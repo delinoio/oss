@@ -122,7 +122,7 @@ func TestMainHistoryRejectsForeignChangedTruncatedAndDetachedEvidence(t *testing
 			case "foreign-cwd":
 				assistant["cwd"] = workspace + "-foreign"
 			case "foreign-version":
-				assistant["version"] = "other"
+				assistant["version"] = "invalid/version"
 			case "sidechain":
 				assistant["isSidechain"] = true
 			case "missing-parent":

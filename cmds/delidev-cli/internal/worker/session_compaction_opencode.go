@@ -86,7 +86,11 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 			output, returned = nil, err
 		}
 	}()
-	executable := i.Assignment.Installation.ResolvedPath
+	installation, err := resolveOriginalStartup(ctx, config, i.SourceJobID, i.Assignment)
+	if err != nil {
+		return nil, err
+	}
+	executable := installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.CompactionUncertain()
@@ -151,7 +155,7 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 	defer cancel()
 	stopCancellation := context.AfterFunc(ctx, cancel)
 	defer stopCancellation()
-	nativeConfig := opencode.APIExecutionConfig{Probe: opencode.ProbeConfig{Version: i.Assignment.Installation.Version, Home: filepath.Join(home, "opencode"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}}, Workspace: lease.WorkingDirectory(), Root: root, References: openCodeWorkspaceReferences(manifest), ServerOrigin: c.Credential.Endpoint, Token: token, Settings: settings.Session, Instructions: settings.Instructions, Rejection: settings.Rejection}
+	nativeConfig := opencode.APIExecutionConfig{Probe: opencode.ProbeConfig{Version: installation.Version, Home: filepath.Join(home, "opencode"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}}, Workspace: lease.WorkingDirectory(), Root: root, References: openCodeWorkspaceReferences(manifest), ServerOrigin: c.Credential.Endpoint, Token: token, Settings: settings.Session, Instructions: settings.Instructions, Rejection: settings.Rejection}
 	if i.Assignment.Configuration.OpenCodeContext != nil {
 		nativeConfig.ContextLimit = int64(i.Assignment.Configuration.OpenCodeContext.Tokens)
 		nativeConfig.Prune = i.Assignment.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1

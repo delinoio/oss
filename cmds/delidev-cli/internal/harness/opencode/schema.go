@@ -17,9 +17,13 @@ func scalar(raw json.RawMessage, want string) bool {
 	var value *string
 	return json.Unmarshal(raw, &value) == nil && value != nil && *value == want
 }
+func nativeVersion(raw json.RawMessage) bool {
+	var version string
+	return json.Unmarshal(raw, &version) == nil && domain.ValidNativeVersionMetadata(version)
+}
 func validateHealth(raw []byte) error {
 	fields, err := object(raw)
-	if err != nil || len(fields) != 2 || !scalar(fields["version"], SupportedVersion) {
+	if err != nil || len(fields) != 2 || !nativeVersion(fields["version"]) {
 		return incompatible()
 	}
 	var healthy *bool

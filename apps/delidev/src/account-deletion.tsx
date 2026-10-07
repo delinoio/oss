@@ -12,7 +12,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
 import { useSettingsOpening } from "./settings-lifetime";
-import { SettingsTaskContext, SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
+import { SettingsTaskContext } from "./settings-task-context";
 import { serviceAccount } from "./subscription-resource";
 import { safeDiagnostic } from "./subscription-onboarding";
 import { Failure } from "./ui";
@@ -51,7 +51,7 @@ export function useAccountDeletionCompletion(accepted: boolean, active: boolean,
   const retireOpener = useContext(SettingsTaskContext)?.retireOpener;
   useEffect(() => {
     if (!accepted || !active || opening?.disposed || completed.current) return;
-    // Commit cleared retention before parent teardown. A confirmed-deleted row
+    // Commit confirmed deletion before parent teardown. A confirmed-deleted row
     // is no longer a focus destination, even while inventory refresh is pending.
     completed.current = true;
     retireOpener?.(node => Boolean(node.closest(".subscription-row, .api-entry-row")));
@@ -59,7 +59,7 @@ export function useAccountDeletionCompletion(accepted: boolean, active: boolean,
   }, [accepted, active, opening, retireOpener, deleted]);
 }
 
-// This category owns only the confirmed client sequence. Go retains every
+// This task owns only the confirmed client sequence. Go retains every
 // credential, execution, revision, reference and native-cleanup authority.
 export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { initial: Resource; active: boolean; deleted: () => void; close: () => void }) {
   useLocale();
@@ -72,10 +72,6 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
   const [view, setView] = useState<View>({ stage: Stage.Confirmation });
   const pending = useRef<Attempt | undefined>(undefined);
   const waiting = [Stage.Checking, Stage.Logout, Stage.Deleting].includes(view.stage);
-  // Direct clients bypass mutation retention. Keep original operations mounted
-  // through uncertainty, then release retention before completing the dialog.
-  const retained = view.stage !== Stage.Deleted && (waiting || Boolean(pending.current?.logout || pending.current?.operation || pending.current?.deletion));
-  useRetainSettingsTask(retained, waiting ? SettingsTaskStatus.Pending : pending.current?.retry !== undefined ? SettingsTaskStatus.Uncertain : SettingsTaskStatus.AwaitingConfirmation);
   useAccountDeletionCompletion(view.stage === Stage.Deleted, active, deleted);
   const mounted = useRef(false), activeRef = useRef(active);
   activeRef.current = active;
@@ -174,7 +170,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     const p = pending.current;
     if (!active || view.stage !== Stage.Logout || !p?.operation) return;
     // Nonoverlapping reads only. Timers and late continuations cannot survive
-    // a category departure or authorize another native lifecycle request.
+    // task/category disposal or authorize another native lifecycle request.
     void inspect(p);
     const timer = setInterval(() => void inspect(p), 2000);
     return () => clearInterval(timer);

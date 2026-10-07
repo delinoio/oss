@@ -1,10 +1,18 @@
 # Project: DeliDev
 
+Direct execution startup owns System 43 / Worker 23 after PR #1645's main-first
+closure. The [startup contract](cmds-delidev-execution-startup-contract.md) replaces
+manual inspection and numeric execution gates with actual original-process
+initialization, bounded failure metadata and explicit proven no-send retry.
+Account/Worker/history, credentials, revisions and independent cleanup remain
+cross-domain invariants; existing supported feature/platform limits remain and
+no SQLite migration is added.
+
 API account protocol selection reserves ProviderInventory capability 7 and its complete profile/filter declarations under issue #964 before implementation. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-protocol-reservations) owns this prerequisite; it adds no runtime or database authority.
 
 Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
 
-Failed-login subscription cleanup reserves System capability 41 and its closed batch/status/result declarations under issue #964. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) and [protocol contract](protos-delidev-v1-contract.md#failed-subscription-cleanup-reservations) require the complete main-first reservation before implementation. This prerequisite grants no cleanup or deletion authority and adds no migration.
+Failed-login subscription cleanup uses System capability 41 after main-first reservation PR #1614. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
 
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative, with the explicit owner startup/presentation amendment in #1137; implementation and real-environment evidence are distinct.
@@ -57,7 +65,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
-- [Direct execution startup (planned)](cmds-delidev-execution-startup-contract.md)
+- [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
@@ -95,9 +103,11 @@ owns the lifecycle, snapshot-copy deletion integration and remaining database-re
 ## Cross-Domain Invariants
 - Token-first GitHub profile creation uses existing System capability 34 and two always-visible Classic/Fine grained creation shortcuts. Go permits an undeclared owner only for draft form preparation; confirmation, saved-profile forms and repository access retain explicit owner rules. Native opening stays closed, click-driven and guarded by the original Settings visit, with no new allocation or migration. See the [integration contract](cmds-delidev-integrations-contract.md#official-forms-and-local-browser-opening) and [desktop contract](apps-delidev-desktop-contract.md#github-profile-settings).
 
-- Confirmed desktop subscription/API-account configuration deletion closes its task dialog and refreshes the current category once, without a completion screen or cleanup-count read. Pending/uncertain requests retain their exact identities until confirmation or category disposal. Independent native browser cleanup and offline acknowledgments remain authoritative under the desktop, subscription Settings and browser contracts.
+- Confirmed desktop subscription/API-account configuration deletion closes its task dialog and refreshes the current category once, without a completion screen or cleanup-count read. Open tasks retain exact pending/uncertain identities for explicit retry. X/Escape/local Cancel disposes the task scope without hidden-operation UI or category locking; late results cannot continue a client deletion or reach a fresh task. Independent native browser cleanup and offline acknowledgments remain authoritative under the desktop, subscription Settings and browser contracts.
 
 - macOS desktop builds with `debug_assertions` use an explicit development CEF Mock cookie key without signing credentials. System/development CEF paths share metadata, an exclusive native-host lease and durable cleanup of both copies; Go account/PAT/OAuth credentials remain OS-protected. Every other build retains System cookie storage. Follow the [desktop](apps-delidev-desktop-contract.md) and [browser](cmds-delidev-browser-contract.md) contracts; development observations grant no production Keychain or shutdown acceptance.
+
+- macOS development launches retain a verified bundle per run. Only its Go server uses the explicitly registered local self-signed certificate and stable certificate-bound identifier. Original server/Worker files survive rebuilds and abnormal desktop exit. Code-change checks precede fresh OAuth and protected reads/writes; old ad-hoc items retain their original user authorization/repair boundary. Follow [local development signing](apps-delidev-desktop-contract.md#local-development-signing-and-recovery) and the [credential contract](cmds-delidev-credentials-contract.md). Public RPC/capability/schema and release-signing ownership are unchanged; fixture evidence cannot establish real account/platform acceptance.
 
 - Desktop Settings has four ordered groups: AI, Coding, Device management and System. Repositories, Git Profiles and Git remain independent Coding menus; Runner Devices and Paired devices belong to Device management. Git presents global fetch/remediation policy while Server preferences retains routing/network settings. Both policy editors use the existing complete SETTINGS singleton and Connect configuration authority; grouping grants no new capability or migration. Existing category IDs and lifetimes remain stable, with `git-workflow` as the additional presentation category.
 - Agent Worker creation/editing uses Harness → account source groups → source-specific Models → Configure under System capabilities 33/36, reserved on main by PRs #1351 and #1371. Models Settings is removed; Usage owns model details and Token pricing. The [desktop wizard](apps-delidev-desktop-contract.md#agent-worker-wizard) and [catalog](cmds-delidev-catalog-contract.md#agent-worker-model-selection) contracts preserve atomic model/Worker saving, legacy APIs and historical attribution without a migration or native/account readiness grant. Shared Reasoning effort/Subagent effort autocomplete provides advisory harness hints and exact direct input under the [desktop presentation contract](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation), without discovery or new execution support.

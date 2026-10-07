@@ -1,26 +1,20 @@
 # DeliDev managed Codex subscriptions
 
+## Direct execution startup
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) removes manual installation inspection and separate execution probes from new negotiated assignments. Initialize the actual selected process and validate its protocol, credential mode and settings before input. Optional observed version metadata cannot grant or deny execution by numeric comparison. Existing protected generation, original account lease, server-owned OAuth and credential write-back/cleanup remain required; readiness never grants login, account refresh or credential ownership.
+
 ## Failed subscription cleanup reservations
 
-Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the
-`CleanupFailedSubscriptions` and `GetFailedSubscriptionCleanup` request/response
-messages, `FailedSubscriptionCleanupJob` and `FailedSubscriptionCleanupResult`,
-and the closed cleanup state/outcome/reason enums in `allocations.json`.
-Establish this complete reservation on main before dependent implementation.
-The request reserves the original request ID; status reserves original job ID
-and pagination token. Responses reserve the job, original receipt identity,
-replay flag and bounded result pagination. Job metadata reserves ID/revision,
-state, total/processed/deleted/retained counts and safe problem code. Results
-reserve account ID/alias, outcome, reason and safe problem code.
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by PR #1614 before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
 
-The planned button deliberately starts one server-wide cleanup without another
-confirmation. Only failed, canceled, expired, unsupported or interrupted initial
-ChatGPT server logins without independent authentication or Worker ownership are
-candidates. Original native and protected-credential cleanup, fresh revisions,
-complete retained-reference checks and deletion receipts remain authoritative.
-Ordinary disconnected accounts and active logins remain outside the batch.
-Reservations introduce no active schemas, generated bindings, capability
-advertisement, native cleanup, configuration deletion or database migration.
+One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. Connected accounts, ordinary disconnected accounts, active logins, restored generations and independent Worker/native/observation ownership are excluded.
+
+The joined server controller applies the original 30-second account attempt and account gate. It rechecks the original requester, exact account revision and login ownership. It shares the existing native/credential cleanup and configuration deletion checks, including protected vault references and complete Agent/Project/retained Session references. Its native and credential checkpoints advance the child's expected revision in the same transaction. Changed settings or ownership remain retained. Failed attempts are terminal retained outcomes with closed reasons, never automatic retries. A later deliberate button click can create a fresh batch.
+
+Confirmed deletion, tombstone/browser obligations, the existing configuration receipt, child result and aggregate counts commit together. Restart reads only original jobs and confirmed cleanup checkpoints, never login or callbacks. An interrupted attempt without a native checkpoint remains retained; confirmed native cleanup may resume protected cleanup. Shutdown cancels and joins the controller before store/vault closure. Revocation permits server-owned retained-result bookkeeping only, never substituted account deletion authority. Restore blocks queued/pending cleanup jobs and quarantines historical nonterminal jobs and receipts, so restored work cannot regain deletion authority.
+
+`GetFailedSubscriptionCleanup(job_id, page_token)` returns current revision/state, total/processed/deleted/retained counts and at most 50 original account results. Signed cursors bind the actor and batch. Result metadata contains only the original alias, account ID, closed outcome/reason and safe problem code. Logs contain job/operation IDs, counts, phases and safe codes. Existing generic jobs/receipts need no migration or Rust/native change.
 
 ## Planned native Claude subscriptions
 
@@ -140,6 +134,8 @@ Uncertain delivery or completion closes the Worker subscription lane and joins i
 
 ## Security
 
+Disposable subscription lifecycle processes disable native plugins before launch and verify the normalized disabled feature through the harness profile. This prevents unrelated startup/account-change catalog downloads from overflowing cleanup inventory. Discovery uses the same download restriction; actual session execution retains independent feature authority. Keep the original 2,048-file and 64 MiB runtime cleanup limits, identity checks, symlink refusal, original process joins and final auth-file comparison. Disabling downloads grants no recovery of prior failed logins, credential adoption, automatic retry or authentication authority.
+
 Uncertain protected execution completion escapes ordinary job-error reporting and closes the primary work lane after joined cleanup. The original started job claim and protected completion journal remain retained; the server records the lost execution lease as recovery-required. Workspace cleanup failures preserve this completion uncertainty, and receipt replay cannot manufacture a successful write-back. A successful protected Finish RPC can acknowledge a fenced account; it permits ordinary execution reporting only after final bundle capture and independent cleanup, or the separately verified unused-original pre-native outcome. Acknowledgment alone cannot replace the started job claim.
 
 Once subscription ownership is recovery-required, every new Finish is denied before vault staging or deletion and again at its final transaction. Only an already accepted receipt may replay through this handler; that read-only replay preserves any later retained lease, pending operation and recovery fence. A late background completion cannot replace the independent recovery path.
@@ -164,11 +160,15 @@ Use structured `slog` events for accepted operations, grants, completion, capabi
 
 Managed native failure logs additionally retain the closed internal `stage`: `login-start`, `login-completion`, `login-cancel`, `account-read`, `bundle-validation` or `local-logout`. The stage identifies the first failed check within its existing safe phase and original operation correlation. It does not change public diagnostic schemas, retain native field values or authorize retry.
 
+Server cleanup failures additionally emit `server_subscription_cleanup_failed` with the original operation reference, closed stage/reason and bounded `file_count`, `observed_bytes`, `file_limit` and `byte_limit` counters. Stages distinguish `native-process`, `auth-file`, `runtime-validation`, `runtime-inventory`, `runtime-removal` and `runtime-sync`. Reasons distinguish unconfirmed native cleanup, failed protected reads, bundle mismatch, filesystem/identity failure, symlink/non-regular entries and file/byte limit overflow. Inventory counters stop at the first failure; an individual file size above the byte limit is capped at limit plus one before accumulation to prevent overflow. No path, filesystem error text, native output, content, identity or credential is retained. Internal typed runtime failures preserve the original public recovery error and cannot alter cleanup proof, account state or retry authority.
+
 ## Build and Test
 
 Run `go test -race ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`, `pnpm proto:check`, and the API client's tests/typecheck. Generate bindings through pinned root Buf tooling. Controlled native-process fixtures cover browser/device progress, completion, cancellation, file rotation, unchanged refresh evidence, logout and symlink refusal. Real loopback Connect/SQLite fixtures cover lease races, protected-channel authorization, generation fencing, lost write-back, cancellation, identity uniqueness, independent accounts, API relay denial and secret-free outputs/database files.
 
 These fixtures do not authenticate real accounts, execute hosted inference or establish installed-Codex/desktop/Windows/Linux/release acceptance. Record actual executed checks, source revisions and unresolved limits in issue #1095, its pull requests and CI logs/artifacts.
+
+Lifecycle fixtures verify normalized plugin disablement before any login request, rejection of incomplete observations, unchanged thread feature policy and sequential independent account login without changing the first saved configuration or protected generation. Cleanup fixtures preserve exact file/byte limits, identity/symlink refusal, auth-file equality and secret-free failure counters. The opt-in installed empty-home logout smoke waits for asynchronous startup work, rejects plugin cache creation and checks joined private-runtime removal after native closure. It uses no browser, real account credentials, OAuth completion or inference.
 
 Account-response fixtures cover omitted/null/validated routing across browser/device completion, refresh and logout, malformed/foreign metadata, unknown/duplicate fields and secret-free stage logs. The explicit `DELIDEV_NATIVE_INITIALIZE_EXECUTABLE` empty-home logout smoke exercises an installed Codex's actual `account/read` response and joined process/private-runtime cleanup without opening a browser, authenticating a user or invoking inference. This check cannot establish real OAuth completion or packaged-platform acceptance.
 

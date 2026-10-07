@@ -44,6 +44,11 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		}
 		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers}, "origins": nil, "layers": nil})
 	case "account/login/start":
+		if sentinel := os.Getenv("DELIDEV_CODEX_LOGIN_SENTINEL"); sentinel != "" {
+			if os.WriteFile(sentinel, []byte("sent"), 0600) != nil {
+				os.Exit(43)
+			}
+		}
 		var input struct {
 			Type string `json:"type"`
 		}

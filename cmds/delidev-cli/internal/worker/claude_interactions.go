@@ -73,7 +73,7 @@ func (c *ClaudeContentPublisher) PublishInteractionObservation(ctx context.Conte
 		if err != nil || domain.Decode(suggestions, &metadata.Suggestions) != nil {
 			return true, b.block()
 		}
-		request := &domain.ClaudeInteractionRequest{Version: claude.SupportedVersion, Kind: domain.ClaudeInteractionKind(r.Kind), ArrivalID: r.ArrivalID, Tool: tool.Reference, MessageID: tool.MessageID, NativeMessageID: tool.NativeMessageID, Index: tool.Index, Caller: caller, InputJSON: string(r.Input), Metadata: metadata}
+		request := &domain.ClaudeInteractionRequest{Version: b.publisher.NativeVersion(), Kind: domain.ClaudeInteractionKind(r.Kind), ArrivalID: r.ArrivalID, Tool: tool.Reference, MessageID: tool.MessageID, NativeMessageID: tool.NativeMessageID, Index: tool.Index, Caller: caller, InputJSON: string(r.Input), Metadata: metadata}
 		u := domain.ExecutionInteractionUpdate{ID: domain.NewID(), NativeItemID: r.ToolID, NativeRequestID: domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: r.RequestID}, Type: domain.NativeApprovalInteraction, Claude: request}
 		if r.Kind == claude.UserQuestion {
 			u.Type = domain.UserQuestionInteraction

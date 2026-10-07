@@ -1,5 +1,9 @@
 # DeliDev native session compaction
 
+## Direct startup source identity
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) permits v4 source assignments and retains their exact restore assignment family. Compaction reuses the original private resolved executable identity, rehashes it, and validates the actual source process and original checkpoint. No current installation inspection, PATH replacement or numeric version baseline can authorize a source action. Existing native acknowledgment, complete history, context, account/Worker and independent cleanup proofs remain required.
+
 ## Status and ownership
 
 This is the common boundary for issues #1093 (Claude), #1202 (Codex) and

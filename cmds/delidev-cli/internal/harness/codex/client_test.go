@@ -23,6 +23,14 @@ func init() {
 	}
 	// Each mode implements only its controlled protocol fixture. Unsupported
 	// requests fail instead of reaching an installed CLI or an external account.
+	if !strings.HasPrefix(mode, "thread-") && !strings.Contains(strings.Join(os.Args, "\n"), "features.plugins=false") {
+		os.Exit(42)
+	}
+	if marker := os.Getenv("DELIDEV_CODEX_PLUGIN_OVERRIDE_SENTINEL"); marker != "" && strings.Contains(strings.Join(os.Args, "\n"), "features.plugins=false") {
+		if os.WriteFile(marker, []byte("disabled"), 0600) != nil {
+			os.Exit(43)
+		}
+	}
 	initialized, notified := false, false
 	threads := &threadFixture{mode: mode}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -91,6 +99,15 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
 		default:
+			if request.Method == "experimentalFeature/list" && !strings.HasPrefix(mode, "thread-") {
+				enabled := strings.HasSuffix(mode, "plugins-enabled")
+				data := []any{map[string]any{"name": "plugins", "stage": "stable", "displayName": nil, "description": nil, "announcement": nil, "enabled": enabled, "defaultEnabled": true}}
+				if strings.HasSuffix(mode, "plugins-missing") {
+					data = []any{}
+				}
+				write(request.ID, map[string]any{"data": data, "nextCursor": nil})
+				continue
+			}
 			if managedFixtureHandle(mode, request.ID, request.Method, request.Params, write) {
 				continue
 			}
@@ -153,7 +170,7 @@ func TestCodexNativeHandshakeAndCleanup(t *testing.T) {
 	}
 }
 func TestCodexRejectsChangedNativeRuntime(t *testing.T) {
-	for _, mode := range []string{"home", "platform", "version", "unknown-field", "existing-thread"} {
+	for _, mode := range []string{"home", "platform", "unknown-field", "existing-thread"} {
 		t.Run(mode, func(t *testing.T) {
 			config := fixtureConfig(t, mode)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -168,12 +185,10 @@ func TestCodexRejectsChangedNativeRuntime(t *testing.T) {
 		})
 	}
 }
-func TestCodexUnknownVersionAndForeignHomeNeverLaunch(t *testing.T) {
-	for _, change := range []string{"version", "home", "duplicate"} {
+func TestCodexForeignHomeNeverLaunch(t *testing.T) {
+	for _, change := range []string{"home", "duplicate"} {
 		config := fixtureConfig(t, "ready")
 		switch change {
-		case "version":
-			config.Version = "0.150.9"
 		case "home":
 			config.Process.Env = []string{"CODEX_HOME=" + t.TempDir()}
 		case "duplicate":
@@ -197,7 +212,7 @@ func fixtureVersion() string {
 }
 
 func TestCodexNewerVersionsAttemptNativeProtocol(t *testing.T) {
-	for _, version := range []string{"0.151.0", "0.159.2", "1.0.0", "1.0.0-beta.1+build.7"} {
+	for _, version := range []string{"0.150.9", "0.151.0-beta.1", "0.151.0", "0.159.2", "1.0.0", "1.0.0-beta.1+build.7"} {
 		t.Run(version, func(t *testing.T) {
 			cfg := fixtureConfig(t, "ready")
 			cfg.Version = version

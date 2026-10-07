@@ -1,6 +1,6 @@
 import {  ownedMessage, useProductMessage, copy, useLocale   } from "./localization";
 import { createContext, useContext, useRef, useState, type ReactNode } from "react";
-import { useRetainSettingsTask, useSettingsTaskDismiss } from "./settings-task-context";
+import { useSettingsTaskDismiss } from "./settings-task-context";
 import type { PairingAuthority } from "./pairing-grant";
 import { useSettingsOpening } from "./settings-lifetime";
 import { encryptedInput, workerRecipient, type WorkerRecipient } from "./worker-network";
@@ -17,7 +17,6 @@ export function WorkerNetworkNative({ machine, authority, prepared }: { machine:
   const pending = useRef(false);
   const [originalImport, setOriginalImport] = useState<{ ciphertext: string; digest: string }>();
   const [unconfirmed, setUnconfirmed] = useState(false);
-  useRetainSettingsTask(busy || unconfirmed);
   // Editable inputs are disposable; the dispatched import retains its exact ciphertext/digest.
   useSettingsTaskDismiss(() => { setCiphertext(""); setDigest(""); setConfirm(false); });
   const run = async (action: WorkerNetworkAction) => {

@@ -29,6 +29,7 @@ import (
 )
 
 type Config struct {
+	startup              *executionStartupAttempt
 	network              *workerNetworkRuntime
 	observations         *managedObservationRegistry
 	inspectionMetadata   bool
@@ -238,7 +239,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
-	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -260,8 +261,8 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
 		if err == nil {
-			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && workerOpenCodeCompactionInstallation(attached.Msg.Machine)
-			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1) && workerOpenCodeCompactionInstallation(attached.Msg.Machine)
+			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
+			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
 			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
 			subagentExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
@@ -273,50 +274,17 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			remoteCloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
 			cloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
-			installation := codexTitleInstallation(attached.Msg.Machine)
-			executable, version := "", ""
-			if installation != nil {
-				executable, version = installation.ResolvedPath, installation.Version
-			}
-			// Adapter support is independent of the current installation inventory.
-			// Admission still requires the parent's exact verified pinned native
-			// installation; discovery must not require a process reconnect merely
-			// to advertise code that this Worker already implements.
+			// Capabilities describe implemented adapters, never inventory readiness.
+			// The original actual process validates its protocol before input.
 			sidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
-			verifiedTitleProfile := false
-			if executable != "" {
-				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
-				var probeErr error
-				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, version, config.Logger)
-				stopProbe()
-				if probeErr != nil {
-					if fatal := fatalTitleProfileProbeError(probeErr); fatal != nil {
-						return fatal
-					}
-					config.Logger.WarnContext(ctx, "automatic title capability probe failed", "machine_id", credential.MachineID, "code", domain.SafeError(probeErr).Code)
-				}
-			}
-			if executable != "" {
-				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
-				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable, version)
-				stopProbe()
-				if err != nil {
-					if domain.SafeError(err).Code == domain.RecoveryRequired {
-						return err
-					}
-					config.Logger.InfoContext(ctx, "managed_subscription_profile_unavailable", "code", domain.SafeError(err).Code)
-					err = nil
-				}
-			}
-			titleCapabilityExpected = verifiedTitleProfile
-			profile := executable + "\x00" + version
-			if installation != nil {
-				profile += "\x00" + installation.ExecutableSHA256
-			}
+			verifiedTitleProfile := true
+			managedCapabilityExpected = true
+			titleCapabilityExpected = true
+			profile := "implemented-adapters-v1"
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}
-			if compactionExpected && executable != "" {
+			if compactionExpected {
 				profile += "\x00codex-session-compaction-v1"
 			}
 			if subagentExpected {
@@ -364,7 +332,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
-			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
 			}
@@ -374,12 +342,12 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if openCodeForkExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			}
-			if compactionExpected && executable != "" {
+			if compactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			}
 			if openCodeCompactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
-				if !compactionExpected || executable == "" {
+				if !compactionExpected {
 					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1)
 				}
 			}

@@ -1,3 +1,5 @@
+- Direct startup validates the actual original owned API and effective settings without numeric version admission or a separate execution probe under `docs/cmds-delidev-execution-startup-contract.md`. Versions remain optional observed metadata. Preserve strict native shapes, original executable identity, account/Worker/history, once-only mutations and independently joined cleanup; no supported feature or platform is inferred from a version.
+
 # OpenCode native ownership
 
 - Follow `docs/cmds-delidev-harness-contract.md`, `docs/cmds-delidev-subagents-contract.md`, `docs/cmds-delidev-compaction-contract.md` and `docs/cmds-delidev-forks-contract.md`. Go owns the original private process/API/session and durable business admission; no exported constructor may adopt an arbitrary native endpoint.

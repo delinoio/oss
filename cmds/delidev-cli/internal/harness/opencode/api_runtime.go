@@ -59,14 +59,12 @@ func directoryContains(parent, child string) bool {
 }
 
 func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, error) {
-	if config.Probe.Version != SupportedVersion {
-		return nil, nil, incompatible()
-	}
+
 	scope, err := config.workspaceRoot()
 	if err != nil {
 		return nil, nil, err
 	}
-	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) || config.Claim == nil || !apiproxy.ValidToken(config.Token) {
+	if config.Probe.Version != "" && !domain.ValidNativeVersionMetadata(config.Probe.Version) || config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) || config.Claim == nil || !apiproxy.ValidToken(config.Token) {
 		return nil, nil, sessionInvalid()
 	}
 	// Only the two native primary profiles have effective-policy evidence.

@@ -120,7 +120,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(err)
 	}
 	input := b.publisher.input
-	if input.Configuration.Harness != domain.OpenCode || input.Installation.Version != opencode.SupportedVersion {
+	if input.Configuration.Harness != domain.OpenCode || (input.Version != 4 && input.Installation.Version != opencode.SupportedVersion) {
 		return fail(executionCheckpointUncertain())
 	}
 	claimBytes, err := json.Marshal(claims)

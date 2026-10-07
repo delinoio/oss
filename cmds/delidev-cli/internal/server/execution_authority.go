@@ -176,11 +176,11 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIProtocol) []apiproxy.Operation {
 	switch input.Configuration.Harness {
 	case domain.Codex:
-		if domain.CodexVersionAllowed(input.Installation.Version) && protocol == domain.OpenAIResponses {
+		if (input.Version == 4 || domain.CodexVersionAllowed(input.Installation.Version)) && protocol == domain.OpenAIResponses {
 			return []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
 		}
 	case domain.ClaudeCode:
-		if input.Validate() != nil || input.Installation.Version != domain.ClaudeProtocolVersion || protocol != domain.AnthropicMessages {
+		if input.Validate() != nil || (input.Version != 4 && input.Installation.Version != domain.ClaudeProtocolVersion) || protocol != domain.AnthropicMessages {
 			return nil
 		}
 		if _, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode); err == nil {
@@ -189,7 +189,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 			return []apiproxy.Operation{apiproxy.MessageCreate}
 		}
 	case domain.GrokBuild:
-		if input.Validate() != nil || input.Version != 1 || input.Continuation != nil || input.Installation.Version != domain.GrokProtocolVersion || protocol != domain.OpenAIChat {
+		if input.Validate() != nil || input.Continuation != nil || input.Fork != nil || (input.Version != 4 && input.Installation.Version != domain.GrokProtocolVersion) || protocol != domain.OpenAIChat {
 			return nil
 		}
 		if _, err := input.Configuration.GrokModeForInput(input.Input.Mode); err == nil {
@@ -197,8 +197,8 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 		}
 	case domain.OpenCode:
 		o := input.Configuration.Options
-		validGeneration := input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
-		if !validGeneration || input.Installation.Version != domain.OpenCodeProtocolVersion || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+		validGeneration := input.Version == 4 && input.Validate() == nil || input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
+		if !validGeneration || (input.Version != 4 && input.Installation.Version != domain.OpenCodeProtocolVersion) || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 			return nil
 		}
 		if _, err := o.OpenCodePrimaryForInput(input.Input.Mode); err == nil {
@@ -208,11 +208,24 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 	return nil
 }
 
+// inferenceScope adds readiness to live account and assignment authority. Registration
+// and original-process initialization use scope alone and cannot infer through it.
+func (a *executionAuthority) inferenceScope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
+	scope, err := a.scope(tx, grant)
+	if err == nil {
+		err = requireExecutionStartupReady(tx, grant.JobID)
+	}
+	return scope, err
+}
+
 func (a *executionAuthority) resolve(ctx context.Context, grant store.ExecutionGrant) (apiproxy.Scope, error) {
 	var scope apiproxy.Scope
 	err := a.service.Store.Read(ctx, func(tx *store.Tx) error {
 		var err error
 		scope, err = a.scope(tx, grant)
+		if err == nil {
+			err = requireExecutionStartupReady(tx, grant.JobID)
+		}
 		return err
 	})
 	return scope, err
@@ -226,7 +239,10 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		var err error
 		grant, err = tx.ExecutionGrant(digest[:])
 		if err == nil {
-			scope, err = a.scope(tx, grant)
+			scope, err = a.inferenceScope(tx, grant)
+		}
+		if err == nil {
+			err = requireExecutionStartupReady(tx, grant.JobID)
 		}
 		return err
 	})
@@ -285,7 +301,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				if leaseContext.Err() != nil {
 					return nil, executionDenied()
 				}
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return nil, err
 				}
 				if scope.Purpose == domain.SessionTitleUsage && value.HTTPAttempted != nil && *value.HTTPAttempted {
@@ -455,7 +471,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				return executionDenied()
 			}
 			return a.service.Store.Read(ctx, func(tx *store.Tx) error {
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return err
 				}
 				_, session, err := sessionRecord(tx, scope.SessionID)
@@ -480,7 +496,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				return executionDenied()
 			}
 			_, err := a.service.Store.Mutate(ctx, domain.NewID(), "execution.observe-reference", reference(kind, nativeID), func(tx *store.Tx) (any, error) {
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return nil, err
 				}
 				return struct{}{}, tx.ObserveExecutionReference(reference(kind, nativeID))
@@ -523,7 +539,7 @@ func (a *executionAuthority) historyObservation(tx *store.Tx, grant store.Execut
 	if err := tx.Authorize(); err != nil {
 		return store.Record{}, domain.Session{}, "", err
 	}
-	scope, err := a.scope(tx, grant)
+	scope, err := a.inferenceScope(tx, grant)
 	if err != nil {
 		return store.Record{}, domain.Session{}, "", err
 	}
@@ -675,7 +691,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 				var supported bool
 				if job.Type == domain.ExecuteSessionJob {
 					var input domain.ExecutionJobInput
-					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && domain.CodexVersionAllowed(input.Installation.Version)
+					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && (input.Version == 4 || domain.CodexVersionAllowed(input.Installation.Version))
 				} else if job.Type == domain.CompactSessionJob {
 					var input domain.SessionCompactionInput
 					supported = domain.DecodeCompactionInput(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex

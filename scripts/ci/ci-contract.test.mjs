@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
 import { load } from "js-yaml";
-import { Event, jobPaths, nativeMatrices, planJobs } from "./plan.mjs";
+import { Event, jobPaths, matricesForEvent, nativeMatrices, planJobs } from "./plan.mjs";
 import { jobCommands, jobTaskGraph } from "./task-graph.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -621,10 +621,12 @@ test("local CI commands are documented by repository contracts", () => {
   for (const command of ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:security", "test:adapters"]) assert.ok(project.includes(command), command);
 });
 
-test("Go validation retains full main suites and five independent native Windows shards", () => {
+test("Go validation consumes the planned event matrix and retains five native Windows shards after PRs", () => {
   const job = workflow.jobs["go-test"];
   assert.equal(job.strategy["fail-fast"], false);
-  assert.deepEqual(job.strategy.matrix, { include: [
+  assert.equal(workflow.jobs.changes.outputs.go_test_matrix, "${{ steps.plan.outputs.go_test_matrix }}");
+  assert.equal(job.strategy.matrix, "${{ fromJSON(needs.changes.outputs.go_test_matrix) }}");
+  assert.deepEqual(matricesForEvent(Event.Manual).goTestMatrix, { include: [
     { os: "ubuntu-latest", shard: "all", label: "ubuntu-latest" },
     { os: "macos-latest", shard: "all", label: "macos-latest" },
     ...["core", "server", "harness", "worker", "workspace"].map((shard) => ({ os: "windows-latest", shard, label: `windows-latest, ${shard}` })),
@@ -763,16 +765,33 @@ test("Rust CI consumes one verified prebuilt selection and gates native preparat
 });
 
 
-test("Go PR selection uses exact comparisons while main, manual and forced validation stay complete", () => {
+test("Go selection preserves exact comparisons and keeps quality validation unchanged", () => {
   for (const id of ["go-test", "go-quality"]) {
     const job = workflow.jobs[id];
     const execution = job.steps.find(({ run }) => run?.includes(id === "go-test" ? "ci:go:test" : "ci:go:quality"));
-    assert.equal(execution.env.CI_GO_MODE, "${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['" + id + "'] && 'affected' || 'full' }}");
+    if (id === "go-quality") assert.equal(execution.env.CI_GO_MODE, "${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-quality'] && 'affected' || 'full' }}");
     assert.equal(execution.env.CI_GO_BASE, "${{ needs.changes.outputs.base }}");
     assert.equal(execution.env.CI_GO_HEAD, "${{ needs.changes.outputs.head }}");
   }
   for (const id of ["ci-contracts", "go-quality", "async-commit-hook", "devhud-api", "delidev-protocol", "delidev-client"]) assert.equal(step(workflow.jobs[id], "ci-go").with["cache-scope"], id);
   assert.equal(namedStep(workflow.jobs["go-test"], "Verify native affected Go discovery").run, "node scripts/ci/run-affected.mjs @delinoio/ci ci:go:discovery");
+});
+
+test("Go workflow selects affected native main packages and full Ubuntu main, manual and forced runs", () => {
+  const expression = namedStep(workflow.jobs["go-test"], "Run go test").env.CI_GO_MODE;
+  for (const event of Object.values(Event)) {
+    for (const row of matricesForEvent(event).goTestMatrix.include) {
+      for (const forced of [false, true]) {
+        const mode = runInNewContext(expression.slice(3, -2), {
+          github: { event_name: event }, matrix: row,
+          needs: { changes: { outputs: { forced: JSON.stringify({ "go-test": forced }) } } },
+          fromJSON: JSON.parse,
+        });
+        const expected = forced || event === Event.Manual || (event === Event.Push && row.os === "ubuntu-latest") ? "full" : "affected";
+        assert.equal(mode, expected, `${event}: ${row.label}: forced=${forced}`);
+      }
+    }
+  }
 });
 
 test("the separate Runmoor PR workflow retains full native validation through Turbo", () => {

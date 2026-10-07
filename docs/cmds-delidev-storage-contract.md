@@ -1,5 +1,9 @@
 # DeliDev storage operations
 
+## Startup metadata without migration
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) stores the current bounded startup record in existing session JSON and mirrors it into the original terminal job JSON. Readiness and first failure remain separate immutable observations. Report receipts use existing durable mutations without changing the claimed assignment revision or its input bytes. Explicit retry retains the failed job/input and creates distinct IDs. Original private executable identity, process and outbox journals remain Worker-owned. No table or SQLite migration is added.
+
 ## Request diagnostic retention
 
 Schema 27 adds bounded metadata-only request diagnostic rows and session/execution indexes under the existing synchronized pre-migration backup boundary. It preserves all historical state, title claims, backup obligations and usage; no historical requests are synthesized. Rows retain immutable event-time attribution, exact revision checks and original publication receipts. Proxy revisions publish session invalidation events atomically at the unchanged session-state revision, while native observations share their original session publication. The 4 KiB row and 10,000-per-session admission limits do not evict history; existing observations may settle. Session deletion cascades rows, and reference-only old receipts cannot recreate them. Single-record and page reads reject row/body identity, session, execution or revision mismatches without exposing partial records. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for publication/cancellation/read ownership.
@@ -679,7 +683,47 @@ original pinned entries and rechecks regular-file hashes/size/mode, symlink text
 kind and named/opened identity immediately before unlink. New entries are never
 selected, and atomic empty-directory removal refuses remaining unknown contents.
 Changes during removal retain the claim, remaining bytes and recovery uncertainty;
-partial recovery checks the same intent and root identity. Scratch cleanup keeps
+partial recovery checks the same intent and root identity. Final root removal
+first synchronizes a bounded metadata-only transition in
+`storage-removal-root-claims/<operation>.json`, binding the original
+operation/session/snapshot/action, intent digest and native root identity. Claim
+the empty root with a no-replace rename into the separate private
+`workspace-removal-roots/<operation>-<private-UUID>` namespace before anchored identity, exact
+mode and empty-inventory verification. Synchronize both namespace parents before
+recording the claimed state. The old removal name is never an unlink operand;
+a directory or symlink appearing there is preserved and blocks completion.
+On Linux and other POSIX platforms, retain the opened final root, remove its
+search permission, and repeat the anchored identity check immediately before
+`unlinkat`; this closes the retained-root-handle path to the private parent
+during the final name operation. Darwin cannot unlink by directory handle, so
+it transfers the verified writable root with an exclusive directory-fd rename
+into the fresh operation-private
+`workspace-removal-quarantine/<operation>-<private-UUID>` namespace, rechecks
+the native identity, removes search permission there, and unlinks only the
+quarantined name. The old private namespace remains a recovery boundary.
+Repeat the anchored check after the last mutation checkpoint as well. If a
+retained parent moves the original and the name operation selects a replacement,
+the second check retains recovery ownership before any post-unlink receipt can be
+published. Linux additionally verifies the opened directory's post-unlink
+link count so a retained-parent race in the final kernel interval remains
+recovery-required; Darwin verifies the opened identity and unlinked path after
+the quarantine unlink.
+Keep unlink preparation separate from the durable receipt recorded after native
+unlink. Publish that receipt with a bounded cancellation-independent context
+before honoring the caller's cancellation. Recovery with a missing root and no unlink receipt remains uncertain,
+including interruption between unlink and receipt publication. With the original
+receipt, recovery synchronizes both parents and independently requires both
+names absent before recording completion. Missing or replaced proof/root never
+reconstructs removal authority from absence or matching bytes. The workspace
+owner retires only a validated final-root proof after its durable removed state
+and final namespace absence, before generic session-copy cleanup; legacy intent
+and journal retirement remains separate. A canonical proof that reappears after
+that boundary is absence-only. Retire the remaining proof records only at the
+acknowledged-report boundary after checking final namespace absence.
+Permanent deletion resumes only the original final-root transition and includes
+its namespace, proof and target-attributed atomic-write remnants in both removal
+and completed-proof replay inventories; generic copy cleanup cannot remove a
+reappearing final root. Scratch cleanup keeps
 its separate operation-owned enumeration. Only create/cleanup and restore create
 scratch. After exclusive directory creation, synchronize an external versioned
 claim binding the exact operation/request digest, preparation, session/machine,
@@ -973,6 +1017,14 @@ initializes the current functional layout and removes upgrades from schemas
 1–31. Unsupported DBs and backups retain their original files and sidecars;
 no startup, inspection or restore may silently convert or reset them. This
 reservation adds no executable migration or runtime capability.
+
+## Failed subscription cleanup jobs
+
+Server-owned `cleanup-failed-subscriptions` parent jobs and `cleanup-failed-subscription` children use existing generic entities, jobs and receipts, without a database migration. The subscription owner validates their closed input/checkpoint/results, original actor/server, fixed account revisions and original login/deletion identities. Only confirmed account cleanup transactions advance child revisions. Terminal retained attempts cannot rerun automatically; tombstone, deletion receipt, child result and parent counts are atomic. Narrow pending-job filtering occurs before bounds so unrelated Worker history cannot hide the one active batch.
+
+Managed restore eligibility includes queued cleanup parents/children as unsettled ownership. The existing image transformer cancels every historical nonterminal cleanup job and quarantines its receipts. Maintenance selects only pending original live jobs; historical canceled or terminal jobs cannot acquire account deletion authority. Follow the [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations).
+
+Each batch child records native and credential-attempt fences before external cleanup. A confirmed native checkpoint can resume only before the credential attempt begins. An interrupted credential attempt with no confirmed account checkpoint is retained without repeating vault effects, even when its previous outcome write failed. A fresh explicit batch can retry that account.
 
 ## Inline Worker models and endpoint-only completion reservation
 

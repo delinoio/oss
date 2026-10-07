@@ -1,5 +1,9 @@
 # DeliDev same-account native session forks
 
+## Direct startup source identity
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) permits source assignments with private execution version 4. Freeze the original successful readiness digest into the Fork input without rewriting source assignment bytes. The Worker resolves and rehashes only the original private resolved executable. Child execution uses its own successfully published Fork job seed, so independent parent deletion cannot transfer or erase child ownership. Existing API-only, platform, transcript, account/Worker, workspace-copy and native mutation/cleanup limits remain unchanged.
+
 ## Scope
 
 Issue #1092 adds independent native Codex forks to the Go session, Worker and

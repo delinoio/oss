@@ -134,7 +134,7 @@ func openGrokClaims(p *ExecutionPublisher) (*grokClaimJournal, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, publication := p.input, p.state
-	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.GrokBuild || i.Installation.Version != grok.SupportedVersion || i.Continuation != nil || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.GrokBuild || (i.Version != 4 && i.Installation.Version != grok.SupportedVersion) || i.Continuation != nil || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
 		return nil, grokClaimUncertain()
 	}
 	ref := grokClaimReference{Version: 1, JobID: p.job, InstanceID: publication.InstanceID, ServerID: publication.ServerID, DeviceID: publication.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, CreationRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: publication.Revision, AssignmentDigest: publication.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}

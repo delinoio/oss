@@ -65,10 +65,11 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   expect(document(repositories.resources[0]).integration_id).toBeUndefined();
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
   fireEvent.click(screen.getByRole("button", { name: "New Project" }));
-  change("Name", "Owned project");
-  change("Add Repository", (await screen.findByRole("option", { name: "Owned repository" }) as HTMLOptionElement).value);
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Owned repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  change("Project name", "Owned project");
   change("Primary repository", repositories.resources[0].id);
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Restrict ai accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("heading", { name: "Owned project" });
@@ -78,7 +79,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(await screen.findByRole("button", { name: "Inspect installed harnesses" }));
   fireEvent.click(screen.getByRole("button", { name: "Edit executable paths" }));
   for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) change(`${harness} executable path`, join(directory, `missing-${harness}`));
-  fireEvent.click(screen.getByRole("button", { name: "Check installed harnesses" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
   fireEvent.click(await screen.findByRole("button", { name: "Finish inspection" }, { timeout: 15000 }));
   await waitFor(() => expect(screen.getAllByText("missing · Version: Unknown")).toHaveLength(4));
   // An account-less Agent is valid configuration but cannot infer readiness or

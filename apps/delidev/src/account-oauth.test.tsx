@@ -149,6 +149,37 @@ it("a definitive admission rejection allows explicit native disposal and manual 
  expect(f.native.mock.calls.filter(call=>call[1]===OAuthNativeAction.Dispose).length).toBeGreaterThan(0);
 });
 
+it("a runtime admission rejection explains explicit server restart without opening the provider", async () => {
+ const rejection = new ConnectError("private native content", Code.FailedPrecondition, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "recovery_required", cause: "oauth_start_not_admitted" }) }]);
+ const f = fixture({ startError: rejection });
+ fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
+ expect((await screen.findByRole("alert")).textContent).toContain("explicitly stop and start this server");
+ expect(screen.queryByText("private native content")).toBeNull();
+ expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BindOpen)).toHaveLength(0);
+ expect(f.start).toHaveBeenCalledTimes(1);
+ fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+ await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Dispose)).toBe(true));
+ expect(f.cancel).not.toHaveBeenCalled();
+ expect(f.complete).not.toHaveBeenCalled();
+});
+
+it.each(["credential_executable_changed", "credential_executable_invalid"])("runtime exchange failure %s preserves the original receipt and clears callback bytes", async cause => {
+ const rejection = new ConnectError("private native content", Code.FailedPrecondition, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "recovery_required", cause }) }]);
+ const f = fixture({ complete: async () => { throw rejection; } });
+ fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
+ await screen.findByText("Waiting for authorization…");
+ f.trigger();
+ expect((await screen.findByRole("alert", {}, { timeout: 2500 })).textContent).toContain("Keep existing credentials");
+ await waitFor(() => expect(f.rawCode.every(byte => byte === 0)).toBe(true));
+ const original = f.complete.mock.calls[0][0].mutation?.requestId;
+ fireEvent.click(screen.getByRole("button", { name: "Inspect original attempt" }));
+ await waitFor(() => expect(f.status).toHaveBeenCalled());
+ expect(f.complete).toHaveBeenCalledTimes(1);
+ expect(f.complete.mock.calls[0][0].mutation?.requestId).toBe(original);
+ expect(f.client.getMutationCache().getAll()).toHaveLength(0);
+ expect(screen.queryByText("private native content")).toBeNull();
+});
+
 it.each([Code.Unavailable,Code.Aborted,Code.Unimplemented])("an unproven Start failure %s retains its exact receipt and blocks fallback",async code=>{
  const f=fixture({startError:new ConnectError("unknown outcome",code)});
  fireEvent.click(screen.getByRole("button",{name:"Connect selected OpenRouter"}));await screen.findByRole("alert");

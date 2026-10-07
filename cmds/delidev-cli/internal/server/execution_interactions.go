@@ -42,7 +42,7 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 				return false, executionEventConflict()
 			}
 		}
-		if u.Approval != nil && (u.Approval.Harness != input.Configuration.Harness || u.Approval.Version != input.Installation.Version) {
+		if u.Approval != nil && (u.Approval.Harness != input.Configuration.Harness || (input.Version != 4 && u.Approval.Version != input.Installation.Version)) {
 			return false, executionEventConflict()
 		}
 		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, OpenCode: u.OpenCode, Claude: u.Claude, Grok: u.Grok, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}

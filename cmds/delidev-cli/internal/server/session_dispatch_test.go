@@ -131,7 +131,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	if harness == domain.OpenCode {
-		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})); err != nil {
+		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1}})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -448,7 +448,7 @@ func TestInitialDispatchStopAndResumeAreSerialized(t *testing.T) {
 }
 
 func TestInitialDispatchRequiresCurrentEvidence(t *testing.T) {
-	for _, failure := range []string{"worker-stale", "installation-unverified", "connection-changed", "validation-failed"} {
+	for _, failure := range []string{"worker-stale", "old-worker", "connection-changed", "validation-failed"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newFirstDispatchFixture(t)
 			ctx := context.Background()
@@ -460,14 +460,12 @@ func TestInitialDispatchRequiresCurrentEvidence(t *testing.T) {
 						return nil, err
 					}
 					return nil, tx.SetWorkerInstance(f.selection.MachineID, instance, time.Now().Add(-time.Hour))
-				case "installation-unverified":
+				case "old-worker":
 					r, m, err := activeMachine(tx, f.selection.MachineID)
 					if err != nil {
 						return nil, err
 					}
-					for i := range m.Installations {
-						m.Installations[i].ProtocolVerified = false
-					}
+					m.WorkerCapabilities = nil
 					return tx.Put(r.Kind, r.ID, r.Revision, "", "", m)
 				default:
 					r, a, err := accountFromTx(tx, domain.ID(f.account.Id), 0)

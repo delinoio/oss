@@ -38,12 +38,12 @@ func (u NativeAccountingUnit) Validate() error {
 		return invalidClaudeUsage()
 	}
 	if u.Kind == OpenCodeStep {
-		if u.OpenCode == nil || !reflect.ValueOf(u.Observation).IsZero() || o.Harness != OpenCode || o.Version != OpenCodeProtocolVersion || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(OpenCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(OpenCode, NativeTurnIdentity) != nil || u.OpenCode.Usage.Source != OpenCodeStepUsage || u.OpenCode.Usage.Validate() != nil {
+		if u.OpenCode == nil || !reflect.ValueOf(u.Observation).IsZero() || o.Harness != OpenCode || (o.Version != "" && !ValidNativeVersionMetadata(o.Version)) || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(OpenCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(OpenCode, NativeTurnIdentity) != nil || u.OpenCode.Usage.Source != OpenCodeStepUsage || u.OpenCode.Usage.Validate() != nil {
 			return invalidObservation()
 		}
 		return nil
 	}
-	if u.OpenCode != nil || u.Kind != ClaudeMainLoopInput || o.Harness != ClaudeCode || o.Version != ClaudeProtocolVersion || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(ClaudeCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(ClaudeCode, NativeTurnIdentity) != nil || o.Usage.Source != ClaudeInputResultUsage || o.Usage.Validate() != nil {
+	if u.OpenCode != nil || u.Kind != ClaudeMainLoopInput || o.Harness != ClaudeCode || (o.Version != "" && !ValidNativeVersionMetadata(o.Version)) || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(ClaudeCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(ClaudeCode, NativeTurnIdentity) != nil || o.Usage.Source != ClaudeInputResultUsage || o.Usage.Validate() != nil {
 		return invalidClaudeUsage()
 	}
 	return nil

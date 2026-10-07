@@ -104,7 +104,7 @@ it("retains exact executable selections and protocol intent after uncertain Work
   fireEvent.click(screen.getByRole("button", { name: "Edit executable paths" }));
   fireEvent.change(screen.getByLabelText("codex executable path"), { target: { value: "/selected/codex" } });
   fireEvent.click(screen.getByRole("checkbox", { name: "Verify the installed native protocol without login or inference" }));
-  fireEvent.click(screen.getByRole("button", { name: "Check installed harnesses" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same harness check" }));
   await screen.findByText("Worker operation: queued");
   expect(value.discovery.mock.calls[0][0]).toEqual(value.discovery.mock.calls[1][0]);
@@ -121,7 +121,7 @@ it("blocks stale executable path edits while retaining the staged path", async (
   fireEvent.change(screen.getByLabelText("codex executable path"), { target: { value: "/staged/codex" } });
   value.resources[0] = create(ResourceSchema, { ...value.machine, revision: 6n });
   await screen.findByText(/Worker configuration changed elsewhere/, {}, { timeout: 7000 });
-  expect((screen.getByRole("button", { name: "Check installed harnesses" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Run optional diagnostics" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByLabelText("codex executable path") as HTMLInputElement).value).toBe("/staged/codex");
   expect(value.discovery).not.toHaveBeenCalled();
 });

@@ -1,7 +1,5 @@
 package domain
 
-import "golang.org/x/mod/semver"
-
 type NativeProtocol string
 
 const (
@@ -23,7 +21,7 @@ const (
 // CodexVersionAllowed permits an actual native attempt, not inferred protocol
 // readiness. Every accepted installation still requires its native handshake.
 func CodexVersionAllowed(version string) bool {
-	return ValidInstallationVersion(version) && semver.IsValid("v"+version) && semver.Compare("v"+version, "v"+CodexMinimumVersion) >= 0
+	return ValidNativeVersionMetadata(version)
 }
 
 type ProtocolState string
@@ -77,7 +75,7 @@ func (i *Installation) validateProtocol(requested bool) error {
 	}
 	switch i.Protocol.State {
 	case ProtocolVerified:
-		supported := (i.Harness == Codex && CodexVersionAllowed(i.Version)) || (i.Harness == ClaudeCode && i.Version == ClaudeProtocolVersion) || (i.Harness == GrokBuild && i.Version == GrokProtocolVersion) || (i.Harness == OpenCode && i.Version == OpenCodeProtocolVersion)
+		supported := ValidNativeVersionMetadata(i.Version) && ProtocolFor(i.Harness) != ""
 		if !supported || !i.ProtocolVerified || i.Protocol.Problem != nil || i.Protocol.Diagnostic != nil {
 			return Fail(InvalidArgument, "The reported native profile is not validated.", "Use a supported protocol profile; version detection alone cannot grant capabilities.")
 		}
