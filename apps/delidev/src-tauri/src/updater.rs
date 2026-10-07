@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed native installation infrastructure. Go independently owns signed
 //! release verification, immutable download and the durable once-only journal.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use std::{thread, time::Instant};
+
 use sha2::{Digest, Sha256};
 
 use super::*;
