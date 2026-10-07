@@ -40,6 +40,8 @@ type serverCodexRuntime struct {
 	*codex.Client
 	home      string
 	original  os.FileInfo
+	owner     domain.ID
+	logger    *slog.Logger
 	guard     *http.Server
 	guardDone chan struct{}
 }
@@ -56,13 +58,14 @@ func openServerSubscription(ctx context.Context, root string, owner domain.ID, b
 	if e != nil {
 		return nil, subscriptionDenied()
 	}
-	info, e := os.Stat(home)
+	info, e := security.StableStat(home)
 	if e != nil {
 		return nil, subscriptionDenied()
 	}
 	defer func() {
 		if err != nil && domain.SafeError(err).Code != domain.RecoveryRequired {
-			if subscription.CleanupRuntime(home, info) != nil {
+			if cleanupErr := subscription.CleanupRuntime(home, info); cleanupErr != nil {
+				logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
 				err = domain.CodexRecoveryFailure(version, phase, err, subscriptionDenied())
 			}
 		}
@@ -107,7 +110,7 @@ func openServerSubscription(ctx context.Context, root string, owner domain.ID, b
 	if e != nil {
 		return nil, e
 	}
-	return &serverCodexRuntime{Client: native, home: home, original: info}, nil
+	return &serverCodexRuntime{Client: native, home: home, original: info, owner: owner, logger: logger}, nil
 }
 
 func (r *serverCodexRuntime) StartManagedLogin(ctx context.Context, device bool) (codex.ManagedLoginProgress, error) {
@@ -138,15 +141,43 @@ func (r *serverCodexRuntime) Close(latest []byte) error {
 		<-r.guardDone
 	}
 	if err != nil {
+		logSubscriptionCleanup(r.logger, r.owner, subscription.CleanupNativeProcess, subscription.CleanupUnconfirmed, 0, 0)
 		return subscriptionDenied()
 	}
+	return cleanupServerSubscriptionRuntime(r.home, r.original, r.owner, r.logger, latest)
+}
+
+// The caller has already joined the original native process and descendants.
+func cleanupServerSubscriptionRuntime(home string, original os.FileInfo, owner domain.ID, logger *slog.Logger, latest []byte) error {
 	if len(latest) > 0 {
-		closed, readErr := security.ReadPrivate(filepath.Join(r.home, "codex", "auth.json"), subscription.MaxBundle)
+		closed, readErr := security.ReadPrivate(filepath.Join(home, "codex", "auth.json"), subscription.MaxBundle)
 		equal := readErr == nil && bytes.Equal(closed, latest)
 		clear(closed)
 		if !equal {
+			reason := subscription.CleanupMismatch
+			if readErr != nil {
+				reason = subscription.CleanupReadFailed
+			}
+			logSubscriptionCleanup(logger, owner, subscription.CleanupAuthFile, reason, 0, 0)
 			return subscriptionDenied()
 		}
 	}
-	return subscription.CleanupRuntime(r.home, r.original)
+	err := subscription.CleanupRuntime(home, original)
+	logSubscriptionRuntimeCleanup(logger, owner, err)
+	return err
+}
+
+func logSubscriptionRuntimeCleanup(logger *slog.Logger, owner domain.ID, err error) {
+	var failure *subscription.RuntimeCleanupError
+	if errors.As(err, &failure) {
+		logSubscriptionCleanup(logger, owner, failure.Stage, failure.Reason, failure.FileCount, failure.Bytes)
+	}
+}
+
+func logSubscriptionCleanup(logger *slog.Logger, owner domain.ID, stage subscription.CleanupStage, reason subscription.CleanupReason, count int, total int64) {
+	if logger != nil {
+		logger.Warn("server_subscription_cleanup_failed", "operation_id", owner, "stage", stage, "reason", reason,
+			"file_count", count, "observed_bytes", total, "file_limit", subscription.RuntimeFileLimit,
+			"byte_limit", subscription.RuntimeByteLimit, "code", domain.RecoveryRequired)
+	}
 }

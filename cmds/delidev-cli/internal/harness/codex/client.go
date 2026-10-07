@@ -128,6 +128,15 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	// ephemeral store is also the future execution boundary for short-lived
 	// DeliDev proxy credentials, never server-owned upstream API keys.
 	config.Process.Args = []string{"-c", `cli_auth_credentials_store="ephemeral"`, "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false", "-c", "feedback.enabled=false"}
+	if config.Mode != ThreadProtocol {
+		// Codex 0.159.2 warms plugin catalogs even without a thread. Those
+		// downloads exceed the bounded disposable login runtime inventory.
+		// Keep them disabled for discovery and subscription lifecycle only;
+		// execution retains its independently verified native feature profile.
+		// Revisit this override only when a validated native lifecycle profile
+		// keeps startup and account changes within the unchanged cleanup bounds.
+		config.Process.Args = append(config.Process.Args, "-c", "features.plugins=false")
+	}
 	if config.ManagedAuthentication {
 		config.Process.Args[1] = `cli_auth_credentials_store="file"`
 		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
@@ -212,6 +221,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	}
 	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
+	if err := client.verifyLifecyclePlugins(ctx); err != nil {
+		return nil, err
+	}
 	if config.ManagedAuthentication {
 		client.managedHome = home
 		client.quotaObserver = config.QuotaObserver

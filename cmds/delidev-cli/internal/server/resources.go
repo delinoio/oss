@@ -424,20 +424,46 @@ func (s *Service) CreateBackup(ctx context.Context, req *connect.Request[pb.Crea
 	return response, nil
 }
 
+type configurationDeletePhase string
+
+const (
+	configurationDeleteValidation  configurationDeletePhase = "validation"
+	configurationDeleteAdmission   configurationDeletePhase = "account-admission"
+	configurationDeleteReceipt     configurationDeletePhase = "receipt"
+	configurationDeleteReferences  configurationDeletePhase = "references"
+	configurationDeleteAccount     configurationDeletePhase = "account-state"
+	configurationDeleteCredentials configurationDeletePhase = "credentials"
+	configurationDeleteCommit      configurationDeletePhase = "commit"
+)
+
 func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[pb.DeleteConfigurationRequest]) (*connect.Response[pb.DeleteConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
+	phase := configurationDeleteValidation
+	// Log only closed phases/codes and validated request identities. Neither
+	// resource documents nor native/provider error text belong in diagnostics.
+	reject := func(err error) (*connect.Response[pb.DeleteConfigurationResponse], error) {
+		requestID, correlationID := "", ""
+		if req.Msg.Mutation != nil && domain.ID(req.Msg.Mutation.RequestId).Validate() == nil {
+			requestID = req.Msg.Mutation.RequestId
+		}
+		if domain.ID(correlation).Validate() == nil {
+			correlationID = correlation
+		}
+		s.logger.WarnContext(ctx, "configuration_delete_rejected", "phase", phase, "error_code", domain.SafeError(err).Code, "request_id", requestID, "correlation_id", correlationID)
+		return nil, rpc.Error(err, correlation)
+	}
 	meta := req.Msg.Mutation
 	if meta == nil || meta.Id == "" || meta.ExpectedRevision == 0 {
-		return nil, rpc.Error(domain.Fail(domain.MissingInput, "Deletion requires a request ID, entity ID, and expected revision.", "Read the current entity before deleting it."), correlation)
+		return reject(domain.Fail(domain.MissingInput, "Deletion requires a request ID, entity ID, and expected revision.", "Read the current entity before deleting it."))
 	}
 	kind, err := rpc.Kind(req.Msg.Kind)
 	if err != nil {
-		return nil, rpc.Error(err, correlation)
+		return reject(err)
 	}
 	switch kind {
 	case domain.ProjectKind, domain.RepositoryKind, domain.AgentKind, domain.AccountKind, domain.ProviderKind, domain.ModelKind, domain.TemplateKind:
 	default:
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "This entity cannot be deleted through configuration.", "Use its dedicated lifecycle operation."), correlation)
+		return reject(domain.Fail(domain.InvalidArgument, "This entity cannot be deleted through configuration.", "Use its dedicated lifecycle operation."))
 	}
 	input := struct {
 		ID       string      `json:"id"`
@@ -445,15 +471,17 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 		Kind     domain.Kind `json:"kind"`
 	}{meta.Id, meta.ExpectedRevision, kind}
 	if kind == domain.AccountKind {
+		phase = configurationDeleteAdmission
 		unlock, err := s.lockAccounts(ctx)
 		if err != nil {
-			return nil, rpc.Error(err, correlation)
+			return reject(err)
 		}
 		defer unlock()
-		if err := s.checkAccountDeletionLocked(ctx, meta.RequestId, meta.Id, meta.ExpectedRevision, input); err != nil {
-			return nil, rpc.Error(err, correlation)
+		if err := s.checkAccountDeletionLocked(ctx, meta.RequestId, meta.Id, meta.ExpectedRevision, input, func(next configurationDeletePhase) { phase = next }); err != nil {
+			return reject(err)
 		}
 	}
+	phase = configurationDeleteCommit
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "configuration.delete", input, func(tx *store.Tx) (any, error) {
 		if err := deleteConfigurationTx(tx, kind, domain.ID(meta.Id), meta.ExpectedRevision); err != nil {
 			return nil, err
@@ -464,7 +492,7 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 		}{meta.Id, true}, nil
 	})
 	if err != nil {
-		return nil, rpc.Error(err, correlation)
+		return reject(err)
 	}
 	s.logger.InfoContext(ctx, "configuration_deleted", "kind", kind, "entity_id", meta.Id, "request_id", meta.RequestId, "replayed", result.Replayed)
 	response := connect.NewResponse(&pb.DeleteConfigurationResponse{Id: meta.Id, RequestId: meta.RequestId, Replayed: result.Replayed})
@@ -475,8 +503,14 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 var protectedAccountDeletion = domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect the account and complete credential cleanup before deleting it.")
 
 // Called under accountGate by ordinary and failed-login batch deletion.
-func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id string, revision uint64, input any) error {
+func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id string, revision uint64, input any, observe func(configurationDeletePhase)) error {
+	phase := func(next configurationDeletePhase) {
+		if observe != nil {
+			observe(next)
+		}
+	}
 	kind := domain.AccountKind
+	phase(configurationDeleteReceipt)
 	_, replayed, err := s.Store.Replay(ctx, domain.ID(request), "configuration.delete", input)
 	if err != nil {
 		return err
@@ -487,9 +521,11 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			if err := tx.Authorize(); err != nil {
 				return err
 			}
+			phase(configurationDeleteReferences)
 			if err := validateDeletion(tx, kind, domain.ID(id)); err != nil {
 				return err
 			}
+			phase(configurationDeleteAccount)
 			_, account, err := accountFromTx(tx, domain.ID(id), revision)
 			if err != nil {
 				return err
@@ -501,6 +537,7 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 			return err
 		}
 		if !keyless {
+			phase(configurationDeleteCredentials)
 			vault, err := s.secrets()
 			if err != nil {
 				return err

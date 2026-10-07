@@ -431,7 +431,7 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 			Revision uint64      `json:"revision"`
 			Kind     domain.Kind `json:"kind"`
 		}{string(in.AccountID), out.Revision, domain.AccountKind}
-		err = s.checkAccountDeletionLocked(ctx, string(in.DeleteRequestID), string(in.AccountID), out.Revision, input)
+		err = s.checkAccountDeletionLocked(ctx, string(in.DeleteRequestID), string(in.AccountID), out.Revision, input, nil)
 		if err == nil {
 			_, err = s.Store.Mutate(ctx, in.DeleteRequestID, "configuration.delete", input, func(tx *store.Tx) (any, error) {
 				if err := deleteConfigurationTx(tx, domain.AccountKind, in.AccountID, out.Revision); err != nil {
