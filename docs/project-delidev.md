@@ -180,6 +180,7 @@ owns the lifecycle, snapshot-copy deletion integration and remaining database-re
 
 - Managed database restore preserves current revocations and external permanent deletion obligations, quarantines historical execution and ends the original server epoch. Temporary recovery images participate in permanent erasure; the storage contract owns their lifecycle.
 - PR activity preserves immutable source/version/actor metadata across Go, generated clients, CLI and desktop. Attempt success cannot establish verified handling; only a dedicated original verification source can project that outcome.
+- Token Usage displays zero for a fully present empty recorded response summary only in its six top-level cards. Missing execution/compaction coverage remains explicit; details, charts, native accounting and ledger evidence retain their original meanings. See the [usage contract](cmds-delidev-usage-contract.md).
 - Negotiated native usage keeps Codex responses and verified Grok closed inputs as distinct accounting units across Go, CLI and desktop. Grok retention requires original input/history/closure and independently confirmed cleanup; its totals never imply pricing, actual cost or estimated-budget contribution. See the [usage contract](cmds-delidev-usage-contract.md).
 
 Explicit stopped Codex API account selection for issue #1097 spans Go,

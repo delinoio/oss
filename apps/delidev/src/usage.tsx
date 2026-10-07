@@ -36,9 +36,18 @@ function measure(value?: UsageMeasure): string {
 const primaryMeasures = () => [[copy("usage.extra.6e3886ad15d2"), "total"], [copy("usage.extra.dd856eeb5046"), "input"], [copy("usage.extra.a9b50ea0c4a7"), "output"]] as const;
 const secondaryMeasures = () => [[copy("usage.extra.876a4379087b"), "cachedInput"], [copy("usage.extra.f8bc2d034686"), "cacheWriteInput"], [copy("usage.extra.f85860ca7347"), "reasoningOutput"]] as const;
 
-function MeasureCard({ label, value, primary = false }: { label: string; value?: UsageMeasure; primary?: boolean }) {
+// Only the dashboard may present an empty recorded subtotal as zero. Require
+// every response measure so missing or inconsistent evidence stays unavailable.
+function emptyRecordedSummary(value?: UsageTotals): boolean {
+  return value?.responses === 0 && [...primaryMeasures(), ...secondaryMeasures()].every(([, key]) => {
+    const metric = value[key];
+    return metric !== undefined && metric.knownTotal === "" && metric.measuredResponses === 0 && metric.unavailableResponses === 0;
+  });
+}
+
+function MeasureCard({ label, value, primary = false, emptySummary = false }: { label: string; value?: UsageMeasure; primary?: boolean; emptySummary?: boolean }) {
   useLocale();
-  return <div className={primary ? "usage-metric usage-metric-primary" : "usage-metric usage-metric-secondary"}><dt>{label}</dt><dd>{measure(value)}</dd><small><LocalizedText id="usage.measuredUnavailableResponses_5145e5" components={{ s0: <>{value?.measuredResponses ?? 0}</>, s1: <>{value?.unavailableResponses ?? 0}</> }} /></small></div>;
+  return <div className={primary ? "usage-metric usage-metric-primary" : "usage-metric usage-metric-secondary"}><dt>{label}</dt><dd>{emptySummary ? BigInt(0).toLocaleString(displayLocale()) : measure(value)}</dd><small><LocalizedText id="usage.measuredUnavailableResponses_5145e5" components={{ s0: <>{value?.measuredResponses ?? 0}</>, s1: <>{value?.unavailableResponses ?? 0}</> }} /></small></div>;
 }
 
 function Measures({ value }: { value?: UsageTotals }) {
@@ -120,6 +129,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
     closeDrawer();
   };
   const data = result.data;
+  const emptySummary = emptyRecordedSummary(data?.totals);
   const responseGroups = data?.groups.filter((group) => (group.totals?.responses ?? 0) > 0) ?? [];
   const responseAnalytics = data?.analytics ? { ...data.analytics, models: data.analytics.models.filter((model) => (model.totals?.responses ?? 0) > 0) } : undefined;
   const appliedZone = data?.analytics?.timeZone || selection.timeZone;
@@ -154,8 +164,8 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
     {!data && result.isPending ? <div className="usage-skeletons" aria-hidden="true"><div /><div /><div /><div /></div> : null}
     {data ? <>
       <section className="usage-summary" aria-labelledby="usage-summary-title"><h2 id="usage-summary-title">{copy("usage.knownTokenTotals_17a07e")}</h2><p><LocalizedText id="usage.distinctResponsesRecorded_baaa83" components={{ s0: <>{data.totals?.responses.toLocaleString(displayLocale()) ?? "0"}</> }} /></p>
-        <dl className="usage-metrics-primary">{primaryMeasures().map(([label, key]) => <MeasureCard key={key} primary label={label} value={data.totals?.[key]} />)}</dl>
-        <dl className="usage-metrics-secondary">{secondaryMeasures().map(([label, key]) => <MeasureCard key={key} label={label} value={data.totals?.[key]} />)}</dl>
+        <dl className="usage-metrics-primary">{primaryMeasures().map(([label, key]) => <MeasureCard key={key} primary label={label} emptySummary={emptySummary} value={data.totals?.[key]} />)}</dl>
+        <dl className="usage-metrics-secondary">{secondaryMeasures().map(([label, key]) => <MeasureCard key={key} label={label} emptySummary={emptySummary} value={data.totals?.[key]} />)}</dl>
         <p className="usage-subset-note">{copy("usage.cachedInputIsPartOfInput_fa92e1")}</p>
       </section>
       <div className="usage-coverage"><strong>{copy("usage.incompleteCoverage_0922dc")}</strong><span>{data.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES ? copy("usage.observedRootResponsesOnlyMissingOlder_ae66ec") : copy("usage.thisServerSTelemetryCoverageIs_d25728")}</span><span><LocalizedText id="usage.acceptedExecutionsHaveNoResponseUsage_9f2beb" components={{ s0: <>{data.acceptedExecutionsWithoutResponse.toLocaleString(displayLocale())}</> }} /></span><span><LocalizedText id="usage.nativeContextActionsHaveNoExact_9bc220" components={{ s0: <>{data.acceptedCompactionsWithoutResponse.toLocaleString(displayLocale())}</> }} /></span></div>
