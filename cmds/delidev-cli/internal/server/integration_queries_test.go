@@ -22,8 +22,7 @@ func (f queryFunc) QueryRepository(ctx context.Context, token []byte, owner, nam
 	return f(ctx, token, owner, name, q)
 }
 func queryObservation() gh.RepositoryQueryObservation {
-	access := accessObservation()
-	return gh.RepositoryQueryObservation{Identity: *access.Identity, Repository: *access.Repository, Items: []domain.RepositoryItem{}}
+	return gh.RepositoryQueryObservation{Identity: domain.GitHubIdentity{ID: "17", NodeID: "U_17", Login: "fixture-user"}, Repository: domain.RemoteRepository{Provider: domain.GitHubCom, ID: "37", NodeID: "R_37", Owner: "fixture-owner", Name: "repo", Private: true, DefaultBranch: "main", HeadCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, Items: []domain.RepositoryItem{}}
 }
 func repositoryQueryRequest(id string) *pb.QueryRepositoryIntegrationRequest {
 	raw, _ := json.Marshal(domain.RepositoryQuery{Kind: domain.RepositoryIssue, Operation: domain.RepositoryList, State: domain.RepositoryItemsAll, Page: 1, PageSize: 20})

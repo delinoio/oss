@@ -3,7 +3,6 @@ import { useId } from "react";
 import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text } from "./documents";
 import { copy, LocalizedText, useLocale } from "./localization";
-import { RepositoryGitHubAccess } from "./integration-access";
 import { RepositoryGitHubItems } from "./github-items";
 import "./repository-list.css";
 
@@ -35,11 +34,11 @@ export function RepositoryRow({ row, active, edit, remove }: { row: Resource; ac
     </header>
     {supported ? <dl className="repository-metadata">
       <div><dt>{copy("settings.repositoryFolders")}</dt><dd>{checkouts.length ? <ul>{checkouts.map((checkout, index) => <li key={index}><code>{text(checkout.path)}</code></li>)}</ul> : copy("settings.repositoryNoFolders")}</dd></div>
-      <div><dt>GitHub</dt><dd>{owner && githubName ? <span className="repository-github-name">{owner}/{githubName}</span> : copy("settings.repositoryNoGithubIdentity")}</dd>{configured ? <dd className="repository-metadata-help">{copy("settings.repositoryAccessNotChecked")}</dd> : null}</div>
+      <div><dt>GitHub</dt><dd>{owner && githubName ? <span className="repository-github-name">{owner}/{githubName}</span> : copy("settings.repositoryNoGithubIdentity")}</dd></div>
     </dl> : null}
     {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
     {text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}
-    <div className="repository-github-tools"><RepositoryGitHubAccess selected={row} active={active} /><RepositoryGitHubItems selected={row} active={active} /></div>
+    <div className="repository-github-tools"><RepositoryGitHubItems selected={row} active={active} /></div>
     <p className="repository-resource-id"><span>{copy("settings.repositoryId")}</span><code>{row.id}</code></p>
   </article>;
 }

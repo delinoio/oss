@@ -172,10 +172,6 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		if command == "integration" {
 			c.transport.ResponseHeaderTimeout = 25 * time.Second
-			if len(rest) > 0 && rest[0] == "inspect-repository" {
-				limit = 40 * time.Second
-				c.transport.ResponseHeaderTimeout = limit
-			}
 		}
 		if command == "session" && len(rest) > 0 {
 			switch rest[0] {

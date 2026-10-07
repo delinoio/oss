@@ -15,8 +15,8 @@ import (
 
 func ciNodeFixture() map[string]any {
 	head := strings.Repeat("b", 40)
-	return map[string]any{"id": "ITEM_stable", "number": 17, "state": "OPEN", "merged": false, "baseRefName": "main", "baseRefOid": accessSHA, "headRefName": "feature", "headRefOid": head, "mergeable": "MERGEABLE", "isInMergeQueue": false, "mergeQueueEntry": nil, "repository": map[string]any{"id": "R_37"},
-		"potentialMergeCommit": map[string]any{"oid": strings.Repeat("c", 40), "parents": map[string]any{"totalCount": 2, "nodes": []any{map[string]any{"oid": accessSHA}, map[string]any{"oid": head}}}, "statusCheckRollup": nil},
+	return map[string]any{"id": "ITEM_stable", "number": 17, "state": "OPEN", "merged": false, "baseRefName": "main", "baseRefOid": repositorySHA, "headRefName": "feature", "headRefOid": head, "mergeable": "MERGEABLE", "isInMergeQueue": false, "mergeQueueEntry": nil, "repository": map[string]any{"id": "R_37"},
+		"potentialMergeCommit": map[string]any{"oid": strings.Repeat("c", 40), "parents": map[string]any{"totalCount": 2, "nodes": []any{map[string]any{"oid": repositorySHA}, map[string]any{"oid": head}}}, "statusCheckRollup": nil},
 		"statusCheckRollup":    map[string]any{"commit": map[string]any{"oid": head}, "contexts": map[string]any{"totalCount": 1, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "one"}, "nodes": []any{map[string]any{"__typename": "CheckRun", "startedAt": "2026-09-28T00:00:00Z", "completedAt": "2026-09-28T00:01:00Z", "title": "Result", "summary": "Original summary", "text": nil, "id": "CHECK_53", "name": "CI Result", "status": "COMPLETED", "conclusion": "FAILURE", "isRequired": true, "repository": map[string]any{"id": "R_37"}, "checkSuite": map[string]any{"id": "SUITE_1", "commit": map[string]any{"oid": head}, "app": map[string]any{"databaseId": 15368, "id": "APP_15368", "slug": "github-actions"}, "workflowRun": map[string]any{"id": "RUN_1", "event": "pull_request", "runNumber": 12, "runAttempt": 1, "createdAt": "2026-09-28T00:00:00Z", "updatedAt": "2026-09-28T00:01:00Z", "checkSuite": map[string]any{"id": "SUITE_1", "commit": map[string]any{"oid": head}}}}}}}},
 	}
 }
@@ -93,7 +93,7 @@ func TestCIInventoryRejectsPartialErrorsForeignCommitsAndMissingAuthority(t *tes
 				case "partial-error":
 					envelope["errors"] = []any{map[string]any{"message": "private diagnostic"}}
 				case "foreign-head":
-					node["headRefOid"] = accessSHA
+					node["headRefOid"] = repositorySHA
 				case "foreign-repo":
 					node["repository"] = map[string]any{"id": "FOREIGN"}
 				case "missing-required":

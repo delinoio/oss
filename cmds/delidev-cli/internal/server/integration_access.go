@@ -2,23 +2,16 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"strconv"
-	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	gh "github.com/delinoio/oss/cmds/delidev-cli/internal/integrations/github"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-type githubRepositoryAccess interface {
-	InspectRepository(context.Context, []byte, string, string) (gh.RepositoryAccessObservation, error)
-}
 type repositoryIntegrationSelection struct {
 	record     store.Record
 	repository domain.Repository
@@ -51,7 +44,7 @@ func repositoryIntegrationFromTx(tx *store.Tx, id domain.ID) (repositoryIntegrat
 		return repositoryIntegrationSelection{}, domain.Fail(domain.PermissionDenied, "The selected profile targets another resource owner.", "Select a separate profile for this repository's owner.")
 	}
 	if profile.Connection == nil || profile.Pending != nil {
-		return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The selected GitHub profile has no usable token generation.", "Complete its connection or pending cleanup before inspecting repository access.")
+		return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The selected GitHub profile has no usable token generation.", "Complete its connection or pending cleanup before reading GitHub items.")
 	}
 	return repositoryIntegrationSelection{record: record, repository: repository, profile: profile}, nil
 }
@@ -146,45 +139,12 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 	return selected, nil
 }
 
+// InspectRepositoryIntegration retains the allocated RPC for older clients.
+// Authorization precedes retirement; no store, credential or outbound read is admitted.
 func (s *Service) InspectRepositoryIntegration(ctx context.Context, req *connect.Request[pb.InspectRepositoryIntegrationRequest]) (*connect.Response[pb.InspectRepositoryIntegrationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	id := domain.ID(req.Msg.RepositoryId)
-	var observed gh.RepositoryAccessObservation
-	selected, err := s.withRepositoryIntegration(ctx, id, "access", correlation, func(readCtx context.Context, token []byte, selected repositoryIntegrationSelection) error {
-		client := s.githubAccess
-		if client == nil {
-			client = gh.New(s.outboundResolver())
-		}
-		var err error
-		observed, err = client.InspectRepository(readCtx, token, selected.repository.GitHubOwner, selected.repository.GitHubName)
-		return err
-	})
-	if err != nil {
+	if _, err := integrationActor(ctx); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	profileID, generation := selected.repository.IntegrationID, selected.profile.Connection.GenerationID
-
-	if observed.Repository != nil && (!strings.EqualFold(observed.Repository.Owner, selected.repository.GitHubOwner) || !strings.EqualFold(observed.Repository.Name, selected.repository.GitHubName)) {
-		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The query returned another repository.", "Refresh the explicitly selected repository."), correlation)
-	}
-
-	value := domain.RepositoryIntegrationAccess{RepositoryID: id, RepositoryRevision: strconv.FormatUint(selected.record.Revision, 10), ProfileID: profileID, GenerationID: generation, ObservedAt: time.Now().UTC().Truncate(time.Millisecond), Identity: observed.Identity, Repository: observed.Repository, Features: observed.Features}
-	for i := range value.Features {
-		if value.Features[i].Problem != nil {
-			problem := *value.Features[i].Problem
-			problem.CorrelationID = correlation
-			value.Features[i].Problem = &problem
-		}
-	}
-	if err := value.Validate(); err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, rpc.Error(domain.SafeError(err), correlation)
-	}
-	s.logger.Info("repository_integration_inspection_finished", "repository_id", id, "profile_id", profileID, "feature_count", len(value.Features), "correlation_id", correlation)
-	response := connect.NewResponse(&pb.InspectRepositoryIntegrationResponse{SchemaVersion: 1, DocumentJson: raw})
-	rpc.CopyCorrelation(response, req.Header())
-	return response, nil
+	return nil, rpc.Error(domain.Fail(domain.Unsupported, "Standalone GitHub repository access inspection has been retired.", "Use GitHub item operations; each operation validates its own access."), correlation)
 }

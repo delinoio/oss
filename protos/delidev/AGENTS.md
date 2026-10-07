@@ -139,7 +139,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - DeliDev IntegrationService is owner/client-only under `docs/cmds-delidev-integrations-contract.md`. Keep PATs bounded and write-only, definitions closed, mutations actor/revision/request-bound, pending revisions exact and accepted replay current-state-only. Generic configuration and Worker credentials cannot alter or invoke profile connection state.
 
-- DeliDev InspectRepositoryIntegration is a read-only owner/client operation with a versioned, exact repository-revision/profile/generation-bound response. Keep unavailable and not-evaluated feature observations distinct from CI/rules outcomes; no mutation receipt or saved PAT belongs in this response.
+- Standalone GitHub repository access inspection is retired. Preserve the allocated RPC and messages for older clients; authenticated owner/paired-client calls return typed Unsupported/Connect Unimplemented with safe guidance and correlation. The endpoint performs no store, vault, admission or outbound work. Browse and PR operations retain their independent selected-profile/generation/revision checks.
 
 - DeliDev QueryRepositoryIntegration is a versioned owner/client-only read under the integration contract. Derive profile/generation from the repository, validate strict list/search/detail and PR-only diff/checks/statuses queries, keep exact numeric namespaces and explicit partial results, and expose no mutation receipt or arbitrary API URL. PR observations require one original PR detail and its exclusive head-bound family; native unknown states and independent Checks/statuses never imply evaluated-commit or remediation authority.
 

@@ -137,7 +137,6 @@
   "settings.repositoryFolders": "Registered folders",
   "settings.repositoryNoFolders": "No registered folders",
   "settings.repositoryNoGithubIdentity": "Owner and repository not set",
-  "settings.repositoryAccessNotChecked": "Saved settings only. Inspect access to check permissions.",
   "settings.repositoryId": "Repository ID",
   "settings.repositoryEmptyTitle": "No repositories yet",
   "settings.repositoryEmptyHelp": "Choose Add repository to register a Git repository for your projects.",

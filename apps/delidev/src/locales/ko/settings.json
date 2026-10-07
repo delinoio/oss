@@ -137,7 +137,6 @@
   "settings.repositoryFolders": "등록된 폴더",
   "settings.repositoryNoFolders": "등록된 폴더 없음",
   "settings.repositoryNoGithubIdentity": "소유자와 저장소 이름 미설정",
-  "settings.repositoryAccessNotChecked": "저장된 설정입니다. 접근 권한은 별도로 확인하세요.",
   "settings.repositoryId": "저장소 ID",
   "settings.repositoryEmptyTitle": "등록된 저장소가 없습니다",
   "settings.repositoryEmptyHelp": "저장소 추가를 눌러 프로젝트에서 사용할 Git 저장소를 등록하세요.",
