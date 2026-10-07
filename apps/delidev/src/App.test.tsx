@@ -1411,3 +1411,16 @@ it("retains one original Runner inspection draft through same-identity connectio
   expect(screen.getByLabelText("claude-code executable path")).toBe(path);
   expectNoNavigationWrites(value);
 }, fullShellTimeoutMs);
+
+
+it("rechecks the original welcome status failure without creating or controlling a session", async () => {
+  const value = fixture();
+  value.status.mockRejectedValueOnce(new ConnectError("Fixture status failure", Code.PermissionDenied));
+  render(<App transport={value.transport} />);
+  const retry = await screen.findByRole("button", { name: "Retry current read" });
+  expect(value.status).toHaveBeenCalledTimes(1);
+  fireEvent.click(retry);
+  await waitFor(() => expect(value.status).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry current read" })).toBeNull());
+  expect(value.creates).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
+});
