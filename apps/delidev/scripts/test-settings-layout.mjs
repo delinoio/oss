@@ -50,6 +50,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
+const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";
 const projectsOnly = process.env.DELIDEV_LAYOUT_PROJECTS_ONLY === "1";
 const languageOnly = process.env.DELIDEV_LAYOUT_LANGUAGE_ONLY === "1";
 let language = "en";
@@ -164,18 +165,18 @@ try {
   };
   const checkHiddenAccountChoices = async () => {
     await select("Agent Workers");
-    await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
+    await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
     await page.getByRole("radio", { name: "Codex", exact: true }).click();
-    await page.getByRole("combobox", { name: "Account source", exact: true }).click();
+    await page.getByRole("combobox", { name: l("Account source"), exact: true }).click();
     await page.getByRole("option", { name: "Fixture provider", exact: true }).click();
     const form = page.locator(".worker-wizard");
-    await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    await form.getByText(l("No accounts to select on this page."), { exact: true }).waitFor();
     assert.equal(await form.locator(".worker-account-row").count(), 0, "Hidden accounts have no DOM/focusable rows");
     assert.equal(await form.getByRole("checkbox").count(), 0, "Hidden accounts have no accessible checkbox");
-    assert(await form.getByText("0 accounts selected", { exact: true }).first().isVisible());
-    assert(await form.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.", { exact: true }).isVisible());
-    await form.getByRole("button", { name: "Refresh accounts", exact: true }).click();
-    await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    assert(await form.getByText(l("{{v0}} accounts selected").replace("{{v0}}", "0"), { exact: true }).first().isVisible());
+    assert(await form.getByText(l("Connect an account in AI Subscription or AI API Keys, then refresh."), { exact: true }).isVisible());
+    await form.getByRole("button", { name: l("Refresh accounts"), exact: true }).click();
+    await form.getByText(l("No accounts to select on this page."), { exact: true }).waitFor();
     const workspace = form.locator(".worker-accounts-workspace");
     const geometry = await workspace.evaluate(node => {
       const form = node.closest("form"), columns = getComputedStyle(node).gridTemplateColumns.split(" ");
@@ -184,7 +185,7 @@ try {
     assert.equal(geometry.overflow, false, "Accounts workspace has no horizontal overflow");
     if (geometry.width >= 720) assert.equal(geometry.columns[0], "260px", "Wide Accounts source column");
     else assert.equal(geometry.columns.length, 1, "Narrow Accounts stacks source list and detail");
-    const footerNext = page.locator(".settings-task-footer").getByRole("button", { name: "Next", exact: true });
+    const footerNext = page.locator(".settings-task-footer").getByRole("button", { name: l("Next"), exact: true });
     assert(await footerNext.evaluate(node => node.form === document.querySelector(".worker-wizard")), "Footer Next owns the original form");
     const actionBox = await footerNext.boundingBox();
     assert(actionBox.y >= 0 && actionBox.y + actionBox.height <= page.viewportSize().height + 0.5, "Accounts navigation stays visible");
@@ -229,7 +230,15 @@ try {
     }
     gitChecks++; keyboardChecks += 4;
   };
-  if (projectsOnly) {
+  if (accountsOnly) {
+    for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480], [720,450], [480,320]]) {
+      await page.setViewportSize({ width, height });
+      await page.goto(`${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=${language}`);
+      await page.getByRole("button", { name: l("Settings"), exact: true }).click();
+      await checkHiddenAccountChoices();
+    }
+    console.log(JSON.stringify({ operation: "accounts_layout", result: "passed", accountsChecks: hiddenChoicesChecked, languages: 2, themes: 2, viewports: 4, effectiveZoomViewports: 2, nativeAcceptance: "not-performed" }));
+  } else if (projectsOnly) {
     let projectStepChecks = 0;
     for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const zoom of [1, 2]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
       await page.setViewportSize({ width: width / zoom, height: height / zoom });
@@ -580,7 +589,7 @@ try {
     await page.screenshot({ path: screenshotPath });
   }
   }
-  if (!projectsOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
+  if (!projectsOnly && !accountsOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));
