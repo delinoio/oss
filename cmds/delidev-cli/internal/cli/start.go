@@ -82,15 +82,6 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 	if err := privateDir(o.dataDir); err != nil {
 		return nil, domain.SafeError(err)
 	}
-	if config.Desktop == nil && mode != startupObservation {
-		lease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-session.lock"))
-		if err != nil {
-			return nil, err
-		}
-		if err := lease.Close(); err != nil {
-			return nil, domain.SafeError(err)
-		}
-	}
 	// Lock order is service admission, startup controller, lifecycle, then store.
 	// Service control owns the same admission lock through its native write.
 	var admission *userservice.LaunchAdmission
@@ -120,6 +111,18 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 			lock.Close()
 		}
 	}()
+	if config.Desktop == nil && mode != startupObservation {
+		// Probe under the existing startup controller so concurrent ordinary
+		// callers join that controller instead of conflicting with each other.
+		// A resident host holds this distinct lease through server Stop.
+		lease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-session.lock"))
+		if err != nil {
+			return nil, err
+		}
+		if err := lease.Close(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+	}
 	intentLock, err := server.LockLifecycle(o.dataDir)
 	if err != nil {
 		return nil, err
