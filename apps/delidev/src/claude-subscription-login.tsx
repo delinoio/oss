@@ -190,9 +190,9 @@ export function useClaudeSubscriptionLogin(
     [hidden, setHidden] = useState(false),
     approvalInput = useRef<HTMLInputElement>(null);
 
-  const runner = useRunnerPreference(RunnerWorkflow.ClaudeLogin, active && Boolean(view && view.step === Step.Runner), eligibleRunner);
+  const runner = useRunnerPreference(RunnerWorkflow.ClaudeLogin, active && Boolean(view && view.step === Step.Runner), eligibleRunner, false, pending.current?.opening ?? "");
   const runnerTouched = useRef(false);
-  useEffect(() => { const p = pending.current; if (active && !runnerTouched.current && p && !p.fixedRunner && !p.busy && !p.operation && !p.machine && runner.suggestion) { p.machine = runner.suggestion.id; setView(current => current && { ...current, machine: p.machine }); } }, [active, runner.suggestion, view]);
+  useEffect(() => { const p = pending.current; if (active && runner.resolved && !runnerTouched.current && p && !p.fixedRunner && !p.busy && !p.operation && !p.machine && runner.suggestion) { p.machine = runner.suggestion.id; setView(current => current && { ...current, machine: p.machine }); } }, [active, runner.resolved, runner.suggestion, view]);
   const live = (p: Pending) =>
     pending.current === p && !p.disposed && !opening?.disposed;
   const update = (p: Pending, v: Partial<View>) => {

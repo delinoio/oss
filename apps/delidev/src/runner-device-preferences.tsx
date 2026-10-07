@@ -33,9 +33,11 @@ const definite = (error: unknown) => error instanceof ConnectError && [Code.NotF
 
 // A suggestion is metadata only. Owners keep their original pending requests,
 // fixed selections and Local proof, and call remember only after acceptance.
-export function useRunnerPreference(kind: RunnerWorkflow, active: boolean, eligible: (row: Resource) => boolean = eligibleRunner, excludeLocal = false) {
+export function useRunnerPreference(kind: RunnerWorkflow, active: boolean, eligible: (row: Resource) => boolean = eligibleRunner, excludeLocal = false, eligibilityKey = "") {
  const authority = useContext(context);
  const transport = useTransport(), client = useMemo(() => createClient(ResourceService, transport), [transport]);
+ const requestKey = `${kind}:${eligibilityKey}`;
+ const [resolvedKey, setResolvedKey] = useState<string>();
  const [candidates, setCandidates] = useState<Resource[]>([]);
  const [suggestion, setSuggestion] = useState<Resource>();
  const [problem, setProblem] = useState<CreationPreferenceProblem>();
@@ -72,11 +74,15 @@ export function useRunnerPreference(kind: RunnerWorkflow, active: boolean, eligi
     try { const local = await authority.local(); if (!live()) return; const choice = await resolve(local.machineId); if (choice && !candidates.some(r => r.id === choice.id)) candidates.push(choice); row ??= choice; }
     catch (error) { if (!row) throw error; }
    }
-   if (live() && !touched.current) { setSuggestion(row); setCandidates(candidates); }
+   if (live() && !touched.current) { setSuggestion(row); setCandidates(candidates); setResolvedKey(requestKey); }
   } catch (error) { if (live()) setLookupError(error); }
   finally { if (live()) setReading(false); }
  };
- useEffect(() => { if (active) void inspect(); else epoch.current++; }, [active, authority, kind, client, excludeLocal]);
+ useEffect(() => {
+  epoch.current++; setResolvedKey(undefined); setSuggestion(undefined); setCandidates([]);
+  if (active) { touched.current = false; void inspect(); }
+  else setReading(false);
+ }, [active, authority, kind, client, excludeLocal, eligibilityKey]);
  const persist = (machine: string) => {
   if (!authority) return;
   const memory = authority.memory.get(kind) ?? { scope: authority.scope }; authority.memory.set(kind, memory);
@@ -99,5 +105,5 @@ export function useRunnerPreference(kind: RunnerWorkflow, active: boolean, eligi
  const remember = (machine: string) => { if (!id.test(machine) || !authority) return; const memory = authority.memory.get(kind) ?? { scope: authority.scope }; memory.machine = machine; memory.pending = machine; authority.memory.set(kind, memory); persist(machine); };
  const touch = () => { touched.current = true; epoch.current++; setReading(false); };
  const guidance = authority ? <>{reading ? <p role="status">{copy("new-session.preferencesResolving")}</p> : null}{problem ? <p role="alert">{creationPreferenceProblemMessage(problem)}</p> : null}{lookupError ? <p role="alert">{copy("new-session.preferencesReadFailed")}</p> : null}{!reading && !suggestion && !lookupError ? <p>{copy("runner-preferences.choose")}</p> : null}{problem || lookupError ? <button type="button" disabled={reading} onClick={() => void inspect()}>{copy("new-session.preferencesInspect")}</button> : null}{canRetry ? <button type="button" onClick={() => { const memory = authority?.memory.get(kind); if (memory?.pending) { setCanRetry(false); persist(memory.pending); } }}>{copy("new-session.preferencesSave")}</button> : null}</> : null;
- return { suggestion, candidates, reading, touch, remember, guidance, inspect };
+ return { suggestion: active && resolvedKey === requestKey ? suggestion : undefined, candidates: active && resolvedKey === requestKey ? candidates : [], resolved: active && resolvedKey === requestKey && !reading, reading, lookupFailed: Boolean(lookupError), touch, remember, guidance, inspect };
 }

@@ -61,3 +61,14 @@ describe("workflow Runner preferences",()=>{
   for(const value of [{...valid,revision:0},{...valid,machine_id:"bad"},{...valid,scope:{server_id:server,device_id:"bad"}},{...valid,extra:true},{...valid,problem:"bad"}])expect(()=>parseRunnerPreference(value)).toThrow();expect(parseRunnerPreference({...valid,problem:CreationPreferenceProblem.Changed}).problem).toBe(CreationPreferenceProblem.Changed);
  });
 });
+it("clears stale suggestions and restores fresh eligibility on a later opening after touch",async()=>{
+ const f=fixture();let release!: (value:unknown)=>void;
+ function Probe({active}:{active:boolean}){const runner=useRunnerPreference(RunnerWorkflow.ClaudeLogin,active);return <><output data-testid="suggestion">{runner.suggestion?.id??""}</output><button onClick={runner.touch}>Touch</button></>;}
+ f.memory.set(RunnerWorkflow.ClaudeLogin,remote);
+ const transport=createRouterTransport(({service})=>service(ResourceService,{getResource:f.get}));
+ const bridge={read:f.read,update:f.update};
+ const view=(active:boolean)=><TransportProvider transport={transport}><RunnerPreferenceProvider bridge={bridge} readLocalWorker={f.native}><Probe active={active}/></RunnerPreferenceProvider></TransportProvider>;
+ const rendered=render(view(true));await waitFor(()=>expect(screen.getByTestId("suggestion").textContent).toBe(remote));fireEvent.click(screen.getByText("Touch"));rendered.rerender(view(false));expect(screen.getByTestId("suggestion").textContent).toBe("");
+ f.get.mockImplementation(async request=>({resource:resource(request.id,request.id!==remote)}));f.read.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));rendered.rerender(view(true));expect(screen.getByTestId("suggestion").textContent).toBe("");
+ release({revision:1,scope:{server_id:server,device_id:device},machine_id:remote,problem:null});await waitFor(()=>expect(screen.getByTestId("suggestion").textContent).toBe(local));
+});
