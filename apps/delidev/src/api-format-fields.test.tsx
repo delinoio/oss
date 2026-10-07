@@ -92,3 +92,12 @@ it("locks retained provider profiles after a key-preserving format change", asyn
   expect(screen.getByRole("checkbox", { name: "OpenAI Chat Completions" }).matches(":disabled")).toBe(true);
   expect(screen.getByRole("checkbox", { name: "Anthropic Messages" }).matches(":disabled")).toBe(false);
 });
+
+it("keeps provider saves blocked when retained reference metadata is malformed", async () => {
+  const account = row(EntityKind.ACCOUNT, { type: "api", provider_id: provider.id, api_protocol: "openai-chat", retained_connections: [{ connection: { api_format: { protocol: "unknown" } } }] });
+  const value = fixture(provider, [account], true, true, true);
+  await screen.findByRole("button", { name: "Retry profile checks" });
+  expect(screen.getByText("Entry references are loading or could not be read completely. Profile editing is paused.")).toBeTruthy();
+  await waitFor(() => expect(value.blocked).toHaveBeenLastCalledWith(true));
+  expect(screen.getByRole("checkbox", { name: "OpenAI Responses" }).matches(":disabled")).toBe(true);
+});

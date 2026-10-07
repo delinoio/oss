@@ -6,14 +6,18 @@ import (
 	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"google.golang.org/protobuf/proto"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -82,9 +86,9 @@ func TestAccountApiFormatChangeKeepsKeyAcrossRestartAndCleanup(t *testing.T) {
 		}
 		changed = next
 	}
-	tampered := *request
+	tampered := proto.Clone(request).(*pb.ChangeAccountApiFormatRequest)
 	tampered.Alias = "Different retry"
-	if _, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(&tampered)); err == nil {
+	if _, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(tampered)); err == nil {
 		t.Fatal("changed receipt retry was accepted")
 	}
 	stripped := accountBody(t, changed.Msg.Account)
@@ -157,17 +161,36 @@ func TestAccountApiFormatChangePreservesOAuthReceipt(t *testing.T) {
 }
 
 func TestAccountApiFormatChangeKeepsOriginalExecutionAuthority(t *testing.T) {
-	oldRequests, newRequests := 0, 0
+	var oldRequests, newRequests atomic.Int32
+	streamFinish := make(chan struct{})
+	streamStarted := make(chan struct{})
+	var streamOnce sync.Once
+	releaseStream := func() { streamOnce.Do(func() { close(streamFinish) }) }
 	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		oldRequests++
+		oldRequests.Add(1)
 		if r.Header.Get("Authorization") != "Bearer temporary-upstream-fixture-key" {
 			t.Error("wrong key")
+		}
+		body, _ := io.ReadAll(r.Body)
+		if bytes.Contains(body, []byte(`"stream":true`)) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			io.WriteString(w, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_format_stream\",\"object\":\"response\",\"status\":\"in_progress\",\"output\":[]}}\n\n")
+			w.(http.Flusher).Flush()
+			close(streamStarted)
+			select {
+			case <-streamFinish:
+			case <-r.Context().Done():
+				return
+			}
+			io.WriteString(w, "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_format_stream\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"fixture-model\",\"output\":[]}}\n\n")
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"id":"resp_format","object":"response","status":"completed","output":[]}`)
 	}))
 	defer old.Close()
-	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { newRequests++; w.WriteHeader(500) }))
+	defer releaseStream()
+	next := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { newRequests.Add(1); w.WriteHeader(500) }))
 	defer next.Close()
 	f := newAuthorityFixture(t, old.URL)
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.formats", nil, func(tx *store.Tx) (any, error) {
@@ -194,6 +217,25 @@ func TestAccountApiFormatChangeKeepsOriginalExecutionAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.registerGrant(t)
+	streamCtx, cancelStream := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelStream()
+	streamRequest, _ := http.NewRequestWithContext(streamCtx, http.MethodPost, f.http.URL+apiproxy.Prefix+"/responses", bytes.NewBufferString(`{"model":"fixture-model","stream":true}`))
+	streamRequest.Header.Set("Content-Type", "application/json")
+	streamRequest.Header.Set("Authorization", "Bearer "+f.token)
+	type streamResult struct {
+		response *http.Response
+		err      error
+	}
+	streamResponse := make(chan streamResult, 1)
+	go func() {
+		response, err := http.DefaultClient.Do(streamRequest)
+		streamResponse <- streamResult{response, err}
+	}()
+	select {
+	case <-streamStarted:
+	case <-streamCtx.Done():
+		t.Fatal("original stream did not start")
+	}
 	record, err := f.service.accountRecord(context.Background(), f.input.AccountID)
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +250,16 @@ func TestAccountApiFormatChangeKeepsOriginalExecutionAuthority(t *testing.T) {
 	changed, err := client.ChangeAccountApiFormat(context.Background(), ownerRequest(f.service.Identity, input))
 	if err != nil {
 		t.Fatal(err)
+	}
+	releaseStream()
+	result := <-streamResponse
+	if result.err != nil {
+		t.Fatal("original stream lost its response", result.err)
+	}
+	defer result.response.Body.Close()
+	streamBody, readErr := io.ReadAll(result.response.Body)
+	if result.response.StatusCode != http.StatusOK || readErr != nil || !bytes.Contains(streamBody, []byte("response.completed")) {
+		t.Fatal("format save interrupted the original stream", result.response.StatusCode, readErr)
 	}
 	lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
 	if err != nil {
@@ -225,8 +277,8 @@ func TestAccountApiFormatChangeKeepsOriginalExecutionAuthority(t *testing.T) {
 	response := f.request(t, f.token, `{"model":"fixture-model"}`)
 	io.Copy(io.Discard, response.Body)
 	response.Body.Close()
-	if response.StatusCode != 200 || oldRequests != 1 || newRequests != 0 {
-		t.Fatal("execution reached new profile", response.StatusCode, oldRequests, newRequests)
+	if response.StatusCode != 200 || oldRequests.Load() != 2 || newRequests.Load() != 0 {
+		t.Fatal("execution reached new profile", response.StatusCode, oldRequests.Load(), newRequests.Load())
 	}
 	agentRecord, _ := f.service.Store.Get(context.Background(), domain.AgentKind, f.input.Configuration.AgentID)
 	agent, _ := store.Decode[domain.Agent](agentRecord)

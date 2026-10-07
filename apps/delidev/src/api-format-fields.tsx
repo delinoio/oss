@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useId } from "react";
 import { useInfiniteQuery, useQuery } from "@connectrpc/connect-query";
-import { APIFormatId, APIAuthenticationId, apiFormat, apiFormatLabels, apiFormatToWire, providerAPIFormats, accountAPIProfile, AccountTypeFilter, EntityKind, ProviderInventoryCapability, ProviderQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
+import { APIFormatId, APIAuthenticationId, apiFormat, apiFormatLabels, apiFormatProfile, apiFormatToWire, providerAPIFormats, accountAPIProfile, AccountTypeFilter, EntityKind, ProviderInventoryCapability, ProviderQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
 import { document, object, text, type Document } from "./documents";
 import { Problem } from "./ui";
@@ -30,7 +30,11 @@ export function ProviderAPIFormatFields({ data, change, active, initial, saveBlo
     pageParamKey: "filter", getNextPageParam: page => page.nextPageToken ? { kind: EntityKind.ACCOUNT, pageSize: 200, pageToken: page.nextPageToken } : undefined,
   });
   useEffect(() => { if (generations.hasNextPage && !generations.isFetching && !generations.error) void generations.fetchNextPage(); }, [generations.hasNextPage, generations.isFetching, generations.error, generations.fetchNextPage]);
-  const generationsReady = !keepsKey || Boolean(generations.data && !generations.hasNextPage && !generations.error && !generations.isFetching);
+  const generationsValid = generations.data?.pages.every(page => page.resources.every(resource => {
+    const body = document(resource);
+    return body.type === "api" && body.provider_id === initial?.id && (!Object.hasOwn(body, "retained_connections") || Array.isArray(body.retained_connections) && body.retained_connections.every(retained => Boolean(apiFormatProfile(object(object(retained).connection).api_format))));
+  }));
+  const generationsReady = !keepsKey || Boolean(generationsValid && !generations.hasNextPage && !generations.error && !generations.isFetching);
   const references = [useFormatReferences(APIFormatId.Responses, initial?.id ?? "", active && ready), useFormatReferences(APIFormatId.ChatCompletions, initial?.id ?? "", active && ready), useFormatReferences(APIFormatId.Messages, initial?.id ?? "", active && ready)];
   const referencesReady = !initial || (generationsReady && references.every(({ query }) => query.data && !query.error && !query.isFetching));
   const profiles = Array.isArray(data.api_formats) ? data.api_formats.map(object) : providerAPIFormats(data).map(profile => ({ ...profile }));
@@ -61,7 +65,7 @@ export function ProviderAPIFormatFields({ data, change, active, initial, saveBlo
     {!ready ? <p role="status">{inventory.isFetching ? copy("configuration-fields.loadingApiFormats") : copy("configuration-fields.apiFormatsUnavailable")}</p> : null}
     {initial && !referencesReady ? <p role="status">{copy("configuration-fields.apiProfileReferencesUnavailable")}</p> : null}
     <Problem error={inventory.error || referencesError} />
-    {inventory.error || referencesError ? <button type="button" onClick={() => { void inventory.refetch(); if (initial) { references.forEach(({ query }) => { void query.refetch(); }); if (keepsKey) void generations.refetch(); } }}>{copy("configuration-fields.retryApiFormats")}</button> : null}
+    {inventory.error || referencesError || keepsKey && generations.data && !generationsValid ? <button type="button" onClick={() => { void inventory.refetch(); if (initial) { references.forEach(({ query }) => { void query.refetch(); }); if (keepsKey) void generations.refetch(); } }}>{copy("configuration-fields.retryApiFormats")}</button> : null}
   </section>;
 }
 

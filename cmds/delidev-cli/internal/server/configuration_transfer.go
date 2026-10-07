@@ -75,7 +75,7 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		}
 	case *domain.Provider:
 		if v.Protocol == domain.NativeSubscription {
-			return nil, domain.AgentReconfigurationRequired()
+			return nil, domain.SubscriptionReconfigurationRequired()
 		}
 	case *domain.Account:
 		v.Subscription = nil

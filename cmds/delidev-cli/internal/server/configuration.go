@@ -589,7 +589,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			}
 		}
 		if expected == 0 {
-			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil || v.Subscription != nil || len(v.RetainedConnections) != 0 || v.Connection != nil && v.Connection.CredentialID != "" {
+			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil || v.Subscription != nil || len(v.RetainedConnections) != 0 {
 				return domain.Fail(domain.InvalidArgument, "New account health must be disconnected.", "Use account connect/login to validate credentials and quota.")
 			}
 		} else {
