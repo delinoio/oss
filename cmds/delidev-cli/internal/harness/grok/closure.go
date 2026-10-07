@@ -155,9 +155,15 @@ func (a *apiConnection) CloseText(ctx context.Context, request domain.ID, record
 		if event.Kind != nativewire.Notification {
 			return result, incompatible()
 		}
+		if handled, err := a.consumeManagedPresentation(event); handled {
+			if err != nil {
+				return result, err
+			}
+			continue
+		}
 		switch event.Method {
 		case "_x.ai/sessions/changed":
-			state, err := parseActivity(event.Params, a.session, a.workspace)
+			state, err := parseProfileActivity(event.Params, a.session, a.workspace, a.profile)
 			if err != nil || state != idleActivity || completed.idle {
 				return result, incompatible()
 			}

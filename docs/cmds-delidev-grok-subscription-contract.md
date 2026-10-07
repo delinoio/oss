@@ -112,6 +112,23 @@ verify the latest bundle and original identity, process exit and authentication
 file cleanup before release. Backup/restore and deletion preserve protected
 credential and unsettled original cleanup ownership.
 
+The private managed native profile pins OIDC and the selected built-in model for
+every auxiliary operation. API provider overrides, API-key environment variables
+and imported authentication are rejected. Install original-lease cleanup before
+publishing the private authentication file, use only headless cached-token
+authentication and validate the complete native authentication metadata against
+the current protected bundle. Native settings and announcements are bounded,
+discarded presentation. They grant no model, account, permission or execution
+authority; an access or consent gate is not bypassed. This private profile does
+not independently activate Worker dispatch, repository execution or Resume.
+
+Worker credential cleanup uses an explicit service and retains the original full
+Grok identity across bundle rotation. Scan retained native files for both original
+and latest access/refresh tokens, including padded and unpadded standard/URL
+Base64 copies. Clean authentication-file absence alone is insufficient; uncertain
+scans retain history and exclusive ownership. Codex cleanup keeps its separate
+service profile and historical bundle semantics.
+
 Never retain tokens, authorization codes, device codes, login URLs or raw native
 stderr in database documents, logs, events or frontend caches. Do not import or
 modify a user's existing Grok home. Native callbacks remain bound to the original

@@ -400,17 +400,21 @@ func cleanupManagedHome(home string, original os.FileInfo) error {
 // A failed atomic write still needs a durable absence and the complete retained
 // file scan: a leftover temporary credential file cannot release the lease.
 func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
+	return cleanupUnusedExecutionAuthenticationForService(domain.SubscriptionChatGPT, home, original)
+}
+
+func cleanupUnusedExecutionAuthenticationForService(service domain.SubscriptionService, home string, original []byte) error {
 	if err := security.CheckPrivateDir(home); err != nil {
 		return subscription.Invalid()
 	}
 	path := filepath.Join(home, "auth.json")
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-		return cleanupExecutionAuthentication(home, original, original)
+		return cleanupExecutionAuthenticationForService(service, home, original, original)
 	}
 	if err := security.SyncParent(path); err != nil {
 		return subscription.Invalid()
 	}
-	if err := scanExecutionAuthentication(home, original, original); err != nil {
+	if err := scanExecutionAuthenticationForService(service, home, original, original); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
@@ -420,6 +424,13 @@ func cleanupUnusedExecutionAuthentication(home string, original []byte) error {
 }
 
 func cleanupExecutionAuthentication(home string, latest, original []byte) error {
+	return cleanupExecutionAuthenticationForService(domain.SubscriptionChatGPT, home, latest, original)
+}
+
+func cleanupExecutionAuthenticationForService(service domain.SubscriptionService, home string, latest, original []byte) error {
+	if _, err := subscription.ParseService(service, latest); err != nil {
+		return err
+	}
 	if err := security.CheckPrivateDir(home); err != nil {
 		return subscription.Invalid()
 	}
@@ -435,10 +446,14 @@ func cleanupExecutionAuthentication(home string, latest, original []byte) error 
 	if err := security.SyncParent(filepath.Join(home, "auth.json")); err != nil {
 		return subscription.Invalid()
 	}
-	return scanExecutionAuthentication(home, latest, original)
+	return scanExecutionAuthenticationForService(service, home, latest, original)
 }
 
 func scanExecutionAuthentication(home string, latest, original []byte) error {
+	return scanExecutionAuthenticationForService(domain.SubscriptionChatGPT, home, latest, original)
+}
+
+func scanExecutionAuthenticationForService(service domain.SubscriptionService, home string, latest, original []byte) error {
 	// Native history is retained for resume. Check the bounded original tree
 	// rather than claiming credential cleanup merely from auth.json absence.
 	var needles [][]byte
@@ -448,11 +463,26 @@ func scanExecutionAuthentication(home string, latest, original []byte) error {
 		}
 	}()
 	for _, raw := range [][]byte{original, latest} {
-		b, _, err := subscription.Parse(raw)
-		if err != nil {
+		var tokens []string
+		switch service {
+		case domain.SubscriptionChatGPT:
+			bundle, _, err := subscription.Parse(raw)
+			if err != nil {
+				return err
+			}
+			tokens = []string{bundle.Tokens.ID, bundle.Tokens.Access, bundle.Tokens.Refresh}
+		case domain.SubscriptionGrok:
+			bundle, identity, err := subscription.ParseGrok(raw)
+			originalIdentity, originalErr := subscription.ParseService(service, original)
+			if err != nil || originalErr != nil || !bytes.Equal(subscription.CommitmentInput(identity), subscription.CommitmentInput(originalIdentity)) {
+				return subscription.InvalidGrok()
+			}
+			tokens = []string{bundle.Key, bundle.Refresh}
+		default:
+			_, err := subscription.ParseService(service, raw)
 			return err
 		}
-		for _, v := range []string{b.Tokens.ID, b.Tokens.Access, b.Tokens.Refresh} {
+		for _, v := range tokens {
 			plain := []byte(v)
 			needles = append(needles, plain)
 			// Retained native files may encode credentials. Cleanup must reject

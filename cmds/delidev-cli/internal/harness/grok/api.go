@@ -40,36 +40,42 @@ type apiConfig struct {
 }
 
 type apiProfile struct {
-	model         string
-	mode          domain.SessionMode
-	contextTokens uint64
-	configuration []byte
-	instructions  instructionProfile
-	path          string
-	logGuard      string
+	authentication authenticationProfile
+	nativeModel    string
+	nativeName     string
+	model          string
+	mode           domain.SessionMode
+	contextTokens  uint64
+	configuration  []byte
+	instructions   instructionProfile
+	path           string
+	logGuard       string
 }
 
 type apiConnection struct {
-	wire            *nativewire.Connection
-	profile         apiProfile
-	workspace       string
-	inspection      process.Config
-	gate            chan struct{}
-	creationStarted bool
-	creationRequest domain.ID
-	session         domain.ID
-	product         domain.ID
-	ready           bool
-	inputStarted    bool
-	modeStarted     bool
-	modeRequest     domain.ID
-	modeBinding     *ModeClaim
-	completedText   *completedText
-	completedTools  *completedTools
-	stoppedText     *StoppedTextObservation
-	closureStarted  bool
-	controlMu       sync.Mutex
-	control         *textControl
+	wire                   *nativewire.Connection
+	profile                apiProfile
+	workspace              string
+	inspection             process.Config
+	gate                   chan struct{}
+	creationStarted        bool
+	creationRequest        domain.ID
+	session                domain.ID
+	product                domain.ID
+	ready                  bool
+	inputStarted           bool
+	modeStarted            bool
+	modeRequest            domain.ID
+	modeBinding            *ModeClaim
+	completedText          *completedText
+	completedTools         *completedTools
+	stoppedText            *StoppedTextObservation
+	closureStarted         bool
+	controlMu              sync.Mutex
+	control                *textControl
+	presentationCount      int
+	presentationBytes      int
+	announcementGeneration uint64
 }
 
 func apiConfigurationError() *domain.Error {
@@ -185,6 +191,9 @@ func (p apiProfile) checkInitialized() error {
 }
 
 func validateModels(raw json.RawMessage, profile apiProfile) error {
+	if profile.authentication != apiAuthentication && profile.authentication != managedAuthentication {
+		return incompatible()
+	}
 	var models []struct {
 		ID   string `json:"modelId"`
 		Name string `json:"name"`
@@ -193,7 +202,7 @@ func validateModels(raw json.RawMessage, profile apiProfile) error {
 			AgentType string `json:"agentType"`
 		} `json:"_meta"`
 	}
-	if decode(raw, &models) != nil || len(models) != 1 || models[0].ID != selectedModel || models[0].Name != selectedModelName ||
+	if decode(raw, &models) != nil || len(models) != 1 || models[0].ID != profile.selector() || models[0].Name != profile.selectorName() ||
 		models[0].Meta.Context != profile.contextTokens || models[0].Meta.AgentType != "grok-build-plan" {
 		return incompatible()
 	}

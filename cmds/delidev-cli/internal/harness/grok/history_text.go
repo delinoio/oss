@@ -300,8 +300,12 @@ func nativeTraceID(value, prefix string) bool {
 }
 
 func verifyTextSummary(raw []byte, home, workspace string, session domain.ID, completed *completedText) error {
+	return verifyProfileTextSummary(raw, home, workspace, session, completed, apiProfile{})
+}
+
+func verifyProfileTextSummary(raw []byte, home, workspace string, session domain.ID, completed *completedText, profile apiProfile) error {
 	var value textSummary
-	if decode(raw, &value) != nil || value.Info.Session != session || value.Info.Cwd != workspace || value.Home != home || value.Model != "delidev-selected" || value.Request != completed.prompt || value.LastPrompt != completed.prompt || value.LastSummary != completed.summary || value.AgentName != "grok-build-plan" || value.Sandbox != "off" || value.Messages != 3 || value.ChatMessages != 5 || value.NextTurn != 1 || value.Format != 1 || !nativeTraceID(value.Agent, "ag1.") || !nativeTraceID(value.Attempt, "at1.") || !text(value.Summary, 64<<10) || !text(value.Title, 64<<10) || !historyTime(value.Created) || !historyTime(value.Updated) || !historyTime(value.Active) {
+	if decode(raw, &value) != nil || value.Info.Session != session || value.Info.Cwd != workspace || value.Home != home || value.Model != profile.selector() || value.Request != completed.prompt || value.LastPrompt != completed.prompt || value.LastSummary != completed.summary || value.AgentName != "grok-build-plan" || value.Sandbox != "off" || value.Messages != 3 || value.ChatMessages != 5 || value.NextTurn != 1 || value.Format != 1 || !nativeTraceID(value.Agent, "ag1.") || !nativeTraceID(value.Attempt, "at1.") || !text(value.Summary, 64<<10) || !text(value.Title, 64<<10) || !historyTime(value.Created) || !historyTime(value.Updated) || !historyTime(value.Active) {
 		return historyUncertain()
 	}
 	return nil
@@ -372,7 +376,7 @@ func (a *apiConnection) verifyClosedText(ctx context.Context) (result TextHistor
 		return result, historyUncertain()
 	}
 	stage = historySummary
-	if verifyTextSummary(files[3], home, a.workspace, a.session, completed) != nil {
+	if verifyProfileTextSummary(files[3], home, a.workspace, a.session, completed, a.profile) != nil {
 		return result, historyUncertain()
 	}
 	// Re-read the fixed set after cross-file validation. Identity/size/mtime alone

@@ -199,6 +199,10 @@ const (
 )
 
 func parseActivity(raw []byte, session domain.ID, workspace string) (activity, error) {
+	return parseProfileActivity(raw, session, workspace, apiProfile{})
+}
+
+func parseProfileActivity(raw []byte, session domain.ID, workspace string, profile apiProfile) (activity, error) {
 	var value struct {
 		Upserted []struct {
 			Session   domain.ID       `json:"sessionId"`
@@ -220,7 +224,7 @@ func parseActivity(raw []byte, session domain.ID, workspace string) (activity, e
 		return "", incompatible()
 	}
 	entry := value.Upserted[0]
-	if entry.Session != session || entry.Cwd != workspace || entry.Worktree || entry.Model != selectedModel || entry.Yolo || !entry.Resident || entry.Timestamp > 253402300799999 || entry.Origin.Kind != "local" || (entry.Activity != workingActivity && entry.Activity != idleActivity) {
+	if entry.Session != session || entry.Cwd != workspace || entry.Worktree || entry.Model != profile.selector() || entry.Yolo || !entry.Resident || entry.Timestamp > 253402300799999 || entry.Origin.Kind != "local" || (entry.Activity != workingActivity && entry.Activity != idleActivity) {
 		return "", incompatible()
 	}
 	if !isNull(entry.Title) {

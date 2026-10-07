@@ -103,19 +103,19 @@ type newSessionResult struct {
 
 func validateNewSession(raw []byte, workspace string, profile apiProfile) (domain.ID, error) {
 	var value newSessionResult
-	if decode(raw, &value) != nil || value.SessionID.Validate() != nil || value.Models.Current != selectedModel || validateModels(value.Models.Available, profile) != nil || len(value.Options) != 1 {
+	if decode(raw, &value) != nil || value.SessionID.Validate() != nil || value.Models.Current != profile.selector() || validateModels(value.Models.Available, profile) != nil || len(value.Options) != 1 {
 		return "", incompatible()
 	}
 	option := value.Options[0]
-	if option.ID != "model" || option.Name != "Model" || option.Category != "model" || option.Type != "select" || option.Current != selectedModel || len(option.Options) != 1 || option.Options[0].Value != selectedModel || option.Options[0].Name != selectedModelName {
+	if option.ID != "model" || option.Name != "Model" || option.Category != "model" || option.Type != "select" || option.Current != profile.selector() || len(option.Options) != 1 || option.Options[0].Value != profile.selector() || option.Options[0].Name != profile.selectorName() {
 		return "", incompatible()
 	}
 	meta := value.Meta
-	if meta.Cwd != workspace || !emptyArray(meta.Indexed) || meta.Git || !isNull(meta.GitRoot) || meta.Warning || len(meta.Config.Options) != 1 || meta.Memory != "legacy" || meta.Detail.ID != value.SessionID || meta.Detail.Kind != "build" || meta.Detail.Cwd != workspace || meta.Detail.Model != selectedModel {
+	if meta.Cwd != workspace || !emptyArray(meta.Indexed) || meta.Git || !isNull(meta.GitRoot) || meta.Warning || len(meta.Config.Options) != 1 || meta.Memory != "legacy" || meta.Detail.ID != value.SessionID || meta.Detail.Kind != "build" || meta.Detail.Cwd != workspace || meta.Detail.Model != profile.selector() {
 		return "", incompatible()
 	}
 	selected := meta.Config.Options[0]
-	if selected.ID != selectedModel || selected.Category != "model" || selected.Label != selectedModelName || !selected.Selected {
+	if selected.ID != profile.selector() || selected.Category != "model" || selected.Label != profile.selectorName() || !selected.Selected {
 		return "", incompatible()
 	}
 	return value.SessionID, nil
@@ -212,6 +212,12 @@ func (a *apiConnection) observeSetup(ctx context.Context, session domain.ID) err
 		}
 		if event.Kind != nativewire.Notification || event.EmittedAtMS != nil {
 			return incompatible()
+		}
+		if handled, err := a.consumeManagedPresentation(event); handled {
+			if err != nil {
+				return err
+			}
+			continue
 		}
 		switch event.Method {
 		case "_x.ai/session/setup":

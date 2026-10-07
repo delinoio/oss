@@ -129,8 +129,13 @@ func validateInitializeResult(raw []byte, cwd string, profile *apiProfile) error
 		}
 	} else {
 		authMethods = []string{"xai.api_key", "grok.com"}
+		method := "xai.api_key"
+		if profile.authentication == managedAuthentication {
+			authMethods = []string{"cached_token", "grok.com"}
+			method = "cached_token"
+		}
 		var auth string
-		if decode(result.Meta.DefaultAuth, &auth) != nil || auth != "xai.api_key" || result.Meta.ModelState.Current != selectedModel || validateModels(result.Meta.ModelState.Models, *profile) != nil {
+		if decode(result.Meta.DefaultAuth, &auth) != nil || auth != method || result.Meta.ModelState.Current != profile.selector() || validateModels(result.Meta.ModelState.Models, *profile) != nil {
 			return incompatible()
 		}
 	}

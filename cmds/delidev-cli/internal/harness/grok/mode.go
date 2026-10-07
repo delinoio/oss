@@ -173,7 +173,16 @@ func (a *apiConnection) observeInitialPlan(ctx context.Context) (modeObservation
 			return modeObservation{}, err
 		}
 		size += len(event.Params)
-		if size > nativewire.MaxFrame || event.Kind != nativewire.Notification || event.Method != "session/update" || event.EmittedAtMS != nil {
+		if size > nativewire.MaxFrame || event.Kind != nativewire.Notification || event.EmittedAtMS != nil {
+			return modeObservation{}, incompatible()
+		}
+		if handled, err := a.consumeManagedPresentation(event); handled {
+			if err != nil {
+				return modeObservation{}, err
+			}
+			continue
+		}
+		if event.Method != "session/update" {
 			return modeObservation{}, incompatible()
 		}
 		var variant struct {

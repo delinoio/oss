@@ -221,9 +221,15 @@ func (a *apiConnection) waitStopIdle(ctx context.Context, settled *completedText
 		if event.Kind != nativewire.Notification {
 			return incompatible()
 		}
+		if handled, err := a.consumeManagedPresentation(event); handled {
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		switch event.Method {
 		case "_x.ai/sessions/changed":
-			state, err := parseActivity(event.Params, a.session, a.workspace)
+			state, err := parseProfileActivity(event.Params, a.session, a.workspace, a.profile)
 			if err != nil || state != idleActivity {
 				return incompatible()
 			}

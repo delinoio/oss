@@ -492,6 +492,12 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 		if events > 4096 {
 			return result, domain.Fail(domain.ResourceExhausted, "Native input observations reached their bound.", "Retain the original input and reconcile its native runtime.")
 		}
+		if handled, err := a.consumeManagedPresentation(event); handled {
+			if err != nil {
+				return result, err
+			}
+			continue
+		}
 		if event.Kind == nativewire.ServerRequest {
 			if err := upgradeTools(); err != nil {
 				return result, err
@@ -808,7 +814,7 @@ func (a *apiConnection) runInput(ctx context.Context, request domain.ID, input s
 			promptObserved = true
 		case "_x.ai/sessions/changed":
 			diagnosticStage = inputDiagnosticActivity
-			activity, err := parseActivity(event.Params, a.session, a.workspace)
+			activity, err := parseProfileActivity(event.Params, a.session, a.workspace, a.profile)
 			if err != nil {
 				return result, err
 			}
