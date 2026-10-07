@@ -1,5 +1,7 @@
 # Project: DeliDev
 
+Failed-login subscription cleanup reserves System capability 41 and its closed batch/status/result declarations under issue #964. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) and [protocol contract](protos-delidev-v1-contract.md#failed-subscription-cleanup-reservations) require the complete main-first reservation before implementation. This prerequisite grants no cleanup or deletion authority and adds no migration.
+
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative, with the explicit owner startup/presentation amendment in #1137; implementation and real-environment evidence are distinct.
 
@@ -20,9 +22,13 @@ Repositories use required remote URLs with optional Local folder connections und
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
+The [desktop File menu](apps-delidev-desktop-contract.md#native-tray-and-menu-bar) opens a new product window with Command+T on macOS and Control+T on Windows/Linux through one native app-level handler. Close Window retains Command/Control+W and existing Local/Saved window ownership.
+
 New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation-issue-1152), while strict schedule definitions and server recurrence authority remain unchanged.
 
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.
+
+The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalone-pull-requests) uses name-only repository rows, separate read-free Details disclosures for configured GitHub identity and the complete local UUID, and native segmented state choices. Repository selection and filter edits retain the existing explicit-load boundary; the shared shell, pending PR operations and connection-scoped lifetimes remain independently owned.
 
 ## Domain Contract Documents
 - [Parallel browser QA](apps-delidev-qa-contract.md)
@@ -54,6 +60,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
+- [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
@@ -148,7 +155,9 @@ Update the owning domain contract when behavior changes. Update this index only 
 
 ## Home navigation invariant
 
-Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
+The desktop provides a dedicated New general chat action and projectless start screen under the [desktop contract](apps-delidev-desktop-contract.md#dedicated-general-chat-creation). Reuse ordinary Agent Worker session execution, with independent connection-memory creation drafts and exact requests; no new protocol, migration or tool-free authority is introduced.
+
+Home (Sessions/New Session/New General Chat) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
 
 - Workspace storage and Codex forks share source ownership exclusion: forks require present storage at acceptance, claim and publication, and storage waits for unresolved fork jobs. Stored workspaces require explicit restoration before a fork.
 
@@ -201,3 +210,14 @@ AI Subscription browser login and naming compose across Go server ownership, gen
 The owner-approved [pre-release compatibility reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
 reserves database baseline 32, protocol 2 and Worker attach field 10 before its
 complete implementation. Reservations leave current runtime behavior unchanged.
+
+## Native Claude subscription prerequisite
+
+The owner-approved native Claude subscription extension spans the existing
+subscription, desktop, harness, protocol and storage owners. Reserve System 38,
+Worker 20 and the complete login-code/progress/native-identity declarations on
+main before implementation. Authentication remains in an original installed
+Claude Code account profile on the selected Runner Device; server metadata does
+not grant credentials, cross-device execution or cleanup authority. The
+reservation prerequisite activates no support and adds no migration. Follow
+[the subscription contract](cmds-delidev-subscription-contract.md#planned-native-claude-subscriptions).
