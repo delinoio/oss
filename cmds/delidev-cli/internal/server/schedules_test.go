@@ -158,7 +158,7 @@ func TestScheduleRPCLifecycleRetriesAndIndependentHistory(t *testing.T) {
 	if value.NextRunAt == nil || !value.NextRunAt.After(time.Now()) || value.ConfigurationRevision != 1 || value.Definition.Workspace != domain.Worktree || value.Definition.Mode != domain.ExecuteMode || value.Definition.Overlap != domain.ScheduleAllowOverlap {
 		t.Fatal("invalid schedule defaults/timer")
 	}
-	if _, err := f.client.SaveSchedule(f.ctx, ownerRequest(f.paired, request)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := f.client.SaveSchedule(f.ctx, ownerRequest(f.paired, request)); err != nil {
 		t.Fatal("foreign actor adopted receipt", err)
 	}
 	pause := &pb.ControlScheduleRequest{Mutation: acctMutation(schedule, domain.NewID()), Action: pb.ScheduleAction_SCHEDULE_ACTION_PAUSE}

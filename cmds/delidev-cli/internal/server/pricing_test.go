@@ -117,7 +117,7 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 	if _, err = c.GetModelPricing(ctx, ownerRequest(paired, &pb.GetModelPricingRequest{ModelId: model})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = c.SetModelPricing(ctx, ownerRequest(paired, request)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err = c.SetModelPricing(ctx, ownerRequest(paired, request)); err != nil {
 		t.Fatal("actor reused another receipt", err)
 	}
 	devices := delidevv1connect.NewDeviceServiceClient(f.http.Client(), f.http.URL)

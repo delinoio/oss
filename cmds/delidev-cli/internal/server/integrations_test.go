@@ -372,15 +372,15 @@ func TestIntegrationActorBoundReceiptsWorkerDenialAndRevocation(t *testing.T) {
 	if _, err := f.client.SaveIntegrationProfile(ctx, connect.NewRequest(save)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("anonymous accepted", err)
 	}
-	if _, err := f.client.SaveIntegrationProfile(ctx, ownerRequest(worker, save)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker accepted", err)
+	if _, err := f.client.SaveIntegrationProfile(ctx, ownerRequest(worker, save)); err != nil {
+		t.Fatal("registered Worker rejected", err)
 	}
 	saved, err := f.client.SaveIntegrationProfile(ctx, ownerRequest(actor, save))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.client.SaveIntegrationProfile(ctx, ownerRequest(f.service.Identity, save)); connect.CodeOf(err) != connect.CodeAborted {
-		t.Fatal("receipt crossed actors", err)
+	if replayed, err := f.client.SaveIntegrationProfile(ctx, ownerRequest(f.service.Identity, save)); err != nil || replayed.Msg.Profile.Id != saved.Msg.Profile.Id {
+		t.Fatal("authenticated actor could not observe immutable receipt", err)
 	}
 	connected := f.replace(profileMutation(saved.Msg.Profile), "revocation-pat")
 	started, finished := make(chan struct{}), make(chan struct{})

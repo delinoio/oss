@@ -185,7 +185,7 @@ func TestApprovalResponseRejectsChangedExecutionAuthority(t *testing.T) {
 			if change == "unoffered-decision" {
 				input.Decision.Kind = domain.CodexApprovalDecline
 			}
-			if change == "worker" {
+			if change == "worker" || change == "connection" {
 				if _, err := acceptFixtureApproval(f, domain.NewID(), id, revision, input); err != nil {
 					t.Fatal(err)
 				}

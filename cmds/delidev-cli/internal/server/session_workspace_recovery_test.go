@@ -158,11 +158,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 			if sessionBody(t, current).Preparation.State != domain.PreparationUncertain {
 				t.Fatal("replacement did not publish uncertainty")
 			}
-			archived, err := sessionClient(f).ControlSession(context.Background(), ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(current, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_ARCHIVE}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			request := &pb.RecoverSessionWorkspaceRequest{Mutation: acctMutation(archived.Msg.Change.Session, domain.NewID()), Cleanup: partial}
+			request := &pb.RecoverSessionWorkspaceRequest{Mutation: acctMutation(current, domain.NewID()), Cleanup: partial}
 			response, err := sessionClient(f).RecoverSessionWorkspace(context.Background(), ownerRequest(f.identity, request))
 			if err != nil {
 				t.Fatal(err)
@@ -170,7 +166,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 			recoveryID := response.Msg.Change.RecoveryJob.Id
 			current = waitWorkspaceRecovery(t, f, initial.Session, response.Msg.Change.RecoveryJob, done)
 			if strings.HasSuffix(mode, "mismatched-journal") {
-				if v := sessionBody(t, current); v.Recovery != domain.NeedsRecovery || v.Archive != domain.Archived || v.Preparation.State != domain.PreparationUncertain {
+				if v := sessionBody(t, current); v.Recovery != domain.NeedsRecovery || v.Archive != domain.NotArchived || v.Preparation.State != domain.PreparationUncertain {
 					t.Fatal("mismatched original journal falsely confirmed recovery")
 				}
 				if _, err := os.Stat(retained); err != nil {
@@ -195,11 +191,11 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 			if partial {
 				want = domain.PreparationCanceled
 			}
-			if value.Preparation.State != want || value.Recovery != domain.NoRecovery || value.Dispatch != domain.DispatchPaused || value.Archive != domain.Archived || value.Outcome != domain.ExecutionNotStarted {
+			if value.Preparation.State != want || value.Recovery != domain.NoRecovery || value.Dispatch != domain.DispatchPaused || value.Archive != domain.NotArchived || value.Outcome != domain.ExecutionNotStarted {
 				t.Fatalf("incorrect recovered state: %+v", value)
 			}
 			replay, err := sessionClient(f).RecoverSessionWorkspace(context.Background(), ownerRequest(f.identity, request))
-			if err != nil || !replay.Msg.Change.Replayed || replay.Msg.Change.RecoveryJob.Id != recoveryID || sessionBody(t, replay.Msg.Change.Session).Archive != domain.Archived {
+			if err != nil || !replay.Msg.Change.Replayed || replay.Msg.Change.RecoveryJob.Id != recoveryID || sessionBody(t, replay.Msg.Change.Session).Archive != domain.NotArchived {
 				t.Fatal("recovery receipt repeated work", err)
 			}
 			oldJournal, err := security.ReadPrivate(filepath.Join(workerRoot, "jobs", claimed.Id+".json"), 2<<20)

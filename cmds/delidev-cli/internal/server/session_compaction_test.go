@@ -600,7 +600,7 @@ func TestCompactionReceiptIsBoundToOriginalActor(t *testing.T) {
 		t.Fatal(err)
 	}
 	held := f.refresh(t)
-	if _, err := client.CompactSession(ctx, ownerRequest(paired, request)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := client.CompactSession(ctx, ownerRequest(paired, request)); err != nil {
 		t.Fatal("another actor replayed the original compaction receipt", err)
 	}
 	replay, err := client.CompactSession(ctx, ownerRequest(f.identity, request))

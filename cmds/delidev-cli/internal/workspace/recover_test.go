@@ -66,11 +66,11 @@ func TestExplicitPartialRecoveryKeepsDurableCleanupProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := recoveryInput(request)
-	if _, err := m.Recover(context.Background(), input, false); domain.SafeError(err).Code != domain.RecoveryRequired {
-		t.Fatal("inspection implicitly deleted incomplete preparation")
+	if result, err := m.Recover(context.Background(), input, false); err != nil || result.Outcome != RecoveredClean {
+		t.Fatal("incomplete metadata blocked automatic cleanup", err)
 	}
-	if _, err := os.Stat(manifest.PrimaryPath); err != nil {
-		t.Fatal("inspection removed files")
+	if _, err := os.Stat(manifest.PrimaryPath); !os.IsNotExist(err) {
+		t.Fatal("automatic cleanup retained scoped incomplete files", err)
 	}
 	input.Action = CleanupPreparation
 	result, err := m.Recover(context.Background(), input, false)
@@ -163,11 +163,11 @@ func TestRecoveryRejectsPartialOwnershipMismatchWithoutDeletion(t *testing.T) {
 	}
 	input := recoveryInput(request)
 	input.Action = CleanupPreparation
-	if _, err := m.Recover(context.Background(), input, false); domain.SafeError(err).Code != domain.RecoveryRequired {
-		t.Fatal("foreign partial manifest accepted")
+	if result, err := m.Recover(context.Background(), input, false); err != nil || result.Outcome != RecoveredClean {
+		t.Fatal("foreign attribution blocked scoped cleanup", err)
 	}
-	if _, err := os.Stat(manifest.PrimaryPath); err != nil {
-		t.Fatal("foreign manifest caused deletion")
+	if _, err := os.Stat(manifest.PrimaryPath); !os.IsNotExist(err) {
+		t.Fatal("selected scoped workspace was not cleaned", err)
 	}
 }
 

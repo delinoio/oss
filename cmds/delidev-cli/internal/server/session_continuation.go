@@ -140,7 +140,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domain.ExecutionJobInput, progress domain.ExecutionProgress) error {
 	bindings, err := domain.CheckedExecutionInputs(assignment.InputID, continuationDigest([]byte(assignment.Input.Prompt)), progress.AcceptedInputs)
 	if err != nil {
-		return err
+		return domain.Fail(domain.Conflict, "The retained input bindings are inconsistent.", "Use a valid input without rewriting accepted history.")
 	}
 	requests := make(map[domain.ID]bool, len(bindings))
 	for _, binding := range bindings {
@@ -153,8 +153,8 @@ func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domai
 			return err
 		}
 		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(sessionID), record.SessionID != sessionID) ||
-			input.Delivery != domain.InputAccepted || input.ExecutionID != assignment.ExecutionID || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || domain.BindExecutionInput(record.ID, input.Prompt) != binding {
-			return nativeCompletionUncertain()
+			input.Delivery != domain.InputAccepted || domain.OwnershipBlocks(domain.OwnershipResource, assignment.ExecutionID, input.ExecutionID != assignment.ExecutionID) || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || domain.BindExecutionInput(record.ID, input.Prompt) != binding {
+			return domain.Fail(domain.Conflict, "The retained input bindings are inconsistent.", "Use a valid input without rewriting accepted history.")
 		}
 		requests[input.NativeRequestID] = true
 	}

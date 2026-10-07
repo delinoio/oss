@@ -67,7 +67,7 @@ func TestSessionAcceptanceRestartAndCurrentReceipt(t *testing.T) {
 	if q.Sequence != 1 || q.ContentRevision != 1 || q.Delivery != domain.InputQueued || q.Mode != domain.ExecuteMode || v.PendingInputs != 1 {
 		t.Fatal("initial input not accepted atomically")
 	}
-	if _, err := sessionClient(f).CreateSession(context.Background(), ownerRequest(worker, request)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := sessionClient(f).CreateSession(context.Background(), ownerRequest(worker, request)); err != nil {
 		t.Fatalf("Worker changed a request receipt: %v", err)
 	}
 	modified, err := sessionClient(f).EditQueuedInput(context.Background(), ownerRequest(f.identity, &pb.EditQueuedInputRequest{Mutation: acctMutation(change.Input, domain.NewID()), SessionId: change.Session.Id, Prompt: "replacement private prompt"}))

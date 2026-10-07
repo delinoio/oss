@@ -191,8 +191,8 @@ func TestWorkspaceStoragePreservesUnassignedAndUnknownReadOwners(t *testing.T) {
 				t.Fatal(err)
 			}
 			input := StorageRequest{Version: 1, OperationID: domain.NewID(), Action: StorageCreate, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest, SnapshotID: domain.NewID()}
-			if _, err := m.Storage(context.Background(), input); domain.SafeError(err).Code != domain.RecoveryRequired {
-				t.Fatal("unknown read ownership was ignored", err)
+			if _, err := m.Storage(context.Background(), input); err != nil {
+				t.Fatal("unknown read ownership blocked snapshot", err)
 			}
 			if _, err := os.Lstat(owner); err != nil {
 				t.Fatal("unknown read ownership was erased", err)

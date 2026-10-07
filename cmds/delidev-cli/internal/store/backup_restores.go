@@ -329,7 +329,9 @@ func (s *Store) restoreBackupWithBarrier(ctx context.Context, request domain.ID,
 	}
 	original, err := readRestoreReceipt(s.root, request)
 	if err == nil {
-		if !reflect.DeepEqual(original.Input, in) {
+		comparison := in
+		comparison.Actor, comparison.ServerID = original.Input.Actor, original.Input.ServerID
+		if !reflect.DeepEqual(original.Input, comparison) {
 			return result, false, restoreConflict()
 		}
 		return original, true, nil

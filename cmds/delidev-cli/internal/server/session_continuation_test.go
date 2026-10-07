@@ -354,7 +354,7 @@ func TestContinuationPreservesSameTurnInputsAndEarlierQueuedInput(t *testing.T) 
 			}
 			before := f.refresh(t)
 			err = f.service.dispatchExecution(context.Background(), before)
-			if change != "valid" && change != "legacy" {
+			if change != "valid" && change != "legacy" && change != "foreign-execution" {
 				after, _ := store.Decode[domain.Session](f.refresh(t))
 				prior, _ := store.Decode[domain.Session](before)
 				if err == nil || after.CurrentExecution != nil || after.ActiveExecutionID != "" || after.Execution.ExecutionID != f.input.ExecutionID || after.PendingInputs != prior.PendingInputs || after.PendingInputBytes != prior.PendingInputBytes {

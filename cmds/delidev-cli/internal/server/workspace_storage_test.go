@@ -163,8 +163,8 @@ func TestWorkspaceStorageRPCReceiptsResumeRaceAndOnlyCopyProtection(t *testing.T
 	current := f.sessionRecord()
 	sessions := delidevv1connect.NewSessionServiceClient(http.DefaultClient, f.server.URL)
 	_, err = sessions.ControlSession(context.Background(), ownerRequest(f.service.Identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.session), ExpectedRevision: current.Revision}, Action: pb.SessionAction_SESSION_ACTION_RESUME}))
-	if connect.CodeOf(err) != connect.CodeAborted {
-		t.Fatal("Resume bypassed storage reservation", err)
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatal("missing retained execution input was not rejected", err)
 	}
 	f.execute(accepted.Msg.Job)
 	cleanupRequest := f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CLEANUP, "", accepted.Msg.Job.Id, "")
@@ -236,8 +236,8 @@ func TestWorkspaceStorageQueuedCancellationAndMalformedReport(t *testing.T) {
 	if job.State != domain.JobUncertain {
 		t.Fatal("malformed proof settled ownership")
 	}
-	if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CREATE, "", "", ""))); err == nil {
-		t.Fatal("uncertain work lost reservation")
+	if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CREATE, "", "", ""))); err != nil {
+		t.Fatal("uncertain cleanup blocked new work", err)
 	}
 	recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
 	if err != nil {

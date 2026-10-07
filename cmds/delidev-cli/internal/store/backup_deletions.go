@@ -229,7 +229,9 @@ func (s *Store) DeleteBackup(ctx context.Context, request domain.ID, in BackupDe
 	original, err := s.readDeletionIntent(in.Backup.ID)
 	restoring := err == nil
 	if restoring {
-		if original.RequestID != request || !reflect.DeepEqual(original.Input, in) {
+		comparison := in
+		comparison.Actor, comparison.ServerID = original.Input.Actor, original.Input.ServerID
+		if original.RequestID != request || !reflect.DeepEqual(original.Input, comparison) {
 			return Record{}, false, deletionConflict()
 		}
 		v = original

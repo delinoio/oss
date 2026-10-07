@@ -238,7 +238,7 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 	}
 	response = f.request(t, f.token, `{"model":"fixture-model","previous_response_id":"resp_foreign"}`)
 	io.Copy(io.Discard, response.Body)
-	if response.StatusCode != http.StatusForbidden || requests.Load() != 2 {
+	if response.StatusCode != http.StatusNotFound || requests.Load() != 2 {
 		t.Fatal("foreign response reached the provider")
 	}
 	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.cancel-execution", f.job, func(tx *store.Tx) (any, error) { return f.job, tx.RequestJobCancellation(f.job) })
@@ -246,7 +246,7 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	response = f.request(t, f.token, `{"model":"fixture-model"}`)
-	if response.StatusCode != http.StatusForbidden || requests.Load() != 2 {
+	if response.StatusCode != http.StatusNotFound || requests.Load() != 2 {
 		t.Fatal("canceled execution retained inference authority")
 	}
 	replayed, err := f.client.RegisterExecution(context.Background(), ownerRequest(f.service.Identity, f.register))

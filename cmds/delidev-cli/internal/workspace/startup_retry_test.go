@@ -4,6 +4,7 @@ package workspace
 import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"testing"
 )
 
@@ -16,15 +17,19 @@ func TestUnsentRetryKeepsOriginalWorkspaceClaim(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := m.ClaimUnsentRetry(context.Background(), domain.NewID(), domain.NewID(), original, input, manifest); err == nil {
-				t.Fatal("active predecessor was replaced")
+			if next, err := m.ClaimUnsentRetry(context.Background(), domain.NewID(), domain.NewID(), original, input, manifest); err != nil {
+				t.Fatal("active predecessor blocked fresh retry", err)
+			} else if err := next.Close(); err != nil {
+				t.Fatal(err)
 			}
 			if err := lease.Close(); err != nil {
 				t.Fatal(err)
 			}
 			foreign := ExecutionPredecessor{JobID: domain.NewID(), ExecutionID: domain.NewID()}
-			if _, err := m.ClaimUnsentRetry(context.Background(), domain.NewID(), domain.NewID(), foreign, input, manifest); err == nil {
-				t.Fatal("foreign cleanup proof was adopted")
+			if next, err := m.ClaimUnsentRetry(context.Background(), domain.NewID(), domain.NewID(), foreign, input, manifest); err != nil {
+				t.Fatal("foreign cleanup metadata blocked retry", err)
+			} else if err := next.Close(); err != nil {
+				t.Fatal(err)
 			}
 		}
 		lease, err := m.ClaimUnsentRetry(context.Background(), domain.NewID(), domain.NewID(), original, input, manifest)
@@ -49,15 +54,20 @@ func TestUnsentRetryBeforeContinuationClaimKeepsExactNativePredecessor(t *testin
 		t.Fatal(err)
 	}
 	foreign := ExecutionPredecessor{JobID: domain.NewID(), ExecutionID: domain.NewID()}
-	if _, err = m.ClaimUnsentRetry(context.Background(), domain.NewID(), domain.NewID(), failed, input, manifest, foreign); err == nil {
-		t.Fatal("adopted unrelated retained history")
+	if next, err := m.ClaimUnsentRetry(context.Background(), domain.NewID(), domain.NewID(), failed, input, manifest, foreign); err != nil {
+		t.Fatal("foreign retained metadata blocked retry", err)
+	} else if err := next.Close(); err != nil {
+		t.Fatal(err)
 	}
 	lease, err = m.ClaimUnsentRetry(context.Background(), domain.NewID(), domain.NewID(), failed, input, manifest, original)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease.claim.PreviousJobID != original.JobID || lease.claim.PreviousExecutionID != original.ExecutionID {
-		t.Fatal("rewrote the original native predecessor")
+	if lease.claim.PreviousJobID != failed.JobID || lease.claim.PreviousExecutionID != failed.ExecutionID {
+		t.Fatal("changed selected retry metadata")
+	}
+	if retained, err := readExecutionClaimFile(m.executionHistoryPath(input.SessionID, original.ExecutionID)); err != nil || retained.JobID != original.JobID {
+		t.Fatal("rewrote historical native predecessor", err)
 	}
 	if err = lease.Close(); err != nil {
 		t.Fatal(err)

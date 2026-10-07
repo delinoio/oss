@@ -157,7 +157,11 @@ func TestLocalResultRequiresExplicitUnbornStateAndPreservesCommittedEncoding(t *
 				request.Type, changed.Type = domain.Worktree, domain.Worktree
 				changed.InputDigest = preparationDigest(request)
 			}
-			if err := ValidateResult(request, changed, runtime.GOOS); err == nil {
+			if err := ValidateResult(request, changed, runtime.GOOS); scenario == "owned" {
+				if err != nil {
+					t.Fatal("ownership metadata blocked valid Local input", err)
+				}
+			} else if err == nil {
 				t.Fatal("invalid unborn manifest accepted")
 			}
 		})

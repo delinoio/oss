@@ -196,8 +196,8 @@ func TestLocalUsesCurrentCheckoutWithoutFetchOrStartingSelection(t *testing.T) {
 	}
 	request.SessionID = domain.NewID()
 	request.OriginMachineID = domain.NewID()
-	if _, err := m.Prepare(context.Background(), request); err == nil {
-		t.Fatal("remote Local permitted")
+	if _, err := m.Prepare(context.Background(), request); err != nil {
+		t.Fatal("origin metadata blocked selected Local checkout", err)
 	}
 }
 

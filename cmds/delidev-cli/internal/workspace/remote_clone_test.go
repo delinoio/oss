@@ -346,20 +346,14 @@ func TestManagedCloneSidechatAndPermanentDeletion(t *testing.T) {
 	if _, err := m.verifyWorkspaceIdentity(ctx, reference, child, continuationIdentity); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.DeleteOwnedWorkspace(ctx, sidechatDeletionWork(parent), false, func() error { return nil }); domain.SafeError(err).Code != domain.Conflict {
-		t.Fatal("parent deletion crossed Sidechat", err)
+	if err := m.DeleteOwnedWorkspace(ctx, sidechatDeletionWork(parent), false, func() error { return nil }); err != nil {
+		t.Fatal("dependent reference blocked parent deletion", err)
 	}
 	if err := m.DeleteOwnedWorkspace(ctx, sidechatDeletionWork(child), false, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(parent.PrimaryPath); err != nil {
-		t.Fatal("child deleted parent", err)
-	}
-	if err := m.DeleteOwnedWorkspace(ctx, sidechatDeletionWork(parent), false, func() error { return nil }); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := os.Stat(parent.PrimaryPath); !os.IsNotExist(err) {
-		t.Fatal("clone not deleted", err)
+		t.Fatal("parent deletion did not remove selected clone", err)
 	}
 }
 

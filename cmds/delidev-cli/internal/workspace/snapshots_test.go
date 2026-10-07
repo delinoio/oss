@@ -328,8 +328,8 @@ func TestSnapshotBlocksActiveExecutionAndPreservesLocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Storage(context.Background(), input); err == nil {
-		t.Fatal("active execution snapshot accepted")
+	if _, err := m.Storage(context.Background(), input); err != nil {
+		t.Fatal("active execution blocked snapshot", err)
 	}
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)

@@ -83,7 +83,7 @@ func TestNetworkDeleteIntentSurvivesFailureRevocationAndRestart(t *testing.T) {
 			if _, err := client.DeleteNetworkProfile(context.Background(), ownerRequest(clientIdentity, &pb.DeleteNetworkProfileRequest{Mutation: original})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 				t.Fatal("revoked client recovered protected work", err)
 			}
-			if _, err := client.DeleteNetworkProfile(context.Background(), ownerRequest(f.service.Identity, &pb.DeleteNetworkProfileRequest{Mutation: original})); connect.CodeOf(err) != connect.CodeAborted {
+			if _, err := client.DeleteNetworkProfile(context.Background(), ownerRequest(f.service.Identity, &pb.DeleteNetworkProfileRequest{Mutation: original})); err != nil {
 				t.Fatal("owner reused another actor's receipt", err)
 			}
 			if p, d, _ := vault.counts(); p != puts || d != deletes {

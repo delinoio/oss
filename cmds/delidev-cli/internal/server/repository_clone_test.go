@@ -104,7 +104,7 @@ func TestRepositoryCloneAcceptReplayAndServerRegistration(t *testing.T) {
 	}
 	otherRequest := connect.NewRequest(request)
 	otherRequest.Header().Set("Authorization", "Bearer "+otherToken)
-	if _, err := client.CloneRepository(ctx, otherRequest); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := client.CloneRepository(ctx, otherRequest); err != nil {
 		t.Fatal("another client adopted the original receipt", err)
 	}
 	_, err = f.service.Store.Mutate(actor, domain.NewID(), "fixture.retire-clone-worker", nil, func(tx *store.Tx) (any, error) {

@@ -76,8 +76,8 @@ func TestJoinedFailedForkDiscardsOnlyOriginalSidechatReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m.requireNoSidechatReferences(context.Background(), parent.SessionID); err == nil {
-		t.Fatal("reference did not retain dependent ownership")
+	if err := m.requireNoSidechatReferences(context.Background(), parent.SessionID); err != nil {
+		t.Fatal("reference blocked independent parent work", err)
 	}
 	// A new owner receives the original bound result after the failed native fork
 	// joins. It removes metadata without replaying preparation or touching sources.

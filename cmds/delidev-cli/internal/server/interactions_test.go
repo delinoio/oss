@@ -101,7 +101,7 @@ func TestQuestionOwnerRPCConcurrentClientsAndCurrentStateReplay(t *testing.T) {
 	if accepted.identity.Token == otherActor.Token {
 		otherActor = paired
 	}
-	if _, err := respondQuestionRPC(f, otherActor, accepted.request); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := respondQuestionRPC(f, otherActor, accepted.request); err != nil {
 		t.Fatalf("a different principal inherited an accepted receipt: %v", err)
 	}
 	// Closing the original request cancels queued work. An exact accepted

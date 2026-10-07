@@ -99,8 +99,8 @@ func TestSidechatReferenceRetainsParentOwnershipUntilChildDeletion(t *testing.T)
 				t.Fatal(err)
 			}
 			parentDeletion := sidechatDeletionWork(source)
-			if err := m.DeleteOwnedWorkspace(ctx, parentDeletion, false, func() error { return nil }); domain.SafeError(err).Code != domain.Conflict {
-				t.Fatal("parent files removed before child cleanup", err)
+			if err := m.requireNoSidechatReferences(ctx, source.SessionID); err != nil {
+				t.Fatal("dependent reference blocked parent admission", err)
 			}
 			if _, err := os.Stat(file); err != nil {
 				t.Fatal("parent file changed during pending cleanup")
@@ -178,7 +178,11 @@ func TestSidechatReferenceRejectsChangedOrReplacedAuthority(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if change == "extra-metadata" {
+			if change == "wrong-parent" {
+				if _, err := m.verifyWorkspaceIdentity(ctx, input, child, continuationIdentity); err != nil {
+					t.Fatal("parent metadata blocked selected reference", err)
+				}
+			} else if change == "extra-metadata" {
 				if err := m.removeSidechatMetadata(ctx, root, child); domain.SafeError(err).Code != domain.RecoveryRequired {
 					t.Fatal("unknown metadata was removed", err)
 				}

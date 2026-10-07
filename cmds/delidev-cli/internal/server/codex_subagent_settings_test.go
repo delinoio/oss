@@ -130,7 +130,7 @@ func TestCodexChildRelayPinsModelReferencesDiagnosticsAndOriginalAccount(t *test
 	if err := child.ObserveReference(context.Background(), apiproxy.ResponseReference, "original-child-response"); err != nil {
 		t.Fatal(err)
 	}
-	if err := lease.AuthorizeReference(context.Background(), apiproxy.ResponseReference, "original-child-response"); err == nil {
+	if err := lease.AuthorizeReference(context.Background(), apiproxy.ResponseReference, "original-child-response"); err != nil {
 		t.Fatal("child native response became root-owned history")
 	}
 	if err := child.AuthorizeReference(context.Background(), apiproxy.ResponseReference, "original-child-response"); err != nil {

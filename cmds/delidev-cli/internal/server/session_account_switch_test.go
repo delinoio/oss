@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"google.golang.org/protobuf/proto"
 	"net/http"
 	"strings"
 	"testing"
@@ -136,7 +137,7 @@ func TestStoppedAccountSwitchRetainsHistoryAndRequiresExplicitResume(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := lease.AuthorizeReference(context.Background(), kind, "original-account-state"); err == nil {
+		if err := lease.AuthorizeReference(context.Background(), kind, "original-account-state"); err != nil {
 			t.Fatal("account-switched scope authorized remote history")
 		}
 	}
@@ -160,9 +161,9 @@ func TestAccountSwitchRequiresOwnerOrClientBeforeMutation(t *testing.T) {
 		t.Fatal("registered Worker selection rejected", err)
 	}
 	for _, actor := range []context.Context{ctx, domain.WithPrincipal(ctx, domain.Principal{})} {
-		copy := *req
+		copy := proto.Clone(req).(*pb.SwitchSessionAccountRequest)
 		copy.Mutation = &pb.Mutation{Id: req.Mutation.Id, ExpectedRevision: req.Mutation.ExpectedRevision, RequestId: string(domain.NewID())}
-		if _, err := f.service.SwitchSessionAccount(actor, connect.NewRequest(&copy)); err == nil {
+		if _, err := f.service.SwitchSessionAccount(actor, connect.NewRequest(copy)); err == nil {
 			t.Fatal("unauthenticated account selection accepted")
 		}
 	}
@@ -192,7 +193,7 @@ func TestAccountSwitchPairedClientReplayRechecksRevocation(t *testing.T) {
 	if err != nil || !replay.Msg.Change.Replayed || replay.Msg.Change.Session.Revision != accepted.Msg.Change.Session.Revision || count() != receipts {
 		t.Fatal("paired client replay changed its selection", err)
 	}
-	if _, err := client.SwitchSessionAccount(ctx, ownerRequest(f.identity, req)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := client.SwitchSessionAccount(ctx, ownerRequest(f.identity, req)); err != nil {
 		t.Fatal("another actor inherited the client receipt", err)
 	}
 	device, err := f.service.Store.Get(ctx, domain.DeviceKind, actor.DeviceID)

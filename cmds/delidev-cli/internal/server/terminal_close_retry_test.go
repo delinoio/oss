@@ -74,17 +74,23 @@ func TestSessionDeletionReissuesUncertainTerminalClose(t *testing.T) {
 				t.Fatal("deletion blocked or invented Worker cleanup", err)
 			}
 			owner := domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
+			f.shutdown()
 			db, err := store.Open(ctx, f.root)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+
 			if _, err := db.PurgeDeletedSession(owner, domain.ID(session.Id)); err != nil {
 				t.Fatal("unknown terminal cleanup blocked database purge", err)
 			}
 			if _, err := db.Get(owner, domain.TerminalKind, domain.ID(created.Msg.Terminal.Id)); domain.SafeError(err).Code != domain.NotFound {
 				t.Fatal("terminal projection survived deletion", err)
 			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			f.start()
+			worker = delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.endpoint.URL)
 			if replacement {
 				instance = string(domain.NewID())
 				if _, err := worker.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, Version: "0.1.0", Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}})); err != nil {

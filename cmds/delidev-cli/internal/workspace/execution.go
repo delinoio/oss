@@ -100,10 +100,8 @@ func (m *Manager) noActiveExecutionClaim(session domain.ID) error {
 	return nil
 }
 
-// ClaimFirstExecution validates already prepared files and Local identity.
-// It neither prepares/fetches nor changes HEAD. A closed first claim cannot be
-// reused. Continuation requires the exact closed predecessor; its native-history
-// and current account/server authority must still be checked by the caller.
+// ClaimFirstExecution validates prepared files and path identity without changing
+// HEAD. Retained execution metadata does not block a fresh execution ID.
 func (m *Manager) ClaimFirstExecution(ctx context.Context, jobID, executionID domain.ID, input PrepareRequest, expected Manifest) (*ExecutionLease, error) {
 	return m.claimExecution(ctx, jobID, executionID, nil, false, nil, input, expected)
 }
@@ -125,7 +123,7 @@ func (m *Manager) ClaimContinuation(ctx context.Context, jobID, executionID doma
 // ClaimUnsentRetry advances only the failed original attempt's closed claim.
 // A failure before workspace admission may instead retain no claim or history;
 // recheck that absence under the same lock before the first claim is written.
-// The caller must already hold positive no-input and native-cleanup proof.
+// Unconfirmed native cleanup is retained as an observation and does not block retry.
 func (m *Manager) ClaimUnsentRetry(ctx context.Context, jobID, executionID domain.ID, previous ExecutionPredecessor, input PrepareRequest, expected Manifest, original ...ExecutionPredecessor) (*ExecutionLease, error) {
 	if err := domain.UniqueIDs([]domain.ID{input.SessionID, jobID, executionID, previous.JobID, previous.ExecutionID}); err != nil {
 		return nil, err
@@ -205,7 +203,7 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	} else if previous != nil {
 		domain.ObserveOwnership(domain.OwnershipCleanup, jobID)
 	}
-	if previous != nil {
+	if previous != nil || hadPrior {
 		validation = continuationIdentity
 	}
 

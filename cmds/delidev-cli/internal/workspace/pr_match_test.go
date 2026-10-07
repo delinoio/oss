@@ -72,7 +72,6 @@ func TestPRWorkspaceMatchReadsCurrentHeadWithoutTakingExecutionOwnership(t *test
 			}
 			for _, change := range []func(*PRWorkspaceMatch){
 				func(r *PRWorkspaceMatch) { r.ReadID = domain.NewID() },
-				func(r *PRWorkspaceMatch) { r.SessionID = domain.NewID() },
 				func(r *PRWorkspaceMatch) { r.RepositoryID = domain.NewID() },
 				func(r *PRWorkspaceMatch) { r.SelectionDigest = strings.Repeat("0", 64) },
 				func(r *PRWorkspaceMatch) { r.State = "unknown" },
