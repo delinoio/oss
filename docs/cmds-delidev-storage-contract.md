@@ -2,7 +2,7 @@
 
 ## Request diagnostic retention
 
-Schema 27 adds bounded metadata-only request diagnostic rows and session/execution indexes under the existing synchronized pre-migration backup boundary. It preserves all historical state, title claims, backup obligations and usage; no historical requests are synthesized. Rows retain immutable event-time attribution, exact revision checks and original publication receipts. Proxy revisions publish session invalidation events atomically at the unchanged session-state revision, while native observations share their original session publication. The 4 KiB row and 10,000-per-session admission limits do not evict history; existing observations may settle. Session deletion cascades rows, and reference-only old receipts cannot recreate them. Single-record and page reads reject row/body identity, session, execution or revision mismatches without exposing partial records. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for publication/cancellation/read ownership.
+Schema 32 directly creates bounded metadata-only request diagnostic rows and session/execution indexes. Current title claims, backup obligations and usage retain their existing ownership; no historical requests are synthesized. Rows retain immutable event-time attribution, exact revision checks and original publication receipts. Proxy revisions publish session invalidation events atomically at the unchanged session-state revision, while native observations share their original session publication. The 4 KiB row and 10,000-per-session admission limits do not evict history; existing observations may settle. Session deletion cascades rows, and reference-only old receipts cannot recreate them. Single-record and page reads reject row/body identity, session, execution or revision mismatches without exposing partial records. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for publication/cancellation/read ownership.
 
 
 ## Scope
@@ -13,38 +13,26 @@ actual account/private-GitHub access and platform distribution validation remain
 deferred. This document covers managed backup observation, creation/deletion, permanent
 session deletion, database restore and Worker-local workspace snapshots and restoration.
 
-## Subscription retirement (issue #1235)
+## Current database baseline
 
-Migration 28 implements [issue #1235](https://github.com/delinoio/oss/issues/1235)
-after the real Claude accounting and request-diagnostics migrations at 26 and
-27. Reservations reached main before implementation. Complete accounting and diagnostics precede real migration 28 and independent server capability 17; no empty predecessor is permitted.
+Schema 32 is the only supported database and backup schema. It directly creates
+all current tables, indexes, constraints, search configuration and hosted Provider
+defaults. No migration chain, layout repair, historical backfill, subscription
+retirement table or reconfiguration-required state remains. Earlier and unknown
+schemas fail before source writes; preserve their original database and sidecars.
+Use a separate new data directory for current development rather than converting
+or deleting existing state. Current deletion tombstones and uncertain native or
+protected cleanup evidence remain durable authority.
 
-The reset backs up first and atomically retires legacy subscription
-Accounts, native-subscription Providers and their provider-bound Models into
-read-only historical metadata with original IDs, revisions, timestamps and
-document bytes. Tombstone their IDs, exclude them from live configuration/export
-and refuse outstanding or uncertain native ownership, connection/removal or
-cleanup before changes. Never infer services or recreate accounts. Preserve
-surviving Agent account order/weights and Project restriction `configured` flags,
-including configured-empty deny-all; retired model references require explicit
-reconfiguration. Disable only affected schedules with a retained reset reason,
-preserving accepted occurrences and unrelated API configuration.
-
-Keep session, snapshot, transcript and usage bytes/attribution intact. Retired
-subscription sessions require a new explicitly configured session, without
-Resume, dispatch or automatic account fallback. Migrate older backup candidates
-before restore publication; imports/receipts cannot resurrect retired IDs.
-Portable bundle version 2 carries service-native configuration, while API-only
-version-1 imports remain supported and legacy subscription graphs are rejected
-atomically with recreate guidance. Implementation must compose the independent
-managed-account ownership and cleanup boundary from issue #1095.
+Startup validates a private copy when SQLite sidecars exist, including a schema
+marker committed only in WAL. It never opens an unsupported source writable.
+Current restore recovery remains guarded by exact journal/image ownership.
 
 ## Account OAuth attempts (issue #1146)
 
-Real migration 29 follows accounting 26, request diagnostics 27 and subscription
-identity 28, whose reservations reached main before these dependent feature implementations. It adds the private
-`account_oauth_attempts` table and `account_oauth_layout=pkce-once-v1` marker;
-foreign layouts fail the backup-first transactional upgrade. Attempt body/index
+Schema 32 directly creates the private `account_oauth_attempts` table and
+`account_oauth_layout=pkce-once-v1` marker. Historical allocation 29 remains owned
+by issue #1146; no upgrade is supported. Attempt body/index
 identity and exact revisions agree, with an 8 KiB metadata ceiling and no account
 foreign key or cascading cleanup deletion. Codes, verifiers, keys and browser
 URLs never enter the table, receipts, events, resources or portable bundles.
@@ -59,8 +47,7 @@ protected reference and cancellation/publication gates.
 
 ## API OAuth token generations
 
-Real migration 31 follows real 26–30 and the main-established reservation. It
-adds private `account_oauth_credentials` metadata and the exact
+Schema 32 directly creates private `account_oauth_credentials` metadata and the exact
 `account_oauth_credentials_layout=token-generations-v1` marker. Rows bind current
 account/connection/provider identity, accepted public profile, token references,
 expiry, refresh claim and cleanup. Access/refresh tokens remain only in Vault.
@@ -92,7 +79,7 @@ backup identities/private-file ownership, and excludes unpublished scratch files
 It never returns a partial inventory as complete.
 
 Inspection has a thirty-second deadline and an 8 GiB managed image limit.
-Creation and pre-migration backups enforce the same exact copied-image limit
+Current creation enforces the same exact copied-image limit
 before publication, preserving the live database on rejection. Durable creation
 settles a size-limit rejection as failed/resource-exhausted; it does not retry
 forever. Unpublished scratch files are removed. It checks
@@ -167,8 +154,7 @@ pagination (20 default, 99 maximum). The same request returns the current origin
 job. Other requests cannot replace an accepted deletion, and Workers cannot call
 these operations. A queued acceptance is not proof of file removal.
 
-Schema 24 combines the backup-to-job/request index and automatic-title usage/claims after the main provider migrations in 21 and 22 through the existing synchronized
-backup-first migration. Deletions use the existing durable job and request-receipt
+Schema 32 includes backup-to-job/request indexes and automatic-title usage/claims directly. Deletions use the existing durable job and request-receipt
 infrastructure. Backup creation/inspection/deletion share a server lock; accepted
 SQL ownership immediately prevents an old creation request from recreating the
 image. Before acknowledging acceptance or performing any unlink, the server synchronizes a versioned,
@@ -398,8 +384,8 @@ validation boundary; a second restore cannot publish in the old epoch.
 Copy the image through the inspection identity/hash/sidecar checks into a private
 staging file. The 8 GiB image bound still applies. Reject corrupt, newer-schema,
 foreign-server, replaced or deletion-obligated images without changing live logical
-state or the source. Supported older schemas migrate only in staging through the
-existing backup-first migration, retaining the pre-migration copy until recovery settles. Capture a
+state or the source. Only schema-32 candidates are accepted; no staging migration
+or migration image is created. Capture a
 synchronized current `VACUUM INTO` safety image, including committed WAL content,
 outside the replaceable database. Transform only the candidate in one transaction.
 
@@ -472,21 +458,17 @@ for the replacement. Changed safety/live bytes, foreign identity, sidecars or
 conflicting journal evidence fail closed without overwriting either outcome.
 Recovery synchronizes the observed outcome and its receipt before retiring the
 active barrier. Each completed external receipt must still match its immutable
-SQLite request marker before startup migration or authorization. Manual replacement
+SQLite request marker before authorization. Manual replacement
 with an older image cannot silently bypass that safety boundary. A lost acknowledgment or exact retry reads the retained receipt,
 never publishes another image. Unjournaled interrupted staging remains evidence;
 it is not an accepted restore and cannot be blindly resumed.
 
 After the active barrier is durably retired and the completed SQLite marker is
-validated, startup removes the receipt-owned safety, candidate and staging-migration
-images under exclusive process ownership before serving. The prepared external
-journal pins each staging-migration copy's original UUID, metadata and SHA-256,
-with a bounded unique inventory captured before publication. Exact fingerprints,
-private paths and original server identity are checked first; changed or unexpected
-images remain recovery-required. Legacy journals without this inventory cannot
-adopt retained migration copies from their current bytes; empty or already-removed
-copy directories still permit synchronized cleanup. A retry finishes directory synchronization after
-an interrupted unlink. Metadata-only journals remain reserved for exact retries.
+validated, startup removes only the receipt-owned safety and candidate images
+under exclusive process ownership. Their exact fingerprints, private paths and
+original server identity are checked first; changed or unexpected images remain
+recovery-required. A retry finishes synchronization after an interrupted unlink.
+Metadata-only journals remain reserved for exact retries.
 Unaccepted staging is preserved; any remaining restore database image blocks the
 final permanent-session backup acknowledgement. The selected source backup is
 never removed by restore. This closes the restore namespace over later permanent
@@ -509,7 +491,7 @@ authenticated pagination/cursor invalidation, Worker and revoked-client denial,
 CLI decimal precision, hidden-screen reads, explicit inspection and exact retries.
 Also test concurrent deletion receipts, stale revisions/metadata, failed intent
 persistence, changed content, missing unlink acknowledgment, database rollback
-without journal rollback, exact CLI confirmation and migration from schema 20.
+without journal rollback, exact CLI confirmation and rejection of schemas 1–31 without changes.
 Run DeliDev Go race tests/vet, protocol checks, API-client tests and desktop
 `pnpm test`. Keep real-platform evidence separate from fixtures and builds.
 
@@ -521,7 +503,7 @@ Run DeliDev Go race tests/vet, protocol checks, API-client tests and desktop
 Creation recovery also validates the published image's original server identity
 against the live scope before accepting an already existing filename. Immutable
 SQLite validation rejects adjacent WAL/SHM/journal files, including during legacy
-creation and migration-image checks; it never ingests external sidecar state or
+current image checks; it never ingests external sidecar state or
 opens a backup as a writable live database. Foreign/corrupt images remain intact
 and end a durable creation with recovery-required rather than false success.
 
@@ -535,18 +517,8 @@ observed successful revision refreshes the image inventory. Failed refreshes are
 stale/unavailable, not success. Dismissing terminal tracking frees local capacity
 without deleting server history, canceling work or repeating acceptance.
 
-Schema 24 follows main's provider activation in 21, hosted defaults in 22 and the separate backup/title layouts of version 23. Upgrading a pre-merge
-schema-21 backup database recognizes its existing deletion table, adds the
-missing provider preset index and retains every job, receipt and external
-obligation. Both schema-21 layouts receive a verified pre-migration backup;
-index creation and version advancement commit atomically or leave the original
-database intact. Fresh schema-24 stores include both indexes and hosted defaults from initialization.
-A pre-merge schema-22 backup database retains its deletion table/jobs and receives
-hosted defaults once. Main schema 22 already applied defaults: add only the
-deletion table and preserve later explicit provider deletions, identities and Off
-settings. Detect the prior layout before changing either table or version.
-
-Both version-23 layouts migrate to 24 under the same pre-migration backup and transaction. The backup layout gains the missing title usage column, index and send/HTTP claim tables; the title layout gains the backup deletion index. Preserve existing usage attribution, original job identities, both once-only claims and explicit provider deletions. Never queue title inference or reseed providers while merging these layouts.
+Schema 32 directly includes backup deletion indexes, title usage and once-only
+send/HTTP claim tables. Restart never reseeds Providers or queues title inference.
 
 Creation publication commits a versioned metadata/digest claim in the live SQLite
 metadata table after synchronizing the private copy and before an atomic
@@ -835,14 +807,12 @@ automation suppression bit, without changing historical outcomes or unpausing a
 failed queue. Missing or replaced source ownership cannot authorize a native claim.
 Follow the [automatic coordinator contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
 
-### Retirement storage boundary
+### Independent subscription storage
 
-`retired_configurations` preserves the complete original record columns and document bytes independently of live `entities`. Ordinary Get, mutation, routing, catalog and export never consult it. Only explicit owner/client historical reads and usage labels may use it; their retired Resource projection has schema 2. Permanent tombstones and redacted historical receipts prevent resurrection. The schema marker is `service-accounts-v2`. The integrated migration also rebuilds the notification-delivery table, preserving every prior claim while extending its closed kind constraint to account-scoped subscription recovery. Its independent `subscription_notification_layout=account-recovery-v1` marker is required together with the identity marker; a partially composed or unrelated version-28 layout is recovery-required. This composition precedes migration 28's first main activation and does not alter historical migration 17.
-
-Before creating retirement tables or changing configuration, live upgrades reject original connections, protected generations/identity commitments, pending operations, leases, recovery fences, unremoved device browser profiles and affected claimed/uncertain native work. Failure rolls back the entire composed transaction and preserves the synchronized pre-migration backup. A private restore candidate has explicitly historical ownership without current local authority; it migrates before replacement preparation/publication, preserves original retired documents and merges current retirement/tombstone evidence. This exemption never applies to ordinary startup.
-
-Affected Agents retain names, options, templates and original model IDs with server-owned `reconfiguration_required`; ordered surviving account weights remain unchanged. Project account restrictions preserve their configured flag even when all IDs retire. Only affected Schedules disable their timer and retain accepted occurrence history with explicit reset guidance. Session/snapshot/transcript/usage bodies and their revisions remain unchanged. Pricing retains original API attribution and independently stores the service identity of newly configured native models.
-
+Current service-native Accounts and Models preserve immutable historical
+attribution and configured-empty deny-all restrictions. The pre-release reset
+removes retirement-only configuration history and reconfiguration flags; current
+credential generations, deletion history and unsettled native ownership remain.
 
 ## Desktop workspace storage and permanent deletion
 
@@ -958,18 +928,20 @@ Storage results retain at least the surviving snapshot size in retained bytes an
 
 Atomic journal compaction represents each settled removal with one inventory-bound original-path proof; it does not repeat generated private paths. The original immutable inventory bounds all such proofs, including deep-directory generated-name expansion. Recovered successful cleanup emits and validates the original snapshot source/preview digest before server settlement; authenticated native-result fixtures also verify the final accepted job state.
 
-## Added hosted-provider defaults (migration 30)
+## Current hosted-provider defaults
 
-Real 30 follows implemented OAuth 29 and actual accounting/diagnostics/retirement 26–28. It stores the private `provider_presets_layout=hosted-additions-26-v1` marker and seeds only the 26 explicitly allocated hosted preset identities. Historical defaults migrations retain their original six-ID set. Existing managed UUIDs, Off state, custom providers/accounts/models and explicit deletion of original presets remain authoritative. No Account, credential or model is created. Upgrade synchronizes the original backup first and publishes all predecessor/layout/seed changes atomically; failure leaves the original version and image intact. A current-store reopen validates the exact layout marker and never seeds again.
+Schema 32 creates all 32 current hosted preset identities once, On, with explicit
+availability. No Account, credential or Model is created. Local presets remain
+virtual Off until explicit activation. Restart preserves existing UUIDs, Off
+state, custom configuration and deletion; it never seeds again. Historical
+allocations through 31 remain recorded without an executable migration chain.
 
 Sidechat storage retirement decodes original storage/recovery inputs with the owning strict 3 MiB rule, even when no Sidechat is selected. Its private retirement wrapper permits the existing complete 4 MiB deletion plan plus 4 KiB fixed operation metadata, consistently at publication and restart. The allowance preserves complete original child cleanup obligations and grants no additional native removal authority or ordinary entity capacity.
 
 Server-owned subscription login retains optional original server_operation metadata and a disjoint native_started credential fence. Pending, claimed or recovery-required server ownership blocks managed restore and deletion like original Worker ownership; a terminal record grants no external authority. Restart preserves original pending/runtime obligations as recovery-required without relaunch. No new SQLite migration is required. Follow the managed subscription contract.
-## Pre-release database baseline reservation
+## Pre-release baseline allocation
 
-The [pre-release reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
-reserves baseline 32 after real schema 31. Its complete implementation directly
-initializes the current functional layout and removes upgrades from schemas
-1–31. Unsupported DBs and backups retain their original files and sidecars;
-no startup, inspection or restore may silently convert or reset them. This
-reservation adds no executable migration or runtime capability.
+PR #1609 established baseline 32 on main before this reset. The
+[structure policy](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
+retains all earlier allocation ownership and forbids reuse. This is a direct
+initial schema, with no upgrade from schemas 1–31 or automatic source deletion.

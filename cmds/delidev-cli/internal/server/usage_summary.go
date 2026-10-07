@@ -89,9 +89,6 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 				return label, nil
 			}
 			resource, err := tx.Get(kind, id)
-			if domain.SafeError(err).Code == domain.NotFound && (kind == domain.AccountKind || kind == domain.ModelKind || kind == domain.ProviderKind) {
-				resource, err = tx.RetiredConfiguration(kind, id)
-			}
 			if err != nil && domain.SafeError(err).Code != domain.NotFound {
 				return "", err
 			}

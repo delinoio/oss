@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 31
+const SchemaVersion = 32
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -85,16 +86,13 @@ type Result struct {
 }
 
 type Tx struct {
-	// Only migration 16 reads pre-service immutable pricing while rebuilding its
-	// original budget table. Normal transactions require the current layout.
-	historicalPricingV1 bool
-	tx                  *sql.Tx
-	ctx                 context.Context
-	requestID           domain.ID
-	now                 time.Time
-	touched             map[domain.ID]bool
-	queueTouched        map[domain.ID]bool
-	readOnly            bool
+	tx           *sql.Tx
+	ctx          context.Context
+	requestID    domain.ID
+	now          time.Time
+	touched      map[domain.ID]bool
+	queueTouched map[domain.ID]bool
+	readOnly     bool
 }
 
 func Open(ctx context.Context, root string) (_ *Store, returned error) {
@@ -115,12 +113,15 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			lock.Close()
 		}
 	}()
+	if err := preflightDatabase(ctx, filepath.Join(root, "state.sqlite")); err != nil {
+		return nil, err
+	}
 	for _, name := range []string{"backups", "secrets", "backup-deletions", "backup-removals", "session-deletions"} {
 		if err := security.PrivateDir(filepath.Join(root, name)); err != nil {
 			return nil, storageError(err)
 		}
 	}
-	// Reconcile replacement before SQLite can read a WAL or migrate either
+	// Reconcile replacement before SQLite can open either
 	// image. server.lock remains owned for the entire recovery/publication.
 	if err := recoverBackupRestore(ctx, root); err != nil {
 		return nil, err
@@ -198,7 +199,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			return fail(err)
 		}
 		if _, err = tx.ExecContext(ctx, schema); err == nil {
-			err = applyMigrations(ctx, tx, 1)
+			err = seedHostedProviders(ctx, tx)
 		}
 		if err == nil {
 			err = tx.Commit()
@@ -206,11 +207,6 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			tx.Rollback()
 		}
 		if err != nil {
-			return fail(err)
-		}
-	}
-	if !created {
-		if err := migrate(ctx, db, root); err != nil {
 			return fail(err)
 		}
 	}
@@ -256,46 +252,20 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	if appID != applicationID {
 		return domain.Fail(domain.RecoveryRequired, "This is not a recognized DeliDev database.", "Preserve the original and restore a validated DeliDev backup.")
 	}
-	if version < 1 || version > SchemaVersion {
-		return domain.Fail(domain.RecoveryRequired, "The stored schema requires a compatible DeliDev version.", "Use the matching server version; never reset or downgrade the database.")
+	if version != SchemaVersion {
+		slog.WarnContext(ctx, "database_schema_unsupported", "schema_version", version, "required_schema_version", SchemaVersion)
+		return domain.Fail(domain.RecoveryRequired, "This database schema is unsupported by the current DeliDev server.", "Preserve the original database and sidecars. Start with a separate new data directory or use a matching server version.")
 	}
-	// Unmerged accounting and diagnostics branches reused schema 25. A version
-	// number alone must never adopt their layout or historical records. Preserve
-	// those files for explicit recovery instead of guessing a migration.
-	if version >= 25 {
-		var layout string
-		expectedLayout := "grok-closed-input-v1"
-		if version >= 26 {
-			expectedLayout = "priced-native-input-v2"
-		}
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='native_accounting_layout'").Scan(&layout); err != nil || layout != expectedLayout {
-			return domain.Fail(domain.RecoveryRequired, "The native accounting layout is unrecognized.", "Preserve the original database and use explicit recovery; never adopt an unmerged schema by version number.")
-		}
-	}
-	if version >= 28 {
-		var layout string
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='subscription_notification_layout'").Scan(&layout); err != nil || layout != "account-recovery-v1" {
-			return domain.Fail(domain.RecoveryRequired, "The subscription notification layout is unrecognized.", "Preserve the original database and use a matching composed server version.")
-		}
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='subscription_identity_layout'").Scan(&layout); err != nil || layout != "service-accounts-v2" {
-			return domain.Fail(domain.RecoveryRequired, "The subscription identity layout is unrecognized.", "Preserve the original database and use a matching server version.")
-		}
-	}
-	if version >= 29 {
-		var layout string
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='account_oauth_layout'").Scan(&layout); err != nil || layout != "pkce-once-v1" {
-			return corrupt()
-		}
-	}
-	if version >= 30 {
-		var layout string
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='provider_presets_layout'").Scan(&layout); err != nil || layout != "hosted-additions-26-v1" {
-			return corrupt()
-		}
-	}
-	if version >= 31 {
-		var layout string
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='account_oauth_credentials_layout'").Scan(&layout); err != nil || layout != "token-generations-v1" {
+	for key, expected := range map[string]string{
+		"native_accounting_layout":         "priced-native-input-v2",
+		"subscription_notification_layout": "account-recovery-v1",
+		"subscription_identity_layout":     "service-accounts-v2",
+		"account_oauth_layout":             "pkce-once-v1",
+		"provider_presets_layout":          "hosted-additions-26-v1",
+		"account_oauth_credentials_layout": "token-generations-v1",
+	} {
+		var actual string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key=?", key).Scan(&actual); err != nil || actual != expected {
 			return corrupt()
 		}
 	}
@@ -1102,8 +1072,7 @@ func validateBackup(ctx context.Context, path string, owner *domain.ID) error {
 	if err != nil {
 		return err
 	}
-	// Every published image, including a pre-migration image, must remain
-	// inspectable and deletable through the managed backup APIs.
+	// Every current published image is bounded for managed inspection.
 	if info.Size() > MaxBackupInspectionBytes {
 		return domain.Fail(domain.ResourceExhausted, "The backup exceeds the 8 GiB managed image limit.", "Reduce the live database size before retrying; the original database is unchanged.")
 	}

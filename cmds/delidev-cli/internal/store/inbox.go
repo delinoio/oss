@@ -115,58 +115,6 @@ func inboxConflict() error {
 	return domain.Fail(domain.Conflict, "The inbox entry or original source does not match.", "Reload its current read state and original source without changing response or execution authority.")
 }
 
-// Legacy versions retain all questions and the most recent execution progress.
-// Backfill only that evidence; absent older native history cannot be invented.
-// Pages are closed before writes so migration memory is bounded independently
-// of total retained history.
-func (t *Tx) preserveLegacyInbox() error {
-	for _, kind := range []domain.Kind{domain.InteractionKind, domain.SessionKind} {
-		after := domain.ID("")
-		for {
-			rows, err := t.List(Filter{Kind: kind, After: after, Limit: MaxPage})
-			if err != nil {
-				return err
-			}
-			for _, r := range rows {
-				entry := domain.InboxEntry{Source: domain.InteractionInbox, SourceID: r.ID, ReadState: domain.InboxUnread}
-				session := r.SessionID
-				if kind == domain.SessionKind {
-					value, err := Decode[domain.Session](r)
-					if err != nil {
-						return inboxMigrationError(err)
-					}
-					p := value.Execution
-					if p == nil || p.Outcome == domain.ExecutionRunning || p.Outcome == domain.ExecutionNotStarted {
-						continue
-					}
-					session = r.ID
-					entry.Source, entry.SourceID = domain.ExecutionTerminalInbox, p.ExecutionID
-					entry.Terminal = &domain.InboxTerminal{JobID: p.JobID, InputID: p.InputID, NativeThreadID: p.NativeThreadID, NativeTurnID: p.NativeTurnID, Sequence: p.LastSequence, Outcome: p.Outcome}
-				}
-				if _, err := t.CreateInboxEntry(session, r.ProjectID, entry); err != nil {
-					return inboxMigrationError(err)
-				}
-			}
-			if len(rows) < MaxPage {
-				break
-			}
-			after = rows[len(rows)-1].ID
-		}
-	}
-	return nil
-}
-
-func inboxMigrationError(err error) error {
-	switch domain.SafeError(err).Code {
-	case domain.InvalidArgument, domain.Conflict, domain.NotFound:
-		return domain.Fail(domain.RecoveryRequired, "Retained inbox sources could not be migrated consistently.", "Preserve the original database and pre-migration backup; reconcile the original source ownership without discarding history.")
-	default:
-		// Cancellation, disk exhaustion and I/O retain their actionable cause;
-		// they are not evidence of contradictory native ownership.
-		return err
-	}
-}
-
 type InboxFilter struct {
 	SessionID domain.ID
 	ProjectID domain.ID

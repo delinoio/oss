@@ -108,15 +108,12 @@ Server lifecycle, authorization, route registration and status have separate own
 CLI framing/authentication and command groups have separate files. They retain
 existing order, authorization, cleanup and output behavior.
 
-The original structural change retained schema 24. The current executable registry
-implements real migrations through 31; later reserved versions remain inactive. Versioned migration
-definitions share creation and upgrade paths while retaining backup-first atomic
-upgrade and all recognized historical layout repairs. Historical migration tests
-start from fixed historical SQL, not a newer schema with an expanding drop list.
-Future reserved versions are not executable migrations. Activation requires the
-complete preceding sequence; no empty migrations may skip an unimplemented change.
-Unknown or newer databases, including unmerged variant schema-25 databases, remain
-preserved and require recovery rather than being inferred from their version alone.
+Schema 32 directly initializes the complete current functional layout. Startup,
+backup inspection and restore accept only that schema, preserving unsupported
+original files and sidecars. Executable migrations, recognized old-layout repairs
+and backfills are removed. `migration-reservations.json` retains historical
+numbers and provenance, including main-established baseline 32; no number is
+reused and future reservations do not become executable migrations.
 
 ## Validation and rollout
 
@@ -201,11 +198,9 @@ dependent implementation; no placeholder migration, active protobuf declaration,
 generated binding or OAuth capability is introduced by this prerequisite. Keep
 the existing sequence and issue open until full implementation is accepted.
 
-The storage suite covers every fixed historical schema and the real 29-to-30
-Provider upgrade, along with the recognized
-21/22 backup and 23 title variants. It compares upgraded DDL with a fresh database,
-retains existing seeded record/backfill/rollback tests, and verifies that three
-unidentified version-25 layouts return recovery-required without modifying bytes.
+The storage suite creates and restarts current databases, preserves current
+backup/recovery and native cleanup regressions, and rejects frozen historical
+layouts and every earlier schema without modifying original bytes or sidecars.
 
 Independent files prevent incidental textual conflicts, not semantic dependencies.
 Shared authentication, Worker permissions, account selection, title/usage attribution,

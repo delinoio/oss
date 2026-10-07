@@ -146,9 +146,6 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
-	if agent.ReconfigurationRequired {
-		return empty, domain.SubscriptionReconfigurationRequired()
-	}
 	var provider domain.Provider
 	if model.SourceKind != domain.SubscriptionModel {
 		_, provider, err = decodeEntity[domain.Provider](t, domain.ProviderKind, model.ProviderID)

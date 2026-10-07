@@ -2,77 +2,13 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"os"
-	"path/filepath"
+
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-func TestMigrationBacksUpOriginalAndRollsBackOnFailure(t *testing.T) {
-	for _, conflicting := range []bool{false, true} {
-		t.Run(map[bool]string{false: "success", true: "conflict"}[conflicting], func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "state")
-			if err := security.PrivateDir(root); err != nil {
-				t.Fatal(err)
-			}
-			path := filepath.Join(root, "state.sqlite")
-			if err := os.WriteFile(path, nil, 0600); err != nil {
-				t.Fatal(err)
-			}
-			db, err := sql.Open("sqlite", databaseURI(path, false))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := db.Exec(schema); err != nil {
-				t.Fatal(err)
-			}
-			if conflicting {
-				if _, err := db.Exec("CREATE TABLE jobs(id TEXT PRIMARY KEY)"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			db.Close()
-			if err := os.Chmod(path, 0600); err != nil {
-				t.Fatal(err)
-			}
-			s, err := Open(context.Background(), root)
-			if conflicting {
-				if err == nil {
-					s.Close()
-					t.Fatal("conflicting migration succeeded")
-				}
-			} else {
-				if err != nil {
-					t.Fatal(err)
-				}
-				s.Close()
-			}
-			backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-			if err != nil || len(backups) != 1 {
-				t.Fatalf("missing pre-migration backup: %v %v", backups, err)
-			}
-			for _, item := range []struct {
-				Path    string
-				Version int
-			}{{backups[0], 1}, {path, map[bool]int{false: SchemaVersion, true: 1}[conflicting]}} {
-				db, err := sql.Open("sqlite", databaseURI(item.Path, true))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var version int
-				err = db.QueryRow("PRAGMA user_version").Scan(&version)
-				db.Close()
-				if err != nil || version != item.Version {
-					t.Fatalf("version %d want %d: %v", version, item.Version, err)
-				}
-			}
-		})
-	}
-}
 func TestRevokedPrincipalCannotCommitOrReplayReceipt(t *testing.T) {
 	s, _ := openTest(t)
 	ctx := context.Background()

@@ -1,72 +1,16 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"database/sql"
+
 	"encoding/json"
-	"path/filepath"
+
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
-
-func TestExecutionAuthorityMigrationPreservesAssignmentsAndBackup(t *testing.T) {
-	s, root := openTest(t)
-	ctx := context.Background()
-	jobID := domain.NewID()
-	_, err := s.Mutate(ctx, domain.NewID(), "fixture.claim", nil, func(tx *Tx) (any, error) {
-		return tx.PutJob(jobID, 0, "", "", domain.Job{Type: domain.HarnessDiscoveryJob, State: domain.JobClaimed, MachineID: domain.NewID(), InstanceID: domain.NewID(), Input: json.RawMessage(`{}`), AcceptedAt: time.Now().UTC()})
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	original, err := s.Get(ctx, domain.JobKind, jobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := historicalSchema(s.db, "006"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s, err = Open(ctx, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-	if err != nil || len(backups) != 1 {
-		t.Fatal("migration did not preserve its v6 backup")
-	}
-	backup, err := sql.Open("sqlite", databaseURI(backups[0], true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer backup.Close()
-	var version, grants int
-	if err := backup.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 6 {
-		t.Fatal("backup does not contain the original schema")
-	}
-	if err := backup.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name='execution_grants'").Scan(&grants); err != nil || grants != 0 {
-		t.Fatal("migration changed the backup")
-	}
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
-		t.Fatal("migration did not install the execution authority schema")
-	}
-	if err := s.Read(ctx, func(tx *Tx) error {
-		retained, err := tx.JobAssignment(jobID)
-		if err == nil && (retained.ID != original.ID || retained.Revision != original.Revision || !bytes.Equal(retained.Data, original.Data)) {
-			t.Fatal("execution migration changed an existing assignment")
-		}
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestExecutionGrantAndNativeReferenceIsolationSurviveRestart(t *testing.T) {
 	s, root := openTest(t)

@@ -2,8 +2,7 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
+
 	"strings"
 	"testing"
 
@@ -124,65 +123,5 @@ func TestResponseUsageRollbackAndMissingCounts(t *testing.T) {
 	value, err := s.ResponseUsage(context.Background(), id)
 	if err != nil || value.Record.Usage.Counts != nil {
 		t.Fatal("missing usage invented zero", err)
-	}
-}
-
-func TestResponseUsageMigrationPreservesHistoryWithoutInventingRequests(t *testing.T) {
-	for _, conflict := range []bool{false, true} {
-		t.Run(map[bool]string{false: "migrate", true: "rollback"}[conflict], func(t *testing.T) {
-			s, root := openTest(t)
-			f := seedSearch(t, s, "pre-migration", domain.Archived)
-			if _, err := historicalSchema(s.db, "013"); err != nil {
-				t.Fatal(err)
-			}
-			if conflict {
-				if _, err := s.db.Exec("CREATE TABLE response_usage(conflict TEXT)"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := s.Close(); err != nil {
-				t.Fatal(err)
-			}
-			migrated, err := Open(context.Background(), root)
-			if conflict {
-				if err == nil {
-					migrated.Close()
-					t.Fatal("adopted foreign usage schema")
-				}
-			} else {
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer migrated.Close()
-				rows, _, _, err := searchPage(t, migrated, SearchFilter{Query: "pre-migration"})
-				if err != nil || len(rows) != 1 || rows[0].ID != f.message {
-					t.Fatal("migration lost transcript", err)
-				}
-				var count int
-				if err = migrated.db.QueryRow("SELECT COUNT(*) FROM response_usage").Scan(&count); err != nil || count != 0 {
-					t.Fatal("migration invented usage", err)
-				}
-			}
-			backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-			if err != nil || len(backups) != 1 {
-				t.Fatal("missing original backup", err)
-			}
-			for _, path := range []string{backups[0], filepath.Join(root, "state.sqlite")} {
-				db, err := sql.Open("sqlite", databaseURI(path, true))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var version int
-				err = db.QueryRow("PRAGMA user_version").Scan(&version)
-				db.Close()
-				want := 13
-				if path != backups[0] && !conflict {
-					want = SchemaVersion
-				}
-				if err != nil || version != want {
-					t.Fatal("migration lost version/rollback", version, err)
-				}
-			}
-		})
 	}
 }

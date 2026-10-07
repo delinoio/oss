@@ -28,25 +28,6 @@ func (t *Tx) indexMessage(r Record) error {
 	return storageError(err)
 }
 
-func (t *Tx) backfillSearch() error {
-	after := domain.ID("")
-	for {
-		rows, err := t.List(Filter{Kind: domain.MessageKind, After: after, Limit: MaxPage})
-		if err != nil {
-			return err
-		}
-		for _, r := range rows {
-			if err := t.indexMessage(r); err != nil {
-				return err
-			}
-		}
-		if len(rows) < MaxPage {
-			return nil
-		}
-		after = rows[len(rows)-1].ID
-	}
-}
-
 type SearchFilter struct {
 	domain.SearchSelection
 	Query string

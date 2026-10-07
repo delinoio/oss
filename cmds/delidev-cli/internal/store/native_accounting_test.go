@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
-	"path/filepath"
+
 	"reflect"
 	"testing"
 	"time"
@@ -250,50 +250,6 @@ func TestNativeAccountingAtomicRetentionReplayRestartPriceAndBudget(t *testing.T
 	v, err = readUsage(s, nativeSelection())
 	if domain.SafeError(err).Code != domain.RecoveryRequired || v.NativeAccounting != nil || v.Totals.Responses != 0 {
 		t.Fatal("corruption returned partial summary", v, err)
-	}
-}
-
-func TestNativeAccountingMigrationPreservesRawObservationsWithoutBackfill(t *testing.T) {
-	s, root := openTest(t)
-	r, o, _ := nativeAccountingFixture(t, s)
-	source := domain.NewID()
-	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.historical-native", nil, func(tx *Tx) (any, error) { return nil, tx.PutClaudeUsage(source, r.SessionID, r.ProjectID, o) })
-	if err != nil {
-		t.Fatal(err)
-	}
-	before, err := s.Get(context.Background(), domain.UsageKind, source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := historicalSchema(s.db, "024"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	s, err = Open(context.Background(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	after, err := s.Get(context.Background(), domain.UsageKind, source)
-	if err != nil || string(before.Data) != string(after.Data) || before.Revision != after.Revision {
-		t.Fatal("migration rewrote raw history", err)
-	}
-	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.forbidden-backfill", nil, func(tx *Tx) (any, error) {
-		return nil, tx.PutClaudeAccounting(source, domain.NewID(), r.SessionID, r.ProjectID, o)
-	})
-	if domain.SafeError(err).Code != domain.Conflict {
-		t.Fatal("historical raw source acquired a new price/receipt", err)
-	}
-	var n, version int
-	if s.db.QueryRow("SELECT count(*) FROM native_accounting").Scan(&n) != nil || n != 0 || s.db.QueryRow("PRAGMA user_version").Scan(&version) != nil || version != SchemaVersion {
-		t.Fatal("migration fabricated units", n, version)
-	}
-	backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-	if err != nil || len(backups) != 1 {
-		t.Fatal("no original migration backup", err)
-	}
-	if err := ValidateBackup(context.Background(), backups[0]); err != nil {
-		t.Fatal(err)
 	}
 }
 

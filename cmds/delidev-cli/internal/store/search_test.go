@@ -2,9 +2,9 @@ package store
 
 import (
 	"context"
-	"database/sql"
+
 	"encoding/json"
-	"path/filepath"
+
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -160,65 +160,5 @@ func TestSearchAtomicEditsDeletionRollbackAndPagination(t *testing.T) {
 	}
 	if _, err = s.db.Exec("INSERT INTO transcript_fts(transcript_fts,rank) VALUES('integrity-check',1)"); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestSearchMigrationBackfillsAndBacksUpWithoutRewritingMessages(t *testing.T) {
-	for _, conflict := range []bool{false, true} {
-		t.Run(map[bool]string{false: "backfill", true: "rollback"}[conflict], func(t *testing.T) {
-			s, root := openTest(t)
-			f := seedSearch(t, s, "pre-migration transcript", domain.Archived)
-			original, err := s.Get(context.Background(), domain.MessageKind, f.message)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err = historicalSchema(s.db, "012"); err != nil {
-				t.Fatal(err)
-			}
-			if conflict {
-				if _, err = s.db.Exec("CREATE TABLE transcript_search(conflict TEXT)"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err = s.Close(); err != nil {
-				t.Fatal(err)
-			}
-			s, err = Open(context.Background(), root)
-			if conflict {
-				if err == nil {
-					s.Close()
-					t.Fatal("migration adopted foreign index")
-				}
-			} else {
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer s.Close()
-				rows, _, _, err := searchPage(t, s, SearchFilter{Query: "pre-migration"})
-				if err != nil || len(rows) != 1 || string(rows[0].Data) != string(original.Data) || rows[0].Revision != original.Revision {
-					t.Fatal("backfill changed original", err)
-				}
-			}
-			backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-			if err != nil || len(backups) != 1 {
-				t.Fatal("missing migration backup", err)
-			}
-			for _, path := range []string{backups[0], filepath.Join(root, "state.sqlite")} {
-				db, err := sql.Open("sqlite", databaseURI(path, true))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var version int
-				err = db.QueryRow("PRAGMA user_version").Scan(&version)
-				db.Close()
-				want := 12
-				if path != backups[0] && !conflict {
-					want = SchemaVersion
-				}
-				if err != nil || version != want {
-					t.Fatal("migration lost version/rollback", version, err)
-				}
-			}
-		})
 	}
 }

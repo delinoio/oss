@@ -563,46 +563,6 @@ func TestConcurrentBackupRestoresPublishAtMostOnce(t *testing.T) {
 	}
 }
 
-func TestBackupRestoreMigratesOnlyPrivateCandidate(t *testing.T) {
-	s, root, ctx, in, _ := restoreFixture(t)
-	source := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
-	image, err := openRestoreDatabase(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := historicalSchema(image, "023-titles"); err != nil {
-		t.Fatal(err)
-	}
-	image.Close()
-	inspection, err := s.InspectBackup(ctx, in.Backup.ID, in.ServerID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	in.Backup, in.SHA256 = inspection.Backup, inspection.SHA256
-	before, _ := os.ReadFile(source)
-	request := domain.NewID()
-	if _, _, err := s.RestoreBackup(ctx, request, in); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	reopened, err := Open(ctx, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reopened.Close()
-	var version int
-	if err := reopened.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
-		t.Fatal(version, err)
-	}
-	after, _ := os.ReadFile(source)
-	if !bytes.Equal(before, after) {
-		t.Fatal("migration changed selected image")
-	}
-	if err := reopened.checkRestoreImagesRetired(ctx); err != nil {
-		t.Fatal("settled migration retained database copies", err)
-	}
-}
-
 func TestBackupRestoreRejectsChangedRecoveryEvidence(t *testing.T) {
 	for _, target := range []string{"safety.sqlite", "live", "sidecar"} {
 		t.Run(target, func(t *testing.T) {

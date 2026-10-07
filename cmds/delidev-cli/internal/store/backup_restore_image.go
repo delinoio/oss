@@ -5,28 +5,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
-
-func migrateRestoreImage(ctx context.Context, path, root string) error {
-	if err := security.PrivateDir(filepath.Join(root, "backups")); err != nil {
-		return storageError(err)
-	}
-	db, err := sql.Open("sqlite", databaseURI(path, false))
-	if err != nil {
-		return storageError(err)
-	}
-	db.SetMaxOpenConns(1)
-	defer db.Close()
-	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL"); err != nil {
-		return storageError(err)
-	}
-	return migrate(context.WithValue(ctx, historicalSubscriptionRetirement{}, true), db, root)
-}
 
 // Only the private candidate is writable. The synchronized current snapshot is
 // attached immutable/read-only; it supplies revocations and deletion obligations
@@ -78,7 +60,6 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		"DELETE FROM entities WHERE id IN (SELECT json_extract(body,'$.provider_id') FROM current_state.entities WHERE id IN (" + connectedOAuthAccounts + "))",
 		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind='provider' AND id IN (SELECT json_extract(body,'$.provider_id') FROM current_state.entities WHERE id IN (" + connectedOAuthAccounts + "))",
 		"INSERT OR REPLACE INTO tombstones SELECT * FROM current_state.tombstones",
-		"INSERT OR REPLACE INTO retired_configurations SELECT * FROM current_state.retired_configurations",
 		// Old grants and pairing codes never acquire fresh authority.
 		"DELETE FROM credential_verifiers",
 		"DELETE FROM pairing_verifiers",

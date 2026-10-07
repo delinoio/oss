@@ -134,21 +134,6 @@ func (s *Service) GetResource(ctx context.Context, req *connect.Request[pb.GetRe
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	record, err := s.Store.Get(ctx, kind, domain.ID(req.Msg.Id))
-	if domain.SafeError(err).Code == domain.NotFound {
-		actor, ok := domain.PrincipalFrom(ctx)
-		if ok && (actor.Type == domain.OwnerDevice || actor.Type == domain.ClientDevice) {
-			if historical, e := s.Store.RetiredConfiguration(ctx, kind, domain.ID(req.Msg.Id)); e == nil {
-				historical.Data, e = json.Marshal(struct {
-					Retired               bool            `json:"retired"`
-					OriginalSchemaVersion uint32          `json:"original_schema_version"`
-					OriginalDocument      json.RawMessage `json:"original_document"`
-				}{true, 1, historical.Data})
-				record, err = historical, e
-			} else if domain.SafeError(e).Code != domain.NotFound {
-				err = e
-			}
-		}
-	}
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}

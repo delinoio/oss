@@ -2,8 +2,7 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
+
 	"strconv"
 	"strings"
 	"testing"
@@ -168,61 +167,6 @@ func TestPRProblemsRejectStaleCollectorsAndVersionDismissalAtomically(t *testing
 	value, _ := Decode[domain.PRProblem](rows[0])
 	if value.State != domain.PRProblemUnhandled || value.Feedback.Body != original.Feedback.Body {
 		t.Fatal("failure changed retained evidence")
-	}
-}
-
-func TestPRProblemMigrationPreservesV17BackupAndRejectsUnknownLegacyOwnership(t *testing.T) {
-	for _, mode := range []string{"empty", "legacy", "collision"} {
-		t.Run(mode, func(t *testing.T) {
-			s, root := openTest(t)
-			if mode != "collision" {
-				if _, err := historicalSchema(s.db, "017"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if mode == "legacy" {
-				_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.legacy-problem", nil, func(tx *Tx) (any, error) {
-					return tx.Put(domain.ProblemKind, domain.NewID(), 0, "", "", map[string]string{"unknown": "preserve"})
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			if _, err := s.db.Exec("PRAGMA user_version=17"); err != nil {
-				t.Fatal(err)
-			}
-			s.Close()
-			migrated, err := Open(notificationOwner(), root)
-			if mode == "empty" {
-				if err != nil {
-					t.Fatal(err)
-				}
-				migrated.Close()
-			} else if err == nil {
-				migrated.Close()
-				t.Fatal("legacy ownership overwritten")
-			}
-			backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-			if err != nil || len(backups) != 1 {
-				t.Fatal("missing pre-migration backup", err)
-			}
-			for _, path := range []string{backups[0], filepath.Join(root, "state.sqlite")} {
-				db, err := sql.Open("sqlite", databaseURI(path, true))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var version int
-				err = db.QueryRow("PRAGMA user_version").Scan(&version)
-				db.Close()
-				want := 17
-				if path != backups[0] && mode == "empty" {
-					want = SchemaVersion
-				}
-				if err != nil || version != want {
-					t.Fatal("migration changed original or failed rollback", version, err)
-				}
-			}
-		})
 	}
 }
 
