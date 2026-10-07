@@ -48,6 +48,7 @@ pub(crate) struct Attempt {
     previous: String,
     server: String,
     generation: String,
+    device: String,
     last: Option<CredentialAccessResult>,
 }
 
@@ -65,6 +66,34 @@ fn retire_replaced_attempt(
             // resident runtime, which proves the prior child was replaced.
             *retained = None;
         }
+    }
+    Ok(())
+}
+
+fn reconcile_recovered_device(
+    retained: &mut Option<Attempt>,
+    server: &str,
+    generation: &str,
+    previous_device: &str,
+    new_device: &str,
+) -> Result<()> {
+    if let Some(attempt) = retained.as_mut() {
+        if attempt.server != server {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        if attempt.generation != generation {
+            // A connection returned by local recovery proves the live runtime
+            // generation, so the old child can no longer own this attempt.
+            *retained = None;
+            return Ok(());
+        }
+        if attempt.device == new_device {
+            return Ok(());
+        }
+        if attempt.device != previous_device {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        attempt.device = new_device.to_owned();
     }
     Ok(())
 }
@@ -96,6 +125,33 @@ fn validate_result(value: CredentialAccessResult, id: &str) -> Result<Credential
 }
 
 impl Connector {
+    pub(crate) fn reconcile_credential_access_after_registration_recovery(
+        &self,
+        server: &str,
+        generation: &str,
+        previous_device: &str,
+        new_device: &str,
+    ) -> Result<()> {
+        canonical_id(server)?;
+        canonical_id(generation)?;
+        canonical_id(previous_device)?;
+        canonical_id(new_device)?;
+        if previous_device == new_device {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let mut retained = self
+            .credential_access
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?;
+        reconcile_recovered_device(
+            &mut retained,
+            server,
+            generation,
+            previous_device,
+            new_device,
+        )
+    }
+
     // One attempt belongs to the native main process, independently of every
     // renderer/window mount. Repeated Begin with its same ID is an observation,
     // including after an unknown reply; only explicit Retry replaces that ID.
@@ -149,9 +205,11 @@ impl Connector {
             previous: String::new(),
             server: server.to_owned(),
             generation: generation.to_owned(),
+            device: device.clone(),
             last: None,
         });
-        if attempt.server != server || attempt.generation != generation {
+        if attempt.server != server || attempt.generation != generation || attempt.device != device
+        {
             return Err(NativeFailure::InvalidEvidence);
         }
         if action == CredentialAccessAction::Retry {
@@ -227,6 +285,7 @@ mod tests {
             previous: String::new(),
             server: server.clone(),
             generation: original_generation.clone(),
+            device: uuid::Uuid::now_v7().to_string(),
             last: None,
         });
 
@@ -246,6 +305,7 @@ mod tests {
             previous: String::new(),
             server: original_server,
             generation: uuid::Uuid::now_v7().to_string(),
+            device: uuid::Uuid::now_v7().to_string(),
             last: None,
         });
 
@@ -289,6 +349,7 @@ mod tests {
             previous: String::new(),
             server: uuid::Uuid::now_v7().to_string(),
             generation: uuid::Uuid::now_v7().to_string(),
+            device: uuid::Uuid::now_v7().to_string(),
             last: Some(CredentialAccessResult {
                 attempt_id: current_id.clone(),
                 state: CredentialAccessState::Failed,
@@ -299,5 +360,55 @@ mod tests {
         assert!(validate_retry_target(&attempt, Some(&current_id)).is_ok());
         assert!(validate_retry_target(&attempt, Some(&uuid::Uuid::now_v7().to_string())).is_err());
         assert!(validate_retry_target(&attempt, None).is_err());
+    }
+
+    #[test]
+    fn only_authorized_registration_recovery_rebinds_the_paired_device() {
+        let server = uuid::Uuid::now_v7().to_string();
+        let generation = uuid::Uuid::now_v7().to_string();
+        let old_device = uuid::Uuid::now_v7().to_string();
+        let new_device = uuid::Uuid::now_v7().to_string();
+        let unrelated_device = uuid::Uuid::now_v7().to_string();
+        let mut retained = Some(Attempt {
+            id: uuid::Uuid::now_v7().to_string(),
+            previous: String::new(),
+            server: server.clone(),
+            generation: generation.clone(),
+            device: old_device.clone(),
+            last: None,
+        });
+
+        assert!(
+            reconcile_recovered_device(
+                &mut retained,
+                &server,
+                &generation,
+                &old_device,
+                &new_device
+            )
+            .is_ok()
+        );
+        assert_eq!(retained.as_ref().unwrap().device, new_device);
+        assert!(
+            reconcile_recovered_device(
+                &mut retained,
+                &server,
+                &generation,
+                &old_device,
+                &new_device
+            )
+            .is_ok()
+        );
+        assert!(
+            reconcile_recovered_device(
+                &mut retained,
+                &server,
+                &generation,
+                &old_device,
+                &unrelated_device
+            )
+            .is_err()
+        );
+        assert_eq!(retained.as_ref().unwrap().device, new_device);
     }
 }

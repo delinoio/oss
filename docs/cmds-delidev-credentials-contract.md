@@ -98,6 +98,12 @@ secret buffer is cleared, including on failure. No provider request,
 account-health write, revision or receipt change is permitted. Access success
 proves decryptability only, not provider readiness.
 
+The attempt remains bound to its original paired client. The resident server
+may accept the same retained attempt from a replacement client only after that
+client authenticates and the original paired client is confirmed revoked.
+Observation preserves the in-flight result; a new Keychain check still requires
+an explicit Retry after a confirmed failure.
+
 Repeated observation reuses the original attempt, including unknown replies.
 Terminal failures require an explicit Retry that names the exact failed attempt
 shown in the invoking window; native code rejects a stale failure if another

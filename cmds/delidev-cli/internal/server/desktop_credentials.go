@@ -106,7 +106,14 @@ func (c *DesktopCredentialAccess) Handle(ctx context.Context, action DesktopCred
 		return DesktopCredentialResult{}, err
 	}
 	if c.actor != "" && c.actor != device {
-		return DesktopCredentialResult{}, subscriptionDenied()
+		sameAttempt := attempt == c.result.AttemptID && c.result.AttemptID != ""
+		explicitRetry := action == DesktopCredentialRetry && previous == c.result.AttemptID && c.result.State == DesktopCredentialFailed
+		if (!sameAttempt && !explicitRetry) || desktopCredentialPreviousActorRevoked(ctx, c.service, c.actor) != nil {
+			return DesktopCredentialResult{}, subscriptionDenied()
+		}
+		// Only the authenticated replacement client can continue the exact
+		// retained attempt after the original paired client is confirmed revoked.
+		c.actor = device
 	}
 	if c.result.AttemptID == attempt {
 		if action == DesktopCredentialSkip {
@@ -161,7 +168,12 @@ func (c *DesktopCredentialAccess) Handle(ctx context.Context, action DesktopCred
 	go func() {
 		defer close(done)
 		defer cancel()
-		err := service.checkDesktopCredentials(run, actor)
+		currentActor := func() domain.Principal {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			return domain.Principal{Type: domain.ClientDevice, DeviceID: c.actor}
+		}
+		err := service.checkDesktopCredentials(run, currentActor)
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if c.result.AttemptID != attempt || c.result.State == DesktopCredentialSkipped {
@@ -198,7 +210,21 @@ func desktopCredentialIssue(err error) DesktopCredentialIssue {
 	}
 }
 
-func (s *Service) checkDesktopCredentials(ctx context.Context, actor domain.Principal) error {
+func desktopCredentialPreviousActorRevoked(ctx context.Context, s *Service, id domain.ID) error {
+	return s.Store.Read(ctx, func(tx *store.Tx) error {
+		row, err := tx.Get(domain.DeviceKind, id)
+		if err != nil {
+			return subscriptionDenied()
+		}
+		device, err := store.Decode[domain.Device](row)
+		if err != nil || device.Type != domain.ClientDevice || device.MachineID != "" || !device.Revoked {
+			return subscriptionDenied()
+		}
+		return nil
+	})
+}
+
+func (s *Service) checkDesktopCredentials(ctx context.Context, actor func() domain.Principal) error {
 	filter := store.Filter{Kind: domain.AccountKind, AccountType: domain.APIAccount, Limit: store.MaxPage}
 	for {
 		rows, more, err := s.Store.ListPage(ctx, filter)
@@ -220,7 +246,7 @@ func (s *Service) checkDesktopCredentials(ctx context.Context, actor domain.Prin
 	}
 }
 
-func (s *Service) checkDesktopCredential(ctx context.Context, actor domain.Principal, id domain.ID) error {
+func (s *Service) checkDesktopCredential(ctx context.Context, actor func() domain.Principal, id domain.ID) error {
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return err
@@ -228,7 +254,7 @@ func (s *Service) checkDesktopCredential(ctx context.Context, actor domain.Princ
 	defer unlock()
 	var ref credentials.Ref
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
-		if err := subscriptionActorValid(tx, actor); err != nil {
+		if err := subscriptionActorValid(tx, actor()); err != nil {
 			return err
 		}
 		row, err := tx.Get(domain.AccountKind, id)
@@ -303,5 +329,5 @@ func (s *Service) checkDesktopCredential(ctx context.Context, actor domain.Princ
 	}
 	// Revocation/cancellation while a synchronous native prompt was open
 	// cannot turn its eventual approval into current readiness evidence.
-	return errors.Join(ctx.Err(), s.Store.Read(ctx, func(tx *store.Tx) error { return subscriptionActorValid(tx, actor) }))
+	return errors.Join(ctx.Err(), s.Store.Read(ctx, func(tx *store.Tx) error { return subscriptionActorValid(tx, actor()) }))
 }

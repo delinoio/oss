@@ -85,7 +85,18 @@ impl Connector {
             }
             // Reinspect the fixed active files after Go's durable publication.
             // No owner token, candidate path or argv selector crosses this API.
-            self.read_local_connection(metadata)
+            let connection = self.read_local_connection(metadata)?;
+            let generation = connection
+                .runtime_generation
+                .as_deref()
+                .ok_or(NativeFailure::InvalidEvidence)?;
+            self.reconcile_credential_access_after_registration_recovery(
+                &connection.server_id,
+                generation,
+                device,
+                &connection.device_id,
+            )?;
+            Ok(connection)
         })();
         match &result {
             Ok(_) => tracing::info!(

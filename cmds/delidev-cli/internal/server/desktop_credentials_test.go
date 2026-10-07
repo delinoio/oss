@@ -201,6 +201,57 @@ func TestDesktopCredentialsFailureRequiresExplicitNewAttempt(t *testing.T) {
 	}
 }
 
+func TestDesktopCredentialsRebindAfterAuthorizedLocalRegistrationRecovery(t *testing.T) {
+	f := newOAuthFixture(t)
+	desktopAPI(t, f, domain.BearerAuth, true)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	spy := &desktopReadSecrets{accountSecrets: f.vault, read: func(context.Context, credentials.Ref) error {
+		once.Do(func() { close(entered) })
+		<-release
+		return nil
+	}}
+	f.s.accountSecrets = spy
+	c, originalClient, attempt := desktopAccess(t, f)
+	if _, err := c.Handle(f.ctx, DesktopCredentialBegin, attempt, "", originalClient); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup read did not reach the protected credential")
+	}
+	replacementClient := desktopClient(t, f)
+	if _, err := c.Handle(f.ctx, DesktopCredentialStatus, attempt, "", replacementClient); err == nil {
+		t.Fatal("active original client allowed an unrelated device to rebind the attempt")
+	}
+	_, err := f.s.Store.Mutate(f.ctx, domain.NewID(), "fixture-revoke-original-client", originalClient, func(tx *store.Tx) (any, error) {
+		record, err := tx.Get(domain.DeviceKind, originalClient)
+		if err != nil {
+			return nil, err
+		}
+		device, err := store.Decode[domain.Device](record)
+		if err != nil {
+			return nil, err
+		}
+		device.Revoked = true
+		return tx.Put(domain.DeviceKind, originalClient, record.Revision, "", "", device)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := c.Handle(f.ctx, DesktopCredentialStatus, attempt, "", replacementClient); err != nil || got.State != DesktopCredentialChecking {
+		t.Fatalf("authorized replacement could not observe the original in-flight attempt: %+v %v", got, err)
+	}
+	close(release)
+	if got := waitDesktopAccess(t, c); got.State != DesktopCredentialSucceeded {
+		t.Fatalf("rebound attempt: %+v", got)
+	}
+	if len(spy.reads) != 1 {
+		t.Fatal("registration recovery opened another Keychain read")
+	}
+}
+
 func TestDesktopCredentialsSkipStopsFurtherReadsAndCloseJoinsPrompt(t *testing.T) {
 	f := newOAuthFixture(t)
 	desktopAPI(t, f, domain.BearerAuth, true)

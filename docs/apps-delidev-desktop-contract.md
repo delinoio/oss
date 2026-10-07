@@ -5,10 +5,14 @@
 Each fresh macOS app launch shows the Keychain access notice and starts checking
 automatically after authenticated local connection. The native connector owns
 the attempt across renderer remounts, polling, window reopening and sibling
-local windows. Only trusted local product webviews receive the dedicated
-`credential-access` permission. `desktop_credential_access` accepts closed
-Observe/Retry/Skip actions and the original server/runtime generation; no
-renderer account, key, path, endpoint or remote selector is accepted. Native
+local windows and binds it to the paired client. Only trusted local product
+webviews receive the dedicated `credential-access` permission.
+`desktop_credential_access` accepts closed Observe/Retry/Skip actions and the
+original server/runtime generation; no renderer account, key, path, endpoint or
+remote selector is accepted. After successful explicit local-registration
+recovery on the same server, native code rebinds the retained attempt to the
+replacement client only when Go confirms the old client is revoked. The attempt
+and its current result survive without an automatic Keychain retry. Native
 window authority is rechecked before dispatch and before delivering a result.
 The Go resident host uses its original in-process server and reads through the
 existing vault scope without initializing a missing scope, lock or pin. Follow
