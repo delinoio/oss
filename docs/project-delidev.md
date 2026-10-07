@@ -1,12 +1,6 @@
 # Project: DeliDev
 
-The approved inline-Worker-model replacement composes the current-only DB 32 /
-protocol 2 reset. Its complete main-first declarations and ownership are defined
-in the catalog, structure, storage, desktop, protocol, usage, transfer and
-subagent contracts. Independent Models and persistent API catalogs are removed
-only with complete activation. Earlier DB retention is waived by the owner;
-explicit reset does not convert history or grant native/credential cleanup.
-Earlier backups remain unsupported.
+API account protocol selection reserves ProviderInventory capability 7 and its complete profile/filter declarations under issue #964 before implementation. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-protocol-reservations) owns this prerequisite; it adds no runtime or database authority.
 
 Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
 
@@ -242,3 +236,11 @@ Claude Code account profile on the selected Runner Device; server metadata does
 not grant credentials, cross-device execution or cleanup authority. The
 reservation prerequisite activates no support and adds no migration. Follow
 [the subscription contract](cmds-delidev-subscription-contract.md#planned-native-claude-subscriptions).
+
+The approved inline-Worker-model replacement composes the current-only DB 32 /
+protocol 2 reset. Its complete main-first declarations and ownership are defined
+in the catalog, structure, storage, desktop, protocol, usage, transfer and
+subagent contracts. Independent Models and persistent API catalogs are removed
+only with complete activation. Earlier DB retention is waived by the owner;
+explicit reset does not convert history or grant native/credential cleanup.
+Earlier backups remain unsupported.

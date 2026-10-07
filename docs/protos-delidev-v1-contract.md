@@ -1,5 +1,28 @@
 # DeliDev v1 Connect contract
 
+## API account protocol reservations
+
+Issue #964 reserves ProviderInventory capability `ACCOUNT_API_PROTOCOL_V1 = 7`,
+`ProviderInventoryEntry.api_formats = 10` and the account-list-only
+`ListResourcesRequest.api_protocol = 5`. `ApiProtocol` reserves UNSPECIFIED 0,
+OPENAI_RESPONSES 1, OPENAI_CHAT 2 and ANTHROPIC_MESSAGES 3.
+`ApiAuthentication` reserves UNSPECIFIED 0, BEARER 1, API_KEY 2 and KEYLESS 3.
+`ProviderApiFormat` reserves protocol/endpoint/authentication fields 1–3.
+The complete declaration closure must reach main before dependent implementation.
+Reservations add no active schemas, bindings, capability advertisement, credential
+use, inference authority or database migration.
+
+The planned feature selects one explicit protocol when adding an API key. Custom
+providers declare bounded per-protocol endpoint/authentication profiles. Existing
+accounts retain their original defaults; connected accounts cannot change protocol.
+Disconnect and confirmed protected cleanup precede a changed selection and a new
+connection. Preserve immutable original execution/account ownership, keyless
+cleanup proofs and native uncertainty. API-specific resource schema 3 and portable
+configuration version 4 protect explicit selections from older-client writes while
+retaining legacy reads. Follow the catalog, account and proxy contracts.
+
+
+
 ## Direct execution startup reservation
 
 The [startup contract](cmds-delidev-execution-startup-contract.md) reserves System
