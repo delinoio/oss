@@ -87,7 +87,7 @@ it("runs diagnostics only while selected and distinguishes owner evidence from c
 function expandedReport() {
   return { schema_version: 2, version: "0.1.0", observed_at: "2026-09-25T12:34:56Z", database: "ready", credential_store: "owner-credential-ready", inference_probes: false, protocol_version: 1, database_schema_version: 13, os: "linux", architecture: "amd64", storage: { result: { state: "failed", code: "permission_denied", guidance: "Inspect storage permissions." }, logical_database_bytes: "9007199254740993", volume_available_bytes: "0", resources: [{ kind: "session", count: "42" }] }, machines: [{ machine_id: newRequestId(), name: "Retained Worker", os: "darwin", architecture: "arm64", version: "0.1.0", active_stream: false, disabled: false, last_seen: "2026-09-25T01:00:00Z", installations: [{ harness: "codex", state: "detected", version: "0.151.0", capabilities: [], protocol_verified: false, protocol_state: "failed" }] }], more_machines: false, credentials: [{ account_id: newRequestId(), connection_id: newRequestId(), result: { state: "superseded", code: "conflict", guidance: "Refresh for the current connection." } }], more_credentials: true };
 }
-it("shows partial storage, exact large counters and superseded credential observations without health inference", async () => {
+it("shows partial server storage and large counters without duplicating account observations", async () => {
   const value = fixture();
   value.doctor.mockResolvedValue({ reportJson: encode(expandedReport()) });
   render(value.view(<Doctor active />));
@@ -98,8 +98,8 @@ it("shows partial storage, exact large counters and superseded credential observ
   expect(screen.getByText("session: 42")).toBeTruthy();
   expect(screen.getByText(/No active stream observed/)).toBeTruthy();
   expect(screen.getByText(/Handshake failed/)).toBeTruthy();
-  expect(screen.getByText("Connection changed during inspection")).toBeTruthy();
-  expect(screen.getByText(/Only the first 50 accounts are included/)).toBeTruthy();
+  expect(screen.queryByText("Connection changed during inspection")).toBeNull();
+  expect(screen.queryByText(/Only the first 50 accounts are included/)).toBeNull();
   expect(screen.queryByText("Saved credential readable")).toBeNull();
   expect(value.revoke).not.toHaveBeenCalled();
 });

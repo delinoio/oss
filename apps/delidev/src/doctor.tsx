@@ -63,13 +63,6 @@ function Workers({ report, recordKey }: { report: Document; recordKey: RecordKey
     </article>;
   })}</div> : <p>{copy("doctor.noWorkersAreRegistered_9b7693")}</p> : <p>{copy("doctor.workerObservationsAreUnavailable_ef7c26")}</p>}</section>;
 }
-function Credentials({ report, recordKey }: { report: Document; recordKey: RecordKey }) {
-  useLocale();
-  return <section className="diagnostics-panel diagnostics-wide" aria-label={copy("doctor.protectedCredentialDiagnostics_8f870f")}><h2>{copy("doctor.protectedAccountStorage_fd07a5")}</h2><p>{copy("doctor.onlyEachCurrentAccountConnectionS_aa0ac9")}</p>{completeness(report.more_credentials, "accounts")}{Array.isArray(report.credentials) ? report.credentials.length ? <div className="diagnostics-records">{report.credentials.slice(0, 50).map((entry) => {
-    const credential = object(entry), account = text(credential.account_id), connection = text(credential.connection_id);
-    return <article className="diagnostics-record" key={recordKey(credential, account && connection ? JSON.stringify([account, connection]) : "")}><h3><LocalizedText id="doctor.account_e07497" components={{ s0: <>{account || copy("doctor.extra.b764cdc0eab7")}</> }} /></h3>{observation(credential.result, copy("doctor.extra.0abb2cc2f20e"))}{connection ? <Disclosure title={copy("doctor.connectionIdentity_527d26")}><p><LocalizedText id="doctor.connection_654eff" components={{ s0: <>{connection}</> }} /></p></Disclosure> : null}</article>;
-  })}</div> : <p>{copy("doctor.noAccountsAreConfiguredCredentialStore_7a1e48")}</p> : <p>{copy("doctor.protectedStorageObservationsAreUnavailable_d6d0ba")}</p>}</section>;
-}
 function Report({ report }: { report: Document }) {
   useLocale();
   // Missing identities get response-object keys, so a replacement cannot inherit
@@ -91,12 +84,12 @@ function Report({ report }: { report: Document }) {
     </div>
     <div className="diagnostics-sections">
       <section className="diagnostics-panel" aria-label={copy("doctor.serverInformation_078792")}><h2>{copy("doctor.serverInformation_078792")}</h2><dl className="diagnostics-facts"><dt>{copy("doctor.serverVersion_3f34bb")}</dt><dd>{text(report.version) || copy("doctor.extra.b764cdc0eab7")}</dd>{expanded ? <><dt>{copy("doctor.serverPlatform_9d0c00")}</dt><dd>{text(report.os) || copy("doctor.extra.b764cdc0eab7")} / {text(report.architecture) || copy("doctor.extra.b764cdc0eab7")}</dd><dt>{copy("doctor.protocolVersion_cdd735")}</dt><dd>{Number.isSafeInteger(report.protocol_version) && Number(report.protocol_version) > 0 ? Number(report.protocol_version) : copy("doctor.unknown_b764cd")}</dd><dt>{copy("doctor.databaseSchema_bf3efc")}</dt><dd>{Number.isSafeInteger(report.database_schema_version) && Number(report.database_schema_version) > 0 ? Number(report.database_schema_version) : copy("doctor.unknown_b764cd")}</dd></> : null}<dt>{copy("doctor.boundEndpoint_5501d6")}</dt><dd>{text(report.listener) || copy("doctor.extra.b764cdc0eab7")}</dd></dl><p>{ownerCaveat()}</p><Disclosure title={copy("doctor.serverIdentity_fa4fb0")}><p>{text(report.server_id) || copy("doctor.extra.b764cdc0eab7")}</p></Disclosure></section>
-      {expanded ? <><Storage value={object(report.storage)} /><Workers report={report} recordKey={recordKey} /><Credentials report={report} recordKey={recordKey} /></> : <p>{copy("doctor.thisServerReturnedALegacyReport_0a90d0")}</p>}
+      {expanded ? <><Storage value={object(report.storage)} /><Workers report={report} recordKey={recordKey} /></> : <p>{copy("doctor.thisServerReturnedALegacyReport_0a90d0")}</p>}
     </div>
   </>;
 }
 export enum DoctorTitle { Diagnostics = "Diagnostics", ConnectionDiagnostics = "Connection & diagnostics" }
-export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics, connectionControls }: { active: boolean; visible?: boolean; title?: DoctorTitle; connectionControls?: ReactNode }) {
+export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics, connectionControls, openSubscriptions, openApiKeys }: { active: boolean; visible?: boolean; title?: DoctorTitle; connectionControls?: ReactNode; openSubscriptions?: () => void; openApiKeys?: () => void }) {
   useLocale();
   const result = useQuery(SystemQuery.getDoctor, {}, { enabled: active });
   const [opening, setOpening] = useState(0);
@@ -124,6 +117,7 @@ export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics
     {connectionControls ? <section aria-label={copy("doctor.connection_639a40")}><h2>{copy("doctor.connection_639a40")}</h2>{connectionControls}</section> : null}
     <Problem error={result.error} />{result.isFetching && active ? <p role="status">{copy("doctor.readingServerDiagnostics_f724cd")}</p> : null}{result.error && report ? <p role="alert">{copy("doctor.refreshFailedTheReportBelowIs_f8d24e")}</p> : null}
     {report ? <Report key={JSON.stringify([opening, text(report.server_id) || unknownServer.current.key])} report={report} /> : result.data ? <p role="alert">{unsupported ? copy("doctor.thisDiagnosticReportVersionIsUnsupported_46df0e") : copy("doctor.theDiagnosticReportIsUnavailableOr_c9eb5b")}</p> : null}
+    <section className="diagnostics-panel" aria-label={copy("account-storage.heading")}><h2>{copy("account-storage.heading")}</h2><p>{copy("account-storage.destination")}</p>{openSubscriptions || openApiKeys ? <div className="actions">{openSubscriptions ? <button type="button" onClick={openSubscriptions}>{copy("account-storage.subscriptions")}</button> : null}{openApiKeys ? <button type="button" onClick={openApiKeys}>{copy("account-storage.apiKeys")}</button> : null}</div> : null}</section>
     <p className="diagnostics-guidance"><LocalizedText id="doctor.useAiAccountsForValidationAnd_7713b8" components={{ s0: <>{ownerCaveat()}</> }} /></p>
   </section>;
 }
