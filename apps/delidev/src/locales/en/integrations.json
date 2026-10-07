@@ -81,5 +81,8 @@
   "integrations.extra.3471e3c6191a": "Unsupported token type",
   "integrations.extra.6ae50316d97d": "No owner restriction declared",
   "integrations.extra.59b5da9c12c7": "Tokens are stored in the selected server's OS credential store. Saved tokens cannot be displayed.",
-  "integrations.extra.3aeb00246038": "github.com"
+  "integrations.extra.3aeb00246038": "github.com",
+  "integrations.checkingGitHubSupport": "Checking GitHub connection support…",
+  "integrations.cancel": "Cancel",
+  "integrations.currentGitHubSupportRequired": "Update the selected server to verify a token before creating a profile."
 }

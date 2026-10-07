@@ -42,6 +42,17 @@ function fixture(revision: bigint, removal?: string) {
   return { id, initial, disconnect, status, mount, confirmSecureDeletion: () => { secureDeletionConfirmed = true; }, get current() { return current; } };
 }
 
+it("rejects provider-bound subscription accounts before account requests", () => {
+  const value = fixture(1n);
+  const retired = create(ResourceSchema, { ...value.initial, documentJson: encode({ alias: "Retired subscription", type: "subscription", provider_id: newRequestId() }) });
+  const view = value.mount(retired);
+  expect(screen.getByRole("alert").textContent).toContain("Unsupported account configuration");
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  expect(value.status).not.toHaveBeenCalled();
+  expect(value.disconnect).not.toHaveBeenCalled();
+  view.unmount();
+});
+
 it("reconstructs a high-revision cleanup request after vault failure and a fresh mount", async () => {
   const revision = 9007199254740993n, value = fixture(revision);
   const first = value.mount();

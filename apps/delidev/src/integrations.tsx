@@ -83,14 +83,15 @@ function IntegrationEditor({ initial, active, close }: { initial?: Resource; act
   </form>;
 }
 function IntegrationCreation({ active, close, connected }: { active: boolean; close: () => void; connected: (profile: Resource, retry?: GitHubTokenRetry, problem?: Document) => void }) {
+  useLocale();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active, retry: false });
   const negotiated = useRef<boolean | undefined>(undefined);
   const capabilities = status.data?.capabilities;
   const supported = !status.error && capabilities?.includes(SystemCapability.GITHUB_TOKEN_ONBOARDING_V1) && new Set(capabilities).size === capabilities.length && capabilities.every(value => value !== SystemCapability.UNSPECIFIED && Object.values(SystemCapability).includes(value));
   // Retain the negotiated state across inactive query states.
   if (!status.isPending) negotiated.current = Boolean(supported);
-  if (negotiated.current === undefined) return <><SettingsLoading label="Checking GitHub connection support…" /><button onClick={close}>Cancel</button></>;
-  return negotiated.current ? <GitHubOnboarding active={active} close={close} connected={connected} /> : <><p role="status">Update the selected server to verify a token before creating a profile.</p><button onClick={close}>Cancel</button></>;
+  if (negotiated.current === undefined) return <><SettingsLoading label={copy("integrations.checkingGitHubSupport")} /><button onClick={close}>{copy("integrations.cancel")}</button></>;
+  return negotiated.current ? <GitHubOnboarding active={active} close={close} connected={connected} /> : <><p role="status">{copy("integrations.currentGitHubSupportRequired")}</p><button onClick={close}>{copy("integrations.cancel")}</button></>;
 }
 function IntegrationConnection({ initial, active, close, initialRetry, initialProblem }: { initial: Resource; active: boolean; close: () => void; initialRetry?: GitHubTokenRetry; initialProblem?: Document }) {
   useLocale();
