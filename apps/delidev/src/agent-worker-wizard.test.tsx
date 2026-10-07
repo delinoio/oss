@@ -1069,3 +1069,20 @@ it("translates retained routed account status after its independent read fails",
   expect(value.get).toHaveBeenCalledTimes(reads); expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
   await act(() => i18n.changeLanguage("en"));
 });
+
+
+it("seeds routed account display metadata without replacing failed independent proof", async () => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
+  value.get.mockImplementation(request => { if (request.id === value.subscription.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
+  await screen.findByRole("alert");
+  const selected = screen.getByRole("checkbox", { name: "Select ChatGPT account" });
+  expect(selected).toHaveProperty("checked", true);
+  expect(selected.closest("label")!.textContent).toContain("ChatGPT accountConnected · Quota unknown");
+  next();
+  expect(screen.queryByRole("combobox", { name: "Model for ChatGPT subscription" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
