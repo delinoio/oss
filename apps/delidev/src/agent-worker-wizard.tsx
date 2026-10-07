@@ -183,8 +183,12 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   }
   const catalogDate = knownValid ? new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${known.data!.updatedAt}T00:00:00Z`)) : "";
   useLayoutEffect(() => {
-    if (active && popup && highlight >= 0) (suggestionList.current?.children.item(highlight) as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
-  }, [active, popup, highlight, models.data, known.data]);
+    if (active && popup && highlight >= 0) {
+      const list = suggestionList.current;
+      const option = list?.ownerDocument.getElementById(`${listID}-${highlight}`);
+      if (option && list?.contains(option)) option.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [active, popup, highlight, listID, models.data, known.data]);
   const refreshAccount = selectedRows.find(row => Boolean(document(row).connection) && document(row).enabled !== false && !document(row).removal);
   const providerEntries = providers.rows.filter(entry => entry.enabled && entry.providerId);
   const advance = () => { if (validate(step)) { setStep(step + 1); setFocusField(""); setProblem(""); } };

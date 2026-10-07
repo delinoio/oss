@@ -434,7 +434,7 @@ try {
       await page.getByRole("button", { name: l("Back"), exact: true }).click();
       assert(await page.getByRole("checkbox", { name: /^Personal API/ }).isChecked());
       assert(await page.getByRole("checkbox", { name: /^Team API/ }).isChecked());
-      await page.getByRole("button", { name: l("Cancel"), exact: true }).click();
+      await page.locator(".settings-task-close").click();
       formsChecked += 4;
       if (language === "en") {
         await page.goto(`${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=en`);
@@ -516,7 +516,7 @@ try {
     await page.goto(`${origin}/?theme=dark&language=${language}`); await page.getByRole("button", { name: l("Settings"), exact: true }).click();
     for (const category of categories) { await select(category); if (category === "Git") await checkGit(); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
     await select("Agent Workers"); await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
-    await checkWizard(); await page.getByRole("button", { name: l("Cancel"), exact: true }).click();
+    await checkWizard(); await page.locator(".settings-task-close").click();
     }
     if (language === "en") for (const [width,height] of viewports) {
       await page.setViewportSize({ width: width / 2, height: height / 2 });
