@@ -47,7 +47,7 @@ export function Subagents({ sessionId, revision }: { sessionId: string; revision
   const query = useConversationPages(EntityKind.SUBAGENT, sessionId, supported, 50, validate);
   // Native events invalidate only this read. No observation can issue a child
   // input, resume, interruption, retry, or mutation.
-  useEffect(() => { if (supported) void query.refetch(); }, [revision, supported, query.refetch]);
+  useEffect(() => { if (supported) void query.refresh(); }, [revision, supported, query.refresh]);
   const rows = useMemo(() => {
     if (!query.loaded) return undefined;
     // The accepted payload window can contain several independently bounded
