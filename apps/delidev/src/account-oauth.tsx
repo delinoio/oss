@@ -252,6 +252,12 @@ export function useAccountOAuth() {
     catch { failure(value, ownedMessage("account-oauth.extra.01b9ed071310")); }
     finally { value.busy = false; }
   };
+  const selectProtocol = (protocol: APIFormatId | "") => {
+    const value = pending.current;
+    if (!value || !current(value) || value.serverStartDispatched || value.busy) return;
+    value.protocol = protocol || undefined;
+    setView(previous => previous ? { ...previous } : previous);
+  };
   const continueInBrowser = (project: string, protocol: APIFormatId | "") => {
     const value = pending.current;
     if (!value || !current(value) || value.serverStartDispatched || value.busy || value.quotaProject) return;
@@ -265,7 +271,7 @@ export function useAccountOAuth() {
     }
     setView({ provider: value.provider, stage: Stage.Starting }); void startOriginal(value);
   };
-  return { view, selectedProtocol: pending.current?.protocol, continueInBrowser, available: Boolean(native), supports, start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
+  return { view, selectedProtocol: pending.current?.protocol, selectProtocol, continueInBrowser, available: Boolean(native), supports, start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
 }
 export const useOpenRouterOAuth = useAccountOAuth;
 export type AccountOAuthFlow = ReturnType<typeof useAccountOAuth>;
@@ -286,7 +292,6 @@ export function AccountOAuth({ flow, back, manual, done, metadataReady = true, m
   const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
   const [project, setProject] = useState("");
-  const [protocolChoice, setProtocol] = useState<APIFormatId | "">("");
   useEffect(() => { if (visible) heading.current?.focus(); }, [view?.provider.providerId, visible]);
   const connected = view?.stage === Stage.Connected ? view.account : undefined;
   useEffect(() => {
@@ -302,7 +307,7 @@ export function AccountOAuth({ flow, back, manual, done, metadataReady = true, m
   const gemini = profileOf(view.provider) === AccountOAuthProfile.GoogleGemini;
   const selecting = view.provider.oauthFormatSelectingAvailable;
   const formats = selecting ? oauthFormats(view.provider) : (view.provider.apiFormats ?? providerAPIFormats(document(view.provider.provider))).filter(profile => profile.protocol === document(view.provider.provider).protocol);
-  const protocol = protocolChoice || (formats.length === 1 ? formats[0].protocol : "");
+  const protocol = flow.selectedProtocol || (formats.length === 1 ? formats[0].protocol : "");
   const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());
   return <section className="api-keys-view account-oauth-card" aria-labelledby="account-oauth-title">
@@ -310,7 +315,7 @@ export function AccountOAuth({ flow, back, manual, done, metadataReady = true, m
     <p className="account-oauth-subheading">{configuring ? copy(formats.length === 1 ? "account-oauth.confirmFormat" : "account-oauth.chooseFormat") : copy("account-oauth.completeSignInInYourBrowser_64e524")}</p>
     {configuring ? <>
       {gemini ? <p>{copy("account-oauth.useGoogleCloudProjectToPay_2b7c11")}</p> : null}
-      <APIFormatChoice profiles={formats} value={protocol} disabled={!metadataReady} onChange={setProtocol} />
+      <APIFormatChoice profiles={formats} value={protocol} disabled={!metadataReady} onChange={flow.selectProtocol} />
       {!selecting ? <p>{copy("account-oauth.legacyFormat")}</p> : null}
       {formats.length === 0 ? <p role="alert">{copy("account-oauth.formatUnavailable")}</p> : null}
     </> : <p>{copy("account-oauth.approveAccessOnProviderDelidevWill_7f1c4a", { v0: providerServiceName(view.provider) })}</p>}
