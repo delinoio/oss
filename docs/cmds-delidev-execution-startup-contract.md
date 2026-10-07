@@ -195,6 +195,10 @@ and subscription contracts, the project index and applicable scoped/root AGENTS.
 Preserve historical declaration numbers and evidence boundaries. Update the
 runtime contracts only with the complete implementation and its actual results.
 
+## Desktop inline remediation
+
+The conversation presents the original closed startup classification, safe cause and supported next actions beside the failure. Optional metadata disclosures do not hide the cause or make diagnostics required. Exact Runner setup presents the retained original machine controller in the owning task, without automatic inspection or changed selection. Session recovery exposes the original SessionTools confirmation and retained request through the same conversation; narrow layouts may open its original Info drawer from a local recovery action. Presentation moves neither cancel nor recreate owned requests. Retry continues to require the original explicit positive no-send and confirmed cleanup proof; malformed or uncertain evidence remains blocked pending original recovery.
+
 ## References
 
 - [DeliDev project](project-delidev.md)
