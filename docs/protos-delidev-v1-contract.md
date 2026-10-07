@@ -1,5 +1,39 @@
 # DeliDev v1 Connect contract
 
+## Failed subscription cleanup reservations
+
+Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the
+`CleanupFailedSubscriptions` and `GetFailedSubscriptionCleanup` request/response
+messages, `FailedSubscriptionCleanupJob` and `FailedSubscriptionCleanupResult`,
+and the closed cleanup state/outcome/reason enums in `allocations.json`.
+Establish this complete reservation on main before dependent implementation.
+The request reserves the original request ID; status reserves original job ID
+and pagination token. Responses reserve the job, original receipt identity,
+replay flag and bounded result pagination. Job metadata reserves ID/revision,
+state, total/processed/deleted/retained counts and safe problem code. Results
+reserve account ID/alias, outcome, reason and safe problem code.
+
+The planned button deliberately starts one server-wide cleanup without another
+confirmation. Only failed, canceled, expired, unsupported or interrupted initial
+ChatGPT server logins without independent authentication or Worker ownership are
+candidates. Original native and protected-credential cleanup, fresh revisions,
+complete retained-reference checks and deletion receipts remain authoritative.
+Ordinary disconnected accounts and active logins remain outside the batch.
+Reservations introduce no active schemas, generated bindings, capability
+advertisement, native cleanup, configuration deletion or database migration.
+
+## Grok Build subscription reservations
+
+The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
+reserves System login 39, System execution 40, Worker managed execution 21 and
+progress diagnostic field 10 under issue #964. The ledger also owns the new
+GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Establish
+the complete closure on main before active schemas, generated bindings or runtime
+support. Codex field 7 and existing System 30/35/36/37 and Worker 19 ownership
+remain unchanged. Reservations activate nothing and add no migration.
+
+
+
 ## Native Claude subscription allocations
 
 PR #1612 established System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
@@ -34,17 +68,21 @@ installation and empty-profile cleanup. Native credentials remain on the
 selected Runner. No database migration is added. Follow the subscription and
 structure contracts; the main reservation alone granted no support.
 
-## Agent Worker source-route reservations
+## Agent Worker account source routes
 
-Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
-`SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
-`AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
-is exclusive with the legacy singular model. Establish both ledger reservations
-on main before activation. Capability 35 keeps its known-subscription-model
-ownership. No active schema, generated output, advertisement or migration is
-introduced by this prerequisite.
-
-
+PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5` on main before implementation. The
+active repeated field reuses `AgentWorkerModelSelection`, aligned with ordered
+Agent schema-3 routes and exclusive with the legacy singular model. The existing
+mutation/revision/receipt response remains unchanged. Capability 36 advertises
+this complete configuration extension; capability 35 retains its separate known
+subscription catalog reservation. Schema 1/2 APIs and accountless CLI writes
+remain compatible; current clients retain schema 3 even with one remaining source.
+Resource reads expose schema 3 only for ordered-source Agents. Older clients must
+treat that family as unsupported and cannot overwrite it through legacy saves.
+No Worker protocol shape or database migration changes. The selected-source native
+configuration remains unchanged; complete source decisions are additive server-owned
+initial-execution JSON under the [catalog contract](cmds-delidev-catalog-contract.md).
 
 
 ## Known subscription model allocation and activation
@@ -84,6 +122,14 @@ database migration. Existing profile/revision-bound token forms remain unchanged
 ### Activated onboarding boundary
 
 After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
+
+Fine-grained `PrepareGitHubTokenForm` with selected-repositories access permits
+an empty `resource_owner`, echoes it unchanged and omits `target_name` from the
+canonical URL. Explicit valid owners remain supported. This draft-only allowance
+does not change saved-profile owner requirements or revision-bound form reads.
+The desktop's Classic shortcut uses public-repositories access without scopes;
+existing explicit private-repositories requests retain their separate behavior.
+No protocol field, enum, capability or migration is added.
 
 ## Agent Worker wizard
 

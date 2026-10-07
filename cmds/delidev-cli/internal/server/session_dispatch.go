@@ -35,15 +35,41 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 		if err != nil {
 			return "", err
 		}
-		modelRecord, err := tx.Get(domain.ModelKind, agent.ModelID)
-		if err != nil {
-			return "", err
+		if len(agent.Routes) > 0 {
+			var project *domain.Project
+			if session.ProjectID != "" {
+				record, err := tx.Get(domain.ProjectKind, session.ProjectID)
+				if err != nil {
+					return "", err
+				}
+				value, err := store.Decode[domain.Project](record)
+				if err != nil {
+					return "", err
+				}
+				project = &value
+			}
+			// The first-execution transaction resolves again with the real server policy.
+			// This read guards provider authority without consuming routing state.
+			policy, err := tx.DefaultRoutingPolicy()
+			if err != nil {
+				return "", err
+			}
+			preview, err := tx.PreviewSourceRouting(session.AgentID, agent, project, policy)
+			if err != nil {
+				return "", err
+			}
+			providerID, subscriptionService = preview.Model.ProviderID, preview.Model.SubscriptionService
+		} else {
+			modelRecord, err := tx.Get(domain.ModelKind, agent.ModelID)
+			if err != nil {
+				return "", err
+			}
+			model, err := store.Decode[domain.Model](modelRecord)
+			if err != nil {
+				return "", err
+			}
+			providerID, subscriptionService = model.ProviderID, model.SubscriptionService
 		}
-		model, err := store.Decode[domain.Model](modelRecord)
-		if err != nil {
-			return "", err
-		}
-		providerID, subscriptionService = model.ProviderID, model.SubscriptionService
 	}
 	if subscriptionService.Valid() && providerID == "" {
 		return "", nil

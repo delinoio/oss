@@ -24,8 +24,19 @@ type GitHubTokenForm struct {
 }
 
 func GitHubTokenFormURL(kind PATKind, owner string, access GitHubTokenAccess) (string, error) {
-	invalid := func() (string, error) {
+	// Saved fine-grained profiles retain their explicit, immutable owner. Only
+	// draft preparation may leave owner selection to GitHub's official form.
+	if kind == FineGrainedPAT && owner == "" {
 		return "", Fail(InvalidArgument, "The token type and repository access selection do not match.", "Use selected repositories with a fine-grained owner, or explicitly choose public/private repositories for a classic token.")
+	}
+	return GitHubDraftTokenFormURL(kind, owner, access)
+}
+
+// GitHubDraftTokenFormURL permits an undeclared draft owner without changing
+// saved-profile validation or granting repository access.
+func GitHubDraftTokenFormURL(kind PATKind, owner string, access GitHubTokenAccess) (string, error) {
+	invalid := func() (string, error) {
+		return "", Fail(InvalidArgument, "The token type and repository access selection do not match.", "Use selected repositories for a fine-grained token, or explicitly choose public/private repositories for a classic token.")
 	}
 	if owner != "" && !GitHubOwner(owner) {
 		return invalid()
@@ -34,13 +45,15 @@ func GitHubTokenFormURL(kind PATKind, owner string, access GitHubTokenAccess) (s
 	path := "/settings/tokens/new"
 	switch kind {
 	case FineGrainedPAT:
-		if access != GitHubSelectedRepositories || !GitHubOwner(owner) {
+		if access != GitHubSelectedRepositories {
 			return invalid()
 		}
 		path = "/settings/personal-access-tokens/new"
 		q.Set("name", "DeliDev read-only")
 		q.Set("description", "Read-only repository inspection")
-		q.Set("target_name", owner)
+		if owner != "" {
+			q.Set("target_name", owner)
+		}
 		q.Set("expires_in", "30")
 		// The verified official form exposes these five permissions, but no
 		// Checks permission or repository-list prefill. Users must explicitly
@@ -96,7 +109,7 @@ func ValidateGitHubPresentationURL(raw string) error {
 		} else if q.Get("scopes") == "repo" {
 			access = GitHubPrivateRepositories
 		}
-		expected, err := GitHubTokenFormURL(kind, owner, access)
+		expected, err := GitHubDraftTokenFormURL(kind, owner, access)
 		if err != nil || raw != expected {
 			return invalid()
 		}
