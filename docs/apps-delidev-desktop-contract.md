@@ -315,6 +315,14 @@ Issue #1137 supersedes the earlier Home server-management disclosure. Outside th
 
 Long names truncate on one line with complete pointer/focus and accessible descriptions. Preserve independent passive execution/archive glyphs and unknown values, title states/reasons, visible focus, keyboard activation and reduced motion. Automatic insertion never moves focus. Keep one responsive drawer/controller lifetime, native focus containment/background inertness, Escape/Close/opener restoration, and 200% reflow. There is no new feature flag, dependency, preference, persisted schema, migration or write authority. Diagnostics contain stable stage/classification only, never names, prompts, cursors, credentials or endpoint/path values. Record component/browser checks and unperformed native CEF/platform acceptance separately in issue #1161, its pull requests and CI runs.
 
+#### Sidebar session actions
+
+Execution glyphs retain their shapes and accessible descriptions. Running uses a separate teal semantic token, success uses green, failure uses red, and stopped/not-started/unknown remain neutral. Archive observations remain independent and neutral. Session rows retain their 32px height. A 28px sibling overflow button reserves its space on every row; it appears on hover, focus and an open menu, and stays visible without hover support.
+
+One sidebar-owned menu reads the original Session ID and authoritative bigint revision without navigating or changing selection/drafts. It offers Stop, Resume (or Retry startup), Fork and Archive/Restore through the existing controllers. Read failure or incomplete evidence blocks controls; budget evidence is read only while the menu is open. Detail and menu share startup/archive eligibility and the connection-owned `control:<id>` retained request lock. Only an explicit same-request retry recovers an uncertain operation. Accepted original acknowledgments survive menu closure and navigation. Restore does not Resume. Stop does not close independent terminals. The connection Fork provider owns its existing form and jobs; sidebar presentation excludes Sidechat.
+
+Opening a menu dismisses the read-only hover card. Arrow keys move through available controls; Escape restores the opener, with a remaining group disclosure fallback after row removal. The popup remains within the viewport and inside the compact drawer's DOM using the manual popover top layer. Theme, localized text, reduced motion and 200% reflow preserve the accessible descriptions and sibling button semantics.
+
 #### Session hover information card
 
 Session rows display one read-only card per sidebar. Its hierarchy is the complete

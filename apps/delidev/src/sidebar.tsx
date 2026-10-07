@@ -1,4 +1,5 @@
 import { SubscriptionRail } from "./subscription-rail";
+import { SessionRowActions, SessionRowActionsProvider, useSessionActionMenuOpen } from "./session-row-actions";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject, type MouseEvent, type ReactNode } from "react";
@@ -130,7 +131,7 @@ function StatusGlyph({ outcome, archive }: { outcome: string; archive: string })
   if (archive === ArchiveStatus.Archiving) archiveGlyph = <svg className="sidebar-status-glyph sidebar-archive-glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 4.5V8l2.5 1.5"/></svg>;
   else if (archive === ArchiveStatus.Archived) archiveGlyph = <svg className="sidebar-status-glyph sidebar-archive-glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2.5 5h11v8h-11zM2 2.5h12v2.5H2zM6 8h4"/></svg>;
   else if (archive !== ArchiveStatus.Active) archiveGlyph = <span className="sidebar-status-unknown sidebar-archive-glyph">?</span>;
-  return <span className="sidebar-statuses" aria-hidden="true">{execution}{archiveGlyph}</span>;
+  return <span className="sidebar-statuses" data-outcome={outcome} aria-hidden="true">{execution}{archiveGlyph}</span>;
 }
 
 function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boolean; open: (id: string) => void }) {
@@ -138,6 +139,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const tooltipId = useId();
   const element = useRef<HTMLButtonElement>(null);
   const hover = useSessionHover(element);
+  const actionMenuOpen = useSessionActionMenuOpen();
   const title = row.name;
   const outcome = row.outcome;
   const archive = row.archive;
@@ -148,13 +150,14 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const titleStateSummary = titlePresentation ? [titleState?.replace(/^Title /, "").replace(/^[a-z]/, (letter) => letter.toUpperCase()), titlePresentation.shortDetail].filter(Boolean).join(" · ") : "";
   const description = copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
   const workspaceIcon = row.workspace === Workspace.Worktree ? "branch" : row.workspace === Workspace.Local ? "computer" : row.workspace === Workspace.GeneralChat ? "chat" : "unknown";
-  return <>
-    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); open(row.id); }}>
+  return <div className="sidebar-session-container">
+    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={actionMenuOpen ? undefined : hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={actionMenuOpen ? undefined : hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); open(row.id); }}>
       <Icon name={workspaceIcon} className="sidebar-workspace-icon" />
       <span className="sidebar-session-title">{title}</span>
       {titleStateSummary ? <span className="sidebar-session-title-state">{titleStateSummary}</span> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
     </button>
+    <SessionRowActions id={row.id} descriptionId={tooltipId} dismissHover={hover.dismiss} />
     <span className="sidebar-sr-only" id={tooltipId}>{description}</span>
     {hover.visible ? <SessionHoverCard hover={hover}>
       <p className="sidebar-session-card-title">{title}</p>
@@ -165,7 +168,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
       </dl>
       {titlePresentation ? <div className="sidebar-session-card-title-state"><p>{titleState}</p>{titlePresentation.detail ? <p>{titlePresentation.detail}</p> : null}</div> : null}
     </SessionHoverCard> : null}
-  </>;
+  </div>;
 }
 
 function ProjectSessions({ projectId, label, fallback = false, fallbackRows, home, includeArchived, selected, open, active, root }: {
@@ -356,7 +359,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   const newSessionAria = useGlobalShortcutAria(ShortcutId.NewSession);
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
   const chooseNewSession = (projectId?: string) => { newSession(projectId); setDrawerOpen(false); };
-  return <SessionHoverProvider enabled={active} scope={surface}><aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
+  return <SessionRowActionsProvider active={active}><SessionHoverProvider enabled={active} scope={surface}><aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
     <nav ref={rail} className="sidebar-rail" aria-label={copy("sidebar.primaryNavigation_e1bfe7")}>
       <SidebarButton label={copy("sidebar.sessions_6fa3cb")} icon="sessions" current={sessionNavigation} onClick={() => navigate(Surface.Sessions)} />
       <SidebarButton label={copy("sidebar.pullRequests_d9e3f2")} icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigate(Surface.PullRequests)} />
@@ -409,5 +412,5 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       </footer>
     </div>
     </dialog>
-  </aside></SessionHoverProvider>;
+  </aside></SessionHoverProvider></SessionRowActionsProvider>;
 }

@@ -3,7 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
-import { SubscriptionService, FailedSubscriptionCleanupState, FailedSubscriptionCleanupOutcome, FailedSubscriptionCleanupReason, AccountService, AccountTypeFilter, BackupCreationState, ConfigurationService, EntityKind, GitHubTokenIdentityState, InboxService, IntegrationService, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageService, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
+import { BudgetState, SubscriptionService, FailedSubscriptionCleanupState, FailedSubscriptionCleanupOutcome, FailedSubscriptionCleanupReason, AccountService, AccountTypeFilter, BackupCreationState, ConfigurationService, EntityKind, GitHubTokenIdentityState, InboxService, IntegrationService, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageService, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
 import { LanguagePreference, LanguageProblem, LanguageProvider, type LanguageBridge, type LanguageSnapshot } from "./language";
@@ -34,12 +34,13 @@ const cleanupFixture = args.get("cleanupFixture") === "true";
 const accountStorageFixture = args.get("accountStorage") === "true";
 const subscriptionBackground = args.get("subscriptionBackground") === "true" || accountStorageFixture;
 const theme = Object.values(Theme).find(value => value === args.get("theme")) ?? Theme.System;
-const hoverFixture = args.get("sessionHover") === "true";
+const sessionActionsFixture = args.get("sessionActions") === "true";
+const hoverFixture = args.get("sessionHover") === "true" || sessionActionsFixture;
 if (hoverFixture) void i18n.changeLanguage(args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English);
 const hoverProject = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "oss" }) });
 const hoverSessions = hoverFixture ? Array.from({ length: 20 }, (_, index) => {
   const id = newRequestId();
-  return create(ResourceSchema, { id, sessionId: id, projectId: hoverProject.id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 1n, documentJson: encode({ name: index === 0 ? "New session" : index === 1 ? "Complete-session-name-".repeat(12) : `Synthetic session ${index + 1}`, workspace: "worktree", outcome: index === 0 ? "not-started" : "running", archive: "active", name_mode: "automatic", title_state: index === 1 ? "skipped" : "waiting", ...(index === 1 ? { title_reason: "budget-reached" } : {}) }) });
+  return create(ResourceSchema, { id, sessionId: id, projectId: hoverProject.id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 1n, documentJson: encode({ name: index === 0 ? "New session" : index === 1 ? "Complete-session-name-".repeat(12) : `Synthetic session ${index + 1}`, workspace: "worktree", outcome: sessionActionsFixture ? ["not-started", "running", "succeeded", "failed", "stopped", "unknown"][index % 6] : index === 0 ? "not-started" : "running", archive: sessionActionsFixture && index > 5 ? "archived" : "active", name_mode: "automatic", title_state: index === 1 ? "skipped" : "waiting", ...(index === 1 ? { title_reason: "budget-reached" } : {}) }) });
 }) : [];
 let languageSnapshot: LanguageSnapshot = { revision: 1, language: args.get("language") === "ko" ? LanguagePreference.Korean : LanguagePreference.English, resolved_language: args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English, problem: null };
 const languageListeners = new Set<(snapshot: unknown) => void>();
@@ -113,7 +114,7 @@ const fixtureTransport = createRouterTransport(router => {
   router.service(UsageService, { getUsageSummary: () => ({ fromUnixMs: 1788642000000n, untilUnixMs: 1791234000000n, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, totals: { responses: 126, total: { knownTotal: "1284920", measuredResponses: 126 } }, estimatedCost: UsageCostState.KNOWN_SUBTOTAL, estimates: { currencies: [{ currency: "USD", knownAmount: "12.48", completeResponses: 126 }] } }) });
   router.service(ResourceService, { listResources: request => { return { resources: hoverFixture && request.filter?.kind === EntityKind.PROJECT ? [hoverProject] : subscriptionBackground && request.filter?.kind === EntityKind.ACCOUNT && request.accountType === AccountTypeFilter.SUBSCRIPTION ? [subscription] : records.filter(row => row.kind === request.filter?.kind && (row.kind !== EntityKind.ACCOUNT || resourceDocument(row).type === (request.accountType === AccountTypeFilter.API ? "api" : "subscription"))) }; }, getResource: request => ({ resource: [provider, ...(routingFixture ? routingAccounts : []), ...(subscriptionBackground ? [subscription] : []), ...hoverSessions, ...records].find(row => row.id === request.id) }) });
   router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, presetId: ProviderPresetId.OLLAMA, displayName: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, accountCountsAvailable: true, totalAccounts: 0n, connectedAccounts: 0n }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: populated ? [model, ...extraModels] : [], providers: [provider] }) });
-  router.service(SessionService, { listSessions: () => ({ sessions: hoverSessions }) });
+  router.service(SessionService, { listSessions: () => ({ sessions: hoverSessions }), getSessionBudget: request => ({ view: { session: hoverSessions.find(row => row.id === request.sessionId), state: BudgetState.ALLOW_INCOMPLETE } }) });
   router.service(InboxService, { getNotificationPreferences: () => ({ preferences: notificationPreferences }), setNotificationPreferences: request => { notificationPreferences = { revision: notificationPreferences.revision + 1n, interactions: request.preferences!.interactions, terminals: request.preferences!.terminals }; return { preferences: notificationPreferences }; }, listInbox: () => ({ entries: [] }) });
   let cleanupRead = 0;
   const cleanupId = newRequestId(), retainedCleanupId = newRequestId();

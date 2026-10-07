@@ -19,7 +19,7 @@ const settled = (resource: Resource) => {
   return resource.schemaVersion === 1 && (data.storage === undefined || object(data.storage).state === "present") && data.fork === undefined && data.archive === "active" && data.recovery === "none" && data.outcome === "succeeded" && !data.active_execution_id && !data.pending_steer_id && execution.cleanup_verified === true && !execution.unconfirmed_responses && !object(execution.waiting).user_input && !object(execution.waiting).approval && text(execution.native_turn_id) && profile;
 };
 
-export function SessionForkAction({ source }: { source: Resource }) {
+export function SessionForkAction({ source, forkOnly = false, disabled = false, onOpen }: { source: Resource; forkOnly?: boolean; disabled?: boolean; onOpen?: () => void }) {
   useLocale();
   const show = useContext(Context);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: Boolean(show) });
@@ -30,7 +30,7 @@ export function SessionForkAction({ source }: { source: Resource }) {
   const profile = useOpenCodeForkProfile(source, Boolean(show) && openCode && Boolean(settled(source)) && Boolean(supported));
   const sidechatSupported = sourceHarness(source) === "codex" && object(object(document(source).initial_execution).configuration).subscription !== true && !Object.keys(object(object(document(source).execution).subagents)).length && status.data?.capabilities.includes(SystemCapability.NATIVE_SIDECHAT_V1) && Array.isArray(runner.worker_capabilities) && runner.worker_capabilities.includes("codex-read-only-sidechat-v1");
   if (!show || !settled(source)) return null;
-  return <>{supported && (!openCode || profile.data === true && !profile.isError) ? <button type="button" onClick={() => show(source)}>{copy("session-fork.forkSession_51bc41")}</button> : null}{sidechatSupported ? <button type="button" onClick={() => show(source, ForkPurpose.SIDECHAT)}>{copy("session-fork.openSidechat_20501a")}</button> : null}</>;
+  return <>{supported && (!openCode || profile.data === true && !profile.isError) ? <button type="button" role={forkOnly ? "menuitem" : undefined} disabled={disabled} onClick={() => { onOpen?.(); show(source); }}>{forkOnly ? <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="4" cy="3" r="2"/><circle cx="12" cy="13" r="2"/><path d="M4 5v6a2 2 0 0 0 2 2h4M12 11V5a2 2 0 0 0-2-2H8"/></svg> : null}{forkOnly ? copy("sidebar.fork") : copy("session-fork.forkSession_51bc41")}</button> : null}{!forkOnly && sidechatSupported ? <button type="button" onClick={() => show(source, ForkPurpose.SIDECHAT)}>{copy("session-fork.openSidechat_20501a")}</button> : null}</>;
 }
 
 // This controller stays mounted for the connection, so navigation cannot lose
