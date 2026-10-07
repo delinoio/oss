@@ -10,8 +10,9 @@ local windows. Only trusted local product webviews receive the dedicated
 Observe/Retry/Skip actions and the original server/runtime generation; no
 renderer account, key, path, endpoint or remote selector is accepted. Native
 window authority is rechecked before dispatch and before delivering a result.
-The Go resident host uses its original in-process server and existing vault
-under the [credential contract](cmds-delidev-credentials-contract.md#desktop-startup-access-confirmation).
+The Go resident host uses its original in-process server and reads through the
+existing vault scope without initializing a missing scope, lock or pin. Follow
+the [credential contract](cmds-delidev-credentials-contract.md#desktop-startup-access-confirmation).
 
 The checking screen uses a centered 480px maximum card with 28px padding, existing
 theme tokens and English/Korean catalogs. It has a title, access explanation,

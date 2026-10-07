@@ -4,6 +4,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -127,6 +129,29 @@ func TestDesktopCredentialsPreserveAccountsAndClearReadBuffers(t *testing.T) {
 	}
 	if bytes.Contains(f.logs.Bytes(), []byte("startup-secret-sentinel")) {
 		t.Fatal("secret reached logs")
+	}
+}
+
+func TestDesktopCredentialsDoNotInitializeMissingCredentialScope(t *testing.T) {
+	f := newOAuthFixture(t)
+	desktopAPI(t, f, domain.BearerAuth, true)
+	secretRoot := filepath.Join(f.root, "secrets")
+	if err := os.RemoveAll(secretRoot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(secretRoot); !os.IsNotExist(err) {
+		t.Fatalf("fixture unexpectedly has a credential scope: %v", err)
+	}
+	// The account metadata still points at the fake, server-owned credential,
+	// but startup must not create a real scope just to inspect its readiness.
+	f.s.accountSecrets = nil
+	c, client, attempt := desktopAccess(t, f)
+	c.Handle(f.ctx, DesktopCredentialBegin, attempt, "", client)
+	if got := waitDesktopAccess(t, c); got.State != DesktopCredentialFailed {
+		t.Fatalf("missing scope was treated as ready: %+v", got)
+	}
+	if _, err := os.Stat(secretRoot); !os.IsNotExist(err) {
+		t.Fatalf("startup initialized the missing credential scope: %v", err)
 	}
 }
 

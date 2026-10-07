@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"runtime"
 	"sync"
 
@@ -282,9 +283,16 @@ func (s *Service) checkDesktopCredential(ctx context.Context, actor domain.Princ
 	if err != nil || ref.ID == "" {
 		return err
 	}
-	vault, err := s.secrets()
-	if err != nil {
-		return err
+	vault := s.accountSecrets
+	if vault == nil {
+		// Startup readiness is read-only. Opening a missing or damaged scope
+		// must not initialize locks, pins, or cleanup state.
+		existing, err := credentials.OpenExisting(filepath.Join(s.Store.Root(), "secrets"), s.Identity.ServerID, s.logger)
+		if err != nil {
+			return err
+		}
+		defer existing.Close()
+		vault = existing
 	}
 	secret, err := vault.Get(ctx, ref)
 	clear(secret)
