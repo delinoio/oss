@@ -1947,6 +1947,10 @@ The child contains the existing explicit profile selection, bounded profile pagi
 
 Profile/page/filter choices survive child dismissal and reopening within the same parent. Child reads and current-profile polling pause when hidden; existing capability/revision/generation and complete-page checks remain authoritative. Parent closing or Settings departure also closes the child without stale focus restoration or selection from late replies. The parent task owns the original disposable transport and chooser queries; the child creates no separate lifetime, task operation, RPC, migration or dependency. Existing workflow and confirmation steps continue to use one native surface. Component and synthetic browser checks, including effective 200% layouts, remain separate from packaged CEF/platform acceptance.
 
+## Subscription cleanup action
+
+AI Subscription offers the explicit capability-41 Auto cleanup action under the [subscription Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup). Its inline status/result and original request/status retries belong to the current category lifetime. Account mutations freeze while pending; category and application navigation remain available. Departure disposes local waits and continuations without canceling the accepted server batch. Preserve shared theme controls, responsive wrapping, accessible live status and existing focus; no task dialog or native ownership is added.
+
 ## Inline Worker models and endpoint-only completion reservation
 
 The approved existing wizard uses endpoint-only API completion, exact direct input and official subscription suggestions without Saved choices. Keep keyboard, focus, localization, themes and responsive behavior. Clear editor-local responses on source/account/generation/lifetime changes and errors. Native observations retain no register/use action. Usage selects pricing by source and native ID.

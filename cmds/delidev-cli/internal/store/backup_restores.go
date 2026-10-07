@@ -603,7 +603,7 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		var blocked bool
 		err := tx.tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entities WHERE
 		 (kind IN ('ssh_setup','update') AND (json_extract(body,'$.state') NOT IN ('OBSERVED','SUCCEEDED','FAILED','CANCELED') OR COALESCE(json_extract(body,'$.reconcile_requested'),0)=1 OR (COALESCE(json_extract(body,'$.cancellation_requested'),0)=1 AND COALESCE(json_extract(body,'$.credential_removed'),0)=0))) OR
-		 (kind='job' AND json_extract(body,'$.state') IN ('claimed','uncertain')) OR
+		 (kind='job' AND (json_extract(body,'$.state') IN ('claimed','uncertain') OR (json_extract(body,'$.type') IN ('cleanup-failed-subscriptions','cleanup-failed-subscription') AND json_extract(body,'$.state')='queued'))) OR
 		 (kind='session' AND (COALESCE(json_extract(body,'$.active_execution_id'),'')<>'' OR
 		 json_extract(body,'$.outcome')='running' OR json_extract(body,'$.recovery') IN ('required','reconciling') OR
 		 json_extract(body,'$.archive')='archiving' OR json_extract(body,'$.preparation.state') IN ('stopping','uncertain'))) OR

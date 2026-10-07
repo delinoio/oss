@@ -266,3 +266,7 @@ source/cursor. Keep original uint64 model/Worker revisions and exact uncertain
 wire requests. The canonical model resource remains an internal identity used by
 existing APIs, Usage and historical snapshots. Configured compatibility and
 catalog results grant no execution readiness. Follow the desktop/catalog contracts.
+
+## Failed subscription cleanup client
+
+Generated SubscriptionQuery exports cleanupFailedSubscriptions and getFailedSubscriptionCleanup plus the closed batch state, outcome and reason enums. Capability 41 was reserved on main in PR #1614; preserve Claude 38/Grok 39/40 and their independent support. Exact request UUIDs bind uncertain admission retries; accepted work is read by original job ID, with bigint revisions and fixed 50-result pages. Validate identity, monotonic counts/revision, closed state/outcome/reasons and complete page bounds before accepting status. Metadata-only status may use category-scoped Connect Query; neither generated bindings nor a read grant native/login/callback/deletion authority. See the subscription/Settings contracts.

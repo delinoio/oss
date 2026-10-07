@@ -5,6 +5,16 @@
 import { SubscriptionService } from "./subscription_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SubscriptionService.CleanupFailedSubscriptions
+ */
+export const cleanupFailedSubscriptions = SubscriptionService.method.cleanupFailedSubscriptions;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup
+ */
+export const getFailedSubscriptionCleanup = SubscriptionService.method.getFailedSubscriptionCleanup;
+
+/**
  * @generated from rpc delidev.v1.SubscriptionService.RequestSubscriptionObservation
  */
 export const requestSubscriptionObservation = SubscriptionService.method.requestSubscriptionObservation;

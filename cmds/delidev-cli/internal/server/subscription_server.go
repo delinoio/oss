@@ -182,7 +182,7 @@ func (s *Service) initializeServerSubscriptions(ctx context.Context) error {
 				continue
 			}
 			o := a.Subscription.ServerOperation
-			if !o.Active() || o.Epoch == s.subscriptionServerEpoch() {
+			if !o.Active() || o.Epoch == s.subscriptionServerEpoch() || o.State == domain.SubscriptionRecovery && a.Subscription.RecoveryRequired && a.Health == domain.AccountFailed {
 				continue
 			}
 			o.State = domain.SubscriptionRecovery

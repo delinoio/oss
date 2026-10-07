@@ -1018,6 +1018,14 @@ initializes the current functional layout and removes upgrades from schemas
 no startup, inspection or restore may silently convert or reset them. This
 reservation adds no executable migration or runtime capability.
 
+## Failed subscription cleanup jobs
+
+Server-owned `cleanup-failed-subscriptions` parent jobs and `cleanup-failed-subscription` children use existing generic entities, jobs and receipts, without a database migration. The subscription owner validates their closed input/checkpoint/results, original actor/server, fixed account revisions and original login/deletion identities. Only confirmed account cleanup transactions advance child revisions. Terminal retained attempts cannot rerun automatically; tombstone, deletion receipt, child result and parent counts are atomic. Narrow pending-job filtering occurs before bounds so unrelated Worker history cannot hide the one active batch.
+
+Managed restore eligibility includes queued cleanup parents/children as unsettled ownership. The existing image transformer cancels every historical nonterminal cleanup job and quarantines its receipts. Maintenance selects only pending original live jobs; historical canceled or terminal jobs cannot acquire account deletion authority. Follow the [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations).
+
+Each batch child records native and credential-attempt fences before external cleanup. A confirmed native checkpoint can resume only before the credential attempt begins. An interrupted credential attempt with no confirmed account checkpoint is retained without repeating vault effects, even when its previous outcome write failed. A fresh explicit batch can retry that account.
+
 ## Inline Worker models and endpoint-only completion reservation
 
 DB baseline 32 directly initializes the complete Model-free current schema: inline Worker definitions, source/native-ID pricing and immutable execution/usage attribution. Remove persistent catalogs and model indexes/suppressions. Earlier DBs and backups are unsupported. The owner waives earlier DB retention and permits explicit DB/sidecar reset; protected credentials and native ownership retain their original cleanup authority. No conversion or placeholder migration is permitted.
