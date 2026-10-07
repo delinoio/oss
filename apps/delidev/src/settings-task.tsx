@@ -85,6 +85,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
   const lastActivation = useRef(activation);
   const returnFocus = useRef(fallbackFocus);
   returnFocus.current = fallbackFocus;
+  const openerRetired = useRef(false);
   const closeRequested = useRef(false);
   const retainedDismissal = useRef(false);
   const categoryContent = useRef(document.querySelector<HTMLElement>(".settings-content"));
@@ -115,7 +116,10 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     if (keep) { retainedDismissal.current = true; setVisible(false); } else { closeRequested.current = true; (idleClose ?? close)(); }
   }, [retained, dismissed, close]);
   const dismiss = useCallback(() => dismissWithClose(), [dismissWithClose]);
-  const context = useMemo(() => ({ visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present }), [visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present]);
+  const retireOpener = useCallback((removed: (node: HTMLElement) => boolean) => {
+    if (opener.current && removed(opener.current)) openerRetired.current = true;
+  }, []);
+  const context = useMemo(() => ({ visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present, retireOpener }), [visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present, retireOpener]);
   useLayoutEffect(() => {
     if (lastActivation.current === activation) return;
     lastActivation.current = activation;
@@ -161,17 +165,19 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
         const focused = document.activeElement;
         if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return;
         const openerDialog = opener.current?.closest("dialog");
-        const openerTarget = opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") && !opener.current.closest("[hidden]") && (!openerDialog || openerDialog.open) && (!returnFocus.current || available(opener.current)) ? opener.current : null;
+        const openerTarget = !openerRetired.current && opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") && !opener.current.closest("[hidden]") && (!openerDialog || openerDialog.open) && (!returnFocus.current || available(opener.current)) ? opener.current : null;
         const fallback = returnFocus.current?.() ?? (categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null);
+        // The opener or category fallback can still be inert until this parent
+        // teardown commits. Release their task backgrounds before checking
+        // visibility, while preserving unrelated hidden/disabled boundaries.
+        for (const candidate of [openerTarget, fallback]) {
+          const background = candidate?.closest("fieldset.settings-task-background");
+          background?.removeAttribute("disabled");
+          background?.removeAttribute("inert");
+          background?.removeAttribute("aria-hidden");
+        }
         const target = openerTarget ?? (available(fallback) ? fallback : null);
         if (target?.matches("h1")) target.tabIndex = -1;
-        // The opener can remain inside the task background until the parent
-        // state update commits. Temporarily clear that synchronous focus
-        // boundary so close restores focus in the same event turn.
-        const background = target?.closest("fieldset.settings-task-background");
-        background?.removeAttribute("disabled");
-        background?.removeAttribute("inert");
-        background?.removeAttribute("aria-hidden");
         target?.focus({ preventScroll: true });
         if (target && document.activeElement !== target) requestAnimationFrame(() => { if (target.isConnected) target.focus({ preventScroll: true }); });
         return target;

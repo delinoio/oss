@@ -6834,6 +6834,13 @@
       "declaration": "CompactSessionResponse",
       "member": "session",
       "number": 4
+    },
+    {
+      "pr": 1609,
+      "kind": "message",
+      "declaration": "AttachWorkerRequest",
+      "member": "protocol_version",
+      "number": 10
     }
   ]
 }

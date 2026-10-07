@@ -493,7 +493,7 @@ Settings keeps all 17 category lists and their owning controllers mounted when a
 
 Use the closed size enum: 480px confirmations for configuration deletion, account disconnect/logout, device revocation and network-profile/backup deletion; 768px forms for Project, Provider, Model, account preferences and GitHub-profile create/edit, pricing, routing preview and notification edits; 960px workflows for Agent Workers, Instructions, repository editing/registration, account creation/connection/management, SSH setup, Runner Device details, network settings, pairing documents and backup inspection. Width never exceeds viewport minus 32px; height never exceeds viewport minus 48px. Use 16px outer corners, 20px titles, 16px section titles, 14px body and 12px hints/scope, existing theme tokens and 40px controls with 8px corners. Header and action footer remain fixed; only the body scrolls. Narrow forms stack and wrap full identifiers/actions. These task rules supersede the ordinary-flow action and page-form geometry above only while a task is open.
 
-X, Escape and local Cancel dismiss presentation; backdrop clicks do not dismiss it. Before submission, dispose drafts and secret inputs. Pending or unconfirmed submissions instead hide the same mounted task controller, retain its original immutable request, receipt/job/operation identity and necessary transient authority within the current category, and expose a status plus View original operation in the list. Block replacement submissions; an uncertain write has only its existing exact original retry. Clear editable secret inputs on dismissal while preserving any credential bytes already owned by an authorized original request. Same-computer encrypted imports retain their exact ciphertext/digest for explicit retry; dismissal clears editable copies and cannot prepare a replacement protected recipient during uncertainty. SSH start keeps its original setup ID, blocks replacement host inspection and is never resubmitted after an ambiguous start. Dismissal never calls server/Worker cancellation or OAuth Cancel. Explicit business cancellation remains a separate operation. Confirmed saves use the existing completion and list refresh; accepted jobs retain their existing observation and Done flow. Late hidden results cannot reopen a dialog, navigate or take focus.
+X, Escape and local Cancel dismiss presentation; backdrop clicks do not dismiss it. Before submission, dispose drafts and secret inputs. Pending or unconfirmed submissions instead hide the same mounted task controller, retain its original immutable request, receipt/job/operation identity and necessary transient authority within the current category, and expose a status plus View original operation in the list. Block replacement submissions; an uncertain write has only its existing exact original retry. Clear editable secret inputs on dismissal while preserving any credential bytes already owned by an authorized original request. Same-computer encrypted imports retain their exact ciphertext/digest for explicit retry; dismissal clears editable copies and cannot prepare a replacement protected recipient during uncertainty. SSH start keeps its original setup ID, blocks replacement host inspection and is never resubmitted after an ambiguous start. Dismissal never calls server/Worker cancellation or OAuth Cancel. Explicit business cancellation remains a separate operation. Confirmed saves use the existing completion and list refresh; accepted jobs retain their existing observation and Done flow. Confirmed subscription/API-account configuration deletion releases task retention before invoking its existing completion callback once, closes immediately and refreshes the current category inventory. It has no completion screen, browser-cleanup count read, Return action or new toast, and does not await inventory refresh or independent browser cleanup. A confirmed-deleted account row cannot remain an opener while inventory refresh is pending; retire that original focus destination and use the visible category action/title. A hidden successful deletion clears its retained status/opener without taking focus; category disposal still rejects late completion callbacks. Late hidden results cannot reopen a dialog, navigate or take focus.
 
 Internal workflow and confirmation steps share one native modal surface, keeping their parent controllers mounted rather than stacking dialogs. Within Settings, the dialog has no separate Settings lifetime; external project creation uses its independent opening above. Category departure and Settings exit retain the disposal rules below, including original native/account ownership and detached work. The native modal makes the background inert and contains Tab/Shift+Tab. Creation focuses its first input, long details focus their title and destructive confirmations focus the least destructive Cancel/Keep action. Restore focus only to a connected visible opener; otherwise use that category's primary action/title. Do not overwrite a deliberate focus transfer or restore a departed category. Closing a compact category drawer precedes opening its task. Follow the [W3C modal Dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
 
@@ -568,11 +568,21 @@ button-based single-selection radiogroup with one selected Tab entry, wrapping
 Arrow Up/Down/Left/Right selection, Home/End and native Space/Enter activation.
 With an unsupported saved harness, select no card and use the first card as the
 Tab entry and validation focus target. Preserve the new Codex default and saved
-edit selection. Card selection never advances or saves; Next owns advancement.
+edit selection. Arrows and Home/End only change selection/focus; click or native
+Space/Enter confirmation opens Accounts and focuses its heading, including
+current-card reselection. Harness has no Next button or form-submit advancement.
 Reselecting the current harness preserves account/model choices, while an actual
-change retains the existing explicit reset. Buttons retain visible keyboard focus
-and disabled server-support/mutation guards. Local SVG masks use semantic ink in
-both themes without network access, inline styles or additional dependencies.
+change retains the existing explicit reset. Later steps retain Next. Buttons
+retain visible keyboard focus
+and disabled server-support/mutation guards. Harness cards contain decorative
+official local images in the existing 48px boxes, preserving original colors,
+proportions and transparency without network access, inline styles or additional
+dependencies. OpenCode and Grok use the supplied light/dark variants selected by
+the resolved `data-theme`, with the OS color scheme as the first-paint fallback
+before that attribute exists. Keep these assets and their source/version/hash,
+usage conditions and separate license in `public/harness-marks`; retain the
+subscription provider assets and notices independently. Follow the repository
+license contract for vendor trademark conditions and distribution notices.
 Input/select focus preserves ordinary
 boundaries; buttons/disclosures retain visible focus. The combobox supports
 Arrow Up/Down, Enter and Escape with active-descendant semantics. Stage changes
@@ -881,6 +891,36 @@ Execution-Worker settings expose explicit registration, startup, status and conf
 Status polling is read-only and separately reports not started, starting, controller running, stopping, exited and uncertain. Startup timeout may retain a process waiting for the server's previous instance lease; it cannot automatically start another generation. The UI captures the generation when confirming stop, blocks a newly stale confirmation and retains the original target after uncertain acknowledgment or settings navigation. Refreshing or retrying that stop cannot cancel a replacement. An explicitly stopped reserved child cannot launch later. Offline stop remains available through local Go infrastructure without depending on server connectivity. Controller exit does not establish per-session/native cleanup; existing server recovery and Worker journals remain authoritative. Full native Quit preserves independently started servers and detached Workers; app-owned server children follow the app-owned sidecar shutdown boundary. No OS service, automatic Worker-process restart, SSH setup or binary-update acceptance is inferred.
 
 ### Projects, repositories and configuration actions
+
+#### Repository inventory presentation
+
+Repositories retains the shared Settings body anchor, typography, theme tokens,
+toolbar and visit lifetime. `repository-list.tsx` and its static stylesheet group
+each saved repository into a bordered 8px-corner row with 16px padding: decorative
+Git glyph, full name, source-type label, GitHub configuration badge and explicit
+name-scoped Edit/Delete actions. Registered folder paths and GitHub owner/name
+occupy two semantic metadata columns, stacked below 640px available body width.
+Complete paths and the full repository ID wrap without truncation. The source
+label never exposes configured or inspected raw URLs. Registered folders are
+saved associations, not online-state or Local execution proof.
+
+The badge distinguishes missing GitHub configuration, configured metadata and
+unsupported resource formats. Configured metadata does not establish token
+health, repository access or execution readiness. The existing explicit access
+inspection and item-browser controllers retain their schema gates, read scope,
+revisions and disposal. Edit/Delete retain their existing schema gates and shared
+task dialogs. No row render, reflow or language change performs GitHub reads,
+Worker inspection, mutations or native discovery.
+
+The successful final empty first page uses the shared empty panel and the single
+header Add repository action. Empty continuation pages and retained refresh
+failures remain distinct. Pagination preserves server order/cursors and shows
+only the number of repositories on the current returned page, never an inferred
+inventory total. This presentation does not change registration, cloning,
+configured source authority or original Local checkout ownership below.
+
+#### Repository registration
+
 When the outer GitHub profile inventory moves to another page, clear the
 selected profile and repository page before exposing the new page. The picker
 must never retain repository rows from a profile that is no longer selected.

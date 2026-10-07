@@ -1,13 +1,5 @@
 {
-  "configuration-actions.apiKeyEntryDeleted_3200d9": "API key entry deleted",
   "configuration-actions.savedOnTheSelectedServer_93dbee": "Saved on the selected server.",
-  "configuration-actions.accountConfigurationDeleted_2a5579": "Account configuration deleted",
-  "configuration-actions.browserCleanupIsTrackedSeparatelyOffline_5550d1": "Browser cleanup is tracked separately. Offline devices remain pending until their native browser has shut down, the full profile has been removed and the owning server confirms the acknowledgment.",
-  "configuration-actions.profileCleanupObligationsPendingConfirmedRemoved_063eba": "<s0/> profile cleanup obligations pending · <s1/> confirmed removed",
-  "configuration-actions.cleanupStatusIsUnavailableUntilThe_de4aa8": "Cleanup status is unavailable until the owning server can be read.",
-  "configuration-actions.refreshCleanupStatus_fb7773": "Refresh cleanup status",
-  "configuration-actions.returnToAiApiKeys_4b92a5": "Return to AI API Keys",
-  "configuration-actions.returnToAccounts_4b7a6d": "Return to accounts",
   "configuration-actions.deleteEntry_e570cd": "Delete entry?",
   "configuration-actions.delete_cac286": "Delete <s0/>?",
   "configuration-actions.thisDeletesItsSavedConfigurationRetained_8aa78e": "This deletes its saved configuration. Retained sessions and history remain. The server rejects references that must be reconfigured first.",

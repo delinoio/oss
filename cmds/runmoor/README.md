@@ -250,6 +250,11 @@ Status and doctor JSON use `schema_version: 1`. Status includes image revisions 
 
 `pause` stops acquisition/new capacity and preserves running jobs. `drain` additionally waits for jobs/local cleanup. `stop` drains before exiting and waits for open image setup and pending image removal, including with `--force`. Finish setup by shutting down its VM or sealing the revision, and retry pending removal as needed. New image work requires restarting the manager after stop; `stop --pool NAME` drains that pool while the manager keeps serving other pools. Only explicit `--force` terminates owned work. `resume` revalidates the pool. Pool control commands without `--pool` apply to all pools. A validated reload automatically resumes a suspended pool only when a setting related to its reported failure changed; a verified managed image can also recover image, version or repeated startup failures. Otherwise, correct the cause and use `resume`.
 
+> **Unreleased pause recovery fix:** A late dependency failure and corrected
+> reload preserve an explicit `pause --pool NAME` or `stop --pool NAME`,
+> including scoped force-stop. Correct the cause, then use `resume --pool NAME`
+> to enable new work.
+
 Reload validates the entire candidate first. Existing jobs retain their original configuration and timeout. Removed/changed pools drain their previous generation; a new generation with the same GitHub scale-set identity waits until the old one retires. A failed configuration validation does not replace the last accepted configuration.
 
 > **Unreleased service reload:** After you install a newer Runmoor CLI,
@@ -447,6 +452,13 @@ Paths containing `..` that resolve through a symlink to a different file are
 also rejected; use the installed absolute configuration path directly.
 
 Manager-only restart reconciles local state with verified Docker/Tart/host execution and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
+
+With the **unreleased Docker cleanup fix**, a container that replaces a
+stopped runner or daemon remains untouched, even if its Runmoor labels
+were copied. Cleanup reports `OWNERSHIP_AMBIGUOUS` and remains incomplete.
+The original execution remains confirmed stopped and its capacity stays
+released. Preserve the replacement and Runmoor state while investigating;
+copied labels do not prove ownership.
 
 A recorded job completion continues through cleanup even if GitHub has already removed its ephemeral runner registration. Capacity becomes available once the owned execution is confirmed stopped, while any remaining cleanup is retried. An upgrade does not automatically recover existing quarantines. For a previously affected completed job, confirm completion in GitHub and verify the exact ownership and stopped state of its local resources before recovering the affected pool with `runmoor stop --pool NAME --force`.
 
