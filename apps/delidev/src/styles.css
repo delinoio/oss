@@ -1004,7 +1004,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-statuses[data-outcome=running] > :first-child { color: var(--execution-running); }
 .sidebar-statuses[data-outcome=succeeded] > :first-child { color: var(--success-text); }
 .sidebar-statuses[data-outcome=failed] > :first-child { color: var(--danger-text); }
-.sidebar-session-menu { position: fixed; inset: auto; z-index: 1200; width: 220px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; margin: 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0002; }
+.sidebar-session-menu { position: fixed; inset: auto; z-index: 1200; width: 220px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; margin: 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px var(--shadow-soft); }
 .sidebar-session-menu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; margin: 0; padding: 6px 8px; border: 0; text-align: left; background: transparent; }
 .sidebar-session-menu button:hover { background: var(--surface-hover); }
 .sidebar-session-menu p { font-size: 12px; overflow-wrap: anywhere; }

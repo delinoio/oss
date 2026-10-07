@@ -72,5 +72,5 @@
   "sidebar.sessionActionsRead": "현재 세션을 읽는 중입니다. 읽기가 성공할 때까지 작업을 사용할 수 없습니다.",
   "sidebar.retrySessionActionsRead": "세션 읽기 재시도",
   "sidebar.refreshSessionActions": "새 작업 전에 현재 세션 새로고침",
-  "sidebar.fork": "Fork"
+  "sidebar.fork": "포크"
 }
