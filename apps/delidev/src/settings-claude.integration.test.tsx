@@ -17,7 +17,7 @@ it("persists native Claude permission selection through the desktop and real Go 
   const { transport, providerOrigin } = fixture;
   const configurations = createClient(ConfigurationService, transport);
   const save = async (kind: EntityKind, value: Record<string, unknown>) => (await configurations.saveConfiguration({ kind, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(value) })).resource!;
-  const provider = await save(EntityKind.PROVIDER, { name: "Claude settings API", endpoint: providerOrigin, protocol: "anthropic-messages", authentication: "keyless", discovery: false });
+  const provider = await save(EntityKind.PROVIDER, { name: "Claude settings API", endpoint: providerOrigin, protocol: "anthropic-messages", authentication: "keyless", discovery: false, enabled: true });
   const account = await save(EntityKind.ACCOUNT, { alias: "Claude API account", type: "api", provider_id: provider.id, enabled: true, health: "disconnected" });
   await createClient(AccountService, transport).connectAccount({ mutation: { id: account.id, expectedRevision: account.revision, requestId: newRequestId() }, keyless: true });
   const model = await save(EntityKind.MODEL, { name: "Claude settings model", provider_id: provider.id, native_id: "claude-settings-fixture", harnesses: ["claude-code"], manual: true, metadata_source: "user-declared" });

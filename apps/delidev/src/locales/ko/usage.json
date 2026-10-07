@@ -89,5 +89,6 @@
   "usage.sentence.67a16314500f": "구독 서비스 {{v0}}",
   "usage.sentence.1d3a37cc1c5e": "모델 {{v0}}",
   "usage.range": "{{from}} – {{until}} (종료 시각 제외)",
-  "usage.pendingStart": "서버 현재 시각의 30일 전"
+  "usage.pendingStart": "서버 현재 시각의 30일 전",
+  "usage.currentAccountingRequired": "서버가 지원하지 않는 사용량 형식을 반환했습니다. 선택한 서버를 업데이트하세요."
 }

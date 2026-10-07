@@ -81,13 +81,14 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(screen.getByRole("button", { name: "Check installed harnesses" }));
   fireEvent.click(await screen.findByRole("button", { name: "Finish inspection" }, { timeout: 15000 }));
   await waitFor(() => expect(screen.getAllByText("missing · Version: Unknown")).toHaveLength(4));
-  // An account-less Agent is valid configuration but cannot infer readiness or
-  // launch a harness. The real Worker has only explicit missing executables.
+  // Current Agent configuration requires an account, independently of execution
+  // readiness. This disconnected account and missing harness cannot authorize inference.
   const configurations = createClient(ConfigurationService, transport);
   const save = async (kind: EntityKind, value: Record<string, unknown>) => (await configurations.saveConfiguration({ kind, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(value) })).resource!;
-  const providerConfig = await save(EntityKind.PROVIDER, { name: "Schedule fixture provider", endpoint: providerOrigin, protocol: "openai-chat", authentication: "keyless", discovery: false });
+  const providerConfig = await save(EntityKind.PROVIDER, { name: "Schedule fixture provider", endpoint: providerOrigin, protocol: "openai-chat", authentication: "keyless", discovery: false, enabled: true });
   const model = await save(EntityKind.MODEL, { name: "Schedule fixture model", provider_id: providerConfig.id, native_id: "fixture-model", harnesses: ["codex"], manual: true, metadata_source: "unknown" });
-  const accountlessAgent = await save(EntityKind.AGENT, { name: "Accountless schedule agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
+  const account = await save(EntityKind.ACCOUNT, { alias: "Disconnected schedule account", type: "api", provider_id: providerConfig.id, enabled: true, health: "disconnected" });
+  const configuredAgent = (await configurations.saveAgentWorker({ mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ name: "Configured schedule agent", harness: "codex", model_id: model.id, accounts: [{ id: account.id, weight: 1 }], templates: [], options: { permission: "default" } }), model: { selection: { case: "modelId", value: model.id }, expectedModelRevision: model.revision } })).agent!;
   cleanup();
   const scheduleClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const readLocalWorker = async () => {
@@ -102,7 +103,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(newSession.getByRole("button", { name: "Options" }));
   fireEvent.click(newSession.getByRole("button", { name: "Use this computer's Local checkouts" }));
   await waitFor(() => expect((newSession.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true));
-  changeNewSession("Agent Worker", (await newSession.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
+  changeNewSession("Agent Worker", (await newSession.findByRole("option", { name: "Configured schedule agent" }) as HTMLOptionElement).value);
   changeNewSession("First message", "Local proof fixture without inference");
   fireEvent.click(newSession.getByText("Optional estimated-cost budget"));
   fireEvent.click(newSession.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
@@ -136,7 +137,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
   change("Schedule name", "Owned schedule");
   change("Project", (await within(screen.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
-  change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
+  change("Agent Worker", (await screen.findByRole("option", { name: "Configured schedule agent" }) as HTMLOptionElement).value);
   change("Runner Device", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
   await waitFor(() => expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true));

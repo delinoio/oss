@@ -1,4 +1,4 @@
-import { EntityKind, UsageCoverage, type GetOverviewResponse, type GetUsageSummaryResponse, type ListResourcesResponse } from "@delinoio/delidev-api-client";
+import { EntityKind, UsageCoverage, UsageAccountingProfile, type GetOverviewResponse, type GetUsageSummaryResponse, type ListResourcesResponse } from "@delinoio/delidev-api-client";
 import { document, items, object, text } from "./documents";
 
 export enum TrayDestination { Sessions = "sessions", Inbox = "inbox", Usage = "usage", Settings = "settings" }
@@ -21,7 +21,7 @@ export function traySummary(overview: GetOverviewResponse | undefined, overviewF
   if (overview && observed && overview.connectedWorkers <= overview.registeredWorkers) {
     summary.overview = { observed_at: observed, stale: overviewFailed, active_sessions: overview.activeSessions.toString(), pending_interactions: overview.pendingInteractions.toString(), registered_workers: overview.registeredWorkers.toString(), connected_workers: overview.connectedWorkers.toString() };
   }
-  if (overview && usage && usage.fromUnixMs === overview.todayFromUnixMs && usage.untilUnixMs === overview.todayUntilUnixMs && usage.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES) {
+  if (overview && usage?.accountingProfile === UsageAccountingProfile.NATIVE_UNITS_V1 && usage.fromUnixMs === overview.todayFromUnixMs && usage.untilUnixMs === overview.todayUntilUnixMs && usage.coverage === UsageCoverage.OBSERVED_ROOT_RESPONSES) {
     const total = usage.totals?.total;
     // Exact observed root responses remain incomplete telemetry even when all
     // recorded counters are known. This is neither billing nor pooled quota.

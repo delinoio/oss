@@ -89,5 +89,6 @@
   "usage.sentence.67a16314500f": "Subscription service {{v0}}",
   "usage.sentence.1d3a37cc1c5e": "Model {{v0}}",
   "usage.range": "{{from}} – {{until}} (exclusive)",
-  "usage.pendingStart": "30 days before server now"
+  "usage.pendingStart": "30 days before server now",
+  "usage.currentAccountingRequired": "The server returned an unsupported accounting profile. Update the selected server."
 }

@@ -34,7 +34,7 @@ func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
 	case domain.AccountKind:
 		value = &domain.Account{}
 	case domain.ProviderKind:
-		value = &domain.Provider{Enabled: new(true)}
+		value = &domain.Provider{}
 	case domain.ModelKind:
 		value = &domain.Model{}
 	case domain.TemplateKind:

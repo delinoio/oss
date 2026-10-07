@@ -1,6 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it, vi } from "vitest";
-import { EntityKind, GetOverviewResponseSchema, GetUsageSummaryResponseSchema, ListResourcesResponseSchema, ResourceSchema, UsageCoverage } from "@delinoio/delidev-api-client";
+import { EntityKind, GetOverviewResponseSchema, GetUsageSummaryResponseSchema, ListResourcesResponseSchema, ResourceSchema, UsageCoverage, UsageAccountingProfile } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { TrayPublisher, TrayQuotaState, traySummary, unavailableTray } from "./tray";
 
@@ -8,7 +8,7 @@ const overview = () => create(GetOverviewResponseSchema, { observedAt: "2026-09-
 describe("tray read projection", () => {
   it("preserves exact known zero and large counters without claiming complete telemetry", () => {
     const value = overview();
-    const usage = create(GetUsageSummaryResponseSchema, { fromUnixMs: value.todayFromUnixMs, untilUnixMs: value.todayUntilUnixMs, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, totals: { total: { knownTotal: "0", measuredResponses: 1 } } });
+    const usage = create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, fromUnixMs: value.todayFromUnixMs, untilUnixMs: value.todayUntilUnixMs, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, totals: { total: { knownTotal: "0", measuredResponses: 1 } } });
     const result = traySummary(value, false, usage, undefined);
     expect(result.overview?.active_sessions).toBe("9007199254740993");
     expect(result.overview?.pending_interactions).toBe("0");
@@ -37,7 +37,7 @@ describe("tray read projection", () => {
   });
   it("preserves separate exact currency estimates and rejects malformed currency graphs", () => {
     const value = overview();
-    const usage = create(GetUsageSummaryResponseSchema, { fromUnixMs: value.todayFromUnixMs, untilUnixMs: value.todayUntilUnixMs, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, estimates: { currencies: [
+    const usage = create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, fromUnixMs: value.todayFromUnixMs, untilUnixMs: value.todayUntilUnixMs, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, estimates: { currencies: [
       { currency: "USD", knownAmount: "0.000000001" }, { currency: "KRW", knownAmount: "9007199254740993.000" }, { currency: "EUR", knownAmount: "" },
     ] } });
     expect(traySummary(value, false, usage, undefined).usage?.estimates).toEqual([

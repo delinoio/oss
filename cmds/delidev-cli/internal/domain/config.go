@@ -162,7 +162,7 @@ type Checkout struct {
 	Path      string `json:"path"`
 }
 type Repository struct {
-	RemoteURL       string             `json:"remote_url,omitempty"`
+	RemoteURL       string             `json:"remote_url"`
 	Name            string             `json:"name"`
 	Checkouts       []Checkout         `json:"checkouts"`
 	PreferredRemote string             `json:"preferred_remote,omitempty"`

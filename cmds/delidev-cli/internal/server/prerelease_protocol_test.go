@@ -79,3 +79,15 @@ func TestAllVersionOneBundlesRejectBeforeConfigurationChanges(t *testing.T) {
 		t.Fatal("rejected import changed configuration", err)
 	}
 }
+
+func TestProviderSaveRejectsMissingEnabledWithoutPublication(t *testing.T) {
+	f := newAccountFixture(t)
+	for _, document := range []string{
+		`{"name":"Old provider","endpoint":"http://127.0.0.1:1/v1","protocol":"openai-chat","authentication":"keyless"}`,
+		`{"name":"Old provider","endpoint":"http://127.0.0.1:1/v1","protocol":"openai-chat","authentication":"keyless","enabled":null}`,
+	} {
+		if _, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, SchemaVersion: 1, Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, DocumentJson: []byte(document)})); err == nil {
+			t.Fatal("provider without explicit enabled was accepted")
+		}
+	}
+}

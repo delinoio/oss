@@ -87,7 +87,7 @@ Publication retains all existing session/input/job/account/connection/Worker and
 Budget writes log `session_budget_recorded` with correlation/session/request identities, replay state and explicit removal only, never thresholds or totals. Price writes log `model_pricing_recorded` with correlation, model/version UUIDs, revision and replay state only, excluding source, rates and amounts. Read completion uses `usage_summary_read_completed` with correlation ID and bounded group/response counts, never filter values, labels or token/cost totals. Structured `execution_event_committed` logs include the closed response-usage event kind, job/execution UUIDs, sequence and receipt replay classification. Exclude raw native bodies, response digests, amounts and token counters. Typed failures retain original ownership without logging provider diagnostics.
 
 ## Build and Test
-Run package Go tests and vet from `cmds/delidev-cli`. Ordinary tests cover exact nullable counts, closed schema/privacy, ownership, duplicate identities, conflicting evidence, rollback, restart, session deletion and schema-13 backup/migration failure. Ordinary tests never run installed harnesses. Opt-in `TestManualNativeCodexUsesRegisteredServerRelay` accepts an explicit pinned executable and verifies the real structured response through the Worker outbox and server ledger using a private runtime and scripted loopback provider; it cannot establish hosted billing, subscription, child, or other-platform evidence.
+Run package Go tests and vet from `cmds/delidev-cli`. Ordinary tests cover exact nullable counts, closed schema/privacy, ownership, duplicate identities, conflicting evidence, rollback, restart, session deletion and current schema-32 backup and historical-schema rejection. Ordinary tests never run installed harnesses. Opt-in `TestManualNativeCodexUsesRegisteredServerRelay` accepts an explicit pinned executable and verifies the real structured response through the Worker outbox and server ledger using a private runtime and scripted loopback provider; it cannot establish hosted billing, subscription, child, or other-platform evidence.
 
 ## Dependencies and Integrations
 - [Native harness contract](cmds-delidev-harness-contract.md)
@@ -191,19 +191,19 @@ and 2 MiB binary/JSON response bounds; unknown profiles and retained corruption
 fail without partial output. Completion logging adds a bounded unit count only.
 The desktop requests this profile in its existing Connect Query, checks the
 response echo and displays a separate Grok summary with exact daily/model/session
-semantic tables and original attribution. An older server retains the existing
-response views and receives explicit update guidance; the renderer never computes
-or prices native aggregates.
+semantic tables and original attribution. All CLI, desktop and tray requests
+use NATIVE_UNITS_V1; a response without that exact profile is unsupported and
+its aggregates are not displayed. The renderer never computes or prices native aggregates.
 
 ### Claude and OpenCode input accounting (#1098, #1099)
 
-Schema 26 composes the priced input ledger with schema 25 without rewriting any
-Grok body or repricing retained observations. It rebuilds the shared table to
-retain immutable source, assignment and original price-version references. The
+Schema 32 directly initializes the priced input ledger and independent Grok
+ledger with immutable source, assignment and original price-version references.
+Historical allocations 25/26 retain their owners without an executable upgrade. The
 original receipt transaction alone publishes a Claude main-loop result or an
 OpenCode step-finish part; source replay, assistant summaries, cumulative model
 snapshots and inherited history cannot publish another unit. No historical raw
-observation is backfilled. The migration and all derived writes are atomic after
+observation is backfilled. Current derived writes are atomic under
 the synchronized backup; session deletion cascades the derived rows and lifetime
 native estimate totals.
 

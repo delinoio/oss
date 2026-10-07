@@ -53,7 +53,7 @@ it("manages service-native subscription metadata through real authenticated RPC 
 
 it("automatically closes API entry deletion and refreshes the current inventory through real authenticated RPC", async () => {
   const configurations = createClient(ConfigurationService, fixture.transport);
-  const provider = (await configurations.saveConfiguration({ kind: EntityKind.PROVIDER, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ name: "Deletion keyless provider", endpoint: fixture.providerOrigin, protocol: "openai-chat", authentication: "keyless", discovery: false }) })).resource!;
+  const provider = (await configurations.saveConfiguration({ kind: EntityKind.PROVIDER, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ name: "Deletion keyless provider", endpoint: fixture.providerOrigin, protocol: "openai-chat", authentication: "keyless", discovery: false, enabled: true }) })).resource!;
   const metadata = { provider_id: provider.id, type: "api", enabled: true, exclude_automatic: false, recovery_notifications: false, health: "disconnected", quota: [], confirmed_exhausted: false };
   const account = (await configurations.saveConfiguration({ kind: EntityKind.ACCOUNT, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ ...metadata, alias: "Deleted API entry" }) })).resource!;
   await configurations.saveConfiguration({ kind: EntityKind.ACCOUNT, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ ...metadata, alias: "Retained API entry" }) });

@@ -546,15 +546,15 @@ it("discards a nested integration profile draft on close before targeted reposit
   // Wait for that read so the test clicks the current button, not a detached node.
   await screen.findByRole("heading", { name: "Add your first GitHub profile" });
   fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
-  const name = await screen.findByRole("textbox", { name: "GitHub personal access token" });
+  const name = await screen.findByLabelText("GitHub personal access token");
   fireEvent.change(name, { target: { value: "fixture-unsent-token" } });
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
-  expect(screen.queryByRole("textbox", { name: "GitHub personal access token" })).toBeNull();
+  expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
   expect(value.githubQuery).not.toHaveBeenCalled();
-});
+}, fullShellTimeoutMs);
 
 // Each independent draft family owns its complete close/reopen lifecycle check.
 // Keep them separate so unrelated navigation does not consume one test deadline.

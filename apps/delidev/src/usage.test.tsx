@@ -12,7 +12,7 @@ function fixture() {
   const ids = { session: newRequestId(), account: newRequestId(), model: newRequestId(), provider: newRequestId(), project: newRequestId() };
   const count = { knownTotal: "18446744073709551614", measuredResponses: 2, unavailableResponses: 1 };
   const totals = { responses: 3, total: count, input: { knownTotal: "0", measuredResponses: 2, unavailableResponses: 1 }, output: count, cachedInput: { knownTotal: "", measuredResponses: 0, unavailableResponses: 3 }, cacheWriteInput: { knownTotal: "", measuredResponses: 0, unavailableResponses: 3 }, reasoningOutput: { knownTotal: "0", measuredResponses: 3, unavailableResponses: 0 } };
-  const data = create(GetUsageSummaryResponseSchema, { fromUnixMs: BigInt(Date.UTC(2026, 8, 1)), untilUnixMs: BigInt(Date.UTC(2026, 8, 25)), totals, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, actualCost: UsageCostState.UNAVAILABLE, estimatedCost: UsageCostState.UNAVAILABLE, acceptedExecutionsWithoutResponse: 2, groups: [{ sessionId: ids.session, sessionName: "Retained session", accountId: ids.account, accountName: "Original account", modelId: ids.model, modelName: "Original model", providerId: ids.provider, providerName: "Original API", totals }] });
+  const data = create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, fromUnixMs: BigInt(Date.UTC(2026, 8, 1)), untilUnixMs: BigInt(Date.UTC(2026, 8, 25)), totals, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, actualCost: UsageCostState.UNAVAILABLE, estimatedCost: UsageCostState.UNAVAILABLE, acceptedExecutionsWithoutResponse: 2, groups: [{ sessionId: ids.session, sessionName: "Retained session", accountId: ids.account, accountName: "Original account", modelId: ids.model, modelName: "Original model", providerId: ids.provider, providerName: "Original API", totals }] });
   const read = vi.fn(async (_request: GetUsageSummaryRequest) => data);
   const transport = createRouterTransport((router) => {
     router.service(UsageService, { getUsageSummary: read });
@@ -229,4 +229,12 @@ it("consumes an account entry once, preserves its exact bounds and retains subse
   view.rerender(viewFor(true, next));
   await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
   expect(f.read.mock.calls[1][0].accountId).toBe(next.accountId);
+});
+
+it("rejects response-only accounting without displaying its aggregates", async () => {
+  const f = fixture(); f.data.accountingProfile = UsageAccountingProfile.UNSPECIFIED;
+  render(f.view());
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "The server returned an unsupported accounting profile. Update the selected server.");
+  expect(screen.queryByText("Original model")).toBeNull();
+  expect(screen.queryByText(BigInt("18446744073709551614").toLocaleString())).toBeNull();
 });
