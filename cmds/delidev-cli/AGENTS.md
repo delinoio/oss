@@ -1,3 +1,5 @@
+- Trusted main DeliDev desktops automatically pair/start the fixed local Worker after authenticated local connection and own one joined native supervision task. Fresh launch or explicit Start may reopen ordinary stopped intent; ensure/retry preserve Stop, pending admission and updater ownership. Share current-user Worker service admission without manager writes. Retain original native child/control handles before readiness, recover only confirmed original exits, and stop only app-owned children on normal Quit under the existing 35-second grace. Preserve borrowed CLI/service Workers, saved connections, crash/EOF survival and all native execution uncertainty. Follow the desktop, CLI and user-service contracts; no protocol allocation or database migration.
+
 # DeliDev CLI
 
 - Native read-only Sidechat additionally follows `docs/cmds-delidev-sidechat-contract.md`. Keep original account/snapshot provenance separate from the immutable child enforcement overlay and reference parent workspace roots without ownership. Parent deletion/storage cleanup must durably stop and join every dependent child before removing parent files; independent Fork lifetime remains unchanged.

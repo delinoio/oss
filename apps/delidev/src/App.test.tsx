@@ -20,7 +20,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   other.sessionId = other.id;
   const enqueues = vi.fn(async () => ({ change: { session } }));
   const controls = vi.fn(async () => ({ change: { session } }));
-  const creates = vi.fn(async () => ({ change: { session } }));
+  const creates = vi.fn(async (_request: { requestId: string; documentJson: Uint8Array }) => ({ change: { session } }));
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Agent One" }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
@@ -43,7 +43,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
       return request.pageToken ? { sessions: [] } : { sessions: [session, other], nextPageToken: "global-next" };
     }, listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls, createSession: creates });
     router.service(ResourceService, {
-      getResource: (request) => ({ resource: projects.find((project) => project.id === request.id) }),
+      getResource: (request) => ({ resource: [...projects, ...repositories, agent, machine].find(row => row.kind === request.kind && row.id === request.id) }),
       getSnapshot: (request) => ({ resources: [request.filter?.sessionId === other.id ? other : session], cursor: "snapshot" }),
       listResources: async (request) => {
         if (request.filter?.kind === EntityKind.AGENT && selectorFailure) throw new ConnectError("Selector request failed", selectorFailure);
@@ -229,6 +229,120 @@ it("keeps first-message drafts when title support is absent and preserves valid 
   expect(value.creates).not.toHaveBeenCalled();
 });
 
+function shortcutProject(name: string) {
+  return create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name, repositories: [], agents: { configured: false, ids: [] } }) });
+}
+
+it.each([false, true])("selects a project once, retains the draft, and focuses the composer (compact %s)", async compact => {
+  viewport(compact);
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  const currentDeviceId = newRequestId(), pairingAuthority = { endpoint: "http://127.0.0.1:46310", serverId: newRequestId() };
+  const rendered = render(<StrictMode><App transport={value.transport} currentDeviceId={currentDeviceId} pairingAuthority={pairingAuthority} /></StrictMode>);
+  const showHome = async () => {
+    if (compact) fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
+    await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` });
+  };
+  await showHome();
+  const fold = screen.getByRole("button", { name: `First project. Project ID: ${first.id}` });
+  fireEvent.click(screen.getByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  const prompt = screen.getByRole("textbox", { name: "First message" });
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  expect(fold.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(prompt);
+  if (compact) expect(screen.queryByRole("dialog", { name: "DeliDev navigation" })).toBeNull();
+  fireEvent.change(prompt, { target: { value: "Retain this task" } });
+  await screen.findByRole("option", { name: "Agent One" });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Mode"), { target: { value: "plan" } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold"), { target: { value: "1.25" } });
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Agent Worker")).toHaveProperty("value", value.agent.id);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Runs on")).toHaveProperty("value", value.machine.id);
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` }));
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", second.id);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Agent Worker")).toHaveProperty("value", "");
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Runs on")).toHaveProperty("value", "");
+  expect(screen.getByRole("button", { name: "Use separate Worktrees" }).getAttribute("aria-pressed")).toBe("true");
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Mode")).toHaveProperty("value", "plan");
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold")).toHaveProperty("value", "1.25");
+  expect(screen.getByRole("button", { name: "Options" }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("textbox", { name: "First message" })).toBe(prompt);
+  expect(prompt).toHaveProperty("value", "Retain this task");
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Project"), { target: { value: first.id } });
+  await act(() => i18n.changeLanguage("ko"));
+  expect(document.querySelector<HTMLSelectElement>(".new-session-content > .resource-choice select")!.value).toBe(first.id);
+  await act(() => i18n.changeLanguage("en"));
+  rendered.rerender(<StrictMode><App transport={{ ...value.transport }} currentDeviceId={currentDeviceId} pairingAuthority={pairingAuthority} /></StrictMode>);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  fireEvent.click(screen.getByRole("button", { name: "Back to sessions" }));
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  expect(prompt).toHaveProperty("value", "Retain this task");
+  expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+it("locks shortcuts for pending and uncertain creates and retries the unchanged request", async () => {
+  viewport();
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  let reject!: (reason: unknown) => void;
+  value.creates.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  await screen.findByRole("option", { name: "Agent One" });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("First message"), { target: { value: "Original request" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create session" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(shortcut);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  await act(async () => reject(new ConnectError("ack lost", Code.Unavailable)));
+  await screen.findByRole("button", { name: "Retry the same session creation" });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Back to sessions" }));
+  fireEvent.click(shortcut);
+  expect(screen.queryByRole("textbox", { name: "First message" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(2));
+  expect(value.creates.mock.calls[1][0]).toEqual(value.creates.mock.calls[0][0]);
+  await waitFor(() => expect(shortcut).toHaveProperty("disabled", false));
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+});
+
+it("locks shortcuts during Local proof and preserves the original project on completion", async () => {
+  viewport();
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  let release!: (proof: { machineId: string; token: string }) => void;
+  const readLocalWorker = vi.fn(() => new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; }));
+  render(<App transport={value.transport} readLocalWorker={readLocalWorker} />);
+  fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(shortcut);
+  await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
+  expect(shortcut).toHaveProperty("disabled", false);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  expect(screen.getByRole("button", { name: "Use this computer's Local checkouts" }).getAttribute("aria-pressed")).toBe("true");
+  expect(value.creates).not.toHaveBeenCalled();
+});
+
 it.each([
   [Code.PermissionDenied, /The server denied access to these choices/],
   [Code.Unavailable, /The server connection failed while loading these choices/],
@@ -258,14 +372,23 @@ it("shows selector loading while the current page has not returned", async () =>
   expect(await screen.findByRole("option", { name: "Agent One" })).toBeTruthy();
 });
 
-it("opens a fresh New Project form from the plus button with visible destination focus", async () => {
+it.each(["New project", "Create a project"])("opens a fresh New Project dialog from %s without visiting Settings", async (entry) => {
   const value = fixture();
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
-  const opener = await screen.findByRole("button", { name: "New project" });
-  expect(opener.textContent).toBe("");
-  expect(opener.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  const opener = await screen.findByRole("button", { name: entry });
+  const welcome = screen.getByRole("heading", { name: "Your sessions, in one place" });
+  if (entry === "New project") {
+    expect(opener.textContent).toBe("");
+    expect(opener.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  }
   fireEvent.click(opener);
-  expect(await screen.findByRole("heading", { name: "New Project" })).toBeTruthy();
+  const dialog = await screen.findByRole("dialog", { name: "New Project" });
+  expect(dialog.getAttribute("data-size")).toBe("form");
+  expect(screen.getByRole("heading", { name: "Your sessions, in one place" })).toBe(welcome);
+  expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "Settings categories" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Sessions" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBeNull();
   expect(window.document.querySelector(".sidebar-action-tooltip")).toBeNull();
   const name = screen.getByRole("textbox", { name: "Name" });
   await waitFor(() => expect(window.document.activeElement).toBe(name));
@@ -274,14 +397,164 @@ it("opens a fresh New Project form from the plus button with visible destination
   expect(value.enqueues).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
-  expect(window.document.activeElement).toBe(screen.getByRole("main"));
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  await waitFor(() => expect(window.document.activeElement).toBe(opener));
   fireEvent.click(opener);
   expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
   expect(screen.getAllByRole("heading", { name: "New Project" })).toHaveLength(1);
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
+
+function projectRepository() {
+  return create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Creation repository" }) });
+}
+
+async function fillProject(repository: Resource, name = "Direct project") {
+  fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: name } });
+  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+}
+
+it.each([false, true])("preserves the mounted conversation or New session draft while creating a project (new session %s)", async newSession => {
+  const repository = projectRepository(), value = fixture([], [repository], [], false, true);
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: newSession ? "New session" : /General Chat Retained session/ }));
+  const composer = await screen.findByRole("textbox", { name: newSession ? "First message" : "Message" });
+  fireEvent.change(composer, { target: { value: "Keep this unsent draft" } });
+  const opener = screen.getByRole("button", { name: "New project" });
+  fireEvent.click(opener);
+  await fillProject(repository);
+  expect(screen.getByRole("textbox", { name: newSession ? "First message" : "Message" })).toBe(composer);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+  fireEvent.click(opener);
+  await fillProject(repository);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
+  expect(screen.getByRole("textbox", { name: newSession ? "First message" : "Message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+  expect(value.saveConfiguration).toHaveBeenCalledOnce();
+  expect(value.creates).not.toHaveBeenCalled();
+  expect(value.enqueues).not.toHaveBeenCalled();
+}, fullShellTimeoutMs);
+
+it("returns successful wide project creation to the persistent Home fallback", async () => {
+  const repository = projectRepository(), value = fixture([], [repository]);
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: "Create a project" }));
+  await fillProject(repository);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+}, fullShellTimeoutMs);
+
+it.each([false, true])("closes the compact drawer before creation and returns focus to the persistent Home opener (pending %s)", async pending => {
+  viewport(true);
+  const repository = projectRepository(), value = fixture([], [repository]);
+  if (pending) value.saveConfiguration.mockImplementationOnce(() => new Promise(() => undefined));
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  const opener = screen.getByRole("button", { name: "Open session navigation" });
+  fireEvent.click(opener);
+  const drawer = screen.getByRole("dialog", { name: "DeliDev navigation" });
+  fireEvent.click(await within(drawer).findByRole("button", { name: "New project" }));
+  const dialog = await screen.findByRole("dialog", { name: "New Project" });
+  expect(drawer.hasAttribute("open")).toBe(false);
+  expect(document.querySelectorAll("dialog[open]")).toHaveLength(1);
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Name" })));
+  if (pending) {
+    await fillProject(repository);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save Project" }));
+    await waitFor(() => expect(value.saveConfiguration).toHaveBeenCalledOnce());
+  }
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close New Project" }));
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("navigation", { name: "Settings categories" })).toBeNull();
+  expect(Boolean(screen.queryByRole("button", { name: "View original operation" }))).toBe(pending);
+}, fullShellTimeoutMs);
+
+it("retains the original uncertain project request when either external creation entry reopens it", async () => {
+  const repository = projectRepository(), value = fixture([], [repository]);
+  value.saveConfiguration.mockRejectedValueOnce(new ConnectError("The original response was lost.", Code.Unavailable));
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+  await fillProject(repository);
+  const name = screen.getByRole("textbox", { name: "Name" });
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await screen.findByRole("button", { name: "Retry the same configuration" });
+  const original = value.saveConfiguration.mock.calls[0][0];
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+  expect(await screen.findByRole("button", { name: "View original operation" })).toBeTruthy();
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "New project" })));
+  expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Create a project" }));
+  expect(await screen.findByRole("textbox", { name: "Name" })).toBe(name);
+  expect((name as HTMLInputElement).value).toBe("Direct project");
+  expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(value.saveConfiguration).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same configuration" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
+  expect(value.saveConfiguration).toHaveBeenCalledTimes(2);
+  expect(value.saveConfiguration.mock.calls[1][0]).toEqual(original);
+  expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
+}, fullShellTimeoutMs);
+
+it.each(["surface", "conversation", "connection"] as const)("disposes a hidden pending creation without letting its late success affect a replacement (%s change)", async departure => {
+  const repository = projectRepository(), value = fixture([], [repository], [], false, true);
+  let resolve!: (result: { resource: Resource }) => void;
+  value.saveConfiguration.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const authority = { endpoint: "http://127.0.0.1:9090", serverId: newRequestId() }, deviceId = newRequestId();
+  const tree = (serverId = authority.serverId) => <StrictMode><App transport={value.transport} pairingAuthority={{ ...authority, serverId }} currentDeviceId={deviceId} /></StrictMode>;
+  const view = render(tree());
+  fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+  await fillProject(repository);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(value.saveConfiguration).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+  await screen.findByRole("button", { name: "View original operation" });
+  if (departure === "connection") view.rerender(tree(newRequestId()));
+  else if (departure === "conversation") {
+    fireEvent.click(screen.getByRole("button", { name: /General Chat Retained session/ }));
+    await screen.findByRole("textbox", { name: "Message" });
+  }
+  else {
+    fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  }
+  fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  fireEvent.change(name, { target: { value: "Replacement draft" } });
+  await waitFor(() => expect(document.activeElement).toBe(name));
+  await act(async () => resolve({ resource: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Original accepted project" }) }) }));
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect((name as HTMLInputElement).value).toBe("Replacement draft");
+  expect(document.activeElement).toBe(name);
+  expect(value.saveConfiguration).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+}, fullShellTimeoutMs);
+
+it("retains the creation draft through same-identity reconnect and preserves a denied save for correction", async () => {
+  const repository = projectRepository(), value = fixture([], [repository]), replacement = fixture([], [repository]);
+  replacement.saveConfiguration.mockRejectedValueOnce(new ConnectError("Saving this project was denied.", Code.PermissionDenied));
+  const authority = { endpoint: "http://127.0.0.1:9090", serverId: newRequestId() }, deviceId = newRequestId();
+  const view = render(<App transport={value.transport} pairingAuthority={authority} currentDeviceId={deviceId} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+  await fillProject(repository);
+  const name = screen.getByRole("textbox", { name: "Name" });
+  view.rerender(<App transport={replacement.transport} pairingAuthority={authority} currentDeviceId={deviceId} connectionEpoch={1} />);
+  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect((name as HTMLInputElement).value).toBe("Direct project");
+  expect(value.saveConfiguration).not.toHaveBeenCalled();
+  expect(replacement.saveConfiguration).toHaveBeenCalledOnce();
+  expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
+}, fullShellTimeoutMs);
 
 it("preserves a protected draft on active Settings reselection and discards it on departure", async () => {
   const value = fixture();
@@ -316,6 +589,9 @@ it("abandons an uncertain New Project save without replay when reopening", async
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+  await screen.findByRole("button", { name: "View original operation" });
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(opener);
   expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
@@ -360,8 +636,8 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
   fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
-  expect(await screen.findByRole("button", { name: "New Project" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
+  expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
   await waitFor(() => expect(value.projectRequests.filter((page) => page === "project-next")).toHaveLength(currentProjectReads + 1));
   await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toHaveLength(currentGlobalReads + 1));
   await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next")).toHaveLength(currentProjectSessionReads + 1));

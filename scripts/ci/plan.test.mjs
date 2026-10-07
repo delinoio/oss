@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import test from "node:test";
@@ -279,12 +279,78 @@ test("DeliDev updater generator changes select both consumers and force desktop 
   }
 });
 
+test("Linux publication entry point, helpers and configuration select portable fixtures", () => {
+  const helpers = readdirSync(new URL("../release/linux-packages/", import.meta.url), { recursive: true });
+  for (const event of [Event.PullRequest, Event.Push]) {
+    for (const path of [
+      "scripts/release/linux-packages.mjs",
+      "packaging/linux/pins.json",
+      ...helpers.map((name) => `scripts/release/linux-packages/${name.replaceAll("\\", "/")}`),
+    ]) {
+      const plan = planJobs(event, [path]);
+      assert.equal(plan.jobs["devhud-release-contracts"], true, `${event}: ${path}`);
+      assert.equal(plan.jobs["linux-packages"], event === Event.Push, `${event}: ${path}`);
+      for (const id of devhudNative) assert.equal(plan.jobs[id], false, `${event}: ${path}: ${id}`);
+      if (path !== "scripts/release/linux-packages.mjs") {
+        assert.equal(plan.jobs["node-clibox-test"], true, `${event}: ${path}`);
+      }
+      const needs = results(event, [path]);
+      assert.equal(validateResults(needs), true);
+      for (const result of ["failure", "cancelled", "skipped"]) {
+        needs["devhud-release-contracts"].result = result;
+        assert.throws(() => validateResults(needs), /devhud-release-contracts/u);
+      }
+    }
+  }
+});
+
 test("unrelated release helpers retain their narrower owners", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of ["scripts/release/runmoor.mjs", "scripts/release/runmoor-homebrew.mjs"]) {
       assert.deepEqual(selected(event, [path]), ["devhud-release-contracts"]);
     }
     assert.deepEqual(selected(event, ["scripts/release/generate-delidev-updater.test.mjs"]), ["devhud-release-contracts"]);
+  }
+});
+
+test("a readback regression fails the portable fixture command and CI aggregate", (t) => {
+  const cwd = mkdtempSync(join(tmpdir(), "linux-publication-ci-"));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  for (const path of [
+    "scripts/ci/from-root.mjs",
+    "scripts/release/linux-packages.test.mjs",
+    "scripts/release/linux-packages",
+    "scripts/release/runmoor.mjs",
+    "packaging/linux/pins.json",
+  ]) {
+    const target = join(cwd, path);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(new URL(`../../${path}`, import.meta.url), target, { recursive: true });
+  }
+  // Keep this fault injection offline and independent of native package tools.
+  // A new test runner must not inherit the parent runner's child context.
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const run = () => spawnSync(process.execPath, [
+    join(cwd, "scripts/ci/from-root.mjs"), "node", "--test",
+    "--test-name-pattern=public readback never accepts mismatched bytes",
+    "scripts/release/*.test.mjs",
+  ], { cwd, env, encoding: "utf8", timeout: 30000 });
+  const baseline = run();
+  assert.ifError(baseline.error);
+  assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
+  const path = "scripts/release/linux-packages/public-readback.mjs";
+  writeFileSync(join(cwd, path), "export async function verifyPublicObject() {}\n");
+  const failing = run();
+  assert.ifError(failing.error);
+  assert.equal(failing.status, 1, failing.stdout + failing.stderr);
+  assert.match(failing.stdout, /Missing expected rejection/u);
+  assert.match(failing.stdout, /"event":"ci_task_exit","command":"node","code":1/u);
+  for (const event of [Event.PullRequest, Event.Push]) {
+    const needs = results(event, [path]);
+    assert.equal(planJobs(event, [path]).jobs["devhud-release-contracts"], true);
+    needs["devhud-release-contracts"].result = failing.status === 0 ? "success" : "failure";
+    assert.throws(() => validateResults(needs), /devhud-release-contracts: expected success, got failure/u);
   }
 });
 
