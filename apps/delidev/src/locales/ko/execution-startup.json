@@ -1,0 +1,5 @@
+{
+  "execution-startup.runnerRemedy": "이 원래 Runner 검사",
+  "execution-startup.runnerReadInvalid": "원래 Runner 관찰을 읽을 수 없습니다. 원래 작업을 유지하고 다른 Runner를 선택하지 않은 상태에서 읽기를 재시도하세요.",
+  "execution-startup.runnerOwnershipLocked": "다른 원본 Runner 검사 작업이 대기 중이거나 결과가 불확실합니다. 현재 Runner를 검사하기 전에 유지된 원본 작업을 완료하거나 확인하세요."
+}

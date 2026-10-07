@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { copy, useLocale } from "./localization";
 import { useId, type ReactNode } from "react";
 
 export interface RepositoryCloneDraft { url: string; parent: string; directory?: string }
@@ -46,19 +47,20 @@ export function repositoryClonePath(parent: string, directory: string): string {
 export function RepositoryCloneFields({ draft, change, busy, browse, github, supported, showURL = true }: {
   draft: RepositoryCloneDraft; change: (draft: RepositoryCloneDraft) => void; busy: boolean; browse: () => void; github?: ReactNode; supported: boolean; showURL?: boolean;
 }) {
+  useLocale();
   const parentId = useId();
   const parsed = repositoryCloneURL(draft.url);
   const directory = draft.directory ?? parsed?.directory ?? "";
-  return <section className="repository-clone-fields" aria-label="Clone repository">
-    {showURL ? <><label>Git URL<input type="text" value={draft.url} maxLength={4096} placeholder="https://github.com/owner/repository.git" disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, url: event.target.value })} /></label>
-    {draft.url && !parsed ? <p role="alert">Enter a credential-free HTTPS or SSH Git URL.</p> : null}
+  return <section className="repository-clone-fields" aria-label={copy("repository-clone-fields.inline.e8fa94aba0")}>
+    {showURL ? <><label>{copy("repository-clone-fields.inline.cd01c2ef6a")}<input type="text" value={draft.url} maxLength={4096} placeholder={copy("repository-clone-fields.inline.a2116e2c72")} disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, url: event.target.value })} /></label>
+    {draft.url && !parsed ? <p role="alert">{copy("repository-clone-fields.inline.2f00f15706")}</p> : null}
     {github}</> : null}
-    <div><label htmlFor={parentId}>Clone to</label><div className="repository-clone-destination"><input id={parentId} type="text" value={draft.parent} maxLength={4096} placeholder="Choose a parent folder" disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, parent: event.target.value })} /><button type="button" disabled={busy} onClick={browse}>Browse…</button></div></div>
-    <p>A new repository folder will be created here.</p>
-    {parsed ? <><label>Repository folder name<input type="text" value={directory} maxLength={255} disabled={busy} onChange={event => change({ ...draft, directory: event.target.value })} /></label>{!repositoryCloneDirectory(directory) ? <p role="alert">Enter a portable folder name without separators or reserved device names.</p> : null}</> : null}
-    {draft.parent && !repositoryCloneParent(draft.parent) ? <p role="alert">Choose an absolute parent folder on this computer.</p> : null}
-    {parsed && repositoryCloneDirectory(directory) && repositoryCloneParent(draft.parent) ? <p className="repository-path">Final path: {repositoryClonePath(draft.parent, directory)}</p> : null}
-    <p>Private repositories use this computer's Git or SSH credentials.</p>
-    {!supported ? <p role="status">Update the selected server and this computer's Worker to clone repositories.</p> : null}
+    <div><label htmlFor={parentId}>{copy("repository-clone-fields.inline.274474037d")}</label><div className="repository-clone-destination"><input id={parentId} type="text" value={draft.parent} maxLength={4096} placeholder={copy("repository-clone-fields.inline.5dbae92725")} disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, parent: event.target.value })} /><button type="button" disabled={busy} onClick={browse}>{copy("repository-clone-fields.inline.93c6b664dc")}</button></div></div>
+    <p>{copy("repository-clone-fields.inline.50edff7c50")}</p>
+    {parsed ? <><label>{copy("repository-clone-fields.inline.734294b760")}<input type="text" value={directory} maxLength={255} disabled={busy} onChange={event => change({ ...draft, directory: event.target.value })} /></label>{!repositoryCloneDirectory(directory) ? <p role="alert">{copy("repository-clone-fields.inline.ebb54b60a0")}</p> : null}</> : null}
+    {draft.parent && !repositoryCloneParent(draft.parent) ? <p role="alert">{copy("repository-clone-fields.inline.a0acf59b0f")}</p> : null}
+    {parsed && repositoryCloneDirectory(directory) && repositoryCloneParent(draft.parent) ? <p className="repository-path">{copy("repository-clone-fields.inline.51d016541d")} {repositoryClonePath(draft.parent, directory)}</p> : null}
+    <p>{copy("repository-clone-fields.inline.4df6bcbdda")}</p>
+    {!supported ? <p role="status">{copy("repository-clone-fields.inline.11e37089ac")}</p> : null}
   </section>;
 }

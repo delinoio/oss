@@ -25,5 +25,6 @@
   "session-browser.extra.1b8cff3d45fb": "The browser view could not be updated.",
   "session-browser.extra.c6d1ec80c1c4": "The local browser state is unavailable.",
   "session-browser.extra.51fee7071e2b": "The browser action failed. Check its address and the current server and account authorization.",
-  "session-browser.cefBrowserProfilesRequireTheSupported_c9b9e8": "CEF browser profiles require the supported desktop host."
+  "session-browser.cefBrowserProfilesRequireTheSupported_c9b9e8": "CEF browser profiles require the supported desktop host.",
+  "session-browser.retryCapability": "Retry browser capability read"
 }

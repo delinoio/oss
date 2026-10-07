@@ -43,3 +43,17 @@ it.each(["codex", "opencode"])("preserves one exact %s manual request through re
 it.each([undefined, encode({ session_id: "foreign", session_revision: "1" }), encode({ session_id: "original", session_revision: "0" }), new Uint8Array([255]), new Uint8Array((1 << 20) + 1)])("rejects unavailable or foreign context", (bytes) => {
  expect(contextDocument(bytes, "original")).toBeUndefined();
 });
+
+it("keeps failed capability reads separate from unsupported context and rechecks without compaction", async () => {
+ const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ initial_execution: { configuration: { harness: "codex" } } }) });
+ const status = vi.fn().mockRejectedValueOnce(new ConnectError("private-native-error", Code.PermissionDenied)).mockResolvedValue({ capabilities: [] });
+ const compact = vi.fn();
+ const transport = createRouterTransport(router => { router.service(SystemService, { getStatus: status }); router.service(SessionService, { compactSession: compact }); });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionContext session={session} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ await screen.findByText(/Context capability could not be read/);
+ expect(screen.queryByText(/Update the server and original Worker/)).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Retry context capability read" }));
+ await waitFor(() => expect(status).toHaveBeenCalledTimes(2));
+ expect(compact).not.toHaveBeenCalled();
+});

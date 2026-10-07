@@ -27,5 +27,6 @@
   "session-budget.loadingBudget_ff9d54": "예산을 불러오는 중…",
   "session-budget.theServerAcknowledgedTheBudgetWithout_6e9839": "서버가 예산을 접수했지만 결과를 읽을 수 없습니다. 다시 변경하기 전에 현재 세션을 새로 고치세요.",
   "session-budget.editSessionBudget_ee0f8a": "세션 예산 편집",
-  "session-budget.extra.96afe54d0f2e": "예산 필드를 검토하세요."
+  "session-budget.extra.96afe54d0f2e": "예산 필드를 검토하세요.",
+  "session-budget.budgetReadFailed": "예산 근거를 읽지 못했습니다. 여기서 예산을 새로 고치고 원래 실행과 예산 초안을 유지하세요."
 }

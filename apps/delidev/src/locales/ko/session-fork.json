@@ -23,5 +23,8 @@
   "session-fork.retryTheSameForkRequest_782e42": "같은 포크 요청 다시 시도",
   "session-fork.theForkAcknowledgmentIsIncompleteRetain_a0f92f": "분기 접수 확인이 불완전합니다. 원래 요청을 유지하고 작업을 확인한 후 다시 분기하세요.",
   "session-fork.returnToRetainedForkOperation_1beee5": "유지된 포크 작업으로 돌아가기",
-  "session-fork.extra.a00fb0c50741": "수락됨"
+  "session-fork.extra.a00fb0c50741": "수락됨",
+  "session-fork.retryCapability": "포크 기능 읽기 재시도",
+  "session-fork.retryRunnerRead": "원래 포크 Runner 다시 확인",
+  "session-fork.retryProfileRead": "원래 포크 프로필 다시 확인"
 }

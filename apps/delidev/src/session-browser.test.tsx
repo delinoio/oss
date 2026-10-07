@@ -168,3 +168,18 @@ it.each(["closed drawer", "wide region", "hidden popup"])("opens beside the pers
     expect(second.viewId).not.toBe(first.viewId);
   } finally { sidebar.remove(); }
 });
+
+it("rechecks failed browser capabilities locally without registration or clearing the address", async () => {
+ const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n });
+ const capabilities = vi.fn().mockRejectedValueOnce(new ConnectError("private-native-capability", Code.PermissionDenied)).mockResolvedValue({ capabilities: [] });
+ const register = vi.fn();
+ const transport = createRouterTransport(router => router.service(BrowserService, { getBrowserCapabilities: capabilities, registerBrowserProfile: register }));
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionBrowser session={session} accountId={newRequestId()} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ const address = screen.getByRole("textbox", { name: "Address" });
+ fireEvent.change(address, { target: { value: "https://fixture.test/original" } });
+ fireEvent.click(await screen.findByRole("button", { name: "Retry browser capability read" }));
+ await waitFor(() => expect(capabilities).toHaveBeenCalledTimes(2));
+ expect(address).toHaveProperty("value", "https://fixture.test/original");
+ expect(register).not.toHaveBeenCalled(); expect(native).not.toHaveBeenCalled();
+});

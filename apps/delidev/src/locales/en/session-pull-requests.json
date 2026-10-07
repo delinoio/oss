@@ -28,5 +28,8 @@
   "session-pull-requests.showPrAssociations_8dbf45": "Show PR associations",
   "session-pull-requests.extra.26513f241135": "The link was acknowledged, but its response could not be verified. Refresh retained associations before another operation.",
   "session-pull-requests.extra.d68ee597ba2c": "PR association saved.",
-  "session-pull-requests.extra.648a9b6650b9": "The unlink acknowledgment could not be verified. Refresh current associations."
+  "session-pull-requests.extra.648a9b6650b9": "The unlink acknowledgment could not be verified. Refresh current associations.",
+  "session-pull-requests.inline.60c1498ca3": "Original association:",
+  "session-pull-requests.inline.a4c646bacf": "The retained unlink request could not be verified.",
+  "session-pull-requests.inline.e3faf29ec8": "Pending PR unlinks"
 }

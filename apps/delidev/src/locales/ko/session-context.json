@@ -14,5 +14,7 @@
   "session-context.compactTheNativeWorkingContextAt_69b0dd": "완료된 경계에서 네이티브 작업 컨텍스트를 압축합니다. 저장된 대화와 대기 중인 입력은 유지됩니다.",
   "session-context.compactContext_afbbb8": "컨텍스트 압축",
   "session-context.compactionRequiresASupportedHarnessAnd_ae76ff": "압축에는 지원되는 하네스와 워커가 필요하며 자격을 갖춘 안정된 경계에서 수행됩니다.",
-  "session-context.retryTheSameCompactionRequest_12667c": "동일한 압축 요청 다시 시도"
+  "session-context.retryTheSameCompactionRequest_12667c": "동일한 압축 요청 다시 시도",
+  "session-context.capabilityReadFailed": "컨텍스트 기능을 읽지 못했습니다. 원래 Worker에 업데이트가 필요하다는 의미는 아닙니다.",
+  "session-context.retryCapability": "컨텍스트 기능 읽기 재시도"
 }

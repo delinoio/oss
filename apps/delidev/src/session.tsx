@@ -1,3 +1,4 @@
+import { RunnerTaskRemediation } from "./session-runner-remediation";
 import { sessionControlEligibility, useSessionControl } from "./session-control";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
@@ -210,12 +211,14 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
 });
 
 enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics", Info = "info" }
-enum InfoTarget { Status = "status", Budget = "budget" }
+enum InfoTarget { Status = "status", Recovery = "recovery", Budget = "budget" }
 
-export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: string; draft: string; setDraft: (value: string) => void; openRunnerSettings?: () => void }) {
+export function SessionView({ id, draft, setDraft, active = true }: { id: string; draft: string; setDraft: (value: string) => void; active?: boolean; openRunnerSettings?: () => void }) {
   useLocale();
   const live = useSessionStream(id);
   const [panel, setPanel] = useState(SessionPanel.Closed);
+  const [recoveryLauncherTarget, setRecoveryLauncherTarget] = useState<HTMLDivElement | null>(null);
+  const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(null);
   const terminalsButton = useRef<HTMLButtonElement>(null);
   const filesButton = useRef<HTMLButtonElement>(null);
   const diffButton = useRef<HTMLButtonElement>(null);
@@ -231,17 +234,18 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
   useLayoutEffect(() => { if (panel === SessionPanel.Info) infoHeading.current?.focus({ preventScroll: true }); }, [panel]);
   useLayoutEffect(() => {
     if (!infoReveal) return;
-    const target = infoReveal.target === InfoTarget.Budget ? budgetDetails.current : infoEvidence.current;
+    const target = infoReveal.target === InfoTarget.Budget ? budgetDetails.current : infoReveal.target === InfoTarget.Recovery ? infoToolsTarget : infoEvidence.current;
     if (target instanceof HTMLDetailsElement) target.open = true;
     else {
       target?.querySelectorAll("details").forEach(details => { details.open = true; });
       const recovery = information.current?.querySelector<HTMLDetailsElement>(".session-tools");
       if (recovery) recovery.open = true;
     }
-    target?.focus({ preventScroll: true });
+    (infoReveal.target === InfoTarget.Recovery ? target?.querySelector<HTMLButtonElement>(".notice button") : target)?.focus({ preventScroll: true });
     target?.scrollIntoView?.({ block: "nearest" });
   }, [infoReveal]);
  const [budgetBlocked,setBudgetBlocked]=useState(false);
+ const [runnerRemediationPending, setRunnerRemediationPending] = useState(false);
   const queueDrafts = useConversationDrafts<QueuedInputDraft>();
   const requestDrafts = useConversationDrafts<InboxInteractionDraft>();
   const interactionRow = (row: Resource) => {
@@ -261,6 +265,7 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
   const data = readDocument(session);
   const startupFailure = executionStartupFailure(data);
   const startupRetry = canRetryExecutionStartup(data);
+  const inlineRecovery = Boolean(startupFailure || Object.hasOwn(data, "startup_rejection") || data.recovery === "required" || ["failed", "canceled", "uncertain"].includes(text(object(data.preparation).state)));
   // A paused account switch selects the next account without rewriting the
   // preceding execution. Match the server's continuation selection immediately.
   const accountChanges = items(data.account_changes);
@@ -336,7 +341,7 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
       </div>
       <div className="session-controls">
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
-        <button type="button" disabled={!session || control.busy || control.uncertain || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
+        <button type="button" disabled={!session || control.busy || control.uncertain || runnerRemediationPending || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
         <SessionActions>
           {session ? <SessionForkAction source={session} disabled={control.busy || control.uncertain} /> : null}
           <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
@@ -350,15 +355,18 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
     <div className="session-body">
       <div className="session-notices">
         {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={opener => showInfo(opener)}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
-        {startupFailure ? <SessionNotice details={opener => showInfo(opener)}><strong>{copy("session.startupFailed")}</strong><span>{startupFailure.state === 2 ? startupCorrection(startupFailure) : copy("session.startupRecover")}</span>{openRunnerSettings && ["not_found", "permission_denied", "unsupported", "invalid_argument"].includes(text(startupFailure.problem_code)) ? <button type="button" onClick={openRunnerSettings}>{copy("session.startupRunnerSettings")}</button> : null}</SessionNotice> : null}
+        {startupFailure ? <SessionNotice><strong>{copy("session.startupFailed")}</strong><span>{startupFailure.state === 2 ? startupCorrection(startupFailure) : copy("session.startupRecover")}</span><ExecutionStartupDetails key={text(startupFailure.correlation_id)} failure={startupFailure} />{startupFailure.state === 2 ? <p>{copy("session.startupManualSteps")}</p> : null}</SessionNotice> : Object.keys(object(object(data.startup).failure)).length ? <p role="alert">{copy("session.startupInvalidEvidence")}</p> : null}
         {text(problem.message) && !startupFailure ? <SessionNotice details={opener => showInfo(opener)}><strong>{text(data.dispatch) === "blocked" ? copy("session.executionBlocked") : copy("session.attentionRequired")}</strong><span>{failureSummary(text(problem.code) || text(problem.problem_code))}</span></SessionNotice> : null}
         {recovering ? <SessionNotice details={opener => showInfo(opener)}><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></SessionNotice> : null}
-        {Object.hasOwn(data, "startup_rejection") ? <SessionNotice details={opener => showInfo(opener)}>{copy("startup-rejection.agentDidNotStart_32a1e1")}</SessionNotice> : null}
+        {session && Object.hasOwn(data, "startup_rejection") ? <StartupRejection session={session} /> : null}
         {budgetBlocked ? <SessionNotice details={opener => showInfo(opener, InfoTarget.Budget)}>{copy("session-budget.budgetThresholdReachedNewTurnsAnd_6236ce")}</SessionNotice> : null}
         {control.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(control.error).code)}</SessionNotice> : null}
-        {control.uncertain ? <SessionNotice details={opener => showInfo(opener)}>{copy("session.retryTheSameControlRequest_609aff")}</SessionNotice> : null}
+        {control.uncertain ? <SessionNotice details={opener => showInfo(opener)}><span>{copy("session.startupControlUncertain")}</span><button type="button" onClick={control.retry} disabled={control.busy}>{copy("session.retryTheSameControlRequest_609aff")}</button></SessionNotice> : null}
         {send.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(send.error).code)}</SessionNotice> : null}
+      <RunnerTaskRemediation active={active} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
+        <div ref={setRecoveryLauncherTarget} hidden={!inlineRecovery} />
       </div>
+      {session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen={panel === SessionPanel.Info} target={infoToolsTarget} launcherTarget={inlineRecovery ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)} /> : null}
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
@@ -393,14 +401,12 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
     <aside ref={information} id={`info-${id}`} className="session-app-panel session-information" hidden={panel !== SessionPanel.Info} aria-labelledby={`info-title-${id}`}>
       <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2><button type="button" onClick={closePanel} aria-label={copy("session.closeInformation")}>×</button></header>
       <div className="session-information-body">
-        {session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen /> : null}
+        <div ref={setInfoToolsTarget} tabIndex={-1} />
         <div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
           <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
           {recovering ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
           {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p>{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
-          {startupFailure ? <ExecutionStartupDetails key={text(startupFailure.correlation_id)} failure={startupFailure} /> : null}
-          {session ? <StartupRejection session={session} /> : null}
-          <Problem error={control.error} />{control.uncertain ? <button onClick={control.retry} disabled={control.busy}>{copy("session.retryTheSameControlRequest_609aff")}</button> : null}
+          <Problem error={control.error} />
           <Problem error={send.error} />
         </div>
         {session ? <>

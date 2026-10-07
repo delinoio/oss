@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { copy, useLocale } from "./localization";
 import { object, text, type Document } from "./documents";
 
@@ -40,22 +40,23 @@ export function startupCorrection(failure: Document): string {
 
 export function ExecutionStartupDetails({ failure }: { failure: Document }) {
   useLocale();
+  const alive = useRef(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const phases = ["", copy("session.startupResolve"), copy("session.startupLaunch"), copy("session.startupInitialize"), copy("session.startupAppliedSettings"), copy("session.startupInput"), copy("session.startupExecution"), copy("session.startupCleanup")];
   const delivery = ["", copy("session.startupNotSent"), copy("session.startupClaimed"), copy("session.startupAcknowledged"), copy("session.startupUnknown")];
   // Project only validated metadata. Never copy the resource or native output.
   const metadata = { phase: failure.phase, harness: failure.harness, native_version: failure.native_version ?? "", problem_code: failure.problem_code, correlation_id: failure.correlation_id, input_delivery: failure.input_delivery, cleanup: failure.cleanup };
-  return <section className="execution-startup-details" aria-label={copy("session.startupDetails")}>
-    <h3>{copy("session.startupDetails")}</h3>
+  return <details className="execution-startup-details"><summary>{copy("session.startupDetails")}</summary>
     <dl><dt>{copy("session.startupPhase")}</dt><dd>{phases[Number(failure.phase)]}</dd>
       <dt>{copy("session.startupVersion")}</dt><dd>{text(failure.native_version) || copy("session.startupUnavailable")}</dd>
       <dt>{copy("session.startupCode")}</dt><dd>{text(failure.problem_code)}</dd>
       <dt>{copy("session.startupReference")}</dt><dd>{text(failure.correlation_id)}</dd>
       <dt>{copy("session.startupInputDelivery")}</dt><dd>{delivery[Number(failure.input_delivery)]}</dd>
       <dt>{copy("session.startupCleanup")}</dt><dd>{failure.cleanup === Cleanup.Confirmed ? copy("session.startupConfirmed") : copy("session.startupUnknown")}</dd></dl>
-    <p>{failure.state === StartupState.Failed ? startupCorrection(failure) : copy("session.startupRecover")}</p>
-    <button type="button" onClick={() => { setCopied(false); setCopyFailed(false); if (!navigator.clipboard) { setCopyFailed(true); return; } void navigator.clipboard.writeText(JSON.stringify(metadata, null, 2)).then(() => setCopied(true), () => setCopyFailed(true)); }}>{copy("session.startupCopy")}</button>
+    <p>{failure.state === StartupState.Failed ? copy("session.startupManualSteps") : copy("session.startupRecover")}</p>
+    <button type="button" onClick={() => { setCopied(false); setCopyFailed(false); if (!navigator.clipboard) { setCopyFailed(true); return; } void navigator.clipboard.writeText(JSON.stringify(metadata, null, 2)).then(() => { if (alive.current) setCopied(true); }, () => { if (alive.current) setCopyFailed(true); }); }}>{copy("session.startupCopy")}</button>
     {copied ? <p role="status">{copy("session.startupCopied")}</p> : null}{copyFailed ? <p role="status">{copy("session.startupCopyFailed")}</p> : null}
-  </section>;
+  </details>;
 }

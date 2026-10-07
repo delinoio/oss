@@ -35,6 +35,7 @@ it("copies only validated debugging metadata without another check", async () =>
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   render(<ExecutionStartupDetails failure={failure} />);
+  fireEvent.click(screen.getByText("Startup failure details"));
   expect(screen.getByText("0.150.9")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Copy debugging details" }));
   await waitFor(() => expect(screen.getByRole("status").textContent).toContain("copied"));

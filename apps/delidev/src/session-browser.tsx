@@ -144,8 +144,8 @@ function NativeSessionBrowser({ session, accountId, close }: { session: Resource
     <header><h3>{copy("session-browser.browser_d31de1")}</h3><button onClick={close}>{copy("session-browser.closeBrowser_dd3303")}</button></header>
     <p>{copy("session-browser.sharedWithThisAccountSSessions_361a18")}</p>
     {!profileId ? <><p>{copy("session-browser.enterAWebAddressThenOpen_60a48b")}</p><button disabled={blocked || !supported || !idPattern.test(accountId) || !validAddress(address)} onClick={() => void registration.send({ session: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() }, accountId })}>{copy("session-browser.openAccountBrowser_6ee5d1")}</button>{registration.uncertain ? <button disabled={registration.busy} onClick={registration.retry}>{copy("session-browser.retryTheSameRegistration_c86ef9")}</button> : null}<Problem error={registration.error} /></> : null}
-    {!supported ? <p>{copy("session-browser.protectedBrowserProfilesAreUnavailableUntil_033b80")}</p> : null}
-    <Problem error={capabilities.error} />
+    {!supported && !capabilities.error ? <p>{copy("session-browser.protectedBrowserProfilesAreUnavailableUntil_033b80")}</p> : null}
+    <Problem error={capabilities.error} actions={<button disabled={capabilities.isFetching} onClick={() => void capabilities.refetch()}>{copy("session-browser.retryCapability")}</button>} />
     {failure ? <p role="alert">{failure}</p> : null}
     {state?.removal_pending ? <p role="alert">{copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")}</p> : null}
     <form onSubmit={(event) => { event.preventDefault(); void control(BrowserAction.Navigate); }} className="browser-address">

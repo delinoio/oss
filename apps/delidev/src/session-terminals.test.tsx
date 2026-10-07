@@ -253,3 +253,20 @@ it("preserves the explicitly attached terminal and its draft after its history p
   expect(input).toHaveProperty("value", "Retained terminal draft");
   expect(watch).toHaveBeenCalledTimes(1);
 });
+
+it("keeps failed terminal capability reads distinct from missing support and preserves the shell draft", async () => {
+ const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+ const status = vi.fn().mockRejectedValueOnce(new ConnectError("private-native-status", Code.PermissionDenied)).mockResolvedValue({ capabilities: [] });
+ const createTerminal = vi.fn();
+ const transport = createRouterTransport(router => { router.service(SystemService, { getStatus: status }); router.service(TerminalService, { createTerminal }); });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} close={() => {}} /></MutationIntents></TransportProvider></QueryClientProvider>);
+ const shell = screen.getByRole("textbox");
+ fireEvent.change(shell, { target: { value: "/original/shell" } });
+ const retry = await screen.findByRole("button", { name: "Retry terminal capability read" });
+ expect(screen.queryByText(/Waiting for a server that supports/)).toBeNull();
+ expect(createTerminal).not.toHaveBeenCalled();
+ fireEvent.click(retry);
+ await waitFor(() => expect(status).toHaveBeenCalledTimes(2));
+ expect(shell).toHaveProperty("value", "/original/shell"); expect(createTerminal).not.toHaveBeenCalled();
+});

@@ -60,19 +60,20 @@ function PendingUnlink({ sessionId, associationId, refreshed }: { sessionId: str
   const original = remove.input as UnlinkSessionPullRequestRequest | undefined;
   const valid = original?.sessionId === sessionId && original.mutation?.id === associationId && uuid(original.mutation.requestId) && original.mutation.expectedRevision > 0n && original.mutation.expectedRevision < 1n << 63n;
   return <article aria-label={`Pending PR unlink ${associationId}`}>
-    <p>Original association: {associationId}</p>
+    <p>{copy("session-pull-requests.inline.60c1498ca3")} {associationId}</p>
     <p role="status">{remove.busy ? "Submitting original PR unlink…" : "PR unlink acknowledgment is uncertain."}</p>
     <Problem error={remove.error} />
-    {!valid ? <p role="alert">The retained unlink request could not be verified.</p> : remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>Retry original PR unlink</button> : null}
+    {!valid ? <p role="alert">{copy("session-pull-requests.inline.a4c646bacf")}</p> : remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>{copy("session-pull-requests.retryOriginalPrUnlink_29e215")}</button> : null}
   </article>;
 }
 
 function PendingUnlinks({ sessionId, refreshed }: { sessionId: string; refreshed: () => void }) {
+  useLocale();
   const prefix = `session-pr:unlink:${sessionId}:`;
   const intents = useRetainedMutationIntents(prefix).filter((intent) => uuid(intent.key.slice(prefix.length)));
   // Unlink can remove its own row before the original receipt reaches this
   // connection. Recovery must remain independent of the current resource page.
-  return intents.length ? <section aria-label="Pending PR unlinks"><h4>Pending PR unlinks</h4>
+  return intents.length ? <section aria-label={copy("session-pull-requests.inline.e3faf29ec8")}><h4>{copy("session-pull-requests.inline.e3faf29ec8")}</h4>
     {intents.map((intent) => <PendingUnlink key={intent.key} sessionId={sessionId} associationId={intent.key.slice(prefix.length)} refreshed={refreshed} />)}
   </section> : null;
 }
