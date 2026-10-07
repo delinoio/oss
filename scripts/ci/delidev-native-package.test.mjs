@@ -56,7 +56,7 @@ test('workspace investigation is explicit and excludes package assembly', () => 
   assert.equal(fixtures['timeout-minutes'], 60);
   assert.equal(fixtures.steps.length, 3);
   assert.ok(fixtures.steps.some(step => step.with?.lfs === true && step.with['persist-credentials'] === false));
-  assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotMaximumInventoryRemainsDeletable|TestSnapshotCreatePublicationFailureRetainsOriginalRecovery|TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart|TestSnapshotObservationSharesBudgetBeforeHashing|TestSnapshotObservationStopsAtAggregateGitInventory|TestSnapshotAdmissionReservesPrivatePathHeadroom)$' -count=1 -timeout=45m -v");
+  assert.equal(fixtures.steps.at(-1).run, "go test ./cmds/delidev-cli/internal/workspace -run '^(TestClaimedRemovalPreservesUncapturedWritesDuringUnlink|TestSnapshotCreatePublicationFailureRetainsOriginalRecovery|TestRemovalJournalCapacityCompactionRetainsActiveProofAcrossRestart|TestSnapshotObservationSharesBudgetBeforeHashing|TestSnapshotObservationStopsAtAggregateGitInventory|TestSnapshotAdmissionReservesPrivatePathHeadroom)$' -count=1 -timeout=45m -v");
 });
 
 test('DeliDev updater inputs retain the one six-target matrix and keyless boundary',()=>{
