@@ -66,6 +66,7 @@ async fn desktop_credential_access(
     action: delidev_desktop::CredentialAccessAction,
     server: String,
     generation: String,
+    expected_attempt_id: Option<String>,
 ) -> Result<delidev_desktop::CredentialAccessResult, NativeFailure> {
     let original = capture_authority(&window)?;
     trusted_local(&window)?;
@@ -74,7 +75,7 @@ async fn desktop_credential_access(
     let dispatch_authority = original.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         recheck_authority(&dispatch_window, &dispatch_authority)?;
-        connector.credential_access(action, &server, &generation)
+        connector.credential_access(action, &server, &generation, expected_attempt_id.as_deref())
     })
     .await
     .map_err(|_| NativeFailure::SidecarFailed)?;

@@ -21,8 +21,10 @@ checking and Connection & diagnostics. Small windows retain 16px side padding
 and vertical scrolling; reduced-motion preference suppresses spinner animation.
 Successful access or no eligible key enters the product automatically and moves
 focus to its heading. Failure remains on the same card with an announced safe
-problem, explicit Retry and Continue. Unknown transport results only re-observe
-the same attempt; only a confirmed terminal failure can start a fresh retry.
+problem, explicit Retry and Continue. Retry names the exact failed attempt shown
+in that window; a stale failure cannot retry a newer native attempt. Unknown
+transport results only re-observe the same attempt; only a confirmed terminal
+failure can start a fresh retry.
 Skipping or a borrowed server displays a dismissible notice stating that startup
 checking was skipped and saved account status is unchanged. Saved remote windows
 and non-macOS launches retain their existing entry flow.

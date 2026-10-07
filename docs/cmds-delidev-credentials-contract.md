@@ -96,8 +96,10 @@ account-health write, revision or receipt change is permitted. Access success
 proves decryptability only, not provider readiness.
 
 Repeated observation reuses the original attempt, including unknown replies.
-Terminal failures require an explicit observed-failure Retry and a new attempt
-bound to its original predecessor; status and restart do not retry authentication.
+Terminal failures require an explicit Retry that names the exact failed attempt
+shown in the invoking window; native code rejects a stale failure if another
+window has advanced the attempt. The new attempt remains bound to its original
+predecessor; status and restart do not retry authentication.
 Continue without checking cancels later reads and retains a skipped observation.
 A synchronous OS-owned prompt may remain open until its original native call
 completes. Server shutdown cancels and joins this work before closing its vault;

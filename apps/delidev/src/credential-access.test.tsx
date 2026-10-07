@@ -31,8 +31,8 @@ it("shows automatic access before mounting account queries and observes the orig
   expect(JSON.stringify(native.invoke.mock.calls)).not.toContain(f.connection.token);
 });
 it("requires explicit retry after denial and never mounts disconnected account presentation", async () => {
-  const f = fixture();
-  native.invoke.mockImplementation(async (_command, { action }) => ({ attempt_id: newRequestId(), state: action === CredentialAccessAction.Retry ? CredentialAccessState.Succeeded : CredentialAccessState.Failed, ...(action === CredentialAccessAction.Retry ? {} : { issue: CredentialAccessIssue.ConfirmationRequired }) }));
+  const f = fixture(), failedAttempt = newRequestId();
+  native.invoke.mockImplementation(async (_command, { action }) => ({ attempt_id: action === CredentialAccessAction.Retry ? newRequestId() : failedAttempt, state: action === CredentialAccessAction.Retry ? CredentialAccessState.Succeeded : CredentialAccessState.Failed, ...(action === CredentialAccessAction.Retry ? {} : { issue: CredentialAccessIssue.ConfirmationRequired }) }));
   render(<CredentialAccessGate {...f.props} />);
   await screen.findByRole("alert");
   expect(screen.queryByText("Product")).toBeNull();
@@ -41,6 +41,7 @@ it("requires explicit retry after denial and never mounts disconnected account p
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   await screen.findByText("Product");
   expect(native.invoke.mock.calls[1][1].action).toBe(CredentialAccessAction.Retry);
+  expect(native.invoke.mock.calls[1][1].expectedAttemptId).toBe(failedAttempt);
 });
 it("continues after native skip without publishing late approval", async () => {
   const f = fixture();

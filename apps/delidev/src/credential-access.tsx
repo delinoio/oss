@@ -32,7 +32,7 @@ export function CredentialAccessGate({ connection, diagnostics, children }: {
   const [error, setError] = useState(false);
   const [acting, setActing] = useState(false);
   const [dismissedNotice, setDismissedNotice] = useState(false);
-  const controller = useRef<(action: CredentialAccessAction) => Promise<void>>(undefined);
+  const controller = useRef<(action: CredentialAccessAction, expectedAttemptId?: string) => Promise<void>>(undefined);
   const content = useRef<HTMLDivElement>(null);
   const movedFocus = useRef(false);
   useEffect(() => {
@@ -41,14 +41,16 @@ export function CredentialAccessGate({ connection, diagnostics, children }: {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const setResult = (value?: CredentialAccessResult) => setObservation(value ? { scope, value } : undefined);
     setResult(undefined); setError(false); setActing(false); setDismissedNotice(false); movedFocus.current = false;
-    const read = async (action: CredentialAccessAction) => {
+    const read = async (action: CredentialAccessAction, expectedAttemptId?: string) => {
       const request = ++sequence;
       clearTimeout(timer);
       if (action !== CredentialAccessAction.Observe) setActing(true);
       setError(false);
       try {
         if (!generation) throw new Error("Missing original desktop generation");
-        const value = await invoke<CredentialAccessResult>("desktop_credential_access", { action, server, generation });
+        const value = await invoke<CredentialAccessResult>("desktop_credential_access", {
+          action, server, generation, ...(expectedAttemptId ? { expectedAttemptId } : {}),
+        });
         if (disposed || request !== sequence) return;
         if (!Object.values(CredentialAccessState).includes(value.state) || !value.attempt_id
           || (value.state === CredentialAccessState.Failed) !== Boolean(value.issue)
@@ -79,6 +81,8 @@ export function CredentialAccessGate({ connection, diagnostics, children }: {
     <h1 id="credential-access-title">{copy(failed ? "desktop.keychainFailed" : "desktop.keychainChecking")}</h1>
     <p>{copy("desktop.keychainDescription")}<br />{copy("desktop.keychainPrompt")}</p>
     {failed ? <p role="alert">{copy(error ? "desktop.keychainObservationFailed" : issueMessages[result!.issue!])}</p> : <p className="credential-access-progress" role="status"><span className="credential-access-spinner" aria-hidden="true" />{copy("desktop.keychainProgress")}</p>}
-    <div className="credential-access-actions">{failed ? <button className="primary" disabled={acting} onClick={() => void controller.current?.(error ? CredentialAccessAction.Observe : CredentialAccessAction.Retry)}>{copy("desktop.keychainRetry")}</button> : null}<button disabled={acting} onClick={() => void controller.current?.(CredentialAccessAction.Skip)}>{copy("desktop.keychainContinue")}</button></div>
+    <div className="credential-access-actions">{failed ? <button className="primary" disabled={acting} onClick={() => void (error
+      ? controller.current?.(CredentialAccessAction.Observe)
+      : controller.current?.(CredentialAccessAction.Retry, result?.attempt_id))}>{copy("desktop.keychainRetry")}</button> : null}<button disabled={acting} onClick={() => void controller.current?.(CredentialAccessAction.Skip)}>{copy("desktop.keychainContinue")}</button></div>
   </section><button className="credential-access-diagnostics" onClick={diagnostics}>{copy("desktop.keychainDiagnostics")}</button></main>;
 }

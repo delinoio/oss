@@ -69,6 +69,22 @@ fn retire_replaced_attempt(
     Ok(())
 }
 
+fn validate_retry_target(attempt: &Attempt, expected_attempt_id: Option<&str>) -> Result<()> {
+    let expected_attempt_id = expected_attempt_id.ok_or(NativeFailure::InvalidEvidence)?;
+    canonical_id(expected_attempt_id)?;
+    if attempt.id != expected_attempt_id {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    if attempt
+        .last
+        .as_ref()
+        .is_none_or(|result| result.state != CredentialAccessState::Failed)
+    {
+        return Err(NativeFailure::Busy);
+    }
+    Ok(())
+}
+
 fn validate_result(value: CredentialAccessResult, id: &str) -> Result<CredentialAccessResult> {
     canonical_id(&value.attempt_id)?;
     if value.attempt_id != id
@@ -88,12 +104,20 @@ impl Connector {
         action: CredentialAccessAction,
         server: &str,
         generation: &str,
+        expected_attempt_id: Option<&str>,
     ) -> Result<CredentialAccessResult> {
         if self.exiting.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
         }
         canonical_id(server)?;
         canonical_id(generation)?;
+        match (action, expected_attempt_id) {
+            (CredentialAccessAction::Retry, Some(expected)) => canonical_id(expected)?,
+            (CredentialAccessAction::Retry, None) | (_, Some(_)) => {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+            _ => {}
+        }
         if self.oauth_server_identity()? != server {
             return Err(NativeFailure::InvalidEvidence);
         }
@@ -114,6 +138,12 @@ impl Connector {
             .lock()
             .map_err(|_| NativeFailure::Busy)?;
         retire_replaced_attempt(&mut retained, server, generation)?;
+        if action == CredentialAccessAction::Retry {
+            validate_retry_target(
+                retained.as_ref().ok_or(NativeFailure::InvalidEvidence)?,
+                expected_attempt_id,
+            )?;
+        }
         let attempt = retained.get_or_insert_with(|| Attempt {
             id: uuid::Uuid::now_v7().to_string(),
             previous: String::new(),
@@ -125,13 +155,6 @@ impl Connector {
             return Err(NativeFailure::InvalidEvidence);
         }
         if action == CredentialAccessAction::Retry {
-            if attempt
-                .last
-                .as_ref()
-                .is_none_or(|v| v.state != CredentialAccessState::Failed)
-            {
-                return Err(NativeFailure::Busy);
-            }
             attempt.previous = attempt.id.clone();
             attempt.id = uuid::Uuid::now_v7().to_string();
             attempt.last = None;
@@ -256,5 +279,25 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn retry_must_name_the_failed_attempt_still_retained() {
+        let current_id = uuid::Uuid::now_v7().to_string();
+        let attempt = Attempt {
+            id: current_id.clone(),
+            previous: String::new(),
+            server: uuid::Uuid::now_v7().to_string(),
+            generation: uuid::Uuid::now_v7().to_string(),
+            last: Some(CredentialAccessResult {
+                attempt_id: current_id.clone(),
+                state: CredentialAccessState::Failed,
+                issue: Some(CredentialAccessIssue::Unavailable),
+            }),
+        };
+
+        assert!(validate_retry_target(&attempt, Some(&current_id)).is_ok());
+        assert!(validate_retry_target(&attempt, Some(&uuid::Uuid::now_v7().to_string())).is_err());
+        assert!(validate_retry_target(&attempt, None).is_err());
     }
 }
