@@ -82,7 +82,9 @@ func TestManualNativeGrokUncertainRefreshIsNotAnAcceptedManagedProfile(t *testin
 		t.Fatal(err)
 	}
 	// These test-only overrides never enter a managed constructor or Worker.
-	environment = append(environment, "GROK_OAUTH2_ISSUER="+issuer, "GROK_OAUTH2_CLIENT_ID="+subscription.GrokClientID)
+	// The workspace proactive-refresh switch does not disable the login SDK's
+	// token-exchange retry primitive. Do not treat it as once-only admission.
+	environment = append(environment, "GROK_OAUTH2_ISSUER="+issuer, "GROK_OAUTH2_CLIENT_ID="+subscription.GrokClientID, "GROK_WORKSPACE_OIDC_PROACTIVE_REFRESH_ENABLED=false")
 	process := config.Probe.Process
 	process.Executable, process.Env, process.Args = binary, environment, []string{"--no-auto-update", "agent", "stdio"}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
