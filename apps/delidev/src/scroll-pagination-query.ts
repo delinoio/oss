@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { type DescMessage, type DescMethodUnary, type MessageInitShape, type MessageShape } from "@bufbuild/protobuf";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { PaginationChain, type PaginationBatch, type PaginationReader, type PaginationRow } from "./scroll-pagination";
@@ -54,4 +54,18 @@ export function useConnectPaginationReader<I extends DescMessage, O extends Desc
       client.removeQueries({ queryKey, exact: true });
     }
   }, [client, transport, method, request, project]);
+}
+
+/** Domain cadences/invalidation refresh accepted ranges without reading a new
+ * tail. Prefix invalidation reaches this marker while batch caches stay empty. */
+export function usePaginationRefresh<I extends DescMessage, O extends DescMessage>(
+  method: DescMethodUnary<I, O>, input: MessageInitShape<I>, active: boolean,
+  refresh: () => void, interval: number | false = false,
+) {
+  const transport = useTransport();
+  const options = createQueryOptions(method, input, { transport });
+  useQuery({ queryKey: [...options.queryKey, { scrollPaginationRefresh: true }],
+    queryFn: async () => { refresh(); return null; }, initialData: null, enabled: active,
+    refetchOnMount: false, refetchOnWindowFocus: false, refetchIntervalInBackground: false,
+    refetchInterval: active ? interval : false, retry: false, staleTime: Infinity, gcTime: 0 });
 }

@@ -65,3 +65,20 @@ export function ScrollContinuation({ query, label, root, active, showErrors = tr
     {loaded && !nextPageToken && !loading && !error ? <span role="status">{copy("pagination.exhausted", { label })}</span> : null}
   </div>;
 }
+
+/** Resolve a list content anchor to its actual overflow owner. Do not observe
+ * the unscrollable section when main, a drawer or a task body owns scrolling. */
+export function useScrollRoot(content: RefObject<HTMLElement | null>) {
+  const root = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    let node = content.current;
+    while (node) {
+      const style = getComputedStyle(node);
+      if (/(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`)) break;
+      node = node.parentElement;
+    }
+    root.current = node ?? content.current;
+    return () => { root.current = null; };
+  }, [content]);
+  return root;
+}

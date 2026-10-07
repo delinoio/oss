@@ -85,3 +85,13 @@ it("keeps a focused page inside the bounded window and refreshes only accepted r
   expect(chain.getSnapshot().payloadPages).toHaveLength(3);
   expect(chain.getSnapshot().payloadPages.some(page => page.token === "")).toBe(false);
 });
+
+it("rehydrates the prior bounded payload window after suspended scope returns", async () => {
+  const chain = new PaginationChain<Row, Payload>(); chain.activate();
+  await chain.refresh(reader); for (let index = 0; index < 4; index++) await chain.append(reader);
+  const window = chain.getSnapshot().payloadPages.map(page => page.token);
+  chain.suspend(); expect(chain.getSnapshot().payloadPages).toEqual([]);
+  chain.activate(); await chain.refresh(reader);
+  expect(chain.getSnapshot().payloadPages.map(page => page.token)).toEqual(window);
+  expect(chain.getSnapshot().payloadPages).toHaveLength(3);
+});

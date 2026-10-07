@@ -37,12 +37,14 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
   private controller?: AbortController;
   private active = false;
   private protectedToken?: string;
+  private retainedPayloadTokens: string[] = [];
   protect(token?: string) { this.protectedToken = token; }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
   private publish(next: PaginationSnapshot<Row, Payload>) { this.snapshot = next; for (const listener of this.listeners) listener(); }
   activate() { this.active = true; }
   suspend() {
+    if (this.snapshot.payloadPages.length) this.retainedPayloadTokens = this.snapshot.payloadPages.map(page => page.token);
     this.active = false;
     this.protectedToken = undefined;
     this.generation++;
@@ -50,7 +52,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
     this.controller = undefined;
     if (this.snapshot.loading || this.snapshot.payloadPages.length) this.publish({ ...this.snapshot, payloadPages: [], loading: undefined });
   }
-  reset() { this.suspend(); this.publish(emptySnapshot<Row, Payload>()); }
+  reset() { this.suspend(); this.retainedPayloadTokens = []; this.publish(emptySnapshot<Row, Payload>()); }
   refresh(reader: PaginationReader<Row, Payload>) {
     if (this.snapshot.error) return Promise.resolve();
     return this.run(this.snapshot.loaded ? ReadStage.Refresh : ReadStage.Initial, "", reader);
@@ -90,6 +92,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
     try {
       const pages: PaginationPage<Row>[] = stage === ReadStage.Additional || retryOnly ? [...previous.pages] : [];
       const payloads = new Map(previous.payloadPages.map(page => [page.token, page.payload]));
+      const refreshWindow = new Set(previous.payloadPages.length ? previous.payloadPages.map(page => page.token) : this.retainedPayloadTokens.length ? this.retainedPayloadTokens : previous.pages.slice(-3).map(page => page.token));
       if (stage === ReadStage.Reload || stage === ReadStage.Initial) payloads.clear();
       const retryIndex = retryOnly ? pages.findIndex((page) => page.token === token) : -1;
       const seen = new Set((retryOnly ? pages.slice(0, Math.max(0, retryIndex)) : pages).map((page) => page.token));
@@ -122,7 +125,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
         const acceptedBatch = { rows: batch.rows, nextPageToken: acceptedPage?.nextPageToken ?? batch.nextPageToken, token: currentToken, height: acceptedPage?.height };
         // Full domain payloads never enter retained page boundaries. Keep at
         // most three reached pages around the latest requested visible page.
-        if (batch.payload && (!refreshing || previous.payloadPages.some(page => page.token === currentToken))) payloads.set(currentToken, batch.payload);
+        if (batch.payload && (!refreshing || refreshWindow.has(currentToken))) payloads.set(currentToken, batch.payload);
         if (!refreshing) {
         const center = retryOnly ? retryIndex : refreshing ? previous.pages.findIndex(page => page.token === currentToken) : pages.length;
         const closest = pages.map((page, index) => ({ token: page.token, distance: Math.abs(index - center) }))
@@ -135,6 +138,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
         if (!batch.nextPageToken) break;
         currentToken = batch.nextPageToken;
       }
+      this.retainedPayloadTokens = [...payloads.keys()];
       for (const page of pages) page.height = this.snapshot.pages.find(previousPage => previousPage.token === page.token)?.height ?? page.height;
       this.publish({ rows: uniqueRows(pages), pages, payloadPages: [...payloads].map(([token, payload]) => ({ token, payload })), loaded: true, nextPageToken: pages.at(-1)?.nextPageToken ?? "" });
     } catch (error) {
