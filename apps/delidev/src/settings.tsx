@@ -16,7 +16,7 @@ import { AccountQuery, apiFormatToWire, ConfigurationQuery, configurationSchemaV
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { accountPreferencesDocument } from "./account-preferences";
 import { revealRepositoryInvalidControl } from "./repository-editor";
-import { ConfigurationFields, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
+import { ConfigurationFields, ResourceSelectionPending, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { JobState, TrackedJob } from "./jobs";
 import { LocalWorkerControls, LocalWorkerPresentation, type ControlLocalWorker, type LocalWorkerAction } from "./local-worker-controls";
@@ -64,6 +64,12 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
+  const pendingSelections = useRef(new Set<string>());
+  const [selectionPending, setSelectionPending] = useState(false);
+  const reportSelectionPending = useCallback((identity: string, pending: boolean) => {
+    if (pending) pendingSelections.current.add(identity); else pendingSelections.current.delete(identity);
+    setSelectionPending(pendingSelections.current.size > 0);
+  }, []);
   const [keepsFormatKey, setKeepsFormatKey] = useState(false);
   const [fieldsBlocked, setFieldsBlocked] = useState(false);
   const [problem, setProblem] = useProductMessage("");
@@ -131,9 +137,10 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const repositoryStatusPending = repositoryNeedsRemoteCapability && repositoryStatus.data === undefined && !repositoryStatus.error;
   const repositoryStatusFailed = repositoryNeedsRemoteCapability && Boolean(repositoryStatus.error);
   const repositoryUnsupported = repositoryNeedsRemoteCapability && repositoryStatus.data !== undefined && !repositoryStatus.data.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1);
-  const saveDisabled = fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
+  const saveDisabled = selectionPending || fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
   const submit = () => {
-    if (saveDisabled) return;
+    // The ref also fences a submit dispatched before React commits the disabled button.
+    if (saveDisabled || pendingSelections.current.size) return;
     const selectedFormat = apiFormat(data.api_protocol);
     if (apiEditor && keepsFormatKey && source && selectedFormat && selectedFormat !== document(source).api_protocol) {
       void formatMutation.send({ mutation: { id: source.id, expectedRevision: source.revision, requestId: newRequestId() }, apiProtocol: apiFormatToWire(selectedFormat), alias: text(data.alias), enabled: data.enabled === true, excludeAutomatic: data.exclude_automatic === true, recoveryNotifications: data.recovery_notifications === true });
@@ -147,10 +154,10 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     }
     void mutation.send({ mutation: { id: source?.id ?? "", expectedRevision: source?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: configurationSchemaVersion(kind, data), documentJson });
   };
-  if (kind === EntityKind.PROJECT && !source) return <ProjectCreationWizard data={data} change={change} active={active} visible={taskVisible} blocked={blocked || childPending} busy={mutation.busy} saveDisabled={saveDisabled} submit={submit} cancel={cancelTask} cancelDisabled={!inTask && (blocked || childPending)} uncertain={mutation.uncertain} retry={mutation.retry}>
+  if (kind === EntityKind.PROJECT && !source) return <ResourceSelectionPending.Provider value={reportSelectionPending}><ProjectCreationWizard data={data} change={change} active={active} visible={taskVisible} blocked={blocked || childPending} busy={mutation.busy} saveDisabled={saveDisabled} submit={submit} cancel={cancelTask} cancelDisabled={!inTask && (blocked || childPending)} uncertain={mutation.uncertain} retry={mutation.retry}>
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
-  </ProjectCreationWizard>;
-  return <form id={formId} ref={form} aria-label={inline ? (serverPreferenceSection === ServerPreferenceSection.GitWorkflow ? "Git workflow form" : "Server preferences form") : undefined} className={kind === EntityKind.REPOSITORY && source ? "repository-editor" : kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.REPOSITORY && source ? revealRepositoryInvalidControl : kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); submit(); }}>
+  </ProjectCreationWizard></ResourceSelectionPending.Provider>;
+  return <ResourceSelectionPending.Provider value={reportSelectionPending}><form id={formId} ref={form} aria-label={inline ? (serverPreferenceSection === ServerPreferenceSection.GitWorkflow ? "Git workflow form" : "Server preferences form") : undefined} className={kind === EntityKind.REPOSITORY && source ? "repository-editor" : kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.REPOSITORY && source ? revealRepositoryInvalidControl : kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); submit(); }}>
     {inline ? null : isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? copy("settings.editPreferences_00b4cc") : copy("settings.newAiApiKeyEntry_5f978c")}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : <h3 hidden={inTask}>{initial ? copy("settings.edit_464c4f") : copy("settings.new_18fdd5")} {kindLabel}</h3>}
     {kind === EntityKind.AGENT && !initial ? <p className="agent-subtitle">{copy("settings.configureTheEssentialsThenCustomizeOnly_a8beda")}</p> : null}
     <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields keepsFormatKey={setKeepsFormatKey} initial={source} saveBlocked={setFieldsBlocked} kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>
@@ -161,7 +168,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     {!inline && (kind === EntityKind.AGENT || kind === EntityKind.SETTINGS) ? <SettingsTaskActions form={formId} className={kind === EntityKind.AGENT ? "agent-footer" : "server-preferences-actions"}><button type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>{copy("settings.cancelEdit_6fa271")}</button>{formatMutation.uncertain ? <button type="button" disabled={formatMutation.busy} onClick={formatMutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}<button className="primary" disabled={saveDisabled}>{apiEditor && keepsFormatKey ? copy("settings.saveChanges") : <LocalizedText id="settings.save_cdb68b" components={{ s0: <>{kindLabel}</> }} />}</button></SettingsTaskActions>
       : !inline ? <SettingsTaskActions form={formId}>{kind === EntityKind.REPOSITORY && source && inTask ? null : <button type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>{copy("settings.cancelEdit_6fa271")}</button>}<button className="primary" disabled={saveDisabled}>{apiEditor && keepsFormatKey ? copy("settings.saveChanges") : <LocalizedText id="settings.save_cdb68b" components={{ s0: <>{kindLabel}</> }} />}</button>{formatMutation.uncertain ? <button type="button" disabled={formatMutation.busy} onClick={formatMutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}</SettingsTaskActions> : null}
 
-  </form>;
+  </form></ResourceSelectionPending.Provider>;
 }
 
 function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, error, section, active, saved, authority, onNetworkPresentationChange }: { resources?: Resource[]; nextPageToken?: string; page: string; fetching: boolean; error?: unknown; section: ServerPreferenceSection; active: boolean; saved: () => void; authority?: PairingAuthority; onNetworkPresentationChange?: (open: boolean) => void }) {
