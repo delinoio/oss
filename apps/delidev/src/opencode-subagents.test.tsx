@@ -16,17 +16,18 @@ test("renders independently owned foreground child facts without child controls"
   expect(screen.queryAllByRole("button")).toHaveLength(0);
 });
 
-test.each(["valid", "missing-cleanup", "missing-interruption", "completed", "foreign-source"])("distinguishes joined scope cleanup from native child completion: %s", mode => {
+test.each(["valid", "missing-cleanup", "malformed-cleanup", "missing-interruption", "completed", "foreign-source"])("distinguishes joined scope cleanup from native child completion: %s", mode => {
   const session = newRequestId(), row = openCodeSubagentFixture(session), value = document(row), child = object(value.observation);
   const proof = { request_id: newRequestId(), input_request_id: newRequestId(), input_part_id: "prt_01960dcbe1fa1234567890ABCD", assistant_id: "msg_01960dcbe1faABCDEFGHIJKLMN", history_digest: "a".repeat(64), http_accepted: true, interrupted_observed: true, terminal_observed: true, idle_observed: true, pending_cleared: true, cleanup_verified: true };
   child.source = "opencode-child-scope-cleanup"; child.source_id = "original-cleanup"; child.status = "interrupted"; child.opencode_cleanup = proof;
   object(items(value.sources)[1]).source = child.source; object(items(value.sources)[1]).source_id = child.source_id;
   if (mode === "missing-cleanup") proof.cleanup_verified = false;
+  if (mode === "malformed-cleanup") Object.assign(proof, { cleanup_verified: "true" });
   if (mode === "missing-interruption") proof.interrupted_observed = false;
   if (mode === "completed") child.status = "completed";
   if (mode === "foreign-source") { child.source = "opencode-child-history"; object(items(value.sources)[1]).source = child.source; }
   row.documentJson = encode(value);
-  expect(validateSubagentPage([row], session)?.length).toBe(mode === "valid" ? 1 : undefined);
+  expect(validateSubagentPage([row], session)?.length).toBe(mode === "valid" || mode === "missing-cleanup" ? 1 : undefined);
 });
 
 test.each(["parent", "tool", "model", "missing-tool", "foreign-family", "missing-initial-task", "native-string-counter", "rounded-counter", "nested", "nonpartial"])("rejects the complete foreground child page: %s", mode => {

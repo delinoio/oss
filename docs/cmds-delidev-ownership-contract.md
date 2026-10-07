@@ -54,6 +54,15 @@ request deduplication prevents another presentation grant. Add no migration or
 format conversion. Remove proof-only production, transfer, waits and UI gates when their
 only purpose was ownership enforcement.
 
+Failed initial-login cleanup resumes scoped filesystem and idempotent vault deletion from its retained checkpoint. Missing or mismatched native metadata does not block account configuration deletion after actual protected-reference removal. Historical `native_started` and recovery observations remain valid terminal metadata without pending intent; they never grant a confirmed native-cleanup phase. OpenCode compaction publishes the observed cleanup boolean with its actual command result rather than requiring or fabricating a positive cleanup proof.
+
+PR remediation retains earlier active attempts as history and admits another attempt within the original lifetime budget and revision checks. The chain's selected attempt is metadata. Settling an earlier attempt never clears the newer selection. The desktop permits another fix and displays the retained earlier attempt without an ownership lock.
+
+The existing PR remediation partial unique index remains in the unchanged SQLite schema. A new reservation retires only the earlier selected index slot using its existing canceled index value; the original entity document, operation state, job and execution history remain unchanged. Reads accept this retired slot only for an active historical document whose chain selects another attempt. Native reconciliation queries the entity's actual state. This ordinary transactional index update adds no migration or format conversion and grants no cancellation or cleanup proof.
+
+Historical Stop and denial observations accept either boolean cleanup result. The desktop renders the observed result and does not hide a valid native outcome because cleanup is false. OpenCode stopped execution completion retains the Stop receipt's cleanup boolean; it never upgrades that receipt to confirmed cleanup.
+
+
 ## Storage
 Create new state with existing private defaults. Existing filesystem owners,
 Unix mode sharing and Windows ACL sharing do not prevent access. Preserve actual
@@ -105,11 +114,3 @@ changes. Keep implementation and validation records in PRs and CI artifacts.
 - [CLI/server/Worker](cmds-delidev-contract.md)
 - [Native process lifecycle](cmds-delidev-process-contract.md)
 - [Repository defaults](repository-defaults.md)
-
-Failed initial-login cleanup resumes scoped filesystem and idempotent vault deletion from its retained checkpoint. Missing or mismatched native metadata does not block account configuration deletion after actual protected-reference removal. Historical `native_started` and recovery observations remain valid terminal metadata without pending intent; they never grant a confirmed native-cleanup phase. OpenCode compaction publishes the observed cleanup boolean with its actual command result rather than requiring or fabricating a positive cleanup proof.
-
-PR remediation retains earlier active attempts as history and admits another attempt within the original lifetime budget and revision checks. The chain's selected attempt is metadata. Settling an earlier attempt never clears the newer selection. The desktop permits another fix and displays the retained earlier attempt without an ownership lock.
-
-The existing PR remediation partial unique index remains in the unchanged SQLite schema. A new reservation retires only the earlier selected index slot using its existing canceled index value; the original entity document, operation state, job and execution history remain unchanged. Reads accept this retired slot only for an active historical document whose chain selects another attempt. Native reconciliation queries the entity's actual state. This ordinary transactional index update adds no migration or format conversion and grants no cancellation or cleanup proof.
-
-Historical Stop and denial observations accept either boolean cleanup result. The desktop renders the observed result and does not hide a valid native outcome because cleanup is false. OpenCode stopped execution completion retains the Stop receipt's cleanup boolean; it never upgrades that receipt to confirmed cleanup.
