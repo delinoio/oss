@@ -201,6 +201,16 @@ it.each([false, true])("preserves the mounted conversation or New session draft 
   expect(value.enqueues).not.toHaveBeenCalled();
 }, fullShellTimeoutMs);
 
+it("returns successful wide project creation to the persistent Home fallback", async () => {
+  const repository = projectRepository(), value = fixture([], [repository]);
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: "Create a project" }));
+  await fillProject(repository);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+}, fullShellTimeoutMs);
+
 it.each([false, true])("closes the compact drawer before creation and returns focus to the persistent Home opener (pending %s)", async pending => {
   viewport(true);
   const repository = projectRepository(), value = fixture([], [repository]);

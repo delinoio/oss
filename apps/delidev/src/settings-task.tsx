@@ -109,8 +109,10 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     setActiveStep([...presentations.current.keys()].at(-1));
   }, []);
   const current = presentation ?? { title, size, focus };
-  const dismissWithClose = useCallback((idleClose?: () => void) => {
-    const keep = retained || signals.current.size > 0;
+  // A confirmed completion can run before child retention effects observe the
+  // cleared mutation. Only an authoritative completion may force close here.
+  const dismissWithClose = useCallback((idleClose?: () => void, force = false) => {
+    const keep = !force && (retained || signals.current.size > 0);
     dismissed?.();
     for (const action of dismissals.current.values()) action();
     if (keep) { retainedDismissal.current = true; setVisible(false); } else { closeRequested.current = true; (idleClose ?? close)(); }
@@ -157,7 +159,9 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
       if (!closeRequested.current && !committed.current) return;
       // Settings keeps its retained background locked. External creation can
       // return to its visible Home opener after an explicit pending dismissal.
-      if ((retained || signals.current.size > 0) && !(returnFocus.current && retainedDismissal.current)) return;
+      // A forced confirmed completion already marked closeRequested, even if a
+      // stale child retention signal is still present during this cleanup.
+      if ((retained || signals.current.size > 0) && !closeRequested.current && !(returnFocus.current && retainedDismissal.current)) return;
       // A category departure or replacement dialog cannot restore a stale opener.
       if (anotherModal(node)) return;
       const restoreFocus = () => {
