@@ -1,3 +1,5 @@
+The current pre-release reset implements Model-based Agent schemas 1/3 and portable bundle v2. Inline Worker schema 4, bundle v4, API account protocol selection and direct execution startup remain reserved future features; their declarations grant no runtime support. Activate their complete replacements separately, reconcile the active database baseline before implementation, and preserve current files and native/credential cleanup authority.
+
 # Project: DeliDev
 
 API account protocol selection reserves ProviderInventory capability 7 and its complete profile/filter declarations under issue #964 before implementation. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-protocol-reservations) owns this prerequisite; it adds no runtime or database authority.
