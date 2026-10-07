@@ -19,10 +19,11 @@ function deferred<T>() {
 }
 function fixture() {
   const saved = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Saved project" }) });
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Task repository" }) });
   const save = vi.fn(async (_request: unknown) => ({ resource: saved }));
   const transport = createRouterTransport(router => {
     router.service(ConfigurationService, { saveConfiguration: save });
-    router.service(ResourceService, { listResources: () => ({ resources: [] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [repository] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   function Harness() {
@@ -34,6 +35,12 @@ function fixture() {
   }
   render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Harness /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>);
   return { save, saved };
+}
+async function configure() {
+  const checkbox = await screen.findByRole("checkbox", { name: "Task repository" });
+  fireEvent.click(checkbox); fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: (screen.getByRole("option", { name: "Task repository" }) as HTMLOptionElement).value } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
 }
 function submit() {
   const button = screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement;
@@ -51,10 +58,10 @@ it("keeps the inventory mounted, moves actions outside the scrolling body and di
   const dialog = screen.getByRole("dialog");
   expect(inventory.isConnected).toBe(true);
   expect(inventory.closest("fieldset")?.getAttribute("aria-hidden")).toBe("true");
-  const name = screen.getByRole("textbox", { name: "Name" });
+  const name = screen.getByRole("searchbox", { name: "Search repository names" });
   await waitFor(() => expect(document.activeElement).toBe(name));
   fireEvent.change(name, { target: { value: "Discard this draft" } });
-  const saveButton = screen.getByRole("button", { name: "Save Project" });
+  const saveButton = screen.getByRole("button", { name: "Next" });
   expect(saveButton.closest(".settings-task-footer")).not.toBeNull();
   expect(saveButton.closest(".settings-task-body")).toBeNull();
   fireEvent.click(dialog); // Backdrop/body clicks do not dismiss the task.
@@ -63,7 +70,7 @@ it("keeps the inventory mounted, moves actions outside the scrolling body and di
   expect(screen.queryByRole("dialog")).toBeNull();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "New project task" })));
   fireEvent.click(screen.getByRole("button", { name: "New project task" }));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe("");
   expect(save).not.toHaveBeenCalled();
 });
 
@@ -71,7 +78,7 @@ it("hides a submitted request without replacing it and exposes only its exact un
   const { save } = fixture();
   save.mockRejectedValueOnce(new ConnectError("Lost acknowledgment", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "New project task" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Original submitted project" } });
+  await configure();
   submit();
   await screen.findByRole("button", { name: "Retry the same configuration" });
   const request = save.mock.calls[0][0];
@@ -90,6 +97,7 @@ it("accepts a late successful result while hidden without reopening or taking an
   const { save, saved } = fixture(), pending = deferred<{ resource: typeof saved }>();
   save.mockReturnValue(pending.promise);
   fireEvent.click(screen.getByRole("button", { name: "New project task" }));
+  await configure();
   submit();
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
   escape();
@@ -106,9 +114,10 @@ it("restores opener focus when a successful save closes the task programmaticall
   fixture();
   const opener = screen.getByRole("button", { name: "New project task" });
   fireEvent.click(opener);
+  await configure();
   submit();
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(document.activeElement).toBe(opener);
+  await waitFor(() => expect(document.activeElement).toBe(opener));
 });
 
 it("uses one native dialog for a confirmation step and restores its original body without remounting", async () => {

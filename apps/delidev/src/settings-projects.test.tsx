@@ -18,7 +18,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 type Page = { resources: Resource[]; nextPageToken?: string };
-function fixture(resources: Resource[] = []) {
+const creationRepository = resource(EntityKind.REPOSITORY, { name: "Fixture repository" });
+function fixture(resources: Resource[] = [creationRepository]) {
   const list = vi.fn(async (kind: EntityKind, _page: string): Promise<Page> => ({ resources: resources.filter(row => row.kind === kind) }));
   const get = vi.fn(async (id: string) => ({ resource: resources.find(row => row.id === id) }));
   const save = vi.fn(async (request: { documentJson: Uint8Array }) => ({ resource: resource(EntityKind.PROJECT, JSON.parse(new TextDecoder().decode(request.documentJson))) }));
@@ -37,6 +38,13 @@ function openProjects(value: ReturnType<typeof fixture>) {
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
 }
 function decoded(request: unknown) { return JSON.parse(new TextDecoder().decode((request as { documentJson: Uint8Array }).documentJson)); }
+async function configureProject(name: string) {
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Fixture repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), { target: { value: name } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: creationRepository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+}
 
 it("shows final first-page emptiness with exact help, one create action and no pagination", async () => {
   const value = fixture(); openProjects(value);
@@ -73,7 +81,7 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("separa
   await act(async () => pending.reject(new ConnectError("The server denied this read.", code, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "unavailable", guidance: "Retry the selected server read.", correlationId }) }])));
   const alert = await screen.findByRole("alert"); expect(alert.textContent).not.toContain("private fixture detail"); expect(alert.textContent).toContain(correlationId);
   expect(screen.queryByText("No projects yet")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect(screen.getByRole("button", { name: "Save Project" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
 });
 it.each([false, true])("retains cached content during refresh and reports failed refresh truthfully (empty=%s)", async empty => {
   const value = fixture(empty ? [] : [project("Retained project")]); openProjects(value);
@@ -90,6 +98,8 @@ it("preserves four field groups, repository order, primary clearing, restriction
   row.documentJson = encode({ name: "Editable project", repositories: [first.id, second.id], primary_repository: first.id, agents: { configured: true, ids: [newRequestId()] }, accounts: { configured: false, ids: [] }, extension: { retained: true } });
   const value = fixture([row, first, second]); openProjects(value); fireEvent.click(await screen.findByRole("button", { name: "Edit Editable project" }));
   for (const label of ["Name", "Repositories", "Agent Workers", "AI accounts"]) expect(screen.getByRole("group", { name: label })).toBeTruthy();
+  await within(screen.getByRole("combobox", { name: "Primary repository" })).findByRole("option", { name: "First" });
+  expect(within(screen.getByRole("combobox", { name: "Primary repository" })).getByRole("option", { name: "Second" }).getAttribute("value")).toBe(second.id);
   const repositories = screen.getByRole("group", { name: "Repositories" }); fireEvent.click(within(repositories).getByRole("button", { name: "Move entry 2 up" }));
   expect(Array.from(repositories.querySelectorAll("li code"), node => node.textContent)).toEqual([second.id, first.id]);
   fireEvent.click(within(repositories).getByRole("button", { name: "Remove entry 2" }));
@@ -100,6 +110,25 @@ it("preserves four field groups, repository order, primary clearing, restriction
   fireEvent.click(screen.getByRole("checkbox", { name: "Restrict ai accounts" })); fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(decoded(value.save.mock.calls[0][0])).toEqual({ name: "Editable project", repositories: [second.id], primary_repository: second.id, agents: { configured: true, ids: [] }, accounts: { configured: false, ids: [] }, extension: { retained: true } });
+});
+
+it("retries exact edit repository IDs without replacing unreadable names with selector labels", async () => {
+  const first = resource(EntityKind.REPOSITORY, { name: "Exact repository" }), other = resource(EntityKind.REPOSITORY, { name: "Other repository" }), row = project("Name lookup project");
+  row.documentJson = encode({ name: "Name lookup project", repositories: [first.id], primary_repository: first.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
+  const value = fixture([row, first, other]); let readable = false;
+  value.get.mockImplementation(async id => {
+    if (id === first.id && !readable) throw new ConnectError("Name read unavailable", Code.Unavailable);
+    return { resource: [row, first, other].find(candidate => candidate.id === id) };
+  });
+  openProjects(value); fireEvent.click(await screen.findByRole("button", { name: "Edit Name lookup project" }));
+  const primary = screen.getByRole("combobox", { name: "Primary repository" }) as HTMLSelectElement;
+  const retry = await screen.findByRole("button", { name: "Retry repository loading" });
+  expect(within(primary).getByRole("option", { name: "Repository name unavailable (entry 1)" })).toBeTruthy();
+  const reads = value.get.mock.calls.filter(([id]) => id === first.id).length;
+  readable = true; fireEvent.click(retry);
+  await waitFor(() => expect(within(primary).getByRole("option", { name: "Exact repository" })).toBeTruthy());
+  expect(primary.value).toBe(first.id); expect(value.get.mock.calls.filter(([id]) => id === first.id)).toHaveLength(reads + 1);
+  expect(within(primary).queryByRole("option", { name: "Other repository" })).toBeNull();
 });
 it.each(["revision", "failure"])("retains an edit draft and blocks Save after current-resource %s", async reason => {
   const row = project("Original"), value = fixture([row]);
@@ -122,15 +151,15 @@ it.each(["navigation", "Escape then navigation"])("discards a project draft and 
   const value = fixture(); value.save.mockRejectedValue(new ConnectError("ack lost", Code.Unavailable));
   function Harness() { const [visible, show] = useState(false); return <><button onClick={() => show(true)}>Open settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); show(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>; }
   render(value.view(<Harness />)); const opener = screen.getByRole("button", { name: "Open settings fixture" }); opener.focus(); fireEvent.click(opener);
-  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned project" } }); fireEvent.submit((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).form!); await screen.findByRole("button", { name: "Retry the same configuration" });
+  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); await configureProject("Abandoned project"); fireEvent.submit((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).form!); await screen.findByRole("button", { name: "Retry the same configuration" });
   if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBeTruthy(); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   expect(document.activeElement).not.toBe(opener); fireEvent.click(opener); expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy(); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(""); expect(value.save).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe(""); expect(value.save).toHaveBeenCalledTimes(1);
 });
 it("focuses targeted creation and confines the presentation to Projects", async () => {
-  const value = fixture(); render(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} />)); await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
-  expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(true); fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  const value = fixture(); render(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} />)); await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search repository names" })));
+  expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(true); fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   for (const category of ["Repositories", "Instructions", "API Providers"]) { fireEvent.click(screen.getByRole("button", { name: category })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(false); expect(screen.getByRole("heading", { level: 1, name: category })).toBeTruthy(); }
 });
 it("consumes explicit New Project and Repositories entry while another category has an unsaved form", async () => {
@@ -138,11 +167,11 @@ it("consumes explicit New Project and Repositories entry while another category 
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Discard this draft" } });
   view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} destinationConsumed={consumed} />));
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(""); expect(consumed).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Keep current project draft" } });
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search repository names" })));
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe(""); expect(consumed).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search repository names" }), { target: { value: "Keep current project draft" } });
   view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} destinationConsumed={consumed} />));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Keep current project draft"); expect(consumed).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe("Keep current project draft"); expect(consumed).toHaveBeenCalledTimes(1);
   view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.Repositories} destinationConsumed={consumed} />));
   await screen.findByRole("heading", { level: 1, name: "Repositories" }); expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull(); expect(consumed).toHaveBeenCalledTimes(2);
   expect(value.save).not.toHaveBeenCalled();

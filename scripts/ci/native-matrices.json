@@ -1,4 +1,13 @@
 {
+  "go-test": [
+    { "os": "ubuntu-latest", "shard": "all", "label": "ubuntu-latest" },
+    { "os": "macos-latest", "shard": "all", "label": "macos-latest" },
+    { "os": "windows-latest", "shard": "core", "label": "windows-latest, core" },
+    { "os": "windows-latest", "shard": "server", "label": "windows-latest, server" },
+    { "os": "windows-latest", "shard": "harness", "label": "windows-latest, harness" },
+    { "os": "windows-latest", "shard": "worker", "label": "windows-latest, worker" },
+    { "os": "windows-latest", "shard": "workspace", "label": "windows-latest, workspace" }
+  ],
   "devhud-desktop": [
     { "id": "macos-x64", "runner": "macos-15-intel", "os": "macos", "bundle": "dmg", "package": "macos-app" },
     { "id": "macos-arm64", "runner": "macos-15", "os": "macos", "bundle": "dmg", "package": "macos-app" },

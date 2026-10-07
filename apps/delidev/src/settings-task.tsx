@@ -157,17 +157,17 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
       // StrictMode and retained-task visibility changes also clean up this
       // effect. They must not unlock the background or steal focus.
       if (!closeRequested.current && !committed.current) return;
-      // Settings keeps its retained background locked. External creation can
-      // return to its visible Home opener after an explicit pending dismissal.
-      // A forced confirmed completion already marked closeRequested, even if a
-      // stale child retention signal is still present during this cleanup.
-      if ((retained || signals.current.size > 0) && !closeRequested.current && !(returnFocus.current && retainedDismissal.current)) return;
+      let restoreFocus: (ignoreSignals?: boolean) => HTMLElement | null = () => null;
       // A category departure or replacement dialog cannot restore a stale opener.
       if (anotherModal(node)) return;
-      const restoreFocus = () => {
-        if (anotherModal(node)) return;
+      restoreFocus = (ignoreSignals = false) => {
+        // On accepted completion, child layout cleanups release their pending
+        // signals after this parent's cleanup. Recheck on the restoration frame;
+        // a hidden, still-retained operation keeps its signals and cannot restore.
+        if (!ignoreSignals && !closeRequested.current && !retainedDismissal.current && signals.current.size > 0) return null;
+        if (anotherModal(node)) return null;
         const focused = document.activeElement;
-        if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return;
+        if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return null;
         const openerDialog = opener.current?.closest("dialog");
         const openerTarget = !openerRetired.current && opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") && !opener.current.closest("[hidden]") && (!openerDialog || openerDialog.open) && (!returnFocus.current || available(opener.current)) ? opener.current : null;
         const fallback = returnFocus.current?.() ?? (categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null);
@@ -186,8 +186,20 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
         if (target && document.activeElement !== target) requestAnimationFrame(() => { if (target.isConnected) target.focus({ preventScroll: true }); });
         return target;
       };
+      // Settings keeps its retained background locked. External creation can
+      // return to its visible Home opener after an explicit pending dismissal.
+      // A forced confirmed completion already marked closeRequested, even if a
+      // stale child retention signal is still present during this cleanup.
+      if ((retained || signals.current.size > 0) && !closeRequested.current && !(returnFocus.current && retainedDismissal.current)) {
+        // A parent can unmount the task immediately after a successful child
+        // save, before the child clears its retention signal. A retained task
+        // remains connected and must keep focus; an unmounted task can safely
+        // restore its opener after React removes the dialog.
+        queueMicrotask(() => { if (!node.isConnected && !anotherModal(node)) restoreFocus(true); });
+        return;
+      }
       restoreFocus();
-      requestAnimationFrame(restoreFocus);
+      requestAnimationFrame(() => restoreFocus());
     };
   // Step changes do not create another modal opening or overwrite its opener.
   }, [visible, host?.outlet]);

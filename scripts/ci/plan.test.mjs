@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { changedFiles, Event, jobPaths, matchesPath, matricesForEvent, nativeMatrices, planJobs, previousJobPaths } from "./plan.mjs";
 import { validateResults } from "./result.mjs";
@@ -121,10 +122,12 @@ test("hidden shared action descendants force every event-eligible job", () => {
   }
 });
 
-test("Go runner changes exercise all native Go shards without selecting unrelated jobs", () => {
+test("Go runner changes select validation without adding native Go runners to PRs", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of ["scripts/ci/go-test.mjs", "scripts/ci/go-test.test.mjs", "scripts/ci/go-affected.mjs", "scripts/ci/go-quality.mjs"]) {
       assert.deepEqual(selected(event, [path]), ["go-quality", "go-test"]);
+      assert.deepEqual(matricesForEvent(event).goTestMatrix.include,
+        event === Event.PullRequest ? [nativeMatrices["go-test"][0]] : nativeMatrices["go-test"]);
     }
   }
 });
@@ -633,7 +636,7 @@ function results(event, paths) {
   const { jobs } = planJobs(event, paths);
   const matrices = matricesForEvent(event);
   return {
-    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), rust_packages: JSON.stringify(jobs["rust-test"] || jobs["rust-clippy"] ? ["fixture-package"] : []), event, desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) } },
+    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), rust_packages: JSON.stringify(jobs["rust-test"] || jobs["rust-clippy"] ? ["fixture-package"] : []), event, go_test_matrix: JSON.stringify(matrices.goTestMatrix), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) } },
     "ci-contracts": { result: "success" },
     ...Object.fromEntries(Object.entries(jobs).map(([id, run]) => [id, { result: run ? "success" : "skipped" }])),
   };
@@ -710,6 +713,65 @@ test("event matrices retain only the authorized native hosts", () => {
   assert.deepEqual(matricesForEvent(Event.Manual).desktopMatrix.include, nativeMatrices["devhud-desktop"]);
   assert.deepEqual(matricesForEvent(Event.Manual).reactForgeMatrix.include, nativeMatrices["react-forge"]);
   assert.equal(planJobs(Event.Manual, []).jobs["devhud-ios-simulator"], true);
+});
+
+test("Go matrix contains only Ubuntu on PRs, including dependency and forced configuration changes", () => {
+  const ubuntu = { os: "ubuntu-latest", shard: "all", label: "ubuntu-latest" };
+  for (const path of ["cmds/delidev-cli/internal/worker/run.go", "go.mod", "go.sum", ".github/workflows/CI.yml", "scripts/ci/native-matrices.json"]) {
+    assert.equal(planJobs(Event.PullRequest, [path]).jobs["go-test"], true, path);
+    assert.deepEqual(matricesForEvent(Event.PullRequest).goTestMatrix, { include: [ubuntu] }, path);
+  }
+  const complete = [ubuntu, { os: "macos-latest", shard: "all", label: "macos-latest" },
+    ...["core", "server", "harness", "worker", "workspace"].map((shard) => ({ os: "windows-latest", shard, label: `windows-latest, ${shard}` }))];
+  for (const event of [Event.Push, Event.Manual]) {
+    assert.deepEqual(matricesForEvent(event).goTestMatrix, { include: complete });
+  }
+});
+
+test("planner publishes the event Go matrix from real Git comparisons", (t) => {
+  const f = fixture(t);
+  const script = fileURLToPath(new URL("./plan.mjs", import.meta.url));
+  const eventPath = join(f.cwd, ".git", "go-plan-event.json");
+  const outputPath = join(f.cwd, ".git", "go-plan-output");
+  for (const path of ["cmds/derun/example.go", "go.mod", ".github/workflows/CI.yml"]) {
+    f.write(path, "fixture\n");
+    const head = f.commit();
+    for (const event of Object.values(Event)) {
+      writeFileSync(eventPath, JSON.stringify(event === Event.PullRequest
+        ? { pull_request: { base: { sha: f.initial }, head: { sha: head } } }
+        : { before: f.initial }));
+      writeFileSync(outputPath, "");
+      execFileSync(process.execPath, [script], { cwd: f.cwd, env: {
+        ...process.env, GITHUB_EVENT_NAME: event, GITHUB_EVENT_PATH: eventPath,
+        GITHUB_SHA: head, GITHUB_OUTPUT: outputPath, GITHUB_STEP_SUMMARY: "",
+      } });
+      const outputs = Object.fromEntries(readFileSync(outputPath, "utf8").trim().split("\n").map((line) => {
+        const index = line.indexOf("=");
+        return [line.slice(0, index), line.slice(index + 1)];
+      }));
+      assert.equal(JSON.parse(outputs.jobs)["go-test"], true, `${event}: ${path}`);
+      assert.deepEqual(JSON.parse(outputs.go_test_matrix), matricesForEvent(event).goTestMatrix);
+      assert.equal(outputs.base, event === Event.Manual ? head : f.initial);
+      assert.equal(outputs.head, head);
+    }
+  }
+});
+
+test("CI Result rejects altered or missing Go matrices and every unsuccessful selected Go result", () => {
+  for (const event of Object.values(Event)) {
+    for (const value of [undefined, "{", "{}", "null", JSON.stringify({ include: [] }),
+      JSON.stringify(matricesForEvent(event === Event.PullRequest ? Event.Push : Event.PullRequest).goTestMatrix),
+      JSON.stringify({ include: [...matricesForEvent(event).goTestMatrix.include, nativeMatrices["go-test"][0]] })]) {
+      const needs = results(event, ["cmds/derun/example.go"]);
+      needs.changes.outputs.go_test_matrix = value;
+      assert.throws(() => validateResults(needs), value);
+    }
+    for (const result of ["failure", "cancelled", "skipped", undefined]) {
+      const needs = results(event, ["cmds/derun/example.go"]);
+      needs["go-test"].result = result;
+      assert.throws(() => validateResults(needs), /go-test/u);
+    }
+  }
 });
 
 test("path-rule edits force only changed eligible jobs", () => {
