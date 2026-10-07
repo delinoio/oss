@@ -259,8 +259,8 @@ jobs:
         id: ci-go
         uses: ./.github/actions/setup-ci-go
         with:
-          cache-scope: ${{ format('go-test-{0}', matrix.shard) }}
-          cache-fallback-scope: ${{ matrix.shard == 'workspace' && 'go-test-worker' || '' }}
+          cache-scope: ${{ matrix.os == 'ubuntu-latest' && 'go-test-all' || format('go-test-{0}', matrix.shard) }}
+          cache-fallback-scope: ${{ matrix.os == 'windows-latest' && matrix.shard == 'workspace' && 'go-test-worker' || '' }}
 
       - name: Setup Node.js
         id: ci-node

@@ -25,7 +25,7 @@ export function shardForPackage(importPath) {
 }
 
 export function selectPackages(output, shard) {
-  if (!Object.values(GoTestShard).includes(shard) || shard === GoTestShard.All) throw new Error("Expected a Windows Go test shard");
+  if (!Object.values(GoTestShard).includes(shard) || shard === GoTestShard.All) throw new Error("Expected a partitioned Go test shard");
   const packages = output.trim().split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
   if (packages.length === 0 || new Set(packages).size !== packages.length || packages.some((name) => /\s/u.test(name))) {
     throw new Error("Go package discovery returned an empty or invalid inventory");
@@ -77,7 +77,8 @@ export async function runGoTests(shard, { run = spawnSync, runTests = runTestJso
     throw error;
   }
   log(JSON.stringify({ event: "ci_go_test_start", shard, packageCount: shard === GoTestShard.All ? null : packages.length, packages }));
-  if (shard !== GoTestShard.All) {
+  const windowsShard = platform === "win32" && shard !== GoTestShard.All;
+  if (windowsShard) {
     // -p=1 also serializes compilation. Populate the build cache at Go's default
     // compiler parallelism before any fixture runs, so cold caches do not extend
     // the serial test critical path. -c never executes tests or TestMain; the null
@@ -103,10 +104,10 @@ export async function runGoTests(shard, { run = spawnSync, runTests = runTestJso
   // claims across fresh recovery owners. Their aggregate Windows package time
   // exceeds 20 minutes; this watchdog does not extend any product deadline.
   // Reassess the larger budget after native fixture timings permit reduction.
-  const timeout = [GoTestShard.Worker, GoTestShard.Workspace].includes(shard) ? "45m" : "20m";
+  const timeout = windowsShard && [GoTestShard.Worker, GoTestShard.Workspace].includes(shard) ? "45m" : "20m";
   // Subprocess command changes can leave a consumer's test binary unchanged.
   // Disable result reuse so TestMain runs; compiled objects remain cacheable.
-  const args = ["test", "-count=1", "-json", ...(shard === GoTestShard.All ? [] : ["-p=1"]), `-timeout=${timeout}`, ...packages];
+  const args = ["test", "-count=1", "-json", ...(windowsShard ? ["-p=1"] : []), `-timeout=${timeout}`, ...packages];
   report.commands.push(["go", ...args]);
   const testStarted = performance.now();
   const result = await runTests("go", args, commandOptions, { log });
