@@ -131,9 +131,10 @@ async function fillCreation(value: ReturnType<typeof fixture>) {
   fireEvent.change(screen.getByLabelText("Schedule name"), { target: { value: "Morning review" } });
   fireEvent.change(screen.getByLabelText("Scheduled prompt"), { target: { value: "Review project changes" } });
   for (const [label, resource] of [["Project", value.project], ["Agent Worker", value.agent], ["Runner Device", value.machine]] as const) {
-    const select = screen.getByLabelText(label);
-    await within(select).findByRole("option", { name: JSON.parse(new TextDecoder().decode(resource.documentJson)).name });
-    fireEvent.change(select, { target: { value: resource.id } });
+    const select = screen.getByRole("combobox", { name: label });
+    fireEvent.click(select);
+    fireEvent.click(await screen.findByRole("option", { name: JSON.parse(new TextDecoder().decode(resource.documentJson)).name }));
+    await waitFor(() => expect(select.getAttribute("data-value")).toBe(resource.id));
   }
 }
 const choose = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -147,7 +148,7 @@ it("creates a paused strict definition with explicit resources and the original 
   expect(screen.getByLabelText("Schedule name")).toBe(globalThis.document.activeElement);
   expect(screen.getByRole("button", { name: /Starting reference overrides/ }).getAttribute("aria-expanded")).toBe("false");
   await fillCreation(value);
-  expect((screen.getByLabelText("Project") as HTMLSelectElement).required).toBe(true);
+  expect(screen.getByLabelText("Project").getAttribute("aria-required")).toBe("true");
   expect((screen.getByRole("checkbox", { name: "Enable future scheduled runs" }) as HTMLInputElement).checked).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
@@ -221,7 +222,8 @@ it("keeps complete reference drafts mounted behind the disclosure and clears the
   expect(screen.getByLabelText(`Starting ${value.repositoryId} name`)).toBe(reference); expect((reference as HTMLInputElement).value).toBe("retained-branch");
   fireEvent.click(screen.getByRole("button", { name: "Remove starting override" })); expect(disclosure.textContent).toContain("Using saved project references");
   choose("Add repository override", value.repositoryId); fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
-  choose("Project", ""); expect(disclosure.textContent).toContain("Using saved project references"); expect(screen.queryByLabelText(`Starting ${value.repositoryId} name`)).toBeNull();
+  fireEvent.click(screen.getByRole("combobox", { name: "Project" })); fireEvent.click(screen.getByRole("option", { name: "Select project" }));
+  await waitFor(() => expect(disclosure.textContent).toContain("Using saved project references")); expect(screen.queryByLabelText(`Starting ${value.repositoryId} name`)).toBeNull();
   expect(document(value.project)).toMatchObject({ base: { name: "main" } });
 });
 
@@ -253,7 +255,7 @@ it.each(["changed", "malformed", "rejected"])("refuses %s Local submission proof
   render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />)); await fillCreation(value);
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" })); await waitFor(() => expect((screen.getByRole("radio", { name: "Local computer" }) as HTMLInputElement).checked).toBe(true));
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" })); await screen.findByText(/paired Worker could not be verified/);
-  expect(value.save).not.toHaveBeenCalled(); expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).value).toBe(value.machine.id);
+  expect(value.save).not.toHaveBeenCalled(); expect(screen.getByLabelText("Runner Device").getAttribute("data-value")).toBe(value.machine.id);
 });
 
 it("retains creation UI state across inactivity without focus theft and Cancel returns to guidance", async () => {
@@ -281,7 +283,7 @@ it("shows initial catalog loading and successful empty pages without selecting a
   const value = fixture(); let ready!: () => void; const pending = new Promise<void>((resolve) => { ready = resolve; });
   value.list.mockImplementation(async () => { await pending; return { resources: [], nextPageToken: "" }; });
   render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
-  expect(screen.getByText("Loading Project choices…")).toBeTruthy(); expect((screen.getByLabelText("Project") as HTMLSelectElement).value).toBe("");
+  expect(screen.getByText("Loading Project choices…")).toBeTruthy(); expect(screen.getByLabelText("Project").getAttribute("data-value")).toBe("");
   ready(); await screen.findByText("No selectable Project choices are on this page."); await screen.findByText("No selectable Agent Worker choices are on this page.");
   expect(value.save).not.toHaveBeenCalled();
 });
@@ -290,25 +292,27 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("shows 
   const value = fixture(); value.list.mockRejectedValue(new ConnectError("fixture denied", code));
   render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
   await screen.findAllByText(code === Code.Unavailable ? /server connection failed while loading these choices/ : /server denied access to these choices/);
-  expect((screen.getByLabelText("Project") as HTMLSelectElement).value).toBe(""); expect(value.save).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Project").getAttribute("data-value")).toBe(""); expect(value.save).not.toHaveBeenCalled();
 });
 
 it("reports cached catalog refresh failure with the previous exact choices and selections", async () => {
   const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
   value.list.mockRejectedValue(new ConnectError("fixture offline", Code.Unavailable)); await value.client.invalidateQueries();
   await screen.findByText(/Showing cached Project choices/);
-  expect((screen.getByLabelText("Project") as HTMLSelectElement).value).toBe(value.project.id); expect(screen.getByRole("option", { name: "Selected project" })).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Project").getAttribute("data-value")).toBe(value.project.id); fireEvent.click(screen.getByRole("combobox", { name: "Project" })); expect(screen.getByRole("option", { name: "Selected project" })).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
 });
 
-it("preserves an exact off-page choice through bounded More/First pages and suspends inactive reads", async () => {
+it("preserves exact choices through accepted continuation and suspends inactive reads", async () => {
   const value = fixture(); value.list.mockImplementation(async (request) => ({ resources: request.filter?.pageToken ? [] : value.resources.filter((row) => row.kind === request.filter?.kind), nextPageToken: request.filter?.kind === EntityKind.PROJECT && !request.filter.pageToken ? "next-project-page" : "" }));
   const rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
-  const projectChoices = within(screen.getByLabelText("Project").closest(".resource-choice")!);
-  fireEvent.click(projectChoices.getByRole("button", { name: "More choices" }));
-  await projectChoices.findByText(/selected Project is outside this page/);
-  expect((screen.getByLabelText("Project") as HTMLSelectElement).value).toBe(value.project.id);
-  expect((screen.getByLabelText("Project") as HTMLSelectElement).selectedOptions[0].value).toBe(value.project.id);
-  fireEvent.click(projectChoices.getByRole("button", { name: "First choices" })); await projectChoices.findByRole("option", { name: "Selected project" });
+  const selected = screen.getByRole("combobox", { name: "Project" });
+  fireEvent.click(selected);
+  fireEvent.click(screen.getByRole("button", { name: "Load more Project" }));
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.kind === EntityKind.PROJECT && request.filter.pageToken === "next-project-page")).toBe(true));
+  await screen.findByText("All loaded Project are shown.");
+  expect(selected.getAttribute("data-value")).toBe(value.project.id);
+  expect(screen.getByRole("option", { name: "Selected project" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.keyDown(selected, { key: "Escape" });
   rendered.rerender(value.view(<ScheduleEditor active={false} saved={() => {}} cancel={() => {}} />));
   const reads = value.list.mock.calls.length; await value.client.invalidateQueries(); expect(value.list).toHaveBeenCalledTimes(reads); expect(value.save).not.toHaveBeenCalled();
 });
