@@ -63,7 +63,7 @@ it.each(["job", "unknown", "failed", "uncertain"])("does not show configuration 
   render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.PROJECT} initial={project} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
-  if (outcome === "job") await screen.findByText("Worker operation: queued");
+  if (outcome === "job") await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   else await screen.findByRole("alert");
   expect(screen.queryByText("Project saved.")).toBeNull();
   expect(saved).not.toHaveBeenCalled();
@@ -510,18 +510,16 @@ it("keeps repository save acknowledgment separate from completed Worker validati
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
-  await screen.findByText("Worker operation: queued");
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   expect(saved).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh operation" }) as HTMLButtonElement).disabled).toBe(false));
   value.resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state: "uncertain", problem: { message: "Owned operation needs recovery" } }) });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh operation" }));
-  await screen.findByText("Worker operation: uncertain");
+  await act(async () => { await value.client.invalidateQueries(); });
+  await screen.findByText("The Worker outcome is uncertain. Inspect the original operation before starting another.");
   expect(value.save).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("button", { name: "Return to retained draft" })).toBeNull();
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh operation" }) as HTMLButtonElement).disabled).toBe(false));
   value.resources[1] = create(ResourceSchema, { ...job, revision: 3n, documentJson: encode({ type: "save-repository", state: "succeeded", output: { id: repository.id, revision: 2 } }) });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh operation" }));
+  await act(async () => { await value.client.invalidateQueries(); });
   fireEvent.click(await screen.findByRole("button", { name: "Done" }));
   expect(saved).toHaveBeenCalledTimes(1);
 });
@@ -1000,6 +998,22 @@ it("pauses the containing Settings inventory while its original Network settings
   expect(form.isConnected).toBe(true); expect(value.save).not.toHaveBeenCalled();
 });
 
+
+it.each(["queued", "succeeded", "failed", "unknown"])("retains selected-server API entry scope through an asynchronous %s save", async state => {
+ const account = resource(EntityKind.ACCOUNT, { type: "api", alias: "Scoped API entry", provider_id: newRequestId(), enabled: true, health: "disconnected" });
+ const job = resource(EntityKind.JOB, { type: "save-account", state });
+ const value = fixture([account, job]);
+ value.save.mockResolvedValueOnce(state === "unknown" ? {} : { job });
+ render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} initial={account} active saved={vi.fn()} cancel={vi.fn()} />));
+ const save = screen.getByRole("button", { name: "Save AI API key entry" });
+ await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(save);
+ await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+ await waitFor(() => expect(screen.queryByRole("button", { name: "Save AI API key entry" })).toBeNull());
+ expect(screen.getByText("Saved on the selected server.")).toBeTruthy();
+ expect(screen.getByRole("heading", { name: "Edit preferences" })).toBeTruthy();
+ expect(screen.getByText("Scoped API entry")).toBeTruthy();
+});
 
 it.each([true, false])("blocks configuration submit until an exact picker read accepts the choice while preserving sibling edits (prior selection: %s)", async hasPrior => {
   const oldProfile = resource(EntityKind.INTEGRATION, { name: "Previous profile" });

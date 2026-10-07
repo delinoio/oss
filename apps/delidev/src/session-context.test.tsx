@@ -32,7 +32,7 @@ it.each(["codex", "opencode"])("preserves one exact %s manual request through re
  await screen.findByRole("button", { name: "Retry the same compaction request" });
  rendered.rerender(view(false)); rendered.rerender(view(true));
  fireEvent.click(await screen.findByRole("button", { name: "Retry the same compaction request" }));
- await screen.findByText("Compaction operation: claimed");
+ await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
  expect(requests[1]).toEqual(requests[0]);
  expect(requests[0]).toMatchObject({ mutation: { id: session.id, expectedRevision: 8n } });
  expect(screen.getByText("Current context tokens: Not reported")).toBeTruthy();

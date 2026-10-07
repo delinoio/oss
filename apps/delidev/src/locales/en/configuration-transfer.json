@@ -51,7 +51,6 @@
   "configuration-transfer.configurationImportFailedExistingConfigurationWas_c7e5ad": "Configuration import failed. Existing configuration was preserved.",
   "configuration-transfer.importAcceptedWaitingForConfirmationOf_8ed561": "Import accepted. Waiting for confirmation of every repository validation.",
   "configuration-transfer.theImportOutcomeIsUnavailableInspect_7a2ebb": "The import outcome is unavailable. Inspect the original operation before trying another import.",
-  "configuration-transfer.refreshConfigurationImport_e42bc3": "Refresh configuration import",
   "configuration-transfer.returnToRetainedImportDocument_9a833a": "Return to retained import document",
   "configuration-transfer.beforeYouTransfer_1de385": "Before you transfer",
   "configuration-transfer.importedAccountsAreDisconnectedAndNeed_2a3422": "Imported accounts are disconnected and need a new connection.",

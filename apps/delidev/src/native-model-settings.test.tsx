@@ -8,14 +8,14 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, NativeModelService, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type DiscoverNativeModelsRequest, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
-import { chooseScrollOption } from "./test-scroll-picker";
 import { NativeModelSettings } from "./native-model-settings";
+import { chooseScrollOption } from "./test-scroll-picker";
 
-function fixture(loseFirst = false, scoped = false) {
+function fixture(loseFirst = false, scoped = false, observationState = "succeeded", empty = false) {
   const provider = newRequestId();
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Runner fixture" }) });
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 8n, schemaVersion: 1, documentJson: encode({ alias: "Account fixture", provider_id: provider, connection: { id: newRequestId() } }) });
-  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 3n, schemaVersion: 1, documentJson: encode({ type: "native-codex-models", state: "succeeded", input: { machine_id: machine.id, account_id: account.id, provider_id: provider, installation_generation: 1 }, output: { observed_at: "2026-10-01T00:00:00Z" } }) });
+  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 3n, schemaVersion: 1, documentJson: encode({ type: "native-codex-models", state: observationState, input: { machine_id: machine.id, account_id: account.id, provider_id: provider, installation_generation: 1 }, output: { observed_at: "2026-10-01T00:00:00Z" } }) });
   const requests: DiscoverNativeModelsRequest[] = [];
   const discover = vi.fn(async (request: DiscoverNativeModelsRequest) => {
     requests.push(request);
@@ -23,13 +23,14 @@ function fixture(loseFirst = false, scoped = false) {
     return { job };
   });
   const createModel = vi.fn();
+  const getObservation = vi.fn((_request: { jobId: string }) => ({ job }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_CODEX_MODEL_DISCOVERY_V1] }) });
     router.service(ResourceService, { getResource: request => ({ resource: request.id === machine.id ? machine : request.id === account.id ? account : undefined }), listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MACHINE ? [machine] : request.filter?.kind === EntityKind.ACCOUNT ? [account] : [] }) });
     router.service(NativeModelService, {
       discoverNativeModels: discover,
-      getNativeModelObservation: () => ({ job }),
-      listNativeModels: () => ({ job, modelsJson: encode([{ id: "picker-only", model: "executable-only", display_name: "Fixture model", description: "Advisory", reasoning: ["medium"], modalities: ["text"], service_tiers: [] }]) }),
+      getNativeModelObservation: getObservation,
+      listNativeModels: () => ({ job, modelsJson: encode(empty ? [] : [{ id: "picker-only", model: "executable-only", display_name: "Fixture model", description: "Advisory", reasoning: ["medium"], modalities: ["text"], service_tiers: [] }]) }),
     });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -37,7 +38,7 @@ function fixture(loseFirst = false, scoped = false) {
   const rendered = render(view(scoped ? [account] : undefined));
   const details = screen.getByText("Native Codex model observations").parentElement as HTMLDetailsElement;
   details.open = true; fireEvent(details, new Event("toggle"));
-  return { machine, account, provider, discover, requests, createModel, scoped, selectAccounts: (rows: Resource[]) => rendered.rerender(view(rows)) };
+  return { machine, account, provider, discover, requests, createModel, getObservation, job, scoped, selectAccounts: (rows: Resource[]) => rendered.rerender(view(rows)) };
 }
 
 async function choose(value: ReturnType<typeof fixture>) {
@@ -79,4 +80,112 @@ it("retains the exact discovery receipt after a lost response and blocks a repla
   expect(value.requests[1]).toEqual(value.requests[0]);
   await screen.findByRole("button", { name: "Register Fixture model…" });
   expect(value.createModel).not.toHaveBeenCalled();
+});
+
+
+it("reinspects an uncertain native observation without replacing its accepted request", async () => {
+ const value = fixture(false, false, "uncertain");
+ await choose(value);
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ expect((screen.getByRole("button", { name: "Observe models" }) as HTMLButtonElement).closest("fieldset")?.disabled).toBe(true);
+ expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(retry);
+ await waitFor(() => expect(value.getObservation).toHaveBeenCalledTimes(2));
+ expect(value.getObservation.mock.calls.every(([request]) => request.jobId === value.job.id)).toBe(true);
+ expect(value.discover).toHaveBeenCalledTimes(1);
+});
+
+
+it("retains exact provenance for an empty successful native observation", async () => {
+ const value = fixture(false, false, "succeeded", true);
+ await choose(value);
+ await screen.findByText("No native models in this observation page.");
+ expect(screen.getByText(new RegExp(value.job.id)).textContent).toContain(value.account.id);
+ expect(screen.getByText(new RegExp(value.job.id)).textContent).toContain("1");
+ expect(screen.getByText(/Observed at/)).toBeTruthy();
+ expect(screen.queryByRole("button", { name: /Register/ })).toBeNull();
+ expect(value.createModel).not.toHaveBeenCalled();
+});
+
+
+it.each([Code.NotFound, Code.Unavailable])("allows correcting an unverified failed manual observation lookup (%s)", async code => {
+ const value = fixture();
+ value.getObservation.mockRejectedValueOnce(new ConnectError("Lookup failed", code));
+ const lookup = screen.getByLabelText("Original observation ID") as HTMLInputElement;
+ const invalidId = newRequestId();
+ fireEvent.change(lookup, { target: { value: invalidId } });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect(lookup.disabled).toBe(false));
+ fireEvent.change(lookup, { target: { value: value.job.id } });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByRole("button", { name: "Register Fixture model…" });
+ expect(value.getObservation.mock.calls.map(([request]) => request.jobId)).toEqual([invalidId, value.job.id]);
+ expect(value.discover).not.toHaveBeenCalled();
+ expect(value.createModel).not.toHaveBeenCalled();
+});
+
+it("locks a verified unsettled manual observation against lookup replacement", async () => {
+ const value = fixture(false, false, "uncertain");
+ fireEvent.change(screen.getByLabelText("Original observation ID"), { target: { value: value.job.id } });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByText("The Worker outcome is uncertain. Inspect the original operation before starting another.");
+ expect((screen.getByLabelText("Original observation ID") as HTMLInputElement).disabled).toBe(true);
+ expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(true);
+ expect(value.discover).not.toHaveBeenCalled();
+});
+
+
+it.each(["missing", "foreign", "wrong-kind"])("allows correcting an unverified malformed manual observation (%s)", async mode => {
+ const value = fixture();
+ const invalidId = newRequestId();
+ const candidate = mode === "missing" ? undefined! : { ...value.job, ...(mode === "foreign" ? { id: newRequestId() } : { id: invalidId, kind: EntityKind.ACCOUNT }) };
+ value.getObservation.mockResolvedValueOnce({ job: candidate });
+ const lookup = screen.getByLabelText("Original observation ID") as HTMLInputElement;
+ fireEvent.change(lookup, { target: { value: invalidId } });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect(lookup.disabled).toBe(false));
+ fireEvent.change(lookup, { target: { value: value.job.id } });
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByRole("button", { name: "Register Fixture model…" });
+ expect(value.getObservation.mock.calls.map(([request]) => request.jobId)).toEqual([invalidId, value.job.id]);
+ expect(value.discover).not.toHaveBeenCalled(); expect(value.createModel).not.toHaveBeenCalled();
+});
+
+
+it("keeps an acknowledged unsettled observation locked after malformed status", async () => {
+ const value = fixture(false, false, "uncertain");
+ value.getObservation.mockResolvedValueOnce({ job: undefined! });
+ await choose(value);
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ expect((screen.getByLabelText("Original observation ID") as HTMLInputElement).disabled).toBe(true);
+ expect((screen.getByRole("button", { name: "Observe models" }) as HTMLButtonElement).closest("fieldset")?.disabled).toBe(true);
+ expect(value.discover).toHaveBeenCalledTimes(1);
+});
+
+
+it.each(["missing", "unrecognized"])("reinspects a retained native observation with %s state without releasing ownership", async mode => {
+ const value = fixture(false, false, "unrecognized-state");
+ if (mode === "missing") {
+  const data = JSON.parse(new TextDecoder().decode(value.job.documentJson));
+  delete data.state; value.job.documentJson = encode(data);
+ }
+ await choose(value);
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ expect((screen.getByLabelText("Original observation ID") as HTMLInputElement).disabled).toBe(true);
+ expect((screen.getByRole("button", { name: "Observe models" }) as HTMLButtonElement).closest("fieldset")?.disabled).toBe(true);
+ const succeeded = { ...value.job, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(value.job.documentJson)), state: "succeeded" }) };
+ value.getObservation.mockResolvedValueOnce({ job: succeeded });
+ fireEvent.click(retry);
+ await screen.findByRole("button", { name: "Register Fixture model…" });
+ expect(value.getObservation.mock.calls.map(([request]) => request.jobId)).toEqual([value.job.id, value.job.id]);
+ expect(value.discover).toHaveBeenCalledTimes(1); expect(value.createModel).not.toHaveBeenCalled();
 });

@@ -1,8 +1,9 @@
 {
-  "jobs.workerOperation_b3e39e": "워커 작업",
-  "jobs.workerOperation_8d8a5d": "워커 작업: <s0/>",
   "jobs.acceptedByTheServerWaitingFor_2b0bf0": "서버가 수락했습니다. 선택한 워커의 완료를 기다리는 중입니다.",
   "jobs.theWorkerOutcomeIsUncertainInspect_2212e2": "워커 결과가 불확실합니다. 다른 작업을 시작하기 전에 원래 작업을 확인하세요.",
-  "jobs.refreshOperation_8b5c83": "작업 새로고침",
-  "jobs.extra.b764cdc0eab7": "알 수 없음"
+  "jobs.retryStatusRead": "원래 상태 읽기 재시도",
+  "jobs.failed": "작업이 실패했습니다. 다시 시도하기 전에 문제를 확인하세요.",
+  "jobs.canceled": "작업이 취소되었습니다. 남은 정리는 계속 확인이 필요합니다.",
+  "jobs.readingStatus": "원래 상태를 읽는 중…",
+  "jobs.unreadableStatus": "원래 상태를 확인할 수 없습니다. 계속하기 전에 다시 읽으세요."
 }

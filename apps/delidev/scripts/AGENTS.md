@@ -80,6 +80,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Dialog layout fixtures follow the duplicate-dismissal contract in `docs/apps-delidev-desktop-contract.md`. Assert absence of audited duplicate buttons and empty footers, safe named header-close focus for destructive tasks, and retained distinct nested cancellation. Keep browser focus/layout evidence separate from packaged CEF/platform acceptance.
 
 - `DELIDEV_LAYOUT_DISMISSAL_ONLY=1` scopes the Settings browser fixture to safe destructive header focus/Enter, keyboard containment, opener return and duplicate removal in English/Korean, both themes and wide/narrow/effective 200% layouts. It runs no native or account acceptance.
+- `test-jobs-layout.mjs` and `src/jobs-layout.fixture.tsx` check synthetic original-job polling and success-notice removal in host Playwright/Chrome. Keep English/Korean, light/dark, narrow/wide bounds and keyboard/focus checks, feature children and no visible/accessibility operation IDs. Temporary browser/build/server output stays outside the checkout and is disposed. Fixtures grant no native/account acceptance or product authority.
+
 
 
 - Concurrent localization preparation publishes each generated compiler input through unique same-directory atomic replacement and skips unchanged output. Never truncate a live catalog; keep staging files disposable and remove them after failure.

@@ -730,3 +730,24 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Session creation preferences follow `docs/apps-delidev-desktop-contract.md#session-creation-preferences-issue-1682`. Keep separate accepted-request pairs per stable native server/device and creation kind, bounded private version-1 storage, original authority/process revisions and explicit uncertain-write reinspection. Restore only untouched permitted fields by exact resource ID, excluding Agents requiring reconfiguration. Revalidate automatically selected fields after current reads, block new creation while their proof loads, and clear only their settled ineligible choices without changing saved history or later manual choices/drafts/original requests. Transient exact-resource/project read failures retain automatic selections while blocking new creation until current proof recovers; successful ineligible or explicit missing/permission responses clear them. Retain disconnected registered runners and Local proof precedence. Preference failures never repeat CreateSession.
 
 - Dialog dismissal follows `docs/apps-delidev-desktop-contract.md#duplicate-dialog-dismissal-issue-1680`. Audit complete handlers and lifetime effects before opting a control into `SettingsTaskDismissButton`; suppress only top-level header equivalents and retain page cancellation and distinct nested return. Never blanket-filter cancellation markers. Destructive confirmation focuses named header close after duplicate removal; distinct nested Keep remains the safe initial target, with header close as the only fallback. Omit empty actions/footer spacing. Preserve business cancellation, device exit/focus outcomes, Claude Later, retained Fork/storage completion and original pending/uncertain authority.
+- Generic operation presentation follows the desktop operation-result contract. Shared TrackedJob and independent backup/model/Fork/storage/context/import views hide generic headings, raw job/action IDs/revisions and unconditional operation refresh while retaining feature children, progress/problems/cancellation/uncertainty, original read-only failed-status retries and functional completion/recovery controls. Preserve all query/polling/receipt/revision/mutation/lifetime owners, resource IDs/provenance/cleanup proofs, explicit observation lookup, product Check again and account-storage warnings. Remove empty success wrappers without success toasts.
+
+- Keep retained uncertain Fork jobs explicitly reinspectable through their original read query, without replaying Fork creation.
+
+- Do not replace an unsettled native-model observation with a new scope, lookup or discovery. Keep its original status read explicitly retryable.
+
+- Empty native-model pages retain exact selected observation provenance without granting model-registration authority.
+
+- Validate original session identity before treating deletion status as terminal; foreign status remains read-only retryable and cannot authorize Finish.
+
+- Name backup creation and deletion tracking distinctly, including their independent dismissal actions, while keeping raw operation IDs hidden.
+
+- Retain API-entry feature identity and selected-server scope while displaying an asynchronous save or its result.
+
+- Successful Fork status remains reinspectable until its returned child verifies against the original source.
+
+- Failed manual native-model lookup grants no accepted operation ownership; allow correction until discovery acknowledgment or verified status retains the original unsettled job.
+
+- Missing, foreign and wrong-kind manual observation responses remain correctable only when no original unsettled job has been retained.
+
+- Keep unreadable retained native-model job states explicitly reinspectable when automatic polling is unavailable; original unsettled ownership remains locked.

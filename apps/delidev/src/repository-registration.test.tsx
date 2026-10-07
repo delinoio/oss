@@ -374,7 +374,7 @@ it("clones with fresh local proof and no frontend registration after acceptance"
   expect(screen.queryByRole("button", { name: "Optional settings" })).toBeNull();
   expect((screen.getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(true);
   const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
-  fireEvent.click(button); await screen.findByText("Repository clone accepted");
+  fireEvent.click(button); await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   expect(f.proof).toHaveBeenCalledTimes(1); expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
   expect(f.clone.mock.calls[0][0]).toMatchObject({ machineId: f.machine.id, localWorkerToken: "A".repeat(43), url: "https://github.com/delinoio/oss.git", parentPath: "/parent", directoryName: "oss" });
   fireEvent.click(screen.getByRole("button", { name: "Close Add repository" }));
@@ -384,7 +384,7 @@ it("clones with fresh local proof and no frontend registration after acceptance"
 it("retains the exact clone request through an uncertain response", async () => {
   const f = fixture(metadata, true); f.clone.mockRejectedValueOnce(new ConnectError("Response lost", Code.Unavailable)); f.mount(); await f.add(); cloneInputs();
   const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false)); fireEvent.click(button);
-  fireEvent.click(await screen.findByRole("button", { name: "Retry the same clone request" })); await screen.findByText("Repository clone accepted");
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same clone request" })); await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   expect(f.clone.mock.calls[1][0]).toEqual(f.clone.mock.calls[0][0]); expect(f.proof).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
 });
 it("rejects an older Worker before sending clone and retains local folder registration", async () => {
@@ -401,7 +401,7 @@ it("shows only usable PAT profiles and requires explicit profile and repository 
   fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "git@github.com:delinoio/oss.git" } });
   if (screen.getByRole("button", { name: "Clone to this computer (optional)" }).getAttribute("aria-expanded") === "false") fireEvent.click(screen.getByRole("button", { name: "Clone to this computer (optional)" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
-  await screen.findByText("Repository clone accepted"); expect(f.clone.mock.calls[0][0].githubSelection).toMatchObject({ profileId: profile.id, owner: "delinoio", name: "oss" });
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish."); expect(f.clone.mock.calls[0][0].githubSelection).toMatchObject({ profileId: profile.id, owner: "delinoio", name: "oss" });
 });
 it.each(["Escape", "Close"])("closes only the GitHub child with %s and preserves the parent draft and chooser state", async action => {
   const f = fixture(metadata, true), profile = connectedProfile(f); f.mount(); await f.add(false);
@@ -518,7 +518,7 @@ it("drops the selected profile association when the Git URL changes repositories
   fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); fireEvent.click(await screen.findByRole("button", { name: "delinoio/oss Private · Archived" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "https://github.com/another/repo.git" } }); if (screen.getByRole("button", { name: "Clone to this computer (optional)" }).getAttribute("aria-expanded") === "false") fireEvent.click(screen.getByRole("button", { name: "Clone to this computer (optional)" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
-  await screen.findByText("Repository clone accepted"); expect(f.clone.mock.calls[0][0].githubSelection).toBeUndefined();
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish."); expect(f.clone.mock.calls[0][0].githubSelection).toBeUndefined();
 });
 it("appends repository pages without discarding accepted rows or local filtering", async () => {
   const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
