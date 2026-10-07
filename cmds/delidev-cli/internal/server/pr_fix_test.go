@@ -184,11 +184,15 @@ func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
 			accepted := make(chan *pb.RequestPullRequestFixResponse, 2)
 			failures := make(chan error, 2)
 			var accepting sync.WaitGroup
-			for range 2 {
+			for i := range 2 {
 				accepting.Add(1)
+				identity := f.identity
+				if i == 1 {
+					identity = f.workerIdentity
+				}
 				go func() {
 					defer accepting.Done()
-					r, e := client.RequestPullRequestFix(context.Background(), ownerRequest(f.identity, request))
+					r, e := client.RequestPullRequestFix(context.Background(), ownerRequest(identity, request))
 					if e != nil {
 						failures <- e
 						return
@@ -238,8 +242,13 @@ func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
 			request.RequestId = string(domain.NewID())
 			input.SetRevision = response.Msg.ProblemSet.Revision
 			request.DocumentJson, _ = json.Marshal(input)
-			if _, err := client.RequestPullRequestFix(context.Background(), ownerRequest(f.identity, request)); connect.CodeOf(err) != connect.CodeAborted {
-				t.Fatal("second owner accepted", err)
+			next, err := client.RequestPullRequestFix(context.Background(), ownerRequest(f.identity, request))
+			if err != nil || next.Msg.Attempt.Id == response.Msg.Attempt.Id || next.Msg.Session.Id == response.Msg.Session.Id {
+				t.Fatal("earlier attempt blocked an independent explicit fix", err)
+			}
+			original, err := f.service.Store.Get(owner, domain.ProblemKind, domain.ID(response.Msg.Attempt.Id))
+			if err != nil || original.Revision != response.Msg.Attempt.Revision || string(original.Data) != string(response.Msg.Attempt.DocumentJson) {
+				t.Fatal("new reservation rewrote the original attempt", err)
 			}
 			worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice})
 			if _, err := f.service.RequestPullRequestFix(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {

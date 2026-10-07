@@ -23,7 +23,7 @@ type prFixReceipt struct {
 	SessionID domain.ID `json:"session_id"`
 }
 
-// Coalesce only an identical original actor/request while pre-acceptance
+// Coalesce an identical request and input across authenticated callers while
 // provider reads run outside the database transaction. Receipt replay stays
 // durable and precedes this bounded, ephemeral gate; it is not a native retry.
 type prFixRequestTracker struct {
@@ -49,7 +49,7 @@ func (t *prFixRequestTracker) claim(ctx context.Context, request domain.ID, iden
 		if prior := t.active[request]; prior != nil {
 			t.mu.Unlock()
 			if prior.digest != digest {
-				return nil, domain.Fail(domain.Conflict, "The active fix request has different original input or actor.", "Preserve the original request ID and exact selection; no new lookup was started.")
+				return nil, domain.Fail(domain.Conflict, "The active fix request has different input.", "Preserve the original request ID and exact selection; no new lookup was started.")
 			}
 			select {
 			case <-ctx.Done():
@@ -320,7 +320,7 @@ func (s *Service) RequestPullRequestFix(ctx context.Context, req *connect.Reques
 		return fail(err)
 	}
 	if !replayed {
-		release, err := s.prFixRequests.claim(ctx, request, identity)
+		release, err := s.prFixRequests.claim(ctx, request, input)
 		if err != nil {
 			return fail(err)
 		}
