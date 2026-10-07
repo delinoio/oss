@@ -304,9 +304,13 @@ it("focuses inspection only at activation and restores the opener or list-headin
   await waitFor(() => expect(document.activeElement).toBe(opener));
   fireEvent.click(opener);
   await screen.findByText("Database integrity and original server identity verified.");
-  f.list.mockResolvedValueOnce({ backups: [] });
+  const reads = f.list.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Refresh backups" }));
-  await screen.findByText("No managed backups.");
+  await act(async () => { await Promise.resolve(); });
+  expect(f.list).toHaveBeenCalledTimes(reads);
+  // The paused inventory must keep its original row. Independently exercise
+  // safe focus fallback when an external DOM owner detaches that opener.
+  opener.remove();
   fireEvent.click(screen.getByRole("button", { name: "Close backup inspection" }));
   expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Database backups" }));
 });
