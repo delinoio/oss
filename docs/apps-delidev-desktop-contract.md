@@ -1569,6 +1569,8 @@ SystemService exposes owner/client backup creation, metadata pagination and expl
 
 ## CEF packaging
 
+macOS `dev:desktop` sets `MACOSX_DEPLOYMENT_TARGET` from `tauri.conf.json`'s `bundle.macOS.minimumSystemVersion` for both its Cargo preparation and Tauri bundling children. The pinned Tauri CLI selects that same value during bundling. Keeping preparation aligned prevents each launch from invalidating the shared macOS dependency cache twice; an ambient deployment-target override cannot change this development build input.
+
 `pnpm bundle:native` builds frontend assets and the target Go sidecar before
 invoking a package-local CLI compiled from the same immutable Tauri revision.
 It explicitly enables the local `custom-protocol` feature so saved-window
