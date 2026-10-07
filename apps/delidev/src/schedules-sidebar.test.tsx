@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { EntityKind, InboxService, ResourceSchema, ResourceService, ScheduleService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
+import { chooseScrollOption } from "./test-scroll-picker";
 import { ResourceChoice } from "./configuration-fields";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
@@ -31,7 +32,7 @@ function fixture() {
   const run = vi.fn(async (_request: unknown) => ({ occurrence: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.OCCURRENCE, revision: 1n, schemaVersion: 1 }) }));
   const transport = () => createRouterTransport((router) => {
     router.service(ScheduleService, { listSchedules: list, getSchedule: (request) => ({ schedule: schedules.find((schedule) => schedule.id === request.id) }), listScheduleOccurrences: history, runScheduleNow: run });
-    router.service(ResourceService, { listResources: choices });
+    router.service(ResourceService, { listResources: choices, getResource: request => ({ resource: request.id === project.id ? project : undefined }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
     router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
     router.service(InboxService, { listInbox: () => ({ entries: [] }) });
@@ -66,7 +67,10 @@ it("retains independent selector pages while immediate status and project filter
   render(value.view());
   await screen.findByRole("button", { name: /^Morning review/ });
   fireEvent.click(pane().getByRole("button", { name: "Load more Saved schedules" }));
-  fireEvent.click(pane().getByRole("button", { name: "More choices" }));
+  const projectPicker = pane().getByRole("combobox", { name: "Filter by project" });
+  fireEvent.click(projectPicker);
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Filter by project" }));
+  fireEvent.keyDown(projectPicker, { key: "Escape" });
   await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next"));
   await waitFor(() => expect(value.choices.mock.lastCall?.[0].filter?.pageToken).toBe("project-next"));
   for (const [name, enabled] of [["Enabled", true], ["Paused", false], ["All schedules", undefined]] as const) {
@@ -75,7 +79,7 @@ it("retains independent selector pages while immediate status and project filter
     expect(pane().getByRole("button", { name }).getAttribute("aria-pressed")).toBe("true");
     expect(value.choices.mock.lastCall?.[0].filter).toMatchObject({ pageToken: "project-next", pageSize: 50 });
   }
-  fireEvent.change(pane().getByLabelText("Filter by project"), { target: { value: value.project.id } });
+  await chooseScrollOption(projectPicker, value.project.id);
   await waitFor(() => expect(value.list.mock.lastCall?.[0]).toMatchObject({ pageToken: "", projectId: value.project.id, pageSize: 50 }));
   expect(value.choices.mock.lastCall?.[0].filter?.pageToken).toBe("project-next");
   expect(value.history).not.toHaveBeenCalled();
@@ -252,8 +256,12 @@ it("limits the All projects empty option to Schedules and preserves other select
   const value = fixture();
   render(<TransportProvider transport={value.initialTransport}><QueryClientProvider client={value.client}><MutationIntents><Schedules active open={() => {}} /><ResourceChoice label="Project" kind={EntityKind.PROJECT} value="" active change={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   await screen.findByRole("button", { name: /^Morning review/ });
-  expect((pane().getByLabelText("Filter by project") as HTMLSelectElement).options[0].text).toBe("All projects");
-  expect((screen.getByLabelText("Project", { exact: true }) as HTMLSelectElement).options[0].text).toBe("Select project");
+  const filtered = pane().getByRole("combobox", { name: "Filter by project" });
+  fireEvent.click(filtered);
+  expect(await screen.findByRole("option", { name: "All projects" })).toBeTruthy();
+  fireEvent.keyDown(filtered, { key: "Escape" });
+  fireEvent.click(screen.getByRole("combobox", { name: "Project", exact: true }));
+  expect(await screen.findByRole("option", { name: "Select project" })).toBeTruthy();
 });
 
 it("retains Schedules connection memory on same-identity reconnect and resets on identity replacement", async () => {
