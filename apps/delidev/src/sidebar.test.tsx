@@ -92,6 +92,47 @@ it("keeps equal-name projects separate, includes empty projects, and only reads 
   expect(value.openSession).not.toHaveBeenCalled();
 });
 
+it("opens project creation shortcuts without toggling groups or reading collapsed sessions", async () => {
+  const first = resource(EntityKind.PROJECT, "Same name");
+  const second = resource(EntityKind.PROJECT, "Same name");
+  const empty = resource(EntityKind.PROJECT, "Empty project");
+  const value = mountSidebar({ projects: () => ({ resources: [first, second, empty] }), sessions: () => ({ sessions: [] }) });
+  for (const project of [first, second, empty]) {
+    const name = JSON.parse(new TextDecoder().decode(project.documentJson)).name as string;
+    const toggle = await screen.findByRole("button", { name: `${name}. Project ID: ${project.id}` });
+    const shortcut = screen.getByRole("button", { name: `New session in ${name}. Project ID: ${project.id}` });
+    expect(shortcut.parentElement).toBe(toggle.parentElement);
+    expect(toggle.contains(shortcut)).toBe(false);
+    expect(shortcut.getAttribute("title")).toBe(`New session in ${name}`);
+    fireEvent.click(shortcut);
+    expect(value.newSession).toHaveBeenLastCalledWith(project.id);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(value.sessionRequests.some(request => request.projectId === project.id)).toBe(false);
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(shortcut);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  }
+  value.setProps({ projectSelectionBlocked: true });
+  const disabled = screen.getByRole("button", { name: `New session in Same name. Project ID: ${first.id}` });
+  expect(disabled).toHaveProperty("disabled", true);
+  const before = value.newSession.mock.calls.length;
+  fireEvent.click(disabled);
+  expect(value.newSession).toHaveBeenCalledTimes(before);
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("button", { name: `Same name 프로젝트의 새 세션. 프로젝트 ID: ${first.id}` })).toBe(disabled);
+  expect(disabled.getAttribute("title")).toBe("Same name 프로젝트의 새 세션");
+});
+
+it("keeps creation shortcuts out of unknown-project and General Chat groups", async () => {
+  const unknown = resource(EntityKind.SESSION, "Unknown parent", newRequestId());
+  const general = resource(EntityKind.SESSION, "Projectless");
+  mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [unknown, general] }) });
+  await screen.findByRole("button", { name: /Unknown parent/ });
+  await screen.findByRole("button", { name: /Projectless/ });
+  expect(screen.queryByRole("button", { name: /^New session in / })).toBeNull();
+});
+
 it("includes the safe title reason in sidebar text and its accessible description", async () => {
   const project = resource(EntityKind.PROJECT, "Title project");
   const session = resource(EntityKind.SESSION, "New session", project.id, {
