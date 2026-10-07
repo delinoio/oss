@@ -2,7 +2,7 @@
 
 ## Direct startup presentation
 
-[Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, original correlation, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.
+[Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing; owning failures can present the same original controller locally without category navigation. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, original correlation, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.
 
 ## Scope
 
@@ -91,3 +91,11 @@ Update this presentation contract, the desktop/diagnostics links and scoped fron
 The first-session prerequisite validator accepts all 29 current stored resource kinds, including `subagent` and `forward`, with an allowlist-derived maximum and exact uint64 count strings. Unknown kinds, duplicate kind rows and invalid counts still make that strict enclosing report unavailable; retained resources never grant execution readiness.
 
 Title requests commit their once-only HTTP send claim and diagnostic send revision in one Go-owned transaction. A failed diagnostic publication rolls back the claim. A committed claim still does not prove provider acceptance. Stream frames with a present malformed or null response ID invalidate the response identity and effective settings; absent ID fields do not change the retained identity.
+
+## Inline problems and remediation (issue #1699)
+
+Every desktop task, row, dialog and startup surface presents its available safe cause and supported next actions locally. Typed transport guidance remains visible beside workflow-specific explanations. Only secondary technical codes, versions and opaque references may be disclosed. Standalone diagnostics remains optional; navigation to another category is not a prerequisite for understanding a failure or invoking an existing remedy.
+
+Presentation reuses the owning read, mutation or native controller and its exact busy, confirmation and uncertain-request state. Moving a view cannot create another server, registration, credential, Runner or account recovery controller. Rechecks read the original scope; they do not retry mutations. Never mount Doctor globally or in an account workflow to obtain causes: its protected credential inspection retains explicit diagnostic invocation and bounds.
+
+Successful empty inventory, loading, failed reads, retained stale observations, malformed evidence, current-page exclusions and continuation availability remain distinct. Unknown evidence grants neither a diagnosis nor eligibility. External installation, OS permission and remote administration remedies use concrete manual guidance plus an existing explicit recheck; they grant no new repair authority. Preserve original IDs, revisions, native generations, once-only exchange, cleanup, terminal confirmation, Stop intent, borrowed Worker lifetimes, drafts and disposed-callback guards. Account-storage presentation remains removed.

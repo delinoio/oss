@@ -63,5 +63,7 @@
   "configuration-transfer.extra.307cfd717ce3": "내보내기에 실패했습니다.",
   "configuration-transfer.extra.8f5998bb6b15": "미리보기에 실패했습니다.",
   "configuration-transfer.extra.0c01933238f8": "384 KiB 이하의 내보내기를 사용하세요.",
-  "configuration-transfer.extra.1724f7337bd3": "구성 파일을 UTF-8로 읽지 못했습니다."
+  "configuration-transfer.extra.1724f7337bd3": "구성 파일을 UTF-8로 읽지 못했습니다.",
+  "configuration-transfer.updateRemoteServer": "URL로 저장소를 가져오려면 선택한 서버를 업데이트하세요.",
+  "configuration-transfer.retryServerCapabilities": "서버 기능 확인 다시 시도"
 }

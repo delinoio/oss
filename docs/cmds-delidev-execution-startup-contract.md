@@ -100,7 +100,7 @@ operation retains its own capability, protocol and original-executable checks.
 
 Remove the first-session prerequisite checklist and required inspection controls
 from ordinary execution. Preserve optional explicit diagnostics and path editing.
-Show an immediate session-owned failure summary with a concrete corrective action.
+Show an immediate session-owned failure summary with a concrete corrective action. Issue #1699 keeps available safe cause metadata and the original session/Runner controls in the owning surface; required setup does not navigate to another category. Preserve the single original controller, task draft and exact Runner identity. Unsupported installation or remote administration uses concrete manual steps and a supported explicit recheck, without new repair authority.
 Optional details expose phase, observed version, stable code, original log/
 correlation reference, input delivery and independent cleanup classification.
 Copy only validated metadata; opening or copying details performs no inspection.

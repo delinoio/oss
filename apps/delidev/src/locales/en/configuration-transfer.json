@@ -63,5 +63,7 @@
   "configuration-transfer.extra.307cfd717ce3": "Export failed.",
   "configuration-transfer.extra.8f5998bb6b15": "Preview failed.",
   "configuration-transfer.extra.0c01933238f8": "Use an export of at most 384 KiB.",
-  "configuration-transfer.extra.1724f7337bd3": "The configuration file could not be read as UTF-8."
+  "configuration-transfer.extra.1724f7337bd3": "The configuration file could not be read as UTF-8.",
+  "configuration-transfer.updateRemoteServer": "Update the selected server before importing repositories by URL.",
+  "configuration-transfer.retryServerCapabilities": "Retry server capability check"
 }
