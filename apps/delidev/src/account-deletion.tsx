@@ -68,6 +68,8 @@ export function useAccountDeletionCompletion(accepted: boolean, active: boolean,
 // This task owns only the confirmed client sequence. Go retains every
 // credential, execution, revision, reference and native-cleanup authority.
 export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { initial: Resource; active: boolean; deleted: () => void; close: () => void }) {
+  const task = useContext(SettingsTaskContext);
+  const hasReturnAction = !task || Boolean(task.stepId);
   useLocale();
   const service = subscriptionService(document(initial).subscription_service)!;
   const claude = service === SubscriptionServiceId.Claude;
@@ -254,7 +256,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       <p role="status">{view.stage === Stage.Checking ? copy("account-deletion.checkingTheCurrentAccount_9c2ed5") : view.stage === Stage.Logout ? copy("account-deletion.loggingOutAndCleaningUpCredentials_6b3730") : view.stage === Stage.CleanupDeleting ? copy("account-deletion.cleaningUpAndDeleting") : view.stage === Stage.Deleting ? copy("account-deletion.deletingTheAccountConfiguration_9b97e4") : copy("account-deletion.accountDeletionPaused_df3fd2")}</p>
       {view.stage === Stage.Logout ? <p>{copy("account-deletion.theAccountWillBeDeletedAfter_6b177a")}</p> : null}
       <Failure failure={view.failure} />
-      <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <button disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? copy("account-deletion.retryOriginalLogoutRequest_ce84e9") : pending.current.retry === Retry.Delete ? copy("account-deletion.retryTheSameDeletion_b32bf6") : copy("account-deletion.retryOriginalStatusCheck_88bd61")}</button> : <button disabled={!active || pending.current?.busy} onClick={() => void refresh()}>{copy("account-deletion.refreshAccountForConfirmation_deba05")}</button> : null}<SettingsTaskDismissButton disabled={!active} onClick={leave}>{copy("account-deletion.backToSubscriptions_257d53")}</SettingsTaskDismissButton></div>
+      {view.stage === Stage.Paused || hasReturnAction ? <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <button disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? copy("account-deletion.retryOriginalLogoutRequest_ce84e9") : pending.current.retry === Retry.Delete ? copy("account-deletion.retryTheSameDeletion_b32bf6") : copy("account-deletion.retryOriginalStatusCheck_88bd61")}</button> : <button disabled={!active || pending.current?.busy} onClick={() => void refresh()}>{copy("account-deletion.refreshAccountForConfirmation_deba05")}</button> : null}<SettingsTaskDismissButton disabled={!active} onClick={leave}>{copy("account-deletion.backToSubscriptions_257d53")}</SettingsTaskDismissButton></div> : null}
       <p className="settings-scope">{copy(pending.current?.deletion && !cleared(pending.current.confirmed) && failedInitialLogin(pending.current.confirmed) ? "account-deletion.acceptedServerDeletionContinues" : "account-deletion.leavingThisScreenStopsAutomaticDeletion_7a5a3c")}</p>
     </>}
   </section>;

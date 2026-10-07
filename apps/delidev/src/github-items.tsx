@@ -7,7 +7,7 @@ import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { IntegrationQuery, type Resource } from "@delinoio/delidev-api-client";
+import { FailureCode, IntegrationQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text, type Document } from "./documents";
 import { OpenPRProblemHistory } from "./pr-problems";
 import { Problem } from "./ui";
@@ -95,11 +95,11 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
   const chain = usePaginationChain(scope, active, reader);
   usePaginationRefresh(IntegrationQuery.queryRepositoryIntegration, request(""), active, chain.refresh);
   return <div ref={bindRoot} role={props.standaloneCards ? "region" : undefined} aria-label={props.standaloneCards ? copy("github-items.githubQueryResults_66fac2") : undefined}>
-    {props.standaloneCards ? <PRListHeader selected={props.selected} pending={props.pending} reading={Boolean(chain.loading)} refresh={chain.refreshExplicit} /> : null}
+    {props.standaloneCards ? <PRListHeader selected={props.selected} pending={props.pending} reading={Boolean(chain.loading)} reloadRequired={Boolean(chain.error?.stalled || chain.error?.failure.code === FailureCode.CursorExpired)} refresh={chain.refreshExplicit} /> : null}
     {props.standaloneCards && chain.loading ? <p role="status">{copy("github-items.readingGithub_ebcef8")}</p> : null}
     <Problem error={paginationError(chain.error?.failure)} />
     <ScrollPayloadWindow query={chain} root={root} active={active}>{(payload, projections) => payload.map(({ data, query }) => { const ids = visiblePageIds(chain.pages, projections); const observation = query.operation === QueryOperation.Checks ? "checks" : query.operation === QueryOperation.Statuses ? "statuses" : undefined; const field = observation === "checks" ? "runs" : "contexts";
-      const visible = observation ? { ...data, [observation]: { ...object(data[observation]), [field]: items(object(data[observation])[field]).filter(raw => ids.has(observation + ":" + text(object(raw).id))) } } : { ...data, items: items(data.items).filter(raw => { const item = object(raw); return ids.has(text(item.identity_source) + ":" + text(item.id)); }) }; return props.standaloneCards ? <PRListCards key={query.page} data={visible} query={query} reading={Boolean(chain.loading)} previous={Boolean(chain.error)} emptyPage={!items(data.items).length} change={props.change} /> : <QueryResultPage key={query.page} {...props} query={query} validated={visible} result={{ data, error: paginationError(chain.error?.failure), isFetching: Boolean(chain.loading), refetch: chain.refresh }} />; })}</ScrollPayloadWindow>
+      const visible = observation ? { ...data, [observation]: { ...object(data[observation]), [field]: items(object(data[observation])[field]).filter(raw => ids.has(observation + ":" + text(object(raw).id))) } } : { ...data, items: items(data.items).filter(raw => { const item = object(raw); return ids.has(text(item.identity_source) + ":" + text(item.id)); }) }; return props.standaloneCards ? <PRListCards key={query.page} data={visible} query={query} reading={Boolean(chain.loading)} previous={Boolean(chain.error)} emptyPage={!items(visible.items).length} change={props.change} /> : <QueryResultPage key={query.page} {...props} query={query} validated={visible} result={{ data, error: paginationError(chain.error?.failure), isFetching: Boolean(chain.loading), refetch: chain.refresh }} />; })}</ScrollPayloadWindow>
     <ScrollContinuation query={chain} root={root} active={active} label={copy("github-items.githubQueryResults_66fac2")} />
   </div>;
 }
