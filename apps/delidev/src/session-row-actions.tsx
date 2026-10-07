@@ -40,8 +40,17 @@ export function SessionRowActions({ id, descriptionId, dismissHover }: { id: str
     const position = () => {
       const bounds = opener.current?.getBoundingClientRect();
       if (!bounds) return;
-      menu.style.left = `${Math.max(8, Math.min(bounds.right + 8, window.innerWidth - menu.offsetWidth - 8))}px`;
-      menu.style.top = `${Math.max(8, Math.min(bounds.top, window.innerHeight - menu.offsetHeight - 8))}px`;
+      let left = bounds.right + 8, top = bounds.top;
+      if (left + menu.offsetWidth > window.innerWidth - 8) {
+        left = bounds.left;
+        const below = window.innerHeight - bounds.bottom - 16;
+        const above = bounds.top - 16;
+        const useBelow = menu.offsetHeight <= below || below >= above;
+        menu.style.maxHeight = `${Math.max(32, useBelow ? below : above)}px`;
+        top = useBelow ? bounds.bottom + 8 : bounds.top - menu.offsetHeight - 8;
+      }
+      menu.style.left = `${Math.max(8, Math.min(left, window.innerWidth - menu.offsetWidth - 8))}px`;
+      menu.style.top = `${Math.max(8, Math.min(top, window.innerHeight - menu.offsetHeight - 8))}px`;
     };
     position();
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position);

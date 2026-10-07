@@ -59,6 +59,8 @@ try {
     await page.getByRole("menuitem").first().waitFor();
     const bounds = await menu.boundingBox();
     assert(bounds.x >= 7 && bounds.y >= 7 && bounds.x + bounds.width <= width - 7 && bounds.y + bounds.height <= height - 7);
+    const openerBounds = await more.boundingBox();
+    assert(bounds.x >= openerBounds.x + openerBounds.width || bounds.x + bounds.width <= openerBounds.x || bounds.y >= openerBounds.y + openerBounds.height || bounds.y + bounds.height <= openerBounds.y, "Menu must not cover its opener");
     assert.equal(await card.count(), 0);
     await page.keyboard.press("ArrowDown");
     assert(await menu.evaluate(node => node.contains(document.activeElement)));
