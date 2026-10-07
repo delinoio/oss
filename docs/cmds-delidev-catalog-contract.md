@@ -194,9 +194,11 @@ account, connection and Usage/cost attribution. Relationship checks, project
 selection, deletion protection and portable version 3 include all sources.
 Schedules use the ordinary first-execution boundary.
 
-Codex requires an explicitly configured Responses provider. The OpenRouter managed
-Chat preset and existing connections are not rewritten. Use a compatible custom
-provider/account configuration and retain execution-time validation. OpenRouter
+Codex requires the selected API account's Responses profile. OpenRouter's original
+Chat default and existing connections are not rewritten. A new manual OpenRouter
+account may explicitly choose Responses; an existing account must disconnect,
+finish protected cleanup and reconnect before changing its format. Retain
+execution-time validation. OpenRouter
 [documents Responses](https://openrouter.ai/docs/api/api-reference/responses/create-responses).
 No automatic harness switch, active-session retry/account switch or new subscription
 execution profile is introduced.
