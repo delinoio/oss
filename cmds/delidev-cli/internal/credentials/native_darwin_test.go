@@ -18,7 +18,10 @@ import (
 // Native integration uses a new password-protected temporary keychain. Every
 // query explicitly names it; no login keychain/default credentials are read.
 func TestMacTemporaryKeychain(t *testing.T) {
-	a, err := loadMac()
+	if runMacNoninteractiveFixture(t) {
+		return
+	}
+	a, err := fixtureMacAPI()
 	if err != nil {
 		t.Fatal(err)
 	}

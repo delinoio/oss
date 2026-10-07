@@ -14,7 +14,8 @@ import (
 // Security.framework supplies the macOS file-keychain API without a C compiler
 // requirement. All CF values are retained until the synchronous SecItem call
 // finishes; native objects never retain Go buffers. Do not substitute `security`
-// CLI parsing or enable UI: the server must also work non-interactively.
+// CLI parsing. Authentication UI belongs to the OS in the server user's session;
+// a session that cannot display it still returns a typed native failure.
 type macAPI struct {
 	dictionary     func(uintptr, int64, uintptr, uintptr) uintptr
 	set            func(uintptr, uintptr, uintptr)
@@ -65,7 +66,7 @@ var loadMac = sync.OnceValues(func() (*macAPI, error) {
 		}
 		purego.RegisterFunc(item.p, address)
 	}
-	for _, name := range []string{"kSecClass", "kSecClassGenericPassword", "kSecAttrService", "kSecAttrAccount", "kSecValueData", "kSecReturnData", "kSecMatchLimit", "kSecMatchLimitOne", "kSecUseAuthenticationUI", "kSecUseAuthenticationUIFail", "kSecUseKeychain", "kSecMatchSearchList"} {
+	for _, name := range []string{"kSecClass", "kSecClassGenericPassword", "kSecAttrService", "kSecAttrAccount", "kSecValueData", "kSecReturnData", "kSecMatchLimit", "kSecMatchLimitOne", "kSecUseKeychain", "kSecMatchSearchList"} {
 		address, err := purego.Dlsym(sec, name)
 		if err != nil {
 			return nil, unavailable()
@@ -87,15 +88,22 @@ var loadMac = sync.OnceValues(func() (*macAPI, error) {
 		}
 	}
 	// File-based keychains can ignore the per-query authentication UI attribute.
-	// This server process never requests optional keychain UI; explicit provider
-	// login flows run in their own owned harness process. Keep this process-wide
-	// setting disabled so concurrent native calls cannot briefly re-enable prompts.
-	if a.setInteraction(0) != 0 {
-		return nil, unavailable()
+	// Enable OS authentication once for the server lifetime, including Doctor and
+	// background credential access. Never toggle this global policy per request:
+	// another concurrent operation could otherwise inherit the wrong policy.
+	if err := allowMacInteraction(a); err != nil {
+		return nil, err
 	}
 	// Framework handles remain open for the lifetime of these registered functions.
 	return a, nil
 })
+
+func allowMacInteraction(a *macAPI) error {
+	if status := a.setInteraction(1); status != 0 {
+		return macError(status)
+	}
+	return nil
+}
 
 // The address is a native global from dlsym, never an integer offset into a
 // Go allocation. Reinterpret its pointer bits without uintptr arithmetic; this
@@ -165,7 +173,8 @@ func (s *macStore) query(name string, adding bool) uintptr {
 		return 0
 	}
 	a.set(q, a.values["kSecClass"], a.values["kSecClassGenericPassword"])
-	a.set(q, a.values["kSecUseAuthenticationUI"], a.values["kSecUseAuthenticationUIFail"])
+	// Omit the authentication UI attribute: Security.framework defaults to allow.
+	// This preserves exact item matching while letting the OS authorize this call.
 	for _, p := range []struct{ k, v string }{{"kSecAttrService", s.profile.service()}, {"kSecAttrAccount", name}} {
 		value := a.stringValue(0, p.v, 0x08000100) // kCFStringEncodingUTF8
 		if value == 0 {
