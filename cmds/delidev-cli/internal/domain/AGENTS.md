@@ -129,3 +129,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Codex diagnostics are optional bounded existing-document metadata with closed phases/codes and locally reconstructed safe text. Validate actual version attribution and original operation correlation; no diagnostic grants native/account authority or requires a SQLite migration.
 
 - Repository remote_url is required on explicit save/import and accepts credential-free HTTPS, SSH or SCP syntax. Empty checkouts are valid. Keep historical omitted URLs readable without migration, extraction or rewriting; pinned preparation source kinds remain closed enums.
+
+- Claude subscription optional ownership pairs native profile and owner machine, with original operation/actor/epoch/lifetime, once-only code claim/consumption and closed safe diagnostics. Usable generations require native identity commitment and subscription connection. Metadata grants no credentials; preserve account/model/harness matching, historical identity and no migration under the subscription/storage contracts.

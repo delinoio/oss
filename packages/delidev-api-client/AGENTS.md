@@ -87,3 +87,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
 
 - Remote repository clients negotiate generated System 37 before saves/imports and preserve Worker 19 independent managed-clone gates. Retain original request bytes and source-kind/URL identity, optional checkout semantics and legacy immutable records under the protocol/workspace contracts.
+
+- Native Claude generated bindings expose System 38 / Worker 20 and closed method/diagnostic/profile metadata. Never place original login URLs or approval-code bytes in query caches, persistent mutation state or logs. Submit is initiating-owner/client-only; protected Take is original-Worker-only. Capability metadata grants no native login or cross-device execution.

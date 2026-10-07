@@ -69,3 +69,5 @@ Record implementation status and validation results in pull requests, issues and
 - DeliDev BrowserService follows `docs/cmds-delidev-browser-contract.md`: use its own typed profile/state/capability declarations, exact original mutation identities and metadata-only payloads. Preserve all existing numeric allocations and migration reservations; generated compatibility exports must reproduce.
 
 - Remote repositories activate the main-established System 37 / Worker 19 allocations; retain System 31/32 and Worker 18 immediate Local Clone/metadata meanings. Source-kind enums and pinned URL JSON remain additive and historical omitted fields are never rewritten. Regenerate bindings from reconciled schemas.
+
+- Native Claude subscriptions activate only the main-established PR #1612 allocation closure (System 38 / Worker 20). Keep existing Codex fields and independent capabilities unchanged, generated parity, write-only once-only code and original Worker ownership under the subscription/protocol contracts. No database migration.

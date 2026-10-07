@@ -973,3 +973,34 @@ initializes the current functional layout and removes upgrades from schemas
 1–31. Unsupported DBs and backups retain their original files and sidecars;
 no startup, inspection or restore may silently convert or reset them. This
 reservation adds no executable migration or runtime capability.
+
+## Device-owned Claude authentication metadata
+
+Claude subscription ownership uses optional server-owned Account JSON under
+capabilities System 38 / Worker 20. `native_profile_id` and `owner_machine_id`
+are present together, and usable generation/connection requires the original
+profile plus keyed identity commitment. Optional `native_operation` retains
+original actor/action/machine/server epoch, bounded start/expiry, closed state,
+login method, original code submission/consumption metadata and safe diagnostic
+fields. The original exclusive lease remains fenced after restart, owner loss
+or uncertain native cleanup. Code claims are durable before memory retention;
+consumption is durable before delivery. URL/code bytes and native identity text
+never enter SQLite, receipts, events, jobs or backups. No SQLite migration is
+added and no existing migration/reset reservation is activated.
+
+Worker-private canonical profile ownership and process/lease journals remain
+on the original Runner. The official CLI owns its authentication files and
+secure-store entries. Profile cleanup requires original native logout/status,
+joined processes and inode-bound bounded removal. Missing/foreign/symlinked or
+oversized native state is uncertain, never cleanup proof. Server disconnect and
+configuration deletion remain blocked while profile/owner, generation, pending,
+lease or recovery remains. Native history retention is separate from server
+transcripts and grants no credential transfer.
+
+Backup restore retains ownership references only as quarantined historical
+metadata with readiness removed and recovery required. It cannot adopt a
+Worker's profile or enable execution on another machine. Portable configuration
+v2 omits protected subscription ownership; imported account preferences start
+without authentication. Native checkpoints serialize no profile paths or auth
+files and pin only the accepted profile reference through their comparison
+digest. Follow the [subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
