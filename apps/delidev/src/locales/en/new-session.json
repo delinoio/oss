@@ -42,5 +42,18 @@
   "new-session.startGeneralChat": "Start general chat",
   "new-session.conversationsAreNamedAutomatically": "Conversation names are assigned automatically.",
   "new-session.conversationCreatedAs": "Conversation created as “<s0/>”. ",
-  "new-session.openConversation": "Open conversation"
+  "new-session.openConversation": "Open conversation",
+  "new-session.preferencesReading": "Restoring your saved Agent Worker and Runner Device…",
+  "new-session.preferencesInspect": "Inspect saved choices",
+  "new-session.preferencesSave": "Retry saving accepted choices",
+  "new-session.preferencesProblem": "Your accepted session is unchanged. Saved choices need attention: {{v0}}. Inspect saved choices before trying to save again.",
+  "new-session.preferencesUnavailable": "Preference storage is unavailable",
+  "new-session.preferencesReadFailed": "Saved choices could not be read",
+  "new-session.preferencesInvalidDocument": "The saved choices document is invalid and has been preserved",
+  "new-session.preferencesUnsupportedVersion": "The saved choices document uses an unsupported version and has been preserved",
+  "new-session.preferencesWriteFailed": "The choices could not be saved",
+  "new-session.preferencesOutcomeUnknown": "The save outcome is unknown",
+  "new-session.preferencesChanged": "Saved choices changed elsewhere",
+  "new-session.preferencesCapacity": "Saved choices have reached the device storage limit",
+  "new-session.preferencesResolving": "Checking the saved Agent Worker and Runner Device…"
 }

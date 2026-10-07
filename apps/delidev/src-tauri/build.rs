@@ -9,6 +9,8 @@ fn main() {
             "account_oauth_native",
             "desktop_credential_access",
             "choose_repository_folder",
+            "read_session_creation_preferences",
+            "update_session_creation_preferences",
             "read_appearance",
             "update_appearance",
             "read_language",

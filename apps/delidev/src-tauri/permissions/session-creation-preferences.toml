@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "session-creation-preferences"
+description = "Read and save accepted Agent Worker and Runner Device selections within the native trusted connection scope."
+commands.allow = ["read_session_creation_preferences", "update_session_creation_preferences"]

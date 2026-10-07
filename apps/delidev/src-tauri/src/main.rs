@@ -6,6 +6,7 @@ mod appearance_host;
 mod browser_host;
 mod notification_host;
 mod oauth_host;
+mod session_creation_preferences_host;
 mod tray_host;
 mod updater_host;
 mod widget_host;
@@ -43,6 +44,9 @@ impl Drop for DesktopLifetime {
 }
 
 use appearance_host::{read_appearance, update_appearance};
+use session_creation_preferences_host::{
+    read_session_creation_preferences, update_session_creation_preferences,
+};
 mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
@@ -461,6 +465,8 @@ struct SavedBinding {
 }
 #[derive(Default)]
 struct ProductWindows {
+    local_preference_scope:
+        Mutex<Option<(u64, delidev_desktop::session_creation_preferences::Scope)>>,
     bindings: Mutex<BTreeMap<String, SavedBinding>>,
     registry: Mutex<delidev_desktop::window_registry::Registry>,
     removals: Mutex<BTreeMap<String, SavedBinding>>,
@@ -592,6 +598,23 @@ fn adopt_local(
         }
         registry.adopt_local_at(digest.finalize().into(), original.local_revision)?
     };
+    {
+        let revision = windows
+            .registry
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?
+            .local_revision;
+        *windows
+            .local_preference_scope
+            .lock()
+            .map_err(|_| NativeFailure::Busy)? = Some((
+            revision,
+            delidev_desktop::session_creation_preferences::Scope {
+                server_id: connection.server_id.clone(),
+                device_id: connection.device_id.clone(),
+            },
+        ));
+    }
     if changed {
         // The event carries no identity or credential. Each sibling re-reads
         // the native-owned observation and authenticates its own transport.
@@ -1733,6 +1756,8 @@ fn run() -> Result<(), NativeFailure> {
             desktop_credential_access,
             choose_repository_folder,
             read_appearance,
+            read_session_creation_preferences,
+            update_session_creation_preferences,
             update_appearance,
             read_language,
             update_language,
@@ -1845,6 +1870,11 @@ fn run() -> Result<(), NativeFailure> {
                     code = "storage-unavailable"
                 );
             }
+            app.manage(Arc::new(
+                delidev_desktop::session_creation_preferences::Store::new(
+                    app.path().app_config_dir().ok(),
+                ),
+            ));
             app.manage(Arc::new(delidev_desktop::appearance::AppearanceStore::new(
                 config_dir.clone(),
             )));
