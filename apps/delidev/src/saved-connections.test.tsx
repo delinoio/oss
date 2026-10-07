@@ -179,3 +179,24 @@ it("keeps independent Worker stop targeting its original generation after client
   expect(value.retainedWorker.mock.calls.filter(([, action]) => action === LocalWorkerAction.Stop)).toEqual([[value.profile.id, LocalWorkerAction.Stop, generation], [value.profile.id, LocalWorkerAction.Stop, generation]]);
   expect(value.open).not.toHaveBeenCalled();
 });
+
+it("requires explicit first history read, appends with exact cursor and fences hidden late responses", async () => {
+  const value = fixture();
+  const removed = { ...value.profile, state: SavedConnectionState.Removed, name: "First removed" };
+  let resolve!: (page: { connections: SavedConnection[]; next_after?: string }) => void;
+  value.removed.mockResolvedValueOnce({ connections: [removed], next_after: removed.id } as { connections: SavedConnection[] });
+  value.removed.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  await screen.findByRole("button", { name: "Open Saved server" });
+  expect(value.removed).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Show removed connections" }));
+  await screen.findByRole("heading", { name: "First removed" });
+  fireEvent.click(screen.getByRole("button", { name: "Load more Removed connections" }));
+  await waitFor(() => expect(value.removed.mock.calls.map(([after]) => after)).toEqual(["", removed.id]));
+  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
+  resolve({ connections: [{ ...removed, id: newRequestId(), name: "Late removed" }] });
+  await Promise.resolve();
+  expect(screen.queryByRole("heading", { name: "Late removed", hidden: true })).toBeNull();
+  expect(value.retainedWorker).not.toHaveBeenCalled();
+  expect(value.open).not.toHaveBeenCalled();
+});

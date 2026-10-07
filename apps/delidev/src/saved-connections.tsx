@@ -1,5 +1,5 @@
 import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { object, text } from "./documents";
 import { Modal } from "./ui";
@@ -7,6 +7,10 @@ import { LocalWorkerControls, type LocalWorkerAction, type LocalWorkerStatus } f
 
 export enum SavedConnectionState { Pending = "pending", Paired = "paired", Removing = "removing", Removed = "removed" }
 export interface SavedConnection { version: number; revision: number; id: string; name: string; endpoint: string; server_id: string; pairing_id: string; device_id: string; state: SavedConnectionState; created_at: string; removal?: { request_id: string; expected_revision: number } }
+import { usePaginationChain } from "./scroll-pagination-query";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+
 export interface SavedConnectionActions {
   list: () => Promise<SavedConnection[]>;
   removed: (after: string) => Promise<RemovedPage>;
@@ -163,24 +167,26 @@ export function SavedConnections({ visible, close, actions }: { visible: boolean
 
 function RemovedConnections({ visible, actions }: { visible: boolean; actions: SavedConnectionActions }) {
   useLocale();
-  const [shown, setShown] = useState(false), [busy, setBusy] = useState(false);
-  const [page, setPage] = useState<RemovedPage>(), [after, setAfter] = useState("");
-  const [error, setError] = useState<unknown>();
+  const [shown, setShown] = useState(false);
+  const content = useRef<HTMLElement>(null);
+  const root = useScrollRoot(content);
   const [selected, setSelected] = useState<SavedConnection>(), [workerPending, setWorkerPending] = useState(false);
-  const refresh = async (cursor: string) => {
-    if (busy) return;
-    setBusy(true); setError(undefined);
-    try { const value = await actions.removed(cursor); setPage(value); setAfter(cursor); }
-    catch (error) { setError(error); }
-    finally { setBusy(false); }
-  };
-  return <section><h3>{copy("saved-connections.removedConnections_2e4440")}</h3><p>{copy("saved-connections.removalHistoryKeepsIndependentWorkerControls_c576dd")}</p>
-    <button disabled={busy} onClick={() => { setShown(true); void refresh(""); }}>{copy("saved-connections.showRemovedConnections_08135e")}</button>
-    <div hidden={!shown}><SavedConnectionProblem error={error} />
-      {page ? <><ul>{page.connections.map((profile) => <li key={profile.id}><h4>{profile.name}</h4><p>{profile.endpoint}</p><button disabled={workerPending} onClick={() => setSelected(profile)}><LocalizedText id="saved-connections.inspectRetainedWorkerFor_c42af0" components={{ s0: <>{profile.name}</> }} /></button></li>)}</ul>{!page.connections.length ? <p>{copy("saved-connections.noRemovedConnections_53a79f")}</p> : null}
-        {after ? <button disabled={busy} onClick={() => void refresh("")}>{copy("saved-connections.firstRemovedConnections_a591e6")}</button> : null}
-        {page.next_after ? <button disabled={busy} onClick={() => void refresh(page.next_after!)}>{copy("saved-connections.moreRemovedConnections_5f8390")}</button> : null}
-      </> : null}
+  const reader = useCallback(async (after: string, signal: AbortSignal) => {
+    const value = await actions.removed(after);
+    // Native reads cannot be canceled. The chain fences late publication as
+    // well, so hiding or replacing the dialog cannot adopt an old response.
+    if (signal.aborted) throw new DOMException("Read canceled", "AbortError");
+    if (!Array.isArray(value.connections) || value.connections.length > 16 || value.connections.some(profile => !profile.id || !Number.isSafeInteger(profile.revision) || profile.revision < 0)
+      || (value.next_after !== undefined && typeof value.next_after !== "string")) throw new Error("Invalid removed connection page");
+    return { rows: value.connections.map(profile => ({ id: profile.id, revision: BigInt(profile.revision) })), payload: value.connections, nextPageToken: value.next_after ?? "" };
+  }, [actions.removed]);
+  const query = usePaginationChain("removed-saved-connections", visible && shown, reader);
+  return <section ref={content}><h3>{copy("saved-connections.removedConnections_2e4440")}</h3><p>{copy("saved-connections.removalHistoryKeepsIndependentWorkerControls_c576dd")}</p>
+    <button disabled={!visible || Boolean(query.loading)} onClick={() => { setShown(true); if (shown) query.reload(); }}>{copy("saved-connections.showRemovedConnections_08135e")}</button>
+    <div hidden={!shown}><SavedConnectionProblem error={query.error?.failure} />
+      <ScrollPayloadWindow query={query} root={root} active={visible && shown} identity={profile => profile.id} revision={profile => BigInt(profile.revision)}>{profiles => <ul>{profiles.map(profile => <li key={profile.id}><h4>{profile.name}</h4><p>{profile.endpoint}</p><button disabled={workerPending || Boolean(query.error) || Boolean(query.loading)} onClick={() => setSelected(profile)}><LocalizedText id="saved-connections.inspectRetainedWorkerFor_c42af0" components={{ s0: <>{profile.name}</> }} /></button></li>)}</ul>}</ScrollPayloadWindow>
+      {query.loaded && !query.rows.length ? <p>{copy("saved-connections.noRemovedConnections_53a79f")}</p> : null}
+      <ScrollContinuation query={query} root={root} active={visible && shown} label={copy("saved-connections.removedConnections_2e4440")} />
       {selected ? <section aria-label={copy("saved-connections.retainedWorkerFor_8f7a9b", { v0: selected.name })}><h4><LocalizedText id="saved-connections.retainedWorkerFor_0cc5fa" components={{ s0: <>{selected.name}</> }} /></h4>
         <LocalWorkerControls key={selected.id} allowRegistration={false} pendingChanged={setWorkerPending} active={visible && shown} changed={() => {}} control={(action, generation) => actions.retainedWorker(selected.id, action, generation)} />
         <button disabled={workerPending} onClick={() => setSelected(undefined)}>{copy("saved-connections.closeRetainedWorkerControls_52e73a")}</button>

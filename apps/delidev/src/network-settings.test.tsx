@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, NetworkService, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type SelectNetworkProfileRequest } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
@@ -23,7 +23,7 @@ function fixture(lose = false, native?: (machine: string, action: WorkerNetworkA
   const save = vi.fn(request => ({ resource: create(ResourceSchema, { ...row, documentJson: request.documentJson }) }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SERVER_OUTBOUND_PROXY_V1, SystemCapability.WORKER_NETWORK_BOOTSTRAP_V1, SystemCapability.WORKER_CODEX_PROXY_V1] }) });
-    router.service(ResourceService, { listResources: () => { reads(); return { resources: [row] }; } });
+    router.service(ResourceService, { getResource: () => ({ resource: row }), listResources: () => { reads(); return { resources: [row] }; } });
     router.service(NetworkService, { getNetworkRoute: () => ({ route }), getWorkerNetworkStatus: () => ({ statusJson: encode({ version: 1, machine_id: machine, desired_generation: "9007199254740994", effective_generation: "9007199254740993", native_generation: "9007199254740993", control_state: "stale", native_state: "stale" }) }), selectNetworkProfile: select, saveNetworkProfile: save });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -41,8 +41,9 @@ it("keeps network reads collapsed and distinct exact control/native generations"
 it("retains the exact original route revision after response loss", async () => {
   const f = fixture(true);
   fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
-  await screen.findByRole("option", { name: /Pinned proxy/ });
-  fireEvent.change(screen.getByLabelText("Profile to select"), { target: { value: f.row.id } });
+  fireEvent.click(await screen.findByRole("combobox", { name: "Profile to select" }));
+  fireEvent.click(await screen.findByRole("option", { name: /Pinned proxy/ }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Profile to select" }).dataset.value).toBe(f.row.id));
   fireEvent.click(screen.getByRole("button", { name: "Select this revision" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry original route selection" }));
   await waitFor(() => expect(f.requests).toHaveLength(2));
@@ -137,4 +138,42 @@ it.each(["uncertain", "completed"] as const)("discards a %s native import on dis
   expect((screen.getByLabelText("Separately authenticated digest") as HTMLInputElement).value).toBe("");
   expect(screen.queryByRole("button", { name: "Retry original encrypted import" })).toBeNull();
   expect(native).toHaveBeenCalledTimes(state === "completed" ? 2 : 1);
+});
+
+it("retains three network profile payload pages and restores an older accepted range without a mutation", async () => {
+  const pages = [1, 2, 3, 4].map(number => create(ResourceSchema, { kind: EntityKind.NETWORK_PROFILE, id: newRequestId(), revision: 1n, schemaVersion: 1, documentJson: encode({ name: `Profile ${number}`, mode: "direct" }) }));
+  const list = vi.fn(request => { const index = request.filter?.pageToken ? Number(request.filter.pageToken) : 0; return { resources: [pages[index]], nextPageToken: index < 3 ? String(index + 1) : "" }; });
+  const select = vi.fn();
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SERVER_OUTBOUND_PROXY_V1] }) });
+    router.service(ResourceService, { listResources: list, getResource: request => ({ resource: pages.find(row => row.id === request.id) }) });
+    router.service(NetworkService, { getNetworkRoute: () => ({}), selectNetworkProfile: select });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NetworkSettings active /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  await screen.findByRole("heading", { name: "Profile 1" });
+  for (let number = 2; number <= 4; number++) {
+    fireEvent.click(screen.getByRole("button", { name: "Load more Network profile pages" }));
+    await screen.findByRole("heading", { name: `Profile ${number}` });
+  }
+  expect(screen.queryByRole("heading", { name: "Profile 1" })).toBeNull();
+  expect(document.querySelectorAll("[data-payload-page] article")).toHaveLength(3);
+  fireEvent.click(screen.getByRole("button", { name: "Restore previously loaded items" }));
+  await screen.findByRole("heading", { name: "Profile 1" });
+  expect(document.querySelectorAll("[data-payload-page] article")).toHaveLength(3);
+  expect(list.mock.calls.at(-1)?.[0].filter?.pageToken).toBe("");
+  expect(select).not.toHaveBeenCalled();
+});
+
+it.each(["Edit profile", "Delete profile"])("pauses both network inventories beneath %s while retaining the original row", async action => {
+  const f = fixture(); fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  const opener = await screen.findByRole("button", { name: action });
+  const row = opener.closest("article")!;
+  fireEvent.click(opener);
+  await screen.findByRole("dialog", { name: action === "Edit profile" ? "Edit network profile" : action });
+  const reads = f.reads.mock.calls.length;
+  await act(async () => { await f.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(f.reads).toHaveBeenCalledTimes(reads); expect(row.isConnected).toBe(true);
+  expect(f.select).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
 });

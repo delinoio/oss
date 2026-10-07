@@ -21,12 +21,13 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false) {
   const rename = vi.fn(async () => ({ change: { session } }));
   const control = vi.fn(async () => ({ change: { session } }));
   const budget = vi.fn(() => ({ view: create(SessionBudgetViewSchema, { session, state, ...(state === BudgetState.THRESHOLD_REACHED ? { budget: { currency: "USD", threshold: "1" } } : {}) }) }));
+  const list = vi.fn(async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[], nextPageToken: "" }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
     router.service(SessionService, { listQueue: () => ({ inputs: [] }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control });
     router.service(ResourceService, {
       getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
-      listResources: () => ({ resources: [] }),
+      listResources: list,
       async *watchEvents(_request, context) {
         if (!context.signal.aborted) await new Promise<void>(resolve => context.signal.addEventListener("abort", () => resolve(), { once: true }));
       },
@@ -35,7 +36,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
   const view = (value = "Original draft") => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionView id={id} draft={value} setDraft={draft} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { session, client, view, enqueue, rename, control, budget, draft };
+  return { session, client, view, enqueue, rename, control, budget, draft, list };
 }
 
 it("retains composer, mode and staged information edits through tool switches and language changes", async () => {
@@ -111,4 +112,24 @@ it("retries the exact queued input after supporting panels were opened and close
   expect(f.enqueue.mock.calls[1][0]).toEqual(original);
   expect(JSON.parse(new TextDecoder().decode(original.documentJson))).toEqual({ prompt: "Original draft", mode: Mode.Plan });
   expect(readDocument(f.session).archive).toBe("active");
+});
+
+
+it("appends forward transcript pages in server order without moving the composer", async () => {
+  const f = fixture();
+  const secondId = newRequestId(), firstId = newRequestId();
+  const message = (id: string, text: string) => create(ResourceSchema, { id, sessionId: f.session.id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role: "user", state: "completed", text }) });
+  f.list.mockImplementation(async request => request.filter?.kind === EntityKind.MESSAGE
+    ? { resources: [request.filter.pageToken ? message(secondId, "Second forward message") : message(firstId, "First forward message")], nextPageToken: request.filter.pageToken ? "" : "accepted-forward-token" }
+    : { resources: [], nextPageToken: "" });
+  render(f.view());
+  await screen.findByText("First forward message");
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  composer.focus();
+  fireEvent.click(screen.getByRole("button", { name: "Load more Conversation pages" }));
+  await screen.findByText("Second forward message");
+  expect(screen.getAllByText(/forward message/).map(element => element.textContent)).toEqual(["First forward message", "Second forward message"]);
+  expect(document.activeElement).toBe(composer);
+  expect(f.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.MESSAGE).map(([request]) => request.filter?.pageToken)).toEqual(["", "accepted-forward-token"]);
+  expect(f.enqueue).not.toHaveBeenCalled();
 });

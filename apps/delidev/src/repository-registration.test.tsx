@@ -1,3 +1,4 @@
+import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -8,7 +9,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, IntegrationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, SettingsEntryDestination } from "./settings";
-import { encode, document as resourceDocument, type Document } from "./documents";
+import { resourceName, encode, document as resourceDocument, type Document } from "./documents";
 import { LocalWorkerState } from "./local-worker-controls";
 import { validRepositoryInspection, selectedInspectionRemote } from "./repository-registration";
 import { i18n, SupportedLanguage } from "./localization";
@@ -137,8 +138,7 @@ it.each([false, true])("retains the confirmed primary checkout when additional c
   const other = row(EntityKind.MACHINE, { name: "Other runner", last_seen: new Date().toISOString() });
   f.resources.set(other.id, other); f.mount(); await f.chooseAndReview();
   fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
-  await screen.findByRole("option", { name: "Other runner" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: other.id } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runner Device" }), other.id);
   fireEvent.change(screen.getByRole("textbox", { name: "Absolute checkout path on this Worker" }), { target: { value: "/alias/B" } });
   f.inspected.mockImplementationOnce(async request => {
     const job = row(EntityKind.JOB, { state: "succeeded", machine_id: request.machineId, output: { ...metadata, root: "/canonical/B", name: "B", github_repositories: { origin: { owner: "different", name: "B" } } } });
@@ -198,8 +198,7 @@ it.each([
 it("supports explicitly selected remote paths without native proof or normalization", async () => {
   const f = fixture(); f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Enter a path…" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Computer" }), { target: { value: "remote" } });
-  await screen.findByRole("option", { name: "Runner" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: f.machine.id } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runner Device" }), f.machine.id);
   const path = "C:\\Work Space\\repo";
   fireEvent.change(screen.getByRole("textbox", { name: "Absolute checkout path" }), { target: { value: path } });
   fireEvent.click(screen.getByRole("button", { name: "Inspect folder" }));
@@ -395,7 +394,7 @@ it("rejects an older Worker before sending clone and retains local folder regist
 it("shows only usable PAT profiles and requires explicit profile and repository selection", async () => {
   const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add();
   fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" })); expect(f.repositories).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) }));
   const repo = await screen.findByRole("button", { name: "delinoio/oss Private · Archived" }); fireEvent.click(repo);
   expect((screen.getByRole("textbox", { name: "Git URL" }) as HTMLInputElement).value).toBe("https://github.com/delinoio/oss.git");
   fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "git@github.com:delinoio/oss.git" } });
@@ -414,7 +413,7 @@ it.each(["Escape", "Close", "Cancel"])("closes only the GitHub child with %s and
   const child = screen.getByRole("dialog", { name: "Choose a GitHub repository" });
   expect(parent.contains(child)).toBe(false); expect(screen.getAllByRole("dialog")).toHaveLength(2);
   const select = within(child).getByRole("combobox", { name: "GitHub profile" }); expect(document.activeElement).toBe(select);
-  fireEvent.change(select, { target: { value: profile.id } }); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.click(select); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
   fireEvent.change(within(child).getByRole("textbox", { name: "Filter this page" }), { target: { value: "oss" } });
   fireEvent.click(child); expect(child.isConnected).toBe(true);
   if (action === "Escape") fireEvent(child, new Event("cancel", { bubbles: true, cancelable: true }));
@@ -424,7 +423,7 @@ it.each(["Escape", "Close", "Cancel"])("closes only the GitHub child with %s and
   expect(url.value).toBe("https://github.com/delinoio/oss.git"); expect(name.value).toBe("My edited name"); expect(body.scrollTop).toBe(40);
   expect(document.activeElement).toBe(opener); expect(f.save).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
   fireEvent.click(opener);
-  expect((screen.getByRole("combobox", { name: "GitHub profile" }) as HTMLSelectElement).value).toBe(profile.id);
+  expect(screen.getByRole("combobox", { name: "GitHub profile" }).getAttribute("data-value")).toBe(profile.id);
   expect((screen.getByRole("textbox", { name: "Filter this page" }) as HTMLInputElement).value).toBe("oss");
   fireEvent(screen.getByRole("dialog", { name: "Choose a GitHub repository" }), new Event("cancel", { cancelable: true }));
   fireEvent(parent, new Event("cancel", { cancelable: true })); expect(screen.queryByRole("dialog")).toBeNull();
@@ -435,7 +434,7 @@ it("immediately applies a GitHub choice without saving or replacing a manually e
   fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "https://example.com/previous.git" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Repository name" }), { target: { value: "Keep my name" } });
   const opener = await screen.findByRole("button", { name: "Choose from GitHub" }); fireEvent.click(opener);
-  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) }));
   fireEvent.click(await screen.findByRole("button", { name: "delinoio/oss Private · Archived" }));
   expect(screen.queryByRole("dialog", { name: "Choose a GitHub repository" })).toBeNull();
   expect(screen.getByRole("dialog", { name: "Add repository" })).toBe(parent); expect(document.activeElement).toBe(opener);
@@ -449,7 +448,7 @@ it("ignores a late repository page after child cancellation or Settings departur
   const f = fixture(metadata, true), profile = connectedProfile(f), response = deferred<Awaited<ReturnType<typeof f.repositories>>>();
   const reply = await f.repositories({ profileId: profile.id, expectedRevision: profile.revision, page: 1 }); f.repositories.mockClear(); f.repositories.mockReturnValueOnce(response.promise);
   f.mount(); await f.add(false); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(1));
   fireEvent.click(within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).getByRole("button", { name: "Cancel" }));
   const opener = screen.getByRole("button", { name: "Choose from GitHub" });
   await act(async () => response.resolve(reply)); expect(document.activeElement).toBe(opener);
@@ -462,12 +461,12 @@ it("ignores a late repository page after child cancellation or Settings departur
 it("updates child language in place without resetting selection, filter, focus or requests", async () => {
   const f = fixture(metadata, true), profile = connectedProfile(f); f.mount(); await f.add(false);
   fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
   const child = screen.getByRole("dialog", { name: "Choose a GitHub repository" }), filter = screen.getByRole("textbox", { name: "Filter this page" }) as HTMLInputElement;
   fireEvent.change(filter, { target: { value: "oss" } }); filter.focus(); const calls = f.repositories.mock.calls.length;
   await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
   expect(screen.getByRole("dialog", { name: "GitHub 저장소 선택" })).toBe(child); expect(document.activeElement).toBe(filter); expect(filter.value).toBe("oss");
-  expect((screen.getByRole("combobox", { name: "GitHub 프로필" }) as HTMLSelectElement).value).toBe(profile.id);
+  expect(screen.getByRole("combobox", { name: "GitHub 프로필" }).getAttribute("data-value")).toBe(profile.id);
   expect(screen.getByRole("button", { name: "delinoio/oss 비공개 · 보관됨" })).toBeTruthy(); expect(f.repositories).toHaveBeenCalledTimes(calls);
   fireEvent.click(within(child).getByRole("button", { name: "취소" })); expect(document.activeElement).toBe(screen.getByRole("button", { name: "GitHub에서 선택" }));
 });
@@ -483,56 +482,56 @@ it("focuses the child heading without admitting reads on an unsupported server",
 it("retains the child and parent on permission denial and rejects stale profile choices", async () => {
   const f = fixture(metadata, true), profile = connectedProfile(f); f.repositories.mockRejectedValueOnce(new ConnectError("Repository access denied", Code.PermissionDenied));
   f.mount(); await f.add(false); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) }));
   await within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).findByRole("alert"); expect(screen.getAllByRole("dialog")).toHaveLength(2);
   expect(screen.queryByRole("button", { name: "delinoio/oss Private · Archived" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh repositories" })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.click(screen.getByRole("button", { name: "Retry" })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
   f.resources.set(profile.id, { ...profile, revision: profile.revision + 1n }); await f.client.invalidateQueries();
   await screen.findByText("The selected profile changed. Refresh profiles and select its current version.");
-  expect((screen.getByRole("button", { name: "delinoio/oss Private · Archived" }) as HTMLButtonElement).disabled).toBe(true); expect(f.save).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "delinoio/oss Private · Archived" })).toBeNull(); expect(f.save).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
 });
 it("keeps profile pagination explicit instead of scanning every page", async () => {
   const f = fixture(metadata, true, true, true); connectedProfile(f); f.mount(); await f.add();
-  await screen.findByRole("button", { name: "Next profile page" });
+  await screen.findByRole("button", { name: "Load more GitHub profile" });
   const initialProfileCalls = f.listResources.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.INTEGRATION);
   expect(initialProfileCalls.length).toBeGreaterThan(0);
   expect(initialProfileCalls.every(([request]) => !request.filter?.pageToken)).toBe(true);
   expect(screen.queryByRole("button", { name: "Choose from GitHub" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Next profile page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub profile" }));
   await screen.findByRole("button", { name: "Choose from GitHub" });
   expect(f.listResources.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.INTEGRATION && request.filter.pageToken === "profile-next").length).toBeGreaterThan(0);
 });
-it("clears a selected profile when outer profile paging changes page", async () => {
+it("preserves a selected profile when more profiles append", async () => {
   const f = fixture(metadata, true, true, true, undefined, true), profile = connectedProfile(f); f.mount(); await f.add();
   fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) }));
   fireEvent.click(within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).getByRole("button", { name: "Cancel" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Next profile page" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Load more GitHub profile" }));
   await screen.findByRole("button", { name: "Choose from GitHub" });
   fireEvent.click(screen.getByRole("button", { name: "Choose from GitHub" }));
-  expect((screen.getByRole("combobox", { name: "GitHub profile" }) as HTMLSelectElement).value).toBe("");
+  expect(screen.getByRole("combobox", { name: "GitHub profile" }).getAttribute("data-value")).toBe(profile.id);
 });
 it("drops the selected profile association when the Git URL changes repositories", async () => {
   const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); fireEvent.click(await screen.findByRole("button", { name: "delinoio/oss Private · Archived" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); fireEvent.click(await screen.findByRole("button", { name: "delinoio/oss Private · Archived" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "https://github.com/another/repo.git" } }); if (screen.getByRole("button", { name: "Clone to this computer (optional)" }).getAttribute("aria-expanded") === "false") fireEvent.click(screen.getByRole("button", { name: "Clone to this computer (optional)" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
   await screen.findByText("Repository clone accepted"); expect(f.clone.mock.calls[0][0].githubSelection).toBeUndefined();
 });
-it("keeps repository pagination explicit including empty later pages and local filtering", async () => {
+it("appends repository pages without discarding accepted rows or local filtering", async () => {
   const f = fixture(metadata, true); const profile = connectedProfile(f); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
   fireEvent.change(screen.getByRole("textbox", { name: "Filter this page" }), { target: { value: "not-on-this-page" } }); await screen.findByText("No matches on this page."); expect(f.repositories).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Next" })); await screen.findByText("No repositories are accessible on this page."); expect(f.repositories.mock.calls[1][0].page).toBe(2);
-  fireEvent.click(screen.getByRole("button", { name: "First" })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh repositories" })); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(3));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Choose a GitHub repository" })); await waitFor(() => expect(f.repositories.mock.calls[1][0].page).toBe(2));
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter this page" }), { target: { value: "" } }); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh repositories" })); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(4));
 });
 it("hides the GitHub choice for a pending profile change", async () => {
   const f = fixture(metadata, true); connectedProfile(f, true); f.mount(); await f.add(); await waitFor(() => expect(screen.queryByText("Checking connected GitHub profiles…")).toBeNull()); expect(screen.queryByRole("button", { name: "Choose from GitHub" })).toBeNull();
 });
 it("discards a late GitHub page on close without selecting or cloning", async () => {
   const f = fixture(metadata, true); const profile = connectedProfile(f), response = deferred<Awaited<ReturnType<typeof f.repositories>>>();
-  f.repositories.mockImplementationOnce(() => response.promise); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" })); fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(1));
+  f.repositories.mockImplementationOnce(() => response.promise); f.mount(); await f.add(); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" })); fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole("button", { name: "Close Add repository" })); response.resolve({ schemaVersion: 1, documentJson: encode({}) }); await Promise.resolve(); expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull(); expect(f.clone).not.toHaveBeenCalled();
 });
 it("shows the published checkout when clone registration fails", async () => {

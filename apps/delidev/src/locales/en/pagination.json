@@ -1,0 +1,12 @@
+{
+  "pagination.loading": "Loading {{label}}…",
+  "pagination.loadingMore": "Loading more {{label}}…",
+  "pagination.previousData": "Could not read {{label}}. Previous data is shown.",
+  "pagination.readFailed": "Could not read {{label}}.",
+  "pagination.reload": "Reload list",
+  "pagination.retry": "Retry",
+  "pagination.loadMore": "Load more",
+  "pagination.loadMoreLabel": "Load more {{label}}",
+  "pagination.exhausted": "All loaded {{label}} are shown.",
+  "pagination.restore": "Restore previously loaded items"
+}

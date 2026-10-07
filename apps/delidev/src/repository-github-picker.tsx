@@ -1,5 +1,10 @@
+import { ScrollPicker } from "./scroll-picker";
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { useConnectPaginationReader, usePaginationChain } from "./scroll-pagination-query";
+import { useStablePageRevisions, paginationError, invalidGitHubPage, useGitHubCatalog, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -43,7 +48,7 @@ function GitHubRepositoryDialog({ opener, close, children }: { opener: RefObject
     // Strict Mode's first cleanup must not move focus back into the parent.
     queueMicrotask(() => { if (live) committed = true; });
     node.showModal();
-    const profile = node.querySelector<HTMLSelectElement>("select:not(:disabled)");
+    const profile = node.querySelector<HTMLElement>('[role="combobox"]:not(:disabled)');
     (profile ?? heading.current)?.focus({ preventScroll: true });
     return () => {
       live = false;
@@ -74,47 +79,63 @@ function GitHubRepositoryDialog({ opener, close, children }: { opener: RefObject
   </DialogSurface>, document.body);
 }
 
-// Only one profile inventory page and one repository page are retained. Reads
+// Profile metadata and accepted boundaries accumulate; repository payloads use
+// the shared three-page window. Reads
 // use the containing dialog's disposable transport and never grant Git auth.
 export function RepositoryGitHubPicker({ active, supported, disabled, choose }: { active: boolean; supported: boolean; disabled: boolean; choose: (selection: GitHubCloneSelection, url: string) => void }) {
   useLocale();
   const opener = useRef<HTMLButtonElement>(null), taskVisible = useSettingsTaskVisible();
-  const [open, setOpen] = useState(false), [profilePage, setProfilePage] = useState("");
-  const [profile, setProfile] = useState<Resource>(), [page, setPage] = useState(1), [filter, setFilter] = useState("");
+  const [open, setOpen] = useState(false);
+  const { root, bindRoot } = useGitHubScrollRoot();
+  const { root: repositoryRoot, bindRoot: bindRepositoryRoot } = useGitHubScrollRoot();
+  const [profile, setProfile] = useState<Resource>(), [filter, setFilter] = useState("");
   const visible = active && taskVisible && open;
   useSettingsTaskDismiss(() => setOpen(false));
   useEffect(() => { if (!active || !taskVisible) setOpen(false); }, [active, taskVisible]);
-  const profiles = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.INTEGRATION, pageSize: 50, pageToken: profilePage } }, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
+  const profiles = useGitHubCatalog(EntityKind.INTEGRATION, active);
   const rows = profiles.data?.resources ?? [], available = rows.filter(connectedGitHubProfile);
   const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.INTEGRATION, id: profile?.id ?? "" }, { enabled: visible && Boolean(profile), refetchInterval: visible && profile ? 5000 : false, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const stale = Boolean(profile && current.data?.resource && (current.data.resource.revision !== profile.revision || !connectedGitHubProfile(current.data.resource)));
-  const repositories = useQuery(IntegrationQuery.listGitHubRepositories, { profileId: profile?.id ?? "", expectedRevision: profile?.revision ?? 0n, page, pageSize: 50 }, { enabled: visible && supported && Boolean(profile) && !stale && !disabled, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
-  let result: RepositoryPage | undefined, malformed: unknown;
-  try { result = repositoryPage(repositories.data, profile, page); } catch (error) { malformed = error; }
-  const reading = repositories.isFetching;
-  const usable = Boolean(result && !repositories.error && !malformed && !current.error && !stale && !reading);
-  const changeProfile = (id: string) => { setProfile(available.find(row => row.id === id)); setPage(1); setFilter(""); };
-  const changeProfilePage = (token: string) => { setProfilePage(token); setProfile(undefined); setPage(1); setFilter(""); };
-  const refreshProfiles = () => { setProfile(undefined); setPage(1); setFilter(""); void profiles.refetch(); };
-  return <div className="repository-github-picker">
+  const validateBoundary = useStablePageRevisions(JSON.stringify([profile?.id, String(profile?.revision)]));
+  const request = useCallback((token: string) => ({ profileId: profile?.id ?? "", expectedRevision: profile?.revision ?? 0n, page: token ? Number(token) : 1, pageSize: 50 }), [profile?.id, profile?.revision]);
+  const project = useCallback((reply: { schemaVersion: number; documentJson: Uint8Array }, token: string) => {
+    const data = repositoryPage(reply, profile, token ? Number(token) : 1);
+    if (!data) invalidGitHubPage();
+    const rows = data.repositories.map(entry => ({ id: entry.repository.id, revision: profile!.revision, label: entry.repository.owner + '/' + entry.repository.name }));
+    validateBoundary(token, rows);
+    return { rows, nextPageToken: data.next_page ? String(data.next_page) : "", payload: [data] };
+  }, [profile, validateBoundary]);
+  const reader = useConnectPaginationReader(IntegrationQuery.listGitHubRepositories, request, project);
+  const traversal = usePaginationChain(JSON.stringify([profile?.id, String(profile?.revision)]), visible && supported && Boolean(profile) && !stale && !disabled, reader);
+  const reading = Boolean(traversal.loading), malformed = paginationError(traversal.error?.failure);
+  const usable = Boolean(traversal.loaded && !traversal.error && !current.error && !stale && !reading);
+  const changeProfile = (id: string) => { setProfile(available.find(row => row.id === id)); setFilter(""); };
+  const refreshProfiles = () => { setProfile(undefined); setFilter(""); profiles.refetch(); };
+  return <div ref={bindRoot} className="repository-github-picker">
     {available.length > 0 && !profiles.error && !disabled ? <button ref={opener} type="button" disabled={disabled || profiles.isFetching} aria-haspopup="dialog" onClick={event => { event.currentTarget.focus({ preventScroll: true }); setOpen(true); }}>{copy("repository-github.choose")}</button> : null}
     {!visible && profiles.isPending ? <p role="status">{copy("repository-github.checkingProfiles")}</p> : null}
-    {!visible ? <><Problem error={profiles.error} />{profiles.error ? <button type="button" disabled={disabled || profiles.isFetching} onClick={refreshProfiles}>{copy("repository-github.refreshGitHubProfiles")}</button> : null}</> : null}
-    {!visible && (profiles.data?.nextPageToken || profilePage) ? <div className="actions"><button type="button" disabled={disabled || profiles.isFetching || !profilePage} onClick={() => changeProfilePage("")}>{copy("repository-github.firstProfilePage")}</button><button type="button" disabled={disabled || profiles.isFetching || !profiles.data?.nextPageToken} onClick={() => changeProfilePage(profiles.data!.nextPageToken)}>{copy("repository-github.nextProfilePage")}</button></div> : null}
+    {!visible ? <><Problem error={paginationError(profiles.error?.failure)} />{profiles.error ? <button type="button" disabled={disabled || profiles.isFetching} onClick={refreshProfiles}>{copy("repository-github.refreshGitHubProfiles")}</button> : null}</> : null}
+    {!visible ? <ScrollContinuation query={profiles} root={root} active={active && !disabled} label={copy("repository-github.profile")} /> : null}
     {visible ? <GitHubRepositoryDialog opener={opener} close={() => setOpen(false)}>
-      {profiles.isPending ? <p role="status">{copy("repository-github.checkingProfiles")}</p> : null}<Problem error={profiles.error} />
+      {profiles.isPending ? <p role="status">{copy("repository-github.checkingProfiles")}</p> : null}<Problem error={paginationError(profiles.error?.failure)} />
       {!supported ? <p role="status">{copy("repository-github.updateServer")}</p> : null}
-      <label>{copy("repository-github.profile")}<select value={profile?.id ?? ""} disabled={disabled || profiles.isFetching || !supported} onChange={event => changeProfile(event.target.value)}><option value="">{copy("repository-github.chooseProfile")}</option>{available.map(row => <option key={`${row.id}:${row.revision}`} value={row.id}>{resourceName(row)}</option>)}</select></label>
-      <div className="actions"><button type="button" disabled={disabled || profiles.isFetching} onClick={refreshProfiles}>{copy("repository-github.refreshProfiles")}</button><button type="button" disabled={disabled || profiles.isFetching || !profilePage} onClick={() => changeProfilePage("")}>{copy("repository-github.firstProfilePage")}</button><button type="button" disabled={disabled || profiles.isFetching || !profiles.data?.nextPageToken} onClick={() => changeProfilePage(profiles.data!.nextPageToken)}>{copy("repository-github.nextProfilePage")}</button></div>
+      <ScrollPicker label={copy("repository-github.profile")} value={profile?.id ?? ""} change={changeProfile} query={profiles} active={visible} disabled={disabled || !supported} placeholder={copy("repository-github.chooseProfile")} options={available.map(row => ({ id: row.id, label: resourceName(row) }))} selectedLabel={profile ? resourceName(profile) : undefined} />
+      <div className="actions"><button type="button" disabled={disabled || profiles.isFetching} onClick={refreshProfiles}>{copy("repository-github.refreshProfiles")}</button></div>
       {!available.length && !profiles.isPending && !profiles.error ? <p>{copy("repository-github.noProfiles")}</p> : null}
       {profile ? <><label>{copy("repository-github.filter")}<input value={filter} maxLength={200} disabled={disabled} onChange={event => setFilter(event.target.value)} /></label>
         {reading ? <p role="status">{copy("repository-github.loading")}</p> : null}
         {stale ? <p role="alert">{copy("repository-github.staleProfile")}</p> : null}
-        <Problem error={current.error || repositories.error || malformed} />
-        {result && !reading ? <><p>{copy("repository-github.page", { page })}</p>{repositories.error ? <p>{copy("repository-github.cached")}</p> : null}{result.repositories.length === 0 && usable ? <p>{copy("repository-github.empty")}</p> : null}
-          <ul className="repository-github-list">{result.repositories.filter(entry => `${entry.repository.owner}/${entry.repository.name}`.toLowerCase().includes(filter.toLowerCase())).map(entry => <li key={entry.repository.id}><button type="button" disabled={disabled || !usable} onClick={() => { const repo = entry.repository; choose({ profileId: profile.id, expectedRevision: profile.revision, repositoryId: repo.id, nodeId: repo.node_id, owner: repo.owner, name: repo.name }, entry.https_url); setOpen(false); }}><span>{entry.repository.owner}/{entry.repository.name}</span><small>{copy(entry.repository.private ? "repository-github.private" : "repository-github.public")}{entry.archived ? copy("repository-github.archived") : ""}</small></button></li>)}</ul>
-          {result.repositories.length > 0 && !result.repositories.some(entry => `${entry.repository.owner}/${entry.repository.name}`.toLowerCase().includes(filter.toLowerCase())) ? <p>{copy("repository-github.noMatches")}</p> : null}</> : null}
-        <div className="actions"><button type="button" disabled={disabled || reading || stale || !supported} onClick={() => void repositories.refetch()}>{copy("repository-github.refreshRepositories")}</button><button type="button" disabled={disabled || reading || page === 1} onClick={() => { setPage(1); setFilter(""); }}>{copy("repository-github.first")}</button><button type="button" disabled={disabled || !usable || !result?.next_page} onClick={() => { setPage(result!.next_page); setFilter(""); }}>{copy("repository-github.next")}</button></div>
+        <Problem error={current.error || malformed} />
+        <div ref={bindRepositoryRoot}>
+          <ScrollPayloadWindow query={traversal} root={repositoryRoot} active={visible && !disabled && !stale}>{(payload, projections) => payload.map(result => {
+            const ids = visiblePageIds(traversal.pages, projections);
+            return <ul key={result.page} className="repository-github-list">{result.repositories.filter(entry => ids.has(entry.repository.id) && `${entry.repository.owner}/${entry.repository.name}`.toLowerCase().includes(filter.toLowerCase())).map(entry => <li key={entry.repository.id}><button type="button" disabled={disabled || !usable} onClick={() => { const repo = entry.repository; choose({ profileId: profile.id, expectedRevision: profile.revision, repositoryId: repo.id, nodeId: repo.node_id, owner: repo.owner, name: repo.name }, entry.https_url); setOpen(false); }}><span>{entry.repository.owner}/{entry.repository.name}</span><small>{copy(entry.repository.private ? "repository-github.private" : "repository-github.public")}{entry.archived ? copy("repository-github.archived") : ""}</small></button></li>)}</ul>;
+          })}</ScrollPayloadWindow>
+          {traversal.loaded && !traversal.rows.length ? <p>{copy("repository-github.empty")}</p> : null}
+          {traversal.rows.length > 0 && !traversal.rows.some(row => row.label.toLowerCase().includes(filter.toLowerCase())) ? <p>{copy("repository-github.noMatches")}</p> : null}
+          <ScrollContinuation query={traversal} root={repositoryRoot} active={visible && !disabled && !stale} label={copy("repository-github.title")} />
+        </div>
+        <div className="actions"><button type="button" disabled={disabled || reading || stale || !supported} onClick={traversal.refresh}>{copy("repository-github.refreshRepositories")}</button></div>
       </> : null}
       <p className="repository-github-hint">{copy("repository-github.credentials")}</p>
     </GitHubRepositoryDialog> : null}

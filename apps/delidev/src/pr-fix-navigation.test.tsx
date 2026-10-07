@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { expect, it, vi } from "vitest";
 import { EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, PullRequestFixProfile, PullRequestFixQuery, PullRequestFixService, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { App } from "./App";
+import { chooseScrollOption } from "./test-scroll-picker";
 import { document, encode, object, type Document } from "./documents";
 import { defaultRemediationPolicy } from "./remediation-policy";
 
@@ -49,7 +50,7 @@ function fixture() {
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
-    router.service(ResourceService, { listResources: request => ({ resources: request.filter?.kind === EntityKind.REPOSITORY ? repositoryAvailable ? [repository] : [] : request.filter?.kind === EntityKind.PROJECT ? [project] : [] }), getResource: request => ({ resource: repositoryAvailable && request.id === repositoryId ? repository : undefined }) });
+    router.service(ResourceService, { listResources: request => ({ resources: request.filter?.kind === EntityKind.REPOSITORY ? repositoryAvailable ? [repository] : [] : request.filter?.kind === EntityKind.PROJECT ? [project] : [] }), getResource: request => ({ resource: request.kind === EntityKind.PROJECT && request.id === projectId ? project : request.kind === EntityKind.REPOSITORY && repositoryAvailable && request.id === repositoryId ? repository : undefined }) });
     router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences: create(NotificationPreferencesSchema, { revision: 1n }) }) });
     router.service(IntegrationService, { queryRepositoryIntegration: query, listPullRequestProblems: history });
     router.service(PullRequestFixService, { getPullRequestFixCapabilities: capabilities, requestPullRequestFix: fix });
@@ -57,12 +58,12 @@ function fixture() {
   const start = async () => {
     fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
     fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repositoryId}` }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
     fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
     fireEvent.click(await screen.findByRole("button", { name: "Show retained PR problems" }));
     fireEvent.click(await screen.findByRole("button", { name: "Fix now" }));
-    await screen.findByRole("option", { name: "Fixture project" });
-    fireEvent.change(screen.getByLabelText("Fix project"), { target: { value: projectId } });
+    await chooseScrollOption(screen.getByRole("combobox", { name: "Fix project" }), projectId);
     await waitFor(() => expect((screen.getByRole("button", { name: "Start fix" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Start fix" }));
     await waitFor(() => expect(fix).toHaveBeenCalledOnce());
@@ -101,8 +102,9 @@ it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps
   f.back();
   if (state !== "removed repository") {
     if (state === "removed PR row") fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
-    if (state === "failed GitHub reload") await within(screen.getByRole("region", { name: "GitHub query results" })).findByRole("alert");
+    if (state === "failed GitHub reload") await waitFor(() => expect(screen.getAllByRole("alert").some(alert => !screen.getByRole("region", { name: "Pending PR actions" }).contains(alert) && alert.textContent?.includes("server_unavailable"))).toBe(true));
     else await screen.findByText("No pull requests on this returned page.");
   }
   const queries = f.query.mock.calls.length;

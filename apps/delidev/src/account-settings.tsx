@@ -10,6 +10,10 @@ import { AccountOAuth, useAccountOAuth, type AccountOAuthFlow } from "./account-
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode, useId } from "react";
 import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
+import { useResourceScrollQuery } from "./resource-scroll-query";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { ApiEntryRow } from "./api-entry-row";
 import type { UsageEntry } from "./usage-entry";
@@ -32,7 +36,7 @@ import { AccountConnection } from "./account-connection";
 import { Authentication } from "./configuration-fields";
 import { document, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
 import { SubscriptionAccounts } from "./subscription-accounts";
 
 export enum AccountSettingsSection {
@@ -55,6 +59,9 @@ export interface AccountProviderSummary {
 }
 
 export interface AccountProviderPicker {
+  failure?: import("@delinoio/delidev-api-client").ClientFailure;
+  query?: import("./scroll-continuation").ScrollContinuationQuery;
+  renderOptions?: (render: (provider: AccountProviderSummary) => ReactNode, root: import("react").RefObject<HTMLElement | null>, active: boolean) => ReactNode;
   ready: boolean;
   loaded: boolean;
   fetching: boolean;
@@ -74,6 +81,7 @@ export interface AccountSettingsProps {
   accountTypeFilteringReady: boolean;
   apiFormatSelectingReady?: boolean;
   accountTypeFilteringProblem?: unknown;
+  providerInventoryFailure?: import("@delinoio/delidev-api-client").ClientFailure;
   accountTypeFilteringLoading?: boolean;
   accountTypeFilteringFetching?: boolean;
   retryAccountCapabilities?: () => void;
@@ -250,6 +258,7 @@ function AccountCreationWizard({
   providerContractRef.current = selectedProviderContract;
   const capabilityRef = useRef(manualReady);
   capabilityRef.current = manualReady;
+  const pickerContent = useRef<HTMLElement>(null), pickerRoot = useScrollRoot(pickerContent);
   const providerRead = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: providerId }, { enabled: active && step === WizardStep.Account && Boolean(providerId) });
   const verifyProvider = async (expected: ReturnType<typeof providerContract>): Promise<boolean> => {
     try {
@@ -257,7 +266,7 @@ function AccountCreationWizard({
       return !checked.error && providerContractMatches(expected, checked.data?.resource) && sameProviderContract(providerContractRef.current, expected);
     } catch { return false; }
   };
-  const metadataUnavailable = providerRead.isFetching || Boolean(providerRead.error) || picker.fetching;
+  const metadataUnavailable = providerRead.isFetching || Boolean(providerRead.error || picker.error || picker.failure) || picker.fetching;
   const keyless = selectedAuthentication === APIAuthenticationId.Keyless;
   const apiKeyValid = keyless || /^[!-~]{1,8192}$/.test(apiKey);
   const aliasValid = alias.trim().length > 0 && !alias.includes(String.fromCharCode(0)) && new TextEncoder().encode(alias).byteLength <= 256;
@@ -556,35 +565,34 @@ function AccountCreationWizard({
     const metadataMatches = providerRead.isSuccess && providerRead.data?.resource?.revision === original.provider.revision &&
       providerContractMatches(providerContract(original), providerRead.data?.resource);
     return <AccountOAuth metadataReady={!metadataUnavailable && picker.ready && metadataMatches && accountTypeFilteringReady && (!original.oauthFormatSelectingAvailable || apiFormatSelectingReady)} metadataProblem={<>
-      <Problem error={providerRead.error ?? picker.error} />
+      <Problem error={providerRead.error ?? picker.error} /><Failure failure={picker.failure} />
       {providerRead.isSuccess && !metadataMatches ? <p role="alert">{copy("account-settings.thisProviderChangedOrIsNo_c94fdd")}</p> : null}
       {!accountTypeFilteringReady ? <p role="status">{copy("account-settings.connectionIsPausedUntilThisServer_0528c4")}</p> : null}
     </>} flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} done={resource => { saved(resource); close(); }} />;
   }
 
-  return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
+  return <section ref={pickerContent} className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</button>
     <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><h2 hidden={inTask} id="api-account-wizard-title">{copy("account-settings.addAiApiKey_2c04a8")}</h2>
     {step === WizardStep.Provider ? <>
       <h2 ref={heading} tabIndex={-1}>{copy("account-settings.chooseAnApiProvider_929afa")}</h2>
       <p>{copy("account-settings.selectAProviderToConnectYour_585388")}</p>
       {picker.fetching ? <p role="status">{copy("account-settings.loadingProviders_d8de93")}</p> : null}
-      <Problem error={picker.error} />
-      {picker.error && clientFailure(picker.error).code === FailureCode.PermissionDenied ? <p role="status">{copy("account-settings.providerInventoryAccessIsDeniedCheck_6101ae")}</p> : null}
-      {picker.error ? <button type="button" disabled={picker.fetching} onClick={picker.retry}>{copy("account-settings.retryProviders_9bd189")}</button> : null}
-      {picker.error && picker.loaded ? <p className="notice" role="status">{copy("account-settings.refreshFailedShowingTheLastSuccessfully_058f65")}</p> : null}
+      <Problem error={picker.error} /><Failure failure={picker.failure} />
+      {(picker.failure?.code ?? (picker.error ? clientFailure(picker.error).code : undefined)) === FailureCode.PermissionDenied ? <p role="status">{copy("account-settings.providerInventoryAccessIsDeniedCheck_6101ae")}</p> : null}
+      {picker.error || picker.failure ? <button type="button" disabled={picker.fetching} onClick={picker.retry}>{copy("account-settings.retryProviders_9bd189")}</button> : null}
+      {(picker.error || picker.failure) && picker.loaded ? <p className="notice" role="status">{copy("account-settings.refreshFailedShowingTheLastSuccessfully_058f65")}</p> : null}
       {picker.loaded && (!accountTypeFilteringReady || !picker.ready) ? <p role="status">{copy("account-settings.providerChoicesAreUnavailableBecauseThis_af2379")}</p> : null}
       {accountTypeFilteringReady && picker.ready ? <>
-        <div className="account-provider-choices">{options.map((provider) => <button type="button" className="account-provider-action" key={provider.providerId} ref={(button) => { if (button) providerButtons.current.set(provider.providerId, button); else providerButtons.current.delete(provider.providerId); }} onClick={() => pickProvider(provider)}>
+        <div className="account-provider-choices">{picker.renderOptions ? picker.renderOptions(provider => <button type="button" className="account-provider-action" key={provider.providerId} ref={(button) => { if (button) providerButtons.current.set(provider.providerId, button); else providerButtons.current.delete(provider.providerId); }} onClick={() => pickProvider(provider)}>
+          <span><strong>{provider.displayName}</strong><span className="account-provider-method">{oauth.supports(provider) ? copy("account-settings.browserSignIn_5db278") : document(provider.provider).authentication === Authentication.Keyless ? copy("account-settings.localEndpoint_c04191") : copy("account-settings.apiKey_16f0ee")}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
+        </button>, pickerRoot, active && step === WizardStep.Provider) : options.map(provider => <button type="button" className="account-provider-action" key={provider.providerId} ref={(button) => { if (button) providerButtons.current.set(provider.providerId, button); else providerButtons.current.delete(provider.providerId); }} onClick={() => pickProvider(provider)}>
           <span><strong>{provider.displayName}</strong><span className="account-provider-method">{oauth.supports(provider) ? copy("account-settings.browserSignIn_5db278") : document(provider.provider).authentication === Authentication.Keyless ? copy("account-settings.localEndpoint_c04191") : copy("account-settings.apiKey_16f0ee")}</span></span><span className="account-provider-chevron" aria-hidden="true">›</span>
         </button>)}</div>
-        {options.length === 0 && !picker.fetching && !picker.error ? !picker.pageToken && !picker.nextPageToken ? <div><p>{copy("account-settings.enableAnApiProviderToAdd_e516fd")}</p><button type="button" onClick={openProviders}>{copy("account-settings.openApiProviders_1e4d77")}</button></div> : <p>{copy("account-settings.noEnabledApiProvidersOnThis_7ad0ab")}</p> : null}
+        {options.length === 0 && !picker.fetching && !picker.error && !picker.failure ? !picker.pageToken && !picker.nextPageToken ? <div><p>{copy("account-settings.enableAnApiProviderToAdd_e516fd")}</p><button type="button" onClick={openProviders}>{copy("account-settings.openApiProviders_1e4d77")}</button></div> : <p>{copy("account-settings.noEnabledApiProvidersOnThis_7ad0ab")}</p> : null}
       </> : null}
       <p>{copy("account-settings.onlyEnabledApiProvidersAppearHere_c9d5a2")}</p>
-      {picker.pageToken || picker.nextPageToken ? <nav className="actions" aria-label={copy("account-settings.providerPages_ca1fc1")}>
-        {picker.pageToken ? <button type="button" disabled={picker.fetching} onClick={picker.first}>{copy("account-settings.firstPage_0bdbb7")}</button> : null}
-        {picker.nextPageToken ? <button type="button" disabled={picker.fetching} onClick={picker.next}>{copy("account-settings.nextPage_c08ac7")}</button> : null}
-      </nav> : null}
+      <ScrollContinuation showInitial={false} showErrors={false} root={pickerRoot} active={active && step === WizardStep.Provider} label={copy("account-settings.providerPages_ca1fc1")} query={picker.query ?? { loaded: picker.loaded, nextPageToken: picker.nextPageToken, append: picker.next, retry: picker.retry, reload: picker.first }} />
     </> : <>
       <h2 ref={heading} tabIndex={-1}>{copy("account-settings.connectYourEntry_17c199")}</h2>
       <div className="api-entry-provider"><div><strong>{selectedProvider?.displayName ?? copy("account-settings.unavailable_ca1844")}</strong><span>{keyless ? copy("account-settings.localEndpoint_c04191") : copy("account-settings.apiKey_16f0ee")}</span></div><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain || unknownResponse} onClick={returnToProviders}>{copy("account-settings.change_c0bf75")}</button></div>
@@ -635,6 +643,7 @@ function ApiAccountSettings({
   accountTypeFilteringReady,
   apiFormatSelectingReady = false,
   accountTypeFilteringProblem,
+  providerInventoryFailure,
   accountTypeFilteringLoading = false,
   accountTypeFilteringFetching = false,
   retryAccountCapabilities,
@@ -665,7 +674,7 @@ function ApiAccountSettings({
   const transport = useTransport();
   const usageKey = createConnectQueryKey({ schema: UsageQuery.getUsageSummary, transport, cardinality: "finite" });
   const usageFetching = useIsFetching({ queryKey: usageKey });
-  const [page, setPage] = useState<{ section: AccountSettingsSection; providerId: string; token: string }>({ section, providerId: "", token: "" });
+  const content = useRef<HTMLElement>(null), root = useScrollRoot(content);
   const addAccountButton = useRef<HTMLButtonElement>(null);
   const [wizard, setWizard] = useState(false);
   const [wizardProvider, setWizardProvider] = useState<AccountProviderSummary>();
@@ -679,13 +688,15 @@ function ApiAccountSettings({
     }
     return result;
   }, [providerHint, providers, startApiWizard]);
-  const pageToken = page.section === section && page.providerId === providerIdFilter ? page.token : "";
   const accountType = AccountTypeFilter.API;
-  const rows = useQuery(ResourceQuery.listResources, {
-    filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken },
-    providerId: providerIdFilter,
-    accountType,
-  }, { enabled: active && accountTypeFilteringReady });
+  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && accountTypeFilteringReady && !wizard && !selectedAccount, section, false, accountType, providerIdFilter, undefined, true);
+  const resources = inventory.payloadPages.flatMap(page => page.payload);
+  const rows = { data: inventory.loaded ? { resources, nextPageToken: inventory.nextPageToken } : undefined,
+    error: inventory.error?.failure, isFetching: Boolean(inventory.loading),
+    refetch: () => inventory.refreshExplicit() };
+  const entryRetryShown = useRef(false);
+  if (rows.error) entryRetryShown.current = true;
+  else if (!rows.isFetching) entryRetryShown.current = false;
   const providersById = useMemo(() => {
     const values = new Map<string, { displayName: string; enabled: boolean; protocol?: string }>();
     for (const provider of providerSummaries) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled, protocol: text(document(provider.provider).protocol) });
@@ -718,30 +729,31 @@ function ApiAccountSettings({
   };
 
   const inventoryProblem = accountTypeFilteringProblem || providerSearchError;
-  const readProblem = inventoryProblem || rows.error;
-  const readDenied = readProblem && clientFailure(readProblem).code === FailureCode.PermissionDenied;
-  const successfulEmpty = accountTypeFilteringReady && rows.data?.resources.length === 0 && !readProblem;
-  const finalFirstPage = !pageToken && !rows.data?.nextPageToken;
-  return <section className="account-settings api-keys-view api-usage-list" aria-label={copy("account-settings.aiApiKeysSettings_111960")}>
+  const hasInventoryProblem = Boolean(inventoryProblem || providerInventoryFailure);
+  const readProblem = inventoryProblem || providerInventoryFailure || rows.error;
+  const readDenied = (rows.error?.code ?? providerInventoryFailure?.code ?? (inventoryProblem ? clientFailure(inventoryProblem).code : undefined)) === FailureCode.PermissionDenied;
+  const successfulEmpty = accountTypeFilteringReady && inventory.loaded && inventory.rows.length === 0 && !readProblem;
+  const finalFirstPage = inventory.loaded && !inventory.nextPageToken;
+  return <section ref={content} className="account-settings api-keys-view api-usage-list" aria-label={copy("account-settings.aiApiKeysSettings_111960")}>
     <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} description={copy("account-settings.manageAiApiKeysAndKeyless_372629")} actions={<>
       <button ref={addAccountButton} className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); onWorkflowReadyChange?.(true); setWizard(true); }}>{copy("account-settings.addAiApiKey_2c04a8")}</button>
     </>} />
-    {providerIdFilter ? <div className="api-entry-filter"><p><LocalizedText id="account-settings.provider_bcf1a6" components={{ s0: <>{providersById.get(providerIdFilter)?.displayName || providerIdFilter}</> }} /></p><button type="button" onClick={() => { setPage({ section, providerId: "", token: "" }); clearProviderFilter(); }}>{copy("account-settings.clearProviderFilter_e0b8c0")}</button></div> : null}
+    {providerIdFilter ? <div className="api-entry-filter"><p><LocalizedText id="account-settings.provider_bcf1a6" components={{ s0: <>{providersById.get(providerIdFilter)?.displayName || providerIdFilter}</> }} /></p><button type="button" onClick={() => {  clearProviderFilter(); }}>{copy("account-settings.clearProviderFilter_e0b8c0")}</button></div> : null}
     {accountTypeFilteringLoading ? <p role="status">{copy("account-settings.loadingProviderCapabilities_012324")}</p> : null}
-    <Problem error={inventoryProblem} />
-    {inventoryProblem ? <button type="button" disabled={accountTypeFilteringFetching || providerSearchLoading} onClick={retryAccountCapabilities}>{copy("account-settings.retryProviderInventory_afa130")}</button> : null}
+    <Problem error={inventoryProblem} /><Failure failure={providerInventoryFailure} />
+    {hasInventoryProblem ? <button type="button" disabled={accountTypeFilteringFetching || providerSearchLoading} onClick={retryAccountCapabilities}>{copy("account-settings.retryProviderInventory_afa130")}</button> : null}
     {readDenied ? <p role="status">{copy("account-settings.entryAccessIsDeniedCheckThis_755d6f")}</p> : null}
-    {!accountTypeFilteringReady && !accountTypeFilteringLoading && !inventoryProblem ? <p role="status">{copy("account-settings.entryListsRequireAServerThat_d168c9")}</p> : null}
+    {!accountTypeFilteringReady && !accountTypeFilteringLoading && !hasInventoryProblem ? <p role="status">{copy("account-settings.entryListsRequireAServerThat_d168c9")}</p> : null}
     {accountTypeFilteringReady ? <>
       {rows.data?.resources.length ? storage.header : null}
-      <Problem error={rows.error} />
-      {rows.error ? <button type="button" disabled={rows.isFetching} onClick={() => { void rows.refetch(); }}>{copy("account-settings.retryEntries_038902")}</button> : null}
+      <Failure failure={rows.error} />
+      {entryRetryShown.current ? <button type="button" disabled={rows.isFetching} onClick={() => { void rows.refetch(); }}>{copy("account-settings.retryEntries_038902")}</button> : null}
       {readProblem && rows.data ? <p className="notice" role="status">{copy("account-settings.refreshFailedShowingTheLastSuccessfully_09833b")}</p> : null}
       {rows.isFetching && !rows.data ? <SettingsLoading label={copy("account-settings.loadingEntries_49f7f3")} /> : null}
       <div className="api-usage-list-heading"><div><h2>{copy("account-settings.yourApiKeys_e9bf62")}</h2><p>{copy("account-settings.delidevUsageLast30Days_6c267c")}</p></div><button type="button" disabled={!active || rows.isFetching || usageFetching > 0} onClick={() => { void rows.refetch(); void client.refetchQueries({ queryKey: usageKey, type: "active" }); }}><LocalizedText id="account-settings.refreshUsage_831ddd" components={{ s0: <span aria-hidden="true">↻</span> }} /></button></div>
-      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map(row => <ApiEntryRow key={row.id} storage={storage.forAccount(row)} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div> : null}
+      <ScrollPayloadWindow query={inventory} root={root} active={active && !wizard && !selectedAccount} identity={paginationIdentity} revision={paginationRevision}>{resources => <div className="api-entry-rows">{resources.map(row => <ApiEntryRow key={row.id} storage={storage.forAccount(row)} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied && !wizard && !selectedAccount} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div>}</ScrollPayloadWindow>
       {successfulEmpty ? finalFirstPage && !providerIdFilter ? <SettingsEmpty title={copy("account-settings.noAiApiKeyEntries_319a32")}><p>{copy("account-settings.addAnEntryForAnEnabled_309062")}</p><p>{copy("account-settings.keylessLocalProvidersDoNotRequire_8313c6")}</p></SettingsEmpty> : <p className="api-entry-page-empty">{finalFirstPage && providerIdFilter ? copy("account-settings.noEntriesForThisProvider_86ca40") : copy("account-settings.noEntriesOnThisPage_c02ff6")}</p> : null}
-      {pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label={copy("account-settings.entryPages_b4e028")}>{pageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>{copy("account-settings.firstPage_0bdbb7")}</button> : null}{rows.data?.nextPageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>{copy("account-settings.nextPage_c08ac7")}</button> : null}</nav> : null}
+      <div hidden={wizard || Boolean(selectedAccount)}><ScrollContinuation showInitial={false} showErrors={false} query={inventory} root={root} active={active && !wizard && !selectedAccount} label={copy("account-settings.entryPages_b4e028")} /></div>
     </> : null}
     {accountTypeFilteringReady ? <p className="api-entry-storage-note">{copy("account-settings.knownUsageMayBeIncompleteEstimates_30eea0")}</p> : null}
     <p className="api-entry-storage-note">{copy("account-settings.credentialsAreStoredSecurelyOnThe_be612b")}</p>

@@ -1,10 +1,11 @@
+import { create } from "@bufbuild/protobuf";
 import { useState } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { SessionService, newRequestId } from "@delinoio/delidev-api-client";
+import { ErrorDetailSchema, SessionService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { SessionFiles } from "./session-files";
 
@@ -49,10 +50,10 @@ it("browses the actual selected root and retains inert bounded previews with exa
 it("pages directory observations, exposes failures and discards content when closed", async () => {
   const f = fixture(); render(<f.View />);
   await screen.findByRole("button", { name: "note.txt 42 bytes" });
-  fireEvent.click(screen.getByRole("button", { name: "Next directory page" }));
-  await screen.findByText("This directory is empty.");
+  fireEvent.click(screen.getByRole("button", { name: "Load more Directory pages" }));
+  await screen.findByText("All loaded Directory pages are shown.");
+  expect(screen.getByRole("button", { name: "note.txt 42 bytes" })).toBeTruthy();
   expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).page_token).toBe("page-two");
-  fireEvent.click(screen.getByRole("button", { name: "First directory page" }));
   await screen.findByRole("button", { name: "note.txt 42 bytes" });
   f.read.mockRejectedValueOnce(new ConnectError("Worker unavailable", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Refresh files" }));
@@ -84,4 +85,38 @@ it("keeps keyboard focus inside the panel after opening a file so Escape can clo
   expect(document.activeElement?.textContent).toBe("note.txt");
   fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   expect(screen.queryByRole("complementary")).toBeNull();
+});
+
+it("retains directory metadata on a digest-bound cursor failure and requires explicit reload", async () => {
+  const f = fixture(); render(<f.View />);
+  await screen.findByRole("button", { name: "note.txt 42 bytes" });
+  f.read.mockRejectedValueOnce(new ConnectError("Directory changed", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "conflict" }) }]));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Directory pages" }));
+  await screen.findByRole("button", { name: "Reload list" });
+  expect(screen.getByRole("button", { name: "note.txt 42 bytes" })).toBeTruthy();
+  expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).page_token).toBe("page-two");
+  const before = f.read.mock.calls.length;
+  fireEvent.scroll(screen.getByRole("button", { name: "note.txt 42 bytes" }).closest(".conversation-page-scroll")!);
+  expect(f.read).toHaveBeenCalledTimes(before);
+  fireEvent.click(screen.getByRole("button", { name: "Reload list" }));
+  await screen.findByRole("button", { name: "Load more Directory pages" });
+  expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).page_token).toBe("");
+});
+
+
+it.each(["continuation", "refresh"])("rejects a whole directory page with duplicate entry names during %s", async stage => {
+ const f = fixture(); render(<f.View />);
+ await screen.findByRole("button", { name: "note.txt 42 bytes" });
+ const prior = f.read.mock.calls.length;
+ f.read.mockResolvedValueOnce({ documentJson: encode({ size: "0", binary: false, truncated: false, entries: [{ name: "duplicate.txt", kind: "file", size: "1" }, { name: "duplicate.txt", kind: "directory", size: "0" }, { name: "poison.txt", kind: "file", size: "2" }] }) });
+ fireEvent.click(screen.getByRole("button", { name: stage === "continuation" ? "Load more Directory pages" : "Refresh files" }));
+ await screen.findByText("Refresh failed. The last observation is shown below.");
+ expect(screen.getByRole("button", { name: "note.txt 42 bytes" })).toBeTruthy();
+ expect(screen.queryByText("duplicate.txt")).toBeNull(); expect(screen.queryByText("poison.txt")).toBeNull();
+ expect(f.read).toHaveBeenCalledTimes(prior + 1);
+ const query = JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson));
+ expect(query).toMatchObject({ operation: "directory", repository_id: f.primary, path: ".", page_token: stage === "continuation" ? "page-two" : "" });
+ fireEvent.scroll(screen.getByRole("button", { name: "note.txt 42 bytes" }).closest(".conversation-page-scroll")!);
+ expect(f.read).toHaveBeenCalledTimes(prior + 1);
+ expect(f.read.mock.calls.every(([request]) => JSON.parse(new TextDecoder().decode(request.queryJson)).operation !== "file")).toBe(true);
 });

@@ -64,8 +64,8 @@ it("starts once without confirmation, blocks account changes and presents partia
   f.complete(); await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
   await screen.findByText("2 deleted · 1 retained");
   fireEvent.click(screen.getByText("Retained accounts (1)"));
-  expect(screen.getByText(/The account is still referenced by saved work/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  expect(await screen.findByText(/The account is still referenced by saved work/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Load more Cleanup result pages" }));
   await waitFor(() => expect(f.status.mock.calls.at(-1)?.[0].pageToken).toBe("fixture-next-page"));
   expect(f.list.mock.calls.length).toBeGreaterThan(1);
   expect(f.start).toHaveBeenCalledTimes(1);

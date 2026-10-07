@@ -1,13 +1,17 @@
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { defaultRemediationPolicy, RemediationDetailPresentation, RemediationPolicyFields } from "./remediation-policy";
-import { useContext, useEffect, useId, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { AgentConfiguration, AgentReadProblem } from "./agent-configuration";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { createQueryOptions, useQuery, useTransport } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
+import { ScrollPicker } from "./scroll-picker";
+import type { MessageShape } from "@bufbuild/protobuf";
+import { FailureCode, clientFailure, EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text, type Document } from "./documents";
-import { Problem } from "./ui";
+import { Problem, ServiceProblem } from "./ui";
 import { useRetainedMutation } from "./mutation";
 import { JobState, TrackedJob } from "./jobs";
 import { providerInventoryReady } from "./provider-model-settings";
@@ -80,68 +84,88 @@ function AgentPermissions({ harness, options, change }: { harness: unknown; opti
 function Check({ label, value, change }: { label: string; value: unknown; change: (value: boolean) => void }) {
   useLocale(); return <label className="checkbox"><input type="checkbox" checked={value === true} onChange={(event) => change(event.target.checked)} />{label}</label>; }
 
-// Selectors retain only one bounded page. An already selected identity outside
-// that page remains explicit rather than falling back to its first result.
+export const ResourceSelectionPending = createContext<((identity: string, pending: boolean) => void) | undefined>(undefined);
+
+// Selectors accumulate bounded display projections. Exact resources are read
+// only for the retained selection and a deliberate selection callback.
 export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string }) {
   useLocale();
-  const reportRead = useContext(AgentReadProblem);
-  const agentPresentation = Boolean(reportRead) || markRequired;
-  const [page, setPage] = useState("");
+  const reportRead = useContext(AgentReadProblem), reportPending = useContext(ResourceSelectionPending), readIdentity = useId();
+  const transport = useTransport(), client = useQueryClient(), generation = useRef(0);
+  const latestChange = useRef(change); latestChange.current = change;
+  const [selectionBusy, setSelectionBusy] = useState(false), [selectionError, setSelectionError] = useState<unknown>();
   const needsProviderCapability = activeApiOnly && (kind === EntityKind.PROVIDER || kind === EntityKind.MODEL);
-  const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 200, pageToken: kind === EntityKind.PROVIDER ? page : "" }, { enabled: active && needsProviderCapability });
+  const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 1 }, { enabled: active && needsProviderCapability });
   const ready = providerInventoryReady(inventory.data?.capabilities);
-  const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: active && !needsProviderCapability });
-  const modelSearch = useQuery(ProviderQuery.searchModels, { query: "", providerId: "", includeHidden: true, pageSize: 50, pageToken: page, enabledProvidersOnly: true }, { enabled: active && kind === EntityKind.MODEL && needsProviderCapability && ready });
-  const selected = useQuery(ResourceQuery.getResource, { kind, id: value }, { enabled: active && Boolean(value) && needsProviderCapability });
+  const allowedKey = allowed === undefined ? "*" : JSON.stringify(allowed);
+  interface ChoiceRow { id: string; revision: bigint; name: string; health: string }
+  const projectResources = useCallback((resources: Resource[]) => {
+    if (resources.length > 50 || new Set(resources.map(row => row.id)).size !== resources.length || resources.some(row => row.kind !== kind || !row.id || row.revision <= 0n || !supportsResourceSchema(row))) throw new ConnectError("Invalid resource choices", Code.DataLoss);
+    return resources.filter(row => allowedKey === "*" || (JSON.parse(allowedKey) as unknown[]).includes(row.id)).map(row => {
+      const data = document(row); return { id: row.id, revision: row.revision, name: text(data.name) || text(data.alias), health: text(data.health) };
+    });
+  }, [kind, allowedKey]);
+  const requestResources = useCallback((token: string) => ({ filter: { kind, pageSize: 50, pageToken: token } }), [kind]);
+  const projectList = useCallback((response: MessageShape<typeof ResourceQuery.listResources.output>) => ({ rows: projectResources(response.resources), nextPageToken: response.nextPageToken }), [projectResources]);
+  const resourceReader = useConnectPaginationReader(ResourceQuery.listResources, requestResources, projectList);
+  const resources = usePaginationChain<ChoiceRow>(`resource-choice:${kind}:${allowedKey}`, active && !disabled && !needsProviderCapability, resourceReader);
+  const requestProviders = useCallback((token: string) => ({ query: "", enabledOnly: true, pageSize: 50, pageToken: token }), []);
+  const projectInventory = useCallback((response: MessageShape<typeof ProviderQuery.listProviderInventory.output>) => {
+    if (response.entries.length > 50 || new Set(response.entries.map(entry => entry.providerId)).size !== response.entries.length || !providerInventoryReady(response.capabilities) || response.entries.some(entry => !entry.provider || entry.providerId !== entry.provider.id || !entry.enabled)) throw new ConnectError("Invalid provider choices", Code.DataLoss);
+    return { rows: projectResources(response.entries.flatMap(entry => entry.provider ? [entry.provider] : [])), nextPageToken: response.nextPageToken };
+  }, [projectResources]);
+  const providerReader = useConnectPaginationReader(ProviderQuery.listProviderInventory, requestProviders, projectInventory);
+  const providers = usePaginationChain<ChoiceRow>(`provider-choice:${allowedKey}`, active && !disabled && needsProviderCapability && kind === EntityKind.PROVIDER && ready, providerReader);
+  const requestModels = useCallback((token: string) => ({ query: "", providerId: "", includeHidden: true, pageSize: 50, pageToken: token, enabledProvidersOnly: true }), []);
+  const projectModels = useCallback((response: MessageShape<typeof ProviderQuery.searchModels.output>) => ({ rows: projectResources(response.models), nextPageToken: response.nextPageToken }), [projectResources]);
+  const modelReader = useConnectPaginationReader(ProviderQuery.searchModels, requestModels, projectModels);
+  const models = usePaginationChain<ChoiceRow>(`model-choice:${allowedKey}`, active && !disabled && needsProviderCapability && kind === EntityKind.MODEL && ready, modelReader);
+  const result = needsProviderCapability ? kind === EntityKind.PROVIDER ? providers : models : resources;
+  usePaginationRefresh(ResourceQuery.listResources, requestResources(""), active && !needsProviderCapability, resources.refresh);
+  usePaginationRefresh(ProviderQuery.listProviderInventory, requestProviders(""), active && needsProviderCapability && kind === EntityKind.PROVIDER, providers.refresh);
+  usePaginationRefresh(ProviderQuery.searchModels, requestModels(""), active && needsProviderCapability && kind === EntityKind.MODEL, models.refresh);
+  const selected = useQuery(ResourceQuery.getResource, { kind, id: value }, { enabled: active && Boolean(value) });
   const selectedData = document(selected.data?.resource);
-  const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: kind === EntityKind.MODEL ? text(selectedData.provider_id) : value }, { enabled: active && kind === EntityKind.MODEL && Boolean(text(selectedData.provider_id)) });
-  const selectedProviderOff = kind === EntityKind.PROVIDER ? selectedData.protocol !== Protocol.Subscription && selectedData.enabled === false : selectedProvider.data?.resource ? document(selectedProvider.data.resource).enabled === false : false;
-  const activeProviders = (inventory.data?.entries ?? []).flatMap((entry) => entry.provider ? [entry.provider] : []);
-  let rows = kind === EntityKind.MODEL && needsProviderCapability ? (modelSearch.data?.models ?? []) : kind === EntityKind.PROVIDER && needsProviderCapability ? activeProviders : (result.data?.resources ?? []);
-  rows = rows.filter((row) => !allowed || allowed.includes(row.id));
-  const pageRows = rows;
-  const selectedOffPage = Boolean(selected.data?.resource && !pageRows.some((row) => row.id === selected.data!.resource!.id));
-  if (selected.data?.resource && !rows.some((row) => row.id === selected.data!.resource!.id)) rows = [...rows, selected.data.resource];
-  const nextPage = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.data?.nextPageToken : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.data?.nextPageToken : result.data?.nextPageToken;
-  const fetching = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.isFetching : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.isFetching : result.isFetching;
-  const pageData = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.data : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.data : result.data;
-  const pageError = kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.error : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.error : result.error;
-  const pageFailure = pageError ?? (kind === EntityKind.MODEL && needsProviderCapability ? modelSearch.failureReason : kind === EntityKind.PROVIDER && needsProviderCapability ? inventory.failureReason : result.failureReason);
-  const failure = pageFailure ?? (agentPresentation && needsProviderCapability ? inventory.error ?? inventory.failureReason ?? selected.error ?? selected.failureReason ?? selectedProvider.error ?? selectedProvider.failureReason : undefined);
-  const initialFetching = fetching || (agentPresentation && needsProviderCapability && inventory.isFetching && !ready);
-  const readProblem = Boolean(failure || selectedProviderOff || (active && needsProviderCapability && inventory.data && !ready));
-  const readIdentity = useId();
+  const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: kind === EntityKind.MODEL ? text(selectedData.provider_id) : "" }, { enabled: active && needsProviderCapability && kind === EntityKind.MODEL && Boolean(text(selectedData.provider_id)) });
+  const selectedProviderOff = needsProviderCapability && (kind === EntityKind.PROVIDER ? selectedData.protocol !== Protocol.Subscription && selectedData.enabled === false : document(selectedProvider.data?.resource).enabled === false);
+  const failure = selectionError ?? (needsProviderCapability ? inventory.error : undefined) ?? selected.error ?? (needsProviderCapability && kind === EntityKind.MODEL ? selectedProvider.error : undefined);
+  const choiceFailure = result.error?.failure ?? (failure ? clientFailure(failure) : undefined);
+  const reason = choiceFailure?.code === FailureCode.PermissionDenied || choiceFailure?.code === FailureCode.Unauthenticated
+    ? copy("configuration-fields.choices.denied")
+    : choiceFailure?.code === FailureCode.Unavailable || choiceFailure?.code === FailureCode.ServerUnavailable
+      ? copy("configuration-fields.choices.connection") : copy("configuration-fields.choices.request");
+  const readProblem = Boolean(failure || result.error || selectedProviderOff || active && needsProviderCapability && inventory.data && !ready);
   useEffect(() => { reportRead?.(readIdentity, readProblem); return () => reportRead?.(readIdentity, false); }, [readIdentity, readProblem, reportRead]);
-  const errorCode = failure instanceof ConnectError ? failure.code : undefined;
-  let statusMessage = "";
-  if (active && (showStatus || agentPresentation)) {
-    if (failure) {
-      const reason = errorCode === Code.PermissionDenied || errorCode === Code.Unauthenticated
-        ? copy(fetching ? "configuration-fields.choices.deniedRetrying" : "configuration-fields.choices.denied")
-        : errorCode === Code.Unavailable || errorCode === Code.DeadlineExceeded
-          ? copy(fetching ? "configuration-fields.choices.connectionRetrying" : "configuration-fields.choices.connection")
-          : copy(fetching ? "configuration-fields.choices.requestRetrying" : "configuration-fields.choices.request");
-      statusMessage = pageData
-        ? copy("configuration-fields.sentence.054bff468121", { v0: resourceLabel, v1: reason })
-        : copy("configuration-fields.sentence.1ad5938a045c", { v0: reason });
-    } else if (initialFetching && !pageData) {
-      statusMessage = copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel });
-    } else if (pageData && (agentPresentation ? pageRows : rows).length === 0) {
-      statusMessage = nextPage
-        ? copy("configuration-fields.sentence.244a41434b15", { v0: resourceLabel })
-        : copy("configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel });
-    } else if (value && selectedOffPage) {
-      statusMessage = copy("configuration-fields.sentence.5398fd2fa5b0", { v0: resourceLabel });
-    } else if (value && !rows.some((row) => row.id === value)) {
-      statusMessage = copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel });
-    }
-  }
-  return <div className="resource-choice"><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<select autoFocus={autoFocus} aria-label={markRequired ? label : undefined} disabled={disabled} required={required} value={value} onChange={(event) => change(event.target.value, document(rows.find((row) => row.id === event.target.value)), rows.find((row) => row.id === event.target.value))}><option value="">{emptyLabel ?? copy("configuration-fields.select_586618", { v0: resourceLabel.toLowerCase() })}</option>{value && !rows.some((row) => row.id === value) ? <option value={value} disabled><LocalizedText id="configuration-fields.selected_3d6467" components={{ s0: <>{kindNames[kind]}</>, s1: <>{value}</> }} /></option> : null}{rows.map((row) => { const off = row.id === value && selectedProviderOff; const name = resourceName(row); return <option key={row.id} value={row.id} disabled={off}>{off ? copy("configuration-fields.offProvider_749d7d", { v0: name }) : name}{kind === EntityKind.ACCOUNT ? copy("configuration-fields.message_2fa20b", { v0: statusLabel(text(document(row).health)) }) : ""}</option>; })}</select></label>
-    {statusMessage ? <p role="status">{statusMessage}</p> : null}
-    {needsProviderCapability && active && !ready && (!agentPresentation || (!inventory.isFetching && !failure)) ? <p role="status">{copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}</p> : null}
-    {kind === EntityKind.PROVIDER && needsProviderCapability ? <>
-      {page || nextPage ? <nav className="actions" aria-label={copy("configuration-fields.activeApiProviderChoices_c54a50")}><button type="button" disabled={!page || fetching || disabled} onClick={() => setPage("")}>{copy("configuration-fields.firstApiProviders_b13875")}</button><button type="button" disabled={!nextPage || fetching || disabled || !ready} onClick={() => setPage(nextPage ?? "")}>{copy("configuration-fields.moreApiProviders_bb3c2b")}</button></nav> : null}
-    </> : page || nextPage ? <div className="actions"><button type="button" disabled={!page || fetching || disabled} onClick={() => setPage("")}>{copy("configuration-fields.firstChoices_7d06aa")}</button><button type="button" disabled={!nextPage || fetching || disabled || (needsProviderCapability && !ready)} onClick={() => setPage(nextPage ?? "")}>{copy("configuration-fields.moreChoices_e80424")}</button></div> : null}<Problem error={result.error || inventory.error || modelSearch.error || selected.error || selectedProvider.error} />
+  useLayoutEffect(() => { generation.current++; reportPending?.(readIdentity, false); setSelectionBusy(false); setSelectionError(undefined); return () => { generation.current++; reportPending?.(readIdentity, false); }; }, [active, disabled, kind, allowedKey, transport, reportPending, readIdentity]);
+  // Release only after the accepted callback and its parent draft update commit.
+  useLayoutEffect(() => { if (!selectionBusy) reportPending?.(readIdentity, false); });
+  const select = async (id: string) => {
+    if (!active || disabled || selectionBusy) return;
+    if (!id) { latestChange.current(""); return; }
+    const original = generation.current; reportPending?.(readIdentity, true); setSelectionBusy(true); setSelectionError(undefined);
+    try {
+      const response = await client.fetchQuery({ ...createQueryOptions(ResourceQuery.getResource, { kind, id }, { transport }), staleTime: 0, retry: false });
+      if (generation.current !== original) return;
+      const row = response.resource;
+      if (!row || row.id !== id || row.kind !== kind || !supportsResourceSchema(row) || allowedKey !== "*" && !(JSON.parse(allowedKey) as unknown[]).includes(id)) throw new ConnectError("Selected resource is unavailable", Code.NotFound);
+      if (needsProviderCapability) {
+        const provider = kind === EntityKind.PROVIDER ? row : (await client.fetchQuery({ ...createQueryOptions(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: text(document(row).provider_id) }, { transport }), staleTime: 0, retry: false })).resource;
+        if (generation.current !== original) return;
+        if (!provider || provider.kind !== EntityKind.PROVIDER || !supportsResourceSchema(provider) || document(provider).enabled !== true || document(provider).protocol === Protocol.Subscription) throw new ConnectError("Selected provider is unavailable", Code.FailedPrecondition);
+      }
+      latestChange.current(id, document(row), row);
+    } catch (error) { if (generation.current === original) setSelectionError(error); }
+    finally { if (generation.current === original) setSelectionBusy(false); }
+  };
+  const options = [{ id: "", label: emptyLabel ?? copy("configuration-fields.select_586618", { v0: resourceLabel.toLowerCase() }) }, ...result.rows.map(row => ({ id: row.id, label: (row.name || copy("documents.extra.e504e6152194")) + (kind === EntityKind.ACCOUNT ? copy("configuration-fields.message_2fa20b", { v0: statusLabel(row.health) }) : ""), disabled: row.id === value && selectedProviderOff }))];
+  return <div className="resource-choice"><ScrollPicker label={label} options={options} value={value} selectedLabel={value ? selected.data?.resource ? resourceName(selected.data.resource) : copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel }) : undefined} placeholder={emptyLabel} change={id => void select(id)} query={result} active={active} disabled={disabled || selectionBusy} required={required} autoFocus={autoFocus} markRequired={markRequired} />
+    {needsProviderCapability && active && !ready ? <p role="status">{copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}</p> : null}
+    {(showStatus || reportRead || markRequired) && result.loading ? <p role="status">{copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel })}</p> : null}
+    {(showStatus || reportRead || markRequired) && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy(result.nextPageToken ? "configuration-fields.sentence.244a41434b15" : "configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}
+    {(showStatus || reportRead || markRequired) && value && selected.data?.resource && !result.rows.some(row => row.id === value) ? <p role="status">{copy("configuration-fields.sentence.5398fd2fa5b0", { v0: resourceLabel })}</p> : null}
+    {(showStatus || reportRead || markRequired) && choiceFailure ? <p role="status">{copy(result.loaded ? "configuration-fields.sentence.054bff468121" : "configuration-fields.sentence.1ad5938a045c", { v0: result.loaded ? resourceLabel : reason, v1: reason })}</p> : null}
+    {result.error ? <ServiceProblem code={result.error.failure.code}><p>{result.error.failure.message}</p><p>{result.error.failure.guidance}</p></ServiceProblem> : null}
+    <Problem error={failure} />
   </div>;
 }
 

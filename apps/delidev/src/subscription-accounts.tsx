@@ -1,9 +1,10 @@
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsEmpty } from "./settings-presentation";
 import { useAccountStorage } from "./account-storage";
 import { SettingsTaskDialog, SettingsDialogSize, SettingsDialogFocus, SettingsTaskActions } from "./settings-task";
 import { useCloseSettingsTask } from "./settings-task-context";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   AccountTypeFilter, EntityKind, FailureCode, ResourceQuery,
@@ -16,9 +17,9 @@ import { useSubscriptionLogin } from "./subscription-login";
 import { serviceAccount } from "./subscription-resource";
 import { document, items, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
 import { SubscriptionBrand } from "./subscription-catalog";
-import { QuotaObservationState, SubscriptionOperationState, SubscriptionConnectionState, SubscriptionReadState, SubscriptionSettingsView, type SubscriptionAccountRow } from "./subscription-settings";
+import { QuotaObservationState, SubscriptionOperationState, SubscriptionConnectionState, SubscriptionReadState, SubscriptionSettingsView, SubscriptionRow, type SubscriptionAccountRow } from "./subscription-settings";
 
 export { serviceAccount } from "./subscription-resource";
 
@@ -69,28 +70,43 @@ export function ManagedSubscriptionAccount({ initial, active, close }: { initial
   </section>;
 }
 
+import { useResourceScrollQuery } from "./resource-scroll-query";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWorkflowReadyChange }: { active: boolean; editAccount: (resource: Resource) => void; deleteAccount: (resource: Resource) => void; onWorkflowReadyChange?: (active: boolean) => void }) {
   useLocale();
-  const [page, setPage] = useState("");
+  const content = useRef<HTMLDivElement>(null), root = useScrollRoot(content);
   const [selected, setSelected] = useState<Resource>();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const capable = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
-  const rows = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: page }, accountType: AccountTypeFilter.SUBSCRIPTION }, { enabled: active && capable });
+  const refreshInventory = useRef<() => void>(() => {});
+  // Login/status authority stays active while its own presentation pauses only
+  // the background inventory reader. The callback uses the current reader.
+  const flow = useSubscriptionLogin(active, () => refreshInventory.current());
+  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && capable && !selected && !flow.workflow, "subscriptions", false, AccountTypeFilter.SUBSCRIPTION, "", serviceAccount, true);
+  // An inert parent beneath its original edit/delete dialog retains its three
+  // resident pages and mounted disclosure owners. Reads remain suspended; the
+  // Settings visit/category owns disposal when this component unmounts.
+  const resident = inventory.payloadPages.flatMap(page => page.payload);
+  const rows = { data: inventory.loaded ? { resources: resident, nextPageToken: inventory.nextPageToken } : undefined,
+    error: inventory.error?.failure, isFetching: Boolean(inventory.loading), refetch: () => inventory.refreshExplicit() };
+  refreshInventory.current = rows.refetch;
   const quota = useRetainedMutation("subscription:quota:row",SubscriptionQuery.requestSubscriptionObservation,()=>{void rows.refetch();},(result,request)=>result.operationId===request.mutation?.requestId && serviceAccount(result.account,request.mutation?.id,undefined,request.mutation?.expectedRevision ?? 1n));
  const refreshAll = useRetainedMutation("subscription:quota:all",SubscriptionQuery.refreshAllSubscriptionQuotas,()=>{void rows.refetch();},(result,request)=>result.requestId===request.requestId && result.accounts.length<=10000 && new Set(result.accounts).size===result.accounts.length && result.accounts.every(isEntityId));
  const quotaSupported=status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1)===true;
- const flow = useSubscriptionLogin(active, () => { void rows.refetch(); });
  const loginCapable = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1) === true;
  const accountOperationsBlocked = Boolean(selected || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain);
  const cleanupCapable = status.data?.capabilities.includes(SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1) === true;
  const cleanup = useFailedSubscriptionCleanup(active, cleanupCapable && !status.error && !rows.error && Boolean(rows.data) && !accountOperationsBlocked, () => { void rows.refetch(); });
  const workflow = Boolean(cleanup.blocked || accountOperationsBlocked);
   useEffect(() => { onWorkflowReadyChange?.(workflow); return () => onWorkflowReadyChange?.(false); }, [onWorkflowReadyChange, workflow]);
-  const validPage = !rows.data || rows.data.resources.length <= 50 && rows.data.resources.every((row) => serviceAccount(row)) && new Set(rows.data.resources.map((row) => row.id)).size === rows.data.resources.length;
-  const problem = status.error || rows.error;
-  const failure = problem ? clientFailure(problem).code : undefined;
-  const readState = failure === FailureCode.PermissionDenied ? SubscriptionReadState.PermissionDenied : failure === FailureCode.Unauthenticated ? SubscriptionReadState.AuthenticationExpired : problem || !validPage ? SubscriptionReadState.Failed : !status.data || capable && !rows.data ? SubscriptionReadState.Loading : !capable ? SubscriptionReadState.Unsupported : SubscriptionReadState.Ready;
-  const storage = useAccountStorage(validPage ? rows.data?.resources ?? [] : [], active && readState === SubscriptionReadState.Ready && !workflow, Boolean(problem));
+  const validPage = !rows.data || rows.data.resources.every((row) => serviceAccount(row)) && new Set(rows.data.resources.map((row) => row.id)).size === rows.data.resources.length;
+  const problem = status.error;
+  const anyProblem = Boolean(problem || rows.error);
+  const failure = rows.error?.code ?? (problem ? clientFailure(problem).code : undefined);
+  const readState = failure === FailureCode.PermissionDenied ? SubscriptionReadState.PermissionDenied : failure === FailureCode.Unauthenticated ? SubscriptionReadState.AuthenticationExpired : anyProblem || !validPage ? SubscriptionReadState.Failed : !status.data || capable && !rows.data ? SubscriptionReadState.Loading : !capable ? SubscriptionReadState.Unsupported : SubscriptionReadState.Ready;
+  const storage = useAccountStorage(validPage ? rows.data?.resources ?? [] : [], active && readState === SubscriptionReadState.Ready && !workflow, anyProblem);
   const accounts: SubscriptionAccountRow[] = validPage ? (rows.data?.resources ?? []).map((row) => {
     const data = document(row), service = subscriptionService(data.subscription_service)!;
     const quotaMachine = quotaObservationMachine(object(data.subscription));
@@ -104,16 +120,16 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
     };
   }) : [];
   const blocked = cleanup.blocked || accountOperationsBlocked;
-  return <>
-    <SubscriptionSettingsView storageHeader={accounts.length ? storage.header : null} actionsBlocked={cleanup.blocked} cleanup={active && readState === SubscriptionReadState.Ready && cleanupCapable && !status.data?.stopping && !accountOperationsBlocked ? cleanup.begin : undefined} cleanupBusy={cleanup.busy} cleanupBlocked={cleanup.blocked} cleanupStatus={cleanup.body} cleanupUnavailable={readState !== SubscriptionReadState.Ready || !active || status.data?.stopping ? copy("subscription-settings.cleanupUnavailable") : !cleanupCapable ? copy("subscription-settings.cleanupUnsupported") : undefined} refreshAll={quotaSupported && !blocked ? ()=>{ if (cleanup.canMutate()) void refreshAll.send({requestId:newRequestId()}); } : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} />{!validPage ? <p role="alert">{copy("subscription-accounts.theServerReturnedAnUnsupportedSubscription_ac7e8b")}</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
+  return <div ref={content}>
+    <SubscriptionSettingsView storageHeader={accounts.length ? storage.header : null} actionsBlocked={cleanup.blocked} cleanup={active && readState === SubscriptionReadState.Ready && cleanupCapable && !status.data?.stopping && !accountOperationsBlocked ? cleanup.begin : undefined} cleanupBusy={cleanup.busy} cleanupBlocked={cleanup.blocked} cleanupStatus={cleanup.body} cleanupUnavailable={readState !== SubscriptionReadState.Ready || !active || status.data?.stopping ? copy("subscription-settings.cleanupUnavailable") : !cleanupCapable ? copy("subscription-settings.cleanupUnsupported") : undefined} refreshAll={quotaSupported && !blocked ? ()=>{ if (cleanup.canMutate()) void refreshAll.send({requestId:newRequestId()}); } : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accountList={now => <><ScrollPayloadWindow query={inventory} root={root} active={active && !workflow} identity={paginationIdentity} revision={paginationRevision}>{resources => resources.map(row => { const account = accounts.find(value => value.id === row.id); return account ? <SubscriptionRow key={row.id} account={account} now={now} unavailable={copy("claude-subscription.availability")} actionsBlocked={cleanup.blocked} /> : null; })}</ScrollPayloadWindow>{inventory.loaded && !inventory.rows.length && !inventory.nextPageToken && !inventory.error ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}</>} completeEmpty={!inventory.nextPageToken} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} /><Failure failure={rows.error} />{!validPage ? <p role="alert">{copy("subscription-accounts.theServerReturnedAnUnsupportedSubscription_ac7e8b")}</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
       lifecycleUnavailable={copy("claude-subscription.availability")}
       selectService={capable && (loginCapable || status.data?.capabilities.includes(SystemCapability.CLAUDE_SUBSCRIPTIONS_V1)) && flow.available && !blocked ? (brand) => { const service = subscriptionService(brand); if (service && cleanup.canMutate()) flow.begin(service); } : undefined}
       serviceLoginAvailable={(brand) => brand === SubscriptionBrand.ChatGPT ? loginCapable : brand === SubscriptionBrand.Claude && status.data?.capabilities.includes(SystemCapability.CLAUDE_SUBSCRIPTIONS_V1) === true}
-      pagination={page || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label={copy("subscription-accounts.subscriptionAccountPages_6c8f61")}><button type="button" disabled={!page || rows.isFetching || workflow} onClick={() => setPage("")}>{copy("subscription-accounts.firstPage_0bdbb7")}</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching || workflow} onClick={() => setPage(rows.data!.nextPageToken)}>{copy("subscription-accounts.nextPage_c08ac7")}</button></nav> : null}
+      pagination={<ScrollContinuation showInitial={false} showErrors={false} query={inventory} root={root} active={active && !workflow} label={copy("subscription-accounts.subscriptionAccountPages_6c8f61")} />}
       advanced={<p>{copy("subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6")}</p>} />
     {flow.hidden ? <button type="button" onClick={flow.show}>{copy("claude-subscription.viewOriginalOperation")}</button> : null}
     {flow.body ? <SettingsTaskDialog title={copy(flow.service === SubscriptionServiceId.Claude ? "claude-subscription.title" : "subscription-accounts.connectSubscription")} size={SettingsDialogSize.Wide} retained={flow.retained} close={flow.hide}>{flow.body}</SettingsTaskDialog> : null}
     {selected ? <SettingsTaskDialog key={selected.id} title={copy("subscription-accounts.manageSubscriptionTitle")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={() => { setSelected(undefined); void rows.refetch(); }}><ManagedSubscriptionAccount initial={selected} active={active} close={() => { setSelected(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
     <Problem error={quota.error || refreshAll.error} />{quota.uncertain ? <button type="button" disabled={quota.busy} onClick={quota.retry}>{copy("subscription-accounts.retryOriginalQuotaRefresh_8a9eca")}</button> : null}
-  </>;
+  </div>;
 }

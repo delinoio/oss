@@ -1,14 +1,18 @@
+import { useProviderPages, useModelPages, inventoryIdentity } from "./model-pagination";
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { providerPresetNames, hostedProviderPresetOrder } from "@delinoio/delidev-api-client";
 import { configurationSchemaVersion, subscriptionService, subscriptionServiceNames, supportsResourceSchema } from "@delinoio/delidev-api-client";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ConfigurationQuery, EntityKind, ProviderInventoryCapability, ProviderPresetId, ProviderQuery, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { More, Problem } from "./ui";
+import { Failure, Problem } from "./ui";
 import { NativeModelSettings } from "./native-model-settings";
 
 const requiredCapabilities = [
@@ -39,7 +43,7 @@ function providerIdentity(entry: ProviderInventoryEntry): string {
   return presetID ? `preset:${presetID}` : entry.providerId || `preset:${entry.presetId}`;
 }
 
-function ProviderToggle({ entry, presets, changed, refresh }: { entry: ProviderInventoryEntry; presets: Document[]; changed: () => void; refresh: () => unknown }) {
+function ProviderToggle({ entry, presets, changed, refresh, readOnly }: { entry: ProviderInventoryEntry; presets: Document[]; changed: () => void; refresh: () => unknown; readOnly: boolean }) {
   useLocale();
   const presetID = presetString(entry.presetId);
   const identity = providerIdentity(entry);
@@ -58,7 +62,7 @@ function ProviderToggle({ entry, presets, changed, refresh }: { entry: ProviderI
       documentJson: encode(next),
     });
   };
-  const disabled = mutation.busy || mutation.uncertain || !presetData(entry, presets);
+  const disabled = readOnly || mutation.busy || mutation.uncertain || !presetData(entry, presets);
   return <div className="provider-toggle">
     <span>{entry.enabled ? copy("provider-model-settings.on_130011") : copy("provider-model-settings.off_ca7981")}</span>
     <button type="button" role="switch" aria-checked={entry.enabled} aria-label={copy("provider-model-settings.message_42d375", { v0: entry.enabled ? copy("provider-model-settings.turnOff_06f0e2") : copy("provider-model-settings.turnOn_5a1f09"), v1: entry.displayName })} disabled={disabled} onClick={() => toggle(!entry.enabled)} />
@@ -92,11 +96,11 @@ export function ApiProviderSettings({
 }) {
   useLocale();
   const [localState, setLocalState] = useState<ProviderListState>({ query: "", page: "" });
-  const { query, page } = state ?? localState;
+  const { query } = state ?? localState;
+  const root = useRef<HTMLElement>(null);
   const change = changeState ?? setLocalState;
   const setQuery = (query: string) => change({ query, page: "" });
-  const setPage = (page: string) => change({ query, page });
-  const result = useQuery(ProviderQuery.listProviderInventory, { query, enabledOnly: false, pageSize: 50, pageToken: page }, { enabled: active });
+  const result = useProviderPages(query, active, false, true);
   const activeInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 1, pageToken: "" }, { enabled: active });
   const presetsQuery = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: active });
   const ready = providerInventoryReady(result.data?.capabilities);
@@ -104,43 +108,48 @@ export function ApiProviderSettings({
   try {
     if (presetsQuery.data) presets.push(...items(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(presetsQuery.data.presetsJson))).map(object));
   } catch { /* Provider preset defaults remain unavailable when server data is malformed. */ }
-  const entries = ready ? result.data?.entries ?? [] : [];
-  const presetsMain = entries.filter((entry) => hostedPresetOrder.includes(entry.presetId)).sort((left, right) => hostedPresetOrder.indexOf(left.presetId) - hostedPresetOrder.indexOf(right.presetId));
-  const local = entries.filter((entry) => [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId));
-  const custom = entries.filter((entry) => entry.presetId === ProviderPresetId.UNSPECIFIED);
   const noEnabledProviders = Boolean(activeInventory.data && providerInventoryReady(activeInventory.data.capabilities) && activeInventory.data.entries.length === 0 && !activeInventory.data.nextPageToken);
   const row = (entry: ProviderInventoryEntry) => {
     const customCopy = presetData(entry, presets);
     const accountState = entry.accountCountsAvailable ? copy("provider-model-settings.sentence.490d50c6611c", { v0: entry.connectedAccounts.toString(), v1: entry.totalAccounts.toString() }) : copy("provider-model-settings.extra.555765b26ebc");
     return <article className="result provider-row" key={providerIdentity(entry)}>
-      <div className="provider-row-heading"><div><h4>{entry.displayName}</h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? copy("provider-model-settings.customApiProvider_c1db3d") : local.includes(entry) ? copy("provider-model-settings.localApiServer_dd8eec") : copy("provider-model-settings.preset_7252e7")}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} /></div>
+      <div className="provider-row-heading"><div><h4>{entry.displayName}</h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? copy("provider-model-settings.customApiProvider_c1db3d") : [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId) ? copy("provider-model-settings.localApiServer_dd8eec") : copy("provider-model-settings.preset_7252e7")}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} readOnly={Boolean(result.error)} /></div>
       <p><LocalizedText id="provider-model-settings.entriesConnectionStateIsSeparateFrom_e54388" components={{ s0: <>{accountState}</> }} /></p>
       {!entry.enabled && entry.totalAccounts > 0n ? <p>{copy("provider-model-settings.turningThisProviderOffPreservesIts_2cf65c")}</p> : null}
       <div className="actions">
-        <button type="button" disabled={!entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
+        <button type="button" disabled={Boolean(result.error) || !entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
           if (!entry.providerId) return;
           if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId, entry, result.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER) ? result.data.capabilities : []);
           else manageAccounts(entry.providerId, entry);
         }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? copy("provider-model-settings.manageAiApiKeys_a84e42") : copy("provider-model-settings.addAiApiKey_2c04a8")}</button>
         {entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled && entry.providerId ? <span>{copy("provider-model-settings.turnOnThisProviderToAdd_6ce913")}</span> : null}
-        {entry.presetId === ProviderPresetId.UNSPECIFIED && entry.provider ? <><button type="button" onClick={() => editCustom(entry.provider!)}>{copy("provider-model-settings.editCustomProvider_15ad80")}</button><button type="button" onClick={() => deleteCustom(entry.provider!)}>{copy("provider-model-settings.deleteCustomProvider_d29669")}</button></> : null}
-        {entry.presetId !== ProviderPresetId.UNSPECIFIED ? <button type="button" disabled={!customCopy} onClick={() => { if (!customCopy) return; const copy: Document = { ...customCopy, enabled: true }; delete copy.preset_id; createCustom(copy); }}>{copy("provider-model-settings.createCustomCopy_a6be49")}</button> : null}
+        {entry.presetId === ProviderPresetId.UNSPECIFIED && entry.provider ? <><button type="button" disabled={Boolean(result.error)} onClick={() => editCustom(entry.provider!)}>{copy("provider-model-settings.editCustomProvider_15ad80")}</button><button type="button" disabled={Boolean(result.error)} onClick={() => deleteCustom(entry.provider!)}>{copy("provider-model-settings.deleteCustomProvider_d29669")}</button></> : null}
+        {entry.presetId !== ProviderPresetId.UNSPECIFIED ? <button type="button" disabled={Boolean(result.error) || !customCopy} onClick={() => { if (!customCopy) return; const copy: Document = { ...customCopy, enabled: true }; delete copy.preset_id; createCustom(copy); }}>{copy("provider-model-settings.createCustomCopy_a6be49")}</button> : null}
       </div>
     </article>;
   };
-  return <section aria-label={copy("provider-model-settings.apiProviderInventory_db530c")}>
-    <SettingsHeading title={copy("provider-model-settings.apiProviders_376855")} description={copy("provider-model-settings.manageApiProvidersAndTheirAvailability_946ee7")} actions={<><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("provider-model-settings.refreshProviders_56b2d1")}</button><button className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>{copy("provider-model-settings.customProvider_fee405")}</button></>} />
+  return <section ref={root} aria-label={copy("provider-model-settings.apiProviderInventory_db530c")}>
+    <SettingsHeading title={copy("provider-model-settings.apiProviders_376855")} description={copy("provider-model-settings.manageApiProvidersAndTheirAvailability_946ee7")} actions={<><button type="button" disabled={result.isFetching} onClick={result.refreshExplicit}>{copy("provider-model-settings.refreshProviders_56b2d1")}</button><button className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>{copy("provider-model-settings.customProvider_fee405")}</button></>} />
     <div className="search-form"><label>{copy("provider-model-settings.searchApiProviders_1b03d9")}<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label></div>
     {result.isFetching && result.data ? <p role="status">{copy("provider-model-settings.refreshingProviderStateDisplayedSwitchesShow_735700")}</p> : null}
-    <Problem error={result.error || activeInventory.error || presetsQuery.error} />
+    {result.error ? <Failure failure={result.error.failure} /> : <Problem error={activeInventory.error || presetsQuery.error} />}
     {!result.error && result.data && !ready ? <p role="alert">{copy("provider-model-settings.thisServerDoesNotReportThe_03ee8f")}</p> : null}
     {result.isLoading ? <SettingsLoading label={copy("provider-model-settings.loadingProviderInventory_fa3bbe")} /> : null}
     {ready && !query && noEnabledProviders ? <p className="notice">{copy("provider-model-settings.noApiProvidersAreEnabledTurn_a639f9")}</p> : null}
-    {ready && presetsMain.length ? <section><h3>{copy("provider-model-settings.presets_954f93")}</h3>{presetsMain.map(row)}</section> : null}
-    {ready && local.length ? <section><h3>{copy("provider-model-settings.localApiServers_2052f0")}</h3>{local.map(row)}</section> : null}
-    {ready && custom.length ? <section><h3>{copy("provider-model-settings.customProviders_52b22a")}</h3>{custom.map(row)}</section> : ready && !result.error && !query && !page && !result.data?.nextPageToken ? <section><h3>{copy("provider-model-settings.customProviders_52b22a")}</h3><SettingsEmpty title={copy("provider-model-settings.noCustomProvidersYet_8fdcb5")}><p>{copy("provider-model-settings.useCustomProviderToConfigureAnother_f7a531")}</p></SettingsEmpty></section> : null}
-    {ready && !entries.length ? <p className="empty">{copy("provider-model-settings.noProvidersMatchThisSearch_45fe24")}</p> : null}
-    <nav aria-label={copy("provider-model-settings.providerPages_ca1fc1")}><button type="button" disabled={!page || result.isFetching} onClick={() => setPage("")}>{copy("provider-model-settings.firstPage_0bdbb7")}</button><More available={Boolean(result.data?.nextPageToken)} busy={result.isFetching} load={() => setPage(result.data!.nextPageToken)} /></nav>
+    <ScrollPayloadWindow query={result} root={root} active={active && ready}>{(payload, rows) => {
+      const resident = result.payloadPages.flatMap(page => page.payload.flatMap(response => response.entries));
+      const accepted = new Set(rows.map(row => row.id));
+      const entries = payload.flatMap(page => page.entries).filter(entry => accepted.has(inventoryIdentity(entry))).map(entry => resident.filter(row => inventoryIdentity(row) === inventoryIdentity(entry)).reduce((best, row) => (row.provider?.revision ?? 1n) >= (best.provider?.revision ?? 1n) ? row : best, entry));
+      const presetsMain = entries.filter(entry => hostedPresetOrder.includes(entry.presetId)).sort((left, right) => hostedPresetOrder.indexOf(left.presetId) - hostedPresetOrder.indexOf(right.presetId));
+      const local = entries.filter(entry => [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId));
+      const custom = entries.filter(entry => entry.presetId === ProviderPresetId.UNSPECIFIED);
+      return <>{ready && presetsMain.length ? <section><h3>{copy("provider-model-settings.presets_954f93")}</h3>{presetsMain.map(row)}</section> : null}
+      {ready && local.length ? <section><h3>{copy("provider-model-settings.localApiServers_2052f0")}</h3>{local.map(row)}</section> : null}
+      {ready && custom.length ? <section><h3>{copy("provider-model-settings.customProviders_52b22a")}</h3>{custom.map(row)}</section> : null}</>;
+    }}</ScrollPayloadWindow>
+    {ready && !result.rows.length && !result.error ? <p className="empty">{copy("provider-model-settings.noProvidersMatchThisSearch_45fe24")}</p> : null}
+    {ready && !query && result.loaded && !result.nextPageToken && !result.rows.some(row => !row.id.startsWith("preset:")) ? <section><h3>{copy("provider-model-settings.customProviders_52b22a")}</h3><SettingsEmpty title={copy("provider-model-settings.noCustomProvidersYet_8fdcb5")}><p>{copy("provider-model-settings.useCustomProviderToConfigureAnother_f7a531")}</p></SettingsEmpty></section> : null}
+    <ScrollContinuation query={result} root={root} active={active && ready} label={copy("provider-model-settings.providerPages_ca1fc1")} />
   </section>;
 }
 
@@ -164,10 +173,11 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
   priceModel: (resource: Resource) => void;
 }) {
   useLocale();
-  const { query, page } = state;
+  const { query } = state;
+  const root = useRef<HTMLElement>(null);
   const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 200, pageToken: "" }, { enabled: active });
   const ready = providerInventoryReady(inventory.data?.capabilities);
-  const models = useQuery(ProviderQuery.searchModels, { query, providerId: "", includeHidden: true, pageSize: 50, pageToken: page, enabledProvidersOnly: true }, { enabled: active && ready });
+  const models = useModelPages(query, active && ready);
   const enabledProviders = ready ? inventory.data?.entries ?? [] : [];
   const connectedAccounts = enabledProviders.reduce((sum, entry) => sum + entry.connectedAccounts, 0n);
   const accountCountsKnown = enabledProviders.every((entry) => entry.accountCountsAvailable);
@@ -175,21 +185,10 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
   const noEnabledProviders = enabledProviders.length === 0 && providerInventoryComplete;
   // Retained data describes this scope's last successful result; a refresh
   // failure does not replace it. Initial failures have no model data.
-  const hasEmptyResults = ready && models.data?.models.length === 0;
-  const emptyFirstPage = hasEmptyResults && !query && !page && !noEnabledProviders;
+  const hasEmptyResults = ready && models.loaded && models.rows.length === 0;
+  const emptyFirstPage = hasEmptyResults && !query && !noEnabledProviders;
   const knownZeroAccounts = enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n;
-  const hidePagination = hasEmptyResults && !page && !models.data?.nextPageToken;
-  const providers = new Map((models.data?.providers ?? []).map((provider) => [provider.id, provider]));
-  const grouped = new Map<string, Resource[]>();
-  for (const model of models.data?.models ?? []) {
-    const data = document(model);
-    const providerID = text(data.provider_id) || `subscription:${text(data.subscription_service)}`;
-    const entries = grouped.get(providerID) ?? [];
-    entries.push(model);
-    grouped.set(providerID, entries);
-  }
-  const groupName = (id: string) => id.startsWith("subscription:") ? subscriptionServiceNames[subscriptionService(id.slice(13))!] ?? copy("provider-model-settings.extra.fdfda19280ec") : resourceName(providers.get(id));
-  return <section className="models-list" aria-label={copy("provider-model-settings.modelsFromActiveApiProvidersAnd_6f3768")}>
+  return <section ref={root} className="models-list" aria-label={copy("provider-model-settings.modelsFromActiveApiProvidersAnd_6f3768")}>
     <SettingsHeading title={copy("provider-model-settings.models_d17d2d")} actions={<>
       <button className="primary" type="button" disabled={!ready} onClick={() => createModel()}><LocalizedText id="provider-model-settings.newModel_aabdb9" components={{ s0: <span aria-hidden="true">+</span> }} /></button>
     </>} />
@@ -201,14 +200,20 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
     {!inventory.error && inventory.data && !ready ? <p role="alert">{copy("provider-model-settings.thisServerDoesNotReportThe_3240be")}</p> : null}
     {ready && models.isLoading ? <SettingsLoading label={copy("provider-model-settings.loadingModels_cc8b46")} /> : null}
     {ready && models.isFetching && models.data ? <p role="status">{copy("provider-model-settings.refreshingModels_833352")}</p> : null}
-    <ModelReadProblem error={models.error} busy={models.isFetching || !active || !ready} retry={models.refetch} label={copy("provider-model-settings.modelSearchReadFailure_3f5169")} />
+    <Failure failure={models.error?.failure} />
     {ready && models.data && (models.error || inventory.error) ? <p role="status">{copy("provider-model-settings.refreshFailedShowingTheLastSuccessfully_df6f1e")}</p> : null}
     {emptyFirstPage ? <SettingsEmpty title={copy("provider-model-settings.noModelsYet_c7a9aa")}><p>{copy("provider-model-settings.addModelsManuallyUsingNewModel_c0e8e6")}</p>
       {knownZeroAccounts ? <div className="models-account-guidance"><p>{copy("provider-model-settings.youCanAddModelsWithoutAn_ffd4ea")}</p><p>{copy("provider-model-settings.connectAnAccountOnlyForAutomatic_050225")}</p></div> : null}
-    </SettingsEmpty> : hasEmptyResults ? <p className="models-empty-message">{noEnabledProviders ? copy("provider-model-settings.noApiProvidersAreEnabledTurn_662508") : page ? copy("provider-model-settings.noModelsOnThisPage_3388d1") : copy("provider-model-settings.noModelsMatchThisSearch_217f95")}</p> : null}
-    {ready && [...grouped.entries()].map(([providerID, entries]) => <section className="models-provider-group" key={providerID} aria-label={copy("provider-model-settings.modelsFrom_4b8ec8", { v0: groupName(providerID) })}>
-      <h3>{groupName(providerID)}</h3>
-      <div className="models-rows">{entries.map((model) => {
+    </SettingsEmpty> : hasEmptyResults ? <p className="models-empty-message">{noEnabledProviders ? copy("provider-model-settings.noApiProvidersAreEnabledTurn_662508") : copy("provider-model-settings.noModelsMatchThisSearch_217f95")}</p> : null}
+    <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={models} root={root} active={active && ready}>{payload => {
+      const groups = new Map<string, typeof payload>();
+      for (const row of payload) {
+        const data = document(row.model), id = text(data.provider_id) || `subscription:${text(data.subscription_service)}`;
+        groups.set(id, [...(groups.get(id) ?? []), row]);
+      }
+      return [...groups.entries()].map(([id, entries]) => {
+        const name = id.startsWith("subscription:") ? subscriptionServiceNames[subscriptionService(id.slice(13))!] ?? copy("provider-model-settings.extra.fdfda19280ec") : entries[0].providerName;
+        return <section className="models-provider-group" key={id} aria-label={copy("provider-model-settings.modelsFrom_4b8ec8", { v0: name })}><h3>{name}</h3><div className="models-rows">{entries.map(({ model }) => {
         const data = document(model);
         return <article className="models-row" key={model.id}>
           <div className="models-row-details">
@@ -216,11 +221,12 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
             <div className="models-identifiers"><p><LocalizedText id="provider-model-settings.nativeId_3dd1ba" components={{ s0: <>{text(data.native_id) || copy("provider-model-settings.extra.ca1844969742")}</> }} /></p><p><LocalizedText id="provider-model-settings.cliAlias_275567" components={{ s0: <>{text(data.alias) || copy("provider-model-settings.extra.dc937b598926")}</> }} /></p></div>
             <p><LocalizedText id="provider-model-settings.configuredHarnesses_94210e" components={{ s0: <>{items(data.harnesses).map(text).join(", ") || copy("provider-model-settings.extra.dc937b598926")}</> }} /></p>
           </div>
-          <div className="models-row-actions"><button type="button" disabled={!supportsResourceSchema(model) || document(model).retired === true} onClick={() => editModel(model)}>{copy("provider-model-settings.editModel_1733ca")}</button><button type="button" disabled={!supportsResourceSchema(model) || document(model).retired === true} onClick={() => priceModel(model)}>{copy("provider-model-settings.tokenPricing_56b24f")}</button></div>
+          <div className="models-row-actions"><button type="button" disabled={Boolean(models.error) || !supportsResourceSchema(model) || document(model).retired === true} onClick={() => editModel(model)}>{copy("provider-model-settings.editModel_1733ca")}</button><button type="button" disabled={Boolean(models.error) || !supportsResourceSchema(model) || document(model).retired === true} onClick={() => priceModel(model)}>{copy("provider-model-settings.tokenPricing_56b24f")}</button></div>
         </article>;
-      })}</div>
-    </section>)}
-    {ready && !hidePagination ? <nav className="models-pages" aria-label={copy("provider-model-settings.modelPages_507678")}><button type="button" disabled={!page || models.isFetching} onClick={() => changeState({ query, page: "" })}>{copy("provider-model-settings.firstPage_0bdbb7")}</button><More available={Boolean(models.data?.nextPageToken)} busy={models.isFetching} load={() => changeState({ query, page: models.data!.nextPageToken })} /></nav> : null}
+        })}</div></section>;
+      });
+    }}</ScrollPayloadWindow>
+    <ScrollContinuation query={models} root={root} active={active && ready} label={copy("provider-model-settings.modelPages_507678")} />
     <p className="models-footnote">{copy("provider-model-settings.modelChoicesRetainIndependentSubscriptionService_a2c413")}</p>
     <NativeModelSettings active={active} createModel={createModel} />
   </section>;

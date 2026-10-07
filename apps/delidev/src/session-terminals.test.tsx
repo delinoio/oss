@@ -20,7 +20,7 @@ it("preserves split multibyte bytes and explicitly resets decoding after an outp
 
 it("retries the exact creation request and reattaches without another shell", async () => {
   const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
-  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running", machine_id: newRequestId(), shell: "/bin/sh", cwd: "/fixture" }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running", machine_id: newRequestId(), shell: "/bin/sh", cwd: "/fixture" }) });
   const createTerminal = vi.fn(async (_request: unknown) => ({ terminal }));
   createTerminal.mockRejectedValueOnce(new ConnectError("acknowledgment lost", Code.Unavailable));
   const calls: { epoch: string; afterSequence: bigint }[] = [];
@@ -56,7 +56,7 @@ it("retries the exact creation request and reattaches without another shell", as
 
 it("focuses the attached terminal input and sends exact UTF-8 and native resize controls", async () => {
   const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
-  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running", machine_id: newRequestId() }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running", machine_id: newRequestId() }) });
   const controlTerminal = vi.fn(async (_request: unknown) => ({ terminal }));
   let release = () => {};
   const held = new Promise<void>((resolve) => { release = resolve; });
@@ -95,8 +95,8 @@ it("focuses the attached terminal input and sends exact UTF-8 and native resize 
 
 it("attaches to the accepted creation beyond the first full history page", async () => {
   const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
-  const history = Array.from({ length: 50 }, () => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "closed", cleanup_verified: true }) }));
-  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running" }) });
+  const history = Array.from({ length: 50 }, () => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "closed", cleanup_verified: true }) }));
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running" }) });
   const createTerminal = vi.fn(() => ({ terminal }));
   const controlTerminal = vi.fn((_request: unknown) => ({ terminal }));
   const watched: string[] = [];
@@ -182,7 +182,7 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
 
 it.each([TerminalAction.INPUT, TerminalAction.RESIZE])("restores input focus after a pending terminal control %s", async (action) => {
   const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
-  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running" }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, schemaVersion: 1, revision: 4n, documentJson: encode({ state: "running" }) });
   let acknowledge = () => {};
   const pending = new Promise<void>((resolve) => { acknowledge = resolve; });
   const controlTerminal = vi.fn(async () => { await pending; return { terminal }; });
@@ -220,4 +220,36 @@ it.each([TerminalAction.INPUT, TerminalAction.RESIZE])("restores input focus aft
   } finally {
     acknowledge(); view.unmount(); releaseStream(); client.clear();
   }
+});
+
+it("preserves the explicitly attached terminal and its draft after its history payload is evicted", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, revision: 1n, documentJson: encode({ archive: "active" }) });
+  const history = Array.from({ length: 4 }, () => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, documentJson: encode({ state: "running" }) }));
+  const watch = vi.fn();
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: request => {
+      const index = Number(request.filter?.pageToken || 0);
+      return { resources: [history[index]], nextPageToken: index < 3 ? String(index + 1) : "" };
+    } });
+    router.service(TerminalService, { watchTerminalOutput: async function* (request, context) {
+      watch(request);
+      yield { epoch: newRequestId(), sequence: 1n, data: new TextEncoder().encode("Original attached output"), terminal: history[0] };
+      await new Promise<void>(resolve => context.signal.addEventListener("abort", () => resolve(), { once: true }));
+    } });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionTerminals session={session} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+  await screen.findByText("Original attached output");
+  const input = screen.getByRole("textbox", { name: "Terminal input" });
+  fireEvent.change(input, { target: { value: "Retained terminal draft" } });
+  for (let index = 2; index <= 4; index++) {
+    fireEvent.click(screen.getByRole("button", { name: "Load more Terminal history pages" }));
+    await screen.findByRole("button", { name: new RegExp(`Terminal ${index}`) });
+  }
+  expect(screen.queryByRole("button", { name: /Terminal 1/ })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Terminal input" })).toBe(input);
+  expect(input).toHaveProperty("value", "Retained terminal draft");
+  expect(watch).toHaveBeenCalledTimes(1);
 });

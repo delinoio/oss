@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { createClient } from "@connectrpc/connect";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
   ConfigurationService,
@@ -19,6 +19,9 @@ import {
   type NativeSubscriptionDiagnostic,
   type Resource,
 } from "@delinoio/delidev-api-client";
+import { ScrollPicker, type ScrollPickerOption } from "./scroll-picker";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
+import { type ScrollContinuationQuery } from "./scroll-continuation";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import {
   document,
@@ -161,6 +164,10 @@ export function claudeLoginURL(raw: string): boolean {
     return false;
   }
 }
+function eligibleRunner(r: Resource): boolean {
+  const d = document(r), installations = items(d.installations).map(object);
+  return r.kind === EntityKind.MACHINE && isEntityId(r.id) && r.revision > 0n && d.disabled !== true && items(d.worker_capabilities).includes("native-claude-subscriptions-v1") && installations.filter(i => i.harness === "claude-code").length === 1 && installations.some(i => i.harness === "claude-code" && i.version === "2.1.236" && i.state === "detected" && i.protocol_verified === true && object(i.protocol).state === "verified" && !i.problem && !object(i.protocol).problem);
+}
 export function useClaudeSubscriptionLogin(
   active: boolean,
   changed: () => void,
@@ -181,7 +188,7 @@ export function useClaudeSubscriptionLogin(
     [view, setView] = useState<View>(),
     [hidden, setHidden] = useState(false),
     approvalInput = useRef<HTMLInputElement>(null);
-  const [machinePage, setMachinePage] = useState("");
+
   const live = (p: Pending) =>
     pending.current === p && !p.disposed && !opening?.disposed;
   const update = (p: Pending, v: Partial<View>) => {
@@ -231,51 +238,20 @@ export function useClaudeSubscriptionLogin(
       setHidden(false);
     }
   }, [active]);
-  const machines = useQuery(
-    ResourceQuery.listResources,
-    {
-      filter: {
-        kind: EntityKind.MACHINE,
-        pageSize: 50,
-        pageToken: machinePage,
-      },
-    },
-    { enabled: active && view?.step === Step.Runner },
-  );
-  const runners = (machines.data?.resources ?? []).filter((r) => {
-    const d = document(r),
-      installations = items(d.installations).map(object);
-    return (
-      r.kind === EntityKind.MACHINE &&
-      isEntityId(r.id) &&
-      d.disabled !== true &&
-      items(d.worker_capabilities).includes("native-claude-subscriptions-v1") &&
-      installations.filter((i) => i.harness === "claude-code").length === 1 &&
-      installations.some(
-        (i) =>
-          i.harness === "claude-code" &&
-          i.version === "2.1.236" &&
-          i.state === "detected" &&
-          i.protocol_verified === true &&
-          object(i.protocol).state === "verified" &&
-          !i.problem &&
-          !object(i.protocol).problem,
-      )
-    );
-  });
-  const ownerRunner = useQuery(
-    ResourceQuery.getResource,
-    { kind: EntityKind.MACHINE, id: view?.machine ?? "" },
-    { enabled: active && Boolean(view?.machine) && view?.step !== Step.Runner },
-  );
-  const runnerResources =
-    ownerRunner.data?.resource?.kind === EntityKind.MACHINE &&
-    ownerRunner.data.resource.id === view?.machine
-      ? [
-          ...runners.filter((r) => r.id !== view.machine),
-          ownerRunner.data.resource,
-        ]
-      : runners;
+  const machineRequest = useCallback((token: string) => ({ filter: { kind: EntityKind.MACHINE, pageSize: 50, pageToken: token } }), []);
+  const machineProject = useCallback((response: { resources: Resource[]; nextPageToken: string }) => {
+    if (response.resources.length > 50 || new Set(response.resources.map(row => row.id)).size !== response.resources.length || response.resources.some(row => row.kind !== EntityKind.MACHINE || !isEntityId(row.id) || row.revision < 1n)) throw new ConnectError("The Runner page is unavailable.", Code.DataLoss);
+    return { rows: response.resources.map(row => ({ id: row.id, revision: row.revision, label: resourceName(row), eligible: eligibleRunner(row) })), nextPageToken: response.nextPageToken };
+  }, []);
+  const machineReader = useConnectPaginationReader(ResourceQuery.listResources, machineRequest, machineProject);
+  const machinesActive = active && !hidden && view?.step === Step.Runner && !view.busy;
+  const machines = usePaginationChain(`claude-runners:${pending.current?.opening ?? ""}`, machinesActive, machineReader);
+  usePaginationRefresh(ResourceQuery.listResources, machineRequest(""), machinesActive, machines.refresh);
+  // Only the exact selected machine owns a full record. Scrolling retains
+  // eligibility/name projections and never substitutes a page row for it.
+  const ownerRunner = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: view?.machine ?? "" }, { enabled: active && Boolean(view?.machine), gcTime: 0 });
+  const selectedRunner = ownerRunner.data?.resource?.kind === EntityKind.MACHINE && ownerRunner.data.resource.id === view?.machine && ownerRunner.data.resource.revision > 0n ? ownerRunner.data.resource : undefined;
+  const runnerOptions = machines.rows.filter(row => row.eligible).map(({ id, label }) => ({ id, label }));
   const fresh = async (p: Pending) => {
     const result = await clients.resource.getResource({
       kind: EntityKind.ACCOUNT,
@@ -336,7 +312,6 @@ export function useClaudeSubscriptionLogin(
     const machine = initial
       ? text(object(document(initial).subscription).owner_machine_id)
       : "";
-    setMachinePage("");
     const p: Pending = {
       opening: newRequestId(),
       machine,
@@ -552,7 +527,7 @@ export function useClaudeSubscriptionLogin(
   }, [active, Boolean(view), clients, native]);
   const start = () => {
     const p = pending.current;
-    if (p?.start && view?.step === Step.Runner)
+    if (p?.start && view?.step === Step.Runner && selectedRunner && eligibleRunner(selectedRunner) && !ownerRunner.error && !ownerRunner.isFetching && !machines.error)
       void run(p, p.start, "claude-subscription.requestUnconfirmed", true);
   };
   const cancel = () => {
@@ -701,23 +676,13 @@ export function useClaudeSubscriptionLogin(
     <ClaudeSubscriptionOnboarding
       view={view}
       setApprovalInput={(input) => { approvalInput.current = input; }}
-      runners={runnerResources}
-      loading={machines.isFetching}
-      readFailed={Boolean(machines.error)}
-      moreRunners={
-        machines.data?.nextPageToken && !p?.fixedRunner
-          ? () => {
-              setMachinePage(machines.data!.nextPageToken);
-              if (p) {
-                p.machine = "";
-                update(p, { machine: "" });
-              }
-            }
-          : undefined
-      }
-      refreshRunners={() => {
-        void machines.refetch();
-      }}
+      runners={runnerOptions}
+      selectedRunner={selectedRunner}
+      runnerQuery={machines}
+      canStart={Boolean(selectedRunner && eligibleRunner(selectedRunner) && !ownerRunner.error && !ownerRunner.isFetching)}
+      loading={Boolean(machines.loading) || ownerRunner.isFetching}
+      readFailed={Boolean(machines.error || ownerRunner.error)}
+      refreshRunners={() => { machines.refreshExplicit(); if (view?.machine) void ownerRunner.refetch(); }}
       fixedRunner={Boolean(p?.fixedRunner)}
       active={active}
       select={(machine) => {
@@ -765,11 +730,13 @@ export function useClaudeSubscriptionLogin(
 interface OnboardingProps {
   view: View;
   setApprovalInput: (input: HTMLInputElement | null) => void;
-  runners: Resource[];
+  runners: ScrollPickerOption[];
+  selectedRunner?: Resource;
+  runnerQuery: ScrollContinuationQuery;
+  canStart: boolean;
   loading: boolean;
   readFailed: boolean;
   fixedRunner: boolean;
-  moreRunners?: () => void;
   refreshRunners: () => void;
   active: boolean;
   select: (id: string) => void;
@@ -807,10 +774,10 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
     [SubscriptionLoginState.RECOVERY_REQUIRED]: "claude-subscription.recovery",
     [SubscriptionLoginState.FAILED]: "claude-subscription.failed",
   };
-  const runner = p.runners.find((r) => r.id === v.machine),
+  const runner = p.selectedRunner,
     runnerName = runner
       ? resourceName(runner)
-      : copy("claude-subscription.originalRunner");
+      : p.runners.find(row => row.id === v.machine)?.label ?? copy("claude-subscription.originalRunner");
   const d = v.diagnostic,
     safeDiagnostic =
       d &&
@@ -850,25 +817,7 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
             if (!busy && v.machine) p.start();
           }}
         >
-          <label htmlFor={`${id}-runner`}>
-            {copy("claude-subscription.runner")}
-          </label>
-          <select
-            id={`${id}-runner`}
-            value={v.machine}
-            disabled={busy || p.fixedRunner || p.loading}
-            onChange={(e) => p.select(e.target.value)}
-          >
-            <option value="">{copy("claude-subscription.selectRunner")}</option>
-            {p.runners.map((r) => (
-              <option key={r.id} value={r.id}>
-                {resourceName(r)}
-              </option>
-            ))}
-            {p.fixedRunner && !runner ? (
-              <option value={v.machine}>{runnerName}</option>
-            ) : null}
-          </select>
+          <ScrollPicker label={copy("claude-subscription.runner")} value={v.machine} selectedLabel={v.machine ? runnerName : undefined} placeholder={copy("claude-subscription.selectRunner")} disabled={busy || p.fixedRunner} active={p.active && visible && v.step === Step.Runner} query={p.runnerQuery} options={p.runners} change={p.select} />
           <p>{copy("claude-subscription.runnerHelp")}</p>
           {p.readFailed || (!p.loading && !p.runners.length) ? (
             <p role="alert">{copy("claude-subscription.noRunner")}</p>
@@ -882,19 +831,10 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
               {copy("claude-subscription.refreshRunners")}
             </button>
           ) : null}
-          {p.moreRunners ? (
-            <button
-              type="button"
-              disabled={busy || p.loading}
-              onClick={p.moreRunners}
-            >
-              {copy("claude-subscription.moreRunners")}
-            </button>
-          ) : null}
           <SettingsTaskActions form={id}>
             <button
               className="primary"
-              disabled={busy || !runner || p.readFailed}
+              disabled={busy || !p.canStart || p.readFailed}
             >
               {copy("claude-subscription.start")}
             </button>

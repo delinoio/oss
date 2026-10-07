@@ -6,11 +6,11 @@ import { EntityKind, ResourceQuery, newRequestId, supportsResourceSchema, type R
 import { document, text } from "./documents";
 import { ProductError } from "./localization";
 
-export interface ProjectRepository { id: string; name: string; supported: boolean }
+export interface ProjectRepository { id: string; revision: bigint; name: string; supported: boolean }
 const PROJECT_REPOSITORY_NAME_CONCURRENCY = 8;
 function projection(row: Resource): ProjectRepository {
   const name = text(document(row).name);
-  return { id: row.id, name, supported: row.kind === EntityKind.REPOSITORY && supportsResourceSchema(row) && Boolean(name.trim()) && !name.includes("\0") && new TextEncoder().encode(name).byteLength <= 256 };
+  return { id: row.id, revision: row.revision, name, supported: row.kind === EntityKind.REPOSITORY && supportsResourceSchema(row) && Boolean(name.trim()) && !name.includes("\0") && new TextEncoder().encode(name).byteLength <= 256 };
 }
 interface Catalog { rows: ProjectRepository[]; loading: boolean; complete: boolean; error?: unknown }
 

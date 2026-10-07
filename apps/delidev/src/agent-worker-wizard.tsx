@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { ApiProtocol, ProviderInventoryCapability, AccountTypeFilter, KnownSubscriptionModelCatalogSource, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SystemCapability, SystemQuery, newRequestId, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { FailureCode, ApiProtocol, ProviderInventoryCapability, AccountTypeFilter, KnownSubscriptionModelCatalogSource, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SystemCapability, SystemQuery, newRequestId, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationFields, Harness, Routing, newConfiguration } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { NativeModelSettings } from "./native-model-settings";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
+import { useWizardAccounts, useWizardModels } from "./wizard-pagination";
+import { useProviderPages } from "./model-pagination";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { ScrollPicker } from "./scroll-picker";
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { revealAgentInvalidControl } from "./agent-configuration";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import { copy, useLocale } from "./localization";
@@ -40,13 +46,9 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const [data, setData] = useState<Document>(() => initial ? document(initial) : newConfiguration(EntityKind.AGENT));
   const [step, setStep] = useState(Step.Harness);
   const [source, setSource] = useState<Source>();
-  const [providerPage, setProviderPage] = useState("");
-  const [accountPage, setAccountPage] = useState("");
-  const [modelPage, setModelPage] = useState("");
   const [knownAccounts, setKnownAccounts] = useState<Record<string, Resource | undefined>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [model, setModel] = useState<Resource>();
-  const [savedModels, setSavedModels] = useState<{ key: string; rows: Record<string, Resource> }>({ key: "", rows: {} });
   const [input, setInput] = useState("");
   const [popup, setPopup] = useState(false);
   const [highlight, setHighlight] = useState(-1);
@@ -58,17 +60,19 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const heading = useRef<HTMLHeadingElement>(null);
   const form = useRef<HTMLFormElement>(null);
   const suggestionList = useRef<HTMLUListElement>(null);
+  const accountsRoot = useRef<HTMLDivElement>(null);
+  const accountScrollRoot = useScrollRoot(accountsRoot);
   const listID = useId();
   const notifications = useNotifications();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const supported = status.data?.capabilities.includes(SystemCapability.AGENT_WORKER_WIZARD_V1) === true;
   const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.AGENT, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
   const originalModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: text(document(initial).model_id) }, { enabled: active && Boolean(initial && document(initial).model_id) });
-  const providers = useQuery(ProviderQuery.listProviderInventory, { enabledOnly: true, pageSize: 50, pageToken: providerPage }, { enabled: active && supported });
+  const providers = useProviderPages("", active && supported && step === Step.Accounts, true);
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: source?.kind === SourceKind.Api ? source.id : "" }, { enabled: active && supported && source?.kind === SourceKind.Api });
-  const accountRows = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: accountPage }, providerId: source?.kind === SourceKind.Api ? source.id : "", accountType: source?.kind === SourceKind.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION, subscriptionService: wireService(source), apiProtocol: source?.kind === SourceKind.Api && providers.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) ? harnessAPIProtocol(text(data.harness)) : ApiProtocol.UNSPECIFIED }, { enabled: active && supported && Boolean(source) });
+  const accountRows = useWizardAccounts(source, source?.kind === SourceKind.Api && providers.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) ? harnessAPIProtocol(text(data.harness)) : ApiProtocol.UNSPECIFIED, active && supported && Boolean(source) && step === Step.Accounts);
   const query = useDeferredValue(input);
-  const models = useQuery(ProviderQuery.searchModels, { query, providerId: source?.kind === SourceKind.Api ? source.id : "", subscriptionService: wireService(source), includeHidden: true, enabledProvidersOnly: true, pageSize: 50, pageToken: modelPage }, { enabled: active && supported && Boolean(source) && step === Step.Model, placeholderData: previous => previous });
+  const models = useWizardModels(query, source, active && supported && Boolean(source) && step === Step.Model);
   const knownSupported = status.data?.capabilities.includes(SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1) === true;
   const known = useQuery(ProviderQuery.listKnownSubscriptionModels, { subscriptionService: wireService(source) }, { enabled: active && supported && knownSupported && source?.kind === SourceKind.Subscription && step === Step.Model });
   const knownValid = knownSupported && source?.kind === SourceKind.Subscription && known.data?.subscriptionService === wireService(source) && known.data.models.length <= 200 && /^sha256:[a-f0-9]{64}$/.test(known.data.catalogVersion) && validCatalogDate(known.data.updatedAt) && [KnownSubscriptionModelCatalogSource.BUNDLED, KnownSubscriptionModelCatalogSource.CACHE, KnownSubscriptionModelCatalogSource.ONLINE].includes(known.data.source) && known.data.models.every(row => row.nativeId && row.displayName) && new Set(known.data.models.map(row => row.nativeId)).size === known.data.models.length;
@@ -76,12 +80,15 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const accountPageValid = accountRows.data?.resources.every(row => sameSource(row, source));
   const accountChoices = accountPageValid ? accountRows.data!.resources.filter(row => showAccountChoice(row) && accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness))) : [];
   const modelPageValid = models.data?.models.every(row => supportsResourceSchema(row) && sourceKey(modelSource(row)) === sourceKey(source));
-  const savedModelKey = `${sourceKey(source)}\u0000${query}`;
-  const cachedSavedModels = savedModels.key === savedModelKey ? savedModels.rows : {};
   const links = items(data.accounts).map(object);
   const ids = links.map(link => text(link.id));
   const remember = useCallback((id: string, row?: Resource) => setKnownAccounts(previous => previous[id] === row ? previous : { ...previous, [id]: row }), []);
-  useEffect(() => { if (accountPageValid) for (const row of accountRows.data?.resources ?? []) remember(row.id, row); }, [accountRows.data, accountPageValid, remember]);
+  const selectedIDs = JSON.stringify(ids);
+  useEffect(() => {
+    const selected = new Set<string>(JSON.parse(selectedIDs));
+    setKnownAccounts(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => selected.has(id))));
+    if (accountPageValid) for (const row of accountRows.data?.resources ?? []) if (selected.has(row.id)) remember(row.id, row);
+  }, [accountRows.data, accountPageValid, selectedIDs, remember]);
   useEffect(() => {
     if (initialized.current || !originalModel.data?.resource) return;
     initialized.current = true;
@@ -93,9 +100,10 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
     if (!active) return;
     if (focusField) {
       const control = focusField === "name" ? form.current?.querySelector<HTMLElement>(".agent-core input") : form.current?.querySelector<HTMLElement>(`[data-wizard-field="${focusField}"]`);
+      const focusControl = control?.matches("input,button,select,textarea") ? control : control?.querySelector<HTMLElement>('[role="combobox"]');
       const disclosure = control?.closest<HTMLDetailsElement>("details");
       if (disclosure) disclosure.open = true;
-      control?.focus();
+      focusControl?.focus();
     } else heading.current?.focus();
   }, [step, focusField, focusAttempt, active]);
   const mutation = useRetainedMutation(`agent-worker-wizard:${initial?.id ?? "new"}`, ConfigurationQuery.saveAgentWorker, (result, request) => {
@@ -103,12 +111,12 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   }, (result, request) => result.requestId === request.mutation?.requestId && result.resource?.kind === EntityKind.AGENT && supportsResourceSchema(result.resource) && (!initial || result.resource.id === initial.id));
   const discovery = useRetainedMutation(`agent-worker-wizard:discovery:${sourceKey(source)}`, ProviderQuery.discoverModels, result => {
     if (result.account) remember(result.account.id, result.account);
-    setModelPage(""); void models.refetch(); void accountRows.refetch();
+    void models.refetch(); void accountRows.refetch();
   }, (result, request) => result.requestId === request.mutation?.requestId && result.account?.id === request.mutation?.id);
   const blocked = nativePending || mutation.busy || mutation.uncertain || discovery.busy || discovery.uncertain;
   const stale = Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const change = (value: Document) => { if (encode(value).byteLength > 1 << 20) { setProblem(copy("agent-worker-wizard.configurationTooLarge")); return false; } setData(value); setProblem(""); return true; };
-  const clearModel = () => { setModel(undefined); setInput(""); setModelPage(""); setSavedModels({ key: "", rows: {} }); setPopup(false); setHighlight(-1); };
+  const clearModel = () => { setModel(undefined); setInput(""); setPopup(false); setHighlight(-1); };
   const chooseHarness = (harness: Harness) => {
     if (blocked || !active || !supported || step !== Step.Harness) return false;
     if (harness === data.harness) return true;
@@ -122,7 +130,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   };
   const chooseSource = (value: string) => {
     initialized.current = true;
-    setSource(fromKey(value)); setAccountPage(""); clearModel();
+    setSource(fromKey(value)); clearModel();
     change({ ...data, accounts: [], model_id: "" });
     setProblem(copy("agent-worker-wizard.selectAccountsAndModel"));
   };
@@ -153,25 +161,9 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
     if (ids.some(id => !knownAccounts[id] || !sameSource(knownAccounts[id]!, source))) fail(Step.Accounts, copy("agent-worker-wizard.selectedAccountChanged"), "source");
     else if (model && (currentModel.error || currentModel.data?.resource && currentModel.data.resource.revision !== model.revision)) fail(Step.Model, copy("agent-worker-wizard.selectedModelUnavailable"), "model");
   }, [active, mutation.error, mutation.uncertain, step, data.accounts, knownAccounts, source, model, currentModel.data, currentModel.error]);
-  const pick = (row?: ModelSuggestion) => { setModelPage(""); setSavedModels({ key: "", rows: {} }); if (row?.resource && row.resource.id === model?.id) void currentModel.refetch(); setModel(row?.resource); if (row) setInput(row.nativeId); setPopup(false); setHighlight(-1); setProblem(""); };
+  const pick = (row?: ModelSuggestion) => { if (row?.resource && row.resource.id === model?.id) void currentModel.refetch(); setModel(row?.resource); if (row) setInput(row.nativeId); setPopup(false); setHighlight(-1); setProblem(""); };
   const pageSuggestions: ModelSuggestion[] = modelPageValid ? models.data!.models.map(resource => ({ nativeId: text(document(resource).native_id), name: resourceName(resource), kind: SuggestionKind.Saved, resource })) : [];
-  useEffect(() => {
-    if (!modelPageValid || !models.data || models.isFetching || models.error) return;
-    setSavedModels(previous => {
-      const current = previous.key === savedModelKey ? previous.rows : {};
-      const next = { ...current };
-      let changed = false;
-      for (const row of models.data.models) {
-        const nativeId = text(document(row).native_id);
-        const prior = current[nativeId];
-        if (!nativeId || prior && prior.id === row.id && prior.revision === row.revision) continue;
-        next[nativeId] = row;
-        changed = true;
-      }
-      return changed ? { key: savedModelKey, rows: next } : previous;
-    });
-  }, [modelPageValid, models.data, models.error, models.isFetching, savedModelKey]);
-  const savedIDs = new Set([...Object.keys(cachedSavedModels), ...pageSuggestions.map(row => row.nativeId)]);
+  const savedIDs = new Set(models.rows.map(row => row.nativeId));
   const suggestions: ModelSuggestion[] = [...pageSuggestions];
   const search = query.trim().toLocaleLowerCase();
   // Known candidates are advisory only. Wait for the terminal saved-model page so an
@@ -182,10 +174,14 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   }
   const catalogDate = knownValid ? new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${known.data!.updatedAt}T00:00:00Z`)) : "";
   useLayoutEffect(() => {
-    if (active && popup && highlight >= 0) (suggestionList.current?.children.item(highlight) as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
-  }, [active, popup, highlight, models.data, known.data]);
+    if (active && popup && highlight >= 0) {
+      const list = suggestionList.current;
+      const option = list?.ownerDocument.getElementById(`${listID}-${highlight}`);
+      if (option && list?.contains(option)) option.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [active, popup, highlight, listID, models.data, known.data]);
   const refreshAccount = selectedRows.find(row => Boolean(document(row).connection) && document(row).enabled !== false && !document(row).removal);
-  const providerEntries = providers.data?.entries.filter(entry => entry.enabled && entry.providerId) ?? [];
+  const providerEntries = providers.rows.filter(entry => entry.enabled && entry.providerId);
   const advance = () => { if (validate(step)) { setStep(step + 1); setFocusField(""); setProblem(""); } };
   return <form ref={form} className="agent-configuration worker-wizard" noValidate onSubmit={event => {
     event.preventDefault(); if (blocked || !active || !supported || step === Step.Harness) return;
@@ -209,19 +205,19 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
       <section hidden={step !== Step.Accounts} aria-label={copy("agent-worker-wizard.chooseAccounts")}>
         <p>{harnessNames[data.harness as Harness]} <button type="button" onClick={() => { setStep(Step.Harness); setFocusField(""); }}>{copy("agent-worker-wizard.changeHarness")}</button></p>
         <h4>{copy("agent-worker-wizard.chooseAccounts")}</h4><p>{copy("agent-worker-wizard.selectAtLeastOneAccount")}</p>
-        <label>{copy("agent-worker-wizard.accountSource")}<select data-wizard-field="source" value={sourceKey(source)} onChange={event => chooseSource(event.target.value)}><option value="">{copy("agent-worker-wizard.selectSource")}</option>{Object.values(SubscriptionServiceId).filter(value => subscriptionServiceHarnesses[value] === data.harness).map(value => <option key={value} value={`${SourceKind.Subscription}:${value}`}>{subscriptionServiceNames[value]} {copy("agent-worker-wizard.subscription")}</option>)}{source?.kind === SourceKind.Api && !providerEntries.some(entry => entry.providerId === source.id) ? <option value={sourceKey(source)}>{sourceLabel}{document(selectedProvider.data?.resource).enabled === false ? copy("agent-worker-wizard.offSuffix") : copy("agent-worker-wizard.retainedSourceSuffix")}</option> : null}{providerEntries.map(entry => <option key={entry.providerId} value={`${SourceKind.Api}:${entry.providerId}`}>{entry.displayName || resourceName(entry.provider)}</option>)}</select></label>
-        <Problem error={providers.error || selectedProvider.error} />
+        <div data-wizard-field="source"><ScrollPicker label={copy("agent-worker-wizard.accountSource")} value={sourceKey(source)} selectedLabel={sourceLabel} change={chooseSource} options={[{ id: "", label: copy("agent-worker-wizard.selectSource") }, ...Object.values(SubscriptionServiceId).filter(value => subscriptionServiceHarnesses[value] === data.harness).map(value => ({ id: `${SourceKind.Subscription}:${value}`, label: `${subscriptionServiceNames[value]} ${copy("agent-worker-wizard.subscription")}` })), ...providerEntries.map(entry => ({ id: `${SourceKind.Api}:${entry.providerId}`, label: entry.displayName }))]} query={providers} active={active && step === Step.Accounts} disabled={blocked || !supported} /></div>
+        <Failure failure={providers.error?.failure} /><Problem error={selectedProvider.error} />
         {providers.isLoading ? <p role="status">{copy("agent-worker-wizard.loadingApiSources")}</p> : null}
-        <nav aria-label={copy("agent-worker-wizard.apiSourcePages")}><button type="button" disabled={!providerPage || providers.isFetching} onClick={() => setProviderPage("")}>{copy("agent-worker-wizard.firstSourcePage")}</button><button type="button" disabled={!providers.data?.nextPageToken || providers.isFetching} onClick={() => setProviderPage(providers.data!.nextPageToken)}>{copy("agent-worker-wizard.nextSourcePage")}</button></nav>
-        <Problem error={accountRows.error} />
+
+        <Failure failure={accountRows.error?.failure} />
         {source && accountRows.isLoading ? <p role="status">{copy("agent-worker-wizard.loadingAccounts")}</p> : null}
         {accountRows.error && accountRows.data ? <p role="status">{copy("agent-worker-wizard.refreshFailedStaleAccounts")}</p> : null}
-        {accountRows.data && !accountPageValid ? <p role="alert">{copy("agent-worker-wizard.invalidAccountPage")}</p> : null}
-        <div className="worker-account-list">{accountChoices.map(row => { const value = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" checked={ids.includes(row.id)} onChange={event => change({ ...data, accounts: event.target.checked ? [...links, { id: row.id, weight: 1 }] : links.filter(link => link.id !== row.id) })} /><span><strong>{resourceName(row)}</strong><small>{copy("agent-worker-wizard.connectionHealth", { v0: value.connection ? copy("agent-worker-wizard.connected") : copy("agent-worker-wizard.disconnected"), v1: text(value.health) || copy("agent-worker-wizard.unavailable") })}</small><small>{copy("agent-worker-wizard.executionEligibility", { v0: value.enabled === false ? copy("agent-worker-wizard.disabled") : value.removal ? copy("agent-worker-wizard.removalPending") : copy("agent-worker-wizard.checkedAtExecution") })}</small></span></label>; })}
+        {(accountRows.data && !accountPageValid) || accountRows.error?.failure.code === FailureCode.Internal ? <p role="alert">{copy("agent-worker-wizard.invalidAccountPage")}</p> : null}
+        <div ref={accountsRoot} className="worker-account-list"><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={accountRows} root={accountScrollRoot} active={active && step === Step.Accounts && !blocked}>{payload => payload.filter(row => showAccountChoice(row) && accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness))).map(row => { const value = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" checked={ids.includes(row.id)} onChange={event => { if (event.target.checked) remember(row.id, row); change({ ...data, accounts: event.target.checked ? [...links, { id: row.id, weight: 1 }] : links.filter(link => link.id !== row.id) }); }} /><span><strong>{resourceName(row)}</strong><small>{copy("agent-worker-wizard.connectionHealth", { v0: value.connection ? copy("agent-worker-wizard.connected") : copy("agent-worker-wizard.disconnected"), v1: text(value.health) || copy("agent-worker-wizard.unavailable") })}</small><small>{copy("agent-worker-wizard.executionEligibility", { v0: value.enabled === false ? copy("agent-worker-wizard.disabled") : value.removal ? copy("agent-worker-wizard.removalPending") : copy("agent-worker-wizard.checkedAtExecution") })}</small></span></label>; })}</ScrollPayloadWindow><ScrollContinuation query={accountRows} root={accountScrollRoot} active={active && step === Step.Accounts && !blocked} label={copy("agent-worker-wizard.chooseAccounts")} />
           {source && accountPageValid && accountRows.data!.resources.length > 0 && !accountRows.error && !accountRows.isFetching && accountChoices.length === 0 ? <div className="worker-account-empty"><p>{copy("agent-worker-wizard.noAccountsToSelectOnThisPage")}</p><p>{copy("agent-worker-wizard.connectAnAccountThenRefresh")}</p></div> : null}
         </div>
-        {source && accountRows.data?.resources.length === 0 && !accountRows.error ? <p>{accountPage ? copy("agent-worker-wizard.noAccountsOnPage") : copy("agent-worker-wizard.noAccountsForSource")}</p> : null}
-        {source ? <nav aria-label={copy("agent-worker-wizard.accountPages")}><button type="button" disabled={!accountPage || accountRows.isFetching} onClick={() => setAccountPage("")}>{copy("agent-worker-wizard.firstAccountPage")}</button><button type="button" disabled={!accountRows.data?.nextPageToken || accountRows.isFetching} onClick={() => setAccountPage(accountRows.data!.nextPageToken)}>{copy("agent-worker-wizard.nextAccountPage")}</button><button type="button" disabled={accountRows.isFetching} onClick={() => void accountRows.refetch()}>{copy("agent-worker-wizard.refreshAccounts")}</button></nav> : null}
+        {source && accountRows.data?.resources.length === 0 && !accountRows.error ? <p>{copy("agent-worker-wizard.noAccountsForSource")}</p> : null}
+        {source ? <button type="button" disabled={accountRows.isFetching} onClick={accountRows.refreshExplicit}>{copy("agent-worker-wizard.refreshAccounts")}</button> : null}
         <p>{copy("agent-worker-wizard.accountsSelected", { v0: ids.length })}</p><p>{copy("agent-worker-wizard.sameSourceRequired")}</p>
         {ids.map(id => <SelectedAccount key={id} id={id} active={active && supported} refresh={accountRefresh} read={remember} />)}
         <details className="worker-routing"><summary>{copy("agent-worker-wizard.routingOptions")} <small>{text(data.routing) || copy("agent-worker-wizard.serverDefault")} · {links.every(link => link.weight === 1) ? copy("agent-worker-wizard.equalWeights") : copy("agent-worker-wizard.customWeights")}</small></summary>
@@ -232,20 +228,20 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
       <section hidden={step !== Step.Model}>
         <p>{harnessNames[data.harness as Harness]} · {sourceLabel} · {copy("agent-worker-wizard.accountsSelected", { v0: ids.length })}</p>
         <h4>{copy("agent-worker-wizard.chooseModel")}</h4><p>{copy("agent-worker-wizard.searchSavedCatalog")}</p>
-        <div className="worker-model-combobox"><label htmlFor={`${listID}-input`}>{copy("agent-worker-wizard.model")}</label><input id={`${listID}-input`} data-wizard-field="model" role="combobox" aria-autocomplete="list" aria-expanded={popup} aria-controls={listID} aria-activedescendant={popup && highlight >= 0 && highlight < suggestions.length + (input.trim() ? 1 : 0) ? `${listID}-${highlight}` : undefined} value={input} maxLength={256} autoComplete="off" onFocus={() => setPopup(true)} onBlur={() => setPopup(false)} onChange={event => { setInput(event.target.value); setModel(undefined); setModelPage(""); setSavedModels({ key: "", rows: {} }); setPopup(true); setHighlight(-1); setProblem(""); }} onKeyDown={event => {
+        <div className="worker-model-combobox"><label htmlFor={`${listID}-input`}>{copy("agent-worker-wizard.model")}</label><input id={`${listID}-input`} data-wizard-field="model" role="combobox" aria-autocomplete="list" aria-expanded={popup} aria-controls={listID} aria-activedescendant={popup && highlight >= 0 && highlight < suggestions.length + (input.trim() ? 1 : 0) ? `${listID}-${highlight}` : undefined} value={input} maxLength={256} autoComplete="off" onFocus={() => setPopup(true)} onBlur={() => setPopup(false)} onChange={event => { setInput(event.target.value); setModel(undefined); setPopup(true); setHighlight(-1); setProblem(""); }} onKeyDown={event => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setPopup(true); const count = suggestions.length + (input.trim() ? 1 : 0); setHighlight(value => count === 0 ? -1 : event.key === "ArrowDown" ? Math.min(value + 1, count - 1) : value <= 0 ? count - 1 : value - 1); }
           else if (event.key === "Escape" && popup) { event.preventDefault(); event.stopPropagation(); setPopup(false); }
           else if (event.key === "Enter" && popup) { event.preventDefault(); pick(suggestions[highlight]); }
         }} />
-          {popup ? <ul ref={suggestionList} id={listID} role="listbox" aria-label={copy("agent-worker-wizard.modelSuggestions")}>{suggestions.map((row, index) => <li id={`${listID}-${index}`} key={`${row.kind}:${row.resource?.id ?? row.nativeId}`} role="option" aria-selected={highlight >= 0 ? highlight === index : Boolean(row.resource && model?.id === row.resource.id)} onMouseDown={event => event.preventDefault()} onClick={() => pick(row)}><div className="worker-model-heading"><strong>{row.name}</strong><span className="worker-model-origin">{row.kind === SuggestionKind.Known ? copy("agent-worker-wizard.knownModelOrigin") : copy("agent-worker-wizard.savedModelOrigin")}</span></div><small>{row.nativeId}{row.resource && document(row.resource).hidden === true ? copy("agent-worker-wizard.hiddenSuffix") : ""}</small></li>)}{input.trim() ? <li id={`${listID}-${suggestions.length}`} role="option" aria-selected={highlight === suggestions.length} onMouseDown={event => event.preventDefault()} onClick={() => pick()}>{copy("agent-worker-wizard.useExactModelId", { v0: input.trim() })}</li> : null}</ul> : null}
+          {popup ? <ul ref={suggestionList} id={listID} role="listbox" aria-label={copy("agent-worker-wizard.modelSuggestions")}><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={models} root={suggestionList} active={active && popup && !blocked}>{payload => <>{suggestions.filter(row => payload.some(resource => resource.id === row.resource?.id)).map(row => { const index = suggestions.indexOf(row); return <li id={`${listID}-${index}`} key={`${row.kind}:${row.resource?.id ?? row.nativeId}`} role="option" aria-selected={highlight >= 0 ? highlight === index : Boolean(row.resource && model?.id === row.resource.id)} onMouseDown={event => event.preventDefault()} onClick={() => pick(row)}><div className="worker-model-heading"><strong>{row.name}</strong><span className="worker-model-origin">{row.kind === SuggestionKind.Known ? copy("agent-worker-wizard.knownModelOrigin") : copy("agent-worker-wizard.savedModelOrigin")}</span></div><small>{row.nativeId}{row.resource && document(row.resource).hidden === true ? copy("agent-worker-wizard.hiddenSuffix") : ""}</small></li>; })}</>}</ScrollPayloadWindow><ScrollContinuation query={models} root={suggestionList} active={active && popup && !blocked} label={copy("agent-worker-wizard.modelSuggestions")} />{suggestions.filter(row => row.kind === SuggestionKind.Known).map(row => { const index = suggestions.indexOf(row); return <li id={`${listID}-${index}`} key={`${row.kind}:${row.resource?.id ?? row.nativeId}`} role="option" aria-selected={highlight >= 0 ? highlight === index : Boolean(row.resource && model?.id === row.resource.id)} onMouseDown={event => event.preventDefault()} onClick={() => pick(row)}><div className="worker-model-heading"><strong>{row.name}</strong><span className="worker-model-origin">{row.kind === SuggestionKind.Known ? copy("agent-worker-wizard.knownModelOrigin") : copy("agent-worker-wizard.savedModelOrigin")}</span></div><small>{row.nativeId}{row.resource && document(row.resource).hidden === true ? copy("agent-worker-wizard.hiddenSuffix") : ""}</small></li>; })}{input.trim() ? <li id={`${listID}-${suggestions.length}`} role="option" aria-selected={highlight === suggestions.length} onMouseDown={event => event.preventDefault()} onClick={() => pick()}>{copy("agent-worker-wizard.useExactModelId", { v0: input.trim() })}</li> : null}</ul> : null}
         </div>
-        {models.isLoading || known.isLoading ? <p role="status">{copy("agent-worker-wizard.loadingModelCatalog")}</p> : models.isFetching || known.isFetching ? <p role="status">{copy("agent-worker-wizard.refreshingSavedCatalog")}</p> : null}<Problem error={models.error || known.error} />
+        {models.isLoading || known.isLoading ? <p role="status">{copy("agent-worker-wizard.loadingModelCatalog")}</p> : models.isFetching || known.isFetching ? <p role="status">{copy("agent-worker-wizard.refreshingSavedCatalog")}</p> : null}<Failure failure={models.error?.failure} /><Problem error={known.error} />
         {models.data && !modelPageValid ? <p role="alert">{copy("agent-worker-wizard.invalidModelPage")}</p> : null}
-        {models.error || known.error ? <p role="status">{copy("agent-worker-wizard.catalogLookupFailed", { v0: models.data || known.data ? copy("agent-worker-wizard.staleResults") : "" })}</p> : !models.isLoading && !known.isLoading && suggestions.length === 0 ? <p>{modelPage ? copy("agent-worker-wizard.noModelsOnPage") : source?.kind === SourceKind.Subscription ? copy("agent-worker-wizard.noMatchingModels") : copy("agent-worker-wizard.noSavedModels")}</p> : null}
-        <nav aria-label={copy("agent-worker-wizard.modelCatalogPages")}>{modelPage ? <button type="button" disabled={models.isFetching} onClick={() => { setSavedModels({ key: "", rows: {} }); setModelPage(""); }}>{copy("agent-worker-wizard.firstModelPage")}</button> : null}{models.data?.nextPageToken ? <button type="button" disabled={models.isFetching} onClick={() => setModelPage(models.data!.nextPageToken)}>{copy("agent-worker-wizard.nextModelPage")}</button> : null}<button type="button" disabled={models.isFetching || known.isFetching} onClick={() => { setSavedModels({ key: "", rows: {} }); setModelPage(""); void models.refetch(); if (source?.kind === SourceKind.Subscription && knownSupported) void known.refetch(); if (model) void currentModel.refetch(); }}>{copy("agent-worker-wizard.reloadSavedCatalog")}</button></nav>
+        {models.error || known.error ? <p role="status">{copy("agent-worker-wizard.catalogLookupFailed", { v0: models.data || known.data ? copy("agent-worker-wizard.staleResults") : "" })}</p> : !models.isLoading && !known.isLoading && suggestions.length === 0 ? <p>{source?.kind === SourceKind.Subscription ? copy("agent-worker-wizard.noMatchingModels") : copy("agent-worker-wizard.noSavedModels")}</p> : null}
+        <button type="button" disabled={models.isFetching || known.isFetching} onClick={() => { models.reload(); if (source?.kind === SourceKind.Subscription && knownSupported) void known.refetch(); if (model) void currentModel.refetch(); }}>{copy("agent-worker-wizard.reloadSavedCatalog")}</button>
         {source?.kind === SourceKind.Subscription ? <>{knownValid ? <p>{copy("agent-worker-wizard.knownModelsCatalogUpdated", { v0: catalogDate, v1: known.data!.source === KnownSubscriptionModelCatalogSource.CACHE ? copy("agent-worker-wizard.cachedCatalog") : known.data!.source === KnownSubscriptionModelCatalogSource.BUNDLED ? copy("agent-worker-wizard.builtInCatalog") : copy("agent-worker-wizard.onlineCatalog") })}</p> : known.data ? <p role="alert">{copy("agent-worker-wizard.knownCatalogUnavailable")}</p> : null}{status.data && !knownSupported ? <p>{copy("agent-worker-wizard.updateServerForKnownModels")}</p> : null}</> : <><button type="button" disabled={blocked || !refreshAccount || document(selectedProvider.data?.resource).discovery !== true || document(selectedProvider.data?.resource).enabled === false} onClick={() => { if (refreshAccount) void discovery.send({ mutation: { requestId: newRequestId(), id: refreshAccount.id, expectedRevision: refreshAccount.revision } }); }}>{copy("agent-worker-wizard.refreshModelsEndpoint")}</button><p>{copy("agent-worker-wizard.discoveryUsesFirstAccount")}</p></>}
         <Problem error={discovery.error} />{discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>{copy("agent-worker-wizard.retryModelRefresh")}</button> : null}
-        {data.harness === Harness.Codex && source?.kind === SourceKind.Api ? <NativeModelSettings active={active && step === Step.Model} selectedAccounts={selectedRows} pendingOperation={setNativePending} createModel={value => { setInput(text(value.native_id)); setModel(undefined); setModelPage(""); setPopup(false); setHighlight(-1); setProblem(""); }} /> : null}
+        {data.harness === Harness.Codex && source?.kind === SourceKind.Api ? <NativeModelSettings active={active && step === Step.Model} selectedAccounts={selectedRows} pendingOperation={setNativePending} createModel={value => { setInput(text(value.native_id)); setModel(undefined); setPopup(false); setHighlight(-1); setProblem(""); }} /> : null}
         <p>{copy(source?.kind === SourceKind.Subscription ? "agent-worker-wizard.subscriptionModelAvailability" : "agent-worker-wizard.modelReadiness")}</p>
         <Problem error={currentModel.error} />
       </section>

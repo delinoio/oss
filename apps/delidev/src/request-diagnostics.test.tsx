@@ -41,7 +41,7 @@ it("filters and paginates without changing the conversation draft, and disposes 
   fireEvent.change(screen.getByLabelText("Execution ID (optional)"), { target: { value: f.execution } });
   fireEvent.click(screen.getByRole("button", { name: "Apply execution filter" }));
   await waitFor(() => expect(f.read).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: f.session, executionId: f.execution, pageSize: 50 }), expect.anything()));
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Model request diagnostics" }));
   await waitFor(() => expect(f.read).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: "opaque-page" }), expect.anything()));
   f.read.mockRejectedValueOnce(new ConnectError("PRIVATE_ERROR_SENTINEL", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Refresh diagnostics" }));

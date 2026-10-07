@@ -1,8 +1,12 @@
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
+import { useStablePageRevisions, paginationError, invalidGitHubPage, resourceProjection, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { formatTimestamp } from "./localization";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource, type UnlinkSessionPullRequestRequest } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, ResourceQuery, SessionQuery, newRequestId, type Resource, type UnlinkSessionPullRequestRequest } from "@delinoio/delidev-api-client";
 import { document, items, text, type Document } from "./documents";
 import { bounded, date, positive, uuid } from "./github-query-model";
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
@@ -87,16 +91,26 @@ function LinkRow({ row, value, sessionId, refreshed }: { row: Resource; value: D
 
 function RetainedLinks({ session }: { session: Resource }) {
   useLocale();
-  const [page, setPage] = useState("");
-  const list = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.PULL_REQUEST, sessionId: session.id, pageSize: 50, pageToken: page } }, readOptions);
-  const refresh = () => { void list.refetch(); };
-  const rows = list.data?.resources ?? [], decoded = rows.map((row) => readSessionPR(row, session.id));
-  const valid = rows.length <= 50 && new Set(rows.map((row) => row.id)).size === rows.length && decoded.every(Boolean);
-  return <section aria-label={copy("session-pull-requests.sessionPrAssociations_1143d2")}><p>{copy("session-pull-requests.associationsRemainAfterArchiveOrProblem_909961")}</p>
-    <button disabled={list.isFetching} onClick={refresh}>{copy("session-pull-requests.refreshPrAssociations_2e9a89")}</button><Problem error={list.error} />{list.error && list.data ? <p>{copy("session-pull-requests.previousAssociationsAreShownRefreshFailed_8dbbd3")}</p> : null}
+  const { root, bindRoot } = useGitHubScrollRoot();
+  const validateBoundary = useStablePageRevisions(session.id);
+  const request = useCallback((token: string) => ({ filter: { kind: EntityKind.PULL_REQUEST, sessionId: session.id, pageSize: 50, pageToken: token } }), [session.id]);
+  const project = useCallback((reply: { resources: Resource[]; nextPageToken: string }, token: string) => {
+    if (reply.resources.length > 50 || new Set(reply.resources.map(row => row.id)).size !== reply.resources.length || reply.resources.some(row => !readSessionPR(row, session.id))) invalidGitHubPage();
+    validateBoundary(token, reply.resources.map(resourceProjection));
+    return { rows: reply.resources.map(resourceProjection), nextPageToken: reply.nextPageToken, payload: reply.resources };
+  }, [session.id, validateBoundary]);
+  const reader = useConnectPaginationReader(ResourceQuery.listResources, request, project);
+  const pending = useRetainedMutationIntents("session-pr:");
+  const blocked = pending.some(intent => (intent.busy || intent.uncertain) && (intent.key === `session-pr:link:${session.id}` || intent.key.startsWith(`session-pr:unlink:${session.id}:`)));
+  const list = usePaginationChain(session.id, true, reader);
+  usePaginationRefresh(ResourceQuery.listResources, request(""), !blocked, list.refresh);
+  const refresh = list.error ? list.error.stalled || list.error.failure.code === FailureCode.CursorExpired ? list.reload : list.retry : list.refresh;
+  return <section ref={bindRoot} aria-label={copy("session-pull-requests.sessionPrAssociations_1143d2")}><p>{copy("session-pull-requests.associationsRemainAfterArchiveOrProblem_909961")}</p>
+    <button disabled={Boolean(list.loading)} onClick={refresh}>{copy("session-pull-requests.refreshPrAssociations_2e9a89")}</button><Problem error={paginationError(list.error?.failure)} />{list.error && list.loaded ? <p>{copy("session-pull-requests.previousAssociationsAreShownRefreshFailed_8dbbd3")}</p> : null}
     <PendingUnlinks sessionId={session.id} refreshed={refresh} />
-    {list.isPending ? <p>{copy("session-pull-requests.loadingPrAssociations_7f2445")}</p> : !valid ? <p role="alert">{copy("session-pull-requests.theAssociationPageIsInconsistentAnd_e8d777")}</p> : rows.length ? rows.map((row, index) => <LinkRow key={row.id} row={row} value={decoded[index]!} sessionId={session.id} refreshed={refresh} />) : <p>{copy("session-pull-requests.noPrAssociationsOnThisPage_83305f")}</p>}
-    <nav aria-label={copy("session-pull-requests.prAssociationPages_242118")}><button disabled={!page || list.isFetching} onClick={() => setPage("")}>{copy("session-pull-requests.firstAssociationPage_d937e9")}</button><button disabled={!valid || !list.data?.nextPageToken || list.isFetching} onClick={() => setPage(list.data!.nextPageToken)}>{copy("session-pull-requests.nextAssociationPage_75769b")}</button></nav>
+    <ScrollPayloadWindow query={list} root={root} active={!blocked}>{(rows, projections) => { const ids = visiblePageIds(list.pages, projections); return rows.filter(row => ids.has(row.id)).map(row => <LinkRow key={row.id} row={row} value={readSessionPR(row, session.id)!} sessionId={session.id} refreshed={refresh} />); }}</ScrollPayloadWindow>
+    {list.loaded && !list.rows.length ? <p>{copy("session-pull-requests.noPrAssociationsOnThisPage_83305f")}</p> : null}
+    <ScrollContinuation query={list} root={root} active={!blocked} label={copy("session-pull-requests.sessionPrAssociations_1143d2")} />
     {uuid(session.projectId) ? <LinkForm sessionId={session.id} projectId={session.projectId} refreshed={refresh} /> : <p>{copy("session-pull-requests.linkingAPrRequiresAProject_301f3d")}</p>}
   </section>;
 }

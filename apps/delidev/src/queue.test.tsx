@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useConversationDrafts } from "./conversation-drafts";
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -5,7 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, SessionService, newRequestId } from "@delinoio/delidev-api-client";
-import { QueuedInput } from "./queue";
+import { QueuedInput, type QueuedInputDraft } from "./queue";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
@@ -19,7 +21,7 @@ function fixture() {
   const transport = createRouterTransport((router) => router.service(SessionService, { editQueuedInput: edit, steerQueuedInput: steer, removeQueuedInput: remove }));
   const client = new QueryClient();
   const view = (input = resource) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><QueuedInput resource={input} session={session} refresh={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { resource, session, execution, turn, edit, steer, remove, view };
+  return { resource, session, execution, turn, edit, steer, remove, view, transport, client };
 }
 
 it("binds an edit to the revision at which editing began and preserves its draft after peer changes", async () => {
@@ -50,4 +52,27 @@ it("does not expose editing or removal once native delivery has claimed the inpu
   expect(screen.queryByRole("button", { name: "Edit input" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Remove input" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Steer with this input" })).toBeNull();
+});
+
+
+it("restores a queue edit after payload eviction without replay or autofocus", async () => {
+  const f = fixture();
+  function View() {
+    const [visible, setVisible] = useState(true);
+    const drafts = useConversationDrafts<QueuedInputDraft>();
+    return <><input aria-label="Composer outside payload" /><button onClick={() => setVisible(value => !value)}>Toggle payload</button>{visible ? <QueuedInput resource={f.resource} session={f.session} refresh={() => {}} draft={drafts.values.get(f.resource.id)} changeDraft={value => drafts.save(f.resource.id, value)} /> : null}</>;
+  }
+  render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><MutationIntents><View /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Edited input" }), { target: { value: "Preserved original edit" } });
+  fireEvent.click(screen.getByRole("button", { name: "Toggle payload" }));
+  const composer = screen.getByRole("textbox", { name: "Composer outside payload" });
+  composer.focus();
+  fireEvent.click(screen.getByRole("button", { name: "Toggle payload" }));
+  expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty("value", "Preserved original edit");
+  expect(document.activeElement).toBe(composer);
+  expect(f.edit).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Save input" }));
+  await waitFor(() => expect(f.edit).toHaveBeenCalledTimes(1));
+  expect(f.edit.mock.calls[0][0]).toMatchObject({ prompt: "Preserved original edit", mutation: { id: f.resource.id, expectedRevision: f.resource.revision } });
 });

@@ -9,7 +9,7 @@
   "backups.retryTheSameBackupCreation_52ba47": "동일한 백업 생성 다시 시도",
   "backups.backupCreationAccepted_77b91d": "백업 생성 수락됨: <s0/>",
   "backups.databaseBackups_e6ded7": "데이터베이스 백업",
-  "backups.onThisPage_3ff888": "이 페이지의 <s0/>",
+  "backups.onThisPage_3ff888": "<s0/>개 불러옴",
   "backups.thePreviousBackupListIsShown_756d12": "이전 백업 목록을 표시합니다. 사용하기 전에 새로 고치세요.",
   "backups.readingManagedBackups_60b272": "관리되는 백업을 읽는 중…",
   "backups.updatingManagedBackups_4d6219": "관리되는 백업을 갱신하는 중…",

@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { EntityKind, InboxService, ResourceSchema, ResourceService, ScheduleService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
+import { chooseScrollOption } from "./test-scroll-picker";
 import { ResourceChoice } from "./configuration-fields";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
@@ -25,13 +26,13 @@ function fixture() {
   const definition = { prompt: "Retained prompt", project_id: project.id, agent_id: newRequestId(), machine_id: newRequestId(), workspace: "worktree", mode: "plan", cron: "0 9 * * 1-5", timezone: "UTC", overlap: "wait" };
   const row = (name: string, enabled: boolean, next_run_at: string) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SCHEDULE, revision: 3n, schemaVersion: 1, documentJson: encode({ definition: { ...definition, name, enabled }, next_run_at }) });
   const schedules = [row("Morning review", true, "2026-10-01T00:00:00Z"), row("Weekly cleanup", false, ""), row("Release check", true, "2026-10-02T01:00:00Z")];
-  const list = vi.fn(async (_request: { pageSize: number; pageToken: string; projectId: string; enabled?: boolean }) => ({ schedules, nextPageToken: "schedule-next" }));
+  const list = vi.fn(async (request: { pageSize: number; pageToken: string; projectId: string; enabled?: boolean }) => ({ schedules, nextPageToken: request.pageToken ? "" : "schedule-next" }));
   const choices = vi.fn(async (_request: { filter?: { pageSize: number; pageToken: string; kind: EntityKind } }) => ({ resources: [project], nextPageToken: "project-next" }));
   const history = vi.fn(async (_request: { scheduleId: string; pageSize: number; pageToken: string }) => ({ occurrences: [] }));
   const run = vi.fn(async (_request: unknown) => ({ occurrence: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.OCCURRENCE, revision: 1n, schemaVersion: 1 }) }));
   const transport = () => createRouterTransport((router) => {
     router.service(ScheduleService, { listSchedules: list, getSchedule: (request) => ({ schedule: schedules.find((schedule) => schedule.id === request.id) }), listScheduleOccurrences: history, runScheduleNow: run });
-    router.service(ResourceService, { listResources: choices });
+    router.service(ResourceService, { listResources: choices, getResource: request => ({ resource: request.id === project.id ? project : undefined }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
     router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
     router.service(InboxService, { listInbox: () => ({ entries: [] }) });
@@ -65,8 +66,11 @@ it("retains independent selector pages while immediate status and project filter
   const value = fixture();
   render(value.view());
   await screen.findByRole("button", { name: /^Morning review/ });
-  fireEvent.click(pane().getByRole("button", { name: "Next" }));
-  fireEvent.click(pane().getByRole("button", { name: "More choices" }));
+  fireEvent.click(pane().getByRole("button", { name: "Load more Saved schedules" }));
+  const projectPicker = pane().getByRole("combobox", { name: "Filter by project" });
+  fireEvent.click(projectPicker);
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Filter by project" }));
+  fireEvent.keyDown(projectPicker, { key: "Escape" });
   await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next"));
   await waitFor(() => expect(value.choices.mock.lastCall?.[0].filter?.pageToken).toBe("project-next"));
   for (const [name, enabled] of [["Enabled", true], ["Paused", false], ["All schedules", undefined]] as const) {
@@ -75,28 +79,26 @@ it("retains independent selector pages while immediate status and project filter
     expect(pane().getByRole("button", { name }).getAttribute("aria-pressed")).toBe("true");
     expect(value.choices.mock.lastCall?.[0].filter).toMatchObject({ pageToken: "project-next", pageSize: 50 });
   }
-  fireEvent.change(pane().getByLabelText("Filter by project"), { target: { value: value.project.id } });
+  await chooseScrollOption(projectPicker, value.project.id);
   await waitFor(() => expect(value.list.mock.lastCall?.[0]).toMatchObject({ pageToken: "", projectId: value.project.id, pageSize: 50 }));
   expect(value.choices.mock.lastCall?.[0].filter?.pageToken).toBe("project-next");
   expect(value.history).not.toHaveBeenCalled();
   expect(value.run).not.toHaveBeenCalled();
 });
 
-it("keeps Refresh and First on the first page without walking trailing tokens", async () => {
+it("refreshes only accepted schedule ranges without discovering an unseen tail", async () => {
   const value = fixture();
+  value.list.mockImplementation(async request => ({ schedules: value.schedules, nextPageToken: request.pageToken ? "unseen-tail" : "schedule-next" }));
   render(value.view());
   await screen.findByRole("button", { name: /^Morning review/ });
-  fireEvent.click(pane().getByRole("button", { name: "Next" }));
+  fireEvent.click(pane().getByRole("button", { name: "Load more Saved schedules" }));
   await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next"));
   await waitFor(() => expect((pane().getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled).toBe(false));
+  const before = value.list.mock.calls.length;
   fireEvent.click(pane().getByRole("button", { name: "Refresh" }));
-  await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe(""));
-  fireEvent.click(pane().getByRole("button", { name: "Next" }));
-  await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next"));
-  await waitFor(() => expect((pane().getByRole("button", { name: "First" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(pane().getByRole("button", { name: "First" }));
-  await waitFor(() => expect((pane().getByRole("button", { name: "First" }) as HTMLButtonElement).disabled).toBe(true));
-  expect(value.list.mock.calls.every(([request]) => request.pageSize === 50 && ["", "schedule-next"].includes(request.pageToken))).toBe(true);
+  await waitFor(() => expect(value.list.mock.calls.length).toBe(before + 2));
+  expect(value.list.mock.calls.slice(before).map(([request]) => request.pageToken)).toEqual(["", "schedule-next"]);
+  expect(pane().queryByRole("button", { name: "First" })).toBeNull();
 });
 
 it("distinguishes initial loading and successful empty first and later pages", async () => {
@@ -108,11 +110,11 @@ it("distinguishes initial loading and successful empty first and later pages", a
   await act(async () => gate.resolve());
   const empty = await screen.findByText("No saved schedules.");
   expect(empty.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-  await waitFor(() => expect((pane().getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(pane().getByRole("button", { name: "Next" }));
-  await screen.findByText("No schedules on this page.");
-  expect((pane().getByRole("button", { name: "First" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((pane().getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  await waitFor(() => expect((pane().getByRole("button", { name: "Load more Saved schedules" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(pane().getByRole("button", { name: "Load more Saved schedules" }));
+  await screen.findByText("All loaded Saved schedules are shown.");
+  expect(pane().queryByRole("button", { name: "First" })).toBeNull();
+  expect(pane().queryByRole("button", { name: "Load more Saved schedules" })).toBeNull();
 });
 
 it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("keeps first-load failure %s separate from successful empty claims", async (code) => {
@@ -254,8 +256,12 @@ it("limits the All projects empty option to Schedules and preserves other select
   const value = fixture();
   render(<TransportProvider transport={value.initialTransport}><QueryClientProvider client={value.client}><MutationIntents><Schedules active open={() => {}} /><ResourceChoice label="Project" kind={EntityKind.PROJECT} value="" active change={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   await screen.findByRole("button", { name: /^Morning review/ });
-  expect((pane().getByLabelText("Filter by project") as HTMLSelectElement).options[0].text).toBe("All projects");
-  expect((screen.getByLabelText("Project", { exact: true }) as HTMLSelectElement).options[0].text).toBe("Select project");
+  const filtered = pane().getByRole("combobox", { name: "Filter by project" });
+  fireEvent.click(filtered);
+  expect(await screen.findByRole("option", { name: "All projects" })).toBeTruthy();
+  fireEvent.keyDown(filtered, { key: "Escape" });
+  fireEvent.click(screen.getByRole("combobox", { name: "Project" }));
+  expect(await screen.findByRole("option", { name: "Select project" })).toBeTruthy();
 });
 
 it("retains Schedules connection memory on same-identity reconnect and resets on identity replacement", async () => {

@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ErrorDetailSchema, IntegrationService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Integrations } from "./integrations";
@@ -105,7 +105,7 @@ it("distinguishes an initial loading read from a successful empty inventory and 
   const f = fixture(); let release!: () => void;
   f.list.mockImplementationOnce(async () => { await new Promise<void>((resolve) => { release = resolve; }); return { resources: [], nextPageToken: "" }; });
   render(f.view());
-  expect(screen.getByRole("status").textContent).toBe("Loading GitHub profiles…");
+  expect(screen.getAllByRole("status").some(node => node.textContent === "Loading GitHub profiles…")).toBe(true);
   expect(screen.queryByText("Add your first GitHub profile")).toBeNull();
   expect(screen.getAllByRole("button", { name: "New GitHub profile" })).toHaveLength(1);
   await waitFor(() => expect(f.list).toHaveBeenCalledTimes(1)); release();
@@ -148,12 +148,13 @@ it("keeps an empty page with continuation distinct and uses the original opaque 
   render(f.view()); await screen.findByText("No GitHub profiles on this page.");
   expect(screen.queryByText("Add your first GitHub profile")).toBeNull();
   expect(screen.getAllByRole("button", { name: "New GitHub profile" })).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub profile pages" }));
   await waitFor(() => expect(f.list.mock.calls.at(-1)?.[0].filter).toMatchObject({ pageToken: "opaque-next", pageSize: 50 }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "First page" }).hasAttribute("disabled")).toBe(false));
-  expect(screen.getByText("No GitHub profiles on this page.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  await waitFor(() => expect(f.list.mock.calls.at(-1)?.[0].filter).toMatchObject({ pageToken: "", pageSize: 50 }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more GitHub profile pages" })).toBeNull());
+  expect(screen.getByText("Add your first GitHub profile")).toBeTruthy();
+  const beforeRefresh = f.list.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub profiles" }));
+  await waitFor(() => expect(f.list.mock.calls.slice(beforeRefresh).some(([request]) => request.filter?.pageToken === "" && request.filter?.pageSize === 50)).toBe(true));
 });
 it("renders separate storage and identity facts with readable immutable metadata and named actions", async () => {
   const f = fixture();
@@ -255,4 +256,15 @@ it("labels pending token denial independently of historical identity verificatio
   fireEvent.click(screen.getByRole("button", { name: "Manage Work" }));
   expect(screen.getByRole("button", { name: "Validate profile" }).hasAttribute("disabled")).toBe(true);
   expect(screen.getByRole("button", { name: "Retry original token replacement" }).hasAttribute("disabled")).toBe(true);
+});
+
+it.each(["Rename Work", "Manage Work"])("pauses the original profile inventory beneath %s without replacing its row", async action => {
+  const f = fixture(); render(f.view());
+  const opener = await screen.findByRole("button", { name: action });
+  const row = opener.closest("article")!;
+  fireEvent.click(opener); await screen.findByRole("dialog");
+  const reads = f.list.mock.calls.length;
+  await act(async () => { await f.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(f.list).toHaveBeenCalledTimes(reads); expect(row.isConnected).toBe(true);
+  expect(f.save).not.toHaveBeenCalled(); expect(f.replace).not.toHaveBeenCalled();
 });

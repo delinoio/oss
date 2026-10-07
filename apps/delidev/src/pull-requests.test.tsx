@@ -43,6 +43,7 @@ async function open() {
 }
 async function choose(row: Resource) {
   fireEvent.click(await screen.findByRole("button", { name: `${resourceName(row)}. Repository ID: ${row.id}` }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled") && !screen.queryByText(/Set a supported GitHub profile/)).toBe(false));
 }
 const submitted = (value: ReturnType<typeof fixture>, index: number) => JSON.parse(new TextDecoder().decode(value.query.mock.calls[index][0].queryJson));
 
@@ -53,8 +54,8 @@ it("shows the approved empty-page hierarchy and scopes styles only while PR is a
   const empty = await pane.findByText("No repositories on this page.");
   expect(empty.closest(".sidebar-repository-empty")?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
   expect(pane.getByText("Select a repository. No GitHub request is made until you load pull requests.")).toBeTruthy();
-  expect((pane.getByRole("button", { name: "First" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((pane.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(pane.queryByRole("button", { name: "First" })).toBeNull();
+  expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull();
   expect(pane.queryByRole("heading", { name: "Query options" })).toBeNull();
   expect(pane.getByRole("button", { name: "Repository settings" })).toBeTruthy();
   expect(window.document.querySelector(".sidebar-pull-requests")).toBeTruthy();
@@ -117,10 +118,9 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   fireEvent.click(pane.getByRole("button", { name: detailsName }));
   fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
   fireEvent.change(pane.getByLabelText("Search title and body"), { target: { value: "fix" } });
-  fireEvent.click(pane.getByRole("button", { name: "Next" }));
-  await pane.findByText("No repositories on this page.");
-  expect(pane.queryByRole("region", { name: detailsName })).toBeNull();
-  fireEvent.click(pane.getByRole("button", { name: "First" }));
+  fireEvent.click(pane.getByRole("button", { name: "Load more Repositories" }));
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "repository-next")).toBe(true));
+  expect(pane.getByRole("region", { name: detailsName })).toBeTruthy();
   expect((await pane.findByRole("button", { name: detailsName })).getAttribute("aria-expanded")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   pane = await open();
@@ -148,27 +148,27 @@ it("keeps missing repository mapping and original content inert in Details", asy
   expect(value.query).not.toHaveBeenCalled();
 });
 
-it("preserves off-page identity and filter drafts through empty later pages and First", async () => {
+it("preserves selected identity and filter drafts through empty appended pages and refresh", async () => {
   const value = fixture(); render(<App transport={value.transport} />);
   const pane = await open(); await choose(value.rows[0]);
   fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
   fireEvent.change(pane.getByLabelText("Search title and body"), { target: { value: "fix" } });
   fireEvent.change(pane.getByLabelText("PR page size"), { target: { value: "5" } });
-  fireEvent.click(pane.getByRole("button", { name: "Next" }));
-  await pane.findByText("No repositories on this page.");
+  fireEvent.click(pane.getByRole("button", { name: "Load more Repositories" }));
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "repository-next")).toBe(true));
   await waitFor(() => expect(value.get).toHaveBeenCalledTimes(1));
   expect(value.get.mock.calls[0][0].id).toBe(repositoryId);
-  expect((pane.getByRole("button", { name: "First" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((pane.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(pane.queryByRole("button", { name: "First" })).toBeNull();
+  expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull();
   expect((pane.getByRole("radio", { name: "Closed" }) as HTMLInputElement).checked).toBe(true);
   expect((pane.getByLabelText("Search title and body") as HTMLInputElement).value).toBe("fix");
-  fireEvent.click(pane.getByRole("button", { name: "First" }));
+  fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
   await pane.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
   expect((pane.getByLabelText("PR page size") as HTMLSelectElement).value).toBe("5");
   const tokens = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).map(([request]) => request.filter?.pageToken);
   expect(tokens.slice(0, 2)).toEqual(["", "repository-next"]);
-  // Returning to First can refresh its cache; later tokens must remain explicit.
-  expect(tokens.slice(2).every((token) => token === "")).toBe(true);
+  // Refresh reads only the accepted two-page range and does not discover a tail.
+  expect(tokens.slice(2).every((token) => token === "" || token === "repository-next")).toBe(true);
   expect(value.query).not.toHaveBeenCalled();
   fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
   await waitFor(() => expect(value.query).toHaveBeenCalledTimes(1));
