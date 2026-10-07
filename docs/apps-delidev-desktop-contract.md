@@ -644,6 +644,65 @@ Internal workflow and confirmation steps share one native modal surface, keeping
 
 Validation covers open/close/save/failure/denial, unchanged list position, discarded drafts/secrets, pending/uncertain close, exact retry while open, fresh reopen, existing server duplicate/revision guards, disposed late results and departure, X/Escape/Tab/Shift+Tab/return focus, drawer handoff, Strict Mode and same-server reconnect. The frontend jsdom suite uses at most four workers to preserve timer responsiveness during concurrent native builds; test and product deadlines remain independent and unchanged. Raise concurrency only after verifying those suites under peak shared-host load. Browser fixtures cover light/dark at 1440×900, 1280×820, 960×640, 640×480 and effective 200% layouts. Keep those checks separate from actual packaged CEF keyboard/zoom and account/platform acceptance. Prepare required generated clients and hydrated LFS assets, run `pnpm test` in `apps/delidev`, and remove generated `dist` directories after validation. No RPC, schema, migration or dependency changes are required.
 
+### Agent Worker routing preview presentation
+
+Routing preview remains a read-only 768px Settings task. Its fixed header shows
+`Preview routing`, the complete Agent Worker name and selected-server scope. The
+scrolling body orders read-only context, server selection result, project scope
+and refresh, routing policy, ordered source decisions and candidate evidence.
+The fixed footer has one neutral Close action. X, Escape and Close share task
+disposal, background release and original-opener focus restoration. No account
+management, login, credential validation or execution action is added.
+
+Use stored account names/aliases as the primary identity and the explicit
+subscription service or saved API provider name as secondary context. Resolve
+unique candidate and selected-account IDs through existing authenticated
+`ResourceService.GetResource` reads, with at most four concurrent reads. Verify
+the exact requested ID, kind, positive revision and supported schema. Reject
+retired metadata. Provider display names require the same checks. Keep only safe
+name/service/provider-reference projections in private, task-scoped query
+caches; do not retain complete account documents or render credentials, endpoint
+URLs or inferred email identities. A shared provider is read once per batch.
+Project/result changes and task disposal fence old reads and late continuations.
+Names do not modify the server's selection, order or execution eligibility.
+
+Each candidate card shows its alias, service/provider, eligibility and labeled
+weight/quota evidence. Score and reset time appear only when returned. Complete
+account UUIDs remain in keyboard-operable, initially collapsed Account ID
+disclosures, including the selected-account summary. Duplicate aliases remain
+independent IDs. Loading metadata uses explicit placeholders; missing, denied,
+invalid or unsupported metadata shows Account information unavailable. A failed
+provider read preserves an available account alias and marks service information
+unavailable. Metadata failure never discards routing evidence.
+
+Preserve all source decisions in server order, the selected source, model
+identities, source problems and fallback notices. Unknown quota remains unknown.
+Distinguish initial loading, successful empty candidates, unavailable/malformed
+evidence and typed request failure. A failed refresh retains the result for the
+same project with an explicit previous-result notice. Changing project must not
+present another project's result as current. General Chat remains the explicit
+project-free option. Refresh performs only read-only preview and metadata reads.
+
+Use existing theme tokens, 16px modal corners, 8px cards/controls, 40px controls,
+24px body spacing and the shared narrow-screen padding. Below 640px available
+body width, project controls, card headings and evidence fields stack. Full
+names and identifiers wrap without horizontal scrolling. At viewport heights of
+480px or less, preview-only compact vertical padding preserves fixed actions;
+the header subtitle is visually limited to two lines and the complete Worker
+name is also displayed in the scrolling body. English/Korean and
+light/dark presentation share identical behavior. Read-only context and the
+execution-time eligibility recheck remain visible. No RPC, schema, migration,
+dependency, routing policy or account/native authority changes are introduced.
+
+Component tests cover metadata identity/schema failures, duplicate aliases,
+provider deduplication, concurrency, retained refresh failures and disposed
+continuations. `test-routing-preview-layout.mjs` uses the opt-in synthetic
+Settings fixture to cover both languages/themes, 1440×900, 1280×820, 960×640,
+640×480 and effective 200% layouts, selection/source/empty/error states,
+disclosures, fixed actions, keyboard containment and opener restoration.
+Browser fixtures and effective layout checks do not establish packaged CEF,
+actual browser chrome zoom or native account/platform acceptance.
+
 ### Settings screen and visit lifetime (issue #1236)
 
 Settings selects the internal `Surface.Settings` destination and renders its category content inside `#main`. The bottom Settings rail item has `aria-current="page"`; all ordinary application navigation remains usable. Categories use the shared sidebar outlet and its 52px rail/288px context pane, contracting to 256px at widths up to and including 1100px. Below 760 CSS pixels, **Open settings categories** opens the existing shared navigation drawer. Settings has no outer dialog, modal header, Close action, Escape hint, backdrop, background inertness, focus trap or opener restoration. Escape does not leave this page; actual child dialogs and the compact drawer retain their own dismissal and focus behavior. No native window geometry changes.
