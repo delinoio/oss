@@ -260,7 +260,7 @@ it("limits the All projects empty option to Schedules and preserves other select
   fireEvent.click(filtered);
   expect(await screen.findByRole("option", { name: "All projects" })).toBeTruthy();
   fireEvent.keyDown(filtered, { key: "Escape" });
-  fireEvent.click(screen.getByRole("combobox", { name: "Project", exact: true }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Project" }));
   expect(await screen.findByRole("option", { name: "Select project" })).toBeTruthy();
 });
 
