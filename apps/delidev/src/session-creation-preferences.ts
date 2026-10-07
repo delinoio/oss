@@ -24,7 +24,7 @@ export function useCreationPreferences(kind: NewSessionKind, active: boolean, br
  const [problem,setProblem] = useState<CreationPreferenceProblem>();
  const [reading,setReading] = useState(false);
  const [canRetry,setCanRetry] = useState(false);
- const mounted = useRef(true), generation = useRef(0), nonce = useRef(0), initialized = useRef(false), scope = useRef(expectedScope), pending = useRef<CreationPreferencePair | undefined>(undefined), snapshot = useRef<CreationPreferenceSnapshot | undefined>(undefined), queue = useRef(Promise.resolve());
+ const mounted = useRef(true), generation = useRef(0), nonce = useRef(0), initialized = useRef(false), scope = useRef(expectedScope), needsInspection = useRef(false), pending = useRef<CreationPreferencePair | undefined>(undefined), snapshot = useRef<CreationPreferenceSnapshot | undefined>(undefined), queue = useRef(Promise.resolve());
  useEffect(() => { mounted.current=true; return () => {mounted.current=false;generation.current++;initialized.current=false;nonce.current++;}; },[]);
  const accept = useCallback((raw: unknown) => {
   const next=parseCreationPreferences(raw);
@@ -37,7 +37,7 @@ export function useCreationPreferences(kind: NewSessionKind, active: boolean, br
   const owner=generation.current, request=++nonce.current;setReading(true);setCanRetry(false);
   try {const raw=await bridge.read(kind);if (!mounted.current || generation.current!==owner || nonce.current!==request) return;
    if (raw===undefined) return;
-   const next=accept(raw);if (!pending.current && !next.problem) setPair(next.pair ?? undefined);setCanRetry(!next.problem && Boolean(pending.current));
+   const next=accept(raw);needsInspection.current=Boolean(next.problem);if (!pending.current && !next.problem) setPair(next.pair ?? undefined);setCanRetry(!next.problem && Boolean(pending.current));
   } catch {if (mounted.current && generation.current===owner && nonce.current===request) setProblem(CreationPreferenceProblem.ReadFailed);}
   finally {if(mounted.current && generation.current===owner && nonce.current===request)setReading(false);}
  },[bridge,kind,accept]);
@@ -45,16 +45,16 @@ export function useCreationPreferences(kind: NewSessionKind, active: boolean, br
  const persist = useCallback((submitted: CreationPreferencePair) => {
   const owner=generation.current;
   queue.current=queue.current.catch(()=>{}).then(async()=>{
-   if(!mounted.current || generation.current!==owner)return;
+   if(!mounted.current || generation.current!==owner || needsInspection.current)return;
    try {
     const raw=await bridge.read(kind);if(!mounted.current || generation.current!==owner)return;
     if(raw===undefined)return;
-    const read=accept(raw);if(read.problem)return;
+    const read=accept(raw);if(read.problem){needsInspection.current=true;return;}
     const result=await bridge.update(kind,submitted,read.revision);if(!mounted.current || generation.current!==owner)return;
-    const updated=accept(result);
+    const updated=accept(result);needsInspection.current=Boolean(updated.problem);
     if(!updated.problem && pending.current===submitted)pending.current=undefined;
     setCanRetry(false);
-   } catch {if(mounted.current && generation.current===owner){setProblem(CreationPreferenceProblem.OutcomeUnknown);setCanRetry(false);}}
+   } catch {if(mounted.current && generation.current===owner){needsInspection.current=true;setProblem(CreationPreferenceProblem.OutcomeUnknown);setCanRetry(false);}}
   });
  },[bridge,kind,accept]);
  const remember = useCallback((submitted: CreationPreferencePair) => {nonce.current++;setReading(false);pending.current=submitted;setPair(submitted);persist(submitted);},[persist]);
