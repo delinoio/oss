@@ -679,7 +679,47 @@ original pinned entries and rechecks regular-file hashes/size/mode, symlink text
 kind and named/opened identity immediately before unlink. New entries are never
 selected, and atomic empty-directory removal refuses remaining unknown contents.
 Changes during removal retain the claim, remaining bytes and recovery uncertainty;
-partial recovery checks the same intent and root identity. Scratch cleanup keeps
+partial recovery checks the same intent and root identity. Final root removal
+first synchronizes a bounded metadata-only transition in
+`storage-removal-root-claims/<operation>.json`, binding the original
+operation/session/snapshot/action, intent digest and native root identity. Claim
+the empty root with a no-replace rename into the separate private
+`workspace-removal-roots/<operation>-<private-UUID>` namespace before anchored identity, exact
+mode and empty-inventory verification. Synchronize both namespace parents before
+recording the claimed state. The old removal name is never an unlink operand;
+a directory or symlink appearing there is preserved and blocks completion.
+On Linux and other POSIX platforms, retain the opened final root, remove its
+search permission, and repeat the anchored identity check immediately before
+`unlinkat`; this closes the retained-root-handle path to the private parent
+during the final name operation. Darwin cannot unlink by directory handle, so
+it transfers the verified writable root with an exclusive directory-fd rename
+into the fresh operation-private
+`workspace-removal-quarantine/<operation>-<private-UUID>` namespace, rechecks
+the native identity, removes search permission there, and unlinks only the
+quarantined name. The old private namespace remains a recovery boundary.
+Repeat the anchored check after the last mutation checkpoint as well. If a
+retained parent moves the original and the name operation selects a replacement,
+the second check retains recovery ownership before any post-unlink receipt can be
+published. Linux additionally verifies the opened directory's post-unlink
+link count so a retained-parent race in the final kernel interval remains
+recovery-required; Darwin verifies the opened identity and unlinked path after
+the quarantine unlink.
+Keep unlink preparation separate from the durable receipt recorded after native
+unlink. Publish that receipt with a bounded cancellation-independent context
+before honoring the caller's cancellation. Recovery with a missing root and no unlink receipt remains uncertain,
+including interruption between unlink and receipt publication. With the original
+receipt, recovery synchronizes both parents and independently requires both
+names absent before recording completion. Missing or replaced proof/root never
+reconstructs removal authority from absence or matching bytes. The workspace
+owner retires only a validated final-root proof after its durable removed state
+and final namespace absence, before generic session-copy cleanup; legacy intent
+and journal retirement remains separate. A canonical proof that reappears after
+that boundary is absence-only. Retire the remaining proof records only at the
+acknowledged-report boundary after checking final namespace absence.
+Permanent deletion resumes only the original final-root transition and includes
+its namespace, proof and target-attributed atomic-write remnants in both removal
+and completed-proof replay inventories; generic copy cleanup cannot remove a
+reappearing final root. Scratch cleanup keeps
 its separate operation-owned enumeration. Only create/cleanup and restore create
 scratch. After exclusive directory creation, synchronize an external versioned
 claim binding the exact operation/request digest, preparation, session/machine,

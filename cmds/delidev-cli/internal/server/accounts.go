@@ -26,6 +26,30 @@ type accountSecrets interface {
 	UnremovedReferences(context.Context, domain.ID) ([]credentials.Ref, error)
 }
 
+type credentialRuntimePhase string
+
+const (
+	credentialRuntimeOAuthStart    credentialRuntimePhase = "oauth-start"
+	credentialRuntimeOAuthExchange credentialRuntimePhase = "oauth-exchange"
+)
+
+func (s *Service) checkCredentialRuntime(ctx context.Context, phase credentialRuntimePhase) error {
+	check := s.credentialRuntimeCheck
+	if check == nil {
+		check = credentials.CheckRuntime
+	}
+	err := check(ctx)
+	if err != nil {
+		safe := domain.SafeError(err)
+		attributes := []any{"phase", phase, "error_code", safe.Code}
+		if safe.Cause == credentials.ExecutableChangedCause {
+			attributes = append(attributes, "reason", "executable_changed")
+		}
+		s.logger.WarnContext(ctx, "credential_runtime_check_failed", attributes...)
+	}
+	return err
+}
+
 func (s *Service) lockAccounts(ctx context.Context) (func(), error) {
 	s.accountOnce.Do(func() { s.accountGate = make(chan struct{}, 1) })
 	if err := ctx.Err(); err != nil {

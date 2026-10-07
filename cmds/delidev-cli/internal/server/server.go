@@ -107,6 +107,7 @@ type Service struct {
 	oauthRefreshMu                sync.Mutex
 	oauthRefreshes                map[domain.ID]chan struct{}
 	oauthExchange                 oauthExchange
+	credentialRuntimeCheck        func(context.Context) error
 	accountChecks                 map[domain.ID]map[domain.ID]accountCheck
 	accountSecrets                accountSecrets
 	ownedVault                    *credentials.Vault

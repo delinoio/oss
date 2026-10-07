@@ -12,7 +12,7 @@ export function validateResults(needs) {
   const rustPackages = validateRustPackages(JSON.parse(needs.changes.outputs.rust_packages));
   if (rustJobs.some(id => expected[id]) !== (rustPackages.length > 0)) throw new Error("Rust package selection differs from the planned jobs");
   const matrices = matricesForEvent(event);
-  for (const [output, matrix] of [["desktop_matrix", matrices.desktopMatrix], ["react_forge_matrix", matrices.reactForgeMatrix], ["delidev_frontend_matrix", matrices.delidevFrontendMatrix]]) {
+  for (const [output, matrix] of [["go_test_matrix", matrices.goTestMatrix], ["desktop_matrix", matrices.desktopMatrix], ["react_forge_matrix", matrices.reactForgeMatrix], ["delidev_frontend_matrix", matrices.delidevFrontendMatrix]]) {
     const actual = JSON.parse(needs.changes.outputs[output]);
     if (JSON.stringify(actual) !== JSON.stringify(matrix)) throw new Error(`${output} differs from the ${event} policy`);
   }

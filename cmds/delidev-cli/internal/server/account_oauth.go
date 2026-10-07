@@ -124,7 +124,7 @@ func (s *Service) clearOAuthLive(id domain.ID) {
 func oauthStartNotAdmitted(err error) error {
 	safe := *domain.SafeError(err)
 	switch safe.Code {
-	case domain.Unsupported, domain.Conflict, domain.NotFound, domain.ResourceExhausted, domain.PermissionDenied:
+	case domain.Unsupported, domain.Conflict, domain.NotFound, domain.ResourceExhausted, domain.PermissionDenied, domain.RecoveryRequired:
 		safe.Cause = "oauth_start_not_admitted"
 	}
 	return &safe
@@ -186,6 +186,9 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 		a := domain.AccountOAuthAttempt{Version: 1, ID: domain.NewID(), Revision: 1, ServerID: s.Identity.ServerID, ProviderID: input.Provider, ProviderRevision: input.Revision, Actor: actor, Generation: s.oauthGeneration, StartRequestID: domain.ID(m.RequestId), AccountID: domain.NewID(), CreateRequestID: domain.NewID(), ConnectRequestID: domain.NewID(), State: domain.OAuthAwaiting, StartedAt: now, ExpiresAt: now.Add(10 * time.Minute), UpdatedAt: now, CallbackCommitment: input.CallbackCommitment}
 		result, err = s.Store.Mutate(ctx, domain.ID(m.RequestId), "oauth.start", input, func(tx *store.Tx) (any, error) {
 			if err := s.oauthProvider(tx, input.Provider, input.Revision); err != nil {
+				return nil, oauthStartNotAdmitted(err)
+			}
+			if err := s.checkCredentialRuntime(ctx, credentialRuntimeOAuthStart); err != nil {
 				return nil, oauthStartNotAdmitted(err)
 			}
 
@@ -711,6 +714,11 @@ func (s *Service) CompleteAccountOAuth(ctx context.Context, req *connect.Request
 		}
 		s.clearOAuthLive(a.ID)
 		return respond(a, false)
+	}
+	// Original replay/recovery and denial above remain usable after a rebuild.
+	// A fresh exchange must not mint a provider key for invalid server code.
+	if err := s.checkCredentialRuntime(ctx, credentialRuntimeOAuthExchange); err != nil {
+		return nil, rpc.Error(err, c)
 	}
 	checkCtx := ctx
 	finish := func() {}

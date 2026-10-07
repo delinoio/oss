@@ -52,7 +52,7 @@ func TestSubscriptionConfigurationRPCHasNoProviderDependency(t *testing.T) {
 	}
 	var bundle domain.ConfigurationBundle
 	if domain.Decode(export.Msg.DocumentJson, &bundle) != nil || bundle.Version != domain.ConfigurationBundleVersion {
-		t.Fatal("export did not use the current portable configuration version")
+		t.Fatalf("export did not use the current portable bundle version: got %d, want %d", bundle.Version, domain.ConfigurationBundleVersion)
 	}
 }
 

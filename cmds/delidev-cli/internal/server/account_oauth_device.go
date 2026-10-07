@@ -197,6 +197,12 @@ func (s *Service) pollOAuthDevice(ctx context.Context, a domain.AccountOAuthAtte
 			s.settleOAuthDevice(a, domain.OAuthRecovery, oauthProblemFor(a))
 			return
 		}
+		// Device approval can outlive Start by minutes. A valid admission is not
+		// a code-identity lease for a later request that can issue credentials.
+		if e := s.checkCredentialRuntime(ctx, credentialRuntimeOAuthExchange); e != nil {
+			s.settleOAuthDevice(a, domain.OAuthRecovery, domain.SafeError(e))
+			return
+		}
 		result, phase, e := s.deviceOAuthClient().Poll(ctx, profile, device)
 		if e != nil {
 			result.tokens.clear()
