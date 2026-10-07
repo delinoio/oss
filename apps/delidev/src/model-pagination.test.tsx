@@ -7,7 +7,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, NativeModelService, ProviderService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { useModelPages, useNativeModelPages } from "./model-pagination";
+import { useModelPages, useNativeModelPages, useProviderPages } from "./model-pagination";
 
 it("bounds complete model documents to three pages and restores the original reached token", async () => {
   const models = Array.from({ length: 5 }, () => create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.MODEL }));
@@ -55,4 +55,18 @@ it("provider envelope pages deduplicate newer revisions in the original visible 
   expect(screen.getAllByRole("heading", { name: "Updated provider" })).toHaveLength(1);
   expect(screen.queryByRole("heading", { name: "Original provider" })).toBeNull();
   expect(read.mock.calls.filter(([request]) => !request.enabledOnly).map(([request]) => request.pageToken)).toEqual(["", "next"]);
+});
+
+it("validates a complete additional provider page before publishing display metadata or actions", async () => {
+  const id = newRequestId();
+  const read = vi.fn(async (request: { pageToken: string }) => ({ entries: [{ providerId: id, displayName: request.pageToken ? "Malformed provider" : "Accepted provider", provider: create(ResourceSchema, { id, revision: 1n, kind: request.pageToken ? EntityKind.MODEL : EntityKind.PROVIDER }) }], nextPageToken: request.pageToken ? "" : "original" }));
+  const transport = createRouterTransport(router => router.service(ProviderService, { listProviderInventory: read }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() { const query = useProviderPages("", true); return <><output>{query.rows.map(row => row.displayName).join(",")}:{query.error ? "failed" : "ready"}</output><button onClick={query.append}>Append</button><button onClick={query.retry}>Retry</button></>; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><View /></QueryClientProvider></TransportProvider>);
+  await screen.findByText("Accepted provider:ready"); fireEvent.click(screen.getByText("Append")); await screen.findByText("Accepted provider:failed");
+  expect(screen.queryByText(/Malformed provider/)).toBeNull();
+  fireEvent.click(screen.getByText("Append")); expect(read).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByText("Retry")); await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+  expect(read.mock.calls.map(([request]) => request.pageToken)).toEqual(["", "original", "original"]);
 });
