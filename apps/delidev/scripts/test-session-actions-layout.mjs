@@ -47,6 +47,8 @@ try {
     if (await drawer.isVisible()) await drawer.click();
     await page.locator(".sidebar-project-row").filter({ hasText: "oss" }).click();
     await rows.first().waitFor();
+    const titleWidths = await page.locator(".sidebar-session-title").evaluateAll(nodes => nodes.slice(0, 6).map(node => node.clientWidth));
+    assert(titleWidths.every(width => width >= 48), "Names retain visible space beside title hints and actions");
     const states = await page.locator(".sidebar-session-row .sidebar-statuses").evaluateAll(nodes => nodes.slice(0, 6).map(node => ({ outcome: node.dataset.outcome, color: getComputedStyle(node.firstElementChild).color })));
     assert.deepEqual(states.map(state => state.outcome), ["not-started", "running", "succeeded", "failed", "stopped", "unknown"]);
     assert.equal(new Set(states.slice(0, 4).map(state => state.color)).size, 4);

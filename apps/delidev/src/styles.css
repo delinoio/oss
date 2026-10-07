@@ -998,6 +998,8 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 /* Reserve the sibling action target without shifting titles on hover. */
 .sidebar-session-container { position: relative; }
 .sidebar-session-container .sidebar-session-row { padding-right: 33px; height: 32px; min-height: 32px; }
+.sidebar-session-container .sidebar-session-title { flex: 1.4 1 0; }
+.sidebar-session-container .sidebar-session-title-state { flex: 1 1 0; max-width: 42%; }
 .sidebar-session-more { position: absolute; right: 2px; top: 2px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-height: 28px; padding: 0; margin: 0; border: 0; background: transparent; color: var(--text-secondary); opacity: 0; }
 .sidebar-session-container:hover .sidebar-session-more, .sidebar-session-container:focus-within .sidebar-session-more, .sidebar-session-more[data-open=true] { opacity: 1; }
 @media (hover: none) { .sidebar-session-more { opacity: 1; } }
