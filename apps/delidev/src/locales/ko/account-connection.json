@@ -61,5 +61,6 @@
   "account-connection.inline.quota": "할당량 관측 결과가 확인되지 않았습니다. 원래 계정, 연결 및 관측 소유자를 유지하세요. 원래 재시도가 제공되면 사용하세요. 저장된 증거를 다시 읽는 것만으로 할당량 복구를 입증할 수 없습니다.",
   "account-connection.inline.railRecheck": "저장된 할당량 증거 다시 확인",
   "account-connection.inline.railProblem": "구독 읽기 문제 설명",
-  "account-connection.inline.railPartial": "이 제한된 계정 페이지를 읽을 수 없습니다. 이전에 저장된 증거는 확인되지 않았습니다. 읽지 않은 페이지로 다른 계정이 없다고 판단할 수 없습니다."
+  "account-connection.inline.railPartial": "이 제한된 계정 페이지를 읽을 수 없습니다. 이전에 저장된 증거는 확인되지 않았습니다. 읽지 않은 페이지로 다른 계정이 없다고 판단할 수 없습니다.",
+  "account-connection.inline.supportLoading": "선택한 서버의 구독 지원 정보를 읽는 중입니다. 이 조회는 로그인을 시작하지 않습니다."
 }

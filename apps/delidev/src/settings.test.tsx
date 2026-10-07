@@ -838,7 +838,7 @@ it("keeps API connection actions separate from validation and preserves server-o
   const subscription = resource(EntityKind.ACCOUNT, { alias: "Subscription alias", subscription_service: "claude", type: "subscription", health: "disconnected" });
   render(value.view(<AccountConnection initial={subscription} active close={() => {}} />));
   expect(screen.getByRole("button", { name: "Back to subscriptions" })).toBeTruthy();
-  expect(screen.getByText(/Native login for this service is unavailable/)).toBeTruthy();
+  expect(await screen.findByText(/This server or subscription service does not support the requested lifecycle action/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Connect API key" })).toBeNull();
   expect(screen.queryByLabelText("API key")).toBeNull();
 });
@@ -1041,4 +1041,17 @@ it.each([true, false])("blocks configuration submit until an exact picker read a
   fireEvent.submit(form);
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toMatchObject({ name: "Edited while reading", integration_id: newProfile.id });
+});
+
+
+it("does not treat a pending or failed subscription support read as proved unsupported", async () => {
+  const account = resource(EntityKind.ACCOUNT, { alias: "Original subscription", subscription_service: "claude", type: "subscription", health: "disconnected" });
+  const value = fixture([account], { systemStatusError: new ConnectError("Fixture status failure", Code.PermissionDenied) });
+  render(value.view(<AccountConnection initial={account} active close={() => {}} />));
+  expect(screen.getByText("Reading the selected server’s subscription support. This read does not start a login.")).toBeTruthy();
+  expect(screen.queryByText(/This server or subscription service does not support the requested lifecycle action/)).toBeNull();
+  await screen.findByText("This connection is not authorized for the action. Check its access.");
+  expect(screen.queryByText(/This server or subscription service does not support the requested lifecycle action/)).toBeNull();
+  expect((screen.getByRole("button", { name: "Sign in to Claude" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(value.connect).not.toHaveBeenCalled(); expect(value.disconnect).not.toHaveBeenCalled();
 });

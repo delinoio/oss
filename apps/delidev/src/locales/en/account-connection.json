@@ -61,5 +61,6 @@
   "account-connection.inline.quota": "Quota observation was not confirmed. Keep the original account, connection and observation owner. Use the original retry when offered; rereading saved evidence cannot prove recovered quota.",
   "account-connection.inline.railRecheck": "Recheck saved quota evidence",
   "account-connection.inline.railProblem": "Explain subscription read problem",
-  "account-connection.inline.railPartial": "This bounded account page could not be read. Previously saved evidence is unconfirmed; unread pages do not establish that other accounts are absent."
+  "account-connection.inline.railPartial": "This bounded account page could not be read. Previously saved evidence is unconfirmed; unread pages do not establish that other accounts are absent.",
+  "account-connection.inline.supportLoading": "Reading the selected server’s subscription support. This read does not start a login."
 }
