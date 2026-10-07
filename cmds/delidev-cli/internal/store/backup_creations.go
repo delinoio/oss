@@ -81,7 +81,9 @@ func (s *Store) RequestBackup(ctx context.Context, request, server domain.ID) (R
 		return Record{}, false, err
 	}
 	_, original, err := DecodeBackupCreation(row)
-	if err != nil || original.RequestID != request || !reflect.DeepEqual(original.Input, input) {
+	comparison := input
+	comparison.Actor, comparison.ServerID = original.Input.Actor, original.Input.ServerID
+	if err != nil || original.RequestID != request || !reflect.DeepEqual(original.Input, comparison) {
 		return Record{}, false, backupUnavailable()
 	}
 	return row, result.Replayed, nil

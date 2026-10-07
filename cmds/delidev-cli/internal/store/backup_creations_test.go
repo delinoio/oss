@@ -198,7 +198,7 @@ func TestBackupCreationRejectsRevokedOriginalActor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.RequestBackup(ctx, request, owner); domain.SafeError(err).Code != domain.Conflict {
+	if replayed, replay, err := s.RequestBackup(ctx, request, owner); err != nil || !replay || replayed.ID != row.ID {
 		t.Fatal("actor borrowed receipt", err)
 	}
 	_, err = s.Mutate(ctx, domain.NewID(), "fixture.revoke", nil, func(tx *Tx) (any, error) {

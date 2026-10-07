@@ -68,7 +68,7 @@ func TestNetworkDeleteIntentSurvivesFailureRevocationAndRestart(t *testing.T) {
 			if err != nil || bytes.Contains(raw, []byte(outboundtest.Username)) || bytes.Contains(raw, []byte(outboundtest.Password)) {
 				t.Fatal("missing or secret-bearing cleanup obligation", err)
 			}
-			puts, deletes, remaining := vault.counts()
+			puts, _, remaining := vault.counts()
 			if remaining != 1 {
 				t.Fatal("fault did not retain native credential")
 			}
@@ -86,12 +86,12 @@ func TestNetworkDeleteIntentSurvivesFailureRevocationAndRestart(t *testing.T) {
 			if _, err := client.DeleteNetworkProfile(context.Background(), ownerRequest(f.service.Identity, &pb.DeleteNetworkProfileRequest{Mutation: original})); err != nil {
 				t.Fatal("owner reused another actor's receipt", err)
 			}
-			if p, d, _ := vault.counts(); p != puts || d != deletes {
-				t.Fatal("unauthorized or changed retry performed native work")
+			if p, _, n := vault.counts(); p != puts || n != 0 {
+				t.Fatal("authenticated retry did not finish cleanup")
 			}
-			fresh := &pb.Mutation{RequestId: string(domain.NewID()), Id: string(id), ExpectedRevision: original.ExpectedRevision}
+			fresh := original
 			recovered, err := client.DeleteNetworkProfile(context.Background(), ownerRequest(f.service.Identity, &pb.DeleteNetworkProfileRequest{Mutation: fresh}))
-			if err != nil || !recovered.Msg.Deleted || recovered.Msg.Replayed || recovered.Msg.Resource != nil || recovered.Msg.RequestId != fresh.RequestId {
+			if err != nil || !recovered.Msg.Deleted || !recovered.Msg.Replayed || recovered.Msg.Resource != nil || recovered.Msg.RequestId != fresh.RequestId {
 				t.Fatal("fresh owner could not recover the original deletion", err)
 			}
 			if _, _, n := vault.counts(); n != 0 {

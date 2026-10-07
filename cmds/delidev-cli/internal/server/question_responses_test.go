@@ -180,7 +180,7 @@ func TestQuestionResponseRejectsChangedExecutionAuthority(t *testing.T) {
 			if change == "answers" {
 				delete(input.Answers, "choice")
 			}
-			if change == "worker" || change == "connection" {
+			if change == "worker" || change == "connection" || change == "heartbeat" {
 				if _, err := acceptFixtureResponse(f, domain.NewID(), id, revision, input); err != nil {
 					t.Fatal(err)
 				}

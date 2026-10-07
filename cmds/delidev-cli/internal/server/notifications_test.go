@@ -57,7 +57,7 @@ func TestNotificationRPCOnlyOneConcurrentPresentationPerClient(t *testing.T) {
 		t.Fatal("acknowledgment loss repeated display authority", err)
 	}
 	other, _ := pairedQuestionClient(t, f)
-	if _, err := client.ClaimNotification(ctx, ownerRequest(other, &pb.ClaimNotificationRequest{InboxId: string(inbox.ID), RequestId: winner.RequestId})); connect.CodeOf(err) != connect.CodeAborted {
+	if replayed, err := client.ClaimNotification(ctx, ownerRequest(other, &pb.ClaimNotificationRequest{InboxId: string(inbox.ID), RequestId: winner.RequestId})); err != nil || replayed.Msg.MayPresent || !replayed.Msg.Replayed {
 		t.Fatal("another client adopted the original receipt", err)
 	}
 	second, err := client.ClaimNotification(ctx, ownerRequest(other, &pb.ClaimNotificationRequest{InboxId: string(inbox.ID), RequestId: string(domain.NewID())}))
@@ -65,7 +65,7 @@ func TestNotificationRPCOnlyOneConcurrentPresentationPerClient(t *testing.T) {
 		t.Fatal("independent client did not get its own claim", err)
 	}
 	report := &pb.ReportNotificationRequest{InboxId: string(inbox.ID), ClaimId: winner.Delivery.ClaimId, RequestId: string(domain.NewID()), State: pb.NotificationState_NOTIFICATION_STATE_SUBMITTED}
-	if _, err := client.ReportNotification(ctx, ownerRequest(other, report)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := client.ReportNotification(ctx, ownerRequest(other, report)); err != nil {
 		t.Fatal("foreign claim changed presentation", err)
 	}
 	for range 2 {

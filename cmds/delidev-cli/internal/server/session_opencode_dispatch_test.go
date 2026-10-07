@@ -26,7 +26,7 @@ func TestOpenCodeFirstDispatchRetainsExactNativeSelection(t *testing.T) {
 			record := f.workerStream.Msg().Job
 			var job domain.Job
 			var input domain.ExecutionJobInput
-			if domain.Decode(record.DocumentJson, &job) != nil || job.Type != domain.ExecuteSessionJob || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode || input.Installation.Version != domain.OpenCodeProtocolVersion || input.Installation.Protocol.Protocol != domain.OpenCodeHTTP || input.Input.Mode != mode || input.Input.Prompt != f.selection.Prompt || input.ExecutionID != session.InitialExecution.ID || input.ConfigurationDigest != session.InitialExecution.ConfigurationDigest || input.Continuation != nil {
+			if domain.Decode(record.DocumentJson, &job) != nil || job.Type != domain.ExecuteSessionJob || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode || input.Version != 4 || input.Startup == nil || input.Startup.Harness != domain.OpenCode || input.Input.Mode != mode || input.Input.Prompt != f.selection.Prompt || input.ExecutionID != session.InitialExecution.ID || input.ConfigurationDigest != session.InitialExecution.ConfigurationDigest || input.Continuation != nil {
 				t.Fatal("dispatched assignment changed first input/settings ownership")
 			}
 			agent, err := input.Configuration.OpenCodePrimaryForInput(mode)
@@ -113,6 +113,12 @@ func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) 
 				if err != nil {
 					t.Fatal(err)
 				}
+			}
+			if failure == "version" || failure == "worker-stale" || failure == "validation" {
+				if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
+					t.Fatal("metadata blocked negotiated startup", err)
+				}
+				return
 			}
 			if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err == nil {
 				t.Fatal("unsupported OpenCode profile dispatched")

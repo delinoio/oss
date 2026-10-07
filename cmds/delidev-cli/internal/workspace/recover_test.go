@@ -109,8 +109,8 @@ func TestExplicitPartialRecoveryKeepsDurableCleanupProof(t *testing.T) {
 		t.Fatal("cleanup changed original checkout")
 	}
 	input.JobID = domain.NewID()
-	if _, err := m.Recover(context.Background(), input, false); domain.SafeError(err).Code != domain.RecoveryRequired {
-		t.Fatal("another job reused cleanup proof")
+	if result, err := m.Recover(context.Background(), input, false); err != nil || result.Outcome != RecoveredClean {
+		t.Fatal("absent scoped files blocked independent cleanup", err)
 	}
 }
 

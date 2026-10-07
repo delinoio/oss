@@ -236,14 +236,20 @@ func TestWorkspaceStorageQueuedCancellationAndMalformedReport(t *testing.T) {
 	if job.State != domain.JobUncertain {
 		t.Fatal("malformed proof settled ownership")
 	}
-	if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CREATE, "", "", ""))); err != nil {
+	next, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_CREATE, "", "", "")))
+	if err != nil {
 		t.Fatal("uncertain cleanup blocked new work", err)
 	}
-	recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", claimed.Id)))
+	f.execute(next.Msg.Job)
+	old, err := f.service.Store.Get(context.Background(), domain.JobKind, domain.ID(claimed.Id))
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.execute(recovery.Msg.Job)
+	var original domain.Job
+	if domain.Decode(old.Data, &original) != nil || original.State != domain.JobUncertain {
+		t.Fatal("fresh operation rewrote uncertain historical job")
+	}
+
 	state, _ := store.Decode[domain.Session](f.sessionRecord())
 	if !state.WorkspaceAvailable() || state.Dispatch != domain.DispatchPaused {
 		t.Fatal("reconciliation lost paused live workspace")

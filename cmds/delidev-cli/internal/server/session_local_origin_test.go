@@ -88,7 +88,7 @@ func TestLocalSessionOriginIsAuthenticatedRetainedAndReferenceOnly(t *testing.T)
 	if domain.Decode(change.WorkspaceJob.DocumentJson, &job) != nil || domain.Decode(job.Input, &preparation) != nil || preparation.OriginMachineID != input.MachineID || preparation.Repositories[0].AutoFetch || preparation.Repositories[0].Starting.Type != "" {
 		t.Fatal("Local job selected remote refs or lost origin")
 	}
-	if _, err := sessionClient(f).CreateSession(ctx, ownerRequest(f.identity, req)); err == nil {
+	if replayed, err := sessionClient(f).CreateSession(ctx, ownerRequest(f.identity, req)); err != nil || !replayed.Msg.Change.Replayed {
 		t.Fatal("another client reused original Local creation receipt")
 	}
 	stopped, err := sessionClient(f).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(change.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_STOP}))

@@ -133,6 +133,23 @@ func (t *Tx) NotificationDelivery(inbox domain.ID) (domain.NotificationDelivery,
 	return value, storageError(err)
 }
 
+// NotificationDeliveryByClaim resolves immutable presentation identity across
+// authenticated clients without changing the original client's delivery record.
+func (t *Tx) NotificationDeliveryByClaim(inbox, claim domain.ID) (domain.NotificationDelivery, error) {
+	var value domain.NotificationDelivery
+	if err := t.Authorize(); err != nil {
+		return value, err
+	}
+	if inbox.Validate() != nil || claim.Validate() != nil {
+		return value, notificationConflict()
+	}
+	err := t.tx.QueryRowContext(t.ctx, `SELECT d.inbox_id,i.session_id,d.kind,d.claim_id,d.state,COALESCE(json_extract(i.body,'$.recovery.account_id'),'') FROM notification_deliveries d JOIN entities i ON i.id=d.inbox_id AND i.kind='inbox' WHERE d.inbox_id=? AND d.claim_id=?`, inbox, claim).Scan(&value.InboxID, &value.SessionID, &value.Kind, &value.ClaimID, &value.State, &value.AccountID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return value, domain.Fail(domain.NotFound, "The notification claim does not exist.", "Use a retained presentation claim.")
+	}
+	return value, storageError(err)
+}
+
 // This durable reservation precedes OS delivery. It has no expiry and cannot be
 // reclaimed after reconnect, lost acknowledgment or native delivery uncertainty.
 // A replay of the outer request is observation only, never another display grant.
@@ -179,18 +196,18 @@ func (t *Tx) ReportNotification(inbox, claim domain.ID, state domain.Notificatio
 	if !state.Reportable() || claim.Validate() != nil {
 		return value, domain.Fail(domain.InvalidArgument, "Invalid notification presentation report.", "Retain the original claim and a known native outcome without content or diagnostics.")
 	}
-	value, err := t.NotificationDelivery(inbox)
+	value, err := t.NotificationDeliveryByClaim(inbox, claim)
 	if err != nil {
 		return value, err
 	}
 	if value.ClaimID != claim || (value.State != domain.NotificationClaimed && value.State != state) {
 		return value, notificationConflict()
 	}
-	client, err := t.notificationClient()
+	_, err = t.notificationClient()
 	if err != nil {
 		return value, err
 	}
-	_, err = t.tx.ExecContext(t.ctx, `UPDATE notification_deliveries SET state=? WHERE client_id=? AND inbox_id=? AND claim_id=?`, state, client, inbox, claim)
+	_, err = t.tx.ExecContext(t.ctx, `UPDATE notification_deliveries SET state=? WHERE inbox_id=? AND claim_id=?`, state, inbox, claim)
 	value.State = state
 	return value, storageError(err)
 }

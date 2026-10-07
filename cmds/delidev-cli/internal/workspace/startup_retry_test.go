@@ -66,9 +66,12 @@ func TestUnsentRetryBeforeContinuationClaimKeepsExactNativePredecessor(t *testin
 	if lease.claim.PreviousJobID != failed.JobID || lease.claim.PreviousExecutionID != failed.ExecutionID {
 		t.Fatal("changed selected retry metadata")
 	}
-	if retained, err := readExecutionClaimFile(m.executionHistoryPath(input.SessionID, original.ExecutionID)); err != nil || retained.JobID != original.JobID {
+	var retained executionClaim
+	raw, err := security.ReadPrivate(m.executionHistoryPath(input.SessionID, original.ExecutionID), 4096)
+	if err != nil || domain.Decode(raw, &retained) != nil || retained.JobID != original.JobID {
 		t.Fatal("rewrote historical native predecessor", err)
 	}
+
 	if err = lease.Close(); err != nil {
 		t.Fatal(err)
 	}

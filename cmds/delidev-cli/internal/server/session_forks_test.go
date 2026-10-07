@@ -180,7 +180,11 @@ func TestSessionForkRejectsActiveSourceAndInvalidCompletion(t *testing.T) {
 		protected.Storage = &domain.WorkspaceStorage{State: state, JobID: domain.NewID(), SnapshotID: domain.NewID()}
 		setSource(protected)
 		blocked := &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(row.ID), ExpectedRevision: row.Revision}, ExpectedTurnId: string(f.turn), Name: "Storage-owned source"}
-		if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, blocked)); domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+		if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, blocked)); state == domain.WorkspaceStored {
+			if domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+				t.Fatal("missing stored workspace was admitted", err)
+			}
+		} else if err != nil {
 			t.Fatal("fork bypassed storage ownership", state, err)
 		}
 	}

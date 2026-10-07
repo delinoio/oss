@@ -246,7 +246,7 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	response = f.request(t, f.token, `{"model":"fixture-model"}`)
-	if response.StatusCode != http.StatusNotFound || requests.Load() != 2 {
+	if response.StatusCode != http.StatusForbidden || requests.Load() != 2 {
 		t.Fatal("canceled execution retained inference authority")
 	}
 	replayed, err := f.client.RegisterExecution(context.Background(), ownerRequest(f.service.Identity, f.register))

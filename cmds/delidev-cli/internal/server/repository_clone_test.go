@@ -130,8 +130,8 @@ func TestRepositoryCloneAcceptReplayAndServerRegistration(t *testing.T) {
 		t.Fatal("secondary proof retirement lost the original acknowledgment", err)
 	}
 	request.RequestId = string(domain.NewID())
-	if _, err := client.CloneRepository(ctx, ownerRequest(f.service.Identity, request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Fatal("retired proof granted fresh Clone authority", err)
+	if _, err := client.CloneRepository(ctx, ownerRequest(f.service.Identity, request)); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatal("revoked selected Worker registration was not rejected", err)
 	}
 }
 func bytesContain(raw []byte, value string) bool { return strings.Contains(string(raw), value) }

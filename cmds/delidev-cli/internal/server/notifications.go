@@ -113,6 +113,15 @@ func (s *Service) readNotificationDelivery(ctx context.Context, inbox domain.ID)
 	err := s.Store.Read(ctx, func(tx *store.Tx) error { var err error; value, err = tx.NotificationDelivery(inbox); return err })
 	return value, err
 }
+func (s *Service) readNotificationClaim(ctx context.Context, inbox, claim domain.ID) (domain.NotificationDelivery, error) {
+	var value domain.NotificationDelivery
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		var err error
+		value, err = tx.NotificationDeliveryByClaim(inbox, claim)
+		return err
+	})
+	return value, err
+}
 func (s *Service) GetNotificationDelivery(ctx context.Context, req *connect.Request[pb.GetNotificationDeliveryRequest]) (*connect.Response[pb.GetNotificationDeliveryResponse], error) {
 	value, err := s.readNotificationDelivery(ctx, domain.ID(req.Msg.InboxId))
 	if err != nil {
@@ -144,6 +153,9 @@ func (s *Service) ClaimNotification(ctx context.Context, req *connect.Request[pb
 		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The original notification claim is inconsistent.", "Keep the retained inbox; never repeat uncertain native presentation."), correlation)
 	}
 	current, err := s.readNotificationDelivery(ctx, identity.InboxID)
+	if result.Replayed {
+		current, err = s.readNotificationClaim(ctx, identity.InboxID, result.RequestID)
+	}
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -177,7 +189,7 @@ func (s *Service) ReportNotification(ctx context.Context, req *connect.Request[p
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	current, err := s.readNotificationDelivery(ctx, identity.InboxID)
+	current, err := s.readNotificationClaim(ctx, identity.InboxID, identity.ClaimID)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
