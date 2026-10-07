@@ -249,9 +249,18 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 	if response.StatusCode != http.StatusForbidden || requests.Load() != 2 {
 		t.Fatal("canceled execution retained inference authority")
 	}
-	replayed, err := f.client.RegisterExecution(context.Background(), ownerRequest(f.service.Identity, f.register))
-	if err != nil || !replayed.Msg.Replayed {
-		t.Fatal("cancellation rewrote an accepted grant receipt", err)
+	_, err = f.client.RegisterExecution(context.Background(), ownerRequest(f.service.Identity, f.register))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("Stop allowed a fresh inference credential", err)
+	}
+	if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		retained, err := tx.ExecutionGrant(f.register.CredentialDigest)
+		if err == nil && retained.JobID != f.job {
+			t.Fatal("Stop rewrote historical grant identity")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

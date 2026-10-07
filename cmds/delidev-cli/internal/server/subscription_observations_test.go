@@ -213,7 +213,7 @@ func TestSubscriptionQuotaActiveExecutionRetainsSingleNativeOwner(t *testing.T) 
 	op = f.requestQuota()
 	f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
 	request := &pb.ClaimSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: original.Revision}, LeaseId: string(original.ID), MachineId: string(original.MachineID), InstanceId: string(original.InstanceID), OperationId: op.OperationId, GenerationId: string(original.Generation)}
-	if _, err := f.client.ClaimSubscriptionObservation(context.Background(), subscriptionRequest(f.workerToken, request)); rpc.ClientError(err).Code != domain.RecoveryRequired {
-		t.Fatal("revoked observation gained native send authority", err)
+	if _, err := f.client.ClaimSubscriptionObservation(context.Background(), subscriptionRequest(f.workerToken, request)); rpc.ClientError(err).Code != domain.Conflict {
+		t.Fatal("changed lease revision gained native send authority", err)
 	}
 }

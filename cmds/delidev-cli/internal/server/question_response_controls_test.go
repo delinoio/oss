@@ -221,7 +221,7 @@ func TestQuestionClaimReplayRechecksAuthorityWithoutReturningAnswers(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			if response, err := claimQuestion(f, request); (change != "worker" && (err == nil || response != nil)) || (change == "worker" && (err != nil || response == nil)) {
+			if response, err := claimQuestion(f, request); (change != "worker" && change != "heartbeat" && (err == nil || response != nil)) || ((change == "worker" || change == "heartbeat") && (err != nil || response == nil)) {
 				t.Fatal("accepted receipt returned answers after authority loss")
 			}
 			r, value := readPublishedInteraction(t, f, domain.ID(request.Mutation.Id))

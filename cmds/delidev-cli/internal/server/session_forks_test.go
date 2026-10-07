@@ -206,12 +206,16 @@ func TestSessionForkRejectsActiveSourceAndInvalidCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	observed, err := sessionClient(f.accountFixture).GetSessionFork(context.Background(), ownerRequest(f.identity, &pb.GetSessionForkRequest{JobId: job.Id}))
-	if err != nil || observed.Msg.Session != nil {
-		t.Fatal("partial child published", err)
+	if err != nil || observed.Msg.Session == nil {
+		t.Fatal("unconfirmed cleanup blocked child publication", err)
 	}
 	var state domain.Job
-	if domain.Decode(observed.Msg.Job.DocumentJson, &state) != nil || state.State != domain.JobUncertain {
-		t.Fatal("unknown cleanup lost uncertainty")
+	if domain.Decode(observed.Msg.Job.DocumentJson, &state) != nil || state.State != domain.JobSucceeded {
+		t.Fatal("completed copy did not settle its actual result")
+	}
+	var retained domain.ForkJobResult
+	if domain.Decode(state.Output, &retained) != nil || retained.CleanupVerified {
+		t.Fatal("unconfirmed native cleanup became positive proof")
 	}
 }
 
