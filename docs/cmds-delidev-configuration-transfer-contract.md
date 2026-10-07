@@ -85,3 +85,14 @@ Version 2 carries independent service-native accounts and models without Provide
 Only bundle version 2 is accepted for export, preview and apply. Version 1 and unknown versions fail before publication. Relationship validation and model uniqueness compare the full source identity, retaining global CLI alias collision checks. Retired subscription documents and reconfiguration flags are unsupported.
 
 Remote repositories retain the required credential-free `remote_url` during export/import. Empty checkout lists require no machine/path mappings and finish the existing durable import atomically without inspection children. Optional folders retain every existing mapping and Worker check. Clients verify System capability 37 before sending repository import requests. Historical missing URLs are not inferred or converted; users must explicitly configure the source before a new save/import.
+
+## Ordered account source routes
+
+Portable version 2 retains every ordered Agent source route, model reference,
+account reference, policy and weight. Remap all route references before complete
+relationship validation and reuse comparisons. Export/import never transports
+routing state, quota observations, connections or execution history. Bundle v2 is
+the only supported transport and carries both current single-source and ordered
+source-route Agent documents. Earlier and unknown bundle versions are rejected.
+Current import previews use version 2 and preserve their exact bytes through
+acceptance/publication.

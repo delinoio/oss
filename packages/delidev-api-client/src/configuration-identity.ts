@@ -19,10 +19,15 @@ function object(value: unknown): value is Record<string, unknown> { return value
 export function supportsResourceSchema(resource: Resource): boolean {
   if (resource.documentJson.byteLength > 1 << 20) return false;
   if (resource.schemaVersion === 1) return true;
-  if (resource.schemaVersion !== 2) return false;
+  if (resource.schemaVersion !== 2 && resource.schemaVersion !== 3) return false;
   try {
     const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson));
     if (!object(value)) return false;
+    if (resource.schemaVersion === 3) {
+      return resource.kind === EntityKind.AGENT && Array.isArray(value.routes) && value.routes.length > 0 && value.routes.length <= 1000 &&
+        !("reconfiguration_required" in value) && !value.model_id && !value.routing && (!Array.isArray(value.accounts) || value.accounts.length === 0) &&
+        value.routes.every(route => object(route) && typeof route.model_id === "string" && Array.isArray(route.accounts) && route.accounts.length > 0);
+    }
     const service = subscriptionService(value.subscription_service);
     if (!service || Object.hasOwn(value, "provider_id")) return false;
     if (resource.kind === EntityKind.ACCOUNT) return value.type === "subscription";
@@ -31,6 +36,7 @@ export function supportsResourceSchema(resource: Resource): boolean {
   } catch { return false; }
 }
 export function configurationSchemaVersion(kind: EntityKind, value: Record<string, unknown>): number {
+  if (kind === EntityKind.AGENT && Array.isArray(value.routes) && value.routes.length > 0) return 3;
   return kind === EntityKind.ACCOUNT && value.type === "subscription" ||
     kind === EntityKind.MODEL && value.source_kind === NativeModelSourceKind.Subscription ? 2 : 1;
 }

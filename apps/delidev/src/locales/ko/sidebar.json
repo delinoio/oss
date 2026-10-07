@@ -1,4 +1,14 @@
 {
+  "sidebar.hover.execution": "실행",
+  "sidebar.hover.archive": "보관",
+  "sidebar.hover.notStarted": "시작 전",
+  "sidebar.hover.running": "실행 중",
+  "sidebar.hover.succeeded": "성공",
+  "sidebar.hover.failed": "실패",
+  "sidebar.hover.stopped": "중지됨",
+  "sidebar.hover.active": "활성",
+  "sidebar.hover.archiving": "보관 중",
+  "sidebar.hover.archived": "보관됨",
   "sidebar.correlation_3851eb": " 상관관계: {{v0}}",
   "sidebar.reloadList_83b8c9": "{{v0}} 목록 다시 읽기",
   "sidebar.reloadList_095352": "목록 다시 읽기",
@@ -54,5 +64,6 @@
   "sidebar.sentence.3c9f0d81b95a": "{{v0}} 불러오기에 연결하지 못했습니다.",
   "sidebar.sentence.7e9a504e5355": "알 수 없는 작업공간({{v0}})",
   "sidebar.sentence.407326d462c1": "세션: {{v0}} {{v1}}. 실행 상태: {{v2}}. 보관 상태: {{v3}}. 작업공간: {{v4}}.{{v5}}",
-  "sidebar.sentence.7436726e0559": "프로젝트 · {{v0}}"
+  "sidebar.sentence.7436726e0559": "프로젝트 · {{v0}}",
+  "sidebar.newGeneralChat": "새 일반 대화"
 }

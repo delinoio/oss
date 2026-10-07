@@ -267,15 +267,22 @@ type WeightedAccount struct {
 	ID     ID     `json:"id"`
 	Weight uint32 `json:"weight"`
 }
+type AgentSourceRoute struct {
+	ModelID  ID                `json:"model_id"`
+	Accounts []WeightedAccount `json:"accounts,omitempty"`
+	Routing  *RoutingPolicy    `json:"routing,omitempty"`
+}
+
 type Agent struct {
-	Name      string            `json:"name"`
-	Harness   Harness           `json:"harness"`
-	ModelID   ID                `json:"model_id"`
-	Effort    string            `json:"effort,omitempty"`
-	Accounts  []WeightedAccount `json:"accounts"`
-	Routing   *RoutingPolicy    `json:"routing,omitempty"`
-	Templates []ID              `json:"templates"`
-	Options   AgentOptions      `json:"options"`
+	Name      string             `json:"name"`
+	Harness   Harness            `json:"harness"`
+	ModelID   ID                 `json:"model_id,omitempty"`
+	Effort    string             `json:"effort,omitempty"`
+	Accounts  []WeightedAccount  `json:"accounts,omitempty"`
+	Routes    []AgentSourceRoute `json:"routes,omitempty"`
+	Routing   *RoutingPolicy     `json:"routing,omitempty"`
+	Templates []ID               `json:"templates"`
+	Options   AgentOptions       `json:"options"`
 }
 
 func (a Agent) Validate() error {
@@ -285,17 +292,28 @@ func (a Agent) Validate() error {
 	if !a.Harness.Valid() {
 		return Fail(InvalidArgument, "Unknown harness.", "Choose codex, claude-code, opencode, or grok-build.")
 	}
-	if err := a.ModelID.Validate(); err != nil {
-		return err
+	if len(a.Routes) > 0 && (a.ModelID != "" || len(a.Accounts) != 0 || a.Routing != nil) {
+		return Fail(InvalidArgument, "Worker configuration mixes account route formats.", "Use ordered source routes or a single source, with one authority.")
 	}
-	if a.Routing != nil && !a.Routing.Valid() {
-		return Fail(InvalidArgument, "Unknown routing policy.", "Select one of the six supported policies.")
-	}
-	ids := make([]ID, 0, len(a.Accounts))
-	for _, c := range a.Accounts {
-		ids = append(ids, c.ID)
-		if c.Weight < 1 || c.Weight > 1000 {
-			return Fail(InvalidArgument, "Invalid account weight.", "Use relative weights from 1 through 1000.")
+	ids := []ID{}
+	for _, route := range a.SourceRoutes() {
+		if err := route.ModelID.Validate(); err != nil {
+			return err
+		}
+		if route.Routing != nil && !route.Routing.Valid() {
+			return Fail(InvalidArgument, "Unknown routing policy.", "Select one of the six supported policies.")
+		}
+		if len(route.Accounts) == 0 {
+			return Fail(MissingInput, "An account source has no accounts.", "Choose at least one account for every source.")
+		}
+		if route.Routing != nil && *route.Routing == Fixed && len(route.Accounts) != 1 {
+			return Fail(InvalidArgument, "Fixed routing accepts one account.", "Select exactly one account.")
+		}
+		for _, c := range route.Accounts {
+			ids = append(ids, c.ID)
+			if c.Weight < 1 || c.Weight > 1000 {
+				return Fail(InvalidArgument, "Invalid account weight.", "Use relative weights from 1 through 1000.")
+			}
 		}
 	}
 	if err := UniqueIDs(ids); err != nil {
@@ -303,9 +321,6 @@ func (a Agent) Validate() error {
 	}
 	if err := UniqueIDs(a.Templates); err != nil {
 		return err
-	}
-	if a.Routing != nil && *a.Routing == Fixed && len(a.Accounts) > 1 {
-		return Fail(InvalidArgument, "Fixed routing accepts one account.", "Select one account or save an account-less draft.")
 	}
 	if a.Options.Permission != PermissionDefault && a.Options.Permission != PermissionReadOnly && a.Options.Permission != PermissionWorkspaceWrite && a.Options.Permission != PermissionFullAccess {
 		return Fail(InvalidArgument, "Unknown native permission mode.", "Choose an explicit supported permission mode.")
@@ -327,6 +342,35 @@ func (a Agent) Validate() error {
 		}
 	}
 	return nil
+}
+
+// SourceRoutes gives all reference consumers one view for current configuration and execution documents.
+func (a Agent) SourceRoutes() []AgentSourceRoute {
+	if len(a.Routes) > 0 {
+		return a.Routes
+	}
+	return []AgentSourceRoute{{ModelID: a.ModelID, Accounts: a.Accounts, Routing: a.Routing}}
+}
+func (a Agent) AllAccounts() []WeightedAccount {
+	result := []WeightedAccount{}
+	for _, route := range a.SourceRoutes() {
+		result = append(result, route.Accounts...)
+	}
+	return result
+}
+func (a Agent) ModelIDs() []ID {
+	result := []ID{}
+	for _, route := range a.SourceRoutes() {
+		result = append(result, route.ModelID)
+	}
+	return result
+}
+
+// WithSource constructs the existing execution shape for the chosen source only.
+func (a Agent) WithSource(route AgentSourceRoute) Agent {
+	a.Routes = nil
+	a.ModelID, a.Accounts, a.Routing = route.ModelID, route.Accounts, route.Routing
+	return a
 }
 
 type Template struct {

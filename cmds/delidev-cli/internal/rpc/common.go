@@ -109,8 +109,12 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
 	var identity struct {
+		Routes     []json.RawMessage      `json:"routes"`
 		Type       domain.AccountType     `json:"type"`
 		SourceKind domain.ModelSourceKind `json:"source_kind"`
+	}
+	if json.Unmarshal(raw, &identity) == nil && kind == domain.AgentKind && len(identity.Routes) > 0 {
+		return 3
 	}
 	if json.Unmarshal(raw, &identity) == nil && ((kind == domain.AccountKind && identity.Type == domain.SubscriptionAccount) || (kind == domain.ModelKind && identity.SourceKind == domain.SubscriptionModel)) {
 		return 2

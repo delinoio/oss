@@ -22,6 +22,23 @@ func TestRemoteScheduleClonesWithoutCheckoutAndClaimsExecution(t *testing.T) {
 	// without invoking an installed harness or an external account.
 	f := newFirstDispatchFixtureWorkspaceProfile(t, domain.Codex, domain.PlanMode, "/fixture/codex", "", "fixture-model", domain.Worktree)
 	ctx := context.Background()
+	nextJob := func(label string) *pb.Resource {
+		t.Helper()
+		for f.workerStream.Receive() {
+			message := f.workerStream.Msg()
+			// Git preparation can queue periodic liveness frames before either
+			// assignment. A heartbeat is not a missing or substituted job.
+			if message.Heartbeat {
+				continue
+			}
+			if message.Job == nil {
+				t.Fatal(label, "received a non-job control frame")
+			}
+			return message.Job
+		}
+		t.Fatal(label, "was not assigned", f.workerStream.Err())
+		return nil
+	}
 	projectRecord, err := f.service.Store.Get(ctx, domain.ProjectKind, f.selection.ProjectID)
 	if err != nil {
 		t.Fatal(err)
@@ -63,16 +80,7 @@ func TestRemoteScheduleClonesWithoutCheckoutAndClaimsExecution(t *testing.T) {
 	if err != nil || run.Msg.Session == nil {
 		t.Fatal("schedule did not accept a session", err)
 	}
-	nextJob := func() *pb.Resource {
-		for f.workerStream.Receive() {
-			if job := f.workerStream.Msg().Job; job != nil {
-				return job
-			}
-		}
-		t.Fatal("scheduled work stream ended", f.workerStream.Err())
-		return nil
-	}
-	assigned := nextJob()
+	assigned := nextJob("schedule preparation")
 	var job domain.Job
 	var preparation workspace.PrepareRequest
 	if domain.Decode(assigned.DocumentJson, &job) != nil || job.Type != domain.PrepareWorkspaceJob || domain.Decode(job.Input, &preparation) != nil || string(preparation.SessionID) != run.Msg.Session.Id {
@@ -99,7 +107,7 @@ func TestRemoteScheduleClonesWithoutCheckoutAndClaimsExecution(t *testing.T) {
 	if err := f.service.dispatchExecution(ctx, current); err != nil {
 		t.Fatal("prepared schedule did not dispatch", err)
 	}
-	execution := nextJob()
+	execution := nextJob("scheduled execution")
 	var input domain.ExecutionJobInput
 	if domain.Decode(execution.DocumentJson, &job) != nil || job.Type != domain.ExecuteSessionJob || domain.Decode(job.Input, &input) != nil || input.SessionID != preparation.SessionID || input.Input.Prompt != definition.Prompt {
 		t.Fatal("scheduled execution lost its accepted input")

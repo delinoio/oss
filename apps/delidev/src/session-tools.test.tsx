@@ -8,9 +8,9 @@ import { EntityKind, ResourceSchema, ResourceService, SessionService, SystemCapa
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionTools } from "./session-tools";
-import { NewSession } from "./new-session";
+import { NewSession, NewSessionKind } from "./new-session";
 
-function fixture() {
+function fixture(automaticTitles = true) {
   const execution = newRequestId();
   const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Session", archive: "active", outcome: "not-started", dispatch: "paused", recovery: "required", preparation: { state: "uncertain" }, execution: { execution_id: execution } }) });
   const workspace = vi.fn(async (_request: unknown) => ({ change: { session } }));
@@ -24,7 +24,7 @@ function fixture() {
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Worker" }) });
   const listResources = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => request.filter?.kind === EntityKind.AGENT && !request.filter.pageToken ? { resources: [], nextPageToken: "later" } : { resources: [project, agent, machine].filter((row) => row.kind === request.filter?.kind), nextPageToken: "" });
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }) });
     router.service(SessionService, { createSession, recoverSessionWorkspace: workspace, recoverSessionExecution: recover, prepareSessionWorkspace: prepare, renameSession: rename, controlSession: control });
     router.service(ResourceService, { getResource: (request) => ({ resource: request.id === project.id ? project : undefined }), listResources });
   });
@@ -48,6 +48,87 @@ it("requires explicit incomplete preparation cleanup and retains its original re
   expect(value.workspace.mock.calls[0][0]).toEqual(value.workspace.mock.calls[1][0]);
   expect(value.workspace.mock.calls[0][0]).toMatchObject({ cleanup: true, mutation: { id: value.session.id, expectedRevision: 8n } });
   expect(value.control).not.toHaveBeenCalled(); expect(value.prepare).not.toHaveBeenCalled();
+});
+
+it("preserves a General Chat UTF-8 draft when automatic titles are unsupported", async () => {
+  const value = fixture(false);
+  render(value.view(<NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const message = screen.getByLabelText("First message") as HTMLTextAreaElement;
+  const valid = "가".repeat(Math.floor((256 << 10) / 3));
+  fireEvent.change(message, { target: { value: valid } });
+  fireEvent.change(message, { target: { value: valid + "가" } });
+  expect(message.value).toBe(valid);
+  expect(screen.getByText(/exceeds 256 KiB/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start general chat" }).getAttribute("disabled")).not.toBeNull();
+  fireEvent.submit(message.form!);
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it.each([Code.PermissionDenied, Code.Unavailable, undefined])("keeps General Chat selector failure or empty inventory distinct (%s)", async (code) => {
+  const value = fixture();
+  const original = value.listResources.getMockImplementation()!;
+  value.listResources.mockImplementation(async (request) => {
+    if (request.filter?.kind === EntityKind.AGENT) {
+      if (code) throw new ConnectError("Choice read failed", code);
+      return { resources: [], nextPageToken: "" };
+    }
+    return original(request);
+  });
+  render(value.view(<NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const expected = code === Code.PermissionDenied ? /The server denied access to these choices/ : code === Code.Unavailable ? /The server connection failed while loading these choices/ : /No selectable Agent Worker choices are on this page/;
+  expect(await screen.findByText(expected)).toBeTruthy();
+  if (code) expect(screen.queryByText("No selectable Agent Worker choices are on this page.")).toBeNull();
+  expect(value.listResources.mock.calls.some(([request]) => request.filter?.kind === EntityKind.PROJECT)).toBe(false);
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it("rejects missing General Chat selections, whitespace and invalid budgets without losing the draft", async () => {
+  const value = fixture();
+  render(value.view(<NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const message = screen.getByLabelText("First message") as HTMLTextAreaElement;
+  fireEvent.change(message, { target: { value: "Draft with no execution selection" } });
+  fireEvent.submit(message.form!);
+  expect(value.createSession).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole("button", { name: "More choices" }));
+  await screen.findByRole("option", { name: "Later-page agent" });
+  fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(screen.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.change(message, { target: { value: "   " } });
+  fireEvent.submit(message.form!);
+  expect(value.createSession).not.toHaveBeenCalled();
+  fireEvent.change(message, { target: { value: "Review this idea" } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(screen.getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(screen.getByLabelText("Estimated-cost threshold"), { target: { value: "invalid" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start general chat" }));
+  expect(screen.getByRole("alert")).toBeTruthy();
+  expect(message.value).toBe("Review this idea");
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it("retries only the original General Chat request after uncertainty and reentry", async () => {
+  const value = fixture();
+  const open = vi.fn();
+  value.createSession.mockRejectedValueOnce(new ConnectError("Lost creation response", Code.Unavailable));
+  const page = (active: boolean, activation: number) => value.view(<NewSession kind={NewSessionKind.GeneralChat} active={active} ownsActivation={active} activation={activation} back={() => {}} openSettings={() => {}} open={open} created={() => {}} />);
+  const view = render(page(true, 1));
+  fireEvent.click(await screen.findByRole("button", { name: "More choices" }));
+  await screen.findByRole("option", { name: "Later-page agent" });
+  fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(screen.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.change(screen.getByLabelText("First message"), { target: { value: "One general conversation" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start general chat" }));
+  await screen.findByRole("button", { name: "Retry the same session creation" });
+  expect((screen.getByLabelText("First message").closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+  view.rerender(page(false, 1));
+  view.rerender(page(true, 2));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
+  await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(2));
+  expect(value.createSession.mock.calls[0][0]).toEqual(value.createSession.mock.calls[1][0]);
+  expect(open).not.toHaveBeenCalled();
+  expect(await screen.findByRole("button", { name: "Open conversation" })).toBeTruthy();
 });
 
 it("binds execution recovery to the original execution without resending input or resuming", async () => {

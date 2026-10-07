@@ -8,7 +8,7 @@
   "validation.e5d23860896b": "Provide at least one explicit rate. A zero rate must be entered as 0.",
   "validation.3574c19968e0": "Keep the source within 2,048 bytes and use at most 16 nonempty exclusion lines of 512 bytes each.",
   "validation.0c01933238f8": "Use an export of at most 384 KiB.",
-  "validation.71aacc919010": "Use a version 1 API-only or version 2 DeliDev configuration export.",
+  "validation.71aacc919010": "Use a current version 2 DeliDev configuration export.",
   "validation.c2538b95da40": "The exported entries are not readable. Validate the original document before continuing.",
   "validation.1661a2b58b48": "The exported machine references are not readable.",
   "validation.261f35fd3668": "Repository checkouts must be an explicit list.",

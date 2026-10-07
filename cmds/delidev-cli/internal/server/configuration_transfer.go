@@ -421,7 +421,24 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 				err = rewrite(&v.ProviderID, domain.ProviderKind)
 			}
 		case *domain.Agent:
-			if err = rewrite(&v.ModelID, domain.ModelKind); err == nil {
+			if len(v.Routes) == 0 {
+				err = rewrite(&v.ModelID, domain.ModelKind)
+			} else {
+				for i := range v.Routes {
+					if err = rewrite(&v.Routes[i].ModelID, domain.ModelKind); err != nil {
+						break
+					}
+					for j := range v.Routes[i].Accounts {
+						if err = rewrite(&v.Routes[i].Accounts[j].ID, domain.AccountKind); err != nil {
+							break
+						}
+					}
+					if err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
 				err = rewriteIDs(v.Templates, domain.TemplateKind)
 			}
 			if err == nil {

@@ -31,21 +31,41 @@ type Candidate struct {
 	ResetAt         *time.Time       `json:"reset_at,omitempty"`
 	ComparisonGroup string           `json:"comparison_group,omitempty"`
 }
-type RoutingState struct {
+type RoutingCursor struct {
 	Current  ID           `json:"current,omitempty"`
 	Rotation map[ID]int64 `json:"rotation"`
 	Tie      uint64       `json:"tie"`
 }
+type RoutingState struct {
+	Sources  map[string]RoutingCursor `json:"sources,omitempty"`
+	Current  ID                       `json:"current,omitempty"`
+	Rotation map[ID]int64             `json:"rotation"`
+	Tie      uint64                   `json:"tie"`
+}
+type SourceSelection struct {
+	Source        string `json:"source"`
+	ModelID       ID     `json:"model_id"`
+	ModelRevision uint64 `json:"model_revision"`
+	NativeModel   string `json:"native_model"`
+	Route         Route  `json:"route"`
+	Problem       *Error `json:"problem,omitempty"`
+}
 type Route struct {
-	Policy     RoutingPolicy `json:"policy"`
-	Selected   ID            `json:"selected,omitempty"`
-	Candidates []Candidate   `json:"candidates"`
-	Fallback   bool          `json:"fallback"`
+	Sources     []SourceSelection `json:"sources,omitempty"`
+	SourceIndex *uint32           `json:"source_index,omitempty"`
+	Policy      RoutingPolicy     `json:"policy"`
+	Selected    ID                `json:"selected,omitempty"`
+	Candidates  []Candidate       `json:"candidates"`
+	Fallback    bool              `json:"fallback"`
 }
 
 // RouteAccount is pure. Preview discards next; dispatch must atomically persist
 // next together with the session snapshot/account and actual selection record.
 func RouteAccount(agentID ID, agent Agent, model Model, project *Project, accounts map[ID]Account, defaultPolicy RoutingPolicy, state RoutingState, now time.Time) (Route, RoutingState, error) {
+	return routeAccount(agentID, agent, model, project, accounts, defaultPolicy, state, now, nil)
+}
+
+func routeAccount(agentID ID, agent Agent, model Model, project *Project, accounts map[ID]Account, defaultPolicy RoutingPolicy, state RoutingState, now time.Time, blocked map[ID]Eligibility) (Route, RoutingState, error) {
 	policy := defaultPolicy
 	if agent.Routing != nil {
 		policy = *agent.Routing
@@ -78,6 +98,8 @@ func RouteAccount(agentID ID, agent Agent, model Model, project *Project, accoun
 			c.Eligibility = DisabledAccount
 		case account.Health != AccountReady || account.Connection == nil || account.Removal != nil:
 			c.Eligibility = UnauthenticatedAccount
+		case blocked[link.ID] != "":
+			c.Eligibility = blocked[link.ID]
 		case account.ConfirmedExhausted:
 			c.Eligibility = ExhaustedAccount
 		case account.ExcludeAutomatic && policy != Fixed:

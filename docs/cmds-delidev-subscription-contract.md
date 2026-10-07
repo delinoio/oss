@@ -1,5 +1,48 @@
 # DeliDev managed Codex subscriptions
 
+## Failed subscription cleanup reservations
+
+Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the
+`CleanupFailedSubscriptions` and `GetFailedSubscriptionCleanup` request/response
+messages, `FailedSubscriptionCleanupJob` and `FailedSubscriptionCleanupResult`,
+and the closed cleanup state/outcome/reason enums in `allocations.json`.
+Establish this complete reservation on main before dependent implementation.
+The request reserves the original request ID; status reserves original job ID
+and pagination token. Responses reserve the job, original receipt identity,
+replay flag and bounded result pagination. Job metadata reserves ID/revision,
+state, total/processed/deleted/retained counts and safe problem code. Results
+reserve account ID/alias, outcome, reason and safe problem code.
+
+The planned button deliberately starts one server-wide cleanup without another
+confirmation. Only failed, canceled, expired, unsupported or interrupted initial
+ChatGPT server logins without independent authentication or Worker ownership are
+candidates. Original native and protected-credential cleanup, fresh revisions,
+complete retained-reference checks and deletion receipts remain authoritative.
+Ordinary disconnected accounts and active logins remain outside the batch.
+Reservations introduce no active schemas, generated bindings, capability
+advertisement, native cleanup, configuration deletion or database migration.
+
+## Planned native Claude subscriptions
+
+The owner-approved Claude extension includes browser login, reauthentication,
+logout and session execution on an explicitly selected local or remote Runner
+Device. It reserves System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the protocol closure on main before
+implementation. These reservations do not change the currently unsupported
+Claude lifecycle or activate any capability.
+
+The planned original installed Claude Code 2.1.236 process owns authentication
+in one private account-specific `CLAUDE_CONFIG_DIR`. Existing personal logins,
+external token input, Console/API login, credential transfer between machines
+and Claude quota/credit operations remain excluded. Native credentials stay on
+their original Runner Device; the server retains only profile references,
+identity commitments, generations and original lifecycle/execution ownership.
+Single-use browser approval input reaches only that original native login.
+Login/status/logout and execution must retain independent native evidence;
+status alone cannot prove token refresh, process cleanup or deletion. This
+extension adds no database migration. Follow the protocol and structure
+contracts for main-first reservations and independent complete feature delivery.
+
 ## Scope
 
 Issue #1095 implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. An explicitly selected paired Worker owns execution processes and its private authentication files. The independently negotiated server login lane owns browser login, authentication refresh and logout without a Worker. The complete product requirements remain in [issue #964's snapshot](cmds-delidev-requirements.md).
