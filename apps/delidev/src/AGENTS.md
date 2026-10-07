@@ -747,3 +747,5 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Failed manual native-model lookup grants no accepted operation ownership; allow correction until discovery acknowledgment or verified status retains the original unsettled job.
 
 - Missing, foreign and wrong-kind manual observation responses remain correctable only when no original unsettled job has been retained.
+
+- Keep unreadable retained native-model job states explicitly reinspectable when automatic polling is unavailable; original unsettled ownership remains locked.

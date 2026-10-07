@@ -2300,3 +2300,5 @@ Desktop update candidates retain the exact recovery ID and decimal revision as f
 Failed unverified manual native-observation lookups remain editable. Discovery acknowledgments and verified lookup jobs retain unsettled ownership across later read failures, preventing replacement.
 
 An unverified manual observation response with a missing, foreign or wrong-kind job is unreadable lookup evidence and permits correction; it cannot release a previously retained unsettled job.
+
+Retained native-model jobs with missing or unrecognized nonterminal states remain locked and explicitly reinspectable when their state cannot be automatically polled. Reinspection reads only the original job.
