@@ -56,10 +56,17 @@ async function start(value: ReturnType<typeof fixture>, edit = false, transport 
 }
 const confirmHarness = (name = "Codex") => fireEvent.click(screen.getByRole("radio", { name }));
 const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
+async function nextAfterAccountRead() {
+  // Selection alone is presentation. Wait for the independent current-account
+  // read before advancing, including slow CI transport/effect delivery.
+  await waitFor(() => expect(screen.queryByText("Loading selected account…")).toBeNull());
+  next();
+}
+
 async function subscriptionModels(value: ReturnType<typeof fixture>) {
   await start(value); confirmHarness(); next();
   await chooseScrollOption(sourceChoice("Account source"), "subscription:chatgpt");
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await nextAfterAccountRead();
   return screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement;
 }
 async function accounts(value: ReturnType<typeof fixture>, multi = false) {
@@ -69,7 +76,7 @@ async function accounts(value: ReturnType<typeof fixture>, multi = false) {
   fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
   if (multi) { fireEvent.click(screen.getByRole("button", { name: /^Load more.*[Aa]ccount/ })); fireEvent.click(await screen.findByRole("checkbox", { name: /Team API/ })); }
   await waitFor(() => expect(screen.getAllByText(`${multi ? 2 : 1} accounts selected`)[0]).toBeTruthy());
-  next();
+  await nextAfterAccountRead();
   await screen.findByRole("combobox", { name: "Model" });
 }
 
@@ -134,12 +141,12 @@ it("starts edits with the saved non-default harness selected", async () => {
 it("preserves edit selections on harness reselection and clears them only on a change", async () => {
   const value = fixture(); await start(value, true); confirmHarness();
   await waitFor(() => expect(scrollChoiceValue(sourceChoice("Account source"))).toBe(`api:${value.provider.id}`));
-  await screen.findByRole("checkbox", { name: /Personal API/ }); next();
+  await screen.findByRole("checkbox", { name: /Personal API/ }); await nextAfterAccountRead();
   expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
   fireEvent.click(screen.getByRole("button", { name: "Back" })); fireEvent.click(screen.getByRole("button", { name: "Back" }));
   confirmHarness();
   expect(scrollChoiceValue(sourceChoice("Account source"))).toBe(`api:${value.provider.id}`);
-  expect(screen.getAllByText("1 accounts selected")[0]).toBeTruthy(); next();
+  expect(screen.getAllByText("1 accounts selected")[0]).toBeTruthy(); await nextAfterAccountRead();
   expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
   fireEvent.click(screen.getByRole("button", { name: "Back" })); fireEvent.click(screen.getByRole("button", { name: "Back" }));
   confirmHarness("Claude Code");
@@ -285,7 +292,7 @@ it("requires accounts, restricts Fixed routing and resets incompatible source se
   fireEvent.change(screen.getByLabelText("Weight for account 2"), { target: { value: "5" } });
   fireEvent.click(screen.getByRole("button", { name: "Move account 2 up" }));
   expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe("5");
-  next(); fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "retained-input" } });
+  await nextAfterAccountRead(); fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "retained-input" } });
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   await chooseScrollOption(sourceChoice("Account source"), `api:${value.otherProvider.id}`);
   expect(screen.getAllByText("0 accounts selected")[0]).toBeTruthy();
@@ -295,7 +302,7 @@ it("requires accounts, restricts Fixed routing and resets incompatible source se
 it("autocompletes known subscription models with an empty saved list and saves through native ID", async () => {
   const value = fixture(); value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" }); await start(value); confirmHarness(); next();
   await chooseScrollOption(sourceChoice("Account source"), "subscription:chatgpt");
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await nextAfterAccountRead();
   await screen.findByText(/Known models · Catalog updated Oct 6, 2026/);
   const input = screen.getByRole("combobox", { name: "Model" });
   fireEvent.focus(input); fireEvent.change(input, { target: { value: "gpt" } });
@@ -873,6 +880,7 @@ it("keeps later-page saved revisions ahead of known duplicates for each source",
   expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Load more Source 1 model pages" })); fireEvent.focus(input);
   fireEvent.click(await screen.findByRole("option", { name: /Saved GPT/ }));
+  await waitFor(() => expect(input).toHaveProperty("value", "gpt-known-current"));
   await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
   expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull(); await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false)); next();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Saved route" } });
@@ -957,5 +965,67 @@ it("focuses account validation and the exact later invalid weight in the display
   fireEvent.change(later, { target: { value: "1001" } });
   await waitFor(() => expect((later as HTMLInputElement).validity.valid).toBe(false));
   next(); expect(globalThis.document.activeElement).toBe(later);
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+
+it("retains selected legacy account status after its independent read fails", async () => {
+  const value = fixture(); await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source"), `api:${value.provider.id}`);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
+  await waitFor(() => expect(value.get.mock.calls.some(([request]) => request.id === value.accounts[0].id)).toBe(true));
+  const selected = screen.getByRole("checkbox", { name: /Personal API/ }).closest("label")!;
+  expect(selected.textContent).toContain("Connected · Health: unverified");
+  expect(selected.textContent).toContain("Execution eligibility: Checked when execution starts");
+  value.get.mockImplementation(request => { if (request.id === value.accounts[0].id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: /Personal API/ }).closest("label")!.textContent).toContain("Connected · Health: unverified"));
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+
+it("focuses legacy account choices when a valid source has no selected account", async () => {
+  const value = fixture(); await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source"), `api:${value.provider.id}`);
+  const account = await screen.findByRole("checkbox", { name: /Personal API/ });
+  next();
+  expect(globalThis.document.activeElement).toBe(account);
+  expect(screen.queryByRole("combobox", { name: "Account source" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+
+it.each([false, true])("keeps resolved edit source collapsed unless explicitly revealed (reveal=%s)", async reveal => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (args[0].name === "GetResource") await pending; return value.transport.unary(...args); } };
+  await start(value, true, transport); confirmHarness();
+  const change = screen.getByRole("button", { name: "Change source" });
+  expect(change.getAttribute("aria-expanded")).toBe("false");
+  if (reveal) fireEvent.click(change);
+  await act(async () => release());
+  await screen.findByRole("checkbox", { name: "Select Personal API" });
+  expect(change.getAttribute("aria-expanded")).toBe(String(reveal));
+  expect(Boolean(screen.queryByRole("combobox", { name: "Account source 1" }))).toBe(reveal);
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+
+it("waits for independent account proof before the legacy fixture advances", async () => {
+  const value = fixture();
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (args[0].name === "GetResource" && (args[4] as { id?: string }).id === value.accounts[0].id) await pending; return value.transport.unary(...args); } };
+  await start(value, false, transport); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source"), `api:${value.provider.id}`);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
+  await screen.findByText("Loading selected account…");
+  const advancing = nextAfterAccountRead();
+  expect(screen.queryByRole("combobox", { name: "Model" })).toBeNull();
+  await act(async () => release());
+  await advancing;
+  expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });

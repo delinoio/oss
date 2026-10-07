@@ -7,5 +7,9 @@
   "backup-job.theLastObservationIsStaleCurrent_4263e8": "The last observation is stale; current job status is unavailable.",
   "backup-job.dismissTracking_12e6bb": "Dismiss tracking",
   "backup-job.backupTracking": "Backup {{v0}}",
-  "backup-job.dismissBackup": "Dismiss backup {{v0}} tracking"
+  "backup-job.dismissBackup": "Dismiss backup {{v0}} tracking",
+  "backup-job.creationTracking": "Backup {{v0}} creation",
+  "backup-job.deletionTracking": "Backup {{v0}} deletion",
+  "backup-job.dismissCreation": "Dismiss backup {{v0}} creation tracking",
+  "backup-job.dismissDeletion": "Dismiss backup {{v0}} deletion tracking"
 }

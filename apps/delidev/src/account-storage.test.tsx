@@ -209,3 +209,20 @@ it("hides matching successful API and subscription observations while retaining 
   expect(screen.queryByText("Protected credential was readable")).toBeNull();
   expect(screen.getByRole("article", { name: "API key" }).querySelector(".account-storage-notice")).toBeNull();
 });
+
+
+it("retains technical disclosure state across hidden matching success but resets changed identity", async () => {
+  const row = account("Account"), initial = report([observation(row, "failed", "permission_denied")]);
+  const value = fixture(initial), view = render(value.view(<List rows={[row]} />));
+  await screen.findByText("Protected credential could not be read");
+  screen.getByText("Technical details").closest("details")!.open = true;
+  value.state.report = { ...initial, credentials: [observation(row)] }; await refresh();
+  expect(screen.queryByText("Technical details")).toBeNull();
+  expect(screen.getByRole("article", { name: "Account" }).querySelector(".account-storage-notice")).toBeNull();
+  value.state.report = { ...initial, credentials: [observation(row, "failed", "permission_denied")] }; await refresh();
+  expect(screen.getByText("Technical details").closest("details")!.open).toBe(true);
+  const changed = create(ResourceSchema, { ...row, revision: row.revision + 1n });
+  view.rerender(value.view(<List rows={[changed]} />));
+  await screen.findByText("Protected credential could not be read");
+  expect(screen.getByText("Technical details").closest("details")!.open).toBe(false);
+});

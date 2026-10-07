@@ -258,3 +258,27 @@ it.each(["pending", "uncertain", "stored"])("hides native fork and Sidechat whil
  await waitFor(()=>expect(client.isFetching()).toBe(0));
  expect(screen.queryByRole("button",{name:"Open Sidechat"})).toBeNull();expect(screen.queryByRole("button",{name:"Fork session"})).toBeNull();expect(fork).not.toHaveBeenCalled();
 });
+
+
+it("reinspects the retained uncertain Fork without resending creation", async () => {
+ const source = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Recovery source", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "codex" } }, execution: { cleanup_verified: true, native_turn_id: "original-turn" } }) });
+ const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "uncertain", input: { source_session_id: source.id } }) });
+ const forkSession = vi.fn(() => ({ job }));
+ const getSessionFork = vi.fn((_request: { jobId: string }) => ({ job }));
+ const transport = createRouterTransport(router => {
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.CODEX_SESSION_FORK_V1] }) });
+  router.service(ResourceService, { getResource: () => ({ resource: source }) });
+  router.service(SessionService, { forkSession, getSessionFork });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+ fireEvent.click(await screen.findByRole("button", { name: "Create fork" }));
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(retry);
+ await waitFor(() => expect(getSessionFork).toHaveBeenCalledTimes(2));
+ expect(getSessionFork.mock.calls.every(call => (call[0] as {jobId: string}).jobId === job.id)).toBe(true);
+ expect(forkSession).toHaveBeenCalledTimes(1);
+ expect(screen.queryByRole("button", { name: "Finish fork" })).toBeNull();
+});

@@ -290,3 +290,29 @@ it("does not label an unverified non-UTC timestamp as a UTC card observation", a
   const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
   await screen.findByRole("alert"); expect(view.container.querySelector(".pr-list-card")).toBeNull(); expect(screen.queryByText("No pull requests were returned on page 1.")).toBeNull();
 });
+
+
+it("announces standalone initial Load and refresh while preserving returned cards", async () => {
+  const value = fixture(), read = value.query.getMockImplementation()!;
+  let finish!: () => void;
+  const pending = new Promise<void>(resolve => { finish = resolve; });
+  value.query.mockImplementationOnce(async request => { await pending; return read(request); });
+  render(<App transport={value.transport} />);
+  const pane = await open(); await choose(value.rows[0]);
+  expect(value.query).not.toHaveBeenCalled();
+  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  const results = within(await screen.findByRole("region", { name: "GitHub query results" }));
+  expect((await results.findByText("Reading GitHub…")).getAttribute("role")).toBe("status");
+  await act(async () => { finish(); await pending; });
+  await results.findByText("Original fixture title");
+  expect(results.queryByText("Reading GitHub…")).toBeNull();
+  let refreshed!: () => void;
+  const refreshing = new Promise<void>(resolve => { refreshed = resolve; });
+  value.query.mockImplementationOnce(async request => { await refreshing; return read(request); });
+  fireEvent.click(results.getByRole("button", { name: "Refresh GitHub results" }));
+  expect((await results.findByText("Reading GitHub…")).getAttribute("role")).toBe("status");
+  expect(results.getByText("Original fixture title")).toBeTruthy();
+  await act(async () => { refreshed(); await refreshing; });
+  await waitFor(() => expect(results.queryByText("Reading GitHub…")).toBeNull());
+  expect(value.query).toHaveBeenCalledTimes(2);
+});
