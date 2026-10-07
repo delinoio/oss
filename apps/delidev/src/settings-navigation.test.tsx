@@ -21,7 +21,7 @@ function fixture(delay?: "begin" | "start") {
   const cancel = vi.fn(async () => ({})), complete = vi.fn(async () => ({}));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({}) });
-    router.service(ResourceService, { listResources: () => ({ resources: [] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [] }), getResource: () => ({ resource: provider }) });
     router.service(ProviderService, { listProviderPresets: () => ({ presetsJson: encode([]) }), listProviderInventory: () => ({ entries: [entry], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER, ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1] }) });
     router.service(AccountService, { startAccountOAuth: start, getAccountOAuthStatus: () => ({ attempt }), cancelAccountOAuth: cancel, completeAccountOAuth: complete });
   });
@@ -37,6 +37,8 @@ async function add() {
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   fireEvent.click(await screen.findByRole("button", { name: "Add AI API key" }));
   expect(screen.getByRole("heading", { level: 1, name: "AI API Keys", hidden: true })).toBeTruthy();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Continue in browser" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Continue in browser" }));
 }
 it("starts a provider entry once after mounting its destination under Strict Mode and disposes only local callback authority", async () => {
   const value = fixture();

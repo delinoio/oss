@@ -2,7 +2,7 @@
 
 The [OAuth format selection reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
 extend the existing API account format boundary to accepted OAuth profiles through
-ProviderInventory capability 8 and Start/attempt fields 4/7. Establish them on main
+ProviderInventory capability 8 and Start/attempt fields 4/7. PR #1657 established them on main
 before implementation; preserve original login, credentials, receipts, account
 connections and execution history without a migration.
 

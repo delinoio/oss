@@ -35,9 +35,11 @@ it("configures a real Go server through the settings forms and explicitly valida
   fireEvent.click(addAccount);
   fireEvent.click(await screen.findByRole("button", { name: "Owned local API Local endpoint" }));
   change("Entry name", "Owned keyless account");
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "API format" }).matches(":disabled")).toBe(false));
-  change("API format", "openai-responses");
-  fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
+  await screen.findByText("OpenAI Responses", { selector: "output" });
+  expect(screen.queryByRole("combobox", { name: "API format" })).toBeNull();
+  const connect = screen.getByRole("button", { name: "Add and connect" });
+  await waitFor(() => expect((connect as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(connect);
   await screen.findByRole("heading", { name: "Owned keyless account" });
   const manageAccount = await screen.findByRole("button", { name: "Manage connection" });
   await waitFor(() => expect((manageAccount as HTMLButtonElement).disabled).toBe(false));

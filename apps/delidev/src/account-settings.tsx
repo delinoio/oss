@@ -4,6 +4,7 @@ import { statusLabel } from "./product-status";
 import { useCloseSettingsTask, useInSettingsTask, useSettingsTaskDismiss, useSettingsTaskVisible } from "./settings-task-context";
 import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
 import { ProviderGuidance } from "./provider-guidance";
+import { APIFormatChoice } from "./api-format-choice";
 import { AccountOAuth, useAccountOAuth, type AccountOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode, useId } from "react";
@@ -47,6 +48,7 @@ export interface AccountProviderSummary {
   presetId?: string;
   keyCreationUrl?: string;
   oauthAvailable?: boolean;
+  oauthFormatSelectingAvailable?: boolean;
 }
 
 export interface AccountProviderPicker {
@@ -188,7 +190,7 @@ function AccountCreationWizard({
   const providerButtons = useRef(new Map<string, HTMLButtonElement>());
   const [focusTarget, setFocusTarget] = useState(initialProvider ? WizardFocus.Account : WizardFocus.Picker);
   const [alias, setAlias] = useState("");
-  const [protocol, setProtocol] = useState<APIFormatId | "">("");
+  const [protocolChoice, setProtocol] = useState<APIFormatId | "">("");
   const [apiKey, setApiKey] = useState("");
   const [providerChecking, setProviderChecking] = useState(false);
   const [providerMismatch, setProviderMismatch] = useState(false);
@@ -228,6 +230,7 @@ function AccountCreationWizard({
   }, [active, focusTarget, providerId, step, taskVisible]);
   const selectedProviderDocument = document(selectedProvider?.provider);
   const formats = providerAPIFormats(selectedProviderDocument).sort((a, b) => Object.values(APIFormatId).indexOf(a.protocol) - Object.values(APIFormatId).indexOf(b.protocol));
+  const protocol = protocolChoice || (formats.length === 1 ? formats[0].protocol : "");
   const selectedProfile = formats.find(profile => profile.protocol === protocol);
   const selectedAuthentication = selectedProfile?.authentication ?? "";
   const selectedProviderContract = selectedProvider ? providerContract(selectedProvider, protocol) : undefined;
@@ -537,7 +540,16 @@ function AccountCreationWizard({
     </section>;
   }
 
-  if (oauth.view) return <AccountOAuth flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} edit={resource => { saved(resource); openEdit(resource); }} manage={resource => { saved(resource); openManage(resource); }} done={() => { if (oauth.view?.account) saved(oauth.view.account); close(); }} />;
+  if (oauth.view) {
+    const original = oauth.view.provider;
+    const metadataMatches = providerRead.isSuccess && providerRead.data?.resource?.revision === original.provider.revision &&
+      providerContractMatches(providerContract(original), providerRead.data?.resource);
+    return <AccountOAuth metadataReady={!metadataUnavailable && picker.ready && metadataMatches && accountTypeFilteringReady && (!original.oauthFormatSelectingAvailable || apiFormatSelectingReady)} metadataProblem={<>
+      <Problem error={providerRead.error ?? picker.error} />
+      {providerRead.isSuccess && !metadataMatches ? <p role="alert">{copy("account-settings.thisProviderChangedOrIsNo_c94fdd")}</p> : null}
+      {!accountTypeFilteringReady ? <p role="status">{copy("account-settings.connectionIsPausedUntilThisServer_0528c4")}</p> : null}
+    </>} flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} edit={resource => { saved(resource); openEdit(resource); }} manage={resource => { saved(resource); openManage(resource); }} done={() => { if (oauth.view?.account) saved(oauth.view.account); close(); }} />;
+  }
 
   return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</button>
@@ -570,7 +582,7 @@ function AccountCreationWizard({
         <fieldset disabled={!manualReady || metadataUnavailable || providerChecking || create.busy || create.uncertain}>
           <label>{copy("account-settings.entryName_978463")}<input autoComplete="off" maxLength={256} value={alias} aria-invalid={(attempted || alias.length > 0) && !aliasValid} onChange={(event) => setAlias(event.target.value)} /></label>
           {(attempted || alias.length > 0) && !aliasValid ? <p role="alert">{copy("account-settings.enterANonEmptyEntryName_24d18d")}</p> : null}
-          <label>{copy("account-settings.apiFormat")}<select required value={protocol} aria-invalid={attempted && !selectedProfile} onChange={(event) => { generation.current += 1; clearHandoff(); setApiKey(""); setConnectionKey(""); setProtocol(apiFormat(event.target.value) ?? ""); setProviderMismatch(false); }}><option value="">{copy("account-settings.chooseApiFormat")}</option>{formats.map(profile => <option key={profile.protocol} value={profile.protocol}>{apiFormatLabels[profile.protocol]}</option>)}</select></label>
+          <APIFormatChoice profiles={formats} value={protocol} invalid={attempted && !selectedProfile} onChange={value => { generation.current += 1; clearHandoff(); setApiKey(""); setConnectionKey(""); setProtocol(value); setProviderMismatch(false); }} />
           <p>{protocol === APIFormatId.Responses ? copy("account-settings.responsesHelp") : copy("account-settings.formatHelp")}</p>
           {keyless ? <p>{copy("account-settings.connectToThisLocalEndpointOn_70be8a")}</p> : <>
             <label>{copy("account-settings.apiKey_16f0ee")}<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={apiKey} aria-invalid={(attempted || apiKey.length > 0) && !apiKeyValid} onChange={(event) => setApiKey(event.target.value)} /></label>

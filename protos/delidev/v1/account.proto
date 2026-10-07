@@ -74,12 +74,16 @@ message AccountOAuthAttempt {
   string expires_at = 4;
   string provider_id = 5;
   ErrorDetail problem = 6;
+  // Original explicit inference format; omitted legacy attempts retain defaults.
+  ApiProtocol api_protocol = 7;
 }
 message StartAccountOAuthRequest {
   Mutation provider = 1;
   // Transient native-owned callback; empty selects documented headless mode.
   string callback_url = 2;
   AccountOAuthGoogleOptions google = 3;
+  // Explicit inference format; UNSPECIFIED preserves the original default.
+  ApiProtocol api_protocol = 4;
 }
 message StartAccountOAuthResponse {
   AccountOAuthAttempt attempt = 1;

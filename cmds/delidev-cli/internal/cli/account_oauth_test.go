@@ -36,6 +36,27 @@ func TestCLIHeadlessOAuthStartStatusCancelAndOriginalReplay(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("OAuth server fixture readiness timeout")
 	}
+	for _, protocol := range []string{"openai-responses", "openai-chat", "anthropic-messages"} {
+		code, inventory := cliRun(t, root, []string{"provider", "inventory", "--query", "OpenRouter"}, "")
+		if code != 0 {
+			t.Fatal(inventory)
+		}
+		entry := inventory["result"].(map[string]any)["entries"].([]any)[0].(map[string]any)
+		args := []string{"account", "oauth", "start", "--provider-id", entry["provider_id"].(string), "--revision", "1", "--api-protocol", protocol}
+		code, selected := cliRun(t, root, args, "")
+		if code != 0 {
+			t.Fatal(selected)
+		}
+		attempt := selected["result"].(map[string]any)["attempt"].(map[string]any)
+		if attempt["api_protocol"] == nil {
+			t.Fatal("CLI omitted selected protocol", selected)
+		}
+		code, canceled := cliRun(t, root, []string{"account", "oauth", "cancel", "--attempt-id", attempt["id"].(string), "--revision", "1"}, "")
+		if code != 0 {
+			t.Fatal(canceled)
+		}
+	}
+
 	code, value := cliRun(t, root, []string{"provider", "inventory", "--query", "OpenRouter"}, "")
 	if code != 0 {
 		t.Fatal(value)
