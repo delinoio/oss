@@ -2275,3 +2275,5 @@ A failed status read retains a read-only Retry original status read control for 
 Uncertain retained Fork jobs expose the same exact-query read-only status reinspection; it does not submit another Fork.
 
 Retained native-model observations remain read-only reinspectable while uncertain or unreadable. Unsettled observations block scope replacement and new discovery; exact discovery/cancellation retry ownership remains separate.
+
+Empty successful native-model observations retain the selected immutable observation, account, installation generation and time independently of model entries.

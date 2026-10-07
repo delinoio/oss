@@ -733,3 +733,5 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Keep retained uncertain Fork jobs explicitly reinspectable through their original read query, without replaying Fork creation.
 
 - Do not replace an unsettled native-model observation with a new scope, lookup or discovery. Keep its original status read explicitly retryable.
+
+- Empty native-model pages retain exact selected observation provenance without granting model-registration authority.

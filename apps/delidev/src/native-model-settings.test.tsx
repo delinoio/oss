@@ -12,7 +12,7 @@ import { chooseScrollOption } from "./test-scroll-picker";
 import { NativeModelSettings } from "./native-model-settings";
 import { chooseScrollOption } from "./test-scroll-picker";
 
-function fixture(loseFirst = false, scoped = false, observationState = "succeeded") {
+function fixture(loseFirst = false, scoped = false, observationState = "succeeded", empty = false) {
   const provider = newRequestId();
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Runner fixture" }) });
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 8n, schemaVersion: 1, documentJson: encode({ alias: "Account fixture", provider_id: provider, connection: { id: newRequestId() } }) });
@@ -31,7 +31,7 @@ function fixture(loseFirst = false, scoped = false, observationState = "succeede
     router.service(NativeModelService, {
       discoverNativeModels: discover,
       getNativeModelObservation: getObservation,
-      listNativeModels: () => ({ job, modelsJson: encode([{ id: "picker-only", model: "executable-only", display_name: "Fixture model", description: "Advisory", reasoning: ["medium"], modalities: ["text"], service_tiers: [] }]) }),
+      listNativeModels: () => ({ job, modelsJson: encode(empty ? [] : [{ id: "picker-only", model: "executable-only", display_name: "Fixture model", description: "Advisory", reasoning: ["medium"], modalities: ["text"], service_tiers: [] }]) }),
     });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -95,4 +95,16 @@ it("reinspects an uncertain native observation without replacing its accepted re
  await waitFor(() => expect(value.getObservation).toHaveBeenCalledTimes(2));
  expect(value.getObservation.mock.calls.every(([request]) => request.jobId === value.job.id)).toBe(true);
  expect(value.discover).toHaveBeenCalledTimes(1);
+});
+
+
+it("retains exact provenance for an empty successful native observation", async () => {
+ const value = fixture(false, false, "succeeded", true);
+ await choose(value);
+ await screen.findByText("No native models in this observation page.");
+ expect(screen.getByText(new RegExp(value.job.id)).textContent).toContain(value.account.id);
+ expect(screen.getByText(new RegExp(value.job.id)).textContent).toContain("1");
+ expect(screen.getByText(/Observed at/)).toBeTruthy();
+ expect(screen.queryByRole("button", { name: /Register/ })).toBeNull();
+ expect(value.createModel).not.toHaveBeenCalled();
 });
