@@ -39,7 +39,7 @@ export function matricesForEvent(event) {
   if (!Object.values(Event).includes(event)) throw new Error(`Unsupported CI event: ${event}`);
   const full = event === Event.Manual;
   return {
-    goTestMatrix: { include: nativeMatrices["go-test"].filter((row) => event !== Event.PullRequest || row.os === "ubuntu-latest") },
+    goTestMatrix: { include: nativeMatrices[event === Event.PullRequest ? "go-test-pr" : "go-test"] },
     delidevFrontendMatrix: { include: [{ phase: "checks" }, { phase: "tests-1" }, { phase: "tests-2" }] },
     desktopMatrix: { include: nativeMatrices["devhud-desktop"].filter((row) => full || row.os !== "macos") },
     reactForgeMatrix: { include: nativeMatrices["react-forge"].filter((row) => full || row.platform !== "darwin") },

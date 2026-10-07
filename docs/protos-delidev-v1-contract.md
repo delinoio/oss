@@ -1,5 +1,57 @@
 # DeliDev v1 Connect contract
 
+## Key-preserving API format change reservations
+
+Issue #964 reserves ProviderInventory capability
+`ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
+reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reserves request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response reserves account 1,
+request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
+Establish these complete allocations on main before implementation. Reservations
+alone grant no format change, key access or execution authority.
+
+The approved extension permits changing a connected API account's format while
+keeping its protected key. Go owns atomic preference/profile publication and
+new connection generations sharing the original protected credential reference.
+Running executions and existing-session continuation retain their original
+connection/profile and admission evidence. New sessions use the new format only
+after explicit validation; saving sends no provider request. Preserve original
+OAuth receipts, account/Worker/history attribution, immutable referenced profiles,
+exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
+across all generations. Do not convert formats or change Provider identity or
+keyless credential ownership. No SQLite migration or native change is authorized.
+Capability 7 and its existing cleanup-required configuration operation remain
+unchanged; capability 9 owns the dedicated extension.
+
+
+## OAuth API format selection reservations
+
+Issue #964 reserves ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
+`StartAccountOAuthRequest.api_protocol = 4` and
+`AccountOAuthAttempt.api_protocol = 7` before dependent implementation.
+The fields reuse the existing closed `ApiProtocol` enum. Capability 8 extends
+account format selection to accepted provider OAuth profiles; it does not replace
+capabilities 5, 6 or 7 or grant OAuth registration, credential, model or native
+execution authority. Reservation-only changes activate no schemas or runtime
+support and require no database migration.
+
+The implementation must bind an explicit selected profile to the original Start
+receipt and private attempt JSON, and preserve it through account creation,
+connection, status, completion and original-result recovery. Omitted legacy
+requests and attempts retain their original default and exact receipt behavior.
+OAuth authentication ownership remains independent of the selected inference
+format. Only currently eligible provider/authentication profiles may be selected;
+REST availability alone cannot grant OAuth support. Existing provider revisions,
+actor/login/credential ownership, once-only exchange and cleanup stay intact.
+
+The desktop uses one provider-metadata-driven format presentation for manual and
+OAuth connections: explicitly choose among multiple formats, or display the sole
+format. Preserve Google project binding and device approval. Existing accounts
+require Disconnect and confirmed cleanup before format changes. No historical
+account/execution rewrite, protocol conversion or native change is authorized.
+
+
 ## API account format selection
 
 Reservation PR #1646 established the complete issue #964 allocation closure on

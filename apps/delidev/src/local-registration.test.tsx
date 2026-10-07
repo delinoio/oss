@@ -9,7 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
 beforeEach(() => native.invoke.mockReset());
 function fixture(state = RegistrationState.Revoked) {
   const status = { state, server_id: newRequestId(), device_id: newRequestId(), revision: "9007199254740993", ...(state === RegistrationState.Recovering ? { request_id: newRequestId() } : {}) };
-  const connection = { endpoint: "http://127.0.0.1:46310", server_id: status.server_id, device_id: newRequestId(), token: "private-fixture-token" };
+  const connection = { endpoint: "http://127.0.0.1:46310", runtime_generation: newRequestId(), runtime_key: "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk", server_id: status.server_id, device_id: newRequestId(), token: "private-fixture-token" };
   native.invoke.mockImplementation(async (command: string) => command === "inspect_local_registration" ? status : connection);
   const recovered = vi.fn(async () => {});
   function View() { const [busy, setBusy] = useState(false); return <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={recovered} />; }

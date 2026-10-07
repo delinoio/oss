@@ -127,7 +127,7 @@ test("Go runner changes select validation without adding native Go runners to PR
     for (const path of ["scripts/ci/go-test.mjs", "scripts/ci/go-test.test.mjs", "scripts/ci/go-affected.mjs", "scripts/ci/go-quality.mjs"]) {
       assert.deepEqual(selected(event, [path]), ["go-quality", "go-test"]);
       assert.deepEqual(matricesForEvent(event).goTestMatrix.include,
-        event === Event.PullRequest ? [nativeMatrices["go-test"][0]] : nativeMatrices["go-test"]);
+        nativeMatrices[event === Event.PullRequest ? "go-test-pr" : "go-test"]);
     }
   }
 });
@@ -719,7 +719,7 @@ test("Go matrix contains only Ubuntu on PRs, including dependency and forced con
   const ubuntu = { os: "ubuntu-latest", shard: "all", label: "ubuntu-latest" };
   for (const path of ["cmds/delidev-cli/internal/worker/run.go", "go.mod", "go.sum", ".github/workflows/CI.yml", "scripts/ci/native-matrices.json"]) {
     assert.equal(planJobs(Event.PullRequest, [path]).jobs["go-test"], true, path);
-    assert.deepEqual(matricesForEvent(Event.PullRequest).goTestMatrix, { include: [ubuntu] }, path);
+    assert.deepEqual(matricesForEvent(Event.PullRequest).goTestMatrix, { include: ["core", "server", "harness", "worker", "workspace"].map((shard) => ({ os: "ubuntu-latest", shard, label: `ubuntu-latest, ${shard}` })) }, path);
   }
   const complete = [ubuntu, { os: "macos-latest", shard: "all", label: "macos-latest" },
     ...["core", "server", "harness", "worker", "workspace"].map((shard) => ({ os: "windows-latest", shard, label: `windows-latest, ${shard}` }))];
@@ -760,6 +760,8 @@ test("planner publishes the event Go matrix from real Git comparisons", (t) => {
 test("CI Result rejects altered or missing Go matrices and every unsuccessful selected Go result", () => {
   for (const event of Object.values(Event)) {
     for (const value of [undefined, "{", "{}", "null", JSON.stringify({ include: [] }),
+      JSON.stringify({ include: matricesForEvent(event).goTestMatrix.include.slice(1) }),
+      JSON.stringify({ include: [...matricesForEvent(event).goTestMatrix.include, matricesForEvent(event).goTestMatrix.include[0]] }),
       JSON.stringify(matricesForEvent(event === Event.PullRequest ? Event.Push : Event.PullRequest).goTestMatrix),
       JSON.stringify({ include: [...matricesForEvent(event).goTestMatrix.include, nativeMatrices["go-test"][0]] })]) {
       const needs = results(event, ["cmds/derun/example.go"]);
