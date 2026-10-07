@@ -63,14 +63,14 @@ func (s *Service) GetSessionDeletion(ctx context.Context, req *connect.Request[p
 func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Request[pb.ListSessionDeletionWorkRequest]) (*connect.Response[pb.ListSessionDeletionWorkResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type != domain.WorkerDevice || actor.MachineID != domain.ID(req.Msg.MachineId) {
+	if !ok {
 		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Deletion work is owning-Worker-only.", "Use the original paired Worker."), c)
 	}
 	check := func(tx *store.Tx) error {
 		if e := tx.Authorize(); e != nil {
 			return e
 		}
-		return currentInstance(tx, actor.MachineID, domain.ID(req.Msg.InstanceId))
+		return currentInstance(tx, domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId))
 	}
 	if e := s.Store.Read(ctx, check); e != nil {
 		return nil, rpc.Error(e, c)
@@ -178,7 +178,7 @@ func lastDeletionSession(items [][]byte) domain.ID {
 func (s *Service) ReportSessionDeletion(ctx context.Context, req *connect.Request[pb.ReportSessionDeletionRequest]) (*connect.Response[pb.ReportSessionDeletionResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type != domain.WorkerDevice || actor.MachineID != domain.ID(req.Msg.MachineId) {
+	if !ok {
 		return nil, rpc.Error(domain.SessionDeletionPending(), c)
 	}
 	v, e := s.Store.AcknowledgeSessionDeletion(ctx, domain.ID(req.Msg.SessionId), domain.ID(req.Msg.DeletionId), domain.ID(req.Msg.RequestId), domain.ID(req.Msg.InstanceId), req.Msg.WorkDigest)
@@ -219,7 +219,7 @@ func (s *Service) runSessionDeletions(parent context.Context) {
 				}
 			}
 			if pending {
-				continue
+				domain.ObserveOwnership(domain.OwnershipCleanup, v.ID)
 			}
 			bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 			current, e := s.Store.PurgeDeletedSession(bounded, v.SessionID)

@@ -28,8 +28,8 @@ func steerConflict() *domain.Error {
 func (s *Service) SteerQueuedInput(ctx context.Context, req *connect.Request[pb.SteerQueuedInputRequest]) (*connect.Response[pb.SteerQueuedInputResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can request Steer.", "Use the selected queued input through an authorized client."), correlation)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), correlation)
 	}
 	if err := validateSessionMutation(req.Msg.Mutation); err != nil {
 		return nil, rpc.Error(err, correlation)

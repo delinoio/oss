@@ -204,7 +204,7 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 		if prior.Version != 2 {
 			return nil, domain.Fail(domain.RecoveryRequired, "This retained execution lacks continuation workspace identity evidence.", "Preserve its original files and native history for explicit recovery; never replay the first input.")
 		}
-		if err := process.ReconcileOwnerContext(ctx, m.Git.ProcessRoot, prior.JobID); err != nil {
+		if _, err := process.ObserveOwnerContext(ctx, m.Git.ProcessRoot, prior.JobID); err != nil {
 			return nil, err
 		}
 		validation = continuationIdentity
@@ -249,7 +249,7 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	}
 	// Preparation's read-only Git checks have their own session process owner.
 	// Prove its cleanup before creating a distinct execution-job owner scope.
-	if err := process.ReconcileOwnerContext(ctx, m.Git.ProcessRoot, input.SessionID); err != nil {
+	if _, err := process.ObserveOwnerContext(ctx, m.Git.ProcessRoot, input.SessionID); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {

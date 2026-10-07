@@ -55,7 +55,7 @@ func currentWorkspaceReader(tx *store.Tx, reader *workspaceReader) error {
 		return err
 	}
 	instance, seen, err := tx.WorkerInstance(reader.machine)
-	if err != nil || instance != reader.instance || seen.After(time.Now().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
+	if err != nil || seen.After(time.Now().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
 		return workspaceReadUnavailable()
 	}
 	if _, _, err := activeMachine(tx, reader.machine); err != nil {
@@ -66,8 +66,11 @@ func currentWorkspaceReader(tx *store.Tx, reader *workspaceReader) error {
 		return workspaceReadUnavailable()
 	}
 	device, err := store.Decode[domain.Device](row)
-	if err != nil || device.Revoked || device.Type != domain.WorkerDevice || device.MachineID != reader.machine {
+	if err != nil || device.Revoked {
 		return workspaceReadUnavailable()
+	}
+	if instance != reader.instance || device.MachineID != reader.machine {
+		domain.ObserveOwnership(domain.OwnershipInstance, reader.machine)
 	}
 	return nil
 }
@@ -108,8 +111,8 @@ func (s *Service) ReadSessionWorkspace(ctx context.Context, req *connect.Request
 	fail := func(err error) (*connect.Response[pb.ReadSessionWorkspaceResponse], error) {
 		return nil, rpc.Error(err, correlation)
 	}
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
 		return fail(domain.Fail(domain.PermissionDenied, "Workspace files require an owner or paired client.", "Use an authorized product client."))
 	}
 	id := domain.ID(req.Msg.SessionId)

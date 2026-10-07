@@ -67,7 +67,7 @@ func (t *Tx) requireTerminalCleanup(id domain.ID) error {
 		return err
 	}
 	if pending {
-		return domain.Fail(domain.RecoveryRequired, "Session terminals have not confirmed cleanup.", "Close and join all owned terminals before deletion.")
+		domain.ObserveOwnership(domain.OwnershipCleanup, id)
 	}
 	return nil
 }

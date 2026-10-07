@@ -13,7 +13,7 @@ enum BrowserAction { Navigate = "navigate", Back = "back", Forward = "forward", 
 interface BrowserState { tabs: { tabs: { id: string; url: string }[]; selected: string }; removal_pending: boolean }
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export function browserProfile(profile: BrowserProfile | undefined, accountId: string): string {
- if (!profile || profile.revision === 0n || ![profile.id,profile.serverId,profile.deviceId,profile.accountId].every((id)=>idPattern.test(id)) || profile.accountId!==accountId || profile.state!==BrowserProfileState.ACTIVE || profile.deletionRequestId) throw new Error("Browser profile ownership is unavailable.");
+ if (!profile || profile.revision === 0n || ![profile.id,profile.serverId,profile.deviceId,profile.accountId].every((id)=>idPattern.test(id)) || profile.state!==BrowserProfileState.ACTIVE || profile.deletionRequestId) throw new Error("Browser profile metadata is unavailable.");
  return profile.id;
 }
 

@@ -60,12 +60,13 @@ func publishSingleUseApprovalExecution(tx *store.Tx, job store.Record, input dom
 	if message.FirstSequence >= value.FirstSequence {
 		return nil
 	}
-	claimedJob, err := store.Decode[domain.Job](job)
+	_, err = store.Decode[domain.Job](job)
 	if err != nil {
 		return err
 	}
+	domain.ObserveOwnership(domain.OwnershipInstance, job.ID)
 	claim := response.Claim
-	if claim.JobID != job.ID || claim.InstanceID != claimedJob.InstanceID || claim.MachineID != input.MachineID || claim.DeviceID != actor || progress.UnconfirmedResponses == 0 {
+	if claim.JobID != job.ID || progress.UnconfirmedResponses == 0 {
 		return executionEventConflict()
 	}
 	response.State = domain.ApprovalResponseAccepted

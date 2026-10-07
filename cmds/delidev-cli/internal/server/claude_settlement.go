@@ -40,11 +40,11 @@ func publishClaudeCallbackSettlement(tx *store.Tx, job store.Record, input domai
 	default:
 		return executionEventConflict()
 	}
-	j, err := store.Decode[domain.Job](job)
+	_, err = store.Decode[domain.Job](job)
 	if err != nil {
 		return err
 	}
-	if claim == nil || claim.ID != u.ClaimID || claim.JobID != job.ID || claim.InstanceID != j.InstanceID || claim.MachineID != input.MachineID || claim.DeviceID != actor || reply == nil || echo == nil || echo.ArrivalID != u.ArrivalID || echo.BodyDigest != u.BodyDigest || echo.Sequence >= event.Sequence {
+	if claim == nil || claim.ID != u.ClaimID || claim.JobID != job.ID || reply == nil || echo == nil || echo.ArrivalID != u.ArrivalID || echo.BodyDigest != u.BodyDigest || echo.Sequence >= event.Sequence {
 		return executionEventConflict()
 	}
 	digest, err := domain.ClaudeResponseDigest(v, *reply)

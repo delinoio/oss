@@ -1,5 +1,8 @@
 # DeliDev Session Development-Server Forwarding
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 `cmds/delidev-cli/internal/forwarding`, the server/Worker forwarding handlers and `session forward` CLI own issue #1089's authenticated session-bound TCP forwarding. The Go client owns a local listener; the execution Worker owns outbound connections to one explicitly selected Worker-loopback development port. This is independent of agent execution and the server-relative model API relay.
 

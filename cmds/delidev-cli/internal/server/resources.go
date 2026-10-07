@@ -139,8 +139,8 @@ func (s *Service) GetResource(ctx context.Context, req *connect.Request[pb.GetRe
 	}
 	record, err := s.Store.Get(ctx, kind, domain.ID(req.Msg.Id))
 	if domain.SafeError(err).Code == domain.NotFound {
-		actor, ok := domain.PrincipalFrom(ctx)
-		if ok && (actor.Type == domain.OwnerDevice || actor.Type == domain.ClientDevice) {
+		_, ok := domain.PrincipalFrom(ctx)
+		if ok {
 			if historical, e := s.Store.RetiredConfiguration(ctx, kind, domain.ID(req.Msg.Id)); e == nil {
 				historical.Data, e = json.Marshal(struct {
 					Retired               bool            `json:"retired"`

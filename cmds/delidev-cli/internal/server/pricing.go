@@ -13,8 +13,8 @@ import (
 
 func pricingActor(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return actor, domain.Fail(domain.PermissionDenied, "Only an owner or paired client can access token pricing.", "Use an authorized product client.")
+	if !ok {
+		return actor, domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
 	return actor, nil
 }

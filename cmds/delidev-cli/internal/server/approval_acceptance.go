@@ -25,12 +25,13 @@ func publishApprovalAcceptance(tx *store.Tx, job store.Record, input domain.Exec
 	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.NativeApprovalInteraction || (value.OpenCode == nil && (value.Approval == nil || value.Approval.Codex == nil || value.Approval.Codex.Kind != domain.CodexPermissionsApproval)) || response == nil || (value.OpenCode == nil && response.Input.Grant == nil) || response.Input.ValidateInteraction(value) != nil || response.ID != u.ResponseID || response.Claim == nil || response.Delivery == nil || response.Acceptance != nil || (response.State != domain.ApprovalResponseTransmitted && response.State != domain.ApprovalResponseUncertain) || (response.Delivery.State != domain.ApprovalTransmitted && response.Delivery.State != domain.ApprovalDeliveryUncertain) || response.Delivery.Sequence >= event.Sequence || progress.UnconfirmedResponses == 0 {
 		return executionEventConflict()
 	}
-	claimedJob, err := store.Decode[domain.Job](job)
+	_, err = store.Decode[domain.Job](job)
 	if err != nil {
 		return err
 	}
+	domain.ObserveOwnership(domain.OwnershipInstance, job.ID)
 	claim := response.Claim
-	if claim.ID != u.ClaimID || claim.JobID != job.ID || claim.InstanceID != claimedJob.InstanceID || claim.MachineID != input.MachineID || claim.DeviceID != actor {
+	if claim.ID != u.ClaimID || claim.JobID != job.ID {
 		return executionEventConflict()
 	}
 	response.State = domain.ApprovalResponseAccepted

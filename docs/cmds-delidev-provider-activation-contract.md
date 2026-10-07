@@ -1,5 +1,8 @@
 # DeliDev API provider activation
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope and ownership
 
 Issue #1046 adds server-owned activation for API providers. Go owns provider identity, availability, model-filter semantics and execution admission. The Connect API, CLI and desktop are clients of that authority. This feature does not own the Settings shell geometry (#1045) or account-menu/two-step connection flow; those surfaces consume this provider state.

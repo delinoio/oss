@@ -1,5 +1,8 @@
 # DeliDev protected credential storage
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 OAuth seals only `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}` after a durable staging claim. Keep account-less references and cleanup evidence across uncertain Put/SQLite outcomes. Explicit original local completion may read that reference without another exchange; missing/tombstoned material cannot be replaced. Cancel records denial and cleanup before removal, retains disconnected metadata and never claims upstream revocation. Follow the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Scope and ownership

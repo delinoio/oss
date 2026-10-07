@@ -269,21 +269,10 @@ func (s *Service) runSSHSetup(parent context.Context, r store.Record) {
 // The transaction is already owner-authorized for metadata publication. Recheck
 // the original paired actor independently without acquiring another transaction.
 func originalInstallationActor(tx *store.Tx, actor domain.Principal) error {
-	if actor.Type == domain.OwnerDevice {
-		return nil
+	if !actor.ValidMetadata() {
+		return domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
-	if actor.Type != domain.ClientDevice {
-		return installationFailure(domain.PermissionDenied)
-	}
-	r, e := tx.Get(domain.DeviceKind, actor.DeviceID)
-	if e != nil {
-		return e
-	}
-	d, e := store.Decode[domain.Device](r)
-	if e != nil || d.Revoked || d.Type != actor.Type {
-		return installationFailure(domain.PermissionDenied)
-	}
-	return nil
+	return tx.Authorize()
 }
 func (s *Service) performSSHSetup(ctx context.Context, r store.Record, o sshOperation, reconcile bool) (error, *sshsetup.SetupResult) {
 	s.logger.InfoContext(ctx, "ssh_setup_phase", "operation_id", r.ID, "phase", "claim")

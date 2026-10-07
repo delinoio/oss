@@ -53,9 +53,9 @@ func TestExclusiveLockReleasedByClose(t *testing.T) {
 	}
 	b.Close()
 }
-func TestRejectSymlinkAndSharedDirectory(t *testing.T) {
+func TestRejectSymlinkAndAcceptExistingSharedDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("Unix mode and symlink test; Windows uses owner-only ACL validation")
+		t.Skip("Unix mode and symlink test; Windows uses ACLs instead of Unix modes")
 	}
 	root := t.TempDir()
 	real := filepath.Join(root, "real")
@@ -72,8 +72,8 @@ func TestRejectSymlinkAndSharedDirectory(t *testing.T) {
 	if err := os.Chmod(real, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := PrivateDir(real); err == nil {
-		t.Fatal("accepted shared scope")
+	if err := PrivateDir(real); err != nil {
+		t.Fatal("rejected shared scope", err)
 	}
 	info, err := os.Stat(real)
 	if err != nil || info.Mode().Perm() != 0755 {

@@ -1,5 +1,8 @@
 # DeliDev native Codex model observations
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 
 [Issue #1206](https://github.com/delinoio/oss/issues/1206) requires an explicit,

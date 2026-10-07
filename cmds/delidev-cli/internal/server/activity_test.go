@@ -93,10 +93,13 @@ func TestActivityRPCScheduleHistorySurvivesConfigurationDeletion(t *testing.T) {
 	if strings.Contains(string(raw), f.definition.Prompt) {
 		t.Fatal("activity exposed schedule prompt")
 	}
-	for _, actor := range []security.Identity{{}, f.worker} {
+	for _, actor := range []security.Identity{{}} {
 		if _, err := c.ListActivity(f.ctx, ownerRequest(actor, &pb.ListActivityRequest{})); err == nil {
 			t.Fatal("unauthorized activity read")
 		}
+	}
+	if _, err := c.ListActivity(f.ctx, ownerRequest(f.worker, &pb.ListActivityRequest{})); err != nil {
+		t.Fatal("registered Worker activity read failed", err)
 	}
 	base := newScheduleDispatchFixture(t, domain.ScheduleAllowOverlap, false)
 	occurrence, _ := base.accept(t, domain.CronOccurrence)

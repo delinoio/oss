@@ -1,3 +1,5 @@
+DeliDev runtime ownership follows `docs/cmds-delidev-ownership-contract.md`. Authentication, pairing and revocation remain required. Role, actor, device, instance, account and cleanup ownership observations do not block authenticated operations. Retain original records, Stop intent, validation and actual I/O errors. Never signal a process reconstructed from a PID or historical journal; missing retained handles permit admission without claiming confirmed cleanup. This runtime policy supersedes conflicting runtime ownership requirements below; source-code ownership is unchanged.
+
 ### Instructions for `apps/`
 
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.

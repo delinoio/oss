@@ -63,7 +63,7 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 			return nil, err
 		}
 		job, err := store.Decode[domain.Job](r)
-		if err != nil || r.Revision != identity.Revision || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.InstanceID != identity.Instance || job.MachineID != identity.Machine || job.AssignedDeviceID != identity.Device {
+		if err != nil || r.Revision != identity.Revision || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed {
 			return nil, executionDenied()
 		}
 		input, sr, session, err := nativeExecutionScope(tx, r, job)

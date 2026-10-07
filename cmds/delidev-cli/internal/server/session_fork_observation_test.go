@@ -11,7 +11,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-func TestSessionForkObservationRequiresCurrentOwnerOrClient(t *testing.T) {
+func TestSessionForkObservationRequiresCurrentAuthentication(t *testing.T) {
 	for _, published := range []bool{false, true} {
 		name := "queued-job"
 		if published {
@@ -39,13 +39,14 @@ func TestSessionForkObservationRequiresCurrentOwnerOrClient(t *testing.T) {
 			if err != nil || owner.Msg.Job.Id != jobID || (owner.Msg.Session != nil) != published {
 				t.Fatal("authorized owner lost fork observation", err)
 			}
-			// Worker credentials must fail before even checking job existence.
-			for _, id := range []string{jobID, string(domain.NewID())} {
-				_, err := sessionClient(f.accountFixture).GetSessionFork(context.Background(), ownerRequest(f.workerIdentity, &pb.GetSessionForkRequest{JobId: id}))
-				if connect.CodeOf(err) != connect.CodePermissionDenied {
-					t.Fatal("Worker retrieved a client-only fork observation", err)
-				}
+			observedWorker, err := sessionClient(f.accountFixture).GetSessionFork(context.Background(), ownerRequest(f.workerIdentity, request))
+			if err != nil || observedWorker.Msg.Job.Id != jobID {
+				t.Fatal("registered Worker lost fork observation", err)
 			}
+			if _, err := sessionClient(f.accountFixture).GetSessionFork(context.Background(), ownerRequest(f.workerIdentity, &pb.GetSessionForkRequest{JobId: string(domain.NewID())})); connect.CodeOf(err) != connect.CodeNotFound {
+				t.Fatal("missing fork did not retain resource validation", err)
+			}
+
 			if _, err := f.service.GetSessionFork(context.Background(), connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
 				t.Fatal("missing principal retrieved fork observation", err)
 			}
@@ -57,7 +58,7 @@ func TestSessionForkObservationRequiresCurrentOwnerOrClient(t *testing.T) {
 				t.Fatal("current paired client lost fork observation", err)
 			}
 			doctorPut(t, f.service, domain.DeviceKind, clientID, 1, domain.Device{Name: "Fork observer", Type: domain.ClientDevice, Revoked: true})
-			if _, err := f.service.GetSessionFork(client, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+			if _, err := f.service.GetSessionFork(client, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 				t.Fatal("stale revoked principal retrieved fork observation", err)
 			}
 			after := f.refresh(t)

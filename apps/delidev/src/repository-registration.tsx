@@ -101,7 +101,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const remoteSupported = status.data?.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1) === true;
   const remoteUnsupported = status.data !== undefined && !remoteSupported;
-  const cloneSupported = status.data?.capabilities.includes(SystemCapability.REPOSITORY_CLONE_V1) === true && Boolean(readLocalWorker);
+  const cloneSupported = status.data?.capabilities.includes(SystemCapability.REPOSITORY_CLONE_V1) === true;
   const pickerSupported = status.data?.capabilities.includes(SystemCapability.GITHUB_REPOSITORY_PICKER_V1) === true;
   const clone = useRetainedMutation("repository-add:clone", WorkerQuery.cloneRepository, (result, request) => {
     if (result.job && result.job.kind === EntityKind.JOB && text(document(result.job).machine_id) === request.machineId && text(document(result.job).type) === "clone-repository") setCloneJob(result.job);
@@ -134,21 +134,8 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     await inspect.send({ requestId: newRequestId(), machineId: selected.machine, path: selected.path, preferredRemote: "" });
   };
   const verifyLocal = async () => {
-    if (!readLocalWorker) throw new ConnectError("This computer's Worker verification is unavailable. Check Runner Devices and retry.", Code.Unavailable);
-    const proof = await native(readLocalWorker);
-    if (!live()) throw new ConnectError("Settings closed.", Code.Canceled);
-    if (!uuid.test(proof.machineId) || !/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(proof.token)) throw new ConnectError("This computer's Worker proof is invalid. Check its registration and retry.", Code.FailedPrecondition);
-    // Retain only the non-secret machine identity. Status is a separate native
-    // read, never a registration/start action or a substitute-machine fallback.
-    const id = proof.machineId;
-    if (controlLocalWorker) {
-      const status = await native(() => controlLocalWorker(LocalWorkerAction.Status));
-      if (!live()) throw new ConnectError("Settings closed.", Code.Canceled);
-      if (status.machine_id !== id) throw new ConnectError("This computer's Worker changed. Verify its registration and retry.", Code.FailedPrecondition);
-      if (status.state === LocalWorkerState.Uncertain) throw new ConnectError("This computer's Worker exit is unconfirmed. Inspect its private log and original session recovery before retrying.", Code.FailedPrecondition);
-      if ([LocalWorkerState.NotStarted, LocalWorkerState.Exited, LocalWorkerState.Stopping].includes(status.state)) throw new ConnectError(status.state === LocalWorkerState.Exited ? "This computer's Worker exited. Open Runner Devices to start it, then retry." : "This computer's Worker is stopped. Open Runner Devices to start it, then retry.", Code.FailedPrecondition);
-    }
-    return proof;
+    if (!uuid.test(machine)) throw new ConnectError("Select a Runner Device.", Code.InvalidArgument);
+    return { machineId: machine };
   };
   const start = async (picker: boolean) => {
     if (gate.current || blocked || !live()) return;
@@ -221,7 +208,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       const response = await createClient(ResourceService, transport).getResource({ kind: EntityKind.MACHINE, id: proof.machineId });
       if (!live()) return;
       if (!items(document(response.resource).worker_capabilities).includes("repository-clone-v1")) throw new ConnectError("Update and reconnect this computer's Worker to clone repositories. Existing folder registration remains available.", Code.Unimplemented);
-      await clone.send({ requestId: newRequestId(), machineId: proof.machineId, localWorkerToken: proof.token, parentPath: cloneDraft.parent, url: cloneDraft.url, directoryName: cloneDirectory, githubSelection });
+      await clone.send({ requestId: newRequestId(), machineId: proof.machineId, parentPath: cloneDraft.parent, url: cloneDraft.url, directoryName: cloneDirectory, githubSelection });
     } catch (error) { if (live()) setProblem(error instanceof ConnectError ? error.rawMessage : "This computer's Worker could not be verified. Check Runner Devices and retry."); }
     finally { gate.current = false; if (live()) setBusy(false); }
   };
@@ -254,6 +241,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
         <Problem error={status.error} />
         {status.error ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry server capability check</button> : null}
       </section>
+      <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={blocked} change={(id, value, resource) => { setMachine(id); setMachineName(resource ? resourceName(resource) : text(value?.name)); }} />
       <button type="button" disabled={blocked} aria-expanded={connectFolder} onClick={() => setConnectFolder(value => !value)}>Connect a Local folder (optional)</button>
       {connectFolder ? <>
       {summary ? <section className="repository-summary" aria-label="Repository detected">

@@ -17,9 +17,9 @@ import (
 )
 
 func (s *Service) authorizeBackups(ctx context.Context) error {
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return domain.Fail(domain.PermissionDenied, "Only an owner or paired client can manage backups.", "Use an authorized product client.")
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
+		return domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
 	return s.Store.Read(ctx, func(tx *store.Tx) error { return tx.Authorize() })
 }

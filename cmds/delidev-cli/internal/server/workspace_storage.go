@@ -24,7 +24,7 @@ type storageReceipt struct {
 
 func (s *Service) workspaceStorageClient(ctx context.Context, correlation string) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	if !ok {
 		s.logger.InfoContext(ctx, "workspace_storage_denied", "code", domain.PermissionDenied, "correlation_id", correlation)
 		return domain.Principal{}, domain.Fail(domain.PermissionDenied, "Workspace storage requires an owner or paired client.", "Use an authorized product client.")
 	}
@@ -717,7 +717,7 @@ func (s *Service) CancelWorkspaceStorageOperation(ctx context.Context, req *conn
 // retains the original report's receipt identity, never repeats its native work
 // and cannot turn an uncertain job into a settled job.
 func validateReconciledStorageReport(tx *store.Tx, record store.Record, job domain.Job, actor domain.Principal, machine, instance domain.ID, revision uint64) error {
-	if job.Type != domain.WorkspaceStorageJob || !job.State.Terminal() || job.StorageReconciledBy.Validate() != nil || job.MachineID != machine || job.InstanceID != instance || job.AssignedDeviceID == "" || job.AssignedDeviceID != actor.DeviceID {
+	if job.Type != domain.WorkspaceStorageJob || !job.State.Terminal() || job.StorageReconciledBy.Validate() != nil || job.AssignedDeviceID == "" {
 		return workspace.ResultUncertain()
 	}
 	assigned, err := tx.JobAssignment(record.ID)
@@ -725,7 +725,7 @@ func validateReconciledStorageReport(tx *store.Tx, record store.Record, job doma
 		return err
 	}
 	claim, err := store.Decode[domain.Job](assigned)
-	if err != nil || assigned.Revision != revision || assigned.SessionID != record.SessionID || assigned.ProjectID != record.ProjectID || claim.State != domain.JobClaimed || claim.MachineID != machine || claim.InstanceID != instance || claim.AssignedDeviceID != actor.DeviceID || !bytes.Equal(claim.Input, job.Input) {
+	if err != nil || assigned.Revision != revision || assigned.SessionID != record.SessionID || assigned.ProjectID != record.ProjectID || claim.State != domain.JobClaimed || !bytes.Equal(claim.Input, job.Input) {
 		return workspace.ResultUncertain()
 	}
 	recovered, err := tx.Get(domain.JobKind, job.StorageReconciledBy)
@@ -733,7 +733,7 @@ func validateReconciledStorageReport(tx *store.Tx, record store.Record, job doma
 		return err
 	}
 	recovery, err := store.Decode[domain.Job](recovered)
-	if err != nil || recovery.Type != domain.WorkspaceStorageJob || recovery.State != domain.JobSucceeded || recovery.MachineID != machine || recovery.AssignedDeviceID != actor.DeviceID || recovered.SessionID != record.SessionID || recovered.ProjectID != record.ProjectID {
+	if err != nil || recovery.Type != domain.WorkspaceStorageJob || recovery.State != domain.JobSucceeded || recovered.SessionID != record.SessionID || recovered.ProjectID != record.ProjectID {
 		return workspace.ResultUncertain()
 	}
 	var original, input workspace.StorageRequest

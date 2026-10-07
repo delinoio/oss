@@ -1,5 +1,8 @@
 # DeliDev native package verification
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 
 `apps/delidev/scripts` and `.github/workflows/delidev-native-dry-run.yml` own

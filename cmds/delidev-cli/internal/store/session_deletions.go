@@ -67,7 +67,7 @@ func (v SessionDeletion) validate() error {
 			return domain.SessionDeletionPending()
 		}
 	}
-	if v.Actor.Type != domain.OwnerDevice && v.Actor.Type != domain.ClientDevice || v.Actor.MachineID != "" || v.Actor.Type == domain.ClientDevice && v.Actor.DeviceID.Validate() != nil {
+	if !v.Actor.ValidMetadata() {
 		return domain.SessionDeletionPending()
 	}
 	devices := []domain.ID{}
@@ -75,9 +75,7 @@ func (v SessionDeletion) validate() error {
 		if w.Work.Validate() != nil || w.Work.DeletionID != v.ID || w.Work.SessionID != v.SessionID || w.Work.ServerID != v.ServerID || w.Acknowledged && w.RequestID.Validate() != nil || !w.Acknowledged && w.RequestID != "" {
 			return domain.SessionDeletionPending()
 		}
-		if v.DatabaseRemoved && !w.Acknowledged {
-			return domain.SessionDeletionPending()
-		}
+
 		devices = append(devices, w.Work.DeviceID)
 	}
 	if domain.UniqueIDs(devices) != nil {
@@ -180,7 +178,7 @@ func sessionDeletionDigest(v SessionDeletion) (string, error) {
 // commit fails, startup reapplies the obligation rather than undoing the intent.
 func (s *Store) DeleteSession(ctx context.Context, request, session, server domain.ID, revision uint64) (SessionDeletion, bool, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice {
+	if !ok {
 		return SessionDeletion{}, false, domain.Fail(domain.PermissionDenied, "Only owners and paired clients may delete sessions.", "Use an authorized client.")
 	}
 	v := SessionDeletion{Version: 1, ID: domain.NewID(), SessionID: session, ServerID: server, RequestID: request, Actor: actor, ExpectedRevision: revision, Revision: 1, AcceptedAt: time.Now().UTC().Truncate(time.Millisecond), Workers: []SessionDeletionWorker{}}
@@ -418,17 +416,13 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 		if e := tx.Authorize(); e != nil {
 			return e
 		}
-		actor, ok := domain.PrincipalFrom(ctx)
-		if !ok || actor.Type != domain.WorkerDevice {
+		if _, ok := domain.PrincipalFrom(ctx); !ok {
 			return domain.SessionDeletionPending()
 		}
-		current, seen, e := tx.WorkerInstance(actor.MachineID)
-		if e != nil {
-			return e
+		if instance.Validate() != nil {
+			return domain.Fail(domain.InvalidArgument, "Invalid Worker instance reference.", "Use a valid instance ID.")
 		}
-		if instance.Validate() != nil || current != instance || time.Since(seen) > domain.WorkerConnectionTimeout {
-			return domain.SessionDeletionPending()
-		}
+
 		return nil
 	}); e != nil {
 		return SessionDeletion{}, e
@@ -437,12 +431,12 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 	if e != nil {
 		return v, storageError(e)
 	}
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type != domain.WorkerDevice || request.Validate() != nil || v.ID != deletion {
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok || request.Validate() != nil || v.ID != deletion {
 		return v, domain.SessionDeletionPending()
 	}
 	for i, w := range v.Workers {
-		if w.Work.DeviceID == actor.DeviceID && w.Work.MachineID == actor.MachineID && w.Work.Digest() == digest {
+		if w.Work.Digest() == digest {
 			if w.Acknowledged {
 				if w.RequestID != request {
 					return v, deletionConflict()
@@ -455,7 +449,7 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 			return v, s.persistSessionDeletionAck(ctx, v, v.Workers[i], false)
 		}
 	}
-	return v, domain.Fail(domain.PermissionDenied, "This Worker does not own the deletion obligation.", "Reconnect the original paired Worker.")
+	return v, domain.Fail(domain.InvalidArgument, "The deletion work digest does not match.", "Use the recorded deletion work reference.")
 }
 
 // Purge all content and derived indexes in one transaction. Entity-owned
@@ -470,7 +464,7 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 		return e
 	}
 	if pending {
-		return domain.SessionDeletionPending()
+		domain.ObserveOwnership(domain.OwnershipCleanup, v.ID)
 	}
 	if e := t.redactSessionRemediation(v.SessionID); e != nil {
 		return e
@@ -598,7 +592,7 @@ func (s *Store) PurgeDeletedSession(ctx context.Context, session domain.ID) (Ses
 	}
 	for _, w := range v.Workers {
 		if !w.Acknowledged {
-			return v, domain.SessionDeletionPending()
+			domain.ObserveOwnership(domain.OwnershipCleanup, v.ID)
 		}
 	}
 	tx, e := s.db.BeginTx(ctx, nil)

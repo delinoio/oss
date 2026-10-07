@@ -1,5 +1,8 @@
 # DeliDev retained conversation search
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 This contract owns retained search in `cmds/delidev-cli/internal/{domain,store,server,cli}/search.go` and its `protos/delidev/v1` boundary.
 The single-user Go server owns conversation search in its private SQLite database. `SearchService.SearchConversations` and `delidev search` share the same owner/paired-client authorization, validation and current-source reads. Workers cannot search conversations. This is a read-only product operation; it never changes inbox read state, dispatches input or invokes a harness/provider.

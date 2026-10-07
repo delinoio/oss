@@ -22,7 +22,7 @@ type localReviewReceipt struct {
 
 func localReviewActor(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	if !ok {
 		return actor, domain.Fail(domain.PermissionDenied, "Local reviews require an owner or paired client.", "Use an authorized product client.")
 	}
 	return actor, nil

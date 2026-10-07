@@ -44,9 +44,9 @@ func (s *Service) ListProviderPresets(ctx context.Context, req *connect.Request[
 }
 
 func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Request[pb.ListProviderInventoryRequest]) (*connect.Response[pb.ListProviderInventoryResponse], error) {
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can inspect provider inventory.", "Use an authorized product client."), req.Header().Get(rpc.CorrelationHeader))
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), req.Header().Get(rpc.CorrelationHeader))
 	}
 	f := store.ProviderInventorySearch{Query: req.Msg.Query, EnabledOnly: req.Msg.EnabledOnly, Limit: int(req.Msg.PageSize)}
 	if f.Limit == 0 {

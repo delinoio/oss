@@ -1,5 +1,8 @@
 # DeliDev schedules and occurrence contract
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 Issue #964 requires server-owned recurring execution, schedule CRUD/pause/resume, next-run inspection, Run now, occurrence history, Overlap/Skip/Wait, offline skipping and reference-deletion disabling. This contract preserves that complete boundary. The calendar/domain/storage primitives, server coordinator and owner/client ScheduleService/CLI are implemented. The coordinator accepts independent sessions through the ordinary input/workspace path, reconciles accepted Wait work and records offline/overlap/capacity history. Referenced Project/Agent configuration deletion atomically disables affected schedules without making retained sessions depend on selectable configuration. Installed macOS Codex evidence covers manual Run now through native Worktree Execute and Local Plan, continuation and retained history. Actual wall-clock cron native acceptance is also verified for macOS Codex Worktree Execute; the remaining harness/platform matrix remains open.
 

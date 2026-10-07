@@ -1,5 +1,8 @@
 # DeliDev GitHub Integration Profiles
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 
 `cmds/delidev-cli/internal/integrations/github`, the domain integration model, server IntegrationService/SessionService handlers and CLI integration commands own named server-side GitHub.com PAT profiles and stable session PR associations. Profile metadata, direct native credential generations, authenticated identity inspection, repository-specific access observations, PR/issue list/search/detail, immutable PR diff, head Checks, commit statuses, complete applicable active PR-base rules, bounded required-CI evaluation, complete published PR feedback, fresh reviewer identity/permission and original App observations, persisted server/repository remediation policies, durable session links, official token forms and closed local browser opening are implemented. HEADGREEN merge-queue, remaining workflow profiles and App-bound-status evaluation and provider-resolved transitions remain separate required issue #964 work; manual/automatic fixes and verified local handling are implemented below; head observations and endpoint access cannot stand in for them.

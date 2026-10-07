@@ -10,7 +10,7 @@ import (
 
 func (t *Tx) prProblemActor() (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(t.ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	if !ok {
 		return actor, domain.Fail(domain.PermissionDenied, "PR problem history requires an owner or paired client.", "Use an authorized product client.")
 	}
 	return actor, t.Authorize()

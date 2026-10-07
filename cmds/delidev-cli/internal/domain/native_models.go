@@ -78,7 +78,7 @@ func (s NativeModelScope) Validate() error {
 			return NativeModelFailure()
 		}
 	}
-	if s.Version != 1 || s.MachineRevision == 0 || s.AccountRevision == 0 || s.InstallationGeneration == 0 || !CodexVersionAllowed(s.NativeVersion) || !nativeExecutableDigest.MatchString(s.ExecutableSHA256) || Text(s.Executable, "native executable", 4096, true) != nil || (s.Actor.Type != OwnerDevice && s.Actor.Type != ClientDevice) || (s.Actor.Type == ClientDevice && s.Actor.DeviceID.Validate() != nil) {
+	if s.Version != 1 || s.MachineRevision == 0 || s.AccountRevision == 0 || s.InstallationGeneration == 0 || !CodexVersionAllowed(s.NativeVersion) || !nativeExecutableDigest.MatchString(s.ExecutableSHA256) || Text(s.Executable, "native executable", 4096, true) != nil || !s.Actor.ValidMetadata() || (s.Actor.Type == ClientDevice && s.Actor.DeviceID.Validate() != nil) {
 		return NativeModelFailure()
 	}
 	return nil

@@ -33,37 +33,10 @@ func createPrivateDirectory(path string) error {
 	return windows.CreateDirectory(p, &sa)
 }
 func checkPrivate(path string, _ os.FileInfo) error {
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		return err
-	}
-	acl, _, err := sd.DACL()
-	if err != nil {
-		return err
-	}
-	want, err := descriptor()
-	if err != nil {
-		return err
-	}
-	wantACL, _, err := want.DACL()
-	if err != nil {
-		return err
-	}
-	if acl == nil || acl.AceCount != 1 {
-		return domain.Fail(domain.PermissionDenied, "State permissions are not owner-only.", "Choose a DeliDev-created private data directory.")
-	}
-	var actual, expected *windows.ACCESS_ALLOWED_ACE
-	if err := windows.GetAce(acl, 0, &actual); err != nil {
-		return err
-	}
-	if err := windows.GetAce(wantACL, 0, &expected); err != nil {
-		return err
-	}
-	if actual.Header.AceType != expected.Header.AceType || actual.Mask != expected.Mask || !(*windows.SID)(unsafe.Pointer(&actual.SidStart)).Equals((*windows.SID)(unsafe.Pointer(&expected.SidStart))) {
-		return domain.Fail(domain.PermissionDenied, "State permissions are not owner-only.", "Choose a DeliDev-created private data directory.")
-	}
+	// Existing ACLs do not gate access. New directories retain private defaults.
 	return nil
 }
+
 func replaceFile(from, to string) error {
 	a, err := windows.UTF16PtrFromString(from)
 	if err != nil {

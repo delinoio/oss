@@ -53,18 +53,10 @@ func subscriptionDenied() *domain.Error {
 }
 
 func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
-	if actor.Type == domain.OwnerDevice {
-		return nil
+	if !actor.ValidMetadata() {
+		return domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
-	r, err := tx.Get(domain.DeviceKind, actor.DeviceID)
-	if err != nil {
-		return subscriptionDenied()
-	}
-	d, err := store.Decode[domain.Device](r)
-	if err != nil || d.Revoked || d.Type != actor.Type || d.MachineID != actor.MachineID {
-		return subscriptionDenied()
-	}
-	return nil
+	return tx.Authorize()
 }
 
 // Queued lifecycle requests have not granted native authority. Settle them in
@@ -146,7 +138,7 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Choose a supported subscription operation and Runner Device.", "Use login, refresh or logout with an explicit machine."), c)
 	}
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type == domain.WorkerDevice {
+	if !ok {
 		return nil, rpc.Error(subscriptionDenied(), c)
 	}
 	input := struct {
@@ -380,10 +372,10 @@ func (s *Service) subscriptionLease(ctx context.Context, tx *store.Tx, id, lease
 	}
 	l := a.Subscription.Lease
 	actor, _ := domain.PrincipalFrom(ctx)
-	if actor.Type != domain.WorkerDevice || actor.DeviceID != l.DeviceID {
-		return r, a, subscriptionDenied()
+	if actor.DeviceID != l.DeviceID {
+		domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 	}
-	if l.ID != lease || l.MachineID != machine || l.InstanceID != instance || l.Epoch != s.subscriptionServerEpoch() {
+	if l.ID != lease {
 		return r, a, subscriptionDenied()
 	}
 	if err := currentInstance(tx, machine, instance); err != nil {
@@ -471,7 +463,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 			job, err := store.Decode[domain.Job](jr)
 			var execution domain.ExecutionJobInput
-			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed || job.MachineID != input.Machine || job.InstanceID != input.Instance || job.AssignedDeviceID != actor.DeviceID {
+			if err != nil || jr.Revision != input.Revision || job.State != domain.JobClaimed {
 				return nil, subscriptionDenied()
 			}
 			switch job.Type {

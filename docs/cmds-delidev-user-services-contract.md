@@ -1,5 +1,8 @@
 # DeliDev current-user service contract
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 Issue #1086 adds optional native server and Worker registrations. Go owns `cmds/delidev-cli/internal/userservice`, the CLI infrastructure boundary, and authenticated `SystemService` operations. This is separate from Worker job, workspace and native harness process ownership. The complete product requirements remain in [requirements](cmds-delidev-requirements.md).
 

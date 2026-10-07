@@ -7,7 +7,7 @@ import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, newRequestId,
 import { document, encode, items, Mode, object, text, Workspace, type Document } from "./documents";
 import { ReferenceFields, ResourceChoice, TextField } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
-import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
+import { type ReadLocalWorkerProof } from "./local-worker";
 import { ServiceProblem, Problem  } from "./ui";
 import { Icon as SidebarIcon } from "./sidebar";
 import { ScheduleCreation, type ScheduleCreationProps } from "./schedule-creation";
@@ -29,12 +29,11 @@ export function StartingReferences({ project, starting, change, active }: { proj
 
 export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker, protectedChange = ignoreProtectedChange }: { initial?: Resource; active: boolean; saved: (resource?: Resource) => void; cancel: () => void; readLocalWorker?: ReadLocalWorkerProof; protectedChange?: (protectedState: boolean) => void }) {
   useLocale();
-  const localProof = useLocalWorkerProof(readLocalWorker);
   const [definition, setDefinition] = useState<Document>(() => initial ? object(document(initial).definition) : emptyDefinition());
   const [limit, setLimit] = useProductMessage("");
   const current = useQuery(ScheduleQuery.getSchedule, { id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
   const mutation = useRetainedMutation(`schedule-save:${initial?.id ?? "new"}`, ScheduleQuery.saveSchedule, (response) => saved(response.schedule));
-  const blocked = mutation.busy || mutation.uncertain || localProof.busy;
+  const blocked = mutation.busy || mutation.uncertain;
   useEffect(() => protectedChange(true), [protectedChange]);
   const stale = Boolean(initial && current.data?.schedule && initial.revision !== current.data.schedule.revision);
   const local = definition.workspace === Workspace.Local;
@@ -45,27 +44,23 @@ export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker
   const field = (key: string) => (value: unknown) => change({ ...definition, [key]: value });
   const submit = async () => {
     if (blocked || stale || (initial && current.error)) return;
-    const original = object(document(initial).definition);
-    const retainedLocal = local && original.workspace === Workspace.Local && original.machine_id === definition.machine_id;
     const input = { mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, definitionJson: encode(definition) };
-    const proof = local && !retainedLocal ? await localProof.load(text(definition.machine_id)) : undefined;
-    if (local && !retainedLocal && !proof) return;
-    void mutation.send({ ...input, localWorkerToken: proof?.token });
+    void mutation.send(input);
   };
   if (!initial) {
     const props: ScheduleCreationProps = { definition, change, active, blocked, cancel, submit,
-      localAvailable: localProof.available,
-      selectLocal: () => { void localProof.load().then((proof) => { if (proof) change({ ...definition, workspace: Workspace.Local, machine_id: proof.machineId, starting: [] }); }); },
+      localAvailable: true,
+      selectLocal: () => { change({ ...definition, workspace: Workspace.Local, starting: [] }); },
       references: local ? null : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />,
-      errors: <>{limit ? <p role="alert">{limit}</p> : null}{localProof.problem ? <p role="alert">{localProof.problem}</p> : null}<Problem error={mutation.error} /></>,
+      errors: <>{limit ? <p role="alert">{limit}</p> : null}<Problem error={mutation.error} /></>,
       retry: mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("schedules.retryTheSameSchedule_7702b8")}</button> : null };
     return <ScheduleCreation {...props} />;
   }
   return <section><h3>{initial ? copy("schedules.editSchedule_559b37") : copy("schedules.newSchedule_3bfe90")}</h3><form onSubmit={(event) => { event.preventDefault(); void submit(); }}><fieldset disabled={blocked}>
     <TextField label={copy("schedules.scheduleName_60918e")} value={definition.name} required change={field("name")} /><label className="checkbox"><input type="checkbox" checked={definition.enabled === true} onChange={(event) => field("enabled")(event.target.checked)} />{copy("schedules.enableFutureScheduledRuns_d1eab6")}</label><ResourceChoice label={copy("schedules.project_985959")} kind={EntityKind.PROJECT} value={text(definition.project_id)} active={active} required change={(project_id) => setDefinition({ ...definition, project_id, starting: [] })} /><ResourceChoice label={copy("schedules.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={text(definition.agent_id)} active={active} required change={field("agent_id")} /><ResourceChoice label={copy("schedules.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={text(definition.machine_id)} active={active} disabled={local} required change={field("machine_id")} />
-    <div className="actions"><button type="button" aria-pressed={!local} onClick={() => setDefinition({ ...definition, workspace: Workspace.Worktree })}>{copy("schedules.useSeparateWorktrees_5cd0b6")}</button><button type="button" disabled={!localProof.available} aria-pressed={local} onClick={() => { void localProof.load().then((proof) => { if (proof) setDefinition({ ...definition, workspace: Workspace.Local, machine_id: proof.machineId, starting: [] }); }); }}>{copy("schedules.useThisComputerSLocalCheckouts_eadaad")}</button></div><p><LocalizedText id="schedules.workspace_4eaed8" components={{ s0: <>{local ? copy("schedules.localComputerOriginatingWorkerSelected_9357e2") : copy("schedules.worktreeSeparateDetachedCheckouts_5318f3")}</> }} /></p>{local ? <p>{copy("schedules.existingLocalSchedulesRetainTheirAuthenticated_538d29")}</p> : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />}
+    <div className="actions"><button type="button" aria-pressed={!local} onClick={() => setDefinition({ ...definition, workspace: Workspace.Worktree })}>{copy("schedules.useSeparateWorktrees_5cd0b6")}</button><button type="button"  aria-pressed={local} onClick={() => setDefinition({ ...definition, workspace: Workspace.Local, starting: [] })}>{copy("schedules.useThisComputerSLocalCheckouts_eadaad")}</button></div><p><LocalizedText id="schedules.workspace_4eaed8" components={{ s0: <>{local ? copy("schedules.localComputerOriginatingWorkerSelected_9357e2") : copy("schedules.worktreeSeparateDetachedCheckouts_5318f3")}</> }} /></p>{local ? <p>{copy("schedules.existingLocalSchedulesRetainTheirAuthenticated_538d29")}</p> : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />}
     <label>{copy("schedules.executionMode_c21e7c")}<select value={text(definition.mode)} onChange={(event) => field("mode")(event.target.value)}>{Object.values(Mode).map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label><label>{copy("schedules.scheduledPrompt_209d2b")}<textarea required rows={6} maxLength={262144} value={text(definition.prompt)} onChange={(event) => field("prompt")(event.target.value)} /></label><TextField label={copy("schedules.cronExpression_9e6e7d")} value={definition.cron} required max={512} change={field("cron")} /><p>{copy("schedules.fiveFieldsMinuteHourDayOf_8fec47")}</p><TextField label={copy("schedules.ianaTimezone_37cf56")} value={definition.timezone} required change={field("timezone")} /><label>{copy("schedules.whenAPreviousOccurrenceIsStill_851448")}<select value={text(definition.overlap)} onChange={(event) => field("overlap")(event.target.value)}><option value={Overlap.Overlap}>{copy("schedules.overlapIndependentSessions_df3095")}</option><option value={Overlap.Skip}>{copy("schedules.skipTheNewOccurrence_e30b7e")}</option><option value={Overlap.Wait}>{copy("schedules.waitInFifoOrderForConfirmed_f1ce8e")}</option></select></label><p>{copy("schedules.theServerContinuesSchedulingWhenThe_116ec3")}</p></fieldset>
-    {stale ? <p role="alert">{copy("schedules.thisScheduleChangedElsewhereYourDraft_9d939b")}</p> : null}{limit ? <p role="alert">{limit}</p> : null}{localProof.problem ? <p role="alert">{localProof.problem}</p> : null}<Problem error={current.error || mutation.error} /><div className="actions"><button className="primary" disabled={blocked || stale || Boolean(initial && current.error)}>{copy("schedules.saveSchedule_387f35")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("schedules.retryTheSameSchedule_7702b8")}</button> : null}<button type="button" disabled={blocked} onClick={cancel}>{copy("schedules.cancelScheduleEdit_efc0c0")}</button></div></form></section>;
+    {stale ? <p role="alert">{copy("schedules.thisScheduleChangedElsewhereYourDraft_9d939b")}</p> : null}{limit ? <p role="alert">{limit}</p> : null}<Problem error={current.error || mutation.error} /><div className="actions"><button className="primary" disabled={blocked || stale || Boolean(initial && current.error)}>{copy("schedules.saveSchedule_387f35")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("schedules.retryTheSameSchedule_7702b8")}</button> : null}<button type="button" disabled={blocked} onClick={cancel}>{copy("schedules.cancelScheduleEdit_efc0c0")}</button></div></form></section>;
 }
 
 function Occurrence({ resource, open }: { resource: Resource; open: (id: string) => void }) {

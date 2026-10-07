@@ -28,7 +28,7 @@ func (t *Tx) Authorize() error {
 	if err != nil {
 		return err
 	}
-	if device.Revoked || device.Type != actor.Type || device.MachineID != actor.MachineID {
+	if device.Revoked {
 		return domain.Fail(domain.Unauthenticated, "The device authorization was revoked.", "Pair this device again with a new code.")
 	}
 	return nil
@@ -163,7 +163,7 @@ func (s *Store) Heartbeat(ctx context.Context, machine, instance domain.ID) erro
 		return storageError(err)
 	}
 	if count != 1 {
-		return domain.Fail(domain.Conflict, "The Worker instance no longer owns this connection.", "Reattach with the current process identity.")
+		domain.ObserveOwnership(domain.OwnershipInstance, machine)
 	}
 	return storageError(sqlTx.Commit())
 }

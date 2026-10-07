@@ -47,7 +47,7 @@ type integrationReceipt struct {
 
 func integrationActor(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	if !ok {
 		return actor, domain.Fail(domain.PermissionDenied, "An owner or paired client is required.", "Use the selected server's product connection.")
 	}
 	return actor, nil

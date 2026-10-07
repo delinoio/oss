@@ -1,5 +1,8 @@
 # DeliDev retained activity
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 This contract owns `cmds/delidev-cli/internal/{store,server,cli}/activity.go`, the domain/store `pr_activity.go` sources, the server `activity_pr.go` adapter, and `ActivityService` in `protos/delidev/v1/activity.proto`.
 `ActivityService.ListActivity` and `delidev activity list` expose a read-only chronological projection of durable server-owned execution jobs, native terminal inbox entries, schedule occurrences and immutable PR handling metadata. Execution/schedule sources use their canonical UUID-v7 as the activity identity. PR transitions have independent immutable UUID-v7 identities and retain the original source UUID/revision. No copied prompt, output, instruction, credential, native thread/turn identifier or arbitrary diagnostic belongs in the projection. This is separate from inbox read state and cannot approve, dispatch, resume or confirm cleanup.

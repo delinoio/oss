@@ -1,5 +1,8 @@
 # DeliDev desktop client
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## API key format selection
 
 The manual Add AI API key task requires Entry name, API format and API key in that

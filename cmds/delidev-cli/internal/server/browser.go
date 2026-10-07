@@ -15,7 +15,7 @@ import (
 
 func browserActor(ctx context.Context) (domain.Principal, error) {
 	p, ok := domain.PrincipalFrom(ctx)
-	if !ok || p.Type != domain.ClientDevice || p.DeviceID.Validate() != nil {
+	if !ok {
 		return p, domain.Fail(domain.PermissionDenied, "Browser profiles require this computer's paired client identity.", "Use the desktop client scope; owner and Worker credentials cannot represent a browser device.")
 	}
 	return p, nil
@@ -43,7 +43,7 @@ func (s *Service) browserProfile(ctx context.Context, id domain.ID) (domain.Brow
 			return err
 		}
 		if p.ServerID != s.Identity.ServerID || p.DeviceID != actor.DeviceID {
-			return domain.Fail(domain.PermissionDenied, "This browser profile belongs to another device.", "Use the original server and paired client.")
+			domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 		}
 		return nil
 	})
@@ -81,12 +81,27 @@ func (s *Service) RegisterBrowserProfile(ctx context.Context, req *connect.Reque
 		}
 		selectedAccount, _ := session.ContinuationAccount()
 		if selectedAccount != identity.Account {
-			return nil, domain.Fail(domain.PermissionDenied, "The browser account is not this session's selected account.", "Use the original currently selected AI account.")
+			domain.ObserveOwnership(domain.OwnershipResource, r.ID)
 		}
 		if _, err = tx.Get(domain.AccountKind, identity.Account); err != nil {
 			return nil, err
 		}
-		existing, err := tx.FindBrowserProfile(actor.DeviceID, identity.Account)
+		device := actor.DeviceID
+		if device == "" {
+			mr, err := tx.Get(domain.MachineKind, session.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			_, err = store.Decode[domain.Machine](mr)
+			if err != nil {
+				return nil, err
+			}
+			device, err = tx.InstallationWorkerDevice(session.MachineID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		existing, err := tx.FindBrowserProfile(device, identity.Account)
 		if err == nil {
 			p := existing.Data
 			if err = p.Validate(); err != nil {
@@ -102,7 +117,7 @@ func (s *Service) RegisterBrowserProfile(ctx context.Context, req *connect.Reque
 		if domain.SafeError(err).Code != domain.NotFound {
 			return nil, err
 		}
-		profile, err := tx.PutBrowserProfile(domain.BrowserProfileRecord{ID: domain.NewID(), Revision: 1, Data: domain.BrowserProfile{ServerID: s.Identity.ServerID, DeviceID: actor.DeviceID, AccountID: identity.Account, State: domain.BrowserProfileActive}}, 0)
+		profile, err := tx.PutBrowserProfile(domain.BrowserProfileRecord{ID: domain.NewID(), Revision: 1, Data: domain.BrowserProfile{ServerID: s.Identity.ServerID, DeviceID: device, AccountID: identity.Account, State: domain.BrowserProfileActive}}, 0)
 		return struct {
 			ID domain.ID `json:"id"`
 		}{profile.ID}, err
@@ -186,7 +201,7 @@ func (s *Service) ListBrowserProfiles(ctx context.Context, req *connect.Request[
 			return nil, rpc.Error(err, correlation)
 		}
 		if p.ServerID != s.Identity.ServerID || p.DeviceID != actor.DeviceID {
-			return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "Browser profile inventory has foreign ownership.", "Preserve the original device metadata."), correlation)
+			domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 		}
 		response.Profiles = append(response.Profiles, browserResource(r))
 	}
@@ -222,7 +237,7 @@ func (s *Service) ConfirmBrowserProfileRemoval(ctx context.Context, req *connect
 			return nil, err
 		}
 		if p.DeviceID != actor.DeviceID || p.ServerID != s.Identity.ServerID {
-			return nil, domain.Fail(domain.PermissionDenied, "Another device owns this cleanup obligation.", "Use the original device's paired client.")
+			domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 		}
 		if r.Revision != input.Revision || p.State != domain.BrowserProfileRemovalPending || p.DeletionRequestID != input.Deletion {
 			return nil, domain.Fail(domain.Conflict, "The original removal obligation does not match.", "Read its current status; do not substitute a new cleanup operation.")
@@ -248,9 +263,9 @@ func (s *Service) ConfirmBrowserProfileRemoval(ctx context.Context, req *connect
 func (s *Service) GetAccountBrowserCleanup(ctx context.Context, req *connect.Request[pb.GetAccountBrowserCleanupRequest]) (*connect.Response[pb.GetAccountBrowserCleanupResponse], error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Account cleanup is a client operation.", "Use an authorized owner or paired client."), req.Header().Get(rpc.CorrelationHeader))
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), req.Header().Get(rpc.CorrelationHeader))
 	}
 	if err := domain.ID(req.Msg.AccountId).Validate(); err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -287,9 +302,9 @@ func browserResource(r domain.BrowserProfileRecord) *pb.BrowserProfile {
 func (s *Service) GetBrowserCapabilities(ctx context.Context, req *connect.Request[pb.GetBrowserCapabilitiesRequest]) (*connect.Response[pb.GetBrowserCapabilitiesResponse], error) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Browser capabilities require a client.", "Use an authorized product client."), req.Header().Get(rpc.CorrelationHeader))
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), req.Header().Get(rpc.CorrelationHeader))
 	}
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return tx.Authorize() }); err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))

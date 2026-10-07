@@ -84,7 +84,7 @@ func (s SubscriptionState) Validate(account Account) error {
 	}
 	if s.Pending != nil {
 		op := s.Pending
-		if op.ID.Validate() != nil || (op.MachineID != "" && op.MachineID.Validate() != nil) || (op.Action != SubscriptionLogin && op.Action != SubscriptionRefresh && op.Action != SubscriptionLogout) || (op.Phase != SubscriptionQueued && op.Phase != SubscriptionClaimed) || (op.Actor.Type != OwnerDevice && op.Actor.Type != ClientDevice) {
+		if op.ID.Validate() != nil || (op.MachineID != "" && op.MachineID.Validate() != nil) || (op.Action != SubscriptionLogin && op.Action != SubscriptionRefresh && op.Action != SubscriptionLogout) || (op.Phase != SubscriptionQueued && op.Phase != SubscriptionClaimed) || !op.Actor.ValidMetadata() {
 			return invalid()
 		}
 		if op.Actor.Type == ClientDevice && op.Actor.DeviceID.Validate() != nil {
@@ -118,7 +118,7 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.Generation != "" && o.Generation.Validate() != nil {
 			return invalid()
 		}
-		if (o.Action != SubscriptionLogin && o.Action != SubscriptionRefresh && o.Action != SubscriptionLogout) || !o.State.Valid() || o.StartedAt.IsZero() || !o.ExpiresAt.After(o.StartedAt) || (o.Actor.Type != OwnerDevice && o.Actor.Type != ClientDevice) || o.Actor.Type == ClientDevice && o.Actor.DeviceID.Validate() != nil {
+		if (o.Action != SubscriptionLogin && o.Action != SubscriptionRefresh && o.Action != SubscriptionLogout) || !o.State.Valid() || o.StartedAt.IsZero() || !o.ExpiresAt.After(o.StartedAt) || !o.Actor.ValidMetadata() || o.Actor.Type == ClientDevice && o.Actor.DeviceID.Validate() != nil {
 			return invalid()
 		}
 		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {

@@ -73,7 +73,7 @@ func (s *Service) ClaimQuestionResponse(ctx context.Context, req *connect.Reques
 			return err
 		}
 		claim := value.Response.Claim
-		if value.Response.State != domain.QuestionResponseClaimed || claim == nil || claim.ID != claimID || claim.JobID != identity.Job || claim.MachineID != identity.Machine || claim.InstanceID != identity.Instance || claim.DeviceID != identity.Device {
+		if value.Response.State != domain.QuestionResponseClaimed || claim == nil || claim.ID != claimID || claim.JobID != identity.Job {
 			return executionEventConflict()
 		}
 		record = r
@@ -104,7 +104,7 @@ func (s *Service) currentClaimQuestion(tx *store.Tx, identity questionClaimIdent
 	if err != nil {
 		return r, value, err
 	}
-	if grant.JobID != identity.Job || grant.MachineID != identity.Machine || grant.InstanceID != identity.Instance || grant.DeviceID != identity.Device {
+	if grant.JobID != identity.Job {
 		return r, value, executionDenied()
 	}
 	return r, value, nil
@@ -147,7 +147,7 @@ func (s *Service) pendingQuestionResponses(tx *store.Tx, record store.Record, jo
 			}
 			return nil, err
 		}
-		if r.SessionID != record.SessionID || grant.JobID != record.ID || grant.InstanceID != job.InstanceID || grant.MachineID != job.MachineID || response.ID.Validate() != nil || response.Claim != nil {
+		if r.SessionID != record.SessionID || grant.JobID != record.ID || response.ID.Validate() != nil || response.Claim != nil {
 			return nil, executionEventConflict()
 		}
 		controls = append(controls, &pb.QuestionResponseControl{JobId: string(record.ID), InteractionId: string(id), ResponseId: string(response.ID), Revision: r.Revision})

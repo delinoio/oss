@@ -162,7 +162,7 @@ func (v PRProblemDismissal) Validate() error {
 	if v.RequestID.Validate() != nil || !ciEvidenceTime(v.At) {
 		return invalidPRProblem()
 	}
-	if v.ActorType == ClientDevice {
+	if v.ActorType == ClientDevice || v.ActorType == WorkerDevice {
 		if v.DeviceID.Validate() != nil {
 			return invalidPRProblem()
 		}

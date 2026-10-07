@@ -54,7 +54,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		if jobRecord.Revision != identity.Revision || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.InstanceID != identity.Instance || job.MachineID != identity.Machine {
+		if jobRecord.Revision != identity.Revision || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed {
 			return nil, executionEventConflict()
 		}
 		var input domain.ExecutionJobInput

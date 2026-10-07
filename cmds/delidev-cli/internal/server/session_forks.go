@@ -31,7 +31,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	if err != nil {
 		return r, session, input, err
 	}
-	if !session.WorkspaceAvailable() || session.Fork != nil || session.InitialExecution == nil || session.Execution == nil || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Outcome != domain.ExecutionSucceeded || !session.Execution.CleanupVerified || session.Execution.Waiting != (domain.NativeWaiting{}) || session.Execution.UnconfirmedResponses != 0 || session.Execution.NativeTurnID != string(expected) || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
+	if !session.WorkspaceAvailable() || session.Fork != nil || session.InitialExecution == nil || session.Execution == nil || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Outcome != domain.ExecutionSucceeded || session.Execution.Waiting != (domain.NativeWaiting{}) || session.Execution.UnconfirmedResponses != 0 || session.Execution.NativeTurnID != string(expected) || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
 		return r, session, input, forkConflict()
 	}
 	prior, err := tx.SessionExecutionJob(id, session.ExecutionSelection().ID)
@@ -112,7 +112,6 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
 	var origin *domain.LocalOrigin
-	var originDigest [32]byte
 	if kind == domain.Local {
 		var source domain.Session
 		if err := s.Store.Read(ctx, func(tx *store.Tx) error { _, v, e := sessionRecord(tx, domain.ID(meta.Id)); source = v; return e }); err != nil {
@@ -122,7 +121,7 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 			return nil, rpc.Error(workspace.ValidateLocalForkSource(workspace.Manifest{Type: source.Workspace}), correlation)
 		}
 		var err error
-		origin, originDigest, err = s.authenticateLocalOrigin(ctx, domain.CreateSession{Workspace: domain.Local, MachineID: source.MachineID}, req.Msg.LocalWorkerToken)
+		origin, _, err = s.authenticateLocalOrigin(ctx, domain.CreateSession{Workspace: domain.Local, MachineID: source.MachineID}, req.Msg.LocalWorkerToken)
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
 		}
@@ -195,14 +194,8 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 				return nil, domain.Fail(domain.Unsupported, "The selected Runner Device cannot clone an independent Fork.", "Update and reconnect the original Worker before creating the Fork.")
 			}
 		}
-		if origin != nil && purpose != domain.SidechatFork {
-			current, err := tx.Authenticate(originDigest[:])
-			if err != nil {
-				return nil, err
-			}
-			if current.DeviceID != origin.DeviceID || current.MachineID != session.MachineID || current.Type != domain.WorkerDevice {
-				return nil, localOriginRequired()
-			}
+		if err := tx.Authorize(); err != nil {
+			return nil, err
 		}
 		input.LocalOrigin, input.Actor, input.CreatedBy = origin, actor, actor.DeviceID
 		input.ChildSessionID, input.RuntimeID, input.NativeRequestID = domain.NewID(), domain.NewID(), domain.NewID()

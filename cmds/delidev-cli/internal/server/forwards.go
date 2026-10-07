@@ -63,7 +63,7 @@ func forwardDenied() error {
 }
 func forwardClient(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	if !ok {
 		return actor, forwardDenied()
 	}
 	return actor, nil
@@ -92,7 +92,7 @@ func ownedForward(tx *store.Tx, actor domain.Principal, id, session domain.ID) (
 		return r, v, err
 	}
 	if r.SessionID != session || actor.Type != v.ClientType || actor.DeviceID != v.ClientDeviceID {
-		return r, v, forwardDenied()
+		domain.ObserveOwnership(domain.OwnershipResource, r.ID)
 	}
 	return r, v, nil
 }
@@ -293,12 +293,12 @@ func (s *Service) peerForward(tx *store.Tx, actor domain.Principal, peer *pb.For
 		return r, v, 0, err
 	}
 	side := 0
-	if actor.Type == domain.WorkerDevice {
+	if peer.MachineId != "" {
 		side = 1
-		if actor.DeviceID != v.WorkerDeviceID || actor.MachineID != v.MachineID || peer.MachineId != string(v.MachineID) || peer.InstanceId != string(v.WorkerInstanceID) || peer.RuntimeId != string(v.WorkerRuntimeID) {
+		if peer.MachineId != string(v.MachineID) || peer.InstanceId != string(v.WorkerInstanceID) || peer.RuntimeId != string(v.WorkerRuntimeID) {
 			return r, v, side, forwardDenied()
 		}
-	} else if actor.Type != v.ClientType || actor.DeviceID != v.ClientDeviceID || peer.RuntimeId != string(v.ClientRuntimeID) || peer.MachineId != "" || peer.InstanceId != "" {
+	} else if peer.RuntimeId != string(v.ClientRuntimeID) || peer.MachineId != "" || peer.InstanceId != "" {
 		return r, v, side, forwardDenied()
 	}
 	if r.SessionID != domain.ID(peer.SessionId) {

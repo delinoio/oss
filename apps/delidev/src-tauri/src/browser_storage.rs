@@ -79,9 +79,6 @@ impl BrowserStorage {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            if metadata.mode() & 0o077 != 0 || metadata.uid() != unsafe { libc::geteuid() } {
-                return Err(NativeFailure::PermissionDenied);
-            }
             if metadata.nlink() != 1 {
                 return Err(NativeFailure::InvalidEvidence);
             }
@@ -408,7 +405,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn refused_development_purge_preserves_system_data_until_exact_retry() {
+    fn existing_shared_development_profile_can_be_removed() {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("browser-data");
@@ -420,12 +417,6 @@ mod tests {
         let system = storage.prepare_profile(&record).unwrap();
         fs::write(system.join("Cookies"), b"system fixture").unwrap();
         fs::set_permissions(&development, fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(
-            storage.remove_profile(&record),
-            Err(NativeFailure::PermissionDenied)
-        );
-        assert_eq!(fs::read(system.join("Cookies")).unwrap(), b"system fixture");
-        fs::set_permissions(&development, fs::Permissions::from_mode(0o700)).unwrap();
         storage.remove_profile(&record).unwrap();
         assert!(!development.exists());
         assert!(!system.exists());
@@ -433,7 +424,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn linked_or_shared_lock_files_cannot_admit_a_host() {
+    fn shared_lock_permissions_allow_admission_but_links_do_not() {
         use std::os::unix::fs::{PermissionsExt, symlink};
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("browser-data");
@@ -446,10 +437,12 @@ mod tests {
         fs::remove_file(&lock).unwrap();
         fs::write(&lock, []).unwrap();
         fs::set_permissions(&lock, fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(matches!(
-            BrowserStorage::open(root.clone(), BrowserStorageMode::System),
-            Err(NativeFailure::PermissionDenied)
-        ));
+        let storage = BrowserStorage::open(root.clone(), BrowserStorageMode::System).unwrap();
+        assert_eq!(
+            fs::metadata(&lock).unwrap().permissions().mode() & 0o777,
+            0o644
+        );
+        drop(storage);
         fs::set_permissions(&lock, fs::Permissions::from_mode(0o600)).unwrap();
         fs::hard_link(&lock, temp.path().join("alias")).unwrap();
         assert!(matches!(

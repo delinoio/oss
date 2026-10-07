@@ -26,9 +26,9 @@ func (s *Service) knownSubscriptionModels() *knownmodels.Manager {
 
 func (s *Service) ListKnownSubscriptionModels(ctx context.Context, req *connect.Request[pb.ListKnownSubscriptionModelsRequest]) (*connect.Response[pb.ListKnownSubscriptionModelsResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can inspect known models.", "Use an authorized product client."), correlation)
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), correlation)
 	}
 	service := ""
 	switch req.Msg.SubscriptionService {

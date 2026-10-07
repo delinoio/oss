@@ -24,8 +24,8 @@ type approvalResponseIdentity struct {
 func (s *Service) RespondApproval(ctx context.Context, req *connect.Request[pb.RespondApprovalRequest]) (*connect.Response[pb.RespondApprovalResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can respond to an approval.", "Use the original interaction through an authorized client."), correlation)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), correlation)
 	}
 	if err := validateSessionMutation(req.Msg.Mutation); err != nil {
 		return nil, rpc.Error(err, correlation)

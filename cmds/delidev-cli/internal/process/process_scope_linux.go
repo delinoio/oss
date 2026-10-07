@@ -59,25 +59,6 @@ func initializeScope(s *processScope) error {
 	return err
 }
 func drainScope(_ processScope, rootDone bool) (bool, error) {
-	rows, err := processRows()
-	if err != nil {
-		return false, err
-	}
-	owned := map[int]bool{os.Getpid(): true}
-	for changed := true; changed; {
-		changed = false
-		for _, r := range rows {
-			if owned[r.ppid] && !owned[r.pid] {
-				owned[r.pid] = true
-				changed = true
-			}
-		}
-	}
-	for _, r := range rows {
-		if r.pid != os.Getpid() && owned[r.pid] && ProcessAlive(Process{PID: r.pid, Birth: r.birth}) {
-			_ = syscall.Kill(r.pid, syscall.SIGKILL)
-		}
-	}
 	if !rootDone {
 		return false, nil
 	}
@@ -102,32 +83,13 @@ func drainScope(_ processScope, rootDone bool) (bool, error) {
 	}
 }
 func recoverScope(s processScope, dir string) error {
-	if s.Owner.PID == 0 {
+	// A retained journal is metadata, not a live native control handle. Recovery
+	// never signals a process or service reconstructed from its PID or label.
+	if s.Complete {
 		return nil
 	}
-	if ProcessAlive(s.Owner) {
-		_ = syscall.Kill(s.Owner.PID, syscall.SIGTERM)
-	}
-	deadline := time.Now().Add(8 * time.Second)
-	for {
-		current, err := readScope(dir)
-		if err != nil {
-			return err
-		}
-		if !ProcessAlive(s.Owner) {
-			if current.Complete || !current.Started {
-				return nil
-			}
-			// If the supervisor itself was killed, the kernel no longer retains its
-			// adopted ancestry. Never guess from a now-empty PID list. A host reboot is
-			// the independent proof used on the next recovery attempt.
-			return scopeError()
-		}
-		if time.Now().After(deadline) {
-			return scopeError()
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	domain.ObserveOwnership(domain.OwnershipCleanup, s.OwnerID)
+	return scopeError()
 }
 
 func scopeHasSurvivors(_ processScope) (bool, error) { return true, nil }

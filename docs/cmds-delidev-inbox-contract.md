@@ -1,5 +1,8 @@
 # DeliDev retained inbox contract
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 The Go domain, store, server and CLI under `cmds/delidev-cli` own retained inbox records, per-client notification preferences and durable native-presentation reservations. The complete issue #964 remains normative; OS delivery and activation require the separate desktop adapter and platform evidence.
 

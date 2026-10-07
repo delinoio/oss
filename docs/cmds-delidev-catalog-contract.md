@@ -1,5 +1,8 @@
 # DeliDev provider and model catalog
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## API account format selection
 
 Reservation PR #1646 reached main before this implementation. Issue #964 owns

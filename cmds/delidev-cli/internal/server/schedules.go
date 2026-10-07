@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -21,8 +20,8 @@ type scheduleReceipt struct {
 
 func scheduleActor(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return actor, domain.Fail(domain.PermissionDenied, "Only an owner or paired client can manage schedules.", "Use an authorized product client; Worker credentials cannot configure or initiate scheduled work.")
+	if !ok {
+		return actor, domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
 	return actor, nil
 }
@@ -88,9 +87,8 @@ func (s *Service) SaveSchedule(ctx context.Context, req *connect.Request[pb.Save
 		return nil, rpc.Error(err, correlation)
 	}
 	var proof *domain.LocalOrigin
-	var digest [sha256.Size]byte
-	if req.Msg.LocalWorkerToken != "" {
-		proof, digest, err = s.authenticateLocalOrigin(ctx, definition.Selection(), req.Msg.LocalWorkerToken)
+	if definition.Workspace == domain.Local {
+		proof, _, err = s.authenticateLocalOrigin(ctx, definition.Selection(), req.Msg.LocalWorkerToken)
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
 		}
@@ -126,12 +124,8 @@ func (s *Service) SaveSchedule(ctx context.Context, req *connect.Request[pb.Save
 			value.LastOccurrence = previous.LastOccurrence
 		}
 		if proof != nil {
-			current, err := tx.Authenticate(digest[:])
-			if err != nil {
+			if err := tx.Authorize(); err != nil {
 				return nil, err
-			}
-			if current.Type != domain.WorkerDevice || current.MachineID != proof.MachineID || current.DeviceID != proof.DeviceID {
-				return nil, localOriginRequired()
 			}
 			value.LocalOrigin = proof
 		} else if definition.Workspace == domain.Local {

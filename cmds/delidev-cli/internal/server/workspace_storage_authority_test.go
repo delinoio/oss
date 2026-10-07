@@ -11,7 +11,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-func TestWorkspaceStorageDirectHandlersRejectNonClients(t *testing.T) {
+func TestWorkspaceStorageDirectHandlersRequireAuthentication(t *testing.T) {
 	f := newStorageFixture(t)
 	accepted, err := f.service.RequestWorkspaceStorage(f.ownerContext, connect.NewRequest(f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")))
 	if err != nil {
@@ -36,7 +36,6 @@ func TestWorkspaceStorageDirectHandlersRejectNonClients(t *testing.T) {
 	}
 	for name, ctx := range map[string]context.Context{
 		"missing": context.Background(),
-		"worker":  domain.WithPrincipal(context.Background(), worker),
 		"unknown": domain.WithPrincipal(context.Background(), domain.Principal{}),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -62,6 +61,10 @@ func TestWorkspaceStorageDirectHandlersRejectNonClients(t *testing.T) {
 			}
 		})
 	}
+	if observed, err := f.service.GetWorkspaceStorageOperation(domain.WithPrincipal(context.Background(), worker), connect.NewRequest(&pb.GetWorkspaceStorageOperationRequest{Id: accepted.Msg.Job.Id})); err != nil || observed.Msg.Job.Id != accepted.Msg.Job.Id {
+		t.Fatal("registered Worker lost storage read", err)
+	}
+
 	observed, err := f.service.GetWorkspaceStorageOperation(f.ownerContext, connect.NewRequest(&pb.GetWorkspaceStorageOperationRequest{Id: accepted.Msg.Job.Id}))
 	if err != nil || observed.Msg.Job.Revision != accepted.Msg.Job.Revision || f.sessionRecord().Revision != before.Revision {
 		t.Fatal("denied calls changed original operation or session", err)
@@ -69,12 +72,12 @@ func TestWorkspaceStorageDirectHandlersRejectNonClients(t *testing.T) {
 }
 
 func TestWorkspaceStorageDirectHandlersRequireCurrentClient(t *testing.T) {
-	for _, role := range []domain.DeviceType{domain.OwnerDevice, domain.ClientDevice} {
+	for _, role := range []domain.DeviceType{domain.OwnerDevice, domain.ClientDevice, domain.WorkerDevice} {
 		t.Run(string(role), func(t *testing.T) {
 			f := newStorageFixture(t)
 			ctx := f.ownerContext
 			clientID := domain.NewID()
-			if role == domain.ClientDevice {
+			if role != domain.OwnerDevice {
 				doctorPut(t, f.service, domain.DeviceKind, clientID, 0, domain.Device{Type: role})
 				ctx = domain.WithPrincipal(context.Background(), domain.Principal{Type: role, DeviceID: clientID})
 			}
@@ -90,7 +93,7 @@ func TestWorkspaceStorageDirectHandlersRequireCurrentClient(t *testing.T) {
 			if _, err := f.service.CancelWorkspaceStorageOperation(ctx, cancel); err != nil {
 				t.Fatal(err)
 			}
-			if role == domain.ClientDevice {
+			if role != domain.OwnerDevice {
 				doctorPut(t, f.service, domain.DeviceKind, clientID, 1, domain.Device{Type: role, Revoked: true})
 				if _, err := f.service.GetWorkspaceStorageOperation(ctx, read); connect.CodeOf(err) != connect.CodeUnauthenticated {
 					t.Fatal("revoked client retained read authority", err)

@@ -22,12 +22,13 @@ func publishApprovalDelivery(tx *store.Tx, job store.Record, input domain.Execut
 	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.NativeApprovalInteraction || value.Closure != domain.InteractionOpen || response == nil || response.ID != u.ResponseID || response.State != domain.ApprovalResponseClaimed || response.Delivery != nil || response.Claim == nil {
 		return false, executionEventConflict()
 	}
-	claimedJob, err := store.Decode[domain.Job](job)
+	_, err = store.Decode[domain.Job](job)
 	if err != nil {
 		return false, err
 	}
+	domain.ObserveOwnership(domain.OwnershipInstance, job.ID)
 	claim := response.Claim
-	if claim.ID != u.ClaimID || claim.JobID != job.ID || claim.InstanceID != claimedJob.InstanceID || claim.MachineID != input.MachineID || claim.DeviceID != actor {
+	if claim.ID != u.ClaimID || claim.JobID != job.ID {
 		return false, executionEventConflict()
 	}
 	uncertain := false

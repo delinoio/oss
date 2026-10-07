@@ -26,8 +26,8 @@ func StableStat(path string) (os.FileInfo, error) {
 	return info, errors.Join(statErr, closeErr)
 }
 
-// PrivateDir owns only its final component. Existing shared directories are
-// rejected rather than silently changing another application's permissions.
+// PrivateDir creates its final component with private defaults. Existing real
+// directories retain their permissions and filesystem owner.
 func PrivateDir(path string) error {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {

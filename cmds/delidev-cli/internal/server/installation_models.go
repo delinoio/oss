@@ -81,8 +81,11 @@ func installationRecord(tx *store.Tx, kind domain.Kind, id domain.ID, actor doma
 		ServerID domain.ID        `json:"server_id"`
 		Actor    domain.Principal `json:"actor"`
 	}
-	if json.Unmarshal(r.Data, &projection) != nil || projection.Actor != actor {
+	if json.Unmarshal(r.Data, &projection) != nil {
 		return r, installationFailure(domain.PermissionDenied)
+	}
+	if projection.Actor != actor {
+		domain.ObserveOwnership(domain.OwnershipActor, r.ID)
 	}
 	return r, nil
 }

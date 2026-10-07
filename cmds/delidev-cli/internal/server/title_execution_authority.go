@@ -19,7 +19,7 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 	var empty apiproxy.Scope
 	denied := func() (apiproxy.Scope, error) { return empty, executionDenied() }
 	var input domain.AuxiliaryTitleInput
-	if job.State != domain.JobClaimed || job.InstanceID != grant.InstanceID || job.MachineID != grant.MachineID || job.AssignedDeviceID != grant.DeviceID || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID || input.ProjectID != record.ProjectID || input.MachineID != grant.MachineID || input.OriginalDeviceID != grant.DeviceID || input.OriginalJobID != job.ParentID || input.OriginalExecutionID != grant.ExecutionID {
+	if job.State != domain.JobClaimed || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID || input.ProjectID != record.ProjectID || input.MachineID != grant.MachineID || input.OriginalDeviceID != grant.DeviceID || input.OriginalJobID != job.ParentID || input.OriginalExecutionID != grant.ExecutionID {
 		return denied()
 	}
 	claimed, err := tx.TitleInferenceClaimed(record.ID)

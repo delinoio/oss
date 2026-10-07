@@ -19,7 +19,7 @@
   "new-session.aSeparateDetachedWorktreeIsPrepared_8c300d": "프로젝트 저장소마다 별도의 분리된 작업 트리를 준비합니다. 이 컴퓨터의 기존 체크아웃을 그대로 사용하려면 로컬을 선택하세요.",
   "new-session.useSeparateWorktrees_5cd0b6": "별도 Worktree 사용",
   "new-session.useThisComputerSLocalCheckouts_eadaad": "이 컴퓨터의 Local 체크아웃 사용",
-  "new-session.localUsesThePairedWorkerAnd_ea38f6": "로컬은 페어링된 워커를 사용하며 원래 체크아웃, 현재 브랜치와 커밋되지 않은 변경을 공유합니다. 생성 시 워커 증명을 다시 검증합니다.",
+  "new-session.localUsesThePairedWorkerAnd_ea38f6": "Local은 선택한 Runner Device의 체크아웃, 현재 브랜치와 커밋되지 않은 변경을 공유합니다.",
   "new-session.generalChatUsesAPrivateProjectless_64e0ee": "일반 대화는 선택한 워커의 비공개 프로젝트 없는 디렉터리를 사용합니다. Git 참조는 사용할 수 없습니다.",
   "new-session.optionalEstimatedCostBudget_e9d798": "예상 비용 예산(선택 사항)",
   "new-session.thisIsACeilingAgainstKnown_0260b5": "확인된 과거 토큰 가격 추정치에 대한 한도입니다. 누락된 사용량이나 가격은 사용 불가로 유지되며 청구를 보장하지 않습니다.",

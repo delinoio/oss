@@ -114,7 +114,7 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 			return subscriptionDenied()
 		}
 		o := a.Subscription.ServerOperation
-		if o.ID != operation || o.Actor != actor || o.Epoch != s.subscriptionServerEpoch() || o.State != domain.SubscriptionWaiting || !o.NativeStarted || o.CallbackForwarded || !time.Now().Before(o.ExpiresAt) || a.Subscription.Pending.ID != o.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
+		if o.ID != operation || o.Epoch != s.subscriptionServerEpoch() || o.State != domain.SubscriptionWaiting || !o.NativeStarted || o.CallbackForwarded || !time.Now().Before(o.ExpiresAt) || a.Subscription.Pending.ID != o.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
 			return subscriptionDenied()
 		}
 		p := s.subscriptionProgress[o.ID]

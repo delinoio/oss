@@ -80,8 +80,8 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 		digest, err := hex.DecodeString(c.NativeCheckpointDigest)
 		validProfile = err == nil && len(digest) == sha256.Size && hex.EncodeToString(digest) == c.NativeCheckpointDigest
 	}
-	if !validProfile || c.LastSequence < 3 || c.LastSequence > MaxExecutionEvents || !c.CleanupVerified || !slices.Contains([]ExecutionOutcome{ExecutionSucceeded, ExecutionFailed, ExecutionStopped}, c.Outcome) {
-		return Fail(RecoveryRequired, "The execution completion does not prove its terminal boundary and cleanup.", "Retain its native history and owned process journals for reconciliation.")
+	if !validProfile || c.LastSequence < 3 || c.LastSequence > MaxExecutionEvents || !slices.Contains([]ExecutionOutcome{ExecutionSucceeded, ExecutionFailed, ExecutionStopped}, c.Outcome) {
+		return Fail(RecoveryRequired, "The execution completion has invalid terminal metadata.", "Retain the original execution record and inspect the reported terminal metadata.")
 	}
 	return nil
 }

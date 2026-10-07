@@ -493,6 +493,12 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 	}
 	// A kernel ownership scope, not a sampled ancestry snapshot, determines
 	// membership. An empty scope is permanent because no remaining task can fork.
+	// Signal only the process object retained from this launch. Never recreate
+	// a target from descendant enumeration or historical ownership metadata.
+	if !rootDone {
+		_ = cmd.Process.Kill()
+	}
+	cleanupDeadline := time.Now().Add(5 * time.Second)
 	for {
 		if !rootDone {
 			select {
@@ -503,13 +509,23 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 		}
 		empty, err := drainScope(scope, rootDone)
 		if err != nil {
-			// Preserve kernel ownership while inspection is unavailable. The
-			// worker times out cancellation and retains the scheduling claim.
-			time.Sleep(250 * time.Millisecond)
-			continue
+			domain.ObserveOwnership(domain.OwnershipCleanup, scope.OwnerID)
+			_ = read.Close()
+			_ = stderrRead.Close()
+			_ = inputWrite.Close()
+			_ = writer.frame(processFrame{Kind: processExit, Exit: 1, Failure: domain.RecoveryRequired})
+			return 3
 		}
 		if rootDone && empty {
 			break
+		}
+		if time.Now().After(cleanupDeadline) {
+			domain.ObserveOwnership(domain.OwnershipCleanup, scope.OwnerID)
+			_ = read.Close()
+			_ = stderrRead.Close()
+			_ = inputWrite.Close()
+			_ = writer.frame(processFrame{Kind: processExit, Exit: 1, Failure: domain.RecoveryRequired})
+			return 3
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

@@ -3,8 +3,6 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"path"
 	"slices"
@@ -48,38 +46,25 @@ func (s *Service) CloneRepository(ctx context.Context, req *connect.Request[pb.C
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	machine := domain.ID(req.Msg.MachineId)
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) || len(req.Msg.LocalWorkerToken) != 43 {
+	if !ok {
 		return nil, rpc.Error(localOriginRequired(), correlation)
 	}
-	proof, err := base64.RawURLEncoding.DecodeString(req.Msg.LocalWorkerToken)
-	if err != nil || len(proof) != sha256.Size || base64.RawURLEncoding.EncodeToString(proof) != req.Msg.LocalWorkerToken {
-		clear(proof)
-		return nil, rpc.Error(localOriginRequired(), correlation)
-	}
-	clear(proof)
-	digest := sha256.Sum256([]byte(req.Msg.LocalWorkerToken))
-	// The receipt digest includes the proof commitment, but jobs and responses
-	// retain only original non-secret Worker identities. Replays run no admission.
 	type cloneIntent struct {
 		Actor                          domain.Principal
 		MachineID                      domain.ID
 		ParentPath, URL, DirectoryName string
-		ProofDigest                    [32]byte
 		Selection                      *pb.RepositoryCloneGitHubSelection
 	}
-	intent := cloneIntent{actor, machine, req.Msg.ParentPath, req.Msg.Url, req.Msg.DirectoryName, digest, req.Msg.GithubSelection}
+	intent := cloneIntent{actor, machine, req.Msg.ParentPath, req.Msg.Url, req.Msg.DirectoryName, req.Msg.GithubSelection}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "repository.clone", intent, func(tx *store.Tx) (any, error) {
-		// Authenticate secondary Worker proof only for new admission, within the
-		// same transaction as acceptance. An exact actor-bound receipt remains a
-		// read after Worker retirement; it grants no replacement Clone authority.
-		origin, err := tx.Authenticate(digest[:])
+		if err := tx.Authorize(); err != nil {
+			return nil, err
+		}
+		device, err := tx.InstallationWorkerDevice(machine)
 		if err != nil {
 			return nil, err
 		}
-		if origin.Type != domain.WorkerDevice || origin.MachineID != machine {
-			return nil, localOriginRequired()
-		}
-		input := domain.RepositoryCloneInput{RepositoryID: domain.NewID(), MachineID: machine, LocalOrigin: domain.LocalOrigin{MachineID: origin.MachineID, DeviceID: origin.DeviceID}, ParentPath: intent.ParentPath, URL: intent.URL, DirectoryName: intent.DirectoryName}
+		input := domain.RepositoryCloneInput{RepositoryID: domain.NewID(), MachineID: machine, LocalOrigin: domain.LocalOrigin{MachineID: machine, DeviceID: device}, ParentPath: intent.ParentPath, URL: intent.URL, DirectoryName: intent.DirectoryName}
 		if selected := intent.Selection; selected != nil {
 			if selected.ExpectedRevision == 0 {
 				return nil, domain.Fail(domain.InvalidArgument, "A current profile revision is required.", "Select the profile explicitly.")

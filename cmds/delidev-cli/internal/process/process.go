@@ -69,8 +69,21 @@ func (e commandExitError) Error() string {
 	return fmt.Sprintf("owned process exited with status %d", int(e))
 }
 func (e commandExitError) ExitCode() int { return int(e) }
-func ownershipError() error {
-	return domain.Fail(domain.RecoveryRequired, "Owned process descendants could not be confirmed stopped.", "Retain the execution journal and reconcile its native ownership before retrying or releasing resources.")
+
+var errCleanupUnconfirmed = domain.Fail(domain.RecoveryRequired, "Native process cleanup is unconfirmed.", "Retain the observation; admission may continue without claiming confirmed cleanup.")
+
+func ownershipError() error { return errCleanupUnconfirmed }
+
+// ObserveOwnerContext separates admission from cleanup evidence. Only an exact
+// unconfirmed observation is nonblocking; joined I/O and cancellation errors
+// remain failures. A false result must never become a cleanup-success report.
+func ObserveOwnerContext(ctx context.Context, root string, owner domain.ID) (bool, error) {
+	err := ReconcileOwnerContext(ctx, root, owner)
+	if err == errCleanupUnconfirmed {
+		domain.ObserveOwnership(domain.OwnershipCleanup, owner)
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func launchFailure(code domain.Code) *domain.Error {
@@ -294,7 +307,10 @@ func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, li
 	}
 	directory := filepath.Join(root, string(owner))
 	if err := security.CheckPrivateDir(directory); err != nil {
-		return ownershipError()
+		if errors.Is(err, os.ErrNotExist) {
+			return ownershipError()
+		}
+		return err
 	}
 	// Serialize retirement independently of native handle ownership. The lock
 	// lives outside the owner index so a retained empty index stays meaningful.
@@ -305,7 +321,10 @@ func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, li
 	defer maintenance.Close()
 	index, err := os.Open(directory)
 	if err != nil {
-		return ownershipError()
+		if errors.Is(err, os.ErrNotExist) {
+			return ownershipError()
+		}
+		return err
 	}
 	defer index.Close()
 	var retained []Process
@@ -315,7 +334,7 @@ func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, li
 		}
 		entries, err := index.ReadDir(256)
 		if err != nil && !errors.Is(err, io.EOF) {
-			return ownershipError()
+			return err
 		}
 		if len(entries) == 0 {
 			break
@@ -331,23 +350,26 @@ func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, li
 			}
 			path := filepath.Join(directory, name)
 			if err := security.CheckPrivateDir(path); err != nil {
-				return ownershipError()
+				return err
 			}
 			if retired {
 				// This name is published only after completed ownership and released
 				// controller authority are verified. Retry interrupted removal without
 				// interpreting a partially removed journal as new completion proof.
 				if err := os.RemoveAll(path); err != nil {
-					return ownershipError()
+					return err
 				}
 				if err := security.SyncParent(path); err != nil {
-					return ownershipError()
+					return err
 				}
 				continue
 			}
 			raw, err := security.ReadPrivate(filepath.Join(path, "ownership.json"), 1<<20)
 			if err != nil {
-				return ownershipError()
+				if errors.Is(err, os.ErrNotExist) {
+					return ownershipError()
+				}
+				return err
 			}
 			// This superset contains metadata only and supports each native journal.
 			var scope struct {
@@ -376,25 +398,25 @@ func reconcileOwnerContext(ctx context.Context, root string, owner domain.ID, li
 					checked := ReconcileProcess(identity)
 					closed := controller.Close()
 					if checked != nil || closed != nil {
-						return ownershipError()
+						return errors.Join(checked, closed)
 					}
 					retiredPath := filepath.Join(directory, ".retired-"+name)
 					if err := os.Rename(path, retiredPath); err != nil {
-						return ownershipError()
+						return err
 					}
 					if err := security.SyncParent(retiredPath); err != nil {
-						return ownershipError()
+						return err
 					}
 					if err := os.RemoveAll(retiredPath); err != nil {
-						return ownershipError()
+						return err
 					}
 					if err := security.SyncParent(retiredPath); err != nil {
-						return ownershipError()
+						return err
 					}
 					continue
 				}
 				if domain.SafeError(err).Code != domain.Conflict {
-					return ownershipError()
+					return err
 				}
 			}
 			retained = append(retained, identity)

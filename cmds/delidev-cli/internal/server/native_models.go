@@ -16,9 +16,9 @@ import (
 )
 
 func nativeModelClient(ctx context.Context) error {
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return domain.Fail(domain.PermissionDenied, "Only an owner or paired client can observe native models.", "Use an authorized product client.")
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
+		return domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
 	return nil
 }
@@ -33,7 +33,7 @@ func nativeModelAuthority(tx *store.Tx, scope domain.NativeModelScope) error {
 			return domain.Fail(domain.PermissionDenied, "The original observation client is no longer authorized.", "Create a new explicit observation with an authorized client.")
 		}
 		device, err := store.Decode[domain.Device](record)
-		if err != nil || device.Revoked || device.Type != domain.ClientDevice {
+		if err != nil || device.Revoked {
 			return domain.Fail(domain.PermissionDenied, "The original observation client is no longer authorized.", "Create a new explicit observation with an authorized client.")
 		}
 	}

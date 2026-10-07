@@ -1,5 +1,8 @@
 # DeliDev Read-Only Diagnostics
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Execution startup observations
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) exposes bounded closed phase/code, optional observed native version, executable digest, original job correlation and separate delivery/cleanup facts. The authenticated original Worker reports once against the claimed revision; duplicate receipts do not rerun work. Keep the first startup failure separate from later cleanup uncertainty. No raw native text, prompt, path, URL, credential or environment value enters these reports. Details and metadata copying perform no diagnostic or inference work. Optional machine discovery and Doctor reads retain their independent read-only contracts.

@@ -1,5 +1,8 @@
 # DeliDev native read-only Sidechat
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 
 Issue #964's Sidechat uses the Go session, Worker, workspace and native harness

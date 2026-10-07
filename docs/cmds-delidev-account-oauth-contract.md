@@ -1,5 +1,8 @@
 # API account browser OAuth
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## General API OAuth reservations (issue #964)
 
 The approved extension covers direct ordinary API credentials only: OpenRouter

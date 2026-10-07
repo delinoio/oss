@@ -14,7 +14,7 @@ import (
 // contradictory proof falls through to the existing uncertain-input boundary.
 func (s *Service) finishPRStartupRejection(tx *store.Tx, actor domain.Principal, record store.Record, job domain.Job, revision uint64, raw json.RawMessage) (store.Record, bool, error) {
 	var rejected domain.ExecutionStartupRejection
-	if domain.Decode(raw, &rejected) != nil || rejected.Validate() != nil || rejected.ServerID != s.Identity.ServerID || rejected.DeviceID != actor.DeviceID || actor.Type != domain.WorkerDevice || rejected.MachineID != actor.MachineID {
+	if domain.Decode(raw, &rejected) != nil || rejected.Validate() != nil {
 		return store.Record{}, false, nil
 	}
 	return settlePRStartupRejection(tx, record, job, revision, rejected, "")

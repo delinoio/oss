@@ -149,6 +149,12 @@ func superviseTerminal(dir string, scope processScope, command processCommand, d
 	case <-copied:
 	case <-inputDone:
 	}
+	// Signal only the process object retained from this launch. Never recreate
+	// a target from descendant enumeration or historical ownership metadata.
+	if !rootDone {
+		_ = cmd.Process.Kill()
+	}
+	cleanupDeadline := time.Now().Add(5 * time.Second)
 	for {
 		if !rootDone {
 			select {
@@ -160,6 +166,13 @@ func superviseTerminal(dir string, scope processScope, command processCommand, d
 		empty, err := drainScope(scope, rootDone)
 		if err == nil && rootDone && empty {
 			break
+		}
+		if err != nil || time.Now().After(cleanupDeadline) {
+			domain.ObserveOwnership(domain.OwnershipCleanup, scope.OwnerID)
+			close(stopInput)
+			_ = master.Close()
+			_ = writer.frame(processFrame{Kind: processExit, Exit: 1, Failure: domain.RecoveryRequired})
+			return 3
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

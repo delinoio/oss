@@ -39,11 +39,11 @@ func publishClaudeReplyEcho(tx *store.Tx, job store.Record, input domain.Executi
 	default:
 		return executionEventConflict()
 	}
-	j, err := store.Decode[domain.Job](job)
+	_, err = store.Decode[domain.Job](job)
 	if err != nil {
 		return err
 	}
-	if claim == nil || claim.ID != u.ClaimID || claim.JobID != job.ID || claim.InstanceID != j.InstanceID || claim.MachineID != input.MachineID || claim.DeviceID != actor || response == nil {
+	if claim == nil || claim.ID != u.ClaimID || claim.JobID != job.ID || response == nil {
 		return executionEventConflict()
 	}
 	digest, err := domain.ClaudeResponseDigest(v, *response)

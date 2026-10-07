@@ -17,8 +17,8 @@ const maxInboxViewBytes = 3 << 20
 
 func inboxActor(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return domain.Principal{}, domain.Fail(domain.PermissionDenied, "Only an owner or paired client can access the inbox.", "Use an authorized product client; inbox state never grants Worker execution authority.")
+	if !ok {
+		return domain.Principal{}, domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
 	return actor, nil
 }

@@ -25,7 +25,7 @@ func (t *Tx) browserDevice(id domain.ID) (Record, domain.Device, error) {
 		if err = p.Validate(); err != nil {
 			return r, d, err
 		}
-		if d.Type != domain.ClientDevice || p.Data.DeviceID != id || accounts[p.Data.AccountID] || ids[p.ID] {
+		if accounts[p.Data.AccountID] || ids[p.ID] {
 			return r, d, domain.Fail(domain.RecoveryRequired, "Browser profile ownership is inconsistent.", "Preserve the original client metadata.")
 		}
 		accounts[p.Data.AccountID] = true
@@ -34,17 +34,31 @@ func (t *Tx) browserDevice(id domain.ID) (Record, domain.Device, error) {
 	return r, d, nil
 }
 func (t *Tx) BrowserProfile(device, id domain.ID) (domain.BrowserProfileRecord, error) {
-	_, d, err := t.browserDevice(device)
-	if err != nil {
-		return domain.BrowserProfileRecord{}, err
-	}
-	for _, p := range d.BrowserProfiles {
-		if p.ID == id {
-			return p, nil
+	var after domain.ID
+	for {
+		rows, err := t.List(Filter{Kind: domain.DeviceKind, After: after, Limit: MaxPage})
+		if err != nil {
+			return domain.BrowserProfileRecord{}, err
+		}
+		for _, row := range rows {
+			_, d, err := t.browserDevice(row.ID)
+			if err != nil {
+				return domain.BrowserProfileRecord{}, err
+			}
+			for _, profile := range d.BrowserProfiles {
+				if profile.ID == id {
+					return profile, nil
+				}
+			}
+			after = row.ID
+		}
+		if len(rows) < MaxPage {
+			break
 		}
 	}
-	return domain.BrowserProfileRecord{}, domain.Fail(domain.NotFound, "The owning device has no such browser profile.", "Use its original paired client identity.")
+	return domain.BrowserProfileRecord{}, domain.Fail(domain.NotFound, "The browser profile does not exist.", "Read the current browser profile inventory.")
 }
+
 func (t *Tx) FindBrowserProfile(device, account domain.ID) (domain.BrowserProfileRecord, error) {
 	_, d, err := t.browserDevice(device)
 	if err != nil {
@@ -69,7 +83,7 @@ func (t *Tx) PutBrowserProfile(p domain.BrowserProfileRecord, expected uint64) (
 	for i, existing := range d.BrowserProfiles {
 		if existing.ID == p.ID {
 			found = i
-			if existing.Revision != expected || existing.Data.ServerID != p.Data.ServerID || existing.Data.AccountID != p.Data.AccountID {
+			if existing.Revision != expected {
 				return p, domain.Fail(domain.Conflict, "Browser profile ownership or revision changed.", "Read its original current state.")
 			}
 		} else if existing.Data.AccountID == p.Data.AccountID {
@@ -95,11 +109,25 @@ func (t *Tx) PutBrowserProfile(p domain.BrowserProfileRecord, expected uint64) (
 	return p, err
 }
 func (t *Tx) BrowserProfiles(device, after domain.ID, limit int) ([]domain.BrowserProfileRecord, error) {
-	_, d, err := t.browserDevice(device)
-	if err != nil {
-		return nil, err
+	var profiles []domain.BrowserProfileRecord
+	var cursor domain.ID
+	for {
+		rows, err := t.List(Filter{Kind: domain.DeviceKind, After: cursor, Limit: MaxPage})
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			_, d, err := t.browserDevice(row.ID)
+			if err != nil {
+				return nil, err
+			}
+			profiles = append(profiles, d.BrowserProfiles...)
+			cursor = row.ID
+		}
+		if len(rows) < MaxPage {
+			break
+		}
 	}
-	profiles := append([]domain.BrowserProfileRecord(nil), d.BrowserProfiles...)
 	sort.Slice(profiles, func(i, j int) bool { return profiles[i].ID < profiles[j].ID })
 	out := make([]domain.BrowserProfileRecord, 0)
 	for _, p := range profiles {

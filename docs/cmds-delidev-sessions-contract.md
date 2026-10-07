@@ -1,5 +1,8 @@
 # DeliDev session acceptance and input queue contract
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Direct execution startup
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) replaces mandatory installation/protocol inspection for negotiated v4 execution jobs. First, continued and scheduled execution retain the same atomic input, configuration, account routing, leases, budget and Worker authority. The actual process must publish readiness before its API relay can infer. A failed attempt with positive no-send and original cleanup proof keeps its rejected input and immutable assignment; explicit revision-checked Resume creates a distinct same-selection attempt. Uncertain input or cleanup retains original recovery. A retried first execution has a separate native root ID without rewriting the initial selection; continuation and title attribution use that successful original lineage.

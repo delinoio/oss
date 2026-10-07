@@ -17,7 +17,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
-	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 type attemptWindow struct {
@@ -72,13 +71,6 @@ func (s *Service) authorizeRequest(r *http.Request) (*http.Request, func(), erro
 	actor, err := s.Store.Authenticate(r.Context(), digest[:])
 	if err != nil {
 		return nil, nil, err
-	}
-	if actor.Type == domain.WorkerDevice {
-		switch r.URL.Path {
-		case delidevv1connect.InstallationServicePollWorkerUpdateProcedure, delidevv1connect.InstallationServiceClaimWorkerUpdateProcedure, delidevv1connect.InstallationServiceReportWorkerUpdateProcedure, delidevv1connect.WorkerServiceSyncWorkerNetworkProcedure, delidevv1connect.WorkerServiceReportWorkerNativeRouteProcedure, delidevv1connect.SubscriptionServiceClaimSubscriptionObservationProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionObservationProcedure, delidevv1connect.SubscriptionServiceWatchSubscriptionProcedure, delidevv1connect.SubscriptionServiceTakeSubscriptionProcedure, delidevv1connect.SubscriptionServicePublishSubscriptionProgressProcedure, delidevv1connect.SubscriptionServiceFinishSubscriptionProcedure, delidevv1connect.WorkerServiceWatchTerminalsProcedure, delidevv1connect.WorkerServiceClaimTerminalProcedure, delidevv1connect.WorkerServiceReportTerminalProcedure, delidevv1connect.WorkerServicePublishTerminalOutputProcedure, delidevv1connect.WorkerServiceListSessionDeletionWorkProcedure, delidevv1connect.WorkerServiceReportSessionDeletionProcedure, delidevv1connect.WorkerServiceWatchForwardRequestsProcedure, delidevv1connect.ForwardServiceClaimForwardProcedure, delidevv1connect.ForwardServiceWatchForwardProcedure, delidevv1connect.ForwardServiceSendForwardProcedure, delidevv1connect.ForwardServiceReportForwardCleanupProcedure, delidevv1connect.WorkerServiceWatchWorkspaceReadsProcedure, delidevv1connect.WorkerServiceReportWorkspaceReadProcedure, delidevv1connect.WorkerServiceAttachWorkerProcedure, delidevv1connect.WorkerServiceWatchWorkProcedure, delidevv1connect.WorkerServiceWatchAuxiliaryWorkProcedure, delidevv1connect.WorkerServiceReportWorkProcedure, delidevv1connect.WorkerServiceReportExecutionStartupProcedure, delidevv1connect.WorkerServiceRegisterExecutionProcedure, delidevv1connect.WorkerServicePublishExecutionProcedure, delidevv1connect.WorkerServiceClaimQuestionResponseProcedure, delidevv1connect.WorkerServiceClaimApprovalResponseProcedure, delidevv1connect.WorkerServiceClaimSteerInputProcedure, delidevv1connect.SystemServiceGetStatusProcedure:
-		default:
-			return nil, nil, domain.Fail(domain.PermissionDenied, "Worker credentials cannot invoke owner product operations.", "Use an owner or paired client credential.")
-		}
 	}
 	ctx, cancel := context.WithCancel(domain.WithPrincipal(r.Context(), actor))
 	connection := domain.NewID()

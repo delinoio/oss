@@ -1,3 +1,5 @@
+- DeliDev runtime ownership follows `docs/cmds-delidev-ownership-contract.md`, which supersedes earlier runtime ownership enforcement requirements here and in component contracts. Keep authentication, pairing, revocation, actual validation/I/O failures and immutable history. Roles and original-owner comparisons do not gate product actions; unconfirmed cleanup permits admission without fabricated success. Terminate only through retained original native/control handles. Source-code ownership remains separate.
+
 - Direct startup retry follows `docs/cmds-delidev-execution-startup-contract.md`. Under the original session lock, advance only the exact closed failed claim or the immutable original continuation/compaction predecessor when failure occurred before workspace admission. First-attempt absence requires no retained execution history. Server-confirmed no-send/cleanup proof grants no foreign adoption or filesystem deletion.
 
 # DeliDev Worker workspace ownership

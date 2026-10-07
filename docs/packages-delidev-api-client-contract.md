@@ -1,5 +1,8 @@
 # DeliDev TypeScript client
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Execution startup bindings
 
 The [direct startup contract](cmds-delidev-execution-startup-contract.md) activates the main-reserved System 43, Worker 23 and closed ReportExecutionStartup declarations. Generate Go, TypeScript and Connect Query outputs from the reconciled service schemas. The original Worker reports exact claimed revision/instance metadata; desktop presentation reads existing authenticated session resources. Additive observations do not grant client Worker authority, inference or credential access.

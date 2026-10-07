@@ -81,7 +81,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
   const sidechat = Boolean(object(data.fork).sidechat_parent_snapshot);
   const storageSupported = status.data?.capabilities.includes(SystemCapability.WORKSPACE_STORAGE_V1);
   const deleteSupported = status.data?.capabilities.includes(SystemCapability.PERMANENT_SESSION_DELETION_V1);
-  const previewReady = Boolean(job && state === JobState.Succeeded && output.action === "preview" && output.cleanup_verified === true && text(output.preview_digest));
+  const previewReady = Boolean(job && state === JobState.Succeeded && output.action === "preview" && text(output.preview_digest));
   const actionsBlocked = blocked || current.isFetching || current.isError || operationPending || deletionAccepted;
   return <Context.Provider value={show}>{children}{source && visible ? <Modal title={copy("session-storage.workspaceStorageAndPermanentDeletion_d87c74")} close={() => setVisible(false)}>
     <p><LocalizedText id="session-storage.session_37c76b" components={{ s0: <>{resourceName(source)}</>, s1: <>{source.id}</> }} /></p>

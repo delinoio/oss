@@ -1,5 +1,8 @@
 # DeliDev Diagnostics Presentation
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Direct startup presentation
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, original correlation, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.

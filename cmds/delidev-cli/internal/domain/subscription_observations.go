@@ -58,7 +58,7 @@ func (v SubscriptionObservationOperation) Validate() error {
 			return InvalidSubscriptionObservation()
 		}
 	}
-	if !ValidSubscriptionObservationCode(v.ErrorCode) || v.RequestedAt.IsZero() || !slices.Contains([]SubscriptionObservationPhase{SubscriptionObservationQueued, SubscriptionObservationSending, SubscriptionObservationSucceeded, SubscriptionObservationFailed, SubscriptionObservationUncertain, SubscriptionObservationRetiredUncertain}, v.Phase) || (v.Actor.Type != OwnerDevice && v.Actor.Type != ClientDevice) || (v.Actor.Type == ClientDevice && v.Actor.DeviceID.Validate() != nil) {
+	if !ValidSubscriptionObservationCode(v.ErrorCode) || v.RequestedAt.IsZero() || !slices.Contains([]SubscriptionObservationPhase{SubscriptionObservationQueued, SubscriptionObservationSending, SubscriptionObservationSucceeded, SubscriptionObservationFailed, SubscriptionObservationUncertain, SubscriptionObservationRetiredUncertain}, v.Phase) || !v.Actor.ValidMetadata() || (v.Actor.Type == ClientDevice && v.Actor.DeviceID.Validate() != nil) {
 		return InvalidSubscriptionObservation()
 	}
 	if v.Action == SubscriptionQuota {

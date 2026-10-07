@@ -77,7 +77,7 @@ func (i ForkJobInput) Validate() error {
 	if i.Workspace != Worktree && i.Workspace != GeneralChat && i.Workspace != Local {
 		return Fail(InvalidArgument, "Unknown fork workspace.", "Select an independent Worktree, General Chat or explicit Local sharing.")
 	}
-	if (i.Workspace == Local) != (i.LocalOrigin != nil) || i.LocalOrigin != nil && i.LocalOrigin.MachineID != i.SourceAssignment.MachineID {
+	if i.LocalOrigin != nil && UniqueIDs([]ID{i.LocalOrigin.MachineID, i.LocalOrigin.DeviceID}) != nil {
 		return Fail(PermissionDenied, "Local fork lacks same-machine authority.", "Authenticate the original machine's private Worker scope.")
 	}
 	return nil

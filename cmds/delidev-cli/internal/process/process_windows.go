@@ -449,27 +449,10 @@ func ReconcileProcess(identity Process) error {
 	if scope.Complete {
 		return nil
 	}
-	name, err := windows.UTF16PtrFromString(scope.Job)
-	if err != nil {
-		return ownershipError()
-	}
-	open := windows.NewLazySystemDLL("kernel32.dll").NewProc("OpenJobObjectW")
-	handle, _, failure := open.Call(uintptr(0x0004|0x0008), 0, uintptr(unsafe.Pointer(name)))
-	runtime.KeepAlive(name)
-	if handle == 0 {
-		if !errors.Is(failure, windows.ERROR_FILE_NOT_FOUND) {
-			return ownershipError()
-		}
-		// This unique named kill-on-close job cannot disappear while any owned
-		// process survives. No PID lookup is used as a substitute for that proof.
-	} else {
-		defer windows.CloseHandle(windows.Handle(handle))
-		if err := drainJob(windows.Handle(handle)); err != nil {
-			return ownershipError()
-		}
-	}
-	scope.Complete = true
-	return saveWindowsScope(identity.ScopeDir, scope)
+	// Do not reopen a Job Object using a retained journal name. Only the live
+	// managedProcess may terminate its original job through its native handle.
+	domain.ObserveOwnership(domain.OwnershipCleanup, identity.OwnerID)
+	return ownershipError()
 }
 
 // Windows reports several loader failures for invalid or incompatible images,

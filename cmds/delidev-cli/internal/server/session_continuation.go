@@ -30,7 +30,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if err := tx.RequireNoSessionFork(sr.ID); err != nil {
 		return store.Record{}, err
 	}
-	if !session.WorkspaceAvailable() || session.InitialExecution == nil || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.Execution == nil || !session.Execution.CleanupVerified || (session.Dispatch != domain.DispatchReady && session.Dispatch != domain.DispatchBlocked && !(explicit && session.Dispatch == domain.DispatchPaused)) {
+	if !session.WorkspaceAvailable() || session.InitialExecution == nil || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.Execution == nil || (session.Dispatch != domain.DispatchReady && session.Dispatch != domain.DispatchBlocked && !(explicit && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, continuationConflict()
 	}
 	if session.Outcome != domain.ExecutionSucceeded && session.Outcome != domain.ExecutionFailed && session.Outcome != domain.ExecutionStopped {
@@ -154,7 +154,7 @@ func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domai
 }
 
 func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domain.Session) (domain.ExecutionJobInput, domain.ExecutionCompletion, string, error) {
-	if session.InitialExecution == nil || session.Execution == nil || session.ActiveExecutionID != "" || !session.Execution.CleanupVerified || session.Recovery != domain.NoRecovery || session.PendingSteerID != "" {
+	if session.InitialExecution == nil || session.Execution == nil || session.ActiveExecutionID != "" || session.PendingSteerID != "" {
 		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", continuationConflict()
 	}
 	if (session.Outcome != domain.ExecutionSucceeded && session.Outcome != domain.ExecutionFailed && session.Outcome != domain.ExecutionStopped) || session.Execution.Outcome != session.Outcome {

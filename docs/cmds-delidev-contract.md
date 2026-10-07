@@ -1,5 +1,8 @@
 # DeliDev command, server, and Worker contract
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 `cmds/delidev-cli` produces the `delidev` binary for macOS, Windows, and Linux. It contains the standalone CLI and the identical bundled-sidecar server/Worker entry points. The complete issue is retained in [requirements](cmds-delidev-requirements.md); record implementation and verification progress in pull requests, issues and CI logs/artifacts.
 

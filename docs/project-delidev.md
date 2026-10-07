@@ -1,5 +1,7 @@
 # Project: DeliDev
 
+Runtime ownership behavior follows the [ownership observation contract](cmds-delidev-ownership-contract.md). Authentication, pairing and revocation remain required; original ownership and unconfirmed cleanup do not gate product actions. Historical references and actual validation failures remain independent.
+
 API account format selection uses the main-first closure in PR #1646. The
 [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection)
 owns per-key protocol profiles, schema-3 API compatibility and portable version 4;
@@ -48,6 +50,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
  The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalone-pull-requests) uses name-only repository rows, separate read-free Details disclosures for configured GitHub identity and the complete local UUID, and native segmented state choices. Repository selection and filter edits retain the existing explicit-load boundary; the shared shell, pending PR operations and connection-scoped lifetimes remain independently owned.
 
 ## Domain Contract Documents
+- [Runtime ownership observations](cmds-delidev-ownership-contract.md)
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)

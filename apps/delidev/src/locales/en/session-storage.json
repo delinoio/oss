@@ -19,7 +19,7 @@
   "session-storage.sidechatReferencesTheParentSCurrent_00ff51": "Sidechat references the parent's current workspace. Delete this Sidechat to remove its managed conversation and runtime while preserving parent files.",
   "session-storage.originalLocalCheckoutsUseYourOwn_cf2eb0": "Original Local checkouts use your own backup workflow. DeliDev does not snapshot or clean them.",
   "session-storage.workspaceStorage_3107f9": "Workspace storage",
-  "session-storage.workspaceStopWorkAndWaitFor_674acb": "Workspace: <s0/>. Stop work and wait for terminal, forwarding and native cleanup before storage operations. Archive preserves files.",
+  "session-storage.workspaceStopWorkAndWaitFor_674acb": "Workspace: <s0/>. Unconfirmed ownership or cleanup does not block the next operation.",
   "session-storage.updateTheConnectedServerToManage_37cc25": "Update the connected server to manage workspace storage.",
   "session-storage.workspaceSnapshots_626fda": "Workspace snapshots",
   "session-storage.previousSnapshots_1ead42": "Previous snapshots",

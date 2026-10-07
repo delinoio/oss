@@ -48,10 +48,7 @@ func (in BackupDeletionInput) validate() error {
 	if err != nil || len(h) != 32 || hex.EncodeToString(h) != in.SHA256 {
 		return deletionConflict()
 	}
-	if in.Actor.Type != domain.OwnerDevice && in.Actor.Type != domain.ClientDevice {
-		return deletionConflict()
-	}
-	if in.Actor.MachineID != "" || (in.Actor.Type == domain.ClientDevice && in.Actor.DeviceID.Validate() != nil) {
+	if !in.Actor.ValidMetadata() {
 		return deletionConflict()
 	}
 	return nil

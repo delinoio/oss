@@ -1,5 +1,8 @@
 # DeliDev account lifecycle
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Per-account API formats
 
 API accounts may declare the closed `api_protocol` selection under the

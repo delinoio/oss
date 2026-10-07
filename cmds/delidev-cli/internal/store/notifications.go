@@ -9,7 +9,7 @@ import (
 
 func (t *Tx) notificationClient() (string, error) {
 	actor, ok := domain.PrincipalFrom(t.ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	if !ok {
 		return "", domain.Fail(domain.PermissionDenied, "Only an owner or paired client can manage its notifications.", "Use the original client; Worker identity grants no presentation authority.")
 	}
 	if err := t.Authorize(); err != nil {

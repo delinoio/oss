@@ -47,7 +47,7 @@ func serviceWire(s userservice.Status) *pb.UserService {
 }
 func (s *Service) userService(ctx context.Context, k userservice.Kind) (*userservice.Manager, string, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	if !ok {
 		return nil, "", domain.Fail(domain.PermissionDenied, "Only the owner or a paired client can control user services.", "Use an authorized product client on the selected server.")
 	}
 	authorize := func(work context.Context) error {

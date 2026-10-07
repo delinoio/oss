@@ -1,5 +1,8 @@
 # DeliDev v1 Connect contract
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## API account format selection
 
 Reservation PR #1646 established the complete issue #964 allocation closure on

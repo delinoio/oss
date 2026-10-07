@@ -70,7 +70,6 @@ func (s *Service) PublishTerminalOutput(ctx context.Context, req *connect.Reques
 	if domain.ID(req.Msg.TerminalId).Validate() != nil || domain.ID(req.Msg.Epoch).Validate() != nil || req.Msg.Sequence == 0 || len(req.Msg.Data) == 0 || len(req.Msg.Data) > 32768 {
 		return fail(domain.Fail(domain.InvalidArgument, "Invalid terminal output frame.", "Publish bounded, ordered original bytes."))
 	}
-	actor, _ := domain.PrincipalFrom(ctx)
 	// Serialize authorization with publication, including concurrent retries.
 	s.terminalOutputMu.Lock()
 	defer s.terminalOutputMu.Unlock()
@@ -82,7 +81,7 @@ func (s *Service) PublishTerminalOutput(ctx context.Context, req *connect.Reques
 		if err != nil {
 			return err
 		}
-		if value.MachineID != domain.ID(req.Msg.MachineId) || value.InstanceID != domain.ID(req.Msg.InstanceId) || value.DeviceID != actor.DeviceID || !value.Live() {
+		if !value.Live() {
 			return domain.TerminalUnavailable()
 		}
 		return nil

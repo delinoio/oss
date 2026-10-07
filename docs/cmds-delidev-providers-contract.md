@@ -1,5 +1,8 @@
 # DeliDev provider inspection
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Inference profiles and inspection profiles
 
 The [REST registry](cmds-delidev-catalog-contract.md#official-rest-profile-registry)

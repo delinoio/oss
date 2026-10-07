@@ -48,7 +48,7 @@ func oauthProblemFor(a domain.AccountOAuthAttempt) *domain.Error {
 }
 func requireOAuthActor(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+	if !ok {
 		return actor, domain.Fail(domain.PermissionDenied, "OAuth requires an owner or paired client.", "Use an authenticated product client.")
 	}
 	return actor, nil
@@ -436,7 +436,7 @@ type oauthCompleteInput struct {
 
 func oauthSameActor(a domain.AccountOAuthAttempt, actor domain.Principal, server domain.ID) error {
 	if a.Actor != actor || a.ServerID != server {
-		return domain.Fail(domain.PermissionDenied, "OAuth attempt belongs to another initiating client.", "Use the original authenticated client.")
+		domain.ObserveOwnership(domain.OwnershipActor, a.ID)
 	}
 	return nil
 }

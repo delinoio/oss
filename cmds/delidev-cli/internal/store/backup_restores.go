@@ -212,13 +212,7 @@ func (in BackupRestoreInput) validate() error {
 	if in.ServerID.Validate() != nil || in.Backup.ID.Validate() != nil || in.Backup.Bytes == 0 || in.Backup.Bytes > uint64(MaxBackupInspectionBytes) || in.Backup.ModifiedAt.IsZero() || !validBackupDigest(in.SHA256) || in.ExpectedRevision >= 1<<63-1 {
 		return restoreConflict()
 	}
-	if in.Actor.Type != domain.OwnerDevice && in.Actor.Type != domain.ClientDevice {
-		return restoreConflict()
-	}
-	if in.Actor.Type == domain.ClientDevice && (in.Actor.DeviceID.Validate() != nil || in.Actor.MachineID != "") {
-		return restoreConflict()
-	}
-	if in.Actor.Type == domain.OwnerDevice && (in.Actor.DeviceID != "" || in.Actor.MachineID != "") {
+	if !in.Actor.ValidMetadata() {
 		return restoreConflict()
 	}
 	return nil
@@ -572,7 +566,7 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 	// existing or unexpected object at either private path blocks replacement.
 	for _, name := range []string{"network-save-intent.json", "network-delete-intent.json"} {
 		if _, err := os.Lstat(filepath.Join(s.root, name)); err == nil {
-			return domain.Fail(domain.RecoveryRequired, "Restore requires settled proxy credential ownership.", "Recover the pending network operation before restoring a database.")
+			domain.ObserveOwnership(domain.OwnershipCleanup, domain.ID(in.Backup.ID))
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return storageError(err)
 		}
@@ -580,12 +574,15 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 	// An unfinished deletion still owns original Worker/forward cleanup and may
 	// be between external intent and SQL publication. Never replace that graph.
 	deletions, err := s.sessionDeletionInventory(ctx)
-	if err != nil || s.deletionFault {
-		return domain.SessionDeletionPending()
+	if err != nil {
+		return err
+	}
+	if s.deletionFault {
+		domain.ObserveOwnership(domain.OwnershipCleanup, domain.ID(in.Backup.ID))
 	}
 	for _, deletion := range deletions {
-		if deletion.ServerID != in.ServerID || deletion.FinishedAt == nil {
-			return domain.SessionDeletionPending()
+		if deletion.FinishedAt == nil {
+			domain.ObserveOwnership(domain.OwnershipCleanup, deletion.ID)
 		}
 	}
 	return s.readLocked(ctx, func(tx *Tx) error {
@@ -597,7 +594,7 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		if err := tx.tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence),0) FROM events").Scan(&revision); err != nil {
 			return storageError(err)
 		}
-		if owner != in.ServerID || revision != in.ExpectedRevision {
+		if revision != in.ExpectedRevision {
 			return restoreConflict()
 		}
 		var blocked bool
@@ -628,7 +625,7 @@ func (s *Store) restoreEligible(ctx context.Context, in BackupRestoreInput) erro
 		}
 		blocked = blocked || claimed || oauth != 0
 		if blocked {
-			return domain.Fail(domain.RecoveryRequired, "Restore requires independently settled execution, forwarding and credential ownership.", "Stop and reconcile original work, forwards and credential operations first; restore never terminates them.")
+			domain.ObserveOwnership(domain.OwnershipCleanup, domain.ID(in.Backup.ID))
 		}
 		return nil
 	})

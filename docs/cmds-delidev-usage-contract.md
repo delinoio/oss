@@ -1,5 +1,8 @@
 # DeliDev native usage ledger
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 `cmds/delidev-cli/internal/domain`, `internal/harness/codex`, `internal/harness/opencode`, `internal/worker`, `internal/server`, and `internal/store` own the normalized response usage pipeline. Issue #964 requires DeliDev-only aggregation, the dashboard, attributable actual costs, separate historical token-price estimates and optional session budgets. The implemented boundary includes exact Codex response ingestion, durable deduplication, coherent read-only RPC/CLI aggregation and desktop presentation. Immutable user-declared pricing, per-currency estimate aggregation and owner/client pricing RPC/CLI are implemented. Desktop pricing forms and historical estimate presentation are implemented. Optional lifetime session budgets are implemented across creation, RPC, CLI and desktop. Remaining native usage scopes remain required work.
 

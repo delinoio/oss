@@ -1,5 +1,8 @@
 # DeliDev explicit outbound network contract
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Known model catalog downloads
 
 The advisory subscription catalog is an explicit server outbound operation under

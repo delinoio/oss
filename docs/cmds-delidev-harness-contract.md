@@ -1,5 +1,8 @@
 # DeliDev native harness adapter contract
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 `cmds/delidev-cli/internal/harness` owns Worker-native installation discovery and protocol adapters. All four issue #964 harnesses remain required: Codex, Claude Code, OpenCode and Grok Build. This contract records implemented boundaries without reducing the complete [requirements](cmds-delidev-requirements.md).
 

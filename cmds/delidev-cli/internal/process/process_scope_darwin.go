@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -96,7 +95,7 @@ func launchScope(s processScope, dir, socket string) (func() error, error) {
 		if !saved.Complete && saved.Started {
 			return scopeError()
 		}
-		return recoverScope(saved, dir)
+		return launchctl("bootout", s.Domain+"/"+s.Label)
 	}, nil
 }
 func initializeScope(s *processScope) error {
@@ -116,29 +115,6 @@ func initializeScope(s *processScope) error {
 	s.Coalition = id
 	return nil
 }
-func killCoalition(id uint64, exclude int) error {
-	rows, err := processRows()
-	if err != nil {
-		return err
-	}
-	for _, r := range rows {
-		if r.pid == exclude {
-			continue
-		}
-		candidate, err := processCoalition(r.pid)
-		if err != nil || candidate != id {
-			continue
-		}
-		p := Process{PID: r.pid, Birth: r.birth}
-		// Revalidate both birth and membership immediately before signalling.
-		if ProcessAlive(p) {
-			if current, e := processCoalition(r.pid); e == nil && current == id {
-				_ = syscall.Kill(r.pid, syscall.SIGKILL)
-			}
-		}
-	}
-	return nil
-}
 func drainScope(s processScope, _ bool) (bool, error) {
 	count, err := coalitionActive(s.Coalition)
 	if err != nil {
@@ -150,33 +126,16 @@ func drainScope(s processScope, _ bool) (bool, error) {
 	if count == 0 {
 		return false, scopeError()
 	}
-	return false, killCoalition(s.Coalition, os.Getpid())
+	return false, nil
 }
 func recoverScope(s processScope, dir string) error {
-	// A journal without an owner is a launch interrupted before the start
-	// barrier. The exact randomly-named job cannot have run the command yet.
-	_ = launchctl("bootout", s.Domain+"/"+s.Label)
-	if s.Coalition == 0 {
+	// A retained journal is metadata, not a live native control handle. Recovery
+	// never signals a process or service reconstructed from its PID or label.
+	if s.Complete {
 		return nil
 	}
-	deadline := time.Now().Add(8 * time.Second)
-	for {
-		count, err := coalitionActive(s.Coalition)
-		if errors.Is(err, syscall.ESRCH) || err == nil && count == 0 {
-			s.Complete = true
-			return saveScope(dir, s)
-		}
-		if err != nil {
-			return scopeError()
-		}
-		if err = killCoalition(s.Coalition, 0); err != nil {
-			return err
-		}
-		if time.Now().After(deadline) {
-			return scopeError()
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	domain.ObserveOwnership(domain.OwnershipCleanup, s.OwnerID)
+	return scopeError()
 }
 
 func scopeHasSurvivors(s processScope) (bool, error) {

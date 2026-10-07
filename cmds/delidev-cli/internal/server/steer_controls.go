@@ -65,7 +65,7 @@ func (s *Service) ClaimSteerInput(ctx context.Context, req *connect.Request[pb.C
 			return err
 		}
 		claim := attempt.Claim
-		if attempt.State != domain.SteerClaimed || claim == nil || claim.ID != claimID || claim.MachineID != identity.Machine || claim.InstanceID != identity.Instance || claim.DeviceID != identity.Device {
+		if attempt.State != domain.SteerClaimed || claim == nil || claim.ID != claimID {
 			return steerConflict()
 		}
 		response.Steer, response.Input = rpc.Resource(r), rpc.Resource(ir)
@@ -100,7 +100,7 @@ func (s *Service) currentSteerClaim(tx *store.Tx, identity steerClaimIdentity) (
 	if err != nil {
 		return r, attempt, store.Record{}, err
 	}
-	if grant.JobID != identity.Job || grant.MachineID != identity.Machine || grant.InstanceID != identity.Instance || grant.DeviceID != identity.Device || session.Execution.NativeThreadID != string(attempt.NativeThreadID) {
+	if grant.JobID != identity.Job || session.Execution.NativeThreadID != string(attempt.NativeThreadID) {
 		return r, attempt, store.Record{}, executionDenied()
 	}
 	ir, input, err := steerInput(tx, r, attempt)

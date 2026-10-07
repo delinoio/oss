@@ -123,8 +123,8 @@ func activityEntry(tx *store.Tx, r store.Record) (*pb.ActivityEntry, error) {
 func (s *Service) ListActivity(ctx context.Context, req *connect.Request[pb.ListActivityRequest]) (*connect.Response[pb.ListActivityResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can read activity.", "Use an authorized product client."), correlation)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), correlation)
 	}
 	f := store.ActivityFilter{SessionID: domain.ID(req.Msg.SessionId), ProjectID: domain.ID(req.Msg.ProjectId), Limit: int(req.Msg.PageSize)}
 	if f.Limit == 0 {

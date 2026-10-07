@@ -15,9 +15,9 @@ import (
 )
 
 func compactionActor(ctx context.Context) error {
-	a, ok := domain.PrincipalFrom(ctx)
-	if !ok || a.Type != domain.OwnerDevice && a.Type != domain.ClientDevice {
-		return domain.Fail(domain.PermissionDenied, "Only an owner or paired client can request session compaction.", "Use an authenticated product client.")
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
+		return domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
 	return nil
 }
@@ -27,7 +27,7 @@ func compactionActor(ctx context.Context) error {
 func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID) (domain.SessionCompactionInput, error) {
 	var empty domain.SessionCompactionInput
 	p := session.Execution
-	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
+	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || p == nil {
 		return empty, domain.CompactionUncertain()
 	}
 	h := session.InitialExecution.Configuration.Harness

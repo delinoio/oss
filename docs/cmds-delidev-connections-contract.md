@@ -1,5 +1,8 @@
 # DeliDev Saved Client Connections
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 `cmds/delidev-cli/internal/connections`, the local `connection` CLI commands and the existing Worker/device pairing primitive own named client-side server pairings. They provide the durable authority boundary for desktop remote selection. The desktop now opens a separately pinned native window per saved profile under the desktop contract; actual remote TLS/streaming/platform evidence remains distinct from loopback fixture acceptance.
 

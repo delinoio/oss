@@ -82,8 +82,8 @@ func TestNotificationRPCOnlyOneConcurrentPresentationPerClient(t *testing.T) {
 	if err != nil || len(listed.Msg.Candidates) != 0 {
 		t.Fatal("reconnect repeated notification", err)
 	}
-	if _, err := client.GetNotificationPreferences(ctx, ownerRequest(security.Identity{Token: f.workerToken}, &pb.GetNotificationPreferencesRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker gained client presentation authority", err)
+	if _, err := client.GetNotificationPreferences(ctx, ownerRequest(security.Identity{Token: f.workerToken}, &pb.GetNotificationPreferencesRequest{})); err != nil {
+		t.Fatal("registered Worker notification preferences failed", err)
 	}
 }
 

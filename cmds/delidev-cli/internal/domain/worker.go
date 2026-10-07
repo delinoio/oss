@@ -59,6 +59,20 @@ type Principal struct {
 	DeviceID  ID
 	MachineID ID
 }
+
+// ValidMetadata validates the closed actor shape without imposing a product role.
+// Authentication and current registration are checked by the server and store.
+func (p Principal) ValidMetadata() bool {
+	switch p.Type {
+	case OwnerDevice:
+		return p.DeviceID == "" && p.MachineID == ""
+	case ClientDevice, WorkerDevice:
+		return p.DeviceID.Validate() == nil && (p.MachineID == "" || p.MachineID.Validate() == nil)
+	default:
+		return false
+	}
+}
+
 type principalKey struct{}
 
 func WithPrincipal(ctx context.Context, principal Principal) context.Context {
@@ -66,7 +80,7 @@ func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 }
 func PrincipalFrom(ctx context.Context) (Principal, bool) {
 	principal, ok := ctx.Value(principalKey{}).(Principal)
-	return principal, ok
+	return principal, ok && (principal.Type == OwnerDevice || principal.Type == ClientDevice || principal.Type == WorkerDevice)
 }
 
 type JobType string

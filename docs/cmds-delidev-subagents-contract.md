@@ -1,5 +1,8 @@
 # DeliDev native subagent observations
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 Issue #1094 exposes native child ownership, lifecycle, available output, model and usage through the existing authenticated session resource boundary. Go owns adapters and publication in `cmds/delidev-cli`; `protos/delidev/v1` and `packages/delidev-api-client` own additive typed identifiers; `apps/delidev` renders read-only session observations. Issue #964 remains the complete product contract.
 

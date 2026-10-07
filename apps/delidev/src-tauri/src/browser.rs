@@ -323,13 +323,6 @@ pub fn private_dir(path: &Path) -> Result<()> {
             return Err(NativeFailure::InvalidEvidence);
         }
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if metadata.mode() & 0o077 != 0 || metadata.uid() != unsafe { libc::geteuid() } {
-            return Err(NativeFailure::PermissionDenied);
-        }
-    }
     Ok(())
 }
 pub fn profile_path(root: &Path, p: &ProfileRecord) -> Result<PathBuf> {

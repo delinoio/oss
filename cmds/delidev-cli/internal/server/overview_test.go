@@ -14,11 +14,16 @@ func TestOverviewAuthorizesWithoutAccountInspection(t *testing.T) {
 	s, secrets := newDoctorFixture(t)
 	ctx := context.Background()
 	request := connect.NewRequest(&pb.GetOverviewRequest{})
-	for _, actor := range []domain.Principal{{}, {Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()}} {
-		if _, err := s.GetOverview(domain.WithPrincipal(ctx, actor), request); connect.CodeOf(err) != connect.CodePermissionDenied {
-			t.Fatal("non-client read overview", err)
-		}
+	if _, err := s.GetOverview(ctx, request); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("missing principal read overview", err)
 	}
+	workerID, machineID := domain.NewID(), domain.NewID()
+	doctorPut(t, s, domain.DeviceKind, workerID, 0, domain.Device{Type: domain.WorkerDevice, MachineID: machineID})
+	worker := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice, DeviceID: workerID, MachineID: machineID})
+	if _, err := s.GetOverview(worker, request); err != nil {
+		t.Fatal("registered Worker could not read overview", err)
+	}
+
 	owner := domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
 	result, err := s.GetOverview(owner, request)
 	if err != nil {

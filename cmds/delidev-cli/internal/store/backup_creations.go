@@ -31,7 +31,7 @@ func DecodeBackupCreation(row Record) (domain.Job, BackupCreationIntent, error) 
 	return job, intent, nil
 }
 func validBackupActor(actor domain.Principal) bool {
-	return actor.MachineID == "" && ((actor.Type == domain.OwnerDevice && actor.DeviceID == "") || (actor.Type == domain.ClientDevice && actor.DeviceID.Validate() == nil))
+	return actor.ValidMetadata()
 }
 
 // RequestBackup reserves both identities in the same original actor-bound receipt.

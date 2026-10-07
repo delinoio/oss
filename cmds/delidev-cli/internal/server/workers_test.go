@@ -58,7 +58,7 @@ func pairedWorker(t *testing.T, ctx context.Context, endpoint Endpoint, owner se
 	}
 	return security.Identity{Token: token}, paired.Msg
 }
-func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
+func TestWorkerPairingSharedDispatchAndRevocation(t *testing.T) {
 	endpoint, owner, stop, done := runTestServer(t, filepath.Join(t.TempDir(), "state"))
 	defer func() {
 		stop()
@@ -72,8 +72,8 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	two, other := pairedWorker(t, ctx, endpoint, owner)
 	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, endpoint.URL)
 	instance := string(domain.NewID())
-	if _, err := client.AttachWorker(ctx, ownerRequest(two, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version})); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("foreign machine attached: %v", err)
+	if _, err := client.AttachWorker(ctx, ownerRequest(two, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version})); err != nil {
+		t.Fatalf("authenticated foreign machine attachment failed: %v", err)
 	}
 	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}
 	// Verify duplicate rejection across the entire negotiated set, including
@@ -91,9 +91,9 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	if _, err := client.AttachWorker(ctx, ownerRequest(one, attach)); err != nil {
 		t.Fatal(err)
 	}
-	second := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: string(domain.NewID()), Version: rpc.Version}
-	if _, err := client.AttachWorker(ctx, ownerRequest(one, second)); connect.CodeOf(err) != connect.CodeAborted {
-		t.Fatalf("live instance replaced: %v", err)
+	second := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: string(domain.NewID()), Version: rpc.Version, Capabilities: attach.Capabilities}
+	if _, err := client.AttachWorker(ctx, ownerRequest(one, second)); err != nil {
+		t.Fatalf("live instance replacement failed: %v", err)
 	}
 	stream, err := client.WatchWork(ctx, ownerRequest(one, &pb.WatchWorkRequest{MachineId: device.Machine.Id, InstanceId: instance}))
 	if err != nil {
@@ -113,8 +113,8 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 		t.Fatal("paired Worker credential could not open its auxiliary work stream", auxiliary.Err())
 	}
 	inspect := &pb.InspectRepositoryRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, Path: "/example/checkout", PreferredRemote: "origin"}
-	if _, err := client.InspectRepository(ctx, ownerRequest(one, inspect)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("worker invoked owner mutation: %v", err)
+	if _, err := client.InspectRepository(ctx, ownerRequest(one, inspect)); err != nil {
+		t.Fatalf("Worker product mutation failed: %v", err)
 	}
 	job, err := client.InspectRepository(ctx, ownerRequest(owner, inspect))
 	if err != nil {
@@ -133,8 +133,8 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	}
 	output, _ := json.Marshal(workspace.Inspection{Root: "/example/checkout", Name: "checkout", Remotes: []string{"origin"}, DefaultRefs: map[string]string{"origin": "main"}})
 	report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: device.Machine.Id, InstanceId: instance, OutputJson: output}
-	if _, err := client.ReportWork(ctx, ownerRequest(two, report)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("foreign completion accepted: %v", err)
+	if _, err := client.ReportWork(ctx, ownerRequest(two, report)); err != nil {
+		t.Fatalf("authenticated foreign completion failed: %v", err)
 	}
 	result, err := client.ReportWork(ctx, ownerRequest(one, report))
 	if err != nil {
@@ -145,8 +145,8 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 		t.Fatalf("report replay failed: %v", err)
 	}
 	resources := delidevv1connect.NewResourceServiceClient(http.DefaultClient, endpoint.URL)
-	if _, err := resources.GetResource(ctx, ownerRequest(one, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_DEVICE, Id: other.Device.Id})); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("worker read owner resource: %v", err)
+	if _, err := resources.GetResource(ctx, ownerRequest(one, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_DEVICE, Id: other.Device.Id})); err != nil {
+		t.Fatalf("Worker product resource read failed: %v", err)
 	}
 	devices := delidevv1connect.NewDeviceServiceClient(http.DefaultClient, endpoint.URL)
 

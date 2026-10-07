@@ -6,18 +6,16 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"golang.org/x/sys/unix"
 )
 
 func createPrivateDirectory(path string) error { return os.Mkdir(path, 0700) }
-func checkPrivate(_ string, info os.FileInfo) error {
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if info.Mode().Perm()&0077 != 0 || !ok || stat.Uid != uint32(os.Geteuid()) {
-		return domain.Fail(domain.PermissionDenied, "State must be accessible only by its owner.", "Choose an owner-only data directory (0700) and files (0600).")
-	}
+
+// Existing permissions and filesystem owners do not gate access. Creation still
+// uses private defaults; callers independently validate paths and file types.
+func checkPrivate(_ string, _ os.FileInfo) error {
 	return nil
 }
 func replaceFile(from, to string) error { return os.Rename(from, to) }

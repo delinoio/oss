@@ -229,18 +229,8 @@ fn stage_verified(p: &Prepared) -> Result<Prepared> {
     }
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        let m = fs::metadata(&root).map_err(|_| NativeFailure::StorageUnavailable)?;
-        let owner = fs::metadata(root.parent().ok_or(NativeFailure::InvalidEvidence)?)
-            .map_err(|_| NativeFailure::StorageUnavailable)?
-            .uid();
-        if m.uid() != owner {
-            return Err(NativeFailure::PermissionDenied);
-        }
-        if m.permissions().mode() & 0o077 != 0 {
-            if !created {
-                return Err(NativeFailure::PermissionDenied);
-            };
+        use std::os::unix::fs::PermissionsExt;
+        if created {
             fs::set_permissions(&root, fs::Permissions::from_mode(0o700))
                 .map_err(|_| NativeFailure::StorageUnavailable)?;
         }

@@ -1,5 +1,8 @@
 # DeliDev storage operations
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Startup metadata without migration
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) stores the current bounded startup record in existing session JSON and mirrors it into the original terminal job JSON. Readiness and first failure remain separate immutable observations. Report receipts use existing durable mutations without changing the claimed assignment revision or its input bytes. Explicit retry retains the failed job/input and creates distinct IDs. Original private executable identity, process and outbox journals remain Worker-owned. No table or SQLite migration is added.

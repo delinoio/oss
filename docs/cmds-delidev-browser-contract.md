@@ -1,5 +1,8 @@
 # DeliDev protected account browser
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 
 Issue #1087 implements the session browser boundary required by issue #964.

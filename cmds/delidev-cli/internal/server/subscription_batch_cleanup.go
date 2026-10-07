@@ -51,7 +51,7 @@ func failedCleanupUnavailable() error {
 }
 func cleanupActor(ctx context.Context) (domain.Principal, error) {
 	a, ok := domain.PrincipalFrom(ctx)
-	if !ok || a.MachineID != "" || !(a.Type == domain.OwnerDevice && a.DeviceID == "" || a.Type == domain.ClientDevice && a.DeviceID.Validate() == nil) {
+	if !ok {
 		return a, domain.Fail(domain.PermissionDenied, "Failed subscription cleanup requires an owner or paired client.", "Use the selected server's authorized product connection.")
 	}
 	return a, nil

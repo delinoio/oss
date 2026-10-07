@@ -15,9 +15,9 @@ import (
 
 func (s *Service) ListRequestDiagnostics(ctx context.Context, req *connect.Request[pb.ListRequestDiagnosticsRequest]) (*connect.Response[pb.ListRequestDiagnosticsResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can read request diagnostics.", "Use an authorized product client."), correlation)
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), correlation)
 	}
 	session, execution := domain.ID(req.Msg.SessionId), domain.ID(req.Msg.ExecutionId)
 	limit := req.Msg.PageSize

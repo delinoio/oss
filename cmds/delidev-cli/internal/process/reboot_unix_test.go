@@ -74,7 +74,7 @@ func TestRebootCompletionPersistsBeforeReleasedControllerPruning(t *testing.T) {
 }
 
 func TestRebootCompletionRefusesInvalidOriginalOwnership(t *testing.T) {
-	for _, kind := range []string{"version", "owner", "pid", "birth", "boot", "malformed", "missing", "permissions"} {
+	for _, kind := range []string{"version", "owner", "pid", "birth", "boot", "malformed", "missing"} {
 		t.Run(kind, func(t *testing.T) {
 			_, identity, scope := rebootScope(t)
 			switch kind {

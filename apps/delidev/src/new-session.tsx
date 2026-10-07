@@ -7,7 +7,7 @@ import { document, encode, items, Mode, object, text, Workspace } from "./docume
 import { ResourceChoice } from "./configuration-fields";
 import { StartingReferences } from "./schedules";
 import { useRetainedMutation } from "./mutation";
-import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
+import { type ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
 import { Surface } from "./surface";
 import { useShortcuts } from "./shortcut-provider";
@@ -37,7 +37,6 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   useLocale();
   const generalChat = kind === NewSessionKind.GeneralChat;
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
-  const local = useLocalWorkerProof(readLocalWorker);
   const [workspace, setWorkspace] = useState(Workspace.GeneralChat);
   const [project, setProject] = useState("");
   const [agent, setAgent] = useState("");
@@ -83,7 +82,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const submittedActivation = useRef(-1);
   const mutation = useRetainedMutation(generalChat ? "create-general-chat" : "create-session", SessionQuery.createSession, accepted);
   const restrictions = object(document(selectedProject.data?.resource).agents);
-  const blocked = mutation.busy || mutation.uncertain || local.busy || invalidAcknowledgment;
+  const blocked = mutation.busy || mutation.uncertain || invalidAcknowledgment;
   const projectChanged = useCallback((id: string) => {
     setProject(id);
     setAgent("");
@@ -128,10 +127,8 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       mode,
       source: "MANUAL",
     };
-    const proof = workspaceType === Workspace.Local ? await local.load(machine) : undefined;
-    if (workspaceType === Workspace.Local && !proof) return;
     submittedActivation.current = navigation.current.activation;
-    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), localWorkerToken: proof?.token });
+    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection) });
   };
 
   const shortcutScope = generalChat ? Surface.NewGeneralChat : Surface.NewSession;
@@ -202,7 +199,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               <p>{copy("new-session.aSeparateDetachedWorktreeIsPrepared_8c300d")}</p>
               <div className="actions">
                 <button type="button" aria-pressed={workspace === Workspace.Worktree} onClick={() => { setWorkspace(Workspace.Worktree); setMachine(""); setStarting([]); }}>{copy("new-session.useSeparateWorktrees_5cd0b6")}</button>
-                <button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { void local.load().then((proof) => { if (proof) { setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>{copy("new-session.useThisComputerSLocalCheckouts_eadaad")}</button>
+                <button type="button"  aria-pressed={workspace === Workspace.Local} onClick={() => { setWorkspace(Workspace.Local); setStarting([]); }}>{copy("new-session.useThisComputerSLocalCheckouts_eadaad")}</button>
               </div>
               {workspace === Workspace.Local ? <p>{copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}</p> : <StartingReferences key={project} project={project} starting={starting} change={setStarting} active={active} />}
             </> : !generalChat ? <p>{copy("new-session.generalChatUsesAPrivateProjectless_64e0ee")}</p> : null}
@@ -214,7 +211,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       {!automaticTitles ? <div className="notice" role="status"><strong>{copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}</strong><p>{copy("new-session.updateTheDelidevServerAndConnect_039a1d")}</p><button type="button" onClick={openSettings}>{copy("new-session.openSettings_3f9401")}</button><Problem error={status.error} /></div> : null}
       {budgetProblem ? <p role="alert">{budgetProblem}</p> : null}
       {promptLimit ? <p role="alert">{copy("new-session.theFirstMessageExceeds256Kib_9ced04")}</p> : null}
-      {local.problem ? <p role="alert">{local.problem}</p> : null}
+      
       <Problem error={selectedProject.error || mutation.error} />
       {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("new-session.retryTheSameSessionCreation_c70ddb")}</button> : null}
       {invalidAcknowledgment ? <div className="problem" role="alert"><strong>{copy("new-session.creationWasAcknowledgedWithoutAReadable_4432e2")}</strong><p>{copy("new-session.yourMessageIsRetainedRefreshThe_295fd7")}</p><button type="button" onClick={back}>{copy("new-session.inspectSessions_aa8dcc")}</button></div> : null}

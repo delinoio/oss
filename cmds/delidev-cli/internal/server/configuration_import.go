@@ -27,24 +27,10 @@ type configurationImportJob struct {
 }
 
 func authorizeConfigurationImport(tx *store.Tx, actor domain.Principal) error {
-	if actor.Type == domain.OwnerDevice {
-		return nil
+	if !actor.ValidMetadata() {
+		return domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential.")
 	}
-	if actor.Type != domain.ClientDevice {
-		return transferInvalid()
-	}
-	record, err := tx.Get(domain.DeviceKind, actor.DeviceID)
-	if err != nil {
-		return domain.Fail(domain.Unauthenticated, "The importing client is no longer authorized.", "Pair a client again and generate a new configuration preview.")
-	}
-	device, err := store.Decode[domain.Device](record)
-	if err != nil {
-		return err
-	}
-	if device.Type != actor.Type || device.Revoked || actor.MachineID != "" {
-		return domain.Fail(domain.Unauthenticated, "The importing client was revoked before applying configuration.", "Generate a new preview from an authorized client.")
-	}
-	return nil
+	return tx.Authorize()
 }
 func writeConfigurationImport(tx *store.Tx, plan domain.ConfigurationImportPlan) ([]domain.ConfigurationImportedResource, error) {
 	if err := validateConfigurationPlan(tx, plan); err != nil {

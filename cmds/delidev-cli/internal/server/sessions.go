@@ -211,7 +211,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 	if err := input.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	origin, originDigest, err := s.authenticateLocalOrigin(ctx, input, req.Msg.LocalWorkerToken)
+	origin, _, err := s.authenticateLocalOrigin(ctx, input, req.Msg.LocalWorkerToken)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
@@ -223,14 +223,8 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		Origin *domain.LocalOrigin `json:",omitempty"`
 	}{input, actor, origin}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "session.create", identity, func(tx *store.Tx) (any, error) {
-		if origin != nil {
-			current, err := tx.Authenticate(originDigest[:])
-			if err != nil {
-				return nil, err
-			}
-			if current.Type != domain.WorkerDevice || current.DeviceID != origin.DeviceID || current.MachineID != origin.MachineID {
-				return nil, localOriginRequired()
-			}
+		if err := tx.Authorize(); err != nil {
+			return nil, err
 		}
 		if err := validateSessionSelection(tx, input); err != nil {
 			return nil, err

@@ -1755,13 +1755,6 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<T
             return Err(NativeFailure::InvalidEvidence);
         }
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if m.mode() & 0o077 != 0 {
-            return Err(NativeFailure::PermissionDenied);
-        }
-    }
     serde_json::from_slice(&fs::read(path).map_err(|_| NativeFailure::StorageUnavailable)?)
         .map_err(|_| NativeFailure::InvalidEvidence)
 }

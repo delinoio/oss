@@ -53,8 +53,8 @@ func (s *Service) terminalResult(ctx context.Context, result store.Result) (*pb.
 }
 
 func terminalClient(ctx context.Context) error {
-	p, ok := domain.PrincipalFrom(ctx)
-	if !ok || (p.Type != domain.OwnerDevice && p.Type != domain.ClientDevice) {
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
 		return domain.Fail(domain.PermissionDenied, "Terminals require an owner or paired client.", "Use an authorized product client.")
 	}
 	return nil
@@ -69,8 +69,11 @@ func terminalMachine(tx *store.Tx, machine, instance domain.ID) error {
 		return err
 	}
 	current, seen, err := tx.WorkerInstance(machine)
-	if err != nil || current != instance || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().Add(time.Second)) || !slices.Contains(m.WorkerCapabilities, domain.SessionTerminalsV1) {
+	if err != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().Add(time.Second)) || !slices.Contains(m.WorkerCapabilities, domain.SessionTerminalsV1) {
 		return domain.TerminalUnavailable()
+	}
+	if current != instance {
+		domain.ObserveOwnership(domain.OwnershipInstance, machine)
 	}
 	return nil
 }
@@ -319,7 +322,7 @@ func (s *Service) WatchTerminals(ctx context.Context, req *connect.Request[pb.Wa
 				if err != nil {
 					return err
 				}
-				if value.CloseRequestID == "" && (value.InstanceID != instance || value.Pending == nil) {
+				if value.CloseRequestID == "" && (value.Pending == nil) {
 					continue
 				}
 				// An accepted uncertain result gets a fresh close identity. Delay
@@ -400,7 +403,7 @@ func (s *Service) ClaimTerminal(ctx context.Context, req *connect.Request[pb.Cla
 		if err != nil {
 			return nil, err
 		}
-		if value.MachineID != machine || !value.Live() || (value.DeviceID != "" && value.DeviceID != actor.DeviceID) {
+		if !value.Live() {
 			return nil, domain.TerminalUnavailable()
 		}
 		if value.CloseRequestID == domain.ID(req.Msg.OperationId) {
@@ -415,7 +418,7 @@ func (s *Service) ClaimTerminal(ctx context.Context, req *connect.Request[pb.Cla
 			if err != nil {
 				return nil, err
 			}
-			if value.InstanceID != instance || value.CloseRequestID != "" || session.Archive != domain.NotArchived || value.Pending == nil || value.Pending.ID != domain.ID(req.Msg.OperationId) || value.Pending.Claimed {
+			if value.CloseRequestID != "" || session.Archive != domain.NotArchived || value.Pending == nil || value.Pending.ID != domain.ID(req.Msg.OperationId) || value.Pending.Claimed {
 				return nil, domain.Fail(domain.RecoveryRequired, "This terminal operation cannot be claimed again.", "Reconcile the original request without repeating a native side effect.")
 			}
 			if _, err := terminalAssignment(tx, r, value); err != nil {
@@ -444,9 +447,7 @@ func (s *Service) ClaimTerminal(ctx context.Context, req *connect.Request[pb.Cla
 		if err != nil {
 			return err
 		}
-		if value.InstanceID != instance || value.DeviceID != actor.DeviceID {
-			return domain.TerminalUnavailable()
-		}
+		domain.ObserveOwnership(domain.OwnershipInstance, r.ID)
 		assignment, err = terminalAssignment(tx, r, value)
 		if err != nil {
 			return err
@@ -526,9 +527,7 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 				return err
 			}
 			if ref.MachineID != "" || ref.DeviceID != "" {
-				if ref.MachineID != machine || ref.DeviceID != actor.DeviceID {
-					return domain.TerminalUnavailable()
-				}
+				domain.ObserveOwnership(domain.OwnershipDevice, ref.TerminalID)
 				if currentInstance != instance {
 					return nil
 				}
@@ -542,9 +541,7 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 				}
 				return err
 			}
-			if value.MachineID != machine || value.DeviceID != actor.DeviceID {
-				return domain.TerminalUnavailable()
-			}
+			domain.ObserveOwnership(domain.OwnershipMachine, r.ID)
 			if currentInstance == instance && value.InstanceID == instance {
 				projected = rpc.Resource(r)
 			}
@@ -568,7 +565,7 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 		if err != nil {
 			return nil, err
 		}
-		if value.MachineID != machine || value.InstanceID != instance || value.DeviceID != actor.DeviceID || !value.Live() {
+		if !value.Live() {
 			return nil, domain.TerminalUnavailable()
 		}
 		op := domain.ID(req.Msg.OperationId)
@@ -632,13 +629,11 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 		if err := terminalMachine(tx, machine, instance); err != nil {
 			return err
 		}
-		_, value, err := terminalRecord(tx, domain.ID(req.Msg.TerminalId))
+		r, _, err := terminalRecord(tx, domain.ID(req.Msg.TerminalId))
 		if err != nil {
 			return err
 		}
-		if value.MachineID != machine || value.InstanceID != instance || value.DeviceID != actor.DeviceID {
-			return domain.TerminalUnavailable()
-		}
+		domain.ObserveOwnership(domain.OwnershipInstance, r.ID)
 		return nil
 	})
 	if err != nil {

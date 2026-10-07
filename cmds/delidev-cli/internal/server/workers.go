@@ -26,9 +26,12 @@ type workerStream struct {
 }
 
 func workerActor(ctx context.Context, machine, instance string) error {
-	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type != domain.WorkerDevice || string(actor.MachineID) != machine {
+	_, ok := domain.PrincipalFrom(ctx)
+	if !ok {
 		return domain.Fail(domain.PermissionDenied, "This credential does not own the execution machine.", "Use the selected Worker's paired credential.")
+	}
+	if err := domain.ID(machine).Validate(); err != nil {
+		return err
 	}
 	return domain.ID(instance).Validate()
 }
@@ -38,7 +41,7 @@ func currentInstance(tx *store.Tx, machine, instance domain.ID) error {
 		return err
 	}
 	if current != instance {
-		return domain.Fail(domain.Conflict, "The Worker process no longer owns this machine.", "Reattach and reconcile previous execution before continuing.")
+		domain.ObserveOwnership(domain.OwnershipInstance, machine)
 	}
 	return nil
 }
@@ -152,7 +155,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		}
 		now := time.Now().UTC()
 		if previous != "" && previous != instance && now.Sub(seen) < workerLease && !s.signedWorkerTransition(tx, machine, previous, func() domain.ID { a, _ := domain.PrincipalFrom(ctx); return a.DeviceID }(), req.Msg.Version) {
-			return nil, domain.Fail(domain.Conflict, "Another Worker instance still owns this machine.", "Stop that instance and wait for its connection lease to expire.")
+			domain.ObserveOwnership(domain.OwnershipInstance, machine)
 		}
 		if previous != "" && previous != instance {
 			if err := loseTerminalAuthority(tx, machine); err != nil {
@@ -636,7 +639,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			return err
 		}
 		if j.AssignedDeviceID != "" && j.AssignedDeviceID != actor.DeviceID {
-			return domain.Fail(domain.PermissionDenied, "The assigned Worker device does not own this report.", "Use the original paired Worker device.")
+			domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 		}
 		return nil
 	}); err != nil {
@@ -665,8 +668,8 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if err != nil {
 			return nil, err
 		}
-		if job.MachineID != machine || job.InstanceID != instance || job.AssignedDeviceID != "" && job.AssignedDeviceID != actor.DeviceID {
-			return nil, domain.Fail(domain.PermissionDenied, "The Worker does not own this job.", "Report only work assigned to this machine and process.")
+		if job.AssignedDeviceID != "" && job.AssignedDeviceID != actor.DeviceID {
+			domain.ObserveOwnership(domain.OwnershipResource, record.ID)
 		}
 		if job.StorageReconciledBy != "" {
 			if err := validateReconciledStorageReport(tx, record, job, actor, machine, instance, meta.ExpectedRevision); err != nil {
@@ -877,7 +880,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			if err != nil {
 				return err
 			}
-			if job.MachineID != machine || job.InstanceID != instance || (job.Type != domain.ExecuteSessionJob && job.Type != domain.RecoverExecutionJob && job.Type != domain.CompactSessionJob) {
+			if job.Type != domain.ExecuteSessionJob && job.Type != domain.RecoverExecutionJob && job.Type != domain.CompactSessionJob {
 				return executionEventConflict()
 			}
 			return nil

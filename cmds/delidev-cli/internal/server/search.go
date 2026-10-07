@@ -37,8 +37,8 @@ var searchArchives = map[pb.SearchArchiveState]domain.ArchiveState{
 func (s *Service) SearchConversations(ctx context.Context, req *connect.Request[pb.SearchConversationsRequest]) (*connect.Response[pb.SearchConversationsResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
-		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Only an owner or paired client can search conversations.", "Use an authorized product client."), correlation)
+	if !ok {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Server authentication is required.", "Use the server token or a registered device credential."), correlation)
 	}
 	outcome, outcomeOK := searchOutcomes[req.Msg.Outcome]
 	archive, archiveOK := searchArchives[req.Msg.Archive]

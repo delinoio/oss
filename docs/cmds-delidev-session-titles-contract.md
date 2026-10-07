@@ -1,5 +1,8 @@
 # DeliDev automatic session titles
 
+> Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
+
+
 ## Scope
 
 `cmds/delidev-cli/internal/domain`, `internal/server`, `internal/store`, `internal/apiproxy`, `internal/worker`, and `internal/harness/codex` own automatic title state, attribution, execution, and cleanup. The canonical product requirements are issues #1056 and #1057; conversation execution and UI contracts remain in their existing documents.

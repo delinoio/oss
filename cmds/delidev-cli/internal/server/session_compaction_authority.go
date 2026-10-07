@@ -12,7 +12,7 @@ import (
 func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGrant, r store.Record, j domain.Job) (apiproxy.Scope, error) {
 	denied := func() (apiproxy.Scope, error) { return apiproxy.Scope{}, executionDenied() }
 	var i domain.SessionCompactionInput
-	if g.ServerEpoch != a.epoch || j.State != domain.JobClaimed || j.InstanceID != g.InstanceID || j.AssignedDeviceID != g.DeviceID || j.MachineID != g.MachineID || domain.DecodeCompactionInput(j.Input, &i) != nil || i.Validate() != nil || g.ExecutionID != i.ActionID || i.Assignment.SessionID != r.SessionID {
+	if g.ServerEpoch != a.epoch || j.State != domain.JobClaimed || domain.DecodeCompactionInput(j.Input, &i) != nil || i.Validate() != nil || g.ExecutionID != i.ActionID || i.Assignment.SessionID != r.SessionID {
 		return denied()
 	}
 	canceled, err := tx.JobCancellationRequested(r.ID)

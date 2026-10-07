@@ -19,7 +19,7 @@
   "new-session.aSeparateDetachedWorktreeIsPrepared_8c300d": "A separate detached worktree is prepared for every project repository. Choose Local to use this computer's existing checkouts as-is.",
   "new-session.useSeparateWorktrees_5cd0b6": "Use separate Worktrees",
   "new-session.useThisComputerSLocalCheckouts_eadaad": "Use this computer's Local checkouts",
-  "new-session.localUsesThePairedWorkerAnd_ea38f6": "Local uses the paired Worker and shares its original checkouts, current branches and uncommitted changes. Creation revalidates the Worker proof.",
+  "new-session.localUsesThePairedWorkerAnd_ea38f6": "Local uses the selected Runner Device and shares its checkouts, current branches and uncommitted changes.",
   "new-session.generalChatUsesAPrivateProjectless_64e0ee": "General Chat uses a private projectless directory on the selected Worker. Git references are unavailable.",
   "new-session.optionalEstimatedCostBudget_e9d798": "Optional estimated-cost budget",
   "new-session.thisIsACeilingAgainstKnown_0260b5": "This is a ceiling against known historical token-price estimates. Missing usage or pricing remains unavailable; it is not a billing guarantee.",
