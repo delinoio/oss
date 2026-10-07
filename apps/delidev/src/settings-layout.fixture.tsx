@@ -3,17 +3,19 @@
 import { createRoot } from "react-dom/client";
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
-import { AccountService, AccountTypeFilter, BackupCreationState, ConfigurationService, EntityKind, InboxService, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageService, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
+import { AccountService, AccountTypeFilter, BackupCreationState, ConfigurationService, EntityKind, InboxService, IntegrationService, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageService, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
 import { document as resourceDocument, encode } from "./documents";
 import { LocalWorkerState } from "./local-worker-controls";
 import { ToastKind, useNotifications } from "./toast-notifications";
+import { i18n, SupportedLanguage } from "./localization";
 import "./themes.css";
 import "./styles.css";
 import "./settings-presentation.css";
 
 const args = new URLSearchParams(location.search);
+void i18n.changeLanguage(args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English);
 function ToastFixtureControls() {
   const notifications = useNotifications();
   const messages = { [ToastKind.Success]: "Fixture save completed.", [ToastKind.Info]: `A long informational notification wraps within the card, including this uninterrupted word: ${"longword".repeat(30)}.`, [ToastKind.Warning]: "Review the selected settings before continuing.", [ToastKind.Error]: "The fixture operation failed. Its detailed error remains available." };
@@ -42,6 +44,14 @@ const records = populated ? [
 const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
 let notificationPreferences = { revision: 1n, interactions: true, terminals: false };
 const fixtureTransport = createRouterTransport(router => {
+  router.service(IntegrationService, { listGitHubRepositories: request => {
+    const profile = records.find(row => row.id === request.profileId)!;
+    const repositories = request.page === 1 ? [
+      { repository: { provider: "github.com", id: "123", node_id: "R_fixture_123", owner: "example", name: "desktop", private: true }, archived: false, https_url: "https://github.com/example/desktop.git", ssh_url: "git@github.com:example/desktop.git" },
+      { repository: { provider: "github.com", id: "124", node_id: "R_fixture_124", owner: "example", name: "repository-with-a-long-name-".repeat(3), private: false }, archived: true, https_url: `https://github.com/example/${"repository-with-a-long-name-".repeat(3)}.git`, ssh_url: `git@github.com:example/${"repository-with-a-long-name-".repeat(3)}.git` },
+    ] : [];
+    return { schemaVersion: 1, documentJson: encode({ profile_id: profile.id, profile_revision: String(request.expectedRevision), generation_id: resourceDocument(profile).connection && (resourceDocument(profile).connection as { generation_id: string }).generation_id, observed_at: "2026-10-07T00:00:00Z", page: request.page, page_size: 50, next_page: request.page === 1 ? 2 : 0, repositories }) };
+  } });
   router.service(UsageService, { getUsageSummary: () => ({ fromUnixMs: 1788642000000n, untilUnixMs: 1791234000000n, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, totals: { responses: 126, total: { knownTotal: "1284920", measuredResponses: 126 } }, estimatedCost: UsageCostState.KNOWN_SUBTOTAL, estimates: { currencies: [{ currency: "USD", knownAmount: "12.48", completeResponses: 126 }] } }) });
   router.service(ResourceService, { listResources: request => { return { resources: records.filter(row => row.kind === request.filter?.kind && (row.kind !== EntityKind.ACCOUNT || resourceDocument(row).type === (request.accountType === AccountTypeFilter.API ? "api" : "subscription"))) }; }, getResource: request => ({ resource: [provider, ...records].find(row => row.id === request.id) }) });
   router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, presetId: ProviderPresetId.OLLAMA, displayName: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, accountCountsAvailable: true, totalAccounts: 0n, connectedAccounts: 0n }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: populated ? [model, ...extraModels] : [], providers: [provider] }) });
