@@ -997,3 +997,20 @@ it("pauses the containing Settings inventory while its original Network settings
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS)).toHaveLength(reads);
   expect(form.isConnected).toBe(true); expect(value.save).not.toHaveBeenCalled();
 });
+
+
+it.each(["queued", "succeeded", "failed", "unknown"])("retains selected-server API entry scope through an asynchronous %s save", async state => {
+ const account = resource(EntityKind.ACCOUNT, { type: "api", alias: "Scoped API entry", provider_id: newRequestId(), enabled: true, health: "disconnected" });
+ const job = resource(EntityKind.JOB, { type: "save-account", state });
+ const value = fixture([account, job]);
+ value.save.mockResolvedValueOnce(state === "unknown" ? {} : { job });
+ render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} initial={account} active saved={vi.fn()} cancel={vi.fn()} />));
+ const save = screen.getByRole("button", { name: "Save AI API key entry" });
+ await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(save);
+ await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+ await waitFor(() => expect(screen.queryByRole("button", { name: "Save AI API key entry" })).toBeNull());
+ expect(screen.getByText("Saved on the selected server.")).toBeTruthy();
+ expect(screen.getByRole("heading", { name: "Edit preferences" })).toBeTruthy();
+ expect(screen.getByText("Scoped API entry")).toBeTruthy();
+});
