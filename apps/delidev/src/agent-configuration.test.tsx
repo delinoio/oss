@@ -95,13 +95,22 @@ it("changes harness hints while preserving both effort drafts and unrelated fiel
   toggle(disclosure("Reasoning"), true); toggle(disclosure("Native harness options"), true);
   for (const [harness, expected] of [["codex", 9], ["claude-code", 5], ["opencode", 0], ["grok-build", 0]] as const) {
     change("Harness", harness); change("Reasoning effort", "");
-    const input = screen.getByRole("combobox", { name: "Reasoning effort" }); fireEvent.focus(input);
-    expect(within(screen.getByRole("listbox", { name: "Reasoning effort suggestions" })).getAllByRole("option")).toHaveLength(expected + 1);
-    fireEvent.keyDown(input, { key: "Escape" });
-    const child = screen.getByRole("combobox", { name: "Subagent effort" }); fireEvent.focus(child);
-    expect(within(screen.getByRole("listbox", { name: "Subagent effort suggestions" })).getAllByRole("option")).toHaveLength(harness === "codex" ? 10 : 1);
-    fireEvent.keyDown(child, { key: "Escape" });
+    const input = screen.getByRole("combobox", { name: "Reasoning effort" }) as HTMLInputElement;
+    expect(input.disabled).toBe(harness === "grok-build");
+    if (!input.disabled) {
+      fireEvent.focus(input);
+      expect(within(screen.getByRole("listbox", { name: "Reasoning effort suggestions" })).getAllByRole("option")).toHaveLength(expected + 1);
+      fireEvent.keyDown(input, { key: "Escape" });
+    }
+    const child = screen.getByRole("combobox", { name: "Subagent effort" }) as HTMLInputElement;
+    expect(child.disabled).toBe(harness !== "codex");
+    if (harness === "codex") {
+      fireEvent.focus(child);
+      expect(within(screen.getByRole("listbox", { name: "Subagent effort suggestions" })).getAllByRole("option")).toHaveLength(10);
+      fireEvent.keyDown(child, { key: "Escape" });
+    }
   }
+  change("Harness", "codex");
   change("Reasoning effort", " Future-Effort "); change("Subagent effort", " Future-Child ");
   change("Harness", "claude-code");
   expect((screen.getByRole("combobox", { name: "Reasoning effort" }) as HTMLInputElement).value).toBe(" Future-Effort ");
@@ -192,7 +201,7 @@ it("distinguishes delayed, empty first/later pages and failed cached refresh", a
 it("reveals a hidden invalid control and keeps unrelated draft values", async () => {
   const value = fixture(); render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />)); await ready(value);
   change("Name", "Retained draft"); change("Model", value.model.id);
-  const section = disclosure("Native harness options"); toggle(section, true); change("Maximum concurrency (0 uses native default)", "65"); toggle(section, false);
+  const section = disclosure("Native harness options"); toggle(section, true); change("Maximum concurrency (0 uses native default)", "4294967296"); toggle(section, false);
   expect(section.querySelector("summary")?.textContent).toContain("Needs attention");
   const input = screen.getByLabelText("Maximum concurrency (0 uses native default)") as HTMLInputElement;
   expect(document.querySelector<HTMLFormElement>(".agent-configuration")!.checkValidity()).toBe(false);
@@ -248,4 +257,40 @@ it("blocks a stale revision without losing the Agent draft", async () => {
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value); change("Name", "Unsaved");
   value.get.mockImplementation(id => ({ resource: id === agent.id ? create(ResourceSchema, { ...agent, revision: 2n }) : value.resources.find(row => row.id === id) }));
   await act(async () => { await value.client.invalidateQueries(); }); expect(await screen.findByText(/This entry changed elsewhere/)).toBeTruthy(); expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(true); expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Unsaved");
+});
+
+it("keeps all Codex permissions selectable and saves concurrency above the former product cap", async () => {
+  const value = fixture();
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
+  await ready(value);
+  const permission = screen.getByLabelText("Permission mode");
+  expect(within(permission).getAllByRole("option").map(option => (option as HTMLOptionElement).value)).toEqual(["default", "read-only", "workspace-write", "full-access"]);
+  for (const mode of ["default", "read-only", "workspace-write", "full-access"]) {
+    change("Permission mode", mode);
+    expect((permission as HTMLSelectElement).value).toBe(mode);
+  }
+  expect(screen.getByText(/managed authentication file/)).toBeTruthy();
+  toggle(disclosure("Native harness options"), true);
+  change("Maximum concurrency (0 uses native default)", "1024");
+  change("Name", "Native concurrency"); change("Model", value.model.id);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(decoded(value.save.mock.calls[0][0]).options).toEqual({ permission: "full-access", max_concurrency: 1024 });
+});
+
+it("disables unavailable Claude settings and clears only the explicitly selected retained value", async () => {
+  const value = fixture();
+  const data = { name: "Retained Claude", harness: "claude-code", model_id: value.model.id, effort: "Future-Effort", options: { permission: "default", service_tier: "future-tier", subagent_effort: "future-child", max_concurrency: 1024, future_option: "keep" } };
+  const agent = resource(EntityKind.AGENT, data, 5n); value.resources.push(agent);
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />));
+  await ready(value);
+  toggle(disclosure("Native harness options"), true);
+  expect((screen.getByLabelText("Service tier") as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Service tier") as HTMLInputElement).value).toBe("future-tier");
+  expect((screen.getByLabelText("Subagent effort") as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Clear retained option: Service tier" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const saved = decoded(value.save.mock.calls[0][0]);
+  expect(saved).toEqual({ ...data, options: { ...data.options, service_tier: "" } });
 });

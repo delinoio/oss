@@ -77,7 +77,7 @@
   "subscription-settings.extra.f874aed4a97c": "구독 로그인은 아직 사용할 수 없습니다. 이 서버는 구독 연결, 할당량 새로 고침 또는 연결 해제를 지원하지 않습니다.",
   "subscription-settings.cleanupButton": "자동 정리",
   "subscription-settings.cleanupBusy": "정리 중…",
-  "subscription-settings.cleanupHelp": "실패한 로그인 계정을 삭제합니다.",
+  "subscription-settings.cleanupHelp": "실패한 로그인 계정과 연결 해제된 구독 계정을 삭제합니다.",
   "subscription-settings.cleanupUnavailable": "서버 연결과 권한을 확인한 뒤 정리할 수 있습니다.",
   "subscription-settings.cleanupUnsupported": "자동 정리를 사용하려면 선택한 서버를 업데이트하세요.",
   "subscription-settings.cleanupProgress": "{{total}}개 중 {{processed}}개 처리",

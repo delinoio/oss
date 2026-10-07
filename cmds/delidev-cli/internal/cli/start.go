@@ -111,6 +111,18 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 			lock.Close()
 		}
 	}()
+	if config.Desktop == nil && mode != startupObservation {
+		// Probe under the existing startup controller so concurrent ordinary
+		// callers join that controller instead of conflicting with each other.
+		// A resident host holds this distinct lease through server Stop.
+		lease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-session.lock"))
+		if err != nil {
+			return nil, err
+		}
+		if err := lease.Close(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+	}
 	intentLock, err := server.LockLifecycle(o.dataDir)
 	if err != nil {
 		return nil, err
@@ -131,7 +143,7 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 			return nil, err
 		}
 	}
-	if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && intent.Version != 0 && !intent.Matches(config) {
+	if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && config.Desktop == nil && intent.Version != 0 && !intent.Matches(config) {
 		return nil, domain.Fail(domain.Unsupported, "The retained server configuration is incompatible with desktop launch.", "Preserve the original server and inspect connection diagnostics.")
 	}
 	if mode == startupDesktopRetry && intent.State == server.DesiredStopped {

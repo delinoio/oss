@@ -326,11 +326,8 @@ func (a Agent) Validate() error {
 	if a.Options.Permission != PermissionDefault && a.Options.Permission != PermissionReadOnly && a.Options.Permission != PermissionWorkspaceWrite && a.Options.Permission != PermissionFullAccess {
 		return Fail(InvalidArgument, "Unknown native permission mode.", "Choose an explicit supported permission mode.")
 	}
-	if err := a.Options.validateClaudePermission(a.Harness); err != nil {
-		return err
-	}
-	if a.Options.MaxConcurrency > 64 {
-		return Fail(InvalidArgument, "Invalid native concurrency limit.", "Use at most 64; installed harness limits are checked before dispatch.")
+	if a.Options.ClaudePermission != "" && !a.Options.ClaudePermission.Valid() {
+		return Fail(InvalidArgument, "Unknown Claude permission mode.", "Choose a native Claude permission mode.")
 	}
 	if a.Harness == Codex {
 		if err := ValidateCodexSubagentOptions(a.Options); err != nil {

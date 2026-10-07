@@ -93,3 +93,16 @@ func TestRawStreamHasNoInventedInitialAppliedSettings(t *testing.T) {
 		t.Fatal("raw transport invented verified settings")
 	}
 }
+
+func TestAppliedEffortHasNoAdvertisedSupportGate(t *testing.T) {
+	value := settingsFixture()
+	effort := NativeEffort("Future-Effort")
+	value["applied"].(map[string]any)["effort"] = string(effort)
+	raw, _ := json.Marshal(value)
+	for _, requested := range []NativeEffort{effort, ""} {
+		observed, err := decodeAppliedSettings(raw, "fixed-model", requested)
+		if err != nil || observed.Effort == nil || *observed.Effort != effort {
+			t.Fatal("native support was decided by an effort list", err)
+		}
+	}
+}

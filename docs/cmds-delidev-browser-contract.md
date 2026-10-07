@@ -344,3 +344,7 @@ allocations must still follow the source-structure contract on main.
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Protocol](protos-delidev-v1-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+## Resident desktop runtime protection
+
+All protected Local and Saved browser profiles reject the desktop main process's current private loopback port and its loopback aliases, including WebSocket aliases. Adding this port preserves each profile's separate selected product origin and loopback-port exclusion. Legacy ordinary CLI and frontend development ports remain protected. Browser cleanup reads share the resident version-2 CLI; their bounded final discovery precedes host shutdown, and post-shutdown acknowledgments retain durable intents without spawning another CLI. See the [desktop lifetime boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown).

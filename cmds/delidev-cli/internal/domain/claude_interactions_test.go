@@ -63,7 +63,7 @@ func TestClaudeInteractionRejectsForeignOrMixedOriginalRequests(t *testing.T) {
 			case "suggestion":
 				u.Claude.Metadata.Suggestions = []ClaudePermissionUpdate{{Kind: ClaudeUpdateKind("unknown")}}
 			case "mode":
-				u.Claude.Metadata.Suggestions = []ClaudePermissionUpdate{{Kind: ClaudeSetMode, Mode: ClaudePermissionMode("auto")}}
+				u.Claude.Metadata.Suggestions = []ClaudePermissionUpdate{{Kind: ClaudeSetMode, Mode: ClaudePermissionMode("unknown")}}
 			case "bound":
 				v := strings.Repeat("x", 4097)
 				u.Claude.Metadata.Description = &v

@@ -14,7 +14,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -78,7 +77,7 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := server.LoadEndpoint(o.dataDir)
+	endpoint, err := localEndpoint(o)
 	if err != nil {
 		return nil, err
 	}
@@ -106,10 +105,10 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 	if saved, err := worker.LoadCredential(root); err == nil {
 		if saved.Type != kind ||
 			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(saved.ServerID), saved.ServerID != identity.ServerID) ||
-			saved.Endpoint != endpoint.URL {
+			!localEndpointMatches(o, saved.ServerID, saved.Endpoint, endpoint.URL) {
 			return nil, domain.Fail(domain.Conflict, "The device is paired to a different authority.", "Use its original server or explicitly select another client scope.")
 		}
-		c, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true}, strings.NewReader(saved.Token))
+		c, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true, desktop: o.desktop}, strings.NewReader(saved.Token))
 		if err != nil {
 			return nil, err
 		}
@@ -147,11 +146,14 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 			return nil, err
 		}
 		if domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(attempt.ServerID), attempt.ServerID != identity.ServerID) ||
-			attempt.Endpoint != endpoint.URL {
+			!localEndpointMatches(o, attempt.ServerID, attempt.Endpoint, endpoint.URL) {
 			return nil, domain.Fail(domain.Conflict, "A different local pairing attempt is retained.", "Restore its original authority or explicitly select a separate device scope.")
 		}
 	}
 	o.requestID = attempt.RequestID
+	if o.desktop != nil {
+		o.server = attempt.Endpoint
+	}
 	c, err := connectClient(o, nil)
 	if err != nil {
 		return nil, err

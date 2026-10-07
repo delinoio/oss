@@ -146,6 +146,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}
+	if err := writeForkStartupExecutable(config.Root, input.RuntimeID, installation); err != nil {
+		return nil, publicationUncertain()
+	}
 	phase := forkRuntimeUnused
 	var unpublishedSidechatInput workspace.PrepareRequest
 	var unpublishedSidechat *workspace.Manifest

@@ -1,4 +1,11 @@
 {
+  "go-test-pr": [
+    { "os": "ubuntu-latest", "shard": "core", "label": "ubuntu-latest, core" },
+    { "os": "ubuntu-latest", "shard": "server", "label": "ubuntu-latest, server" },
+    { "os": "ubuntu-latest", "shard": "harness", "label": "ubuntu-latest, harness" },
+    { "os": "ubuntu-latest", "shard": "worker", "label": "ubuntu-latest, worker" },
+    { "os": "ubuntu-latest", "shard": "workspace", "label": "ubuntu-latest, workspace" }
+  ],
   "go-test": [
     { "os": "ubuntu-latest", "shard": "all", "label": "ubuntu-latest" },
     { "os": "macos-latest", "shard": "all", "label": "macos-latest" },

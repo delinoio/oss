@@ -2,6 +2,8 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -139,6 +141,43 @@ func runDesktopWorkerHostCommand(ctx context.Context, o options, args []string, 
 	defer signal.Stop(pipeSignal)
 	value, err := desktopWorkerHost(ctx, o, args, streams, "http://"+server.DefaultListen)
 	return emitResult(streams, o, value, err)
+}
+
+type desktopStopRequest struct {
+	Version int    `json:"version"`
+	Action  string `json:"action"`
+}
+
+// EOF is a crash signal, not a Stop authorization. Only the exact bounded
+// control frame can close the admitted Worker's original generation.
+func readDesktopStop(input io.Reader, stop chan<- struct{}) {
+	reader := bufio.NewReader(input)
+	const limit = 64 << 10
+	for {
+		var line []byte
+		for {
+			part, err := reader.ReadSlice('\n')
+			if len(line)+len(part) > limit {
+				return
+			}
+			line = append(line, part...)
+			if err == bufio.ErrBufferFull {
+				continue
+			}
+			var request desktopStopRequest
+			decoder := json.NewDecoder(bytes.NewReader(line))
+			decoder.DisallowUnknownFields()
+			var trailing any
+			if decoder.Decode(&request) == nil && decoder.Decode(&trailing) == io.EOF && request.Version == 1 && request.Action == "stop" {
+				close(stop)
+				return
+			}
+			if err != nil {
+				return
+			}
+			break
+		}
+	}
 }
 
 func desktopWorkerHost(ctx context.Context, o options, args []string, streams IO, expected string) (any, error) {

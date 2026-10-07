@@ -15,7 +15,7 @@ export function CodexSubagentConfiguration({ options, active, change }: { option
     <label>{copy("codex-subagent-configuration.subagentModel_28463c")}<input maxLength={256} value={text(options.subagent_model)} disabled={!supported} onChange={event => change("subagent_model", event.target.value)} /></label>
     <p>{copy("codex-subagent-configuration.useTheExactRegisteredNativeModel_e6e196")}</p>
     <ReasoningEffortField label={copy("codex-subagent-configuration.subagentEffort_eea2b1")} value={options.subagent_effort} disabled={!supported} suggestions={codexEffortSuggestions} change={value => change("subagent_effort", value)} />
-    <label>{copy("codex-subagent-configuration.maximumConcurrency0UsesNativeDefault_451d39")}<input disabled={!supported} type="number" min={0} max={64} step={1} value={Number(options.max_concurrency ?? 0)} onChange={event => change("max_concurrency", Number(event.target.value))} /></label>
+    <label>{copy("codex-subagent-configuration.maximumConcurrency0UsesNativeDefault_451d39")}<input disabled={!supported} type="number" min={0} max={4294967295} step={1} value={Number(options.max_concurrency ?? 0)} onChange={event => change("max_concurrency", Number(event.target.value))} /></label>
     <p>{copy("codex-subagent-configuration.requestedSettingsDoNotEstablishAn_4e5da8")}</p>
   </fieldset>;
 }

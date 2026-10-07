@@ -186,6 +186,9 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	if security.PrivateDir(home) != nil {
 		return nil, executionCheckpointUncertain()
 	}
+	if err := writeForkStartupExecutable(config.Root, i.RuntimeID, installation); err != nil {
+		return nil, publicationUncertain()
+	}
 	// Outer Worker claims/envelope stay outside the native snapshot's complete
 	// file inventory. Child permanent deletion owns the entire original runtime.
 	nativeHome := filepath.Join(home, "native")

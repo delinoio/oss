@@ -447,7 +447,8 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 					t.Fatal("subscription log was not structured JSON")
 				}
 				if record["msg"] == "server_subscription_native_failed" {
-					observed = record["version"] == scenario.version && record["minimum_version"] == "" && record["phase"] == string(scenario.phase) && record["code"] == string(scenario.code) && record["correlation_id"] == op.OperationId
+					minimumVersion, _ := record["minimum_version"].(string)
+					observed = record["version"] == scenario.version && minimumVersion == "" && record["phase"] == string(scenario.phase) && record["code"] == string(scenario.code) && record["correlation_id"] == op.OperationId
 				}
 			}
 			if !observed {

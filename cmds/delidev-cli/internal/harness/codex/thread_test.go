@@ -296,7 +296,7 @@ func TestThreadNativeDefaultsAreObservableWithoutInventingThem(t *testing.T) {
 func TestThreadInvalidSettingsDoNotConsumeRequestIdentity(t *testing.T) {
 	changes := []func(*ThreadSettings){
 		func(s *ThreadSettings) { s.Options.ClaudePermission = domain.ClaudePermissionDefault },
-		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "invented" }, func(s *ThreadSettings) { s.Options.MaxConcurrency = 65 }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invented" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
+		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "invalid\x00effort" }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invalid\x00policy" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
 	}
 	client, capture := openThreadFixture(t, "thread-ready")
 	settings := threadSettings(t)
@@ -414,6 +414,11 @@ func TestThreadErrorsAreRedactedAndOnlyDefiniteRejectionAllowsRetry(t *testing.T
 		t.Run(mode, func(t *testing.T) {
 			client, capture := openThreadFixture(t, "thread-"+mode)
 			settings := threadSettings(t)
+			settings.Effort = "future-root-effort"
+			settings.Options.SubagentEffort = "future-child-effort"
+			settings.Options.MaxConcurrency = 1024
+			settings.Options.ServiceTier = "future-tier"
+			settings.Options.ApprovalPolicy = "on-failure"
 			for range 2 {
 				_, err := client.StartThread(context.Background(), domain.NewID(), settings)
 				if err == nil || strings.Contains(err.Error(), "fixture-protected") {
@@ -431,8 +436,16 @@ func TestThreadErrorsAreRedactedAndOnlyDefiniteRejectionAllowsRetry(t *testing.T
 			if mode == "internal-error" {
 				want = 1
 			}
-			if len(capturedThreads(t, capture)) != want {
+			entries := capturedThreads(t, capture)
+			if len(entries) != want {
 				t.Fatal("incorrect native retry eligibility")
+			}
+			for _, entry := range entries {
+				params := entry["params"].(map[string]any)
+				config := params["config"].(map[string]any)
+				if config["model_reasoning_effort"] != settings.Effort || config["agents.default_subagent_reasoning_effort"] != settings.Options.SubagentEffort || config["agents.max_concurrent_threads_per_session"] != float64(1024) || params["serviceTier"] != settings.Options.ServiceTier || params["approvalPolicy"] != settings.Options.ApprovalPolicy {
+					t.Fatal("native rejection omitted or normalized an explicit option")
+				}
 			}
 		})
 	}

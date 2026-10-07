@@ -160,6 +160,9 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
 	var empty domain.Installation
 	c := input.Configuration
+	if err := c.ValidateNativeOptions(); err != nil {
+		return empty, err
+	}
 	if err := requireSidechatParent(tx, session); err != nil {
 		return empty, err
 	}

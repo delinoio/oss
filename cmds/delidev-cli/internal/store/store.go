@@ -376,6 +376,9 @@ func (s *Store) Replay(ctx context.Context, id domain.ID, operation string, inpu
 		}
 		var savedHash string
 		var saved []byte
+		if err := tx.checkSubscriptionDeletionRequest(id, digest); err != nil {
+			return err
+		}
 		err := tx.tx.QueryRowContext(ctx, "SELECT digest,result FROM receipts WHERE id=?", id).Scan(&savedHash, &saved)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -426,6 +429,9 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	defer tx.Rollback()
 	permission := &Tx{tx: tx, ctx: ctx}
 	if err := permission.Authorize(); err != nil {
+		return Result{}, err
+	}
+	if err := permission.checkSubscriptionDeletionRequest(id, digest); err != nil {
 		return Result{}, err
 	}
 	var savedHash string

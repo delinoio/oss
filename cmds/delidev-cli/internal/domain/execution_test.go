@@ -45,21 +45,17 @@ func TestExecutionInstructionsNeverTruncateToFit(t *testing.T) {
 	}
 }
 
-func TestManagedSubscriptionRequiresBoundedPermission(t *testing.T) {
-	for _, permission := range []PermissionMode{PermissionReadOnly, PermissionWorkspaceWrite} {
+func TestManagedSubscriptionPreservesEveryPermission(t *testing.T) {
+	for _, permission := range []PermissionMode{PermissionDefault, PermissionReadOnly, PermissionWorkspaceWrite, PermissionFullAccess} {
 		t.Run(string(permission), func(t *testing.T) {
 			configuration := managedSubscriptionExecutionConfiguration(t, permission)
-			if err := configuration.Validate(); err != nil {
-				t.Fatal(err)
+			original, err := configuration.Digest()
+			if err != nil || configuration.Validate() != nil {
+				t.Fatal("subscription permission rejected", err)
 			}
-		})
-	}
-	for _, permission := range []PermissionMode{PermissionDefault, PermissionFullAccess} {
-		t.Run(string(permission), func(t *testing.T) {
-			configuration := managedSubscriptionExecutionConfiguration(t, permission)
-			err := configuration.Validate()
-			if err == nil || SafeError(err).Code != Unsupported {
-				t.Fatalf("permission %q was accepted for managed subscription execution: %v", permission, err)
+			after, err := configuration.Digest()
+			if err != nil || after != original || configuration.Options.Permission != permission {
+				t.Fatal("permission changed the immutable snapshot")
 			}
 		})
 	}

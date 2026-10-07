@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestOpenCodeFirstDispatchRetainsExactNativeSelection(t *testing.T) {
 			record := f.workerStream.Msg().Job
 			var job domain.Job
 			var input domain.ExecutionJobInput
-			if domain.Decode(record.DocumentJson, &job) != nil || job.Type != domain.ExecuteSessionJob || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode || input.Version != 4 || input.Startup == nil || input.Startup.Harness != domain.OpenCode || input.Input.Mode != mode || input.Input.Prompt != f.selection.Prompt || input.ExecutionID != session.InitialExecution.ID || input.ConfigurationDigest != session.InitialExecution.ConfigurationDigest || input.Continuation != nil {
+			if domain.Decode(record.DocumentJson, &job) != nil || job.Type != domain.ExecuteSessionJob || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode || input.Version != 4 || input.Startup == nil || input.Startup.Harness != domain.OpenCode || !reflect.DeepEqual(input.Installation, domain.Installation{}) || input.Input.Mode != mode || input.Input.Prompt != f.selection.Prompt || input.ExecutionID != session.InitialExecution.ID || input.ConfigurationDigest != session.InitialExecution.ConfigurationDigest || input.Continuation != nil {
 				t.Fatal("dispatched assignment changed first input/settings ownership")
 			}
 			agent, err := input.Configuration.OpenCodePrimaryForInput(mode)
@@ -37,16 +38,45 @@ func TestOpenCodeFirstDispatchRetainsExactNativeSelection(t *testing.T) {
 	}
 }
 
+func TestOpenCodeFirstDispatchIgnoresStaleInstallationInspection(t *testing.T) {
+	f := newFirstDispatchFixtureForHarness(t, domain.OpenCode)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.stale-opencode-inspection", nil, func(tx *store.Tx) (any, error) {
+		r, m, err := activeMachine(tx, f.selection.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range m.Installations {
+			if m.Installations[i].Harness == domain.OpenCode {
+				m.Installations[i].Version = "invalid/version"
+				m.Installations[i].Protocol.Protocol = domain.CodexAppServer
+			}
+		}
+		return tx.Put(r.Kind, r.ID, r.Revision, "", "", m)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
+		t.Fatal("stale inspection blocked actual-process startup", err)
+	}
+	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
+		t.Fatal("missing direct assignment", f.workerStream.Err())
+	}
+	var job domain.Job
+	var input domain.ExecutionJobInput
+	if domain.Decode(f.workerStream.Msg().Job.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Version != 4 || input.Startup == nil || !reflect.DeepEqual(input.Installation, domain.Installation{}) {
+		t.Fatal("direct assignment reused inspection evidence")
+	}
+}
+
 func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) {
-	for _, failure := range []string{"effort", "subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier", "version", "protocol", "validation", "worker-stale", "provider-protocol"} {
+	for _, failure := range []string{"subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier", "validation", "worker-stale", "provider-protocol"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newFirstDispatchFixtureForHarness(t, domain.OpenCode)
 			switch failure {
-			case "effort", "subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier":
+			case "subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier":
 				f.mutateAgent(t, func(a *domain.Agent) {
 					switch failure {
-					case "effort":
-						a.Effort = "high"
 					case "subagent-model":
 						a.Options.SubagentModel = "another-model"
 					case "subagent-effort":
@@ -91,23 +121,7 @@ func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) 
 						p.Protocol = domain.OpenAIResponses
 						return tx.Put(r.Kind, r.ID, r.Revision, "", "", p)
 					default:
-						r, m, err := activeMachine(tx, f.selection.MachineID)
-						if err != nil {
-							return nil, err
-						}
-						for i := range m.Installations {
-							v := &m.Installations[i]
-							if v.Harness != domain.OpenCode {
-								continue
-							}
-							if failure == "version" {
-								v.Version = "1.18.31"
-							}
-							if failure == "protocol" {
-								v.Protocol.Protocol = domain.CodexAppServer
-							}
-						}
-						return tx.Put(r.Kind, r.ID, r.Revision, "", "", m)
+						return nil, domain.Fail(domain.InvalidArgument, "Unknown test scenario.", "Use a declared fixture case.")
 					}
 				})
 				if err != nil {
@@ -141,5 +155,30 @@ func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) 
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestNativeEffortDispatchKeepsExactSelectionWithoutSupportLists(t *testing.T) {
+	for _, harness := range []domain.Harness{domain.ClaudeCode, domain.OpenCode} {
+		for _, effort := range []string{"", "high", "Future-Effort"} {
+			t.Run(string(harness)+"/"+effort, func(t *testing.T) {
+				f := newFirstDispatchFixtureForHarness(t, harness)
+				if effort != "" {
+					f.mutateAgent(t, func(a *domain.Agent) { a.Effort = effort })
+				}
+				if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
+					t.Fatal(err)
+				}
+				session, err := store.Decode[domain.Session](f.refresh(t))
+				if err != nil || session.InitialExecution == nil || !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
+					t.Fatal("original execution was not dispatched", err)
+				}
+				var job domain.Job
+				var input domain.ExecutionJobInput
+				if domain.Decode(f.workerStream.Msg().Job.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Version != 4 || input.Startup == nil || input.Configuration.Effort != effort || input.ConfigurationDigest != session.InitialExecution.ConfigurationDigest || input.Input.Prompt != f.selection.Prompt {
+					t.Fatal("native effort changed or gained replacement input authority")
+				}
+			})
+		}
 	}
 }

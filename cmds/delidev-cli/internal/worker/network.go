@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -159,6 +161,13 @@ func networkHTTPClient(ctx context.Context, root string, credential Credential) 
 	if runtime != nil {
 		client.Transport = &outbound.Transport{Base: base, Resolve: runtime.resolver}
 	}
+	if err := desktopHTTPClient(ctx, root, credential, client); err != nil {
+		base.CloseIdleConnections()
+		if runtime != nil {
+			runtime.vault.Close()
+		}
+		return nil, nil, err
+	}
 	return client, &networkClientCloser{base: base, runtime: runtime}, nil
 }
 func (n *workerNetworkRuntime) sync(ctx context.Context, client delidevv1connect.WorkerServiceClient, c Credential, instance domain.ID) error {
@@ -235,5 +244,29 @@ func networkHTTPClientFor(ctx context.Context, config Config, credential Credent
 	}
 	client, base := rpc.HTTPClient()
 	client.Transport = &outbound.Transport{Base: base, Resolve: config.network.resolver}
+	if err := desktopHTTPClient(ctx, config.Root, credential, client); err != nil {
+		base.CloseIdleConnections()
+		return nil, nil, err
+	}
 	return client, base.CloseIdleConnections, nil
+}
+
+func desktopHTTPClient(ctx context.Context, root string, credential Credential, client *http.Client) error {
+	if target := desktopruntime.FromContext(ctx); target != nil && target.ServerID == credential.ServerID {
+		// Only native-closed operations can inject this in-memory target. The
+		// exact original grant and credential remain unchanged on disk.
+		if root == filepath.Join(target.Root, "worker") || root == filepath.Join(target.Root, "desktop-client") || strings.HasPrefix(root, filepath.Join(target.Root, "desktop-recoveries")+string(filepath.Separator)) {
+			copy := *target
+			client.Transport = &desktopruntime.Transport{Base: client.Transport, Resolve: func() (desktopruntime.Target, error) { return copy, nil }}
+			return nil
+		}
+	}
+	owner, local, err := desktopruntime.LocalRoot(root, credential.ServerID, credential.Endpoint)
+	if err != nil {
+		return err
+	}
+	if local {
+		client.Transport = &desktopruntime.LocalTransport{Base: client.Transport, Root: root, Owner: owner, ServerID: credential.ServerID}
+	}
+	return nil
 }

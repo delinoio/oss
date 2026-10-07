@@ -104,3 +104,7 @@ The trusted desktop additionally offers Prepare/Import/Status for its already re
 - Same-generation import reconciliation retries obsolete protected-derivative enumeration/deletion after current cache publication; retain the committed current reference through cleanup failure. Transferred bundle issuance allows at most 30 seconds of clock skew between hosts while enforcing the original absolute expiry and five-minute lifetime.
 
 Forwarding control and traffic use the same protected route resolver and joined lifetime as primary Worker control. Within one immutable claimed native runtime, Observed route use is monotonic despite concurrent or delayed failed sockets; this proof does not imply provider success.
+
+## Local desktop execution relocation
+
+Local registration endpoints remain immutable authority. Only a validated fixed Local Worker pairing may resolve a same-server private desktop execution target; every bearer request proves its generation first. Wrap the existing selected outbound transport for both proof and business requests without route fallback or ambient proxy discovery. Retired/missing authority after the durable opt-in marker fails closed; Saved/remote endpoints and execution eligibility remain unchanged.

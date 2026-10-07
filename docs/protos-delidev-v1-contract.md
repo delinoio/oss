@@ -2,6 +2,57 @@
 
 > Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
 
+## Key-preserving API format change reservations
+
+Issue #964 reserves ProviderInventory capability
+`ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
+reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reserves request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response reserves account 1,
+request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
+Establish these complete allocations on main before implementation. Reservations
+alone grant no format change, key access or execution authority.
+
+The approved extension permits changing a connected API account's format while
+keeping its protected key. Go owns atomic preference/profile publication and
+new connection generations sharing the original protected credential reference.
+Running executions and existing-session continuation retain their original
+connection/profile and admission evidence. New sessions use the new format only
+after explicit validation; saving sends no provider request. Preserve original
+OAuth receipts, account/Worker/history attribution, immutable referenced profiles,
+exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
+across all generations. Do not convert formats or change Provider identity or
+keyless credential ownership. No SQLite migration or native change is authorized.
+Capability 7 and its existing cleanup-required configuration operation remain
+unchanged; capability 9 owns the dedicated extension.
+
+
+## OAuth API format selection reservations
+
+Issue #964 reserves ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
+`StartAccountOAuthRequest.api_protocol = 4` and
+`AccountOAuthAttempt.api_protocol = 7` before dependent implementation.
+The fields reuse the existing closed `ApiProtocol` enum. Capability 8 extends
+account format selection to accepted provider OAuth profiles; it does not replace
+capabilities 5, 6 or 7 or grant OAuth registration, credential, model or native
+execution authority. Reservation-only changes activate no schemas or runtime
+support and require no database migration.
+
+The implementation must bind an explicit selected profile to the original Start
+receipt and private attempt JSON, and preserve it through account creation,
+connection, status, completion and original-result recovery. Omitted legacy
+requests and attempts retain their original default and exact receipt behavior.
+OAuth authentication ownership remains independent of the selected inference
+format. Only currently eligible provider/authentication profiles may be selected;
+REST availability alone cannot grant OAuth support. Existing provider revisions,
+actor/login/credential ownership, once-only exchange and cleanup stay intact.
+
+The desktop uses one provider-metadata-driven format presentation for manual and
+OAuth connections: explicitly choose among multiple formats, or display the sole
+format. Preserve Google project binding and device approval. Existing accounts
+require Disconnect and confirmed cleanup before format changes. No historical
+account/execution rewrite, protocol conversion or native change is authorized.
+
 
 ## API account format selection
 
@@ -34,9 +85,9 @@ JSON; no assignment rewrite, credential grant or SQLite migration is added.
 
 System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by PR #1614 before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
 
-One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. Connected accounts, ordinary disconnected accounts, active logins, restored generations and independent Worker/native/observation ownership are excluded.
+One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. The same explicit batch also selects disconnected subscription Accounts for every supported service, including metadata-only accounts and completed logout accounts. Version-2 private child jobs distinguish original failed LOGIN cleanup from disconnected configuration deletion; version-1 children retain their original LOGIN-only meaning. Disconnected targets have no invented operation ID and must retain no active login, native process, generation, identity commitment, active Worker ownership, lease, recovery, removal or active observation. A completed Worker logout may retain its historical owner-machine routing hint; it grants no active authority without a generation, lease, pending action or recovery, and does not bypass protected-reference checks. Connected accounts, restored generations and independent Worker/native/observation ownership are excluded.
 
-The joined server controller applies the original 30-second account attempt and account gate. It rechecks the original requester, exact account revision and login ownership. It shares the existing native/credential cleanup and configuration deletion checks, including protected vault references and complete Agent/Project/retained Session references. Its native and credential checkpoints advance the child's expected revision in the same transaction. Changed settings or ownership remain retained. Failed attempts are terminal retained outcomes with closed reasons, never automatic retries. A later deliberate button click can create a fresh batch.
+The joined server controller applies the original 30-second account attempt and account gate. It rechecks the original requester, exact account revision and login ownership. It shares the existing native/credential cleanup and configuration deletion checks, including protected vault references and complete Agent/Project/retained Session references. Its native and credential checkpoints advance the child's expected revision in the same transaction. Changed settings or ownership remain retained. Failed attempts are terminal retained outcomes with closed reasons, never automatic retries. A later deliberate button click can create a fresh batch. An explicit `DeleteConfiguration` can admit one failed initial ChatGPT LOGIN through the same controller under the original deletion request ID. The child freezes that requester, account, confirmed revision, LOGIN and deletion command; cleanup checkpoints advance only its effective revision. The final deletion receipt retains the original public revision and request bytes. Before that receipt exists, mutation and replay use the immutable child under the existing job parent index to reserve the public request ID for that exact deletion command; admission rejects previously used IDs transactionally. Accepted single-account work survives client departure; terminal failures require fresh observation and explicit confirmation, and receipt/status reads never retry cleanup.
 
 Confirmed deletion, tombstone/browser obligations, the existing configuration receipt, child result and aggregate counts commit together. Restart reads only original jobs and confirmed cleanup checkpoints, never login or callbacks. An interrupted attempt without a native checkpoint remains retained; confirmed native cleanup may resume protected cleanup. Shutdown cancels and joins the controller before store/vault closure. Revocation permits server-owned retained-result bookkeeping only, never substituted account deletion authority. Restore blocks queued/pending cleanup jobs and quarantines historical nonterminal jobs and receipts, so restored work cannot regain deletion authority.
 

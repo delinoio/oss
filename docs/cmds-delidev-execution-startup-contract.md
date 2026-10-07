@@ -129,6 +129,16 @@ Observation metadata is limited to 4 KiB. Existing durable request receipts and
 native process/outbox journals preserve restart and unknown-write outcomes.
 No new table, SQLite migration or configuration import authority is introduced.
 
+Earlier development builds persisted optional session `start_preparation` with
+phase `checking-installation`, `checking-execution-support`, `waiting-dispatch`
+or `failed`, and an optional original `discovery_job_id`. Retain this typed
+historical observation when reading and saving those sessions. Strict decoding
+still rejects unknown fields, duplicate keys and incompatible JSON types. The
+field cannot initiate inspection, select an account, authorize execution or
+permit retry; current startup and original native ownership remain authoritative.
+Account deletion must inspect retained session references without rejecting this
+known historical field or discarding history. No migration or conversion is needed.
+
 ## Security
 
 Preserve configured-empty deny-all policies, account validation and connection

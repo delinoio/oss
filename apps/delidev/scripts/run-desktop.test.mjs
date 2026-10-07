@@ -48,6 +48,8 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
   assert.equal(config.bundle.macOS.signingIdentity, "-");
   assert.equal(config.bundle.resources["/cef/CREDITS.html"], "notices/Chromium-CREDITS.html");
   assert.equal(options.shell, false);
+  assert.equal(calls[0][2].env.MACOSX_DEPLOYMENT_TARGET, "13.0");
+  assert.deepEqual(calls[0][2].env, options.env);
   assert.equal(lifecycle.terminateProcessTree, true);
   assert.equal(calls[0][3].terminateProcessTree, true);
   assert.equal(JSON.stringify(logs).includes(args[1]), false);
@@ -64,17 +66,19 @@ test("Windows and Linux retain the direct Cargo executable path", () => {
   }
 });
 
-test("local macOS bundling excludes signing credentials and shares one CEF cache across build and run", () => {
+test("local macOS preparation and bundling share the configured deployment target and CEF cache without signing credentials", () => {
   const env = desktopEnvironment("darwin", {
     ...environment, CARGO_TARGET_DIR: "/build output", CEF_PATH: "/foreign-cef",
     APPLE_SIGNING_IDENTITY: "private", APPLE_CERTIFICATE: "private", APPLE_CERTIFICATE_PASSWORD: "private",
     APPLE_ID: "private", APPLE_PASSWORD: "private", APPLE_TEAM_ID: "private",
     APPLE_API_KEY: "private", APPLE_API_ISSUER: "private", APPLE_API_KEY_PATH: "private",
     TAURI_SIGNING_PRIVATE_KEY: "private", NODE_OPTIONS: "--require private",
+    MACOSX_DEPLOYMENT_TARGET: "27.0",
   }, "/fixture");
   assert.deepEqual(env, {
     PATH: "/tools", HOME: "/fixture", CARGO_TARGET_DIR: "/build output",
     CEF_PATH: "/fixture/Library/Caches/tauri-cef",
+    MACOSX_DEPLOYMENT_TARGET: JSON.parse(readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8")).bundle.macOS.minimumSystemVersion,
   });
   assert.equal(desktopEnvironment("darwin", { CARGO_TARGET_DIR: "build output" }).CARGO_TARGET_DIR,
     fileURLToPath(new URL("../build output", import.meta.url)));

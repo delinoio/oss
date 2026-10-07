@@ -42,7 +42,18 @@ func resolveExecutionStartup(ctx context.Context, config Config, job domain.ID, 
 		source = input.Fork.JobID
 	}
 	if source != "" && selection.ExecutableSHA256 != "" {
-		raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(source), "startup-executable.json"), 8192)
+		path := filepath.Join(config.Root, "jobs", string(source), "startup-executable.json")
+		if input.Fork != nil {
+			// Published Fork runtimes belong to the child. Parent deletion may
+			// remove the creation job's journal while retaining this identity.
+			child := filepath.Join(config.Root, "runtimes", string(input.Fork.RuntimeID), "startup-executable.json")
+			if _, err := os.Lstat(child); err == nil {
+				path = child
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return domain.Installation{}, executionCheckpointUncertain()
+			}
+		}
+		raw, err := security.ReadPrivate(path, 8192)
 		var previous domain.Installation
 		if errors.Is(err, os.ErrNotExist) && filepath.IsAbs(selection.ExplicitPath) {
 			// Legacy assignments already pin an absolute executable and digest.
@@ -164,6 +175,9 @@ func (a *executionStartupAttempt) finish(original error) error {
 	if o.Validate() != nil {
 		o.ProblemCode = domain.Unavailable
 	}
+	if a.config.Logger != nil {
+		a.config.Logger.Warn("execution_startup_failed", "job_id", a.job, "stage", o.Phase, "options", a.input.Configuration.SelectedNativeOptionNames(), "code", o.ProblemCode, "input_delivery", o.InputDelivery, "cleanup", o.Cleanup)
+	}
 	if err := a.report(context.Background(), "failure", o); err != nil {
 		if a.config.Logger != nil {
 			a.config.Logger.Warn("execution_startup_report_uncertain", "job_id", a.job, "code", domain.SafeError(err).Code)
@@ -223,4 +237,14 @@ func writeStartupExecutable(root string, job domain.ID, installation domain.Inst
 
 func prepareStartupProcessIndex(root string, job domain.ID) error {
 	return security.PrivateDir(filepath.Join(root, "processes", string(job)))
+}
+
+// Keep the original resolved executable with the published child runtime. This
+// file follows child deletion ownership, independently of the source job.
+func writeForkStartupExecutable(root string, runtime domain.ID, installation domain.Installation) error {
+	directory := filepath.Join(root, "runtimes", string(runtime))
+	if err := security.CheckPrivateDir(directory); err != nil {
+		return err
+	}
+	return writeJSON(filepath.Join(directory, "startup-executable.json"), installation)
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -251,7 +252,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	ctx := context.Background()
 	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = "unsupported" })
 	before := f.refresh(t)
-	if err := f.service.dispatchExecution(ctx, before); domain.SafeError(err).Code != domain.Unsupported {
+	if err := f.service.dispatchExecution(ctx, before); domain.SafeError(err).Code != domain.Unsupported || !strings.Contains(domain.SafeError(err).Message, "approval_review_model") {
 		t.Fatal("unsupported option dispatched", err)
 	}
 	blocked := f.refresh(t)

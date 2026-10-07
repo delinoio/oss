@@ -20,9 +20,17 @@ it("disconnects and deletes a real Go keyless account from one Settings confirma
   render(<TransportProvider transport={fixture.transport}><QueryClientProvider client={client}><Settings /></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   const row = (await screen.findByRole("heading", { name: "Owned deletion entry" })).closest("article")!;
+  const background = row.closest("fieldset")!;
+  background.scrollTop = 73;
   fireEvent.click(within(row).getByRole("button", { name: "More actions for Owned deletion entry" }));
   fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));
   const dialog = screen.getByRole("dialog", { name: "Delete entry" });
+  expect(row.isConnected).toBe(true);
+  expect(row.closest("[hidden]")).toBeNull();
+  expect(background.scrollTop).toBe(73);
+  expect(background.hasAttribute("inert")).toBe(true);
+  expect(background.disabled).toBe(true);
+  expect(within(background).getByRole("heading", { name: "AI API Keys", hidden: true })).toBeTruthy();
   await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Keep entry" })));
   fireEvent.click(within(dialog).getByRole("button", { name: "Disconnect and delete entry" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

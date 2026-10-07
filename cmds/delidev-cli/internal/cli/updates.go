@@ -115,8 +115,8 @@ func nativeUpdateClient(o options, saved string) (client, error) {
 	if e != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.ClientDevice) {
 		return client{}, workerUpdateFailure()
 	}
-	if saved == "" && credential.Endpoint != "http://127.0.0.1:46310" {
+	if saved == "" && (o.desktop == nil || o.desktop.Validate() != nil || o.desktop.ServerID != credential.ServerID || o.desktop.Root != o.dataDir) {
 		return client{}, workerUpdateFailure()
 	}
-	return connectClient(options{dataDir: scope}, nil)
+	return connectClient(options{dataDir: scope, desktop: o.desktop}, nil)
 }

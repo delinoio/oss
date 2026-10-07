@@ -112,9 +112,10 @@ export function selectAffected(inventory, changes) {
     reasons.push({ path, reason: owner && candidates.length ? "domain-fallback" : "full-fallback" });
   };
   for (const { status, path } of changes) {
-    if (shared.has(path) || path.startsWith("scripts/ci/go-") || path.startsWith(".github/")) return { packages: all, reasons: [{ path, reason: "shared-input" }] };
+    const agentInstructions = path.split("/").at(-1) === "AGENTS.md";
+    if (!agentInstructions && (shared.has(path) || path.startsWith("scripts/ci/go-") || path.startsWith(".github/"))) return { packages: all, reasons: [{ path, reason: "shared-input" }] };
     for (const edge of embeddedSources) {
-      if (edge.inputs.some((input) => within(path, input))) {
+      if (!agentInstructions && edge.inputs.some((input) => within(path, input))) {
         const target = inventory.find((item) => item.directory === edge.owner);
         if (!target) throw new Error("Missing generated Go embed owner");
         source.add(target.path);
@@ -124,6 +125,13 @@ export function selectAffected(inventory, changes) {
     for (const item of inventory) {
       if (item.embedFiles?.includes(path)) { source.add(item.path); embedded = true; }
       if (item.testEmbedFiles?.includes(path) || item.xTestEmbedFiles?.includes(path)) { tests.add(item.path); embedded = true; }
+    }
+    // Agent instructions are policy metadata, not Go runtime resources. Keep
+    // actual embeds authoritative; unknown resources still expand conservatively.
+    if (agentInstructions) {
+      reasons.push({ path, reason: embedded ? "embedded-agent-instructions" : "agent-instructions-only" });
+      if (!embedded) continue;
+      if (["A", "M"].includes(status)) continue;
     }
     const owner = inventory.filter((item) => item.directory === dirname(path).replaceAll("\\", "/") || within(path, `${item.directory}/testdata`)).sort((a, b) => b.directory.length - a.directory.length)[0];
     if (status === "D" || !["A", "M"].includes(status)) { if (path.endsWith(".go") || domain(path)) selectDomain(path); continue; }

@@ -2,7 +2,37 @@
 
 > Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
 
+## Key-preserving API format change reservations
 
+Issue #964 reserves ProviderInventory capability
+`ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
+reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reserves request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response reserves account 1,
+request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
+Establish these complete allocations on main before implementation. Reservations
+alone grant no format change, key access or execution authority.
+
+The approved extension permits changing a connected API account's format while
+keeping its protected key. Go owns atomic preference/profile publication and
+new connection generations sharing the original protected credential reference.
+Running executions and existing-session continuation retain their original
+connection/profile and admission evidence. New sessions use the new format only
+after explicit validation; saving sends no provider request. Preserve original
+OAuth receipts, account/Worker/history attribution, immutable referenced profiles,
+exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
+across all generations. Do not convert formats or change Provider identity or
+keyless credential ownership. No SQLite migration or native change is authorized.
+Capability 7 and its existing cleanup-required configuration operation remain
+unchanged; capability 9 owns the dedicated extension.
+
+
+## OAuth format selection extension
+
+The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
+own the main-first capability 8 and Start/attempt format fields. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. Reservations
+alone activate no support and add no database migration.
 ## API account format selection
 
 Reservation PR #1646 reached main before this implementation. Issue #964 owns
@@ -472,3 +502,18 @@ account ownership, same-account history and actual execution checks remain intac
 
 Reservations and policy do not establish implementation or native/account
 acceptance. Record validation in PRs and CI, never repository evidence documents.
+
+## Native execution option selection
+
+Saved Agent options retain bounded exact values, including selections that lack a native execution adapter. Saving or changing harnesses never deletes or converts those values. Execution validates adapter availability before admission and reports the exact unavailable option name. The editor disables unavailable controls, explains why below the field and offers explicit clearing of a retained value.
+
+| Harness | Forwarded native settings | Unavailable settings |
+| --- | --- | --- |
+| Codex API and subscription | All four permission modes; bounded exact root effort, approval policy, service tier, same-account child model/effort and uint32 concurrency | Approval-review model and Claude permission |
+| Claude | Native permission modes, including auto, and bounded exact effort | Codex sandbox, approval policy, service tier and Codex child overrides |
+| OpenCode | Native Build/Plan primary-agent policy and exact model `options.reasoningEffort` | Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
+| Grok Build | Existing default permission and native Execute/Plan selection | Effort without an applied-setting observation adapter, Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
+
+Forwarded settings are not restricted by advertised model/effort lists or a DeliDev concurrency maximum of 64. Preserve format/size bounds, canonical model/account references and immutable execution digests. Unselected values omit native overrides and retain native defaults. Native initialization must independently verify actual applied settings before input; drift is an error, never permission to normalize or retry with a default. Native rejection uses the existing execution error path. Positive no-send and cleanup proof remain necessary for any retry; uncertain input delivery retains original recovery ownership.
+
+Codex subscription default/full-access do not waive managed authentication ownership, canonical non-overlapping private homes, original-process verification, final credential comparison or independent cleanup. Full-access may let native tools access managed authentication files. Structured failure logs contain the stage and closed option names, never credentials, selected values or raw native output. Public RPC, stored document formats and historical execution records remain unchanged; add no migration or format conversion.

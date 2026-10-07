@@ -29,13 +29,22 @@ type failedCleanupCounts struct {
 	Deleted  uint32 `json:"deleted"`
 	Retained uint32 `json:"retained"`
 }
+type subscriptionCleanupTarget uint32
+
+const (
+	subscriptionCleanupFailedLogin subscriptionCleanupTarget = iota
+	subscriptionCleanupDisconnected
+)
+
 type failedCleanupAccount struct {
-	Version         uint32    `json:"version"`
-	AccountID       domain.ID `json:"account_id"`
-	Revision        uint64    `json:"revision,string"`
-	OperationID     domain.ID `json:"operation_id"`
-	DeleteRequestID domain.ID `json:"delete_request_id"`
-	Alias           string    `json:"alias"`
+	Target          subscriptionCleanupTarget `json:"target,omitempty"`
+	DeleteRevision  uint64                    `json:"delete_revision,string,omitempty"`
+	Version         uint32                    `json:"version"`
+	AccountID       domain.ID                 `json:"account_id"`
+	Revision        uint64                    `json:"revision,string"`
+	OperationID     domain.ID                 `json:"operation_id"`
+	DeleteRequestID domain.ID                 `json:"delete_request_id"`
+	Alias           string                    `json:"alias"`
 }
 type failedCleanupCheckpoint struct {
 	Revision           uint64                              `json:"revision,string"`
@@ -77,7 +86,7 @@ func decodeFailedCleanupAccount(row store.Record, parent domain.ID) (domain.Job,
 	j, err := store.Decode[domain.Job](row)
 	var in failedCleanupAccount
 	var out failedCleanupCheckpoint
-	if err != nil || row.Kind != domain.JobKind || j.Type != domain.CleanupFailedSubscriptionJob || j.Validate() != nil || j.ParentID != parent || j.MachineID != "" || j.InstanceID != "" || j.AssignedDeviceID != "" || row.SessionID != "" || row.ProjectID != "" || j.AcceptedAt.IsZero() || j.State.Terminal() != (j.FinishedAt != nil) || domain.Decode(j.Input, &in) != nil || domain.Decode(j.Output, &out) != nil || in.Version != 1 || in.AccountID.Validate() != nil || in.OperationID.Validate() != nil || in.DeleteRequestID.Validate() != nil || in.Revision == 0 || out.Revision < in.Revision || domain.Text(in.Alias, "account alias", 256, true) != nil || out.Outcome < pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING || out.Outcome > pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_RETAINED || out.Reason < 0 || out.Reason > pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE || j.State == domain.JobSucceeded && out.Outcome == pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING {
+	if err != nil || row.Kind != domain.JobKind || j.Type != domain.CleanupFailedSubscriptionJob || j.Validate() != nil || j.ParentID != parent || j.MachineID != "" || j.InstanceID != "" || j.AssignedDeviceID != "" || row.SessionID != "" || row.ProjectID != "" || j.AcceptedAt.IsZero() || j.State.Terminal() != (j.FinishedAt != nil) || domain.Decode(j.Input, &in) != nil || domain.Decode(j.Output, &out) != nil || (in.Version != 1 && in.Version != 2) || in.AccountID.Validate() != nil || !validCleanupTarget(in) || in.DeleteRequestID.Validate() != nil || in.Revision == 0 || out.Revision < in.Revision || domain.Text(in.Alias, "account alias", 256, true) != nil || out.Outcome < pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING || out.Outcome > pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_RETAINED || out.Reason < 0 || out.Reason > pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE || j.State == domain.JobSucceeded && out.Outcome == pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING {
 		return j, in, out, failedCleanupUnavailable()
 	}
 	switch j.State {
@@ -124,7 +133,47 @@ func failedCleanupMessage(row store.Record) (*pb.FailedSubscriptionCleanupJob, e
 	return m, nil
 }
 
-// A saved empty account without a failed original LOGIN is deliberately excluded.
+// Version 1 children always retain their original initial LOGIN owner. Version 2
+// additionally represents disconnected configuration without inventing an owner.
+func validCleanupTarget(in failedCleanupAccount) bool {
+	if in.DeleteRevision != 0 && (in.Version != 2 || in.DeleteRevision != in.Revision) {
+		return false
+	}
+	switch in.Target {
+	case subscriptionCleanupFailedLogin:
+		return in.OperationID.Validate() == nil
+	case subscriptionCleanupDisconnected:
+		return in.Version == 2 && in.OperationID == "" && in.DeleteRevision == 0
+	default:
+		return false
+	}
+}
+
+func disconnectedSubscription(a domain.Account) bool {
+	if a.Type != domain.SubscriptionAccount || a.SubscriptionService.Harness() == "" || a.Health != domain.AccountDisconnected || a.Connection != nil || a.Removal != nil {
+		return false
+	}
+	// A completed Worker logout can retain OwnerMachineID as historical routing
+	// metadata. With no generation, lease, pending action or recovery it grants no
+	// active Worker authority; protected references are still checked at deletion.
+	st := a.Subscription
+	if st == nil {
+		return true
+	}
+	if st.Validate(a) != nil || st.Pending != nil || st.Lease != nil || st.RecoveryRequired || st.Generation != "" || st.IdentityCommitment != "" || st.Observation != nil && st.Observation.Active() || st.ResetCredits != nil {
+		return false
+	}
+	return st.ServerOperation == nil || !st.ServerOperation.Active() && !st.ServerOperation.NativeStarted
+}
+
+func cleanupTargetMatches(a domain.Account, in failedCleanupAccount) bool {
+	if in.Target == subscriptionCleanupDisconnected {
+		return disconnectedSubscription(a)
+	}
+	return failedCleanupCandidate(a) && a.Subscription.ServerOperation.ID == in.OperationID
+}
+
+// Initial failed LOGIN cleanup retains its separate original native authority.
 func failedCleanupCandidate(a domain.Account) bool {
 	if a.Subscription == nil || a.Subscription.ServerOperation == nil {
 		return false
@@ -174,10 +223,15 @@ func (s *Service) CleanupFailedSubscriptions(ctx context.Context, req *connect.R
 			if err != nil {
 				return nil, err
 			}
-			if !failedCleanupCandidate(a) {
+			target := failedCleanupAccount{Version: 2, AccountID: r.ID, Revision: r.Revision, DeleteRequestID: domain.NewID(), Alias: a.Alias}
+			if disconnectedSubscription(a) {
+				target.Target = subscriptionCleanupDisconnected
+			} else if failedCleanupCandidate(a) {
+				target.OperationID = a.Subscription.ServerOperation.ID
+			} else {
 				continue
 			}
-			child, _ := json.Marshal(failedCleanupAccount{Version: 1, AccountID: r.ID, Revision: r.Revision, OperationID: a.Subscription.ServerOperation.ID, DeleteRequestID: domain.NewID(), Alias: a.Alias})
+			child, _ := json.Marshal(target)
 			out, _ := json.Marshal(failedCleanupCheckpoint{Revision: r.Revision, Outcome: pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING})
 			if _, err := tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.CleanupFailedSubscriptionJob, State: domain.JobQueued, ParentID: id, Input: child, Output: out, AcceptedAt: now}); err != nil {
 				return nil, err
@@ -344,6 +398,7 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 	var in failedCleanupAccount
 	var out failedCleanupCheckpoint
 	var account domain.Account
+	var terminal bool
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			reason = pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_AUTHORIZATION
@@ -353,21 +408,29 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 		if err != nil {
 			return err
 		}
-		_, in, out, err = decodeFailedCleanupAccount(r, parent)
+		var job domain.Job
+		job, in, out, err = decodeFailedCleanupAccount(r, parent)
 		if err != nil {
 			return err
 		}
-		ar, a, err := subscriptionAccount(tx, in.AccountID, out.Revision)
+		if job.State.Terminal() {
+			terminal = true
+			return nil
+		}
+		ar, a, err := accountFromTx(tx, in.AccountID, out.Revision)
 		if err != nil {
 			return err
 		}
-		if ar.Revision != out.Revision || !failedCleanupCandidate(a) || a.Subscription.ServerOperation.ID != in.OperationID {
+		if ar.Revision != out.Revision || !cleanupTargetMatches(a, in) {
 			return failedCleanupUnavailable()
 		}
 		account = a
 		return nil
 	})
-	if err == nil && account.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupConfirmed {
+	if err == nil && terminal {
+		return nil
+	}
+	if err == nil && in.Target == subscriptionCleanupFailedLogin && account.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionCredentialCleanupConfirmed {
 		reason = pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED
 		// Never repeat an interrupted attempt without its durable native checkpoint.
 		// Confirmed checkpoints alone can resume protected cleanup after restart.
@@ -435,6 +498,9 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 			Revision uint64      `json:"revision"`
 			Kind     domain.Kind `json:"kind"`
 		}{string(in.AccountID), out.Revision, domain.AccountKind}
+		if in.DeleteRevision != 0 {
+			input.Revision = in.DeleteRevision
+		}
 		err = s.checkAccountDeletionLocked(ctx, string(in.DeleteRequestID), string(in.AccountID), out.Revision, input, nil)
 		if err == nil {
 			_, err = s.Store.Mutate(ctx, in.DeleteRequestID, "configuration.delete", input, func(tx *store.Tx) (any, error) {
