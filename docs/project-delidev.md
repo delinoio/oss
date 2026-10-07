@@ -14,6 +14,10 @@ Account/Worker/history, credentials, revisions and independent cleanup remain
 cross-domain invariants; existing supported feature/platform limits remain and
 no SQLite migration is added.
 
+Historical development-session `start_preparation` observations remain readable
+and preserved under the startup contract, so account deletion can check retained
+references. These observations grant no inspection, execution or retry authority.
+
 Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
 
 Failed-login subscription cleanup uses System capability 41 after main-first reservation PR #1614. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
