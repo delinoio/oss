@@ -111,13 +111,13 @@ export function LocalReviews({ sessionId, diff, reading, acceptedDeletionId }: {
   const edits = useConversationDrafts<ReviewDraft>();
   const reviewRoot = useRef<HTMLElement>(null);
   const list = useConversationPages(EntityKind.REVIEW, sessionId);
-  const refresh = () => { void list.refetch(); };
+  const refresh = () => { void list.refresh(); };
   const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? ownedMessage("local-reviews.sentence.72171603f37d", { v0: r.change.input.id }) : ownedMessage("local-reviews.extra.68459ebcb74e")); refresh(); });
   const blocked = submit.busy || submit.uncertain;
   const choose = (id: string, value?: Selected) => { if (blocked) return; if (value && selected.size >= 25 && !selected.has(id)) { setNotice(ownedMessage("local-reviews.extra.28df21a538c2")); return; } setSelected((previous) => { const next = new Map(previous); if (value) next.set(id, value); else next.delete(id); return next; }); };
   return <section ref={reviewRoot} aria-label={copy("local-reviews.localAgentReview_4069f1")} className="local-reviews conversation-page-scroll">
     <h3>{copy("local-reviews.localAgentReview_4069f1")}</h3><p>{copy("local-reviews.saveFileOrLineCommentsThen_fb2192")}</p>
-    <div className="actions"><button disabled={reading || Boolean(authoring) || blocked} onClick={() => setAuthoring(diff)}>{copy("local-reviews.addReviewComment_659e59")}</button><button disabled={list.isFetching} onClick={refresh}>{copy("local-reviews.refreshReviews_d7467d")}</button></div>
+    <div className="actions"><button disabled={reading || Boolean(authoring) || blocked} onClick={() => setAuthoring(diff)}>{copy("local-reviews.addReviewComment_659e59")}</button><button disabled={list.isFetching} onClick={() => void list.refetch()}>{copy("local-reviews.refreshReviews_d7467d")}</button></div>
     {authoring ? <NewComment sessionId={sessionId} diff={authoring} saved={(message) => { setNotice(message); refresh(); }} close={() => setAuthoring(undefined)} /> : null}
     {notice ? <p role="status">{notice}</p> : null}<Failure failure={list.error?.failure} />{list.error && list.data ? <p role="alert">{copy("local-reviews.reviewRefreshFailedRetainedRecordsMay_3dcd6a")}</p> : null}
     {list.isPending ? <p>{copy("local-reviews.loadingLocalReviews_d8fa14")}</p> : list.rows.length ? <div><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={list} root={reviewRoot} active={!blocked}>{payload => payload.map((row) => {
