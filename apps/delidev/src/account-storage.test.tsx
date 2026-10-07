@@ -167,3 +167,21 @@ it("handles initial denied reads and true/false/unknown inventory completeness i
   value.state.report.more_credentials = true; await refresh();
   expect(screen.getByText(/Only the first 50 accounts were inspected/)).toBeTruthy();
 });
+
+it("keeps ChatGPT saved storage independent of account health and localizes deferred ownership", async () => {
+  const row = create(ResourceSchema, { ...account("ChatGPT", "subscription"), documentJson: encode({ alias: "ChatGPT", type: "subscription", subscription_service: "chatgpt", health: "failed", connection: { id: newRequestId() } }) });
+  const value = fixture(report([observation(row, "unavailable", "unavailable")]));
+  render(value.view(<List rows={[row]} />));
+  await screen.findByText(/Saved ChatGPT storage cannot be inspected/);
+  expect(screen.queryByRole("alert")).toBeNull();
+  const count = value.doctor.mock.calls.length;
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  expect(screen.getByText(/계정 소유권이 해결되지 않았거나/)).toBeTruthy();
+  expect(value.doctor).toHaveBeenCalledTimes(count);
+  await act(async () => { await i18n.changeLanguage("en"); });
+  value.state.report = report([observation(row, "failed", "permission_denied")]); await refresh();
+  expect(screen.getByRole("alert").textContent).toContain("Do not recreate the saved bundle.");
+  value.state.report = report([observation(row, "superseded", "conflict")]); await refresh();
+  expect(screen.queryByText(/Saved ChatGPT storage cannot be inspected/)).toBeNull();
+  expect(screen.getByText(/account connection changed during inspection/)).toBeTruthy();
+});

@@ -126,5 +126,8 @@
   "account-storage.connection": "Original connection ID",
   "account-storage.destination": "View account storage results in the account lists.",
   "account-storage.subscriptions": "AI Subscription",
-  "account-storage.apiKeys": "AI API Keys"
+  "account-storage.apiKeys": "AI API Keys",
+  "account-storage.chatGPTUnavailable": "Saved ChatGPT storage cannot be inspected while account ownership is unresolved, the saved connection is incomplete or the credential store is unavailable. No sign-in, recovery or cleanup was performed.",
+  "account-storage.chatGPTRecovery": "Check the server credential store permissions and unlock it if required. Do not recreate the saved bundle. This observation does not authorize another sign-in, recovery or cleanup attempt.",
+  "account-storage.chatGPTReadableLimit": "This confirms only that the exact saved ChatGPT bundle could be read. Authentication, execution readiness, quota, native cleanup and recovery completion remain unconfirmed."
 }
