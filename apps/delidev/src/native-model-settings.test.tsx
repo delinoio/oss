@@ -107,3 +107,65 @@ it("retains exact provenance for an empty successful native observation", async 
  expect(screen.queryByRole("button", { name: /Register/ })).toBeNull();
  expect(value.createModel).not.toHaveBeenCalled();
 });
+
+
+it.each([Code.NotFound, Code.Unavailable])("allows correcting an unverified failed manual observation lookup (%s)", async code => {
+ const value = fixture();
+ value.getObservation.mockRejectedValueOnce(new ConnectError("Lookup failed", code));
+ const lookup = screen.getByLabelText("Original observation ID") as HTMLInputElement;
+ const invalidId = newRequestId();
+ fireEvent.change(lookup, { target: { value: invalidId } });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect(lookup.disabled).toBe(false));
+ fireEvent.change(lookup, { target: { value: value.job.id } });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByRole("button", { name: "Register Fixture model…" });
+ expect(value.getObservation.mock.calls.map(([request]) => request.jobId)).toEqual([invalidId, value.job.id]);
+ expect(value.discover).not.toHaveBeenCalled();
+ expect(value.createModel).not.toHaveBeenCalled();
+});
+
+it("locks a verified unsettled manual observation against lookup replacement", async () => {
+ const value = fixture(false, false, "uncertain");
+ fireEvent.change(screen.getByLabelText("Original observation ID"), { target: { value: value.job.id } });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByText("The Worker outcome is uncertain. Inspect the original operation before starting another.");
+ expect((screen.getByLabelText("Original observation ID") as HTMLInputElement).disabled).toBe(true);
+ expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(true);
+ expect(value.discover).not.toHaveBeenCalled();
+});
+
+
+it.each(["missing", "foreign", "wrong-kind"])("allows correcting an unverified malformed manual observation (%s)", async mode => {
+ const value = fixture();
+ const invalidId = newRequestId();
+ const candidate = mode === "missing" ? undefined! : { ...value.job, ...(mode === "foreign" ? { id: newRequestId() } : { id: invalidId, kind: EntityKind.ACCOUNT }) };
+ value.getObservation.mockResolvedValueOnce({ job: candidate });
+ const lookup = screen.getByLabelText("Original observation ID") as HTMLInputElement;
+ fireEvent.change(lookup, { target: { value: invalidId } });
+ await waitFor(() => expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect(lookup.disabled).toBe(false));
+ fireEvent.change(lookup, { target: { value: value.job.id } });
+ fireEvent.click(screen.getByRole("button", { name: "Inspect observation" }));
+ await screen.findByRole("button", { name: "Register Fixture model…" });
+ expect(value.getObservation.mock.calls.map(([request]) => request.jobId)).toEqual([invalidId, value.job.id]);
+ expect(value.discover).not.toHaveBeenCalled(); expect(value.createModel).not.toHaveBeenCalled();
+});
+
+
+it("keeps an acknowledged unsettled observation locked after malformed status", async () => {
+ const value = fixture(false, false, "uncertain");
+ value.getObservation.mockResolvedValueOnce({ job: undefined! });
+ await choose(value);
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ expect((screen.getByLabelText("Original observation ID") as HTMLInputElement).disabled).toBe(true);
+ expect((screen.getByRole("button", { name: "Observe models" }) as HTMLButtonElement).closest("fieldset")?.disabled).toBe(true);
+ expect(value.discover).toHaveBeenCalledTimes(1);
+});

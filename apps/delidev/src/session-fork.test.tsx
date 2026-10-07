@@ -282,3 +282,29 @@ it("reinspects the retained uncertain Fork without resending creation", async ()
  expect(forkSession).toHaveBeenCalledTimes(1);
  expect(screen.queryByRole("button", { name: "Finish fork" })).toBeNull();
 });
+
+
+it.each(["missing", "foreign", "wrong-kind"])("reinspects a successful Fork with an unverified %s child", async mode => {
+ const source = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Recovery source", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "codex" } }, execution: { cleanup_verified: true, native_turn_id: "original-turn" } }) });
+ const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "succeeded", input: { source_session_id: source.id } }) });
+ const forkSession = vi.fn(() => ({ job }));
+ const child = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, revision: 1n, schemaVersion: 1, documentJson: encode({ fork: { source_session_id: source.id } }) });
+ const getSessionFork = vi.fn((_request: { jobId: string }) => ({ job, session: child }));
+ getSessionFork.mockReturnValueOnce({ job, session: mode === "missing" ? undefined! : { ...child, ...(mode === "wrong-kind" ? { kind: EntityKind.JOB } : { documentJson: encode({ fork: { source_session_id: newRequestId() } }) }) } });
+ const transport = createRouterTransport(router => {
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.CODEX_SESSION_FORK_V1] }) });
+  router.service(ResourceService, { getResource: () => ({ resource: source }) });
+  router.service(SessionService, { forkSession, getSessionFork });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+ fireEvent.click(await screen.findByRole("button", { name: "Create fork" }));
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(retry);
+ await waitFor(() => expect(getSessionFork).toHaveBeenCalledTimes(2));
+ expect(getSessionFork.mock.calls.every(call => (call[0] as {jobId: string}).jobId === job.id)).toBe(true);
+ expect(forkSession).toHaveBeenCalledTimes(1);
+ expect(await screen.findByRole("button", { name: "Open forked session" })).toBeTruthy();
+});

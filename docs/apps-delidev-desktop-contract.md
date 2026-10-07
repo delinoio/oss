@@ -798,9 +798,12 @@ Routing preview remains a read-only 768px Settings task. Its fixed header shows
 `Preview routing`, the complete Agent Worker name and selected-server scope. The
 scrolling body orders read-only context, server selection result, project scope
 and refresh, routing policy, ordered source decisions and candidate evidence.
-The fixed footer has one neutral Close action. X, Escape and Close share task
-disposal, background release and original-opener focus restoration. No account
-management, login, credential validation or execution action is added.
+The top-level task delegates dismissal to its fixed header Close control (X)
+and Escape, without a duplicate footer Close action or empty footer spacing.
+Both dismissal paths share task disposal, background release and
+original-opener focus restoration. A standalone preview retains its Close
+action. No account management, login, credential validation or execution action
+is added.
 
 Use stored account names/aliases as the primary identity and the explicit
 subscription service or saved API provider name as secondary context. Resolve
@@ -2261,7 +2264,7 @@ The native `read_session_creation_preferences` and `update_session_creation_pref
 
 One process-owned store serializes `session-creation-preferences.json` in app_config_dir, independent of server data, backups and configuration transfer. Version 1 contains at most 128 distinct scope/kind records and 64 KiB, storing only server/device identity, creation kind and Agent/runner IDs. Reject duplicate keys/records, malformed UUIDs, linked or nonregular files, unknown fields, excessive size and unsupported versions without replacing the original. Reinspect before private atomic synchronized replacement; preserve committed history on failure and require explicit inspection after uncertain publication or revision conflict. At capacity, keep existing records and report the typed save failure. Process revisions never wrap, and inspection scope/kind must match updates.
 
-Restore only untouched drafts, never manual edits or pending/uncertain original requests. Resolve each remembered resource through an exact-ID GetResource read even beyond the first inventory page; only creation selectors may project that resolved off-page row. Missing, disabled, forbidden or unsupported records remain unselected without fallback; loading, permission and network failures stay distinct and cannot erase saved history. After restoration, current exact-ID reads continue to fence automatic choices: loading blocks new creation and a settled ineligible read clears only the automatically selected field. Manual field choices, other draft edits, Local proof and original pending/uncertain mutation requests retain their ownership. Saved history remains unchanged. Registered disconnected runners remain selected. Project changes reset dependent references/workspace and independently restore permitted fields; configured-empty Agent restrictions remain deny-all and Worktree clone capability stays required. Local proof-pinned machine always takes precedence; restoration never enters Local mode or requests proof.
+Restore only untouched drafts, never manual edits or pending/uncertain original requests. Resolve each remembered resource through an exact-ID GetResource read even beyond the first inventory page; only creation selectors may project that resolved off-page row. Missing, disabled, forbidden or unsupported records, and Agents requiring reconfiguration, remain unselected without fallback; loading, permission and network failures stay distinct and cannot erase saved history. After restoration, current exact-ID reads continue to fence automatic choices: loading blocks new creation and a settled ineligible read clears only the automatically selected field. Transient read failures retain its visible selection while blocking new creation until current proof recovers; only successful ineligible responses or explicit missing/permission rejection clear it. Manual field choices, other draft edits, Local proof and original pending/uncertain mutation requests retain their ownership. Saved history remains unchanged. Registered disconnected runners remain selected. Project changes reset dependent references/workspace and independently restore permitted fields; configured-empty Agent restrictions remain deny-all and Worktree clone capability stays required. Local proof-pinned machine always takes precedence; restoration never enters Local mode or requests proof.
 
 Keep the accepted pair in connection memory when storage fails. Localized preference recovery offers explicit inspection and then a separate save retry, with no session mutation. Late native/resource responses are fenced by original scope and draft edits. Structured logs contain operations and typed outcomes only. Fixture/build evidence remains separate from packaged macOS/Windows/Linux restart and CEF acceptance.
 
@@ -2272,6 +2275,10 @@ Every app-owned dialog exposes one header dismissal control and Escape. Remove a
 Destructive top-level confirmation selects `SettingsDialogFocus.Close`; neutral nested Keep retains `Cancel` focus. If that neutral control is absent or unavailable, focus the named header close button. Never select an arbitrary destructive button or mutation retry as the fallback. Empty action regions, task footers and wizard footer spacing disappear. Header dismissal and Escape preserve task disposal, opener restoration, pending/uncertain dismissal and fencing of late results.
 
 This audit includes Settings forms/workflows, repository registration and its GitHub chooser, account/profile/subscription management and deletion, network/backup confirmations, pairing documents, notification editors, shared Modal consumers, shortcut help and compact navigation/information drawers. Keep wizard Previous/Next, page Cancel edit, internal Back/Keep, OAuth provider return, SSH/login/storage business cancellation, device-revocation exit/focus controls, Claude Later and Fork/storage Discard/Finish. Their effects differ from hiding or disposing their header presentation. Browser fixtures and responsive checks remain separate from packaged CEF keyboard, zoom and platform acceptance.
+### Frontend validation concurrency
+
+The shared hosted CI CPU budget permits at most two jsdom workers while Go/native preparation runs. Preserve individual test deadlines and product deadlines. Increase concurrency only after focus, lifetime and full-shell wizard regressions pass under peak concurrent build load.
+
 ### Operation result presentation
 
 Shared tracked jobs and independent backup, native-model observation, Fork, workspace storage, manual context compaction and configuration-import views show feature results and actionable progress, failure, cancellation and uncertainty. Generic operation headings, raw job/action UUIDs and revisions, unconditional per-operation Refresh controls and empty success notices are absent from visible and accessible presentation. Successful tracking still invokes its existing completion callbacks and preserves feature children, Finish/Discard controls, inventory/history/context refresh, backup resource IDs, model provenance, explicit Original observation ID lookup and independently confirmed cleanup proofs.
@@ -2289,3 +2296,11 @@ Foreign session-deletion status cannot stop original-session polling, display cl
 Backup tracking and dismissal accessible names distinguish creation from deletion for the same backup resource, without exposing operation UUIDs.
 
 API-entry asynchronous save presentation retains its feature heading, entry name and selected-server scope through pending, unknown, failed and completed outcomes. Generic operation headings remain suppressed.
+
+A successful Fork status without its verified original-source child retains exact-query reinspection so completion can recover without another Fork request.
+
+Desktop update candidates retain the exact recovery ID and decimal revision as functional read-only journal-inspection operands. Their display permits later local recovery without live server negotiation and grants no installation or restart authority.
+
+Failed unverified manual native-observation lookups remain editable. Discovery acknowledgments and verified lookup jobs retain unsettled ownership across later read failures, preventing replacement.
+
+An unverified manual observation response with a missing, foreign or wrong-kind job is unreadable lookup evidence and permits correction; it cannot release a previously retained unsettled job.
