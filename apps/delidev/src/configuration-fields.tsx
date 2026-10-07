@@ -1,3 +1,4 @@
+import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -91,6 +92,7 @@ export const ResourceSelectionPending = createContext<((identity: string, pendin
 // only for the retained selection and a deliberate selection callback.
 export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
   useLocale();
+  const inspectRunner = useRunnerRemediation();
   const reportRead = useContext(AgentReadProblem), reportPending = useContext(ResourceSelectionPending), readIdentity = useId();
   const transport = useTransport(), client = useQueryClient(), generation = useRef(0);
   const latestChange = useRef(change); latestChange.current = change;
@@ -171,6 +173,8 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
     {(showStatus || reportRead || markRequired) && choiceFailure ? <p role="status">{copy(result.loaded ? "configuration-fields.sentence.054bff468121" : "configuration-fields.sentence.1ad5938a045c", { v0: result.loaded ? resourceLabel : reason, v1: reason })}</p> : null}
     {result.error ? <ServiceProblem code={result.error.failure.code}><p>{result.error.failure.message}</p><p>{result.error.failure.guidance}</p></ServiceProblem> : null}
     <Problem error={failure} />
+    {kind === EntityKind.MACHINE && inspectRunner && selectedResource ? <button type="button" disabled={!active || disabled || selectionBusy || Boolean(failure) || selected.isFetching || inspectRunner.locked} onClick={() => inspectRunner(selectedResource)}>{copy("claude-subscription.inspectRunner")}</button> : null}
+    {kind === EntityKind.MACHINE ? inspectRunner?.body : null}
   </div>;
 }
 
