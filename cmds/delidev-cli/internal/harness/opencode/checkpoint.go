@@ -402,7 +402,9 @@ func checkpointSettingsForAgent(s *sessionAPI, agent PrimaryAgent) (string, erro
 		Sources                   []instruction
 		References                []WorkspaceReference `json:",omitempty"`
 		Prune                     bool                 `json:",omitempty"`
-	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References, p.Prune})
+		// Omission preserves historical default-profile checkpoint digests.
+		Effort string `json:",omitempty"`
+	}{agent, p.Settings.Provider, p.Settings.Model, p.Settings.Permission, p.ContextLimit, p.OutputLimit, p.Rejection, mutationDigest([]byte(p.Instructions)), mutationDigest([]byte(p.Settings.Title)), mutationDigest([]byte(p.BaseURL)), sources, p.References, p.Prune, p.Settings.Effort})
 	if err != nil {
 		return "", sessionUncertain()
 	}

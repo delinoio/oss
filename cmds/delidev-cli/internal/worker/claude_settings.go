@@ -19,6 +19,7 @@ func claudeExecutionSettings(c domain.ExecutionConfiguration, mode domain.Sessio
 		domain.ClaudePermissionAcceptEdits: claude.AcceptEditsPermission,
 		domain.ClaudePermissionDontAsk:     claude.DontAskPermission,
 		domain.ClaudePermissionBypass:      claude.BypassPermission,
+		domain.ClaudePermissionAuto:        claude.AutoPermission,
 	}
 	return permissions[selected], claude.NativeEffort(c.Effort), nil
 }

@@ -79,7 +79,7 @@ func TestCheckpointStagingCopiesExactDatabaseAndWALKeepsSourceImmutable(t *testi
 }
 
 func TestCheckpointModeTransitionPreservesEveryOtherSetting(t *testing.T) {
-	for _, scenario := range []string{"valid", "wrong-predecessor", "unknown-predecessor", "model", "permission", "instructions", "relay", "limits", "rejection", "title"} {
+	for _, scenario := range []string{"valid", "wrong-predecessor", "unknown-predecessor", "model", "effort", "permission", "instructions", "relay", "limits", "rejection", "title"} {
 		t.Run(scenario, func(t *testing.T) {
 			r, config, profile := checkpointStageFixture(t)
 			config.Settings.Agent, profile.Settings.Agent = PlanAgent, PlanAgent
@@ -92,6 +92,8 @@ func TestCheckpointModeTransitionPreservesEveryOtherSetting(t *testing.T) {
 				r.previousAgent = "future"
 			case "model":
 				config.Settings.Model, profile.Settings.Model = "changed", "changed"
+			case "effort":
+				config.Settings.Effort, profile.Settings.Effort = "changed", "changed"
 			case "permission":
 				config.Settings.Permission = []PermissionRule{{Permission: "read", Pattern: "*", Action: PermissionAllow}}
 				profile.Settings.Permission = config.Settings.Permission

@@ -264,7 +264,7 @@ func TestAPIStreamRejectsInvalidLaunchBeforeCreatingNativeState(t *testing.T) {
 			case "model":
 				cfg.Model = ""
 			case "effort":
-				cfg.Effort = "unknown"
+				cfg.Effort = "invalid\x00effort"
 			case "permission":
 				cfg.Permission = "unknown"
 			case "token":

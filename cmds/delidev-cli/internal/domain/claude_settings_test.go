@@ -7,7 +7,7 @@ import (
 )
 
 func TestClaudePermissionsKeepNativeMeaningAndStoredSelection(t *testing.T) {
-	for _, selected := range []ClaudePermissionMode{"", ClaudePermissionDefault, ClaudePermissionPlan, ClaudePermissionAcceptEdits, ClaudePermissionDontAsk, ClaudePermissionBypass} {
+	for _, selected := range []ClaudePermissionMode{"", ClaudePermissionDefault, ClaudePermissionPlan, ClaudePermissionAcceptEdits, ClaudePermissionDontAsk, ClaudePermissionBypass, ClaudePermissionAuto} {
 		a := Agent{Name: "Private fixture", Harness: ClaudeCode, ModelID: NewID(), Options: AgentOptions{Permission: PermissionDefault, ClaudePermission: selected}}
 		if err := a.Validate(); err != nil {
 			t.Fatal(err)
@@ -33,8 +33,11 @@ func TestClaudePermissionsKeepNativeMeaningAndStoredSelection(t *testing.T) {
 	}
 	for _, harness := range []Harness{Codex, OpenCode, GrokBuild} {
 		a := Agent{Name: "Foreign fixture", Harness: harness, ModelID: NewID(), Options: AgentOptions{Permission: PermissionDefault, ClaudePermission: ClaudePermissionDefault}}
-		if a.Validate() == nil {
-			t.Fatal("foreign harness accepted a Claude policy")
+		if err := a.Validate(); err != nil {
+			t.Fatal("retained option cannot be saved", err)
+		}
+		if err := (ExecutionConfiguration{Harness: harness, Options: a.Options}).validateNativeOptions(); err == nil {
+			t.Fatal("foreign policy gained execution authority")
 		}
 	}
 }
@@ -63,7 +66,7 @@ func TestClaudeSettingsRejectForeignPolicyAndChangedAppliedEvidence(t *testing.T
 		}
 	}
 	for _, change := range []func(*AgentOptions){
-		func(o *AgentOptions) { o.ClaudePermission = "auto" },
+		func(o *AgentOptions) { o.ClaudePermission = "unknown" },
 		func(o *AgentOptions) { o.ClaudePermission = "accept-edits" },
 		func(o *AgentOptions) { o.ClaudePermission = "Plan" },
 		func(o *AgentOptions) { o.Permission = PermissionReadOnly },

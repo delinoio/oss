@@ -38,6 +38,7 @@ const (
 )
 
 type SessionSettings struct {
+	Effort     string           `json:"-"`
 	Title      string           `json:"-"`
 	Agent      PrimaryAgent     `json:"-"`
 	Provider   string           `json:"-"`
@@ -227,7 +228,7 @@ func (s *sessionAPI) diagnostic(ctx context.Context, kind SessionMutation, err e
 }
 
 func validSessionSettings(settings SessionSettings) bool {
-	if domain.Text(settings.Title, "title", 1024, true) != nil || settings.Agent != BuildAgent && settings.Agent != PlanAgent || domain.Text(settings.Provider, "provider", 256, true) != nil || domain.Text(settings.Model, "model", 256, true) != nil || settings.Permission == nil || len(settings.Permission) > 128 {
+	if domain.Text(settings.Effort, "native effort", 256, false) != nil || domain.Text(settings.Title, "title", 1024, true) != nil || settings.Agent != BuildAgent && settings.Agent != PlanAgent || domain.Text(settings.Provider, "provider", 256, true) != nil || domain.Text(settings.Model, "model", 256, true) != nil || settings.Permission == nil || len(settings.Permission) > 128 {
 		return false
 	}
 	for _, rule := range settings.Permission {

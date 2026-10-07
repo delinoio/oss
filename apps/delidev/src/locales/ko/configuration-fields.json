@@ -34,7 +34,7 @@
   "configuration-fields.savingSettingsDoesNotEnableClaude_05773c": "설정을 저장해도 Claude 실행은 활성화되지 않습니다. 공개 실행 연동은 아직 사용할 수 없습니다.",
   "configuration-fields.permissionMode_c7a8e6": "권한 모드",
   "configuration-fields.usesTheHarnessDefaultReviewPermissions_077a8d": "하네스 기본값을 사용합니다. 실행 전에 권한을 검토하세요.",
-  "configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a": "전체 접근은 지원되는 경우 작업 공간 밖의 네이티브 동작을 허용합니다. 에이전트 워커를 사용하기 전에 이 범위를 검토하세요.",
+  "configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a": "full-access는 작업 공간 밖의 작업을 허용합니다. Codex 구독에서는 네이티브 도구가 관리 인증 파일에도 접근할 수 있습니다.",
   "configuration-fields.aClaudePermissionSelectionIsRetained_c20333": "Claude 권한 선택이 유지됩니다: <s0/>. 이 하네스에 적용할 수 없습니다.",
   "configuration-fields.clearClaudePermissionSelection_e65f5d": "Claude 권한 선택 지우기",
   "configuration-fields.select_586618": "{{v0}} 선택",
@@ -95,7 +95,7 @@
   "configuration-fields.approvalPolicy_89d24f": "승인 정책",
   "configuration-fields.approvalReviewModel_ef091f": "승인 검토 모델",
   "configuration-fields.serviceTier_e9cf60": "서비스 등급",
-  "configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d": "지원하지 않는 네이티브 옵션은 서버 오류를 발생시킵니다; 대체 하네스 또는 계정은 선택되지 않습니다.",
+  "configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d": "선택한 옵션을 네이티브 도구에 그대로 전달하며, 도구가 지원 여부를 판단합니다. 네이티브 오류가 발생하면 설정을 바꿔 재시도하지 않고 표시합니다.",
   "configuration-fields.restrict_b3faa2": "{{v0}} 제한",
   "configuration-fields.anEmptySelectionPermitsNoneTurning_60a4d7": "선택이 비어 있으면 아무 항목도 허용하지 않습니다. 이 제한을 끄면 다른 조건을 충족하는 모든 항목을 허용합니다.",
   "configuration-fields.allowed_54fcb8": "허용된 {{v0}}",
@@ -169,5 +169,8 @@
   "configuration-fields.choices.connection": "이 선택 항목을 불러오는 중 서버 연결에 실패했습니다.",
   "configuration-fields.choices.connectionRetrying": "이 선택 항목을 불러오는 중 서버 연결에 실패했습니다. 다시 시도하는 중입니다.",
   "configuration-fields.choices.request": "이 선택 항목에 대한 최근 요청이 실패했습니다.",
-  "configuration-fields.choices.requestRetrying": "이 선택 항목에 대한 최근 요청이 실패했습니다. 다시 시도하는 중입니다."
+  "configuration-fields.choices.requestRetrying": "이 선택 항목에 대한 최근 요청이 실패했습니다. 다시 시도하는 중입니다.",
+  "configuration-fields.nativeOptionUnavailable": "이 실행 인터페이스에는 대응하는 설정이 없습니다. 저장된 값은 직접 지울 때까지 유지됩니다.",
+  "configuration-fields.clearRetainedNativeOption": "저장된 옵션 지우기",
+  "configuration-fields.nativePermissionUnavailable": "이 도구는 네이티브 권한을 사용합니다. 이 실행 인터페이스에는 Codex 파일 시스템 샌드박스 모드에 대응하는 설정이 없습니다."
 }

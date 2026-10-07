@@ -28,6 +28,7 @@ const (
 	AcceptEditsPermission NativePermission = "acceptEdits"
 	DontAskPermission     NativePermission = "dontAsk"
 	BypassPermission      NativePermission = "bypassPermissions"
+	AutoPermission        NativePermission = "auto"
 	LowEffort             NativeEffort     = "low"
 	MediumEffort          NativeEffort     = "medium"
 	HighEffort            NativeEffort     = "high"
@@ -87,7 +88,7 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config, error) {
 
 	if config.Version != "" && !domain.ValidNativeVersionMetadata(config.Version) || config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) || config.SessionID.Validate() != nil || domain.Text(config.Model, "native model", 256, true) != nil || domain.Text(config.Instructions, "native instructions", 256<<10, false) != nil ||
-		!slices.Contains([]NativePermission{DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission}, config.Permission) ||
+		!slices.Contains([]NativePermission{DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission, AutoPermission}, config.Permission) ||
 		!validNativeEffort(config.Effort, true) || !apiproxy.ValidToken(config.API.Token) {
 		return process.Config{}, apiConfigurationError()
 	}

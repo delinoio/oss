@@ -491,6 +491,25 @@ func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[
 	}{meta.Id, meta.ExpectedRevision, kind}
 	if kind == domain.AccountKind {
 		phase = configurationDeleteAdmission
+		_, replayed, err := s.Store.Replay(ctx, domain.ID(meta.RequestId), "configuration.delete", input)
+		if err != nil {
+			return reject(err)
+		}
+		if replayed {
+			response := connect.NewResponse(&pb.DeleteConfigurationResponse{Id: meta.Id, RequestId: meta.RequestId, Replayed: true})
+			rpc.CopyCorrelation(response, req.Header())
+			return response, nil
+		}
+		handled, err := s.deleteFailedSubscription(ctx, domain.ID(meta.RequestId), domain.ID(meta.Id), meta.ExpectedRevision)
+		if err != nil {
+			return reject(err)
+		}
+		if handled {
+			response := connect.NewResponse(&pb.DeleteConfigurationResponse{Id: meta.Id, RequestId: meta.RequestId})
+			rpc.CopyCorrelation(response, req.Header())
+			return response, nil
+		}
+		phase = configurationDeleteAdmission
 		unlock, err := s.lockAccounts(ctx)
 		if err != nil {
 			return reject(err)
