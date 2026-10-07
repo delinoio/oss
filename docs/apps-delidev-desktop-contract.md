@@ -871,6 +871,36 @@ Execution-Worker settings expose explicit registration, startup, status and conf
 Status polling is read-only and separately reports not started, starting, controller running, stopping, exited and uncertain. Startup timeout may retain a process waiting for the server's previous instance lease; it cannot automatically start another generation. The UI captures the generation when confirming stop, blocks a newly stale confirmation and retains the original target after uncertain acknowledgment or settings navigation. Refreshing or retrying that stop cannot cancel a replacement. An explicitly stopped reserved child cannot launch later. Offline stop remains available through local Go infrastructure without depending on server connectivity. Controller exit does not establish per-session/native cleanup; existing server recovery and Worker journals remain authoritative. Full native Quit preserves independently started servers and detached Workers; app-owned server children follow the app-owned sidecar shutdown boundary. No OS service, automatic Worker-process restart, SSH setup or binary-update acceptance is inferred.
 
 ### Projects, repositories and configuration actions
+
+#### Repository inventory presentation
+
+Repositories retains the shared Settings body anchor, typography, theme tokens,
+toolbar and visit lifetime. `repository-list.tsx` and its static stylesheet group
+each saved repository into a bordered 8px-corner row with 16px padding: decorative
+Git glyph, full name, source-type label, GitHub configuration badge and explicit
+name-scoped Edit/Delete actions. Registered folder paths and GitHub owner/name
+occupy two semantic metadata columns, stacked below 640px available body width.
+Complete paths and the full repository ID wrap without truncation. The source
+label never exposes configured or inspected raw URLs. Registered folders are
+saved associations, not online-state or Local execution proof.
+
+The badge distinguishes missing GitHub configuration, configured metadata and
+unsupported resource formats. Configured metadata does not establish token
+health, repository access or execution readiness. The existing explicit access
+inspection and item-browser controllers retain their schema gates, read scope,
+revisions and disposal. Edit/Delete retain their existing schema gates and shared
+task dialogs. No row render, reflow or language change performs GitHub reads,
+Worker inspection, mutations or native discovery.
+
+The successful final empty first page uses the shared empty panel and the single
+header Add repository action. Empty continuation pages and retained refresh
+failures remain distinct. Pagination preserves server order/cursors and shows
+only the number of repositories on the current returned page, never an inferred
+inventory total. This presentation does not change registration, cloning,
+configured source authority or original Local checkout ownership below.
+
+#### Repository registration
+
 When the outer GitHub profile inventory moves to another page, clear the
 selected profile and repository page before exposing the new page. The picker
 must never retain repository rows from a profile that is no longer selected.
