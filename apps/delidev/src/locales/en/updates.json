@@ -1,7 +1,6 @@
 {
   "updates.originalUpdate_9f056a": "Original update",
   "updates.delidev_a214b0": "DeliDev <s0/> · <s1/> · <s2/>",
-  "updates.originalUpdateRevision_bff787": "Original update: <s0/> · revision <s1/>",
   "updates.updatesWaitForActiveWorkTerminals_ac7bf1": "Updates wait for active work, terminals, forwarding and cleanup. The original registration and workspaces are preserved.",
   "updates.updateWorkerWhenIdle_50f590": "Update Worker when idle",
   "updates.cancelUnclaimedUpdate_d10b89": "Cancel unclaimed update",

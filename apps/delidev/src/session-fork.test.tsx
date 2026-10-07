@@ -73,7 +73,7 @@ it("keeps a replacement draft and its accepted job independent of the old profil
  expect((screen.getByRole("textbox", { name: "Fork name" }) as HTMLInputElement).value).toBe("Source B fork");
  await waitFor(() => expect((screen.getByRole("button", { name: "Create fork" }) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
- await screen.findByRole("region", { name: "Fork operation" });
+ await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
  await act(async () => { fixture.gate.resolve(); });
  await waitFor(() => expect(fixture.client.isFetching()).toBe(0));
  expect(fixture.fork).toHaveBeenCalledTimes(1);
@@ -90,7 +90,7 @@ it("requires a new submission when the same source is reopened after discard", a
  await waitFor(() => expect((screen.getByRole("button", { name: "Create fork" }) as HTMLButtonElement).disabled).toBe(false));
  expect(fixture.fork).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
- await screen.findByRole("region", { name: "Fork operation" });
+ await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
  expect(fixture.fork).toHaveBeenCalledTimes(1);
  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: fixture.sources[0]!.id, expectedRevision: 8n }, name: "Replacement name" });
 });
@@ -106,10 +106,10 @@ it("submits once and retains the original Fork when hidden during profile valida
  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: fixture.sources[0]!.id, expectedRevision: 8n }, name: "Source A fork" });
  expect(screen.queryByRole("dialog", { name: "Fork session" })).toBeNull();
  fireEvent.click(screen.getByRole("button", { name: "Return to retained fork operation" }));
- await screen.findByRole("region", { name: "Fork operation" });
+ await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
  fireEvent.click(screen.getByRole("button", { name: "Return to retained fork operation" }));
- expect(screen.getByRole("region", { name: "Fork operation" })).not.toBeNull();
+ expect(screen.getByText("Accepted by the server. Waiting for the selected Worker to finish.")).not.toBeNull();
  expect(fixture.fork).toHaveBeenCalledTimes(1);
 });
 
@@ -142,13 +142,12 @@ it("retains exact fork retry and accepted job while navigation changes, publishi
  rendered.rerender(view(false));
  fireEvent.click(screen.getByRole("button", { name: "Return to retained fork operation" }));
  fireEvent.click(screen.getByRole("button", { name: "Retry the same fork request" }));
- await screen.findByRole("region", { name: "Fork operation" });
+ await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
  expect(sent[1]).toEqual(sent[0]);
  expect(sent[0]).toMatchObject({ mutation: { id: source.id, expectedRevision: 8n }, expectedTurnId: turn, workspace: ForkWorkspace.UNSPECIFIED });
  expect(screen.queryByRole("button", { name: "Open forked session" })).toBeNull();
  completed = true;
-	await waitFor(() => expect((screen.getByRole("button", { name: "Refresh fork operation" }) as HTMLButtonElement).disabled).toBe(false));
- fireEvent.click(screen.getByRole("button", { name: "Refresh fork operation" }));
+ await act(async () => { await client.invalidateQueries(); });
  fireEvent.click(await screen.findByRole("button", { name: "Open forked session" }));
  await waitFor(() => expect(open).toHaveBeenCalledWith(child.id));
  expect(fork).toHaveBeenCalledTimes(2);

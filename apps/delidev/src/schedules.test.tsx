@@ -106,7 +106,7 @@ it("retains exact executable selections and protocol intent after uncertain Work
   fireEvent.click(screen.getByRole("checkbox", { name: "Verify the installed native protocol without login or inference" }));
   fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same harness check" }));
-  await screen.findByText("Worker operation: queued");
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   expect(value.discovery.mock.calls[0][0]).toEqual(value.discovery.mock.calls[1][0]);
   const request = value.discovery.mock.calls[0][0] as { selectionsJson: Uint8Array; verifyProtocol: boolean; mutation: { expectedRevision: bigint } };
   expect(request.verifyProtocol).toBe(true); expect(request.mutation.expectedRevision).toBe(5n);

@@ -13,8 +13,6 @@
   "native-model-settings.retryTheSameObservationRequest_0b6c58": "동일한 관측 요청 다시 시도",
   "native-model-settings.originalObservationId_949ead": "원래 관측 ID",
   "native-model-settings.inspectObservation_ded69a": "관측 확인",
-  "native-model-settings.observation_48f31e": "관측 <s0/>: <s1/>. <s2/>",
-  "native-model-settings.refreshObservationStatus_2714ea": "관측 상태 새로고침",
   "native-model-settings.cancelObservation_0f4be7": "관측 취소",
   "native-model-settings.showLastSuccessfulObservation_e2c0d6": "마지막 성공 관측 표시",
   "native-model-settings.retryTheSameCancellation_0bc7e1": "같은 취소 다시 시도",
@@ -28,5 +26,6 @@
   "native-model-settings.register_55d230": "<s0/> 등록…",
   "native-model-settings.useModel": "모델 사용",
   "native-model-settings.firstObservationPage_e0db18": "첫 관측 페이지",
-  "native-model-settings.extra.ca1844969742": "확인할 수 없음"
+  "native-model-settings.extra.ca1844969742": "확인할 수 없음",
+  "native-model-settings.observedAt": "관측 시각 {{v0}}"
 }

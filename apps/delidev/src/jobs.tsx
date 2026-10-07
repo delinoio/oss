@@ -1,5 +1,4 @@
-import { statusLabel } from "./product-status";
-import { LocalizedText, copy, useLocale } from "./localization";
+import { copy, useLocale } from "./localization";
 import type { ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
@@ -16,5 +15,14 @@ export function TrackedJob({ initial, active, children }: { initial: Resource; a
   const latest = result.data?.resource;
   const current = latest && latest.id === initial.id && latest.kind === EntityKind.JOB && latest.revision >= initial.revision ? latest : initial;
   const value = document(current), state = text(value.state), problem = object(value.problem);
-  return <section className="notice" data-job-state={state} aria-label={copy("jobs.workerOperation_b3e39e")}><p><LocalizedText id="jobs.workerOperation_8d8a5d" components={{ s0: <>{statusLabel(state) || copy("jobs.extra.b764cdc0eab7")}</> }} /></p><small>{initial.id}</small>{state === JobState.Queued || state === JobState.Claimed ? <p>{copy("jobs.acceptedByTheServerWaitingFor_2b0bf0")}</p> : null}{state === JobState.Uncertain ? <p>{copy("jobs.theWorkerOutcomeIsUncertainInspect_2212e2")}</p> : null}{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<Problem error={result.error} /><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("jobs.refreshOperation_8b5c83")}</button>{children?.(state, object(value.output))}</section>;
+  const attention = state !== JobState.Succeeded || Boolean(result.error) || Boolean(text(problem.message));
+  return <>{attention ? <section className="notice" data-job-state={state}><OperationStatus state={state} />{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<Problem error={result.error} />{result.error ? <button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}</section> : null}{children?.(state, object(value.output))}</>;
+}
+
+// Presentation only: callers retain original query, polling and mutation ownership.
+export function OperationStatus({ state }: { state: string }) {
+  useLocale();
+  if (state === JobState.Succeeded) return null;
+  const message = state === JobState.Queued || state === JobState.Claimed ? "jobs.acceptedByTheServerWaitingFor_2b0bf0" : state === JobState.Uncertain ? "jobs.theWorkerOutcomeIsUncertainInspect_2212e2" : state === JobState.Failed ? "jobs.failed" : state === JobState.Canceled ? "jobs.canceled" : "jobs.readingStatus";
+  return <p role="status">{copy(message)}</p>;
 }

@@ -5,8 +5,6 @@
   "session-context.refreshContext_f79efc": "컨텍스트 새로고침",
   "session-context.notReported_adadfa": "보고되지 않음",
   "session-context.currentContextTokens_2fb474": "현재 컨텍스트 토큰: <s0/>",
-  "session-context.compactionOperation_22b764": "압축 작업",
-  "session-context.compactionOperation_42746a": "압축 작업: <s0/>",
   "session-context.theNativeContextWasCompactedAnd_c4307f": "네이티브 컨텍스트가 압축되었으며 기록 및 정리가 검증되었습니다.",
   "session-context.reported_34540b": "보고됨",
   "session-context.notReportedByTheNativeProcess_e76117": "네이티브 프로세스가 보고하지 않음",

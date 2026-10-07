@@ -765,7 +765,7 @@ Successful empty regions have at least 160px height, a 32px decorative vector at
 
 Forms share the category anchor and a 720px maximum, using two columns only at available form widths >=640px. Remove enclosing/nested form cards in favor of flat semantic groups and thin rules. Keep complete documents, every field/help/default/unknown value, mounted independent disclosures, invalid-field reveal/focus and Save/Cancel/original retry in ordinary flow. Subscription services use flat ChatGPT/Claude/Grok rows with negotiated service-only account creation and explicit unsupported lifecycle guidance. Managed Codex authentication follows the independent subscription-settings contract; authentication refresh never implies quota refresh. Appearance alone retains autosave, with native System/Light/Dark radios, decorative CSS miniatures and choices stacked below 640px available width. Git Profiles keeps its single New GitHub profile action in the category header even when empty; profile storage/identity/access distinctions remain visible.
 
-Notifications renders saved Enabled/Disabled values as noninteractive label/value rows. Explicit Edit focuses the first checkbox; Save/Cancel return once to the enabled Edit action within the same active visit. A delayed refetch may postpone return, but deliberate focus transfer, another dialog/drawer, inactivity, window loss or departure discards that intent. Native status and server/client preferences remain independent, with visible Inbox/no-implicit-approval guidance and the full supplementary About notification delivery disclosure. Appearance/device controller and persistent Connection controls remain outside visit disposal. Backups retains semantic inventory, independently observed accepted jobs and manual history tabs, with short Refresh/Dismiss tracking text and full identity-specific accessible names. Diagnostics keeps its original 1100px/1200px viewport breakpoints, exact canonical BigInt values and independent caveats.
+Notifications renders saved Enabled/Disabled values as noninteractive label/value rows. Explicit Edit focuses the first checkbox; Save/Cancel return once to the enabled Edit action within the same active visit. A delayed refetch may postpone return, but deliberate focus transfer, another dialog/drawer, inactivity, window loss or departure discards that intent. Native status and server/client preferences remain independent, with visible Inbox/no-implicit-approval guidance and the full supplementary About notification delivery disclosure. Appearance/device controller and persistent Connection controls remain outside visit disposal. Backups retains semantic inventory, independently observed accepted jobs and manual history tabs, with failed-read-only retry and terminal Dismiss tracking controls named by backup resource identity. Diagnostics keeps its original 1100px/1200px viewport breakpoints, exact canonical BigInt values and independent caveats.
 
 Use existing semantic light/dark/System tokens and system font; no external assets/fonts/dependencies, inline styles, gradients, transparency, blur or CSP exceptions. Preserve full wrapping identities/names/bytes/timestamps and keyboard/focus semantics. Presentation validation must cover all 17 synthetic empty/populated categories at 1920×1080, 1440×1000, 1440×900, 1280×820, 960×640, 640×480 and effective 200% CSS layouts. Fixture/browser/build/package checks remain distinct from actual browser chrome zoom, packaged CEF, macOS/Windows/X11, screen-reader, real-account and OS banner acceptance. Record revision/commands/results/limits in PRs/issues/CI artifacts, never repository evidence documents.
 
@@ -1881,9 +1881,9 @@ submitted uncertain requests retain their original encoded metadata independentl
 Preserve original active/busy/uncertain/capacity gates and irreversible acceptance.
 
 Accepted operations appear after inventory/detail and before history, independently
-of the selected tab. Retain full backup/job IDs, exact revisions, pending/completed/
-failed/unavailable distinctions, problem codes, individual refresh and terminal-only
-dismissal, with 20 local entries per kind and complete capacity guidance. Operation
+of the selected tab. Retain full backup resource IDs, pending/failed/unavailable
+distinctions, problem codes, read-only retries after failed status reads and terminal-only
+dismissal. Job IDs and exact revisions remain internal tracking authority, with 20 local entries per kind and complete capacity guidance. Operation
 history defaults to Creation jobs and uses visit-local enum selection with stable
 tab/panel IDs. Left/Right/Home/End moves roving focus; Enter/Space selects. Selected
 tabs have text/underline indication; hidden panel controls leave the tab order. Both
@@ -1891,7 +1891,7 @@ original query owners stay mounted with independent opaque page-size-20 cursors 
 active-only two-second polling even while their tab panel is hidden. Tab activation
 cannot refetch, reset a page, replace a controller or mutate server state.
 
-Retain Refresh creation jobs, every history-row value and both complete guidance
+Retain Refresh creation jobs, feature-specific history-row values without job UUID/revision text, and both complete guidance
 paragraphs: creation continues after disconnect/restart and past publication is not
 current availability; deletion survives restart, retries failed cleanup and measures
 logical file size rather than free disk space. Distinguish initial loading/error,
@@ -2266,3 +2266,8 @@ Every app-owned dialog exposes one header dismissal control and Escape. Remove a
 Destructive top-level confirmation selects `SettingsDialogFocus.Close`; neutral nested Keep retains `Cancel` focus. If that neutral control is absent or unavailable, focus the named header close button. Never select an arbitrary destructive button or mutation retry as the fallback. Empty action regions, task footers and wizard footer spacing disappear. Header dismissal and Escape preserve task disposal, opener restoration, pending/uncertain dismissal and fencing of late results.
 
 This audit includes Settings forms/workflows, repository registration and its GitHub chooser, account/profile/subscription management and deletion, network/backup confirmations, pairing documents, notification editors, shared Modal consumers, shortcut help and compact navigation/information drawers. Keep wizard Previous/Next, page Cancel edit, internal Back/Keep, OAuth provider return, SSH/login/storage business cancellation, device-revocation exit/focus controls, Claude Later and Fork/storage Discard/Finish. Their effects differ from hiding or disposing their header presentation. Browser fixtures and responsive checks remain separate from packaged CEF keyboard, zoom and platform acceptance.
+### Operation result presentation
+
+Shared tracked jobs and independent backup, native-model observation, Fork, workspace storage, manual context compaction and configuration-import views show feature results and actionable progress, failure, cancellation and uncertainty. Generic operation headings, raw job/action UUIDs and revisions, unconditional per-operation Refresh controls and empty success notices are absent from visible and accessible presentation. Successful tracking still invokes its existing completion callbacks and preserves feature children, Finish/Discard controls, inventory/history/context refresh, backup resource IDs, model provenance, explicit Original observation ID lookup and independently confirmed cleanup proofs.
+
+A failed status read retains a read-only Retry original status read control for its exact original query. Presentation does not change polling, receipt/request identities, revision guards, cancellation, recovery, mutation or lifetime ownership, and does not add success toasts. Product Check again and account-storage warnings retain their separate authority.

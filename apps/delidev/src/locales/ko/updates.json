@@ -1,7 +1,6 @@
 {
   "updates.originalUpdate_9f056a": "원래 업데이트",
   "updates.delidev_a214b0": "DeliDev <s0/> · <s1/> · <s2/>",
-  "updates.originalUpdateRevision_bff787": "원래 업데이트: <s0/> · 리비전 <s1/>",
   "updates.updatesWaitForActiveWorkTerminals_ac7bf1": "활성 작업, 터미널, 포워딩과 정리를 기다린 후 업데이트합니다. 원래 등록과 작업 공간은 보존됩니다.",
   "updates.updateWorkerWhenIdle_50f590": "유휴 상태에서 워커 업데이트",
   "updates.cancelUnclaimedUpdate_d10b89": "아직 인계되지 않은 업데이트 취소",

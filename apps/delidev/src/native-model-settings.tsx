@@ -1,3 +1,4 @@
+import { OperationStatus } from "./jobs";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useNativeModelPages } from "./model-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -57,13 +58,12 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
     {discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>{copy("native-model-settings.retryTheSameObservationRequest_0b6c58")}</button> : null}
     <label>{copy("native-model-settings.originalObservationId_949ead")}<input value={lookup} maxLength={36} disabled={blocked} onChange={(event) => setLookup(event.target.value)} /></label>
     <button type="button" disabled={!supported || blocked || !lookup} onClick={() => { setJobID(lookup); setObservationID(""); }}>{copy("native-model-settings.inspectObservation_ded69a")}</button>
-    {job ? <div><p role="status"><LocalizedText id="native-model-settings.observation_48f31e" components={{ s0: <>{job.id}</>, s1: <>{state}</>, s2: <>{formatTimestamp(text(object(document(job).output).observed_at))}</> }} /></p>
-      <button type="button" disabled={!active || operation.isFetching} onClick={() => void operation.refetch()}>{copy("native-model-settings.refreshObservationStatus_2714ea")}</button>
+    {job && (state !== "succeeded" || text(object(document(job).problem).message)) ? <div><OperationStatus state={state} />
       {["queued", "claimed"].includes(state) ? <button type="button" disabled={blocked} onClick={() => void cancellation.send({ mutation: { requestId: newRequestId(), id: job.id, expectedRevision: job.revision } })}>{copy("native-model-settings.cancelObservation_0f4be7")}</button> : null}
-      {document(job).problem ? <ServiceProblem code={text(object(document(job).problem).code) || text(object(document(job).problem).problem_code)}><p role="alert">{text(object(document(job).problem).message)}</p></ServiceProblem> : null}
+      {text(object(document(job).problem).message) ? <ServiceProblem code={text(object(document(job).problem).code) || text(object(document(job).problem).problem_code)}><p role="alert">{text(object(document(job).problem).message)}</p></ServiceProblem> : null}
       {state !== "succeeded" && operation.data?.lastSuccess ? <button type="button" onClick={() => { setObservationID(operation.data!.lastSuccess!.id); }}>{copy("native-model-settings.showLastSuccessfulObservation_e2c0d6")}</button> : null}
     </div> : null}
-    <Problem error={operation.error} /><Problem error={cancellation.error} />
+    <Problem error={operation.error} />{operation.error ? <button type="button" disabled={!active || operation.isFetching} onClick={() => void operation.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}<Problem error={cancellation.error} />
     {cancellation.uncertain ? <button type="button" disabled={cancellation.busy} onClick={cancellation.retry}>{copy("native-model-settings.retryTheSameCancellation_0bc7e1")}</button> : null}
     <Failure failure={models.error?.failure} />
     {models.error?.failure.code === FailureCode.Internal ? <p role="alert">{copy("native-model-settings.theObservationPageIsMalformedNo_ac73dd")}</p> : null}
@@ -72,7 +72,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
       if (!payload.length) return null;
       const page = payload[0], entries = payload.map(row => row.entry), observedScope = object(document(page.job).input);
       const canRegister = accountSelected && !models.error && observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
-      return <><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{page.job.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p>
+      return <><p>{copy("native-model-settings.observedAt", { v0: formatTimestamp(text(object(document(page.job).output).observed_at)) || copy("native-model-settings.extra.ca1844969742") })}</p><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{page.job.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p>
       {entries.length === 0 ? <p>{copy("native-model-settings.noNativeModelsInThisObservation_a24b4f")}</p> : entries.map((entry) => <article key={text(entry.id)}>
         <h3>{text(entry.display_name)}</h3><p><LocalizedText id="native-model-settings.pickerIdExecutableModel_ea304e" components={{ s0: <>{text(entry.id)}</>, s1: <>{text(entry.model)}</> }} /></p>
         <p>{text(entry.description)}</p><p><LocalizedText id="native-model-settings.reasoningInputServiceTiers_aa5c58" components={{ s0: <>{items(entry.reasoning).map(text).join(", ")}</>, s1: <>{items(entry.modalities).map(text).join(", ")}</>, s2: <>{items(entry.service_tiers).map(text).join(", ")}</>, s3: <>{entry.hidden === true ? copy("native-model-settings.hidden_7e6fef") : copy("native-model-settings.visible_8411f5")}</> }} /></p>

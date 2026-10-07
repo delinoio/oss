@@ -35,7 +35,7 @@ function fixture(options: { local?: boolean; sidechat?: boolean; supported?: boo
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  const view=(active:boolean)=><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionStorageProvider>{active?<SessionStorageAction source={session}/>:<p>Other session</p>}</SessionStorageProvider></MutationIntents></QueryClientProvider></TransportProvider>;
- return {view,session,job,cleanup,deletion,request,requests,cancel,remove,deletes,getDeletion};
+ return {client,view,session,job,cleanup,deletion,request,requests,cancel,remove,deletes,getDeletion};
 }
 async function open(){fireEvent.click(screen.getByRole("button",{name:"Workspace storage and permanent deletion"}));await screen.findByRole("button",{name:"Preview workspace usage"});}
 
@@ -74,7 +74,7 @@ it("observes permanent deletion independently of the removed resource and retain
  expect(f.deletes[1]).toEqual(f.deletes[0]);expect(f.deletes[0]).toMatchObject({mutation:{id:f.session.id,expectedRevision:8n}});
  expect(f.getDeletion).toHaveBeenCalled();
  f.deletion.state=SessionDeletionState.SUCCEEDED;f.deletion.databaseRemoved=true;f.deletion.backupsRemoved=true;
- fireEvent.click(screen.getByRole("button",{name:"Refresh permanent deletion"}));
+ await f.client.invalidateQueries();
  await screen.findByText("Permanent deletion completed.");
  expect(f.remove).toHaveBeenCalledTimes(2);
 });
@@ -89,12 +89,12 @@ it.each([{local:true},{sidechat:true},{supported:false}])("preserves Local/Sidec
 
 it.each(["failed", "canceled"] as const)("retains the restored predecessor after %s recovery without reopening", async(recoveryState)=>{
  const f=fixture({recoveryState});render(f.view(true));await open();
- await screen.findByText("Storage operation: uncertain. Acceptance does not establish native cleanup.");
+ await screen.findByText("The Worker outcome is uncertain. Inspect the original operation before starting another.");
  await waitFor(()=>expect((screen.getByRole("button",{name:"Reconcile original storage operation"}) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(screen.getByRole("button",{name:"Reconcile original storage operation"}));
  fireEvent.click(screen.getByRole("button",{name:"Confirm selected storage action"}));
  fireEvent.click(await screen.findByRole("button",{name:"Retry the same storage request"}));
- await screen.findByText(`Storage operation: ${recoveryState}. Acceptance does not establish native cleanup.`);
+ await screen.findByText(recoveryState === "failed" ? "The work failed. Review the problem before trying again." : "The work was canceled. Any remaining cleanup still requires confirmation.");
  await waitFor(()=>expect((screen.getByRole("button",{name:"Reconcile original storage operation"}) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(screen.getByRole("button",{name:"Reconcile original storage operation"}));
  fireEvent.click(screen.getByRole("button",{name:"Confirm selected storage action"}));

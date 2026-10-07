@@ -30,13 +30,13 @@ export function BackupJob({ kind, accepted, active, completed, dismiss }: Tracke
       completed();
     }
   }, [active, succeeded, job, completed]);
-  return <article className="result" aria-label={copy("backup-job.tracked_7031a7", { v0: kind, v1: accepted.id })}>
-    <h4><LocalizedText id="backup-job.backup_181f9b" components={{ s0: <>{accepted.backupId}</> }} /></h4><p><LocalizedText id="backup-job.jobRevision_b89f71" components={{ s0: <>{accepted.id}</>, s1: <>{(job?.revision ?? accepted.revision).toString()}</> }} /></p>
-    <p role="status"><LocalizedText id="backup-job.accepted_e5e744" components={{ s0: <>{kind}</>, s1: <>{succeeded ? copy("backup-job.completed_4ddb3e") : failed ? copy("backup-job.failed_5d28a9") : pending ? copy("backup-job.pending_62a2fe") : copy("backup-job.statusUnavailable_180119")}</> }} /></p>
+  return <article className="result" aria-label={copy("backup-job.backupTracking", { v0: accepted.backupId })}>
+    <h4><LocalizedText id="backup-job.backup_181f9b" components={{ s0: <>{accepted.backupId}</> }} /></h4>
+    {!succeeded ? <p role="status">{failed ? copy("backup-job.failed_5d28a9") : pending ? copy("backup-job.pending_62a2fe") : copy("backup-job.statusUnavailable_180119")}</p> : null}
     <Problem error={query.error} />
     {job?.problemCode ? <p><LocalizedText id="backup-job.operationNeedsAttention_bfbf09" components={{ s0: <>{job.problemCode}</> }} /></p> : null}
     {query.error && query.data ? <p>{copy("backup-job.theLastObservationIsStaleCurrent_4263e8")}</p> : null}
-    <button aria-label={copy("backup-job.refreshTracked_d1e282", { v0: kind, v1: accepted.id })} disabled={!active || query.isFetching} onClick={() => void query.refetch()}>{copy("backup-job.refresh_0e9161")}</button>
-    {succeeded || failed ? <button aria-label={copy("backup-job.dismissTrackingForCompleted_90b8ac", { v0: kind, v1: accepted.id })} disabled={!active} onClick={dismiss}>{copy("backup-job.dismissTracking_12e6bb")}</button> : null}
+    {query.error ? <button disabled={!active || query.isFetching} onClick={() => void query.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}
+    {succeeded || failed ? <button aria-label={copy("backup-job.dismissBackup", { v0: accepted.backupId })} disabled={!active} onClick={dismiss}>{copy("backup-job.dismissTracking_12e6bb")}</button> : null}
   </article>;
 }

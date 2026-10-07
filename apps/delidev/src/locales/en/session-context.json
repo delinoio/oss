@@ -5,8 +5,6 @@
   "session-context.refreshContext_f79efc": "Refresh context",
   "session-context.notReported_adadfa": "Not reported",
   "session-context.currentContextTokens_2fb474": "Current context tokens: <s0/>",
-  "session-context.compactionOperation_22b764": "Compaction operation",
-  "session-context.compactionOperation_42746a": "Compaction operation: <s0/>",
   "session-context.theNativeContextWasCompactedAnd_c4307f": "The native context was compacted and its history and cleanup were verified.",
   "session-context.reported_34540b": "Reported",
   "session-context.notReportedByTheNativeProcess_e76117": "Not reported by the native process",

@@ -44,7 +44,7 @@ it("requires a preview, preserves exact review bytes and retries only the same u
   expect(Array.from((value.apply.mock.calls[0]![0] as { previewJson: Uint8Array }).previewJson)).toEqual(Array.from(value.previewBytes));
   await screen.findByText(/Import accepted. Waiting for confirmation of every repository validation/);
   expect((screen.getByRole("button", { name: "Apply reviewed configuration" }) as HTMLButtonElement).disabled).toBe(true);
-  value.state("succeeded"); fireEvent.click(screen.getByRole("button", { name: "Refresh configuration import" }));
+  value.state("succeeded"); await value.client.invalidateQueries();
   await screen.findByText(/Configuration import completed/);
   expect(value.apply).toHaveBeenCalledTimes(2);
   expect(JSON.stringify(value.client.getQueryCache().getAll().map((query) => query.queryKey))).not.toContain("Exact text");
