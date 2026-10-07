@@ -2263,7 +2263,7 @@ mod tests {
             )
             .unwrap();
             fs::write(
-                temp.path().join("sidecar"),
+                temp.path().join("sidecar.operation"),
                 r#"#!/bin/sh
 for arg do
   if [ "$arg" = "confirm-removal" ]; then
@@ -3360,7 +3360,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
     #[test]
     fn exit_discovers_deletion_since_last_poll_before_releasing_native_shutdown() {
         let (temp, host, mut record) = storage_fixture();
-        fs::write(temp.path().join("sidecar"), r#"#!/bin/sh
+        fs::write(temp.path().join("sidecar.operation"), r#"#!/bin/sh
 case "$*" in
   *"connection removed"*) printf '%s\n' '{"version":1,"result":{"connections":[],"next_after":""}}' ;;
   *"connection list"*) printf '%s\n' '{"version":1,"result":{"connections":[]}}' ;;
@@ -3424,7 +3424,7 @@ esac
     fn final_discovery_budget_prevents_new_sidecar_reads_and_preserves_close_gate() {
         let (temp, host, _record) = storage_fixture();
         fs::write(
-            temp.path().join("sidecar"),
+            temp.path().join("sidecar.operation"),
             "#!/bin/sh\n: > \"$(dirname \"$0\")/unexpected-read\"\nexit 1\n",
         )
         .unwrap();
@@ -3653,7 +3653,7 @@ esac
             }),
         };
         fs::write(
-            temp.path().join("sidecar"),
+            temp.path().join("sidecar.operation"),
             "#!/bin/sh\nexec /bin/cat \"$2/reply.json\"\n",
         )
         .unwrap();
@@ -3695,6 +3695,10 @@ esac
             &serde_json::json!({"version": 1, "result": paired}),
         )
         .unwrap();
+        assert_eq!(
+            host.observer.inspect_saved(&scope.id).unwrap().state,
+            delidev_desktop::SavedConnectionState::Paired
+        );
         host.prepare_forget(&scope).unwrap();
         host.stopping.store(true, Ordering::Release);
         host.finish_removals().unwrap();

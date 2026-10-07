@@ -276,7 +276,10 @@ loop:
 			}()
 		}
 	}
-	force := time.AfterFunc(desktopShutdownTimeout, func() { os.Exit(1) })
+	force := time.AfterFunc(desktopShutdownTimeout, func() {
+		h.log.Warn("desktop_host_shutdown", "phase", "host-force-requested", "native_cleanup", "unconfirmed")
+		os.Exit(1)
+	})
 	h.shutdown()
 	tasks.Wait()
 	force.Stop()

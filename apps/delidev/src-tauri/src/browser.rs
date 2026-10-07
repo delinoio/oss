@@ -90,6 +90,7 @@ impl Tabs {
 pub struct Policy {
     pub product_origin: String,
     pub loopback_origins: Vec<String>,
+    protected_product_port: Option<u16>,
     blocked_runtime_port: Option<u16>,
 }
 impl Policy {
@@ -104,10 +105,11 @@ impl Policy {
         let policy = Self {
             product_origin,
             loopback_origins: loopback_origin.into_iter().collect(),
-            blocked_runtime_port: url::Url::parse(endpoint)
+            protected_product_port: url::Url::parse(endpoint)
                 .ok()
                 .filter(loopback)
                 .and_then(|u| u.port_or_known_default()),
+            blocked_runtime_port: None,
         };
         if !policy.navigation(url) {
             return Err(NativeFailure::InvalidInput);
@@ -187,6 +189,9 @@ impl Policy {
             || matches!(url.host_str(), Some("tauri.localhost" | "ipc.localhost"))
             || (loopback(url)
                 && (matches!(url.port_or_known_default(), Some(46310 | 46311))
+                    || self
+                        .protected_product_port
+                        .is_some_and(|port| url.port_or_known_default() == Some(port))
                     || self
                         .blocked_runtime_port
                         .is_some_and(|port| url.port_or_known_default() == Some(port))))
@@ -452,6 +457,24 @@ fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn saved_loopback_and_local_runtime_aliases_remain_protected_together() {
+        let mut policy =
+            super::Policy::new("http://127.0.0.1:51235", "https://fixture.test").unwrap();
+        policy
+            .protect_local_runtime("http://127.0.0.1:51234")
+            .unwrap();
+        for address in [
+            "http://localhost:51235",
+            "http://localhost:51234",
+            "http://[::1]:51235",
+            "http://127.1:51234",
+        ] {
+            assert!(policy.with_explicit(address).is_err());
+        }
+        assert!(policy.with_explicit("http://127.0.0.1:51236").is_ok());
+    }
+
     use super::*;
     #[cfg(unix)]
     #[test]

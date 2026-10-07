@@ -224,9 +224,13 @@ impl Owned {
             }
         });
         let mut forced = false;
+        let exit_success;
         loop {
             match self.child.try_wait() {
-                Ok(Some(_)) => break,
+                Ok(Some(status)) => {
+                    exit_success = status.success();
+                    break;
+                }
                 Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
                 _ => {
                     forced = true;
@@ -240,14 +244,17 @@ impl Owned {
                         std::mem::forget(self);
                         return Err(NativeFailure::SidecarFailed);
                     }
-                    if self.child.wait().is_err() {
-                        tracing::error!(
-                            operation = "desktop_sidecar_shutdown",
-                            phase = "exit-unconfirmed"
-                        );
-                        std::mem::forget(self);
-                        return Err(NativeFailure::SidecarFailed);
-                    }
+                    exit_success = match self.child.wait() {
+                        Ok(status) => status.success(),
+                        Err(_) => {
+                            tracing::error!(
+                                operation = "desktop_sidecar_shutdown",
+                                phase = "exit-unconfirmed"
+                            );
+                            std::mem::forget(self);
+                            return Err(NativeFailure::SidecarFailed);
+                        }
+                    };
                     break;
                 }
             }
@@ -256,7 +263,12 @@ impl Owned {
             operation = "desktop_sidecar_shutdown",
             phase = "process-exit-confirmed",
             forced,
-            native_cleanup = if forced { "unconfirmed" } else { "joined" }
+            exit_success,
+            native_cleanup = if !forced && exit_success && self.pipe.is_some() {
+                "joined"
+            } else {
+                "unconfirmed"
+            }
         );
         if let Some(pipe) = &self.pipe {
             pipe.writer_stop.store(true, Ordering::Release);

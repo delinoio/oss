@@ -15,10 +15,12 @@ send({'version': 2, 'result': {'endpoint':'http://127.0.0.1:46310', 'generation'
 def execute(request):
     op = request['operation']
     args = ['--data-dir', root]
+    # Legacy shell fixtures inspect the outer root at argv[2]. Keep the scoped
+    # override after it until those fixtures consume frames directly.
     if request.get('scope') == 'local':
-        args[1] = os.path.join(root, 'desktop-client')
+        args += ['--data-dir', os.path.join(root, 'desktop-client')]
     elif request.get('scope','').startswith('saved:'):
-        args[1] = os.path.join(root,'connections',request['scope'][6:],'client')
+        args += ['--data-dir', os.path.join(root,'connections',request['scope'][6:],'client')]
     if request.get('request_id'):
         args += ['--request-id',request['request_id']]
     if op.startswith('runtime.'):
