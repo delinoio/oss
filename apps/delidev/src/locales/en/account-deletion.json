@@ -1,13 +1,4 @@
 {
-  "account-deletion.refreshCleanupStatus_fb7773": "Refresh cleanup status",
-  "account-deletion.returnToAiApiKeys_4b92a5": "Return to AI API Keys",
-  "account-deletion.returnToAccounts_4b7a6d": "Return to accounts",
-  "account-deletion.apiKeyEntryDeleted_3200d9": "API key entry deleted",
-  "account-deletion.savedOnTheSelectedServer_93dbee": "Saved on the selected server.",
-  "account-deletion.accountConfigurationDeleted_2a5579": "Account configuration deleted",
-  "account-deletion.browserCleanupIsTrackedSeparatelyOffline_5550d1": "Browser cleanup is tracked separately. Offline devices remain pending until their native browser has shut down, the full profile has been removed and the owning server confirms the acknowledgment.",
-  "account-deletion.profileCleanupObligationsPendingConfirmedRemoved_063eba": "<s0/> profile cleanup obligations pending · <s1/> confirmed removed",
-  "account-deletion.cleanupStatusIsUnavailableUntilThe_de4aa8": "Cleanup status is unavailable until the owning server can be read.",
   "account-deletion.deleting_983c74": "Deleting {{v0}}",
   "account-deletion.delete_a19801": "Delete {{v0}}?",
   "account-deletion.thisLogsOutTheAccountAnd_bc0446": "This logs out the account and removes its protected credentials before deleting its saved configuration.",
