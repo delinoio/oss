@@ -1,3 +1,5 @@
+- Inline Worker models and endpoint-only completion follow the main-first reservation amendment in `docs/cmds-delidev-catalog-contract.md`. Reserve System 42 / Worker 22 and the complete endpoint/identity/pricing declarations before activation. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs/backups/sidecars remain untouched and unsupported; reservation-only changes grant no support.
+
 # DeliDev CLI
 
 - Native read-only Sidechat additionally follows `docs/cmds-delidev-sidechat-contract.md`. Keep original account/snapshot provenance separate from the immutable child enforcement overlay and reference parent workspace roots without ownership. Parent deletion/storage cleanup must durably stop and join every dependent child before removing parent files; independent Fork lifetime remains unchanged.

@@ -1,5 +1,11 @@
 # DeliDev native subagent observations
 
+## Inline Worker models and endpoint-only completion reservation
+
+Explicit child selections retain exact source/native ID under the parent selected Account and are frozen with their original Worker/execution revision. Remove canonical child Model UUID/revision lookups. Preserve observed/requested separation, native capability checks, original child history and cleanup ownership.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
 ## Scope
 Issue #1094 exposes native child ownership, lifecycle, available output, model and usage through the existing authenticated session resource boundary. Go owns adapters and publication in `cmds/delidev-cli`; `protos/delidev/v1` and `packages/delidev-api-client` own additive typed identifiers; `apps/delidev` renders read-only session observations. Issue #964 remains the complete product contract.
 

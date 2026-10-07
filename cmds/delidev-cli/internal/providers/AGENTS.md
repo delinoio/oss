@@ -1,3 +1,5 @@
+- Inline Worker models and endpoint-only completion follow the main-first reservation amendment in `docs/cmds-delidev-catalog-contract.md`. Reserve System 42 / Worker 22 and the complete endpoint/identity/pricing declarations before activation. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs/backups/sidecars remain untouched and unsupported; reservation-only changes grant no support.
+
 # DeliDev provider inspection ownership
 
 - Follow `docs/cmds-delidev-providers-contract.md`, the activation/catalog contracts and issue #1148. Go owns the canonical 35-entry ordered registry, fixed non-inference inspection targets and protected credential use. Endpoint/protocol/authentication must match the closed official profile; copied names, preset IDs, response URLs and public catalogs cannot grant authentication authority.

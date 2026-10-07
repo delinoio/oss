@@ -1,5 +1,11 @@
 # DeliDev desktop client
 
+## Inline Worker models and endpoint-only completion reservation
+
+The approved existing wizard uses endpoint-only API completion, exact direct input and official subscription suggestions without Saved choices. Keep keyboard, focus, localization, themes and responsive behavior. Clear editor-local responses on source/account/generation/lifetime changes and errors. Native observations retain no register/use action. Usage selects pricing by source and native ID.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
 ## In-app toast notifications
 
 `src/toast-notifications.tsx`, `src/toast-store.ts` and the static scoped stylesheet own transient in-app notifications. Each authenticated connection mounts one `NotificationProvider` inside its existing connection identity boundary. `useNotifications()` exposes `notify({ kind, message, id?, durationMs? }): string` and `dismiss(id)`. `ToastKind` is the closed success/info/warning/error enum. Publishing updates only the viewport subscription, not conversation/query consumers. Isolated consumers without a provider receive an inert controller; missing optional presentation cannot turn an acknowledged business operation into a failed mutation.

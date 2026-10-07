@@ -1,5 +1,11 @@
 # DeliDev native Codex model observations
 
+## Inline Worker models and endpoint-only completion reservation
+
+Native model observations remain an independent bounded read-only diagnostic. Remove registration and use-model actions; never feed native observations into API completion or a saved Model registry. Preserve original Account/Worker/native-job ownership and diagnostic acceptance limits.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
 ## Scope
 
 [Issue #1206](https://github.com/delinoio/oss/issues/1206) requires an explicit,

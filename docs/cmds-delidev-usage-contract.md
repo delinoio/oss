@@ -1,5 +1,11 @@
 # DeliDev native usage ledger
 
+## Inline Worker models and endpoint-only completion reservation
+
+Token pricing uses exact Provider/service and native-ID identity with its own revision. Preserve immutable price versions, original response estimates, exact category/currency handling and budget gates. New pricing affects only future observations. No independent saved Model or completion history is required.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
 ## Scope
 `cmds/delidev-cli/internal/domain`, `internal/harness/codex`, `internal/harness/opencode`, `internal/worker`, `internal/server`, and `internal/store` own the normalized response usage pipeline. Issue #964 requires DeliDev-only aggregation, the dashboard, attributable actual costs, separate historical token-price estimates and optional session budgets. The implemented boundary includes exact Codex response ingestion, durable deduplication, coherent read-only RPC/CLI aggregation and desktop presentation. Immutable user-declared pricing, per-currency estimate aggregation and owner/client pricing RPC/CLI are implemented. Desktop pricing forms and historical estimate presentation are implemented. Optional lifetime session budgets are implemented across creation, RPC, CLI and desktop. Remaining native usage scopes remain required work.
 

@@ -1,5 +1,11 @@
 # DeliDev source ownership and compatibility
 
+## Inline Worker models and endpoint-only completion reservation
+
+Main first reserves System 42, Worker 22 and the complete endpoint/model-identity/pricing closure in the allocation ledger. Compose full DB baseline 32 / protocol 2 reset with inline Worker schema 4 and current portable bundle 4. The prior atomic Model/Agent save and portable bundle 2 proposal are superseded only on complete activation.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
 ## Failed subscription cleanup reservations
 
 Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the

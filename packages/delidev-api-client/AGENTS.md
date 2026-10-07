@@ -1,3 +1,5 @@
+- Inline Worker models and endpoint-only completion follow the main-first reservation amendment in `docs/cmds-delidev-catalog-contract.md`. Reserve System 42 / Worker 22 and the complete endpoint/identity/pricing declarations before activation. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs/backups/sidecars remain untouched and unsupported; reservation-only changes grant no support.
+
 - Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history and legacy accountless APIs; capability 33 is configuration support, never native readiness.
 # DeliDev delidev-api-client ownership
 

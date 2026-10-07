@@ -1,5 +1,11 @@
 # Project: DeliDev
 
+The approved inline-Worker-model replacement composes the current-only DB 32 /
+protocol 2 reset. Its complete main-first declarations and ownership are defined
+in the catalog, structure, storage, desktop, protocol, usage, transfer and
+subagent contracts. Independent Models and persistent API catalogs are removed
+only with complete activation; existing DBs/backups remain untouched.
+
 Failed-login subscription cleanup reserves System capability 41 and its closed batch/status/result declarations under issue #964. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) and [protocol contract](protos-delidev-v1-contract.md#failed-subscription-cleanup-reservations) require the complete main-first reservation before implementation. This prerequisite grants no cleanup or deletion authority and adds no migration.
 
 ## Goal

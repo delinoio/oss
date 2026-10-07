@@ -1,3 +1,5 @@
+- Inline Worker models and endpoint-only completion follow the main-first reservation amendment in `docs/cmds-delidev-catalog-contract.md`. Reserve System 42 / Worker 22 and the complete endpoint/identity/pricing declarations before activation. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs/backups/sidecars remain untouched and unsupported; reservation-only changes grant no support.
+
 # DeliDev domain ownership
 
 - GitHub draft form URLs may omit an undeclared fine-grained owner while retaining the closed read-only prefills. Saved-profile form URLs and profile validation still require that owner. The native presentation validator admits only the exact canonical draft or saved form, rejecting empty explicit parameters, extra/duplicate query parameters and write permissions. Follow the integration contract; URL preparation grants no repository access.
