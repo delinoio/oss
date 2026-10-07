@@ -6,6 +6,8 @@ import { createRouterTransport } from "@connectrpc/connect";
 import { AccountService, AccountTypeFilter, BackupCreationState, ConfigurationService, EntityKind, InboxService, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageService, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
+import { LanguagePreference, LanguageProblem, LanguageProvider, type LanguageBridge, type LanguageSnapshot } from "./language";
+import { SupportedLanguage } from "./localization";
 import { document as resourceDocument, encode } from "./documents";
 import { LocalWorkerState } from "./local-worker-controls";
 import { ToastKind, useNotifications } from "./toast-notifications";
@@ -23,6 +25,21 @@ const populated = args.get("populated") === "true";
 const apiUsage = args.get("apiUsage") === "true";
 const longNames = args.get("longNames") === "true";
 const theme = Object.values(Theme).find(value => value === args.get("theme")) ?? Theme.System;
+let languageSnapshot: LanguageSnapshot = { revision: 1, language: args.get("language") === "ko" ? LanguagePreference.Korean : LanguagePreference.English, resolved_language: args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English, problem: null };
+const languageListeners = new Set<(snapshot: unknown) => void>();
+// Synthetic device presentation only: no native storage or server mutation.
+const languageBridge: LanguageBridge = {
+  read: async () => languageSnapshot,
+  update: async (language, revision) => {
+    // Keep the synthetic save pending long enough to verify browser focus/locks.
+    await new Promise(resolve => setTimeout(resolve, 25));
+    if (revision !== languageSnapshot.revision) return { ...languageSnapshot, problem: LanguageProblem.Changed };
+    languageSnapshot = { revision: revision + 1, language, resolved_language: language === LanguagePreference.Korean ? SupportedLanguage.Korean : SupportedLanguage.English, problem: null };
+    languageListeners.forEach(changed => changed(languageSnapshot));
+    return languageSnapshot;
+  },
+  subscribe: async changed => { languageListeners.add(changed); return () => { languageListeners.delete(changed); }; },
+};
 const serverId = newRequestId(), currentDeviceId = newRequestId(), machineId = newRequestId();
 const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, schemaVersion: 1, revision: 1n, documentJson: encode({ name: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: false }) });
 const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Fixture model with a complete long identity", native_id: "example-model-native-".repeat(12), alias: "example-model", provider_id: provider.id, new: true, hidden: false, harnesses: ["codex"] }) });
@@ -52,4 +69,4 @@ const fixtureTransport = createRouterTransport(router => {
   router.service(SystemService, { getStatus: () => ({ serverId, protocolVersion: 1, capabilities: [SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.REMOTE_REPOSITORIES_V1, ...(args.get("repository-pat") === "true" ? [SystemCapability.REPOSITORY_CLONE_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] : [])] }), listBackups: () => ({ backups: populated ? [backup] : [] }), inspectBackup: () => ({ backup, sha256: "a".repeat(64), schemaVersion: 30, serverId }), listBackupCreations: () => ({ jobs: populated ? [{ id: creationId, backupId: backup.id, revision: 1n, state: BackupCreationState.SUCCEEDED }] : [] }), listBackupDeletions: () => ({ jobs: [] }), getDoctor: () => ({ reportJson: encode({ schema_version: 2, server_id: serverId, version: "0.1.0", os: "darwin", architecture: "arm64", protocol_version: 1, database_schema_version: 24, listener: "http://127.0.0.1:46310", observed_at: "2026-10-01T08:00:00.000Z", database: "ready", credential_store: "owner-credential-ready", inference_probes: false, storage: { result: { state: "observed" }, database_bytes: "9007199254740993", wal_bytes: "391432", logical_database_bytes: "561152", volume_capacity_bytes: "18446744073709551615", volume_available_bytes: "950436651008", resources: [] }, machines: [], credentials: [], more_machines: false, more_credentials: false }) }) });
 });
 const transport = fixtureTransport;
-createRoot(document.getElementById("root")!).render(<AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={async () => ({ state: LocalWorkerState.Starting, machine_id: machineId, controller_active: true })} /></AppearanceProvider>);
+createRoot(document.getElementById("root")!).render(<LanguageProvider bridge={languageBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={async () => ({ state: LocalWorkerState.Starting, machine_id: machineId, controller_active: true })} /></AppearanceProvider></LanguageProvider>);
