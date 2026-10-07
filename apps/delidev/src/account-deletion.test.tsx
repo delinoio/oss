@@ -19,17 +19,18 @@ import { Settings } from "./settings";
 
 const alias = "ChatGPT fixture";
 const confirmLabel = "Disconnect and delete account";
-function fixture(connected = true) {
+function fixture(connected = true, service: "chatgpt" | "claude" = "chatgpt") {
+  const machine = newRequestId(), profile = newRequestId(), operationKey = service === "claude" ? "native_operation" : "server_operation";
   const generation = newRequestId(), connection = newRequestId();
-  const preferences = { alias, type: "subscription", subscription_service: "chatgpt", enabled: true, exclude_automatic: false, recovery_notifications: false };
+  const preferences = { alias, type: "subscription", subscription_service: service, enabled: true, exclude_automatic: false, recovery_notifications: false };
   let current = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 9007199254740993n,
-    documentJson: encode({ ...preferences, health: connected ? "ready" : "disconnected", quota: [], ...(connected ? { connection: { id: connection }, subscription: { generation } } : {}) }) });
+    documentJson: encode({ ...preferences, health: connected ? "ready" : "disconnected", quota: [], ...(connected ? { connection: { id: connection }, subscription: { generation, ...(service === "claude" ? { owner_machine_id: machine, native_profile_id: profile } : {}) } } : {}) }) });
   const initial = current;
   let removed = false;
   const patch = (change: Record<string, unknown>) => { current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), ...change }) }); return current; };
-  const accept = (request: RequestSubscriptionRequest) => patch({ health: "revoked", subscription: { ...object(document(current).subscription), pending: { id: request.mutation!.requestId, action: "logout", phase: "queued" }, server_operation: { id: request.mutation!.requestId, action: "logout", state: "preparing", native_started: false } } });
+  const accept = (request: RequestSubscriptionRequest) => patch({ health: "revoked", subscription: { ...object(document(current).subscription), pending: { id: request.mutation!.requestId, action: "logout", phase: "queued", ...(service === "claude" ? {machine_id: machine} : {}) }, [operationKey]: { id: request.mutation!.requestId, action: "logout", state: "preparing", native_started: false } } });
   const read = vi.fn(async () => ({ resource: current }));
-  const status = vi.fn(async () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1] }));
+  const status = vi.fn(async () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1, SystemCapability.CLAUDE_SUBSCRIPTIONS_V1] }));
   const logout = vi.fn(async (request: RequestSubscriptionRequest) => ({ operationId: request.mutation!.requestId, account: accept(request) }));
   const progress = vi.fn(async (_request: GetSubscriptionProgressRequest) => create(GetSubscriptionProgressResponseSchema, { state: SubscriptionLoginState.PREPARING }));
   const remove = vi.fn(async (request: DeleteConfigurationRequest) => { removed = true; return { id: request.mutation!.id, requestId: request.mutation!.requestId }; });
@@ -52,11 +53,11 @@ function fixture(connected = true) {
     </QueryClientProvider></TransportProvider></StrictMode>;
   }
   const complete = () => {
-    const operation = object(object(document(current).subscription).server_operation);
-    patch({ health: "disconnected", connection: undefined, subscription: { server_operation: { ...operation, state: "succeeded", native_started: false } } });
+    const operation = object(object(document(current).subscription)[operationKey]);
+    patch({ health: "disconnected", connection: undefined, subscription: { [operationKey]: { ...operation, state: "succeeded", native_started: false } } });
     progress.mockResolvedValue(create(GetSubscriptionProgressResponseSchema, { state: SubscriptionLoginState.SUCCEEDED }));
   };
-  return { Harness, client, initial, read, list, status, logout, progress, remove, cleanup, closed, deleted, patch, accept, complete, get current() { return current; } };
+  return { Harness, client, initial, machine, profile, read, list, status, logout, progress, remove, cleanup, closed, deleted, patch, accept, complete, get current() { return current; } };
 }
 async function start(value: ReturnType<typeof fixture>) {
   render(<value.Harness />);
@@ -475,4 +476,25 @@ it("keeps the account when delete permission is revoked after cleanup", async ()
   await screen.findByText("Account deletion paused.");
   expect(screen.queryByRole("button", { name: "Retry the same deletion" })).toBeNull();
   expect(value.remove).toHaveBeenCalledTimes(1); expect(value.cleanup).not.toHaveBeenCalled();
+});
+
+
+it("logs Claude out on its original Runner before deleting the fresh cleared account", async () => {
+  const value = fixture(true, "claude");
+  await start(value);
+  expect(value.logout.mock.calls[0][0].machineId).toBe(value.machine);
+  expect(value.remove).not.toHaveBeenCalled();
+  value.complete();
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1), { timeout: 4000 });
+  expect(value.remove.mock.calls[0][0].mutation!.expectedRevision).toBe(value.current.revision);
+  expect(value.cleanup).not.toHaveBeenCalled();
+});
+
+it("keeps Claude configuration while the original Runner cleanup is uncertain", async () => {
+  const value = fixture(true, "claude");
+  await start(value);
+  value.progress.mockResolvedValue(create(GetSubscriptionProgressResponseSchema, { state: SubscriptionLoginState.RECOVERY_REQUIRED }));
+  await tick();
+  expect(value.remove).not.toHaveBeenCalled();
+  expect(value.logout).toHaveBeenCalledTimes(1);
 });

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 func authFixtureURL() string {
@@ -269,5 +271,44 @@ func TestNativeClaudeExecutionDoesNotInjectRelayAuthentication(t *testing.T) {
 	raw, _ := json.Marshal(config)
 	if bytes.Contains(raw, []byte(profile.Home)) || bytes.Contains(raw, []byte(config.API.Token)) {
 		t.Fatal("checkpoint configuration serialized profile or authority")
+	}
+}
+
+func TestNativeClaudeSubscriptionStreamValidatesOwnedProfileBeforeInput(t *testing.T) {
+	for _, mode := range []string{"native-subscription-valid", "native-subscription-api-source", "native-subscription-foreign-provider"} {
+		t.Run(mode, func(t *testing.T) {
+			config, logs := apiFixtureConfig(t, mode)
+			profile := filepath.Join(config.Process.Cwd, "owned-profile", "claude")
+			if err := security.PrivateDir(filepath.Dir(profile)); err != nil {
+				t.Fatal(err)
+			}
+			if err := security.PrivateDir(profile); err != nil {
+				t.Fatal(err)
+			}
+			config.Subscription = &NativeSubscriptionProfile{ID: domain.NewID(), Home: profile}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			stream, err := OpenAPIStream(ctx, config)
+			if mode == "native-subscription-valid" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				applied, ok := stream.InitialAppliedSettings()
+				if !ok || applied.Model != config.Model || applied.Effort == nil || *applied.Effort != config.Effort {
+					t.Fatal("native subscription settings changed")
+				}
+				if err = stream.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || stream != nil {
+				t.Fatal("mixed native API authority admitted before input")
+			}
+			if err = process.ReconcileOwner(config.Process.Directory, config.Process.OwnerID); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(logs.String(), "fixture@example.invalid") || strings.Contains(logs.String(), nativeAPIFixtureToken) {
+				t.Fatal("native identity or publication authority entered logs")
+			}
+		})
 	}
 }

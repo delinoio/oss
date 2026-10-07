@@ -212,7 +212,11 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	phase := domain.NativeSubscriptionRuntime
 	defer func() {
 		if returned != nil {
-			diagnostic := &pb.NativeSubscriptionDiagnostic{DetectedVersion: claude.SupportedVersion, RequiredVersion: claude.SupportedVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(phase), Code: string(domain.SafeError(returned).Code), CorrelationId: string(op.ID)}
+			detected := claude.SupportedVersion
+			if phase == domain.NativeSubscriptionVersion {
+				detected = ""
+			}
+			diagnostic := &pb.NativeSubscriptionDiagnostic{DetectedVersion: detected, RequiredVersion: claude.SupportedVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(phase), Code: string(domain.SafeError(returned).Code), CorrelationId: string(op.ID)}
 			reportCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			_, _ = client.PublishSubscriptionProgress(reportCtx, authenticated(credential, &pb.PublishSubscriptionProgressRequest{AccountId: string(account), LeaseId: lease.response.LeaseId, MachineId: string(credential.MachineID), InstanceId: string(instance), State: pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_FAILED, NativeDiagnostic: diagnostic}))
 			stop()

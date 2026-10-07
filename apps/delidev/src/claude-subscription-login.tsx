@@ -849,13 +849,15 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
           {p.readFailed || (!p.loading && !p.runners.length) ? (
             <p role="alert">{copy("claude-subscription.noRunner")}</p>
           ) : null}
-          <button
-            type="button"
-            disabled={busy || p.loading}
-            onClick={p.refreshRunners}
-          >
-            {copy("claude-subscription.refreshRunners")}
-          </button>
+          {p.readFailed || (!p.loading && !p.runners.length) ? (
+            <button
+              type="button"
+              disabled={busy || p.loading}
+              onClick={p.refreshRunners}
+            >
+              {copy("claude-subscription.refreshRunners")}
+            </button>
+          ) : null}
           {p.moreRunners ? (
             <button
               type="button"

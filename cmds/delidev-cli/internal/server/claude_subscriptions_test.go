@@ -243,3 +243,78 @@ func TestClaudeUnsupportedWorkerCannotCreateNativeOwnership(t *testing.T) {
 		t.Fatal("unsupported request created native ownership")
 	}
 }
+
+func TestClaudeSubscriptionFirstInputRequiresOriginalRunnerBeforeClaim(t *testing.T) {
+	for _, scenario := range []string{"original", "wrong-runner", "old-worker"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newFirstDispatchFixtureForHarness(t, domain.ClaudeCode, domain.ExecuteMode)
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.native-subscription-execution", nil, func(tx *store.Tx) (any, error) {
+				r, a, err := accountFromTx(tx, domain.ID(f.account.Id), 0)
+				if err != nil {
+					return nil, err
+				}
+				owner := domain.ID(f.machine.Id)
+				if scenario == "wrong-runner" {
+					owner = domain.NewID()
+				}
+				a.Type = domain.SubscriptionAccount
+				a.ProviderID = ""
+				a.SubscriptionService = domain.SubscriptionClaude
+				a.Validation = nil
+				a.Catalog = nil
+				a.Connection.Authentication = domain.SubscriptionAuth
+				a.Subscription = &domain.SubscriptionState{Generation: domain.NewID(), NativeProfileID: domain.NewID(), OwnerMachineID: owner, IdentityCommitment: strings.Repeat("ab", 32)}
+				if _, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+					return nil, err
+				}
+				ar, err := tx.Get(domain.AgentKind, f.selection.AgentID)
+				if err != nil {
+					return nil, err
+				}
+				agent, err := store.Decode[domain.Agent](ar)
+				if err != nil {
+					return nil, err
+				}
+				mr, err := tx.Get(domain.ModelKind, agent.ModelID)
+				if err != nil {
+					return nil, err
+				}
+				model, err := store.Decode[domain.Model](mr)
+				if err != nil {
+					return nil, err
+				}
+				model.ProviderID = ""
+				model.SourceKind = domain.SubscriptionModel
+				model.SubscriptionService = domain.SubscriptionClaude
+				if _, err = tx.Put(domain.ModelKind, mr.ID, mr.Revision, "", "", model); err != nil {
+					return nil, err
+				}
+				r, m, err := activeMachine(tx, domain.ID(f.machine.Id))
+				if err != nil {
+					return nil, err
+				}
+				if scenario != "old-worker" {
+					m.WorkerCapabilities = append(m.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)
+				}
+				_, err = tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+				return nil, err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = f.service.dispatchExecution(context.Background(), f.refresh(t))
+			session, decode := store.Decode[domain.Session](f.refresh(t))
+			if decode != nil {
+				t.Fatal(decode)
+			}
+			queued := inputBody(t, currentCatalogResource(t, f.accountFixture, f.change.Input))
+			if scenario == "original" {
+				if err != nil || session.InitialExecution == nil || !session.InitialExecution.Configuration.Subscription || session.InitialExecution.Configuration.SubscriptionService != domain.SubscriptionClaude || queued.Delivery != domain.InputClaimed || queued.ExecutionID != session.ActiveExecutionID {
+					t.Fatal("original native subscription selection did not dispatch", err)
+				}
+			} else if err == nil || session.InitialExecution != nil || session.ActiveExecutionID != "" || queued.Delivery != domain.InputQueued || queued.ExecutionID != "" {
+				t.Fatal("rejected Runner consumed original input", err)
+			}
+		})
+	}
+}
