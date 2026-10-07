@@ -46,16 +46,17 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   let currentProps = props;
   let selectSurface!: (surface: Surface) => void;
   const newSession = vi.fn(() => { if (stateful) selectSurface(Surface.NewSession); });
+  const newGeneralChat = vi.fn(() => { if (stateful) selectSurface(Surface.NewGeneralChat); });
   const navigate = vi.fn((surface: Surface) => { if (stateful) selectSurface(surface); });
   function Harness() {
     const [surface, setSurface] = useState(Surface.Sessions);
     selectSurface = setSurface;
-    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} {...currentProps} />;
+    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} newGeneralChat={newGeneralChat} openSettings={openSettings} {...currentProps} />;
   }
   const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><Harness /></QueryClientProvider></TransportProvider>;
   const view = render(tree());
   const setProps = (next: Partial<ComponentProps<typeof Sidebar>>) => { currentProps = { ...currentProps, ...next }; view.rerender(tree()); };
-  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
+  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, newGeneralChat, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
 }
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
@@ -329,6 +330,11 @@ it("discards delayed named continuations on collapse and preserves accepted rows
   expect(screen.queryByRole("button", { name: /Late/ })).toBeNull();
   value.setProps({ surface: Surface.NewSession });
   expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
+  value.setProps({ surface: Surface.NewGeneralChat });
+  expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "New general chat" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
   value.setProps({ surface: Surface.Activity });
   expect(screen.queryByRole("button", { name: /Accepted/ })).toBeNull();
   value.setProps({ surface: Surface.Sessions });

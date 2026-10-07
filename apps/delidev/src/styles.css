@@ -39,9 +39,9 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line
 .sidebar-header-actions { display: flex; gap: 2px; }
 .sidebar-header-button { display: grid; place-items: center; width: 34px; height: 34px; min-width: 34px; min-height: 34px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
 .sidebar-header-button .sidebar-icon { width: 18px; height: 18px; }
-.sidebar-new-session { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; height: 36px; min-height: 36px; padding: 5px 9px; border-color: var(--on-inverse-muted); border-radius: 7px; background: var(--surface); font-size: 13px; font-weight: 550; }
-.sidebar-new-session .sidebar-icon { width: 16px; height: 16px; }
-.sidebar-new-session[aria-current="page"] { border-color: var(--selected-border); background: var(--selected-background); color: var(--selected-text); }
+.sidebar-new-session, .sidebar-new-general-chat { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; height: 36px; min-height: 36px; padding: 5px 9px; border-color: var(--on-inverse-muted); border-radius: 7px; background: var(--surface); font-size: 13px; font-weight: 550; }
+.sidebar-new-session .sidebar-icon, .sidebar-new-general-chat .sidebar-icon { width: 16px; height: 16px; }
+.sidebar-new-session[aria-current="page"], .sidebar-new-general-chat[aria-current="page"] { border-color: var(--selected-border); background: var(--selected-background); color: var(--selected-text); }
 .sidebar-session-title-state { min-width: 0; flex: 0 1 auto; max-width: 132px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .session-title-status { color: var(--muted); font-size: 12px; }
 .sidebar-list { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 1px 8px 0; }
@@ -114,6 +114,8 @@ summary { cursor: pointer; padding: 3px; }
 .new-session-content { width: min(100%, 820px); margin-top: -20px; }
 .new-session-header { display: flex; align-items: flex-start; flex-direction: column; gap: 18px; margin-bottom: 28px; }
 .new-session-header h2 { margin: 0; font-size: 30px; line-height: 1.2; letter-spacing: -.035em; font-weight: 650; }
+.new-general-chat-description { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.new-general-chat-page .new-session-selectors select { min-height: 40px; }
 .new-session-back { min-height: 34px; padding: 5px 9px; border-color: transparent; background: transparent; color: var(--text-secondary); font-size: 13px; }
 .new-session-content > .resource-choice { margin-bottom: 7px; }
 .new-session-content > .resource-choice > label { max-width: 310px; margin: 0; font-size: 13px; }
@@ -814,7 +816,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 }
 /* Home V4 is scoped; other menu contexts retain their presentation. */
 .sidebar-pane.is-home { background: var(--surface-muted); gap: 12px; padding: 12px; }
-.is-home .sidebar-header-button, .is-home .sidebar-new-session { border-radius: 8px; }
+.is-home .sidebar-header-button, .is-home .sidebar-new-session, .is-home .sidebar-new-general-chat { border-radius: 8px; }
 .is-home .sidebar-new-session { background: var(--selected-background); color: var(--selected-text); border-color: var(--selected-border); }
 .is-home .sidebar-project-row, .is-home .sidebar-session-row { height: 34px; min-height: 34px; border-radius: 8px; color: var(--text); }
 .is-home .sidebar-session-row[aria-current="true"] { background: var(--selected-background); color: var(--selected-text); }

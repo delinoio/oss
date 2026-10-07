@@ -56,6 +56,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle and AI API Keys presentation](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
+- [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
 - [API account browser OAuth](cmds-delidev-account-oauth-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
@@ -150,7 +151,9 @@ Update the owning domain contract when behavior changes. Update this index only 
 
 ## Home navigation invariant
 
-Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
+The desktop provides a dedicated New general chat action and projectless start screen under the [desktop contract](apps-delidev-desktop-contract.md#dedicated-general-chat-creation). Reuse ordinary Agent Worker session execution, with independent connection-memory creation drafts and exact requests; no new protocol, migration or tool-free authority is introduced.
+
+Home (Sessions/New Session/New General Chat) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
 
 - Workspace storage and Codex forks share source ownership exclusion: forks require present storage at acceptance, claim and publication, and storage waits for unresolved fork jobs. Stored workspaces require explicit restoration before a fork.
 
@@ -201,3 +204,14 @@ AI Subscription browser login and naming compose across Go server ownership, gen
 The owner-approved [pre-release compatibility reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
 reserves database baseline 32, protocol 2 and Worker attach field 10 before its
 complete implementation. Reservations leave current runtime behavior unchanged.
+
+## Native Claude subscription prerequisite
+
+The owner-approved native Claude subscription extension spans the existing
+subscription, desktop, harness, protocol and storage owners. Reserve System 38,
+Worker 20 and the complete login-code/progress/native-identity declarations on
+main before implementation. Authentication remains in an original installed
+Claude Code account profile on the selected Runner Device; server metadata does
+not grant credentials, cross-device execution or cleanup authority. The
+reservation prerequisite activates no support and adds no migration. Follow
+[the subscription contract](cmds-delidev-subscription-contract.md#planned-native-claude-subscriptions).

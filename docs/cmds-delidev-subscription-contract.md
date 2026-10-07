@@ -2,7 +2,7 @@
 
 ## Failed subscription cleanup reservations
 
-Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 38`, the
+Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the
 `CleanupFailedSubscriptions` and `GetFailedSubscriptionCleanup` request/response
 messages, `FailedSubscriptionCleanupJob` and `FailedSubscriptionCleanupResult`,
 and the closed cleanup state/outcome/reason enums in `allocations.json`.
@@ -21,6 +21,27 @@ complete retained-reference checks and deletion receipts remain authoritative.
 Ordinary disconnected accounts and active logins remain outside the batch.
 Reservations introduce no active schemas, generated bindings, capability
 advertisement, native cleanup, configuration deletion or database migration.
+
+## Planned native Claude subscriptions
+
+The owner-approved Claude extension includes browser login, reauthentication,
+logout and session execution on an explicitly selected local or remote Runner
+Device. It reserves System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the protocol closure on main before
+implementation. These reservations do not change the currently unsupported
+Claude lifecycle or activate any capability.
+
+The planned original installed Claude Code 2.1.236 process owns authentication
+in one private account-specific `CLAUDE_CONFIG_DIR`. Existing personal logins,
+external token input, Console/API login, credential transfer between machines
+and Claude quota/credit operations remain excluded. Native credentials stay on
+their original Runner Device; the server retains only profile references,
+identity commitments, generations and original lifecycle/execution ownership.
+Single-use browser approval input reaches only that original native login.
+Login/status/logout and execution must retain independent native evidence;
+status alone cannot prove token refresh, process cleanup or deletion. This
+extension adds no database migration. Follow the protocol and structure
+contracts for main-first reservations and independent complete feature delivery.
 
 ## Scope
 

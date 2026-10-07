@@ -45,6 +45,7 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
     case "branch": return <svg {...common}><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10a4 4 0 0 0 4 4h6M18 17V9a4 4 0 0 0-4-4h-2"/></svg>;
     case "computer": return <svg {...common}><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></svg>;
     case "chat": return <svg {...common}><path d="M4 5h16v12H9l-5 4z"/><path d="M8 9h8M8 13h5"/></svg>;
+    case "chat-plus": return <svg {...common}><path d="M4 5h16v12H9l-5 4z"/><path d="M12 8v6M9 11h6"/></svg>;
     case "unknown": return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 4.3 1.2c-.9 1.1-2.1 1.2-2.1 3M12 17h.01"/></svg>;
     case "options": return <svg {...common}><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>;
     case "server": return <svg {...common}><rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/><path d="M7 7h.01M7 17h.01M12 7h5M12 17h5"/></svg>;
@@ -198,8 +199,8 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
+export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; newGeneralChat: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   useLocale();
@@ -223,7 +224,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   const newProjectButton = useRef<HTMLButtonElement>(null);
   const newProjectPointerInside = useRef(false);
   const newProjectFocused = useRef(false);
-  const sessionNavigation = surface === Surface.Sessions || surface === Surface.NewSession;
+  const sessionNavigation = surface === Surface.Sessions || surface === Surface.NewSession || surface === Surface.NewGeneralChat;
   const active = sessionNavigation && homeActive && visible && (!compact || drawerOpen);
   useEffect(() => {
     if (sessionNavigation) return;
@@ -373,6 +374,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       </header>
       <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>{copy("sidebar.closeNavigation_99904d")}</button>
       {sessionNavigation ? <button type="button" className="sidebar-new-session" aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />{copy("sidebar.newSession_cffdba")}</button> : null}
+      {sessionNavigation ? <button type="button" className="sidebar-new-general-chat" aria-current={surface === Surface.NewGeneralChat ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newGeneralChat(); setDrawerOpen(false); }}><Icon name="chat-plus" />{copy("sidebar.newGeneralChat")}</button> : null}
       <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? copy("sidebar.projectAndSessionNavigation_ccbca5") : copy("sidebar.menuNavigationAndFilters_b5a21d")}>
         <div hidden={!sessionNavigation}>
         <header className="sidebar-projects-heading"><h2>{copy("sidebar.projects_04e2a9")}</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label={copy("sidebar.newProject_a41eb2")} onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); openSettings(SettingsEntryDestination.NewProject); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />{copy("sidebar.includeArchived_b6c334")}</label></div> : null}</header>
