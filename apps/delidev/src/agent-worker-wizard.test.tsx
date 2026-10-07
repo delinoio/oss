@@ -165,6 +165,8 @@ it.each([{ capabilities: [] }, { capabilities: [SystemCapability.AGENT_WORKER_WI
   expect(screen.getByRole("radio", { checked: true, name: "Codex" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled(); expect(value.search).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: "New Agent Worker" })).toBeTruthy();
 });
 
 it("waits for server support and blocks confirmation while inactive", async () => {
