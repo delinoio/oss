@@ -87,6 +87,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [TypeScript client contract](packages-delidev-api-client-contract.md)
 - [Desktop client contract](apps-delidev-desktop-contract.md), including [Agent Worker core/optional presentation](apps-delidev-desktop-contract.md#agent-worker-core-and-optional-presentation)
+- [Session creation preferences (issue #1682)](apps-delidev-desktop-contract.md#session-creation-preferences-issue-1682)
 - [AI Subscription settings](apps-delidev-subscription-settings-contract.md)
 - [Worker workspace contract](cmds-delidev-workspace-contract.md)
 - [Session file explorer and Git comparisons](cmds-delidev-files-contract.md)
@@ -134,6 +135,8 @@ sessions and shared account profiles are preserved. The [storage contract](cmds-
 owns the lifecycle, snapshot-copy deletion integration and remaining database-restore/Sidechat limits.
 
 ## Cross-Domain Invariants
+- New session and New general chat keep independent accepted-request Agent Worker/Runner Device pairs per stable native server/device scope under the [session creation preferences contract](apps-delidev-desktop-contract.md#session-creation-preferences-issue-1682). The bounded, private native document stores only identity metadata outside server backups and configuration transfer. Exact-ID current resource eligibility, manual drafts, Local proof and original creation receipts retain their separate authority; preference failure or recovery never resends CreateSession. This feature adds no RPC, protocol allocation or database migration.
+
 - Token-first GitHub profile creation uses existing System capability 34 and two always-visible Classic/Fine grained creation shortcuts. Go permits an undeclared owner only for draft form preparation; confirmation, saved-profile forms and repository access retain explicit owner rules. Native opening stays closed, click-driven and guarded by the original Settings visit, with no new allocation or migration. See the [integration contract](cmds-delidev-integrations-contract.md#official-forms-and-local-browser-opening) and [desktop contract](apps-delidev-desktop-contract.md#github-profile-settings).
 
 - Confirmed desktop subscription/API-account configuration deletion closes its task dialog and refreshes the current category once, without a completion screen or cleanup-count read. Open tasks retain exact pending/uncertain identities for explicit retry. X/Escape/local Cancel disposes the task scope without hidden-operation UI or category locking; late results cannot continue a client deletion or reach a fresh task. Independent native browser cleanup and offline acknowledgments remain authoritative under the desktop, subscription Settings and browser contracts.

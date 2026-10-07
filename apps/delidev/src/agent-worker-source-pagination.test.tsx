@@ -38,7 +38,13 @@ async function modelStep(value: ReturnType<typeof fixture>) {
   fireEvent.click(source); fireEvent.click(await screen.findByRole("option", { name: "Fixture API" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ }));
   await screen.findByRole("checkbox", { name: "Select Fixture account" });
+  // Seeded display labels precede the independent exact account proof.
+  await waitFor(() => expect(value.client.getQueryCache().getAll().some(query => {
+    const resource = (query.state.data as { resource?: Resource } | undefined)?.resource;
+    return query.state.status === "success" && query.state.fetchStatus === "idle" && resource?.id === value.account.id && resource.revision === value.account.revision;
+  })).toBe(true));
   await act(async () => {});
+  await waitFor(() => expect(screen.getByRole("button", { name: "Next" }).matches(":disabled")).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   const input = await screen.findByRole("combobox", { name: "Model for Fixture API" });
   fireEvent.focus(input); await screen.findByRole("option", { name: /Fixture model 0/ });
@@ -71,4 +77,22 @@ it("fences an ignored-abort model selection after the original wizard becomes in
   value.rendered.rerender(value.view(false));
   await act(async () => resolve({ resource: value.models[0] }));
   expect(input.value).toBe(""); expect(value.save).not.toHaveBeenCalled();
+});
+
+
+it("does not treat the seeded account label as independent source proof", async () => {
+  const value = fixture();
+  let release!: (response: { resource: Resource }) => void;
+  value.get.mockImplementation(async request => request.id === value.account.id
+    ? await new Promise(resolve => { release = resolve; })
+    : { resource: [value.provider, ...value.models].find(row => row.id === request.id) });
+  const advancing = modelStep(value);
+  await screen.findByRole("checkbox", { name: "Select Fixture account" });
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "Model for Fixture API" })).toBeNull();
+  expect(value.search).not.toHaveBeenCalled();
+  await act(async () => release({ resource: value.account }));
+  expect(await advancing).toBe(screen.getByRole("combobox", { name: "Model for Fixture API" }));
+  expect(value.save).not.toHaveBeenCalled();
 });
