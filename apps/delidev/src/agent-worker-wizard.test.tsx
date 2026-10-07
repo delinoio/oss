@@ -959,3 +959,18 @@ it("focuses account validation and the exact later invalid weight in the display
   next(); expect(globalThis.document.activeElement).toBe(later);
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
+
+
+it("retains selected legacy account status after its independent read fails", async () => {
+  const value = fixture(); await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source"), `api:${value.provider.id}`);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
+  await waitFor(() => expect(value.get.mock.calls.some(([request]) => request.id === value.accounts[0].id)).toBe(true));
+  const selected = screen.getByRole("checkbox", { name: /Personal API/ }).closest("label")!;
+  expect(selected.textContent).toContain("Connected · Health: unverified");
+  expect(selected.textContent).toContain("Execution eligibility: Checked when execution starts");
+  value.get.mockImplementation(request => { if (request.id === value.accounts[0].id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: /Personal API/ }).closest("label")!.textContent).toContain("Connected · Health: unverified"));
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
