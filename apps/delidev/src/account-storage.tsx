@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { FailureCode, SystemQuery, isEntityId, type Resource } from "@delinoio/delidev-api-client";
@@ -99,22 +99,31 @@ function AccountStorageHeader({ active, result, report, listStale }: {
 }
 function AccountStorageNotice({ row, report, stale, loading }: { row: Resource; report: StorageReport; stale: boolean; loading: boolean }) {
   useLocale();
+  const disclosure = useRef<HTMLDetailsElement | null>(null), disclosureOpen = useRef(false);
+  // The keyed account owner survives a hidden successful observation. Retain
+  // the native open value even when its toggle event has not fired yet.
+  const retainDisclosure = useCallback((node: HTMLDetailsElement | null) => {
+    if (disclosure.current) disclosureOpen.current = disclosure.current.open;
+    disclosure.current = node;
+    if (node) node.open = disclosureOpen.current;
+  }, []);
   const value = document(row), connectionId = text(object(value.connection).id), record = report.records?.get(row.id);
   if (!record) return <div className="account-storage-notice"><p>{copy(loading ? "account-storage.loading" : "account-storage.missing")}</p></div>;
   if (record.connectionId !== connectionId) return <div className="account-storage-notice"><p>{copy("account-storage.superseded")}</p></div>;
   const chatGPT = value.type === "subscription" && value.subscription_service === "chatgpt";
   const deferredSubscription = chatGPT && record.state === AccountStorageState.Unavailable && record.code !== FailureCode.Unsupported;
+  if (record.state === AccountStorageState.Observed) return null;
   const failed = record.state === AccountStorageState.Failed;
   const subscription = value.type === "subscription" && record.state === AccountStorageState.Unavailable && record.code === FailureCode.Unsupported;
   return <div className="account-storage-notice" data-failed={failed || undefined}>
     <div className="account-storage-summary" role={failed ? "alert" : "status"}>
       {failed ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z" /><path d="M12 9v5m0 3h.01" /></svg> : null}
       <div><p><strong>{copy(subscription ? "account-storage.subscription" : deferredSubscription ? "account-storage.chatGPTUnavailable" : labels[record.state])}</strong></p>
-        {failed ? <p>{copy(chatGPT ? "account-storage.chatGPTRecovery" : "account-storage.recovery")}</p> : record.state === AccountStorageState.Observed ? <p>{copy(chatGPT ? "account-storage.chatGPTReadableLimit" : "account-storage.readableLimit")}</p> : null}
+        {failed ? <p>{copy(chatGPT ? "account-storage.chatGPTRecovery" : "account-storage.recovery")}</p> : null}
         {stale ? <p>{copy("account-storage.previous")}</p> : null}
       </div>
     </div>
-    <details><summary>{copy("ui.technicalDetails")}</summary>
+    <details ref={retainDisclosure}><summary>{copy("ui.technicalDetails")}</summary>
       <dl><dt>{copy("account-storage.classification")}</dt><dd>{record.state}</dd><dt>{copy("account-storage.observed")}</dt><dd>{formatTimestamp(report.observedAt!)}</dd>{record.code ? <><dt>{copy("account-storage.code")}</dt><dd>{record.code}</dd></> : null}{record.connectionId ? <><dt>{copy("account-storage.connection")}</dt><dd>{record.connectionId}</dd></> : null}</dl>
       {record.guidance ? <p>{record.guidance}</p> : null}
     </details>
