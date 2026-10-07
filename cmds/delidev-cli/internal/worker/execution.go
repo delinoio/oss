@@ -40,6 +40,16 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
+	if input.Version == 4 {
+		config.startup = newExecutionStartupAttempt(config, owner, input)
+		defer func() { returned = config.startup.finish(returned) }()
+		var err error
+		input.Installation, err = resolveExecutionStartup(ctx, config, owner, input)
+		if err != nil {
+			return nil, err
+		}
+		config.startup.observation.ExecutableSHA256 = input.Installation.ExecutableSHA256
+	}
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
@@ -69,7 +79,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Configuration.Harness == domain.GrokBuild {
 		return executeGrokSession(ctx, config, owner, input, logger)
 	}
-	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) {
+	if input.Configuration.Harness != domain.Codex || (input.Version != 4 && !domain.CodexVersionAllowed(input.Installation.Version)) {
 		return nil, domain.Fail(domain.Unsupported, "This native execution profile is not implemented.", "Select a verified installed Codex profile; no fallback harness is used.")
 	}
 	var preparation workspace.PrepareRequest
@@ -84,7 +94,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
-	if c := input.Continuation; c != nil {
+	if retry := input.Retry; retry != nil {
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest)
+	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
 			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
@@ -357,6 +369,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// may authorize removal. A definite failed Open already proves that closure;
 	// recovery-required startup must retain its authentication and lease.
 	managedPreNativeCleanup = false
+	config.startup.setPhase(domain.StartupInitialize)
 	client, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {
 		managedPreNativeCleanup = domain.SafeError(err).Code != domain.RecoveryRequired
@@ -390,6 +403,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		unregister := config.observations.register(input.AccountID, client, managed)
 		defer unregister()
 	}
+	input.Installation.Version = client.Version()
+	publisher.nativeVersion = client.Version()
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
@@ -420,6 +435,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	logger.InfoContext(ctx, "native_execution_thread_bound")
+	if err := config.startup.ready(ctx, client.Version()); err != nil {
+		return nil, err
+	}
+	config.startup.claimInput()
 	turn, err := client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)
 	if err != nil {
 		return nil, err
@@ -430,6 +449,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if !cancelBeforeAcceptance() {
 		return nil, domain.SafeError(context.Canceled)
 	}
+	config.startup.acknowledgeInput()
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
 	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
 	finishApprovals := startApprovalResponseController(ctx, nativeCtx, cancelNative, config.approvalControls, mapper, client)

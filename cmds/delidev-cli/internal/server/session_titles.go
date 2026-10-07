@@ -43,7 +43,7 @@ func titleProfileAvailable(tx *store.Tx, input domain.ExecutionJobInput) (domain
 	if err != nil {
 		return domain.Provider{}, false, err
 	}
-	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || !input.Installation.ProtocolVerified || input.Installation.Protocol == nil || input.Installation.Protocol.State != domain.ProtocolVerified || input.Installation.Protocol.Protocol != domain.CodexAppServer || !hasTitleCapability(machine.WorkerCapabilities) {
+	if input.Configuration.Harness != domain.Codex || (input.Version != 4 && (!domain.CodexVersionAllowed(input.Installation.Version) || !input.Installation.ProtocolVerified || input.Installation.Protocol == nil || input.Installation.Protocol.State != domain.ProtocolVerified || input.Installation.Protocol.Protocol != domain.CodexAppServer)) || !hasTitleCapability(machine.WorkerCapabilities) {
 		return domain.Provider{}, false, nil
 	}
 	record, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
@@ -121,7 +121,7 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 		session.TitleState, session.TitleReason = domain.TitleSkipped, domain.TitleReasonAuthorityLost
 		return nil
 	}
-	if domain.Text(input.Installation.ResolvedPath, "native executable", 4096, true) != nil {
+	if input.Version != 4 && domain.Text(input.Installation.ResolvedPath, "native executable", 4096, true) != nil {
 		session.TitleState, session.TitleReason = domain.TitleUnsupported, domain.TitleReasonUnsupportedAgent
 		return nil
 	}
@@ -135,6 +135,15 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 		ProviderID: input.Configuration.ProviderID, ProviderProtocol: provider.Protocol, ModelID: input.Configuration.ModelID,
 		NativeModel: input.Configuration.NativeModel, Effort: input.Configuration.Effort,
 		ServiceTier: input.Configuration.Options.ServiceTier, Prompt: firstInput.Prompt,
+	}
+	if input.Version == 4 {
+		if session.Startup == nil || session.Startup.JobID != sourceRecord.ID || session.Startup.Ready == nil {
+			session.TitleState, session.TitleReason = domain.TitleUnsupported, domain.TitleReasonUnsupportedAgent
+			return nil
+		}
+		titleInput.Version = 2
+		titleInput.Startup = &domain.ExecutionStartupSelection{Harness: domain.Codex, ExplicitPath: input.Startup.ExplicitPath, ExecutableSHA256: session.Startup.Ready.ExecutableSHA256}
+		titleInput.NativeVersion = session.Startup.Ready.NativeVersion
 	}
 	if err := titleInput.Validate(); err != nil {
 		session.TitleState, session.TitleReason = domain.TitleUnsupported, domain.TitleReasonUnsupportedAgent

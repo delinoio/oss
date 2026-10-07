@@ -65,6 +65,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
+		if input.Version == 4 && session.Startup != nil && session.Startup.JobID == jobRecord.ID && session.Startup.Ready != nil {
+			input.Installation.Version = session.Startup.Ready.NativeVersion
+		}
 		if !session.OwnsExecution(input) || session.ActiveExecutionID != input.ExecutionID {
 			return nil, executionEventConflict()
 		}

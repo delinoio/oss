@@ -104,6 +104,7 @@ type SessionReceipt struct {
 // providers/context and original server ownership. Discovery cannot create one
 // or expose session mutations. Durable Worker/account integration is separate.
 type sessionAPI struct {
+	nativeVersion          string
 	forkAttempt            *nativeForkAttempt
 	forkOrigin             *nativeCheckpointFork
 	forkSelectionPending   bool

@@ -93,9 +93,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 			config.Process.Logger.WarnContext(ctx, "Codex native handshake failed", "owner_id", config.Process.OwnerID, "phase", domain.CodexErrorDiagnostic(returned).Phase, "version", domain.CodexErrorDiagnostic(returned).DetectedVersion, "minimum_version", domain.CodexMinimumVersion, "code", domain.CodexErrorDiagnostic(returned).Code, "recovery_code", domain.SafeError(returned).Code, "correlation_id", config.Process.OwnerID)
 		}
 	}()
-	if !domain.CodexVersionAllowed(config.Version) {
-		return nil, domain.CodexVersionFailure(config.Version)
-	}
+
 	if config.Mode == "" {
 		config.Mode = ProbeProtocol
 	}
@@ -172,8 +170,13 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		return nil, incompatible()
 	}
 	actualHome, err := filepath.EvalSymlinks(initialized.CodexHome)
-	if err != nil || actualHome != home || !strings.HasPrefix(initialized.UserAgent, "delidev/"+config.Version+" ") {
+	if err != nil || actualHome != home || !strings.HasPrefix(initialized.UserAgent, "delidev/") {
 		return nil, incompatible()
+	}
+	observedVersion, _, _ := strings.Cut(strings.TrimPrefix(initialized.UserAgent, "delidev/"), " ")
+	config.Version = ""
+	if domain.ValidNativeVersionMetadata(observedVersion) {
+		config.Version = observedVersion
 	}
 	platform, family := runtime.GOOS, "unix"
 	if platform == "darwin" {

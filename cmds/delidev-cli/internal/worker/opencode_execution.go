@@ -31,7 +31,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		}
 	}()
 
-	if input.Installation.Version != opencode.SupportedVersion {
+	if input.Version != 4 && input.Installation.Version != opencode.SupportedVersion {
 		return nil, domain.Fail(domain.Unsupported, "This OpenCode execution requires a separately verified continuation profile.", "Retain the original native history; do not start a replacement input.")
 	}
 	requested, err := openCodeExecutionSettings(input.Configuration, input.Input.Mode, "DeliDev session")
@@ -50,7 +50,9 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
-	if c := input.Continuation; c != nil {
+	if retry := input.Retry; retry != nil {
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest)
+	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
 			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
@@ -207,6 +209,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}()
 	nativeConfig.Claim = binding.Claim
 	phase = "native-restore"
+	config.startup.setPhase(domain.StartupInitialize)
 	var api *opencode.OwnedAPI
 	if forkSeed != nil {
 		previousHome := filepath.Join(runtimeRoot, string(input.Fork.RuntimeID), "native")
@@ -264,6 +267,12 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	// StartText's context owns the original subscription, so it cannot be the
 	// targeted job context that later wakes the event reader to request Stop.
+	if err := config.startup.ready(ctx, api.Version()); err != nil {
+		return nil, err
+	}
+	input.Installation.Version = api.Version()
+	publisher.nativeVersion = api.Version()
+	config.startup.claimInput()
 	if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
 		return nil, err
 	}
@@ -275,6 +284,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	if !cancelBeforeAcceptance() {
 		return nil, domain.SafeError(context.Canceled)
 	}
+	config.startup.acknowledgeInput()
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
 	mapper, err := OpenOpenCodeEventPublisher(binding, api)
 	if err != nil {

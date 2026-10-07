@@ -176,11 +176,11 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIProtocol) []apiproxy.Operation {
 	switch input.Configuration.Harness {
 	case domain.Codex:
-		if domain.CodexVersionAllowed(input.Installation.Version) && protocol == domain.OpenAIResponses {
+		if (input.Version == 4 || domain.CodexVersionAllowed(input.Installation.Version)) && protocol == domain.OpenAIResponses {
 			return []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
 		}
 	case domain.ClaudeCode:
-		if input.Validate() != nil || input.Installation.Version != domain.ClaudeProtocolVersion || protocol != domain.AnthropicMessages {
+		if input.Validate() != nil || (input.Version != 4 && input.Installation.Version != domain.ClaudeProtocolVersion) || protocol != domain.AnthropicMessages {
 			return nil
 		}
 		if _, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode); err == nil {
@@ -189,7 +189,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 			return []apiproxy.Operation{apiproxy.MessageCreate}
 		}
 	case domain.GrokBuild:
-		if input.Validate() != nil || input.Version != 1 || input.Continuation != nil || input.Installation.Version != domain.GrokProtocolVersion || protocol != domain.OpenAIChat {
+		if input.Validate() != nil || input.Continuation != nil || input.Fork != nil || (input.Version != 4 && input.Installation.Version != domain.GrokProtocolVersion) || protocol != domain.OpenAIChat {
 			return nil
 		}
 		if _, err := input.Configuration.GrokModeForInput(input.Input.Mode); err == nil {
@@ -197,8 +197,8 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 		}
 	case domain.OpenCode:
 		o := input.Configuration.Options
-		validGeneration := input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
-		if !validGeneration || input.Installation.Version != domain.OpenCodeProtocolVersion || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+		validGeneration := input.Version == 4 && input.Validate() == nil || input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
+		if !validGeneration || (input.Version != 4 && input.Installation.Version != domain.OpenCodeProtocolVersion) || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 			return nil
 		}
 		if _, err := o.OpenCodePrimaryForInput(input.Input.Mode); err == nil {
@@ -227,6 +227,9 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		grant, err = tx.ExecutionGrant(digest[:])
 		if err == nil {
 			scope, err = a.scope(tx, grant)
+		}
+		if err == nil {
+			err = requireExecutionStartupReady(tx, grant.JobID)
 		}
 		return err
 	})
@@ -675,7 +678,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 				var supported bool
 				if job.Type == domain.ExecuteSessionJob {
 					var input domain.ExecutionJobInput
-					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && domain.CodexVersionAllowed(input.Installation.Version)
+					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && (input.Version == 4 || domain.CodexVersionAllowed(input.Installation.Version))
 				} else if job.Type == domain.CompactSessionJob {
 					var input domain.SessionCompactionInput
 					supported = domain.DecodeCompactionInput(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex

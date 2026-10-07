@@ -113,7 +113,7 @@ func TestOpenCodeCheckpointRejectsNoncanonicalAndContradictoryMetadata(t *testin
 			}
 			switch mode {
 			case "version":
-				value.NativeVersion = "foreign"
+				value.NativeVersion = "invalid/version"
 			case "history":
 				value.History.Messages[0].Digest = strings.Repeat("0", 64)
 			case "part":

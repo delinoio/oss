@@ -90,7 +90,7 @@ type ClaudeRecoveryReference struct {
 }
 
 func (r ClaudeRecoveryReference) Validate() error {
-	if (r.ClaimVersion != 1 && r.ClaimVersion != 2) || r.Version != ClaudeProtocolVersion || UniqueIDs([]ID{r.BindingRequestID, r.InputRequestID}) != nil || Text(r.Executable, "native executable", 4096, true) != nil || Text(r.Model, "native model", 1024, true) != nil || r.Effort != "" && !validClaudeEffort(r.Effort) || !r.Permission.Valid() {
+	if (r.ClaimVersion != 1 && r.ClaimVersion != 2) || (r.Version != "" && !ValidNativeVersionMetadata(r.Version)) || UniqueIDs([]ID{r.BindingRequestID, r.InputRequestID}) != nil || Text(r.Executable, "native executable", 4096, true) != nil || Text(r.Model, "native model", 1024, true) != nil || r.Effort != "" && !validClaudeEffort(r.Effort) || !r.Permission.Valid() {
 		return ExecutionRecoveryUncertain()
 	}
 	digest, err := hex.DecodeString(r.InstructionsDigest)

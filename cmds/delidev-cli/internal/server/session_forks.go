@@ -65,7 +65,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	}
 	input.Version, input.SourceSessionID, input.SourceRevision = 1, id, r.Revision
 	if input.SourceAssignment.Configuration.Harness == domain.OpenCode {
-		if session.Workspace != domain.GeneralChat || machine.OS == "windows" || (machine.OS != "darwin" && machine.OS != "linux") || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.SourceAssignment.Installation.Version != domain.OpenCodeProtocolVersion {
+		if session.Workspace != domain.GeneralChat || machine.OS == "windows" || (machine.OS != "darwin" && machine.OS != "linux") || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.SourceAssignment.Version != 4 && !domain.ValidNativeVersionMetadata(input.SourceAssignment.Installation.Version) {
 			return r, session, input, domain.Fail(domain.Unsupported, "This Runner Device does not support OpenCode General Chat Fork.", "Update the original Unix Runner Device and keep the completed source session.")
 		}
 		if err := validateOpenCodeForkTranscript(tx, id, input.Completion.NativeThreadID); err != nil {

@@ -11,24 +11,26 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
-	Fork                *ForkExecution         `json:"fork,omitempty"`
-	Version             uint32                 `json:"version"`
-	SessionID           ID                     `json:"session_id"`
-	MachineID           ID                     `json:"machine_id"`
-	ExecutionID         ID                     `json:"execution_id"`
-	InputID             ID                     `json:"input_id"`
-	ThreadRequestID     ID                     `json:"thread_request_id"`
-	TurnRequestID       ID                     `json:"turn_request_id"`
-	Configuration       ExecutionConfiguration `json:"configuration"`
-	ConfigurationDigest string                 `json:"configuration_digest"`
-	AccountID           ID                     `json:"account_id"`
-	ConnectionID        ID                     `json:"connection_id"`
-	Input               SessionInput           `json:"input"`
-	Installation        Installation           `json:"installation"`
-	Preparation         json.RawMessage        `json:"preparation"`
-	Manifest            json.RawMessage        `json:"manifest"`
-	Remediation         *PRFixExecution        `json:"remediation,omitempty"`
-	Continuation        *ExecutionContinuation `json:"continuation,omitempty"`
+	Retry               *ExecutionStartupRetry     `json:"retry,omitempty"`
+	Startup             *ExecutionStartupSelection `json:"startup,omitempty"`
+	Fork                *ForkExecution             `json:"fork,omitempty"`
+	Version             uint32                     `json:"version"`
+	SessionID           ID                         `json:"session_id"`
+	MachineID           ID                         `json:"machine_id"`
+	ExecutionID         ID                         `json:"execution_id"`
+	InputID             ID                         `json:"input_id"`
+	ThreadRequestID     ID                         `json:"thread_request_id"`
+	TurnRequestID       ID                         `json:"turn_request_id"`
+	Configuration       ExecutionConfiguration     `json:"configuration"`
+	ConfigurationDigest string                     `json:"configuration_digest"`
+	AccountID           ID                         `json:"account_id"`
+	ConnectionID        ID                         `json:"connection_id"`
+	Input               SessionInput               `json:"input"`
+	Installation        Installation               `json:"installation"`
+	Preparation         json.RawMessage            `json:"preparation"`
+	Manifest            json.RawMessage            `json:"manifest"`
+	Remediation         *PRFixExecution            `json:"remediation,omitempty"`
+	Continuation        *ExecutionContinuation     `json:"continuation,omitempty"`
 }
 
 // ExecutionCompletion proves only a fully published native terminal boundary
@@ -88,7 +90,7 @@ func (i ExecutionJobInput) Validate() error {
 	if i.Remediation != nil && (i.Remediation.Validate() != nil || i.Input.Mode != ExecuteMode || i.Configuration.Harness != Codex || (i.Configuration.Options.Permission != PermissionWorkspaceWrite && i.Configuration.Options.Permission != PermissionFullAccess)) {
 		return Fail(Unsupported, "This assignment lacks the verified manual Git profile.", "Select the Codex execution profile with explicit write permission for manual PR fixes.")
 	}
-	if !((i.Version == 1 && i.Continuation == nil && i.Fork == nil) || (i.Version == 2 && i.Continuation != nil && i.Fork == nil) || (i.Version == 3 && i.Continuation == nil && i.Fork != nil)) || i.Installation.Harness != i.Configuration.Harness {
+	if !((i.Version == 4 && i.Startup != nil && !(i.Continuation != nil && i.Fork != nil)) || (i.Version == 1 && i.Continuation == nil && i.Fork == nil) || (i.Version == 2 && i.Continuation != nil && i.Fork == nil) || (i.Version == 3 && i.Continuation == nil && i.Fork != nil)) || (i.Version != 4 && i.Installation.Harness != i.Configuration.Harness) {
 		return Fail(Unsupported, "The execution assignment profile is incompatible.", "Use a matching server and Worker native profile.")
 	}
 	for _, id := range []ID{i.SessionID, i.MachineID, i.ExecutionID, i.InputID, i.ThreadRequestID, i.TurnRequestID, i.AccountID, i.ConnectionID} {
@@ -99,11 +101,23 @@ func (i ExecutionJobInput) Validate() error {
 	if err := i.Configuration.Validate(); err != nil {
 		return err
 	}
-	if !slices.ContainsFunc(i.Configuration.Accounts, func(account WeightedAccount) bool { return account.ID == i.AccountID }) || i.Installation.State != InstallationDetected || !i.Installation.ProtocolVerified {
+	if !slices.ContainsFunc(i.Configuration.Accounts, func(account WeightedAccount) bool { return account.ID == i.AccountID }) {
 		return Fail(Unsupported, "The execution lacks matching account or native installation evidence.", "Revalidate the accepted configuration on its owning Worker.")
 	}
-	if err := i.Installation.validateProtocol(true); err != nil {
-		return err
+	if i.Retry != nil && (i.Version != 4 || UniqueIDs([]ID{i.Retry.JobID, i.Retry.ExecutionID, i.ExecutionID}) != nil || i.Retry.InputID.Validate() != nil || i.Retry.InputID == i.InputID || i.Remediation != nil || i.Fork != nil) {
+		return StartupRejectionUncertain()
+	}
+	if i.Version == 4 {
+		if i.Startup.Validate(i.Configuration.Harness) != nil {
+			return Fail(InvalidArgument, "Invalid execution startup selection.", "Preserve the accepted harness and executable selection.")
+		}
+	} else {
+		if i.Startup != nil || i.Installation.State != InstallationDetected || !i.Installation.ProtocolVerified {
+			return Fail(Unsupported, "The historical assignment lacks native evidence.", "Preserve the original assignment.")
+		}
+		if err := i.Installation.validateProtocol(true); err != nil {
+			return err
+		}
 	}
 	digest, err := i.Configuration.Digest()
 	if err != nil || digest != i.ConfigurationDigest {

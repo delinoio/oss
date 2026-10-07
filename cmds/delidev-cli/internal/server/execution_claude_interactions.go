@@ -7,7 +7,7 @@ import (
 
 func validateClaudeInteractionTool(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
 	r := event.Interaction.Claude
-	if input.Configuration.Harness != domain.ClaudeCode || input.Installation.Version != r.Version {
+	if input.Configuration.Harness != domain.ClaudeCode || (input.Version != 4 && input.Installation.Version != r.Version) {
 		return executionEventConflict()
 	}
 	row, err := tx.Get(domain.MessageKind, r.Tool.ID)

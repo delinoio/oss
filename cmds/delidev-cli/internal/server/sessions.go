@@ -489,6 +489,10 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			if err != nil {
 				return nil, err
 			}
+			if value.Startup != nil && value.Startup.Failure != nil && value.Startup.Failure.State == domain.StartupFailed {
+				_, err := queueExecutionStartupRetry(tx, r, value)
+				return sessionReceipt{SessionID: r.ID}, err
+			}
 			if value.StartupRejection != nil {
 				return nil, domain.Fail(domain.Conflict, "This input was rejected before native startup and cannot be resumed.", "Preserve this attempt and create a fresh authorized PR fix after resolving its rejection.")
 			}

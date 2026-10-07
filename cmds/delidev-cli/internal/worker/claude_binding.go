@@ -85,7 +85,7 @@ func OpenClaudeBindingPublisher(p *ExecutionPublisher) (*ClaudeBindingPublisher,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, state := p.input, p.state
-	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.ClaudeCode || i.Installation.Version != claude.SupportedVersion || state.JobID != p.job || i.ExecutionID != p.execution || state.InstanceID != p.config.Instance || state.ServerID != p.config.Credential.ServerID || state.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID || i.ThreadRequestID == i.TurnRequestID {
+	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.ClaudeCode || (i.Version != 4 && i.Installation.Version != claude.SupportedVersion) || state.JobID != p.job || i.ExecutionID != p.execution || state.InstanceID != p.config.Instance || state.ServerID != p.config.Credential.ServerID || state.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID || i.ThreadRequestID == i.TurnRequestID {
 		return nil, publicationUncertain()
 	}
 	if _, _, err := claudeExecutionSettings(i.Configuration, i.Input.Mode); err != nil {

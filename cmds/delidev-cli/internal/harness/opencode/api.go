@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -242,6 +243,11 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 	if validateHealth(health) != nil {
 		return nil, incompatible()
 	}
+	var healthMetadata struct {
+		Version string `json:"version"`
+	}
+	_ = json.Unmarshal(health, &healthMetadata)
+	api.nativeVersion = healthMetadata.Version
 	phase = configPhase
 	global, err := read("/global/config", password, 200)
 	if err != nil {

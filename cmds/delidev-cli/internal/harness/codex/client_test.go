@@ -153,7 +153,7 @@ func TestCodexNativeHandshakeAndCleanup(t *testing.T) {
 	}
 }
 func TestCodexRejectsChangedNativeRuntime(t *testing.T) {
-	for _, mode := range []string{"home", "platform", "version", "unknown-field", "existing-thread"} {
+	for _, mode := range []string{"home", "platform", "unknown-field", "existing-thread"} {
 		t.Run(mode, func(t *testing.T) {
 			config := fixtureConfig(t, mode)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -168,12 +168,10 @@ func TestCodexRejectsChangedNativeRuntime(t *testing.T) {
 		})
 	}
 }
-func TestCodexUnknownVersionAndForeignHomeNeverLaunch(t *testing.T) {
-	for _, change := range []string{"version", "home", "duplicate"} {
+func TestCodexForeignHomeNeverLaunch(t *testing.T) {
+	for _, change := range []string{"home", "duplicate"} {
 		config := fixtureConfig(t, "ready")
 		switch change {
-		case "version":
-			config.Version = "0.150.9"
 		case "home":
 			config.Process.Env = []string{"CODEX_HOME=" + t.TempDir()}
 		case "duplicate":
@@ -197,7 +195,7 @@ func fixtureVersion() string {
 }
 
 func TestCodexNewerVersionsAttemptNativeProtocol(t *testing.T) {
-	for _, version := range []string{"0.151.0", "0.159.2", "1.0.0", "1.0.0-beta.1+build.7"} {
+	for _, version := range []string{"0.150.9", "0.151.0-beta.1", "0.151.0", "0.159.2", "1.0.0", "1.0.0-beta.1+build.7"} {
 		t.Run(version, func(t *testing.T) {
 			cfg := fixtureConfig(t, "ready")
 			cfg.Version = version

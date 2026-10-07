@@ -98,7 +98,7 @@ func TestInitializeRejectsForeignOrUninspectedFacts(t *testing.T) {
 			meta := result["_meta"].(map[string]any)
 			switch change {
 			case "version":
-				meta["agentVersion"] = "1.0.42"
+				meta["agentVersion"] = "invalid/version"
 			case "protocol":
 				result["protocolVersion"] = 2
 			case "cwd":

@@ -321,3 +321,10 @@ func (a *OwnedAPI) Close(ctx context.Context) error {
 	}
 	return err
 }
+
+func (a *OwnedAPI) Version() string {
+	if !a.valid() {
+		return ""
+	}
+	return a.session.nativeVersion
+}

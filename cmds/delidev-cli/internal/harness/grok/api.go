@@ -49,6 +49,7 @@ type apiProfile struct {
 }
 
 type apiConnection struct {
+	nativeVersion   string
 	wire            *nativewire.Connection
 	profile         apiProfile
 	workspace       string
@@ -273,6 +274,8 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if response.ErrorCode != nil || validateInitializeResult(response.Result, prepared.Cwd, &profile) != nil {
 		return nil, incompatible()
 	}
+	var nativeMetadata initializeResult
+	_ = decode(response.Result, &nativeMetadata)
 	phase = authenticatePhase
 	response, err = connection.Call(ready, domain.NewID(), "authenticate", struct {
 		Method string `json:"methodId"`
@@ -288,7 +291,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if response.ErrorCode != nil || decode(response.Result, &struct{}{}) != nil || profile.checkInitialized() != nil {
 		return nil, incompatible()
 	}
-	return &apiConnection{wire: connection, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1)}, nil
+	return &apiConnection{nativeVersion: nativeMetadata.Meta.Version, wire: connection, profile: profile, workspace: config.Workspace, inspection: inspection, gate: make(chan struct{}, 1)}, nil
 }
 
 func (a *apiConnection) Close() error { return a.wire.Close() }
