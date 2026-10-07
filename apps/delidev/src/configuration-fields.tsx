@@ -1,7 +1,7 @@
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { defaultRemediationPolicy, RemediationDetailPresentation, RemediationPolicyFields } from "./remediation-policy";
-import { useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { AgentConfiguration, AgentReadProblem } from "./agent-configuration";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { createQueryOptions, useQuery, useTransport } from "@connectrpc/connect-query";
@@ -84,11 +84,13 @@ function AgentPermissions({ harness, options, change }: { harness: unknown; opti
 function Check({ label, value, change }: { label: string; value: unknown; change: (value: boolean) => void }) {
   useLocale(); return <label className="checkbox"><input type="checkbox" checked={value === true} onChange={(event) => change(event.target.checked)} />{label}</label>; }
 
+export const ResourceSelectionPending = createContext<((identity: string, pending: boolean) => void) | undefined>(undefined);
+
 // Selectors accumulate bounded display projections. Exact resources are read
 // only for the retained selection and a deliberate selection callback.
 export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string }) {
   useLocale();
-  const reportRead = useContext(AgentReadProblem), readIdentity = useId();
+  const reportRead = useContext(AgentReadProblem), reportPending = useContext(ResourceSelectionPending), readIdentity = useId();
   const transport = useTransport(), client = useQueryClient(), generation = useRef(0);
   const latestChange = useRef(change); latestChange.current = change;
   const [selectionBusy, setSelectionBusy] = useState(false), [selectionError, setSelectionError] = useState<unknown>();
@@ -134,11 +136,13 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
       ? copy("configuration-fields.choices.connection") : copy("configuration-fields.choices.request");
   const readProblem = Boolean(failure || result.error || selectedProviderOff || active && needsProviderCapability && inventory.data && !ready);
   useEffect(() => { reportRead?.(readIdentity, readProblem); return () => reportRead?.(readIdentity, false); }, [readIdentity, readProblem, reportRead]);
-  useLayoutEffect(() => { generation.current++; setSelectionBusy(false); setSelectionError(undefined); return () => { generation.current++; }; }, [active, disabled, kind, allowedKey, transport]);
+  useLayoutEffect(() => { generation.current++; reportPending?.(readIdentity, false); setSelectionBusy(false); setSelectionError(undefined); return () => { generation.current++; reportPending?.(readIdentity, false); }; }, [active, disabled, kind, allowedKey, transport, reportPending, readIdentity]);
+  // Release only after the accepted callback and its parent draft update commit.
+  useLayoutEffect(() => { if (!selectionBusy) reportPending?.(readIdentity, false); });
   const select = async (id: string) => {
     if (!active || disabled || selectionBusy) return;
     if (!id) { latestChange.current(""); return; }
-    const original = generation.current; setSelectionBusy(true); setSelectionError(undefined);
+    const original = generation.current; reportPending?.(readIdentity, true); setSelectionBusy(true); setSelectionError(undefined);
     try {
       const response = await client.fetchQuery({ ...createQueryOptions(ResourceQuery.getResource, { kind, id }, { transport }), staleTime: 0, retry: false });
       if (generation.current !== original) return;
