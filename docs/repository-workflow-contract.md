@@ -1,5 +1,21 @@
 # Repository Workflow Contract
 
+## GitHub issue language
+
+Write GitHub issue titles and explanatory body text in English, including new
+issues and later edits. This rule applies to every project in this repository.
+
+Preserve exact code, commands, paths, diagnostic messages, search queries, direct
+quotations and localized UI strings when their original text is required. Explain
+non-English evidence in English so readers can understand it without translating
+the surrounding prose.
+
+When translating an existing issue, preserve its requirements, conditions,
+uncertainty, validation status, references, attachments and open or closed state.
+Translate the prose without treating the translation as implementation or feature
+acceptance. Changes to issue content are made on GitHub; the repository PR records
+the language policy and the translation scope.
+
 ## DeliDev known model catalog
 
 `.github/workflows/delidev-known-models.yml` runs daily at 04:17 Asia/Seoul
