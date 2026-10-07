@@ -22,6 +22,8 @@ Repositories use required remote URLs with optional Local folder connections und
 - `protos/delidev/v1`: versioned Connect schema; `protos/gen/go/delidev/v1`: generated Go bindings.
 - `packages/delidev-api-client`: generated TypeScript client and bounded transport/synchronization helpers.
 
+The [desktop File menu](apps-delidev-desktop-contract.md#native-tray-and-menu-bar) opens a new product window with Command+T on macOS and Control+T on Windows/Linux through one native app-level handler. Close Window retains Command/Control+W and existing Local/Saved window ownership.
+
 New schedule creation adds frequency presets and a creation-only three-section layout under the [desktop contract](apps-delidev-desktop-contract.md#new-schedule-creation-issue-1152), while strict schedule definitions and server recurrence authority remain unchanged.
 
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.
