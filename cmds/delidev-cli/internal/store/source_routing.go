@@ -25,7 +25,7 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		return result, err
 	}
 	if agent.ReconfigurationRequired {
-		return result, domain.SubscriptionReconfigurationRequired()
+		return result, domain.AgentReconfigurationRequired()
 	}
 	record, state, err := t.Routing(agentID)
 	if err != nil {

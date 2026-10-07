@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// AccountServiceChangeAccountApiFormatProcedure is the fully-qualified name of the AccountService's
+	// ChangeAccountApiFormat RPC.
+	AccountServiceChangeAccountApiFormatProcedure = "/delidev.v1.AccountService/ChangeAccountApiFormat"
 	// AccountServiceConnectAccountProcedure is the fully-qualified name of the AccountService's
 	// ConnectAccount RPC.
 	AccountServiceConnectAccountProcedure = "/delidev.v1.AccountService/ConnectAccount"
@@ -61,6 +64,7 @@ const (
 
 // AccountServiceClient is a client for the delidev.v1.AccountService service.
 type AccountServiceClient interface {
+	ChangeAccountApiFormat(context.Context, *connect.Request[v1.ChangeAccountApiFormatRequest]) (*connect.Response[v1.ChangeAccountApiFormatResponse], error)
 	ConnectAccount(context.Context, *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error)
 	DisconnectAccount(context.Context, *connect.Request[v1.DisconnectAccountRequest]) (*connect.Response[v1.DisconnectAccountResponse], error)
 	GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error)
@@ -82,6 +86,12 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	accountServiceMethods := v1.File_delidev_v1_account_proto.Services().ByName("AccountService").Methods()
 	return &accountServiceClient{
+		changeAccountApiFormat: connect.NewClient[v1.ChangeAccountApiFormatRequest, v1.ChangeAccountApiFormatResponse](
+			httpClient,
+			baseURL+AccountServiceChangeAccountApiFormatProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("ChangeAccountApiFormat")),
+			connect.WithClientOptions(opts...),
+		),
 		connectAccount: connect.NewClient[v1.ConnectAccountRequest, v1.ConnectAccountResponse](
 			httpClient,
 			baseURL+AccountServiceConnectAccountProcedure,
@@ -135,14 +145,20 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // accountServiceClient implements AccountServiceClient.
 type accountServiceClient struct {
-	connectAccount        *connect.Client[v1.ConnectAccountRequest, v1.ConnectAccountResponse]
-	disconnectAccount     *connect.Client[v1.DisconnectAccountRequest, v1.DisconnectAccountResponse]
-	getAccountStatus      *connect.Client[v1.GetAccountStatusRequest, v1.GetAccountStatusResponse]
-	validateAccount       *connect.Client[v1.ValidateAccountRequest, v1.ValidateAccountResponse]
-	startAccountOAuth     *connect.Client[v1.StartAccountOAuthRequest, v1.StartAccountOAuthResponse]
-	completeAccountOAuth  *connect.Client[v1.CompleteAccountOAuthRequest, v1.CompleteAccountOAuthResponse]
-	cancelAccountOAuth    *connect.Client[v1.CancelAccountOAuthRequest, v1.CancelAccountOAuthResponse]
-	getAccountOAuthStatus *connect.Client[v1.GetAccountOAuthStatusRequest, v1.GetAccountOAuthStatusResponse]
+	changeAccountApiFormat *connect.Client[v1.ChangeAccountApiFormatRequest, v1.ChangeAccountApiFormatResponse]
+	connectAccount         *connect.Client[v1.ConnectAccountRequest, v1.ConnectAccountResponse]
+	disconnectAccount      *connect.Client[v1.DisconnectAccountRequest, v1.DisconnectAccountResponse]
+	getAccountStatus       *connect.Client[v1.GetAccountStatusRequest, v1.GetAccountStatusResponse]
+	validateAccount        *connect.Client[v1.ValidateAccountRequest, v1.ValidateAccountResponse]
+	startAccountOAuth      *connect.Client[v1.StartAccountOAuthRequest, v1.StartAccountOAuthResponse]
+	completeAccountOAuth   *connect.Client[v1.CompleteAccountOAuthRequest, v1.CompleteAccountOAuthResponse]
+	cancelAccountOAuth     *connect.Client[v1.CancelAccountOAuthRequest, v1.CancelAccountOAuthResponse]
+	getAccountOAuthStatus  *connect.Client[v1.GetAccountOAuthStatusRequest, v1.GetAccountOAuthStatusResponse]
+}
+
+// ChangeAccountApiFormat calls delidev.v1.AccountService.ChangeAccountApiFormat.
+func (c *accountServiceClient) ChangeAccountApiFormat(ctx context.Context, req *connect.Request[v1.ChangeAccountApiFormatRequest]) (*connect.Response[v1.ChangeAccountApiFormatResponse], error) {
+	return c.changeAccountApiFormat.CallUnary(ctx, req)
 }
 
 // ConnectAccount calls delidev.v1.AccountService.ConnectAccount.
@@ -187,6 +203,7 @@ func (c *accountServiceClient) GetAccountOAuthStatus(ctx context.Context, req *c
 
 // AccountServiceHandler is an implementation of the delidev.v1.AccountService service.
 type AccountServiceHandler interface {
+	ChangeAccountApiFormat(context.Context, *connect.Request[v1.ChangeAccountApiFormatRequest]) (*connect.Response[v1.ChangeAccountApiFormatResponse], error)
 	ConnectAccount(context.Context, *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error)
 	DisconnectAccount(context.Context, *connect.Request[v1.DisconnectAccountRequest]) (*connect.Response[v1.DisconnectAccountResponse], error)
 	GetAccountStatus(context.Context, *connect.Request[v1.GetAccountStatusRequest]) (*connect.Response[v1.GetAccountStatusResponse], error)
@@ -204,6 +221,12 @@ type AccountServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	accountServiceMethods := v1.File_delidev_v1_account_proto.Services().ByName("AccountService").Methods()
+	accountServiceChangeAccountApiFormatHandler := connect.NewUnaryHandler(
+		AccountServiceChangeAccountApiFormatProcedure,
+		svc.ChangeAccountApiFormat,
+		connect.WithSchema(accountServiceMethods.ByName("ChangeAccountApiFormat")),
+		connect.WithHandlerOptions(opts...),
+	)
 	accountServiceConnectAccountHandler := connect.NewUnaryHandler(
 		AccountServiceConnectAccountProcedure,
 		svc.ConnectAccount,
@@ -254,6 +277,8 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.AccountService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case AccountServiceChangeAccountApiFormatProcedure:
+			accountServiceChangeAccountApiFormatHandler.ServeHTTP(w, r)
 		case AccountServiceConnectAccountProcedure:
 			accountServiceConnectAccountHandler.ServeHTTP(w, r)
 		case AccountServiceDisconnectAccountProcedure:
@@ -278,6 +303,10 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 
 // UnimplementedAccountServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedAccountServiceHandler struct{}
+
+func (UnimplementedAccountServiceHandler) ChangeAccountApiFormat(context.Context, *connect.Request[v1.ChangeAccountApiFormatRequest]) (*connect.Response[v1.ChangeAccountApiFormatResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.ChangeAccountApiFormat is not implemented"))
+}
 
 func (UnimplementedAccountServiceHandler) ConnectAccount(context.Context, *connect.Request[v1.ConnectAccountRequest]) (*connect.Response[v1.ConnectAccountResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.AccountService.ConnectAccount is not implemented"))

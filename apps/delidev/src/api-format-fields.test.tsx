@@ -14,12 +14,12 @@ const profiles = [{ protocol: "openai-responses", endpoint: "https://api.example
 const row = (kind: EntityKind, data: Document) => create(ResourceSchema, { kind, id: newRequestId(), revision: 1n, schemaVersion: configurationSchemaVersion(kind, data), documentJson: encode(data) });
 const provider = row(EntityKind.PROVIDER, { name: "Gateway", ...profiles[0], api_formats: profiles });
 
-function fixture(initial?: Resource, accounts: Resource[] = [], supported = true, providerForm = false) {
+function fixture(initial?: Resource, accounts: Resource[] = [], supported = true, providerForm = false, keepsKey = false) {
   const blocked = vi.fn();
   const transport = createRouterTransport(router => {
-    router.service(ProviderService, { listProviderInventory: () => ({ capabilities: supported ? [ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1] : [] }) });
+    router.service(ProviderService, { listProviderInventory: () => ({ capabilities: supported ? [ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ...(keepsKey ? [ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1] : [])] : [] }) });
     router.service(ResourceService, { getResource: () => ({ resource: provider }), listResources: request => {
-      const filtered = accounts.filter(account => apiFormatToWire((document(account).api_protocol || document(provider).protocol) as APIFormatId) === request.apiProtocol);
+      const filtered = accounts.filter(account => !request.apiProtocol || apiFormatToWire((document(account).api_protocol || document(provider).protocol) as APIFormatId) === request.apiProtocol);
       return { resources: filtered.slice(0, request.filter?.pageSize || 200), nextPageToken: filtered.length > (request.filter?.pageSize || 200) ? "fixture-next" : "" };
     } });
   });
@@ -82,4 +82,13 @@ it("allows a cleaned account to change format without changing credential owners
   fireEvent.change(select, { target: { value: "openai-responses" } });
   expect(JSON.parse(screen.getByTestId("draft").textContent!).api_protocol).toBe("openai-responses");
   expect(value.blocked).toHaveBeenLastCalledWith(false);
+});
+
+it("locks retained provider profiles after a key-preserving format change", async () => {
+  const account = row(EntityKind.ACCOUNT, { type: "api", provider_id: provider.id, api_protocol: "openai-chat", retained_connections: [{ connection: { api_format: profiles[0] } }] });
+  const value = fixture(provider, [account], true, true, true);
+  await waitFor(() => expect(value.blocked).toHaveBeenLastCalledWith(false));
+  expect(screen.getByRole("checkbox", { name: "OpenAI Responses" }).matches(":disabled")).toBe(true);
+  expect(screen.getByRole("checkbox", { name: "OpenAI Chat Completions" }).matches(":disabled")).toBe(true);
+  expect(screen.getByRole("checkbox", { name: "Anthropic Messages" }).matches(":disabled")).toBe(false);
 });

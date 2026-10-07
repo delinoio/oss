@@ -432,7 +432,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 
 		if v.ReconfigurationRequired {
-			return domain.SubscriptionReconfigurationRequired()
+			return domain.AgentReconfigurationRequired()
 		}
 		sources := map[string]bool{}
 		for _, route := range v.SourceRoutes() {
@@ -522,11 +522,13 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 						return err
 					}
 					if account.ProviderID == id {
-						before, beforeErr := providers.ResolveAccountProfile(previous, account)
-						after, afterErr := providers.ResolveAccountProfile(*v, account)
-						removedDeclaredProfile := slices.Contains(providers.APIFormats(previous), before.LegacyAPIFormat()) && !slices.Contains(providers.APIFormats(*v), before.LegacyAPIFormat())
-						if beforeErr != nil || afterErr != nil || before.LegacyAPIFormat() != after.LegacyAPIFormat() || removedDeclaredProfile || harnessChanged {
-							return domain.Fail(domain.Conflict, "An account-referenced API profile cannot be replaced or removed.", "Keep its original URL and authentication; create a new provider or remove all references first.")
+						for _, account := range accountProfileReferences(account) {
+							before, beforeErr := providers.ResolveAccountProfile(previous, account)
+							after, afterErr := providers.ResolveAccountProfile(*v, account)
+							removedDeclaredProfile := slices.Contains(providers.APIFormats(previous), before.LegacyAPIFormat()) && !slices.Contains(providers.APIFormats(*v), before.LegacyAPIFormat())
+							if beforeErr != nil || afterErr != nil || before.LegacyAPIFormat() != after.LegacyAPIFormat() || removedDeclaredProfile || harnessChanged {
+								return domain.Fail(domain.Conflict, "An account-referenced API profile cannot be replaced or removed.", "Keep its original URL and authentication; create a new provider or remove all references first.")
+							}
 						}
 					}
 				}
@@ -587,7 +589,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			}
 		}
 		if expected == 0 {
-			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil || v.Subscription != nil {
+			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil || v.Subscription != nil || len(v.RetainedConnections) != 0 || v.Connection != nil && v.Connection.CredentialID != "" {
 				return domain.Fail(domain.InvalidArgument, "New account health must be disconnected.", "Use account connect/login to validate credentials and quota.")
 			}
 		} else {
@@ -617,6 +619,9 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 				if (before.Authentication == domain.KeylessAuth) != (after.Authentication == domain.KeylessAuth) {
 					return domain.Fail(domain.Conflict, "An account cannot change whether it owns credentials.", "Create a new account for a keyless or key-required profile.")
 				}
+			}
+			if !bytes.Equal(connectionGenerationBytes(old), connectionGenerationBytes(*v)) {
+				return domain.Fail(domain.InvalidArgument, "Account connection generations are server-owned.", "Preserve the original connection generations.")
 			}
 			oldObservations, _ := json.Marshal(struct {
 				Health       domain.AccountHealth
@@ -710,4 +715,9 @@ func PreviewRouting(ctx context.Context, s *store.Store, agentID, projectID doma
 func routingState(tx *store.Tx, agentID domain.ID) (domain.RoutingState, error) {
 	_, state, err := tx.Routing(agentID)
 	return state, err
+}
+
+func connectionGenerationBytes(account domain.Account) []byte {
+	raw, _ := json.Marshal(account.RetainedConnections)
+	return raw
 }

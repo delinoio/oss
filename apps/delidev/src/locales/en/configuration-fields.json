@@ -169,5 +169,7 @@
   "configuration-fields.choices.connection": "The server connection failed while loading these choices.",
   "configuration-fields.choices.connectionRetrying": "The server connection failed while loading these choices; retrying.",
   "configuration-fields.choices.request": "The latest request for these choices failed.",
-  "configuration-fields.choices.requestRetrying": "The latest request for these choices failed; retrying."
+  "configuration-fields.choices.requestRetrying": "The latest request for these choices failed; retrying.",
+  "configuration-fields.accountFormatKeepsKey": "Your saved API key is kept. The new format applies to future executions.",
+  "configuration-fields.accountFormatFutureExecutions": "Running executions keep their original format. Validate the new format before starting new executions."
 }

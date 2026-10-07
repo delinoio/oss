@@ -219,7 +219,7 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 			}
 		}
 	}
-	_, account, err := accountFromTx(tx, input.AccountID, 0)
+	_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 	if err != nil {
 		return empty, err
 	}

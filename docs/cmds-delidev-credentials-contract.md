@@ -1,5 +1,19 @@
 # DeliDev protected credential storage
 
+## Shared credentials across API format generations
+
+Capability 9 uses the account's server-owned connection `credential_id`, falling
+back to the original connection ID for existing accounts. Every retained/current
+generation points to that same account-owned `account-api` reference. Resolve a
+connection only after proving its immutable execution or inspection authority;
+clients never receive protected material or manage references. Format saving does
+not read, write, enumerate or delete protected keys. OAuth metadata and serialized
+refresh use the original reference ID, preserving once-only exchange and receipts.
+Disconnect clears all generations before the existing joined removal/enumeration
+procedure; pending cleanup blocks changes and replacement. Follow the
+[account generation contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
 OAuth seals only `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}` after a durable staging claim. Keep account-less references and cleanup evidence across uncertain Put/SQLite outcomes. Explicit original local completion may read that reference without another exchange; missing/tombstoned material cannot be replaced. Cancel records denial and cleanup before removal, retains disconnected metadata and never claims upstream revocation. Follow the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Scope and ownership

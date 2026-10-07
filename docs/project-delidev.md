@@ -1,5 +1,18 @@
 # Project: DeliDev
 
+## Key-preserving format amendment
+
+After main reservation PR #1666, ProviderInventory capability 9 owns connected API
+format changes through the dedicated atomic Account RPC. Current/retained
+server-owned connection generations share the original protected key, preserve
+original executions and continuations, and require fresh explicit validation for
+new sessions. Capability 7 and OAuth reservation 8 keep their separate meaning.
+Follow the [account](cmds-delidev-accounts-contract.md#connected-api-format-changes),
+[catalog](cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations)
+and [desktop](apps-delidev-desktop-contract.md#key-preserving-api-format-editing)
+contracts. No migration, native change or format conversion is introduced.
+
+
 The [OAuth format selection reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
 extend the existing API account format boundary to accepted OAuth profiles through
 ProviderInventory capability 8 and Start/attempt fields 4/7. Establish them on main

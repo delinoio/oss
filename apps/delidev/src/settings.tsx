@@ -12,7 +12,7 @@ import { NotificationSettings } from "./notification-settings";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, apiFormat, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, SystemQuery, SystemCapability, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { AccountQuery, apiFormatToWire, ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, apiFormat, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, SystemQuery, SystemCapability, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { accountPreferencesDocument } from "./account-preferences";
 import { ConfigurationFields, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
@@ -53,10 +53,12 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const notifications = useNotifications();
   const inline = kind === EntityKind.SETTINGS && presentation === ConfigurationEditorPresentation.InlineServerPreferences;
   const [baseline, setBaseline] = useState(initial);
-  const source = inline ? baseline : initial;
+  const apiEditor = kind === EntityKind.ACCOUNT && Boolean(initial && document(initial).type === "api");
+  const source = inline || apiEditor ? baseline : initial;
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
+  const [keepsFormatKey, setKeepsFormatKey] = useState(false);
   const [fieldsBlocked, setFieldsBlocked] = useState(false);
   const [problem, setProblem] = useProductMessage("");
   const [conflict, setConflict] = useState(false);
@@ -75,6 +77,9 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   }, inline ? (result, request) => !result.resource || Boolean(result.resource.id && readableServerPreferences(result.resource)
     && (!request.mutation?.id || result.resource.id === request.mutation.id)
     && result.resource.revision > (request.mutation?.expectedRevision ?? 0n)) : undefined);
+  const formatMutation = useRetainedMutation(`account-change-format:${source?.id ?? "new"}`, AccountQuery.changeAccountApiFormat, (result, request) => {
+    notifications.notify({ kind: ToastKind.Success, message: ownedMessage("settings.savedKind.ACCOUNT"), id: request.mutation?.requestId }); saved();
+  }, (result, request) => Boolean(result.account && result.account.kind === EntityKind.ACCOUNT && result.account.id === request.mutation?.id && result.account.revision > (request.mutation?.expectedRevision ?? 0n) && Boolean(apiFormat(document(result.account).api_protocol)) && (result.replayed || apiFormatToWire(apiFormat(document(result.account).api_protocol)!) === request.apiProtocol)));
   const polled = current.data?.resource;
   const latest = inline ? latestServerPreferences(source, preferencesObservation?.resource, polled?.id === source?.id ? polled : undefined) : undefined;
   const dirty = inline && JSON.stringify(data) !== JSON.stringify(source ? document(source) : initialData ?? newConfiguration(kind));
@@ -83,8 +88,8 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const currentUnavailable = inline && Boolean(source && current.data && (!polled || polled.id !== source.id ||
     (polled.revision >= source.revision && !readableServerPreferences(polled))));
   const stale = inline ? Boolean(latest && (!source || latest.id !== source.id || latest.revision > source.revision))
-    : Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
-  const blocked = mutation.busy || mutation.uncertain;
+    : apiEditor ? Boolean(source && polled && polled.revision > source.revision && accountEditingIdentity(document(polled)) !== accountEditingIdentity(document(source))) : Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
+  const blocked = mutation.busy || mutation.uncertain || formatMutation.busy || formatMutation.uncertain;
   const inlineReadBlocked = inline && Boolean(!preferencesObservation?.complete || preferencesObservation.fetching || preferencesObservation.error || currentUnavailable);
   useEffect(() => {
     if (!inline || !mutation.error || observedConflict.current === mutation.error || clientFailure(mutation.error).code !== FailureCode.Conflict) return;
@@ -101,6 +106,13 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     const adopted = latest && readableServerPreferences(latest) ? latest : source;
     setBaseline(adopted); setData(adopted ? document(adopted) : initialData ?? newConfiguration(kind)); setProblem(""); setConflict(false);
   };
+  useEffect(() => {
+    if (!apiEditor || !source || !polled || polled.id !== source.id || polled.kind !== source.kind || polled.revision <= source.revision || stale || blocked) return;
+    // Adopt only server-owned observation changes. Keep every editable draft
+    // and use the exact latest resource bytes for the next revision-bound save.
+    setBaseline(polled);
+    setData(draft => ({ ...document(polled), ...accountDraftPreferences(draft) }));
+  }, [apiEditor, source, polled, stale, blocked]);
   const change = (value: Document) => {
     if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem(ownedMessage("settings.extra.0097158d86f7")); return; }
     setData(value); setProblem("");
@@ -116,6 +128,11 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const saveDisabled = fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
   const submit = () => {
     if (saveDisabled) return;
+    const selectedFormat = apiFormat(data.api_protocol);
+    if (apiEditor && keepsFormatKey && source && selectedFormat && selectedFormat !== document(source).api_protocol) {
+      void formatMutation.send({ mutation: { id: source.id, expectedRevision: source.revision, requestId: newRequestId() }, apiProtocol: apiFormatToWire(selectedFormat), alias: text(data.alias), enabled: data.enabled === true, excludeAutomatic: data.exclude_automatic === true, recoveryNotifications: data.recovery_notifications === true });
+      return;
+    }
     let documentJson: Uint8Array;
     try {
       documentJson = kind === EntityKind.ACCOUNT && source ? accountPreferencesDocument(source, { ...(data.type === "api" && apiFormat(data.api_protocol) ? { api_protocol: apiFormat(data.api_protocol)! } : {}), alias: text(data.alias), enabled: data.enabled === true, exclude_automatic: data.exclude_automatic === true, recovery_notifications: data.recovery_notifications === true }) : encode(data);
@@ -130,13 +147,13 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   return <form id={formId} ref={form} aria-label={inline ? (serverPreferenceSection === ServerPreferenceSection.GitWorkflow ? "Git workflow form" : "Server preferences form") : undefined} className={kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); submit(); }}>
     {inline ? null : isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? copy("settings.editPreferences_00b4cc") : copy("settings.newAiApiKeyEntry_5f978c")}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : <h3 hidden={inTask}>{initial ? copy("settings.edit_464c4f") : copy("settings.new_18fdd5")} {kindLabel}</h3>}
     {kind === EntityKind.AGENT && !initial ? <p className="agent-subtitle">{copy("settings.configureTheEssentialsThenCustomizeOnly_a8beda")}</p> : null}
-    <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields initial={source} saveBlocked={setFieldsBlocked} kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>
+    <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields keepsFormatKey={setKeepsFormatKey} initial={source} saveBlocked={setFieldsBlocked} kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>
     {repositoryUnsupported ? <p role="status">Update the selected server before saving a repository.</p> : null}
-    {stale || (inline && conflict) ? <p role="alert">{inline ? copy("settings.inlinePreferencesChangedElsewhereDraftRetained", { v0: kindLabel }) : copy("settings.thisEntryChangedElsewhereYourDraft_106fa0")}</p> : null}{currentUnavailable ? <p role="status">{inline ? copy("settings.inlinePreferencesUnavailableDraftRetained", { v0: kindLabel }) : copy("settings.serverPreferencesUnavailableDraftRetained")}</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error || (repositoryNeedsRemoteCapability ? repositoryStatus.error : undefined)} />{repositoryStatusFailed ? <button type="button" disabled={repositoryStatus.isFetching} onClick={() => void repositoryStatus.refetch()}>Retry repository capability check</button> : null}
+    {stale || (inline && conflict) ? <p role="alert">{inline ? copy("settings.inlinePreferencesChangedElsewhereDraftRetained", { v0: kindLabel }) : copy("settings.thisEntryChangedElsewhereYourDraft_106fa0")}</p> : null}{currentUnavailable ? <p role="status">{inline ? copy("settings.inlinePreferencesUnavailableDraftRetained", { v0: kindLabel }) : copy("settings.serverPreferencesUnavailableDraftRetained")}</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error || mutation.error || formatMutation.error || (repositoryNeedsRemoteCapability ? repositoryStatus.error : undefined)} />{repositoryStatusFailed ? <button type="button" disabled={repositoryStatus.isFetching} onClick={() => void repositoryStatus.refetch()}>Retry repository capability check</button> : null}
     {subscriptionOnly && !validSubscriptionProvider ? <p role="alert">{copy("settings.subscriptionProvidersMustUseNativeSubscription_8e47b2")}</p> : null}
-    {inline ? <div className="actions server-preferences-actions"><span className="server-preferences-status" role="status">{mutation.busy ? copy("settings.savingChanges") : mutation.uncertain ? copy("settings.saveOutcomeUnknown") : dirty ? copy("settings.unsavedChanges") : ""}</span><button type="button" disabled={blocked || childPending || (!dirty && !stale && !conflict)} onClick={discard}>{copy("settings.discardChanges")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}<button className="primary" disabled={saveDisabled}>{copy("settings.saveChanges")}</button></div> : null}
-    {!inline && (kind === EntityKind.AGENT || kind === EntityKind.SETTINGS) ? <SettingsTaskActions form={formId} className={kind === EntityKind.AGENT ? "agent-footer" : "server-preferences-actions"}><button type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>{copy("settings.cancelEdit_6fa271")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}<button className="primary" disabled={saveDisabled}><LocalizedText id="settings.save_cdb68b" components={{ s0: <>{kindLabel}</> }} /></button></SettingsTaskActions>
-      : !inline ? <SettingsTaskActions form={formId}><button type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>{copy("settings.cancelEdit_6fa271")}</button><button className="primary" disabled={saveDisabled}><LocalizedText id="settings.save_cdb68b" components={{ s0: <>{kindLabel}</> }} /></button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}</SettingsTaskActions> : null}
+    {inline ? <div className="actions server-preferences-actions"><span className="server-preferences-status" role="status">{mutation.busy ? copy("settings.savingChanges") : mutation.uncertain ? copy("settings.saveOutcomeUnknown") : dirty ? copy("settings.unsavedChanges") : ""}</span><button type="button" disabled={blocked || childPending || (!dirty && !stale && !conflict)} onClick={discard}>{copy("settings.discardChanges")}</button>{formatMutation.uncertain ? <button type="button" disabled={formatMutation.busy} onClick={formatMutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}<button className="primary" disabled={saveDisabled}>{copy("settings.saveChanges")}</button></div> : null}
+    {!inline && (kind === EntityKind.AGENT || kind === EntityKind.SETTINGS) ? <SettingsTaskActions form={formId} className={kind === EntityKind.AGENT ? "agent-footer" : "server-preferences-actions"}><button type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>{copy("settings.cancelEdit_6fa271")}</button>{formatMutation.uncertain ? <button type="button" disabled={formatMutation.busy} onClick={formatMutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}<button className="primary" disabled={saveDisabled}>{apiEditor && keepsFormatKey ? copy("settings.saveChanges") : <LocalizedText id="settings.save_cdb68b" components={{ s0: <>{kindLabel}</> }} />}</button></SettingsTaskActions>
+      : !inline ? <SettingsTaskActions form={formId}><button type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>{copy("settings.cancelEdit_6fa271")}</button><button className="primary" disabled={saveDisabled}>{apiEditor && keepsFormatKey ? copy("settings.saveChanges") : <LocalizedText id="settings.save_cdb68b" components={{ s0: <>{kindLabel}</> }} />}</button>{formatMutation.uncertain ? <button type="button" disabled={formatMutation.busy} onClick={formatMutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}</SettingsTaskActions> : null}
 
   </form>;
 }
@@ -522,4 +539,11 @@ function RunnerDeviceInventory({ resources, error, loading, fetching, page, next
     {resources?.length === 0 ? <p>{page || nextPage ? copy("settings.noSavedEntriesOnThisPage_ea1b6b") : copy("settings.noSavedEntries_a59b83")}</p> : null}
     {!hidePagination ? <nav className="settings-pages" aria-label={copy("settings.settingsPages_05ec05")}><button type="button" disabled={!page || fetching} onClick={first}>{copy("settings.firstPage_0bdbb7")}</button><button type="button" disabled={!nextPage || fetching} onClick={next}>{copy("settings.nextPage_c08ac7")}</button></nav> : null}
   </section>;
+}
+
+function accountDraftPreferences(data: Document): Document {
+ return Object.fromEntries(["alias", "enabled", "exclude_automatic", "recovery_notifications", "api_protocol"].filter(key => Object.hasOwn(data, key)).map(key => [key, data[key]]));
+}
+function accountEditingIdentity(data: Document): string {
+ return JSON.stringify({ ...accountDraftPreferences(data), provider_id: data.provider_id, type: data.type });
 }

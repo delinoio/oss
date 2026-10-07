@@ -1,5 +1,31 @@
 # DeliDev desktop client
 
+## Key-preserving API format editing
+
+With ProviderInventory capability 9, Edit AI account enables supported formats for
+connected API accounts and saves the format plus existing editable preferences
+through `ChangeAccountApiFormat`. The saved key stays in place; the help states that
+future executions use the new format, current executions retain their original
+format, and separate Validate connection is required. Saving sends no provider
+request. Provider identity and keyless/key ownership stay fixed. Without capability
+9, the original capability-7 disconnect/cleanup/re-entry behavior remains.
+
+Retain the existing 768px dialog, field order, checkbox controls, Provider lock,
+small-screen scrolling/fixed footer, Settings lifetime, labeled native select,
+keyboard selection, Escape/X/Cancel closure and opener focus restoration. The
+capability-9 action reads Save changes. Capability/profile loading errors, pending
+cleanup, an active save and an uncertain result retain existing protection. Exact
+uncertain retries reuse the original request. Late responses after disposal cannot
+close or refresh a replacement editor.
+
+Observation-only account updates adopt the latest protected fields and bigint
+revision while retaining editable draft values. Changes to editable preferences or
+format elsewhere show a conflict and retain the draft. Provider cards remain locked
+for current and retained account generations; reference-read failures block saves.
+Incompatible Workers show the existing explicit reconfiguration notice. Native
+window/provider acceptance is separate from component/browser fixtures.
+
+
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)

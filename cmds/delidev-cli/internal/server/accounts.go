@@ -376,6 +376,7 @@ func (s *Service) DisconnectAccount(ctx context.Context, req *connect.Request[pb
 		completionID := domain.NewID()
 		removal := &domain.AccountRemoval{RequestID: domain.ID(meta.RequestId), ExpectedRevision: input.Revision}
 		account.Connection = nil
+		account.RetainedConnections = nil
 		account.Health = domain.AccountDisconnected
 		account.Validation = nil
 		account.Catalog = nil
