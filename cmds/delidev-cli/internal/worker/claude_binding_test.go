@@ -168,7 +168,7 @@ func TestClaudeBindingRejectsForeignOrUnobservedInitialization(t *testing.T) {
 			case "missing-init":
 				initialized.Initialized = nil
 			case "effort":
-				value := claude.NativeEffort("unknown")
+				value := claude.NativeEffort("invalid\x00effort")
 				applied.Effort = &value
 			case "accepted":
 				initialized.Accepted = true
