@@ -131,3 +131,9 @@ it("clears only the restored Agent after current project permissions change",asy
  const f=fixture();render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),f.projects[0].id);await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));
  f.projects[0].documentJson=encode({name:"Allowed project",repositories:[],agents:{configured:true,ids:[]}});await act(async()=>{await f.client.invalidateQueries();});await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(""));expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id);expect(f.bridge.update).not.toHaveBeenCalled();expect(f.createSession).not.toHaveBeenCalled();
 });
+
+it.each(["initial", "current"])("excludes a remembered Agent requiring reconfiguration in its %s exact read",async phase=>{
+ const f=fixture();if(phase==="initial")f.agent.documentJson=encode({name:"Remembered agent",reconfiguration_required:true});render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));
+ if(phase==="current"){await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));f.agent.documentJson=encode({name:"Remembered agent",reconfiguration_required:true});await act(async()=>{await f.client.invalidateQueries();});}
+ await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(""));expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id);expect(f.memory.get(NewSessionKind.Session)).toEqual({agent_id:f.agent.id,machine_id:f.machine.id});expect(f.bridge.update).not.toHaveBeenCalled();expect(f.createSession).not.toHaveBeenCalled();
+});
