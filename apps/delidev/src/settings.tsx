@@ -368,7 +368,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const page = "";
   const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean } | undefined>(() => entry?.kind === SettingsEntryKind.NewProject ? { key: newRequestId() } : undefined);
   const [machine, setMachine] = useState<Resource>();
-  const runnerInspection = useRunnerRemediation();
+  const runnerInspection = useRunnerRemediation({ compact: false, authority: pairingAuthority });
   const inspectMachine = (row: Resource) => runnerInspection ? runnerInspection(row) : setMachine(row);
   const [deleting, setDeleting] = useState<Resource>();
   const [routing, setRouting] = useState<Resource>();

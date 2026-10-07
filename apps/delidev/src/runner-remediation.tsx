@@ -50,7 +50,7 @@ export function RunnerRemediationProvider({ children, active, authority }: { chi
 export type RunnerRemediationOpener = ((resource: Resource) => void) & { body: ReactNode; close: () => void; locked: boolean; pending: boolean };
 /** Render `opener.body` within the caller's original task. A nested Step shares
  * its presentation and focus, while the inspection controller stays retained. */
-export function useRunnerRemediation(): RunnerRemediationOpener | undefined {
+export function useRunnerRemediation({ compact = true, authority }: { compact?: boolean; authority?: PairingAuthority } = {}): RunnerRemediationOpener | undefined {
   useLocale();
   const owner = useContext(Context), presenter = useId();
   const [requested, setRequested] = useState<string>();
@@ -59,6 +59,6 @@ export function useRunnerRemediation(): RunnerRemediationOpener | undefined {
   useLayoutEffect(() => () => owner?.release(presenter), [owner?.release, presenter]);
   const open = useCallback((resource: Resource) => { if (owner?.request(resource, presenter)) { lastRequested.current = resource.id; setRequested(resource.id); } }, [owner?.request, presenter]);
   const controller = owner?.controller;
-  const body = requested && owner?.presenter === presenter && owner?.active && controller?.initial.id === requested ? <SettingsTaskDialog title={copy("settings.inspectInstalledHarnesses_45e943")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={close} onDismiss={close}><MachineSettingsView controller={controller} active={owner.active} authority={owner.authority} close={close} compact /></SettingsTaskDialog> : null;
+  const body = requested && owner?.presenter === presenter && owner?.active && controller?.initial.id === requested ? <SettingsTaskDialog title={copy("settings.inspectInstalledHarnesses_45e943")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={close} onDismiss={close}><MachineSettingsView controller={controller} active={owner.active} authority={authority ?? owner.authority} close={close} compact={compact} /></SettingsTaskDialog> : null;
   return owner ? Object.assign(open, { body, close, locked: Boolean(controller?.locked && controller.initial.id !== lastRequested.current), pending: Boolean(controller?.locked && controller.initial.id === lastRequested.current) }) : undefined;
 }

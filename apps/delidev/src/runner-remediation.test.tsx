@@ -11,7 +11,7 @@ import { RunnerRemediationProvider, useRunnerRemediation } from "./runner-remedi
 const machine = (name: string) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 9007199254740993n, documentJson: encode({ name, disabled: false, installations: [{ harness: "claude-code", state: "missing", explicit_path: "", problem: { message: "/private/native secret", guidance: "secret native instruction" } }] }) });
 it("retains one inspection draft and original uncertain request across presentation close, without replacing its Runner", async () => {
   const first = machine("First Runner"), second = machine("Second Runner");
-  const discover = vi.fn((_request: { mutation: { expectedRevision: bigint } }) => { throw new ConnectError("unavailable", Code.Unavailable); });
+  const discover = vi.fn((_request: unknown) => { throw new ConnectError("unavailable", Code.Unavailable); });
   const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: request => ({ resource: request.id === first.id ? first : second }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(first)}>Inspect first</button><button onClick={() => open?.(second)}>Inspect second</button>{open?.body}</>; }
@@ -29,12 +29,23 @@ it("retains one inspection draft and original uncertain request across presentat
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
   await screen.findByRole("button", { name: "Retry the same harness check" });
-  expect(discover).toHaveBeenCalledOnce(); const request = discover.mock.calls[0][0];
+  expect(discover).toHaveBeenCalledOnce(); const request = discover.mock.calls[0][0] as { mutation: { expectedRevision: bigint } };
   fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
   fireEvent.click(screen.getByText("Inspect first"));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same harness check" }));
   await waitFor(() => expect(discover).toHaveBeenCalledTimes(2));
   expect(discover.mock.calls[1][0]).toEqual(request);
   expect(request.mutation.expectedRevision).toBe(9007199254740993n);
+  client.clear();
+});
+it("preserves Worker updates and Network settings in the original full Runner inspection", async () => {
+  const row = machine("Settings Runner");
+  const transport = createRouterTransport(router => router.service(ResourceService, { getResource: () => ({ resource: row }) }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() { const open = useRunnerRemediation({ compact: false }); return <><button onClick={() => open?.(row)}>Inspect saved Runner</button>{open?.body}</>; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByText("Inspect saved Runner"));
+  expect(await screen.findByText("Worker updates")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Network settings" })).toBeTruthy();
   client.clear();
 });
