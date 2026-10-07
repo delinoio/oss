@@ -321,3 +321,15 @@ implemented. Retain main-first allocation ownership and tool-generated outputs.
 DeliDev pre-release breaking changes do not suppress other projects' Buf
 breaking checks, numeric allocation validation, lint or freshness. Record source
 revision, commands, results and unresolved limits in PRs and CI artifacts.
+
+## Native Claude subscription reservations
+
+Issue #964 reserves System capability 38, Worker capability 20 and the complete
+Claude login-code/progress/native-identity closure in the protocol allocation
+ledger. Establish these reservations on main before dependent feature branches
+activate the declarations. Existing Codex bundles, independent capabilities and
+real migrations through 31 retain their meanings. Reservations alone grant no
+native login, execution, browser dispatch or cleanup authority and add no
+migration. The complete feature owns selected-Runner native authentication,
+metadata-only server ownership, single-use original login input and joined
+native lifecycle/execution cleanup under the subscription and desktop contracts.

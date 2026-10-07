@@ -199,3 +199,14 @@ AI Subscription browser login and naming compose across Go server ownership, gen
 The owner-approved [pre-release compatibility reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
 reserves database baseline 32, protocol 2 and Worker attach field 10 before its
 complete implementation. Reservations leave current runtime behavior unchanged.
+
+## Native Claude subscription prerequisite
+
+The owner-approved native Claude subscription extension spans the existing
+subscription, desktop, harness, protocol and storage owners. Reserve System 38,
+Worker 20 and the complete login-code/progress/native-identity declarations on
+main before implementation. Authentication remains in an original installed
+Claude Code account profile on the selected Runner Device; server metadata does
+not grant credentials, cross-device execution or cleanup authority. The
+reservation prerequisite activates no support and adds no migration. Follow
+[the subscription contract](cmds-delidev-subscription-contract.md#planned-native-claude-subscriptions).
