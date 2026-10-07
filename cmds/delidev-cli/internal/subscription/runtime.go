@@ -83,17 +83,21 @@ func CleanupRuntime(home string, original os.FileInfo) error {
 		if err != nil {
 			return fail(CleanupInventory, CleanupFilesystem)
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fail(CleanupInventory, CleanupSymlink)
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		count++
-		info, err := entry.Info()
+		// Directory-entry type bits are not complete on every filesystem
+		// provider, especially for Windows reparse points. Re-stat the path
+		// through the already-open root so symlinks and other replacements are
+		// classified from anchored metadata before any removal is attempted.
+		info, err := root.Lstat(path)
 		if err != nil {
 			return fail(CleanupInventory, CleanupFilesystem)
 		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fail(CleanupInventory, CleanupSymlink)
+		}
+		if info.IsDir() {
+			return nil
+		}
+		count++
 		if !info.Mode().IsRegular() {
 			return fail(CleanupInventory, CleanupNotRegular)
 		}
