@@ -63,19 +63,30 @@ it.each(["begin", "start"] as const)("ignores a late OAuth %s after leaving the 
   expect(value.start).toHaveBeenCalledTimes(delay === "begin" ? 0 : 1); expect(value.cancel).not.toHaveBeenCalled(); expect(value.complete).not.toHaveBeenCalled();
 });
 
-it("hides live OAuth without cancellation or disposing its original native callback owner", async () => {
+it("closes live OAuth and disposes only its local callback owner without business cancellation", async () => {
   const value = fixture(); await add(); await screen.findByText("Waiting for authorization…");
   await waitFor(() => expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BindOpen)).toHaveLength(1));
   const disposed = value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose).length;
   fireEvent.click(screen.getByRole("button", { name: "Close Add AI API key" }));
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   expect(value.cancel).not.toHaveBeenCalled();
-  expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose)).toHaveLength(disposed);
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
-  expect(screen.getByText("Waiting for authorization…")).toBeTruthy();
+  await waitFor(() => expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose)).toHaveLength(disposed + 1));
   expect(value.start).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(value.cancel).not.toHaveBeenCalled();
-  expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose)).toHaveLength(disposed);
+  expect(screen.getByRole("button", { name: "Add AI API key" }).matches(":disabled")).toBe(false);
+});
+
+it.each(["begin", "start"] as const)("fences a closed OAuth %s from a fresh task in the same category", async delay => {
+  const value = fixture(delay); await add();
+  await waitFor(() => expect(delay === "begin" ? value.native.mock.calls.some(call => call[1] === OAuthNativeAction.Begin) : value.start.mock.calls.length > 0).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Close Add AI API key" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Add AI API key" }).matches(":disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
+  const fresh = screen.getByRole("dialog");
+  await act(async () => value.pending.resolve());
+  expect(screen.getByRole("dialog")).toBe(fresh);
+  expect(screen.queryByText("Waiting for authorization…")).toBeNull();
+  expect(value.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BindOpen)).toHaveLength(0);
+  expect(value.start).toHaveBeenCalledTimes(delay === "begin" ? 0 : 1);
+  expect(value.cancel).not.toHaveBeenCalled(); expect(value.complete).not.toHaveBeenCalled();
 });
