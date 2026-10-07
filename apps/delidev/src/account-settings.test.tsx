@@ -643,3 +643,16 @@ it("refreshes every reached account and usage without business mutations", async
   expect(f.list.mock.calls.map(([request]) => request.filter?.pageToken)).toEqual(["", "next-page", "", "next-page"]);
   expect(f.save).not.toHaveBeenCalled(); expect(f.connect).not.toHaveBeenCalled(); expect(f.other).not.toHaveBeenCalled();
 });
+
+it("offers explicit verification guidance without promising maintenance on a compatible older server", async () => {
+  const value = fixture();
+  render(value.view(value.settings(AccountSettingsSection.Api)));
+  fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
+  fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
+  await chooseAPIFormat();
+  expect(screen.getByText("After connecting, use Check again to verify authentication and refresh models without inference. Unsupported authentication remains unverified.")).toBeTruthy();
+  expect(screen.queryByText(/connections are checked automatically/)).toBeNull();
+  expect(value.save).not.toHaveBeenCalled();
+  expect(value.connect).not.toHaveBeenCalled();
+  expect(value.other).not.toHaveBeenCalled();
+});

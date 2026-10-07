@@ -21,8 +21,8 @@
   "api-verification.retryAuth": "Retry original authentication check",
   "api-verification.retryModels": "Retry original model refresh",
   "api-verification.limit": "Verification does not establish model inference permission, harness readiness, usage or quota recovery.",
-  "api-verification.automatic": "Enabled connections are checked automatically without inference. Unsupported authentication remains unverified.",
   "api-verification.badge": "Verified",
   "api-verification.unavailable": "Verification authority is unavailable for this account or provider.",
-  "api-verification.retryProvider": "Retry provider details"
+  "api-verification.retryProvider": "Retry provider details",
+  "api-verification.manualGuidance": "After connecting, use Check again to verify authentication and refresh models without inference. Unsupported authentication remains unverified."
 }

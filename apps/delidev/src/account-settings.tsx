@@ -617,7 +617,7 @@ function AccountCreationWizard({
             <label className="checkbox"><input type="checkbox" checked={recoveryNotifications} onChange={(event) => setRecoveryNotifications(event.target.checked)} />{copy("account-settings.notifyWhenEntryQuotaRecovers_b06486")}</label>
           </details>
         </fieldset>
-        <p className="api-entry-validation-note">{copy("api-verification.automatic")}</p>
+        <p className="api-entry-validation-note">{copy("api-verification.manualGuidance")}</p>
         <Problem error={create.error} />
         {!apiFormatSelectingReady ? <p role="status">{copy("account-settings.apiFormatUnsupported")}</p> : null}
         {create.busy ? <p role="status">{copy("account-settings.creatingEntry_e95d50")}</p> : null}
