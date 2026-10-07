@@ -98,7 +98,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const allowedKey = allowed === undefined ? "*" : JSON.stringify(allowed);
   interface ChoiceRow { id: string; revision: bigint; name: string; health: string }
   const projectResources = useCallback((resources: Resource[]) => {
-    if (resources.some(row => row.kind !== kind || !row.id || row.revision <= 0n || !supportsResourceSchema(row))) throw new ConnectError("Invalid resource choices", Code.DataLoss);
+    if (resources.length > 50 || new Set(resources.map(row => row.id)).size !== resources.length || resources.some(row => row.kind !== kind || !row.id || row.revision <= 0n || !supportsResourceSchema(row))) throw new ConnectError("Invalid resource choices", Code.DataLoss);
     return resources.filter(row => allowedKey === "*" || (JSON.parse(allowedKey) as unknown[]).includes(row.id)).map(row => {
       const data = document(row); return { id: row.id, revision: row.revision, name: text(data.name) || text(data.alias), health: text(data.health) };
     });
@@ -109,7 +109,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const resources = usePaginationChain<ChoiceRow>(`resource-choice:${kind}:${allowedKey}`, active && !disabled && !needsProviderCapability, resourceReader);
   const requestProviders = useCallback((token: string) => ({ query: "", enabledOnly: true, pageSize: 50, pageToken: token }), []);
   const projectInventory = useCallback((response: MessageShape<typeof ProviderQuery.listProviderInventory.output>) => {
-    if (!providerInventoryReady(response.capabilities) || response.entries.some(entry => !entry.provider || entry.providerId !== entry.provider.id || !entry.enabled)) throw new ConnectError("Invalid provider choices", Code.DataLoss);
+    if (response.entries.length > 50 || new Set(response.entries.map(entry => entry.providerId)).size !== response.entries.length || !providerInventoryReady(response.capabilities) || response.entries.some(entry => !entry.provider || entry.providerId !== entry.provider.id || !entry.enabled)) throw new ConnectError("Invalid provider choices", Code.DataLoss);
     return { rows: projectResources(response.entries.flatMap(entry => entry.provider ? [entry.provider] : [])), nextPageToken: response.nextPageToken };
   }, [projectResources]);
   const providerReader = useConnectPaginationReader(ProviderQuery.listProviderInventory, requestProviders, projectInventory);
