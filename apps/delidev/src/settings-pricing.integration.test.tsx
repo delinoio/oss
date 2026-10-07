@@ -12,6 +12,16 @@ import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
 
+async function choose(control: HTMLElement, name: string | RegExp) {
+  await waitFor(() => expect(control.matches(":disabled")).toBe(false));
+  fireEvent.click(control);
+  const popup = window.document.getElementById(control.getAttribute("aria-controls")!)!;
+  const option = await within(popup).findByRole("option", { name });
+  const id = option.dataset.pickerId;
+  fireEvent.click(option);
+  await waitFor(() => expect(control.dataset.value).toBe(id));
+}
+
 it("saves and inspects a real immutable model price through desktop settings and CLI", async () => {
   const { transport, providerOrigin, runCLI } = fixture;
   const configurations = createClient(ConfigurationService, transport);
@@ -20,8 +30,7 @@ it("saves and inspects a real immutable model price through desktop settings and
   const model = await save(EntityKind.MODEL, { name: "Pricing model", provider_id: provider.id, native_id: "pricing-fixture", harnesses: ["codex"], manual: true, metadata_source: "user-declared" });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Usage active open={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
-  await screen.findByRole("option", { name: "Pricing model" });
-  fireEvent.change(screen.getByLabelText("Model"), { target: { value: model.id } });
+  await choose(screen.getByRole("combobox", { name: "Model" }), "Pricing model");
   fireEvent.click(screen.getByRole("button", { name: "Model details and token pricing" }));
   fireEvent.click(await screen.findByRole("button", { name: "Token pricing" }));
   await screen.findByText(/No pricing basis has been configured/);
