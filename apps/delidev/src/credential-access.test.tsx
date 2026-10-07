@@ -26,7 +26,8 @@ it("shows automatic access before mounting account queries and observes the orig
   await waitFor(() => expect(native.invoke).toHaveBeenCalled());
   done = true;
   const heading = await screen.findByRole("heading", { name: "Product" });
-  expect(document.activeElement).toBe(heading);
+  // The heading mounts before the passive focus handoff; wait for that handoff.
+  await waitFor(() => expect(document.activeElement).toBe(heading));
   expect(native.invoke.mock.calls.every(([command, args]) => command === "desktop_credential_access" && args.action === CredentialAccessAction.Observe && args.server === f.connection.server_id && args.generation === f.connection.runtime_generation)).toBe(true);
   expect(JSON.stringify(native.invoke.mock.calls)).not.toContain(f.connection.token);
 });

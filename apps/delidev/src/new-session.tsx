@@ -119,23 +119,25 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const machineChoice = rememberedMachine.data?.resource;
   const restorationBlocked = useRef(false);
   restorationBlocked.current = blocked;
+  const projectEligible = !project || !selectedProject.isFetching && !selectedProject.error && selectedProject.data?.resource?.id === project && selectedProject.data.resource.kind === EntityKind.PROJECT && supportsResourceSchema(selectedProject.data.resource);
+  const agentEligible = projectEligible && !rememberedAgent.isFetching && !rememberedAgent.error && agentChoice?.id === preferences.pair?.agent_id && agentChoice?.kind === EntityKind.AGENT && supportsResourceSchema(agentChoice) && agentChoice.revision > 0n && document(agentChoice).disabled !== true && document(agentChoice).enabled !== false && (restrictions.configured !== true || items(restrictions.ids).includes(agentChoice.id));
+  const machineCapabilities = items(document(machineChoice).worker_capabilities);
+  const machineEligible = projectEligible && !rememberedMachine.isFetching && !rememberedMachine.error && machineChoice?.id === preferences.pair?.machine_id && machineChoice?.kind === EntityKind.MACHINE && supportsResourceSchema(machineChoice) && machineChoice.revision > 0n && document(machineChoice).disabled !== true && document(machineChoice).enabled !== false && (!project || workspace !== Workspace.Worktree || items(document(selectedProject.data?.resource).repositories).length === 0 || machineCapabilities.includes("remote-workspace-clone-v1") || machineCapabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1));
   useEffect(() => {
-    if (!active || touched.current || restorationBlocked.current || !preferences.pair) return;
-    if (project && (selectedProject.isFetching || selectedProject.error || selectedProject.data?.resource?.id !== project || selectedProject.data.resource.kind !== EntityKind.PROJECT || !supportsResourceSchema(selectedProject.data.resource))) return;
-    if (!restoration.current.agent && !rememberedAgent.isFetching && !rememberedAgent.error && agentChoice?.id === preferences.pair.agent_id && agentChoice.kind === EntityKind.AGENT && supportsResourceSchema(agentChoice) && agentChoice.revision > 0n && document(agentChoice).disabled !== true && document(agentChoice).enabled !== false) {
-      restoration.current.agent = true;
-      if (restrictions.configured !== true || items(restrictions.ids).includes(agentChoice.id)) setAgent(agentChoice.id);
-    }
-    if (!restoration.current.machine && !rememberedMachine.isFetching && !rememberedMachine.error && workspace !== Workspace.Local && machineChoice?.id === preferences.pair.machine_id && machineChoice.kind === EntityKind.MACHINE && supportsResourceSchema(machineChoice) && machineChoice.revision > 0n && document(machineChoice).disabled !== true && document(machineChoice).enabled !== false) {
-      restoration.current.machine = true;
-      const capabilities = items(document(machineChoice).worker_capabilities);
-      if (!project || workspace !== Workspace.Worktree || items(document(selectedProject.data?.resource).repositories).length === 0 || capabilities.includes("remote-workspace-clone-v1") || capabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1)) setMachine(machineChoice.id);
-    }
-  }, [active, preferences.pair, agentChoice, machineChoice, rememberedAgent.isFetching, rememberedAgent.error, rememberedMachine.isFetching, rememberedMachine.error, project, workspace, selectedProject.data, selectedProject.isFetching, selectedProject.error, restrictions.configured, restrictions.ids, blocked]);
-  const editAgent = (id: string) => { touched.current = true; setAgent(id); };
-  const editMachine = (id: string) => { touched.current = true; setMachine(id); };
+    if (!active || restorationBlocked.current || !preferences.pair) return;
+    // Automatic ownership is independent per field. Draft edits stop restoration,
+    // but only a manual choice releases that field from eligibility revalidation.
+    if (restoration.current.agent && !rememberedAgent.isFetching && !selectedProject.isFetching && !agentEligible) setAgent(value => value === preferences.pair?.agent_id ? "" : value);
+    if (restoration.current.machine && workspace !== Workspace.Local && !rememberedMachine.isFetching && !selectedProject.isFetching && !machineEligible) setMachine(value => value === preferences.pair?.machine_id ? "" : value);
+    if (touched.current || !projectEligible) return;
+    if (!restoration.current.agent && agentEligible) { restoration.current.agent = true; setAgent(agentChoice!.id); }
+    if (!restoration.current.machine && workspace !== Workspace.Local && machineEligible) { restoration.current.machine = true; setMachine(machineChoice!.id); }
+  }, [active, preferences.pair, agentChoice, machineChoice, agentEligible, machineEligible, projectEligible, rememberedAgent.isFetching, rememberedMachine.isFetching, selectedProject.isFetching, workspace, blocked]);
+  const editAgent = (id: string) => { touched.current = true; restoration.current.agent = false; setAgent(id); };
+  const editMachine = (id: string) => { touched.current = true; restoration.current.machine = false; setMachine(id); };
 
-  const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked;
+  const automaticChoicesEligible = (!restoration.current.agent || agent !== preferences.pair?.agent_id || agentEligible) && (!restoration.current.machine || workspace === Workspace.Local || machine !== preferences.pair?.machine_id || machineEligible);
+  const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked && automaticChoicesEligible;
 
   const submit = async () => {
     if (!canCreate) return;
