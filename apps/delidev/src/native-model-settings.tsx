@@ -20,13 +20,14 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   const [account, setAccount] = useState<Resource>();
   const [hidden, setHidden] = useState(false);
   const [jobID, setJobID] = useState("");
+  const [retainedJobID, setRetainedJobID] = useState("");
   const [lookup, setLookup] = useState("");
   const [observationID, setObservationID] = useState("");
   const listRoot = useRef<HTMLDivElement>(null);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && opened });
   const supported = status.data?.capabilities.includes(SystemCapability.NATIVE_CODEX_MODEL_DISCOVERY_V1) === true;
   const discovery = useRetainedMutation("native-models:discover", NativeModelQuery.discoverNativeModels, (result) => {
-    if (result.job) { setJobID(result.job.id); setObservationID(""); }
+    if (result.job) { setRetainedJobID(result.job.id); setJobID(result.job.id); setObservationID(""); }
   }, (result, request) => {
     const scope = object(document(result.job).input);
     return document(result.job).type === "native-codex-models" && scope.machine_id === request.mutation?.id && scope.account_id === request.accountId;
@@ -37,7 +38,12 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   const job = candidate?.id === jobID && candidate.kind === EntityKind.JOB && document(candidate).type === "native-codex-models" ? candidate : undefined;
   const state = text(document(job).state);
   const source = observationID || (state === "succeeded" ? jobID : "");
-  const observationPending = Boolean(jobID && !["succeeded", "failed", "canceled"].includes(state));
+  // A failed manual lookup has not acquired an accepted operation. Once a
+  // discovery acknowledgment or valid lookup retains it, read errors cannot
+  // release that original unsettled operation for replacement.
+  useEffect(() => { if (job) setRetainedJobID(job.id); }, [job]);
+  const unverifiedLookupFailed = !operation.isFetching && Boolean(operation.error || operation.data && !job);
+  const observationPending = Boolean(jobID && (retainedJobID === jobID || !unverifiedLookupFailed) && !["succeeded", "failed", "canceled"].includes(state));
   const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain;
   const models = useNativeModelPages(source, active && opened && supported && Boolean(source) && !blocked);
   const selectedObservation = models.payloadPages.flatMap(page => page.payload)[0]?.job ?? (job?.id === source && state === "succeeded" ? job : operation.data?.lastSuccess?.id === source ? operation.data.lastSuccess : undefined);
@@ -45,7 +51,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   const accountSelected = !selectedAccounts || selectedAccounts.some(row => row.id === account?.id);
 
   useEffect(() => { pendingOperation?.(blocked || observationPending); return () => pendingOperation?.(false); }, [blocked, observationPending, pendingOperation]);
-  const reset = () => { setJobID(""); setObservationID(""); };
+  const reset = () => { setRetainedJobID(""); setJobID(""); setObservationID(""); };
   return <details onToggle={(event) => setOpened(event.currentTarget.open)}><summary>{copy("native-model-settings.nativeCodexModelObservations_e3a909")}</summary>{opened ? <section aria-label={copy("native-model-settings.nativeCodexModelObservations_e3a909")}>
     <h2>{copy("native-model-settings.observeNativeCodexModels_7d4b36")}</h2>
     <p>{copy("native-model-settings.chooseARunnerDeviceWithCodex_8f2ab4")}</p>

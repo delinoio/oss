@@ -49,6 +49,8 @@ it("uses a saved alias and service, keeping the full identity in a closed disclo
   expect(value.get).toHaveBeenCalledTimes(1);
   expect(value.save).not.toHaveBeenCalled();
   expect(within(dialog).queryByRole("button", { name: "Back to Agent Workers" })).toBeNull();
+  expect(within(dialog).queryByRole("button", { name: /^Close$/ })).toBeNull();
+  expect(dialog.querySelector(".settings-task-actions")).toBeNull();
   fireEvent.click(within(dialog).getByRole("button", { name: "Close Preview routing" }));
   expect(screen.queryByRole("dialog")).toBeNull();
 });
