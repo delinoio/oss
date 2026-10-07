@@ -2,6 +2,24 @@ package domain
 
 import "testing"
 
+func TestProviderRequiresCurrentProtocolAndExplicitAvailability(t *testing.T) {
+	provider := Provider{Name: "Fixture", Endpoint: "https://api.example.test/v1", Protocol: OpenAIResponses, Authentication: BearerAuth, Enabled: new(true)}
+	if err := provider.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, protocol := range []APIProtocol{"native-subscription", "unknown"} {
+		invalid := provider
+		invalid.Protocol = protocol
+		if protocol.Valid() || SafeError(invalid.Validate()).Code != InvalidArgument {
+			t.Fatalf("unsupported API protocol admitted: %q", protocol)
+		}
+	}
+	provider.Enabled = nil
+	if provider.EnabledValue() || SafeError(provider.Validate()).Code != InvalidArgument {
+		t.Fatal("missing provider availability was admitted")
+	}
+}
+
 func TestRepositoryAcceptsRemoteCheckoutPaths(t *testing.T) {
 	for _, checkout := range []string{"/tmp/repo/sub", "/Users/worker/한글 repo", `C:\work\repo`, "D:/work/repo"} {
 		t.Run(checkout, func(t *testing.T) {

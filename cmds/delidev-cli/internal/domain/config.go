@@ -388,14 +388,13 @@ func (t Template) Validate() error {
 type APIProtocol string
 
 const (
-	OpenAIResponses    APIProtocol = "openai-responses"
-	OpenAIChat         APIProtocol = "openai-chat"
-	AnthropicMessages  APIProtocol = "anthropic-messages"
-	NativeSubscription APIProtocol = "native-subscription"
+	OpenAIResponses   APIProtocol = "openai-responses"
+	OpenAIChat        APIProtocol = "openai-chat"
+	AnthropicMessages APIProtocol = "anthropic-messages"
 )
 
 func (p APIProtocol) Valid() bool {
-	return p == OpenAIResponses || p == OpenAIChat || p == AnthropicMessages || p == NativeSubscription
+	return p == OpenAIResponses || p == OpenAIChat || p == AnthropicMessages
 }
 
 type Authentication string
@@ -434,9 +433,6 @@ func (p Provider) Validate() error {
 	}
 	if p.PresetID != nil && !p.PresetID.Valid() {
 		return Fail(InvalidArgument, "Unknown managed provider preset.", "Use one of the supported API provider preset identifiers.")
-	}
-	if p.Protocol == NativeSubscription {
-		return Fail(InvalidArgument, "Subscription accounts have no API Provider.", "Create a service-native subscription account and model.")
 	}
 	if p.Authentication != BearerAuth && p.Authentication != APIKeyAuth && p.Authentication != KeylessAuth {
 		return Fail(InvalidArgument, "Unsupported API authentication.", "Use bearer, api-key, or a keyless local endpoint.")

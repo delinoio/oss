@@ -147,7 +147,7 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 		if err != nil {
 			return err
 		}
-		if provider.Protocol != domain.NativeSubscription && !provider.EnabledValue() {
+		if !provider.EnabledValue() {
 			return providerDisabled()
 		}
 		return nil
@@ -453,9 +453,6 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		return mustExist(tx, domain.TemplateKind, v.Templates...)
 	case *domain.Provider:
-		if v.Protocol == domain.NativeSubscription {
-			return domain.Fail(domain.InvalidArgument, "Subscription providers are retired.", "Create a subscription service account and native model instead.")
-		}
 		if v.PresetID != nil {
 			canonical, ok := providerPresetDefaults(*v.PresetID)
 			if !ok || !sameProviderPresetDefaults(*v, canonical) {
@@ -548,7 +545,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if err != nil {
 				return err
 			}
-			if provider.Protocol == domain.NativeSubscription {
+			if !provider.Protocol.Valid() {
 				return domain.Fail(domain.InvalidArgument, "API accounts require an API provider.", "Select an API endpoint or create an independent subscription account.")
 			}
 		}

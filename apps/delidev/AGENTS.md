@@ -9,6 +9,8 @@
 
 # DeliDev desktop
 
+- API Provider documents use only the current closed API protocols and explicit boolean enabled values. Account pickers, fresh contract checks and connection controls never infer enabled from omission. Service-native subscriptions have no API Provider editor or retirement projection.
+
 - Home New project/Create a project opens the existing Project editor directly over Sessions or New Session without selecting or mounting Settings. `src/project-creation.tsx` owns the independent scoped lifetime and mutation registry, original pending/uncertain task reopening, exact retries and active-query invalidation; App owns admission and disposal on another surface/conversation or connection identity. Preserve drafts, Home pages/filter/scroll, shared dialog geometry and visible opener/compact Home fallback focus. Keep Settings-internal creation unchanged and follow `docs/apps-delidev-desktop-contract.md#project-creation-outside-settings`.
 
 - Widget persistence follows issue #1410 and `docs/apps-delidev-widget-contract.md`: use the process-owned bounded FIFO worker, recheck original window/scope/revision and oldest-ready ownership before storage, and never hold tray/window/queue locks across disk I/O. Quit closes admission on the UI loop and joins all presentation tasks plus final stale publication on its tracked worker. Native Exit performs no storage or task joins; fixtures remain separate from native/platform acceptance.

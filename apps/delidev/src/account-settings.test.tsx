@@ -21,7 +21,7 @@ function requestId(value: unknown): string {
 
 function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Promise<{ resource?: Resource; requestId?: string }>; connect?: (request: unknown) => Promise<{ account?: Resource; requestId?: string }>; providerId?: string; currentProvider?: Resource; listPage?: (request: { filter?: { kind?: EntityKind; pageToken?: string }; providerId?: string; accountType?: number }) => { resources: Resource[]; nextPageToken?: string } } = {}) {
   const providerId = args.providerId ?? newRequestId();
-  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "API provider", protocol: "openai-responses", authentication: "api-key", endpoint: "https://api.example.test/v1" }), id: providerId });
+  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "API provider", enabled: true, protocol: "openai-responses", authentication: "api-key", endpoint: "https://api.example.test/v1" }), id: providerId });
   const providerOption: AccountProviderSummary = { providerId, displayName: "API provider", enabled: true, provider, keyGuidance: "Create a scoped provider key.", documentationUrl: "https://docs.example.test/keys" };
   const resources = args.resources ?? [];
   const list = vi.fn(async (request: { filter?: { kind?: EntityKind; pageToken?: string }; providerId?: string; accountType?: number }) => ({
@@ -64,8 +64,6 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     setProviderFilter={callbacks.setProviderFilter}
     providerSearchLoading={false}
     providerPicker={{ ready: true, loaded: true, fetching: false, pageToken: "", nextPageToken: "", retry: vi.fn(), next: callbacks.loadMoreProviders, first: vi.fn() }}
-    subscriptionProviderResources={[]}
-    subscriptionProviderManagement={<button type="button">Add native subscription provider</button>}
     openApiProviders={callbacks.openApiProviders}
     manageAccount={callbacks.manageAccount}
     editAccount={callbacks.editAccount}
@@ -252,6 +250,7 @@ it("accepts current disconnected metadata on a replay without restoring the old 
 it.each([
   { change: "authentication", authentication: "bearer", enabled: true },
   { change: "enabled state", authentication: "api-key", enabled: false },
+  { change: "missing availability", authentication: "api-key", enabled: undefined },
 ])("rechecks provider $change before account creation and clears the submitted key on mismatch", async ({ authentication, enabled }) => {
   const providerId = newRequestId();
   const changedProvider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Changed provider", protocol: "openai-responses", authentication, endpoint: "https://api.example.test/v1", enabled }), id: providerId });
@@ -292,7 +291,7 @@ it("retries a lost account-create acknowledgment exactly and requires key re-ent
 
 it("uses explicit keyless connection, sends no key bytes, and keeps subscription setup unavailable", async () => {
   const providerId = newRequestId();
-  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Loopback", protocol: "openai-chat", authentication: "keyless", endpoint: "http://127.0.0.1:11434/v1" }), id: providerId });
+  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Loopback", enabled: true, protocol: "openai-chat", authentication: "keyless", endpoint: "http://127.0.0.1:11434/v1" }), id: providerId });
   const summary = { providerId, displayName: "Loopback", enabled: true, provider, keyGuidance: "", documentationUrl: "" } satisfies AccountProviderSummary;
   const account = resource(EntityKind.ACCOUNT, { alias: "Local endpoint", provider_id: providerId, type: "api", enabled: true, health: "disconnected" }, 3n);
   const connected = create(ResourceSchema, { ...account, revision: 4n, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(account.documentJson)), health: "unverified", connection: { id: newRequestId(), authentication: "keyless" } }) });
@@ -422,12 +421,13 @@ it.each([
   expect(value.connect).not.toHaveBeenCalled();
 });
 
-it("labels stale provider results and excludes disabled, unsaved and subscription choices", () => {
+it("labels stale provider results and excludes disabled, unsaved and unsupported protocol choices", () => {
   const value = fixture();
   const invalid = [
     { ...value.providerOption, providerId: newRequestId(), enabled: false },
     { ...value.providerOption, providerId: "" },
     { ...value.providerOption, providerId: newRequestId(), provider: resource(EntityKind.PROVIDER, { protocol: "native-subscription", authentication: "subscription" }) },
+    { ...value.providerOption, providerId: newRequestId(), provider: resource(EntityKind.PROVIDER, { protocol: "unknown", enabled: true }) },
   ];
   render(value.view(value.settings(AccountSettingsSection.Api, { eligibleProviders: [value.providerOption, ...invalid], providerPicker: { ready: true, loaded: true, fetching: false, error: new ConnectError("Unavailable", Code.Unavailable), pageToken: "", nextPageToken: "", retry: vi.fn(), next: vi.fn(), first: vi.fn() } })));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
@@ -473,7 +473,7 @@ it("retains API entries during failed refreshes and labels initial loading witho
 
 it("offers a local endpoint retry after a keyless connection failure without requesting a key", async () => {
   const providerId = newRequestId();
-  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Loopback", protocol: "openai-chat", authentication: "keyless", endpoint: "http://127.0.0.1:11434/v1" }), id: providerId });
+  const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Loopback", enabled: true, protocol: "openai-chat", authentication: "keyless", endpoint: "http://127.0.0.1:11434/v1" }), id: providerId });
   const summary = { providerId, displayName: "Loopback", enabled: true, provider, keyGuidance: "", documentationUrl: "" } satisfies AccountProviderSummary;
   const entry = resource(EntityKind.ACCOUNT, { alias: "Local endpoint", provider_id: providerId, type: "api", enabled: true, health: "disconnected" }, 3n);
   const value = fixture({ resources: [provider], providerId, save: async (request) => ({ resource: entry, requestId: requestId(request) }), connect: async () => { throw new ConnectError("fixture endpoint failure", Code.InvalidArgument); } });

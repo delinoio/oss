@@ -72,7 +72,7 @@ func (s Scope) Validate() error {
 	if err := s.Provider.Validate(); err != nil {
 		return err
 	}
-	if s.Provider.Protocol == domain.NativeSubscription || len(s.Operations) == 0 || len(s.Operations) > 5 {
+	if len(s.Operations) == 0 || len(s.Operations) > 5 {
 		return domain.Fail(domain.Unsupported, "The execution has no compatible API proxy operations.", "Use the installed harness's directly compatible API protocol.")
 	}
 	if s.Purpose == domain.SessionTitleUsage {

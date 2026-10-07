@@ -118,9 +118,6 @@ func Inspect(ctx context.Context, provider domain.Provider, key []byte, routing 
 	if err := provider.Validate(); err != nil {
 		return Observation{}, err
 	}
-	if provider.Protocol == domain.NativeSubscription {
-		return Observation{}, domain.Fail(domain.Unsupported, "Subscription providers require their native account interface.", "Use the isolated subscription lifecycle.")
-	}
 	if err := domain.ValidateAPIKey(key, provider.Authentication == domain.KeylessAuth); err != nil {
 		return Observation{}, err
 	}

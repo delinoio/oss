@@ -82,7 +82,7 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 	if err != nil {
 		return providerID, err
 	}
-	if provider.Protocol != domain.NativeSubscription && !provider.EnabledValue() {
+	if !provider.EnabledValue() {
 		return providerID, providerDisabled()
 	}
 	return providerID, nil

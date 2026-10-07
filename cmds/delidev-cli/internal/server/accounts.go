@@ -157,7 +157,7 @@ func accountConnectPreflight(tx *store.Tx, input connectAccountInput) (domain.Ac
 	if err = provider.Validate(); err != nil {
 		return account, provider, err
 	}
-	if input.Keyless != (provider.Authentication == domain.KeylessAuth) || provider.Protocol == domain.NativeSubscription {
+	if input.Keyless != (provider.Authentication == domain.KeylessAuth) {
 		return account, provider, domain.Fail(domain.InvalidArgument, "The connection input does not match the provider's authentication.", "Use explicit keyless input for a keyless local provider, or supply its API key.")
 	}
 	return account, provider, nil

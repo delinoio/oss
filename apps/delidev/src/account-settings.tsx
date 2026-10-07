@@ -6,7 +6,7 @@ import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./s
 import { ProviderGuidance } from "./provider-guidance";
 import { AccountOAuth, useAccountOAuth, type AccountOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
-import { useEffect, useMemo, useRef, useState, type ReactNode, useId } from "react";
+import { useEffect, useMemo, useRef, useState, useId } from "react";
 import { createConnectQueryKey, useQuery, useTransport } from "@connectrpc/connect-query";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { ApiEntryRow } from "./api-entry-row";
@@ -25,7 +25,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import "./api-account.css";
 import { AccountConnection } from "./account-connection";
-import { Authentication } from "./configuration-fields";
+import { Authentication, Protocol } from "./configuration-fields";
 import { document, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
@@ -83,8 +83,6 @@ export interface AccountSettingsProps {
   providerFilterHasMore?: boolean;
   loadMoreProviderFilters?: () => void;
   setProviderFilter: (providerId: string, provider?: AccountProviderSummary) => void;
-  subscriptionProviderResources: readonly Resource[];
-  subscriptionProviderManagement: ReactNode;
   openApiProviders: (providerId?: string) => void;
   manageAccount: (resource: Resource) => void;
   editAccount: (resource: Resource) => void;
@@ -114,6 +112,10 @@ function validAccountObservation(resource: Resource | undefined, id: string, pro
   return data.type === "api" && data.provider_id === providerId;
 }
 
+function supportedProviderProtocol(value: unknown): boolean {
+  return value === Protocol.Responses || value === Protocol.Chat || value === Protocol.Anthropic;
+}
+
 function providerContract(provider: AccountProviderSummary): { id: string; authentication: string; protocol: string; endpoint: string; enabled: boolean } {
   const data = document(provider.provider);
   return { id: provider.providerId, authentication: text(data.authentication), protocol: text(data.protocol), endpoint: text(data.endpoint), enabled: provider.enabled };
@@ -122,7 +124,7 @@ function providerContract(provider: AccountProviderSummary): { id: string; authe
 function providerContractMatches(expected: ReturnType<typeof providerContract>, resource: Resource | undefined): boolean {
   if (!resource || resource.kind !== EntityKind.PROVIDER || resource.schemaVersion !== 1 || resource.id !== expected.id) return false;
   const data = document(resource);
-  const enabled = data.enabled !== false;
+  const enabled = data.enabled === true;
   return text(data.authentication) === expected.authentication && text(data.protocol) === expected.protocol &&
     text(data.endpoint) === expected.endpoint && enabled === expected.enabled && expected.enabled;
 }
@@ -197,7 +199,7 @@ function AccountCreationWizard({
   const autoConnectStarted = useRef<number | undefined>(undefined);
   const [autoConnect, setAutoConnect] = useState<number>();
   const options = useMemo(() => eligibleProviders.filter((provider) =>
-    provider.providerId && provider.enabled && document(provider.provider).protocol !== "native-subscription"), [eligibleProviders]);
+    provider.providerId && provider.enabled && supportedProviderProtocol(document(provider.provider).protocol)), [eligibleProviders]);
   const selectedProvider = selectedHint?.providerId === providerId ? selectedHint :
     providers.find((provider) => provider.providerId === providerId) ?? eligibleProviders.find((provider) => provider.providerId === providerId);
   useEffect(() => {
@@ -599,8 +601,6 @@ function ApiAccountSettings({
   providerFilterHasMore = false,
   loadMoreProviderFilters,
   setProviderFilter,
-  subscriptionProviderResources,
-  subscriptionProviderManagement,
   openApiProviders,
   manageAccount,
   editAccount,
@@ -651,7 +651,7 @@ function ApiAccountSettings({
     if (!startApiWizard || !startApiWizard.key || startApiWizard.key === lastWizardRequest.current) return;
     lastWizardRequest.current = startApiWizard.key;
     const provider = startApiWizard.provider ?? providers.find((item) => item.providerId === startApiWizard.providerId);
-    if (!provider?.enabled || !provider.providerId || document(provider.provider).protocol === "native-subscription") return;
+    if (!provider?.enabled || !provider.providerId || !supportedProviderProtocol(document(provider.provider).protocol)) return;
     setWizardProvider(provider);
     setPauseWorkflowLock(false);
     onWorkflowReadyChange?.(true);

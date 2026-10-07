@@ -166,14 +166,14 @@ func (s *Store) ProviderInventoryPage(ctx context.Context, presets []domain.Prov
 			candidates = append(candidates, entry)
 		}
 
-		customQuery := "SELECT " + recordColumns + " FROM entities WHERE kind='provider' AND COALESCE(json_type(body,'$.preset_id'),'null') IN ('null','text') AND COALESCE(json_extract(body,'$.preset_id'),'')='' AND COALESCE(json_extract(body,'$.protocol'),'')<>'native-subscription'"
+		customQuery := "SELECT " + recordColumns + " FROM entities WHERE kind='provider' AND COALESCE(json_type(body,'$.preset_id'),'null') IN ('null','text') AND COALESCE(json_extract(body,'$.preset_id'),'')=''"
 		args := []any{}
 		if f.Query != "" {
 			customQuery += " AND instr(lower(json_extract(body,'$.name')),lower(?))>0"
 			args = append(args, f.Query)
 		}
 		if f.EnabledOnly {
-			customQuery += " AND COALESCE(json_extract(body,'$.enabled'),1)=1"
+			customQuery += " AND json_extract(body,'$.enabled')=1"
 		}
 		if strings.HasPrefix(f.After, "custom:") {
 			name, id, ok := splitCustomCursor(f.After)

@@ -78,7 +78,7 @@ function SourceGroup({ value, index, count, step, harness, active, locked, refre
   }, [initialModel.data, value.source, value.key, update]);
   const label = source?.kind === SourceKind.Subscription ? `${subscriptionServiceNames[source.id as SubscriptionServiceId]} ${copy("agent-worker-wizard.subscription")}` : provider.data?.resource ? resourceName(provider.data.resource) : source?.id || copy("agent-worker-wizard.chooseSource");
   const selectedRows = ids.flatMap(id => known[id] ? [known[id]!] : []);
-  const refreshAccount = selectedRows.find(row => document(row).connection && document(row).enabled !== false && !document(row).removal);
+  const refreshAccount = selectedRows.find(row => document(row).connection && document(row).enabled === true && !document(row).removal);
   const discovery = useRetainedMutation(`agent-worker-routes:discovery:${value.key}:${sourceID}`, ProviderQuery.discoverModels, result => {
     if (result.account) remember(result.account.id, result.account);
     setModelPage(""); void models.refetch(); void rows.refetch();

@@ -47,7 +47,7 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
   const operations = [connect, disconnect, validate, discover];
   const blocked = operations.some((operation) => operation.busy || operation.uncertain);
   const metadata = document(provider.data?.resource), keyless = metadata.authentication === Authentication.Keyless;
-  const providerEnabled = provider.data?.resource !== undefined && metadata.enabled !== false;
+  const providerEnabled = provider.data?.resource !== undefined && metadata.enabled === true;
   const disconnected = data.health === "disconnected" && !data.connection && !data.removal;
   useEffect(() => { if (!active || !disconnected) setKey(""); }, [active, disconnected]);
   useSettingsTaskDismiss(() => setKey(""));

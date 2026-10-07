@@ -70,10 +70,6 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		return nil, err
 	}
 	switch v := value.(type) {
-	case *domain.Provider:
-		if v.Protocol == domain.NativeSubscription {
-			return nil, domain.Fail(domain.Unsupported, "Provider-bound subscription configuration is unsupported.", "Use a service-native subscription account and model.")
-		}
 	case *domain.Account:
 		v.Subscription = nil
 		v.Health = domain.AccountDisconnected

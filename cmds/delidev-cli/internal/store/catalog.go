@@ -119,7 +119,7 @@ func (s *Store) SearchModels(ctx context.Context, f ModelSearch) ([]Record, []Re
 		query := "SELECT " + recordColumns + " FROM entities WHERE kind='model'"
 		args := []any{}
 		if f.EnabledProvidersOnly {
-			query += " AND (json_extract(body,'$.source_kind')='subscription' OR EXISTS(SELECT 1 FROM entities p WHERE p.kind='provider' AND p.id=json_extract(entities.body,'$.provider_id') AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription'))"
+			query += " AND (json_extract(body,'$.source_kind')='subscription' OR EXISTS(SELECT 1 FROM entities p WHERE p.kind='provider' AND p.id=json_extract(entities.body,'$.provider_id') AND json_extract(p.body,'$.enabled')=1))"
 		}
 		if f.ProviderID != "" {
 			query += " AND json_extract(body,'$.provider_id')=?"
@@ -211,7 +211,7 @@ func (s *Store) ResolveModel(ctx context.Context, selector string, provider doma
 	return result, err
 }
 
-// Model identity and alias lookup uses the indexes introduced in schema v3.
+// Model identity and alias lookup uses the current initialization indexes.
 // The bounded provider slice prevents a catalog response from retaining an
 // unbounded transaction or returning a partial publication as success.
 func CatalogBound(count int) error {
@@ -235,7 +235,7 @@ FROM entities a JOIN entities p ON p.id=json_extract(a.body,'$.provider_id') AND
 WHERE a.kind='account' AND a.id>? AND json_extract(a.body,'$.type')='api'
 AND json_extract(a.body,'$.enabled')=1 AND json_type(a.body,'$.connection')='object'
 AND COALESCE(json_type(a.body,'$.removal'),'null')='null'
-AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription' AND json_extract(p.body,'$.discovery')=1
+AND json_extract(p.body,'$.enabled')=1 AND json_extract(p.body,'$.discovery')=1
 AND (COALESCE(json_extract(a.body,'$.catalog.connection_id'),'')<>json_extract(a.body,'$.connection.id')
 OR unixepoch(json_extract(a.body,'$.catalog.observed_at'))+MAX(?,COALESCE(json_extract(a.body,'$.catalog.retry_after_seconds'),0))<=unixepoch(?))
 ORDER BY a.id LIMIT ?`
