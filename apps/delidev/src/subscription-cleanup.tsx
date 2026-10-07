@@ -106,7 +106,7 @@ export function useFailedSubscriptionCleanup(active: boolean, available: boolean
     {accepted && (status.error || invalid) ? <div><p>{copy("subscription-settings.cleanupStatusUnavailable")}</p><button type="button" disabled={!active || status.isFetching} onClick={() => void status.refetch()}>{copy("subscription-settings.cleanupRetryStatus")}</button></div> : null}
     {job && job.state !== State.PENDING && job.retained > 0 ? <details ref={resultsRoot} className="subscription-cleanup-results" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
       <summary>{copy("subscription-settings.cleanupRetainedDetails", { count: job.retained })}</summary>
-      {results.length ? <ul>{results.map(result => <li key={result.id}><strong>{result.alias}</strong> · {copy(reasons[result.reason])}</li>)}</ul> : !status.isFetching && !status.error && !invalid ? <p>{copy("subscription-settings.cleanupNoRetainedOnPage")}</p> : null}
+      {results.length ? <ul>{results.map(result => <li key={result.id}><strong>{result.alias}</strong> · {copy(reasons[result.reason])}</li>)}</ul> : resultsQuery.loaded && !resultsQuery.loading && !resultsQuery.error && !status.error && !invalid ? <p>{copy("subscription-settings.cleanupNoRetainedOnPage")}</p> : null}
       <ScrollContinuation query={resultsQuery} label={copy("subscription-settings.cleanupResultPages")} root={scrollRoot} active={active && expanded} />
     </details> : null}
   </>;
