@@ -681,7 +681,7 @@ Queue pages expose edit, remove and explicit Steer for unclaimed items. Editing 
 ### Editable settings and account connection
 Provider, model, AI account, Agent Worker and instruction-template forms use generated configuration RPCs. Provider presets seed concrete editable values; custom API endpoints and explicit keyless authentication remain server-validated. Model provider/native identity is immutable when editing. Agents retain ordered weighted account links, ordered templates, routing inheritance and native permission/options. Configured compatibility does not establish native execution capability. Project/repository forms and local execution-Worker registration/controller lifecycle are implemented; remote setup, updates and OS services retain their separate acceptance requirements.
 
-Each edit captures its original resource revision and full document. Server-owned account observations and model discovery provenance are preserved. A peer revision change blocks a new save while retaining the draft; an uncertain save retries only its original request. Edits and exact uncertain requests remain available within the open Settings task across responsive layout changes and same-identity reconnect. Closing the task, changing categories or leaving Settings discards them, including when an accepted save may still complete on the server. Forms cap complete documents at 1 MiB and instruction content at 128 KiB UTF-8 before retention, and selectors accumulate safe display projections from bounded pages through the shared accessible picker, with an explicit selected identity outside the reached inventory. Exact authoritative selection reads remain separate.
+Each edit captures its original resource revision and full document. Server-owned account observations and model discovery provenance are preserved. A peer revision change blocks a new save while retaining the draft; an uncertain save retries only its original request. Edits and exact uncertain requests remain available within the open Settings task across responsive layout changes and same-identity reconnect. Closing the task, changing categories or leaving Settings discards them, including when an accepted save may still complete on the server. Forms cap complete documents at 1 MiB and instruction content at 128 KiB UTF-8 before retention, and selectors accumulate safe display projections from bounded pages through the shared accessible picker, with an explicit selected identity outside the reached inventory. Exact authoritative selection reads remain separate. A pending deliberate selection synchronously locks the containing configuration save, including direct form submission, until the accepted selection and draft update commit. Preserve the prior IDs and sibling edits while reading; failure or reader disposal releases only its own pending identity and retains the original error and generation rules.
 
 ### Agent Worker core and optional presentation
 
@@ -1865,6 +1865,10 @@ The shared Settings application navigation, geometry, child-dialog/drawer focus
 and visit lifetime remain authoritative; page-level Escape preserves the visit.
 The separate issue #1236 host change must not be implemented or reverted by this
 category treatment.
+
+Backup inventory, creation history and deletion history reject duplicate IDs
+within an RPC page as a whole. Retain the previous accepted range and retry the
+exact failed page token without adopting malformed rows or continuation.
 
 Inventory is one semantic table with Modified (UTC) / Backup ID, Size, Integrity
 and action headers. Preserve server order, complete wrapped UUIDs and roughly 92px
