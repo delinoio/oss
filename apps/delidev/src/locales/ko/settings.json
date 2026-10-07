@@ -64,7 +64,7 @@
   "settings.settingsCategories_b9ed95": "설정 범주",
   "settings.settingsContent_e4dcd3": "설정 내용",
   "settings.reusableConfigurationsForYourAgents_5ba1a2": "에이전트에 재사용할 구성입니다.",
-  "settings.defaultRoutingWorktreeFetchAndPull_e19cf8": "기본 라우팅, Worktree fetch 및 풀 리퀘스트 문제 해결.",
+  "settings.defaultRoutingWorktreeFetchAndPull_e19cf8": "기본 계정 라우팅.",
   "settings.refreshSettings_65dbd6": "설정 새로고침",
   "settings.refresh_0e9161": "새로고침",
   "settings.editServerPreferences_355948": "서버 환경 설정 편집",

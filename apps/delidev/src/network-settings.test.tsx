@@ -13,23 +13,24 @@ import { WorkerNetworkAction, WorkerNetworkControlProvider } from "./worker-netw
 import { encryptedInput, workerRecipient, workerRouteStatus } from "./worker-network";
 import { SettingsLifetime } from "./settings-lifetime";
 
-function fixture(lose = false, native?: (machine: string, action: WorkerNetworkAction, ciphertext: Uint8Array, digest: string) => Promise<unknown>) {
+function fixture(lose = false, native?: (machine: string, action: WorkerNetworkAction, ciphertext: Uint8Array, digest: string) => Promise<unknown>, inline = false) {
   const authority = { endpoint: "https://server.example", serverId: newRequestId() }, machine = newRequestId();
   const row = create(ResourceSchema, { kind: EntityKind.NETWORK_PROFILE, id: newRequestId(), revision: 9007199254740993n, schemaVersion: 1, documentJson: encode({ name: "Pinned proxy", mode: "http", host: "proxy.example", port: 3128 }) });
   const route = create(ResourceSchema, { kind: EntityKind.NETWORK_ROUTE, id: newRequestId(), revision: 9007199254740994n, schemaVersion: 1, documentJson: encode({ machine_id: machine, profile: { name: "Direct", mode: "direct" } }) });
   const requests: SelectNetworkProfileRequest[] = [];
   const select = vi.fn(async (request: SelectNetworkProfileRequest) => { requests.push(request); if (lose && requests.length === 1) throw new ConnectError("Fixture lost response", Code.Unavailable); return { resource: route }; });
+  const remove = vi.fn(() => ({}));
   const reads = vi.fn();
   const save = vi.fn(request => ({ resource: create(ResourceSchema, { ...row, documentJson: request.documentJson }) }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SERVER_OUTBOUND_PROXY_V1, SystemCapability.WORKER_NETWORK_BOOTSTRAP_V1, SystemCapability.WORKER_CODEX_PROXY_V1] }) });
     router.service(ResourceService, { getResource: () => ({ resource: row }), listResources: () => { reads(); return { resources: [row] }; } });
-    router.service(NetworkService, { getNetworkRoute: () => ({ route }), getWorkerNetworkStatus: () => ({ statusJson: encode({ version: 1, machine_id: machine, desired_generation: "9007199254740994", effective_generation: "9007199254740993", native_generation: "9007199254740993", control_state: "stale", native_state: "stale" }) }), selectNetworkProfile: select, saveNetworkProfile: save });
+    router.service(NetworkService, { getNetworkRoute: () => ({ route }), getWorkerNetworkStatus: () => ({ statusJson: encode({ version: 1, machine_id: machine, desired_generation: "9007199254740994", effective_generation: "9007199254740993", native_generation: "9007199254740993", control_state: "stale", native_state: "stale" }) }), selectNetworkProfile: select, saveNetworkProfile: save, deleteNetworkProfile: remove });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const view = <SettingsLifetime>{() => <MutationIntents><NetworkSettings active machine={machine} authority={authority} /></MutationIntents>}</SettingsLifetime>;
+  const view = <SettingsLifetime>{() => <MutationIntents><NetworkSettings active machine={inline ? "" : machine} authority={authority} /></MutationIntents>}</SettingsLifetime>;
   const rendered = render(<TransportProvider transport={transport}><QueryClientProvider client={client}>{native ? <WorkerNetworkControlProvider control={native}>{view}</WorkerNetworkControlProvider> : view}</QueryClientProvider></TransportProvider>);
-  return { ...rendered, authority, machine, row, route, requests, select, reads, save, client };
+  return { ...rendered, authority, machine, row, route, requests, select, reads, save, remove, client };
 }
 it("keeps network reads collapsed and distinct exact control/native generations", async () => {
   const f = fixture(); expect(f.reads).not.toHaveBeenCalled();
@@ -176,4 +177,94 @@ it.each(["Edit profile", "Delete profile"])("pauses both network inventories ben
   await act(async () => { await f.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
   expect(f.reads).toHaveBeenCalledTimes(reads); expect(row.isConnected).toBe(true);
   expect(f.select).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
+});
+
+it("keeps the inline server owner alive after an independent profile dialog closes", async () => {
+  const f = fixture(false, undefined, true);
+  expect(f.reads).not.toHaveBeenCalled();
+  const disclosure = screen.getByRole("button", { name: "Network settings" });
+  fireEvent.click(disclosure);
+  await screen.findByRole("heading", { name: "Current route" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => expect(document.querySelector<HTMLDetailsElement>(".network-transfer")?.open).toBe(false));
+  await screen.findByRole("option", { name: /Pinned proxy/ });
+  fireEvent.change(await screen.findByRole("combobox", { name: "Profile to select" }), { target: { value: f.row.id } });
+  expect(f.select).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "New network profile" }));
+  await screen.findByRole("dialog", { name: "New network profile" });
+  fireEvent.change(screen.getByLabelText("Profile name"), { target: { value: "Disposed draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close New network profile" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Select this revision" }).matches(":disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Select this revision" }));
+  await waitFor(() => expect(f.requests).toHaveLength(1));
+  expect(f.requests[0]).toMatchObject({ machineId: "", profileId: f.row.id, profileRevision: f.row.revision, mutation: { expectedRevision: f.route.revision } });
+  fireEvent.click(disclosure);
+  expect(screen.queryByRole("heading", { name: "Current route" })).toBeNull();
+  fireEvent.click(disclosure);
+  await screen.findByRole("heading", { name: "Current route" });
+  expect((await screen.findByRole("combobox", { name: "Profile to select" }) as HTMLSelectElement).value).toBe("");
+  expect(f.requests).toHaveLength(1);
+});
+it("does not fabricate Direct or generation zero before the server route read", async () => {
+  let release!: (value: object) => void;
+  const routeRead = new Promise<object>(resolve => { release = resolve; });
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SERVER_OUTBOUND_PROXY_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [] }) });
+    router.service(NetworkService, { getNetworkRoute: () => routeRead });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><NetworkSettings active /></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  await screen.findByText("Reading current route…");
+  expect(screen.queryByText(/Selected route:/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Select this revision" }).matches(":disabled")).toBe(true);
+  release({});
+  await screen.findByText(/Selected route: Direct · Generation 0/);
+  await screen.findByText("No saved network profiles");
+});
+it("drops inline uncertain selections on collapse without replay", async () => {
+  const f = fixture(true, undefined, true);
+  const disclosure = screen.getByRole("button", { name: "Network settings" });
+  fireEvent.click(disclosure);
+  await screen.findByRole("heading", { name: "Current route" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Select this revision" }).matches(":disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Select this revision" }));
+  await screen.findByRole("button", { name: "Retry original route selection" });
+  fireEvent.click(disclosure); fireEvent.click(disclosure);
+  await screen.findByRole("heading", { name: "Current route" });
+  expect(screen.queryByRole("button", { name: "Retry original route selection" })).toBeNull();
+  expect(f.select).toHaveBeenCalledTimes(1);
+});
+
+it("disposes an inline deletion confirmation's uncertain request independently", async () => {
+  const f = fixture(false, undefined, true);
+  f.remove.mockRejectedValueOnce(new ConnectError("Lost deletion response", Code.Unavailable));
+  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete profile" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm profile deletion" }));
+  await screen.findByRole("button", { name: "Retry original profile deletion" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Delete profile" }));
+  expect(screen.queryByRole("button", { name: "Retry original profile deletion" })).toBeNull();
+  await screen.findByRole("heading", { name: "Current route" });
+  fireEvent.click(screen.getByRole("button", { name: "Delete profile" }));
+  expect(screen.queryByRole("button", { name: "Retry original profile deletion" })).toBeNull();
+  expect(f.remove).toHaveBeenCalledTimes(1);
+});
+it("fences an accepted inline selection response after collapse", async () => {
+  const f = fixture(false, undefined, true);
+  let release!: (value: { resource: typeof f.route }) => void;
+  f.select.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const disclosure = screen.getByRole("button", { name: "Network settings" });
+  fireEvent.click(disclosure);
+  await screen.findByText(/Selected route:/);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Select this revision" }).matches(":disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Select this revision" }));
+  await waitFor(() => expect(f.select).toHaveBeenCalledTimes(1));
+  fireEvent.click(disclosure); fireEvent.click(disclosure);
+  await screen.findByText(/Selected route:/);
+  await act(async () => { release({ resource: create(ResourceSchema, { ...f.route, revision: 9007199254740999n, documentJson: encode({ profile: { name: "Disposed response", mode: "direct" } }) }) }); });
+  expect(screen.queryByText(/Disposed response/)).toBeNull();
+  expect(f.select).toHaveBeenCalledTimes(1);
 });
