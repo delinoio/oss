@@ -840,6 +840,9 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .subscription-provider-card h3 { margin: 16px 0 4px; font-size: 1rem; font-weight: 600; }
 .subscription-provider-card p { margin: 0 0 20px; color: var(--muted); font-size: .85rem; }
 .subscription-provider-card button { width: 100%; }
+.subscription-provider-card button.subscription-device-action { margin-top: 4px; padding-inline: 0; border-color: transparent; background: transparent; color: var(--accent); text-align: left; }
+.subscription-provider-card button.subscription-device-action:hover:enabled { background: transparent; text-decoration: underline; }
+.subscription-provider-card button.subscription-device-action:disabled { color: var(--muted); }
 .subscription-advanced { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 12px; }
 .subscription-advanced > summary { cursor: pointer; padding-block: 10px; font-weight: 500; }
 .subscription-advanced > div { padding-top: 12px; }
