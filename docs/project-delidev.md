@@ -268,3 +268,5 @@ subagent contracts. Independent Models and persistent API catalogs are removed
 only with complete activation. Earlier DB retention is waived by the owner;
 explicit reset does not convert history or grant native/credential cleanup.
 Earlier backups remain unsupported.
+
+- Subscription Auto cleanup includes failed initial ChatGPT server logins and fully disconnected configurations for all supported subscription services. Explicit failed-login deletion uses the same server-owned durable cleanup controller and retains the original deletion command across cleanup revision changes. Follow the subscription, account and subscription Settings contracts; preserve reference/vault/native ownership checks and terminal-attempt semantics without protocol allocation or migration.

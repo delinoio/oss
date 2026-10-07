@@ -77,7 +77,7 @@
   "subscription-settings.extra.f874aed4a97c": "Subscription login is not available yet. This server does not support subscription connection, quota refresh or disconnection.",
   "subscription-settings.cleanupButton": "Auto cleanup",
   "subscription-settings.cleanupBusy": "Cleaning up…",
-  "subscription-settings.cleanupHelp": "Deletes failed login accounts.",
+  "subscription-settings.cleanupHelp": "Deletes failed login and disconnected subscription accounts.",
   "subscription-settings.cleanupUnavailable": "Verify the selected server connection and permissions before cleanup.",
   "subscription-settings.cleanupUnsupported": "Update the selected server to use automatic cleanup.",
   "subscription-settings.cleanupProgress": "Processed {{processed}} of {{total}} accounts",
