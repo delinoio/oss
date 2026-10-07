@@ -2287,6 +2287,8 @@ Backup tracking and dismissal accessible names distinguish creation from deletio
 
 API-entry asynchronous save presentation retains its feature heading, entry name and selected-server scope through pending, unknown, failed and completed outcomes. Generic operation headings remain suppressed.
 
+A successful Fork status without its verified original-source child retains exact-query reinspection so completion can recover without another Fork request.
+
 
 
 ### Frontend validation concurrency
