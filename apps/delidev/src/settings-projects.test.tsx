@@ -54,16 +54,17 @@ it("shows final first-page emptiness with exact help, one create action and no p
   expect(screen.getAllByRole("button", { name: "New Project" })).toHaveLength(1);
   expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
 });
-it("keeps empty continuation and later pages navigable without claiming final emptiness", async () => {
-  const value = fixture(); value.list.mockImplementation(async (_kind, page) => page ? { resources: [] } : { resources: [], nextPageToken: "projects-2" }); openProjects(value);
+it("reads an empty continuation and renders later projects without claiming final emptiness", async () => {
+  const later = project("Later project");
+  const value = fixture(); value.list.mockImplementation(async (_kind, page) => page ? { resources: [later] } : { resources: [], nextPageToken: "projects-2" }); openProjects(value);
   await screen.findByText("No projects on this page."); expect(screen.queryByText("No projects yet")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect(value.list).toHaveBeenCalledWith(EntityKind.PROJECT, "projects-2"));
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await screen.findByRole("heading", { name: "Later project" });
+  expect(value.list).toHaveBeenCalledWith(EntityKind.PROJECT, "projects-2");
   expect(screen.queryByText("No projects yet")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
 });
+
 it("groups rows in server order with complete identities, schema guards and no extra reads", async () => {
   const last = project(`Zulu ${"long project name ".repeat(30)}`), first = project("Alpha"), future = create(ResourceSchema, { ...project("Future project"), schemaVersion: 2 });
   const value = fixture([last, first, future]); openProjects(value);
