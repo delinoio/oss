@@ -96,6 +96,19 @@ func (c grokOAuthHTTP) userIdentity(ctx context.Context, access []byte) (subscri
 			return identity, grokOAuthProblem()
 		}
 	}
+	// The current fixed personal profile cannot reinterpret a team or
+	// organization grant as the user's personal principal during refresh.
+	var principalType, principalID string
+	for key, target := range map[string]*string{"principal_type": &principalType, "principal_id": &principalID} {
+		if raw := fields[key]; len(raw) != 0 && string(raw) != "null" && json.Unmarshal(raw, target) != nil {
+			return identity, grokOAuthProblem()
+		}
+	}
+	if principalType != "" || principalID != "" {
+		if principalType != "User" || principalID != user {
+			return identity, grokOAuthProblem()
+		}
+	}
 	identity = subscription.Identity{Service: domain.SubscriptionGrok, Issuer: subscription.GrokIssuer, Account: user, User: user, PrincipalType: "User", PrincipalID: user, Email: email, DisplayName: name}
 	return identity, nil
 }

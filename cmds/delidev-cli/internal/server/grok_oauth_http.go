@@ -4,6 +4,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
@@ -21,6 +24,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/outbound"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
+	"github.com/go-jose/go-jose/v4"
 )
 
 const (
@@ -243,7 +247,8 @@ func (c grokOAuthHTTP) verifyID(ctx context.Context, id, access []byte, nonce st
 	if len(parts) != 3 {
 		return identity, grokOAuthProblem()
 	}
-	for _, part := range parts[:2] {
+	var kid string
+	for index, part := range parts[:2] {
 		raw, err := base64.RawURLEncoding.DecodeString(string(part))
 		if err != nil {
 			return identity, grokOAuthProblem()
@@ -253,15 +258,38 @@ func (c grokOAuthHTTP) verifyID(ctx context.Context, id, access []byte, nonce st
 		if err != nil {
 			return identity, grokOAuthProblem()
 		}
+		if index == 0 && (json.Unmarshal(fields["kid"], &kid) != nil || len(kid) == 0 || len(kid) > 256 || domain.Text(kid, "key identity", 256, true) != nil) {
+			clearOAuthObject(fields)
+			return identity, grokOAuthProblem()
+		}
 		clearOAuthObject(fields)
 	}
-	client, close, err := c.client()
+	// Fetch JWKS through the same bounded, duplicate-rejecting, unretried fixed
+	// HTTP path. The generic remote key set otherwise owns an unbounded JSON read.
+	status, fields, err := c.request(ctx, http.MethodGet, grokJWKS, nil, nil)
 	if err != nil {
 		return identity, err
 	}
-	defer close()
-	ctx = oidc.ClientContext(ctx, client)
-	keyset := oidc.NewRemoteKeySet(ctx, grokJWKS)
+	defer clearOAuthObject(fields)
+	var keys []jose.JSONWebKey
+	if status != http.StatusOK || json.Unmarshal(fields["keys"], &keys) != nil || len(keys) == 0 || len(keys) > 64 {
+		return identity, grokOAuthProblem()
+	}
+	keyset := &oidc.StaticKeySet{}
+	seen := map[string]bool{}
+	for _, key := range keys {
+		public, ok := key.Key.(*ecdsa.PublicKey)
+		if !ok || public.Curve != elliptic.P256() || key.Algorithm != "ES256" || key.Use != "sig" || !key.IsPublic() || key.KeyID == "" || seen[key.KeyID] {
+			return identity, grokOAuthProblem()
+		}
+		seen[key.KeyID] = true
+		if key.KeyID == kid {
+			keyset.PublicKeys = []crypto.PublicKey{public}
+		}
+	}
+	if len(keyset.PublicKeys) != 1 {
+		return identity, grokOAuthProblem()
+	}
 	verifier := oidc.NewVerifier(subscription.GrokIssuer, keyset, &oidc.Config{ClientID: subscription.GrokClientID, SupportedSigningAlgs: []string{"ES256"}})
 	token, err := verifier.Verify(ctx, string(id))
 	if err != nil || token.Subject == "" || len(token.Subject) > 256 || token.IssuedAt.IsZero() || token.IssuedAt.After(time.Now().Add(time.Minute)) || !token.Expiry.After(token.IssuedAt) || nonce != "" && subtle.ConstantTimeCompare([]byte(token.Nonce), []byte(nonce)) != 1 || token.AccessTokenHash != "" && token.VerifyAccessToken(string(access)) != nil {

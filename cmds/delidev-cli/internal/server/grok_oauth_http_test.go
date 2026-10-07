@@ -77,7 +77,7 @@ func TestGrokIDTokenValidatesSignatureIssuerAudienceNonceAndTime(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(jwks)), Header: make(http.Header)}, nil
 	})}
-	for _, scenario := range []string{"valid", "issuer", "audience", "nonce", "expired", "future-issued", "azp", "multiple-audiences", "signature"} {
+	for _, scenario := range []string{"valid", "issuer", "audience", "nonce", "expired", "future-issued", "azp", "multiple-audiences", "signature", "unknown-kid", "missing-kid"} {
 		t.Run(scenario, func(t *testing.T) {
 			claims := jwt.MapClaims{"iss": subscription.GrokIssuer, "aud": subscription.GrokClientID, "sub": "fixture-user", "iat": time.Now().Add(-time.Minute).Unix(), "exp": time.Now().Add(time.Hour).Unix(), "nonce": "fixture-nonce"}
 			switch scenario {
@@ -98,6 +98,12 @@ func TestGrokIDTokenValidatesSignatureIssuerAudienceNonceAndTime(t *testing.T) {
 			}
 			token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 			token.Header["kid"] = "fixture-key"
+			if scenario == "unknown-kid" {
+				token.Header["kid"] = "foreign-key"
+			}
+			if scenario == "missing-kid" {
+				delete(token.Header, "kid")
+			}
 			material, err := token.SignedString(key)
 			if err != nil {
 				t.Fatal(err)
@@ -113,6 +119,53 @@ func TestGrokIDTokenValidatesSignatureIssuerAudienceNonceAndTime(t *testing.T) {
 				}
 			} else if err == nil {
 				t.Fatal("invalid signed identity acquired account authority")
+			}
+		})
+	}
+}
+
+func TestGrokJWKSRejectsUnboundedDuplicatePrivateAndForeignKeys(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := jwt.MapClaims{"iss": subscription.GrokIssuer, "aud": subscription.GrokClientID, "sub": "fixture-user", "iat": time.Now().Add(-time.Minute).Unix(), "exp": time.Now().Add(time.Hour).Unix(), "nonce": "fixture-nonce"}
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+	token.Header["kid"] = "fixture-key"
+	material, err := token.SignedString(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scenario := range []string{"duplicate-id", "private", "algorithm", "use", "oversized", "duplicate-member", "missing-key"} {
+		t.Run(scenario, func(t *testing.T) {
+			jwk := map[string]any{"kty": "EC", "crv": "P-256", "use": "sig", "alg": "ES256", "kid": "fixture-key", "x": base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, 32))), "y": base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32)))}
+			keys := []any{jwk}
+			switch scenario {
+			case "duplicate-id":
+				keys = append(keys, jwk)
+			case "private":
+				jwk["d"] = base64.RawURLEncoding.EncodeToString(key.D.FillBytes(make([]byte, 32)))
+			case "algorithm":
+				jwk["alg"] = "ES384"
+			case "use":
+				jwk["use"] = "enc"
+			case "missing-key":
+				jwk["kid"] = "another-key"
+			}
+			raw, _ := json.Marshal(map[string]any{"keys": keys})
+			if scenario == "oversized" {
+				raw = []byte(`{"keys":[],"extra":"` + strings.Repeat("a", 64<<10) + `"}`)
+			}
+			if scenario == "duplicate-member" {
+				raw = []byte(`{"keys":[],"keys":[]}`)
+			}
+			calls := 0
+			c := grokOAuthHTTP{transport: oauthHTTPTransport(func(r *http.Request) (*http.Response, error) {
+				calls++
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(raw))}, nil
+			})}
+			if _, err := c.verifyID(context.Background(), []byte(material), []byte("fixture-access"), "fixture-nonce"); err == nil || calls != 1 {
+				t.Fatal("invalid keys acquired verification or retry authority")
 			}
 		})
 	}
