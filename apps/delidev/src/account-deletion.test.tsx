@@ -19,11 +19,11 @@ import { Settings } from "./settings";
 
 const alias = "ChatGPT fixture";
 const confirmLabel = "Disconnect and delete account";
-function fixture(connected = true) {
+function fixture(connected = true, failedLogin = false) {
   const generation = newRequestId(), connection = newRequestId();
   const preferences = { alias, type: "subscription", subscription_service: "chatgpt", enabled: true, exclude_automatic: false, recovery_notifications: false };
   let current = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 9007199254740993n,
-    documentJson: encode({ ...preferences, health: connected ? "ready" : "disconnected", quota: [], ...(connected ? { connection: { id: connection }, subscription: { generation } } : {}) }) });
+    documentJson: encode({ ...preferences, health: failedLogin ? "failed" : connected ? "ready" : "disconnected", quota: [], ...(failedLogin ? { subscription: { recovery_required: true, server_operation: { id: newRequestId(), action: "login", state: "recovery-required", native_started: false } } } : {}), ...(connected ? { connection: { id: connection }, subscription: { generation } } : {}) }) });
   const initial = current;
   let removed = false;
   const patch = (change: Record<string, unknown>) => { current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), ...change }) }); return current; };
@@ -477,4 +477,25 @@ it("keeps the account when delete permission is revoked after cleanup", async ()
   await screen.findByText("Account deletion paused.");
   expect(screen.queryByRole("button", { name: "Retry the same deletion" })).toBeNull();
   expect(value.remove).toHaveBeenCalledTimes(1); expect(value.cleanup).not.toHaveBeenCalled();
+});
+
+it("deletes an initial failed login through server-owned cleanup without submitting logout", async () => {
+ const value = fixture(false, true);
+ render(<value.Harness />);
+ fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+ await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
+ expect(value.logout).not.toHaveBeenCalled();
+ expect(value.progress).not.toHaveBeenCalled();
+ expect(value.remove.mock.calls[0][0].mutation!.expectedRevision).toBe(value.initial.revision);
+});
+
+it("retains a failed login when the server cannot confirm cleanup", async () => {
+ const value = fixture(false, true);
+ value.remove.mockRejectedValue(new ConnectError("Cleanup requires original recovery.", Code.FailedPrecondition));
+ render(<value.Harness />);
+ fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+ await screen.findByText("Account deletion paused.");
+ expect(value.deleted).not.toHaveBeenCalled();
+ expect(value.logout).not.toHaveBeenCalled();
+ expect(value.remove).toHaveBeenCalledTimes(1);
 });

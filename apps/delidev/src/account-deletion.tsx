@@ -40,6 +40,11 @@ function unchanged(resource: Resource | undefined, attempt: Attempt): resource i
   const current = document(resource), confirmed = document(attempt.confirmed);
   return preferences.every((key) => current[key] === confirmed[key]);
 }
+function failedInitialLogin(resource: Resource) {
+  const data = document(resource), state = object(data.subscription), operation = object(state.server_operation);
+  return !data.connection && !data.removal && !state.generation && !state.identity_commitment && !state.owner_machine_id && !state.lease && !state.observation && !state.reset_credits &&
+    operation.action === "login" && isEntityId(text(operation.id)) && ["failed", "canceled", "expired", "unsupported", "recovery-required"].includes(text(operation.state));
+}
 function cleared(resource: Resource) {
   const data = document(resource), state = object(data.subscription);
   return data.health === "disconnected" && !data.connection && !data.removal && !state.pending && !state.lease &&
@@ -97,7 +102,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
   const remove = async (p: Attempt, resource?: Resource) => {
     if (!live(p) || p.busy) return;
     if (!p.deletion) {
-      if (!unchanged(resource, p) || !cleared(resource)) { changed(p); return; }
+      if (!unchanged(resource, p) || !(cleared(resource) || failedInitialLogin(resource))) { changed(p); return; }
       p.deletion = create(DeleteConfigurationRequestSchema, { kind: EntityKind.ACCOUNT, mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() } });
     }
     p.observing = false; p.busy = true; p.retry = undefined; setView({ stage: Stage.Deleting });
@@ -186,7 +191,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       if (!live(p)) return;
       current = result.resource;
       if (!unchanged(current, p) || current.revision !== confirmed.revision) { changed(p); return; }
-      if (cleared(current)) { p.busy = false; await remove(p, current); return; }
+      if (cleared(current) || failedInitialLogin(current)) { p.busy = false; await remove(p, current); return; }
       const data = document(current), state = object(data.subscription), operation = object(state.server_operation), pendingOperation = object(state.pending);
       if (state.recovery_required || data.removal) {
         pause(p, copy("account-deletion.extra.775c54df4fb5"), copy("account-deletion.extra.a395ee1c2744")); return;
