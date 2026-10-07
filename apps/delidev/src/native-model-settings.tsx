@@ -42,7 +42,8 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   // discovery acknowledgment or valid lookup retains it, read errors cannot
   // release that original unsettled operation for replacement.
   useEffect(() => { if (job) setRetainedJobID(job.id); }, [job]);
-  const observationPending = Boolean(jobID && (retainedJobID === jobID || !operation.error || operation.isFetching) && !["succeeded", "failed", "canceled"].includes(state));
+  const unverifiedLookupFailed = !operation.isFetching && Boolean(operation.error || operation.data && !job);
+  const observationPending = Boolean(jobID && (retainedJobID === jobID || !unverifiedLookupFailed) && !["succeeded", "failed", "canceled"].includes(state));
   const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain;
   const models = useNativeModelPages(source, active && opened && supported && Boolean(source) && !blocked);
   const selectedObservation = models.payloadPages.flatMap(page => page.payload)[0]?.job ?? (job?.id === source && state === "succeeded" ? job : operation.data?.lastSuccess?.id === source ? operation.data.lastSuccess : undefined);

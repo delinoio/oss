@@ -2296,3 +2296,5 @@ A successful Fork status without its verified original-source child retains exac
 Desktop update candidates retain the exact recovery ID and decimal revision as functional read-only journal-inspection operands. Their display permits later local recovery without live server negotiation and grants no installation or restart authority.
 
 Failed unverified manual native-observation lookups remain editable. Discovery acknowledgments and verified lookup jobs retain unsettled ownership across later read failures, preventing replacement.
+
+An unverified manual observation response with a missing, foreign or wrong-kind job is unreadable lookup evidence and permits correction; it cannot release a previously retained unsettled job.

@@ -745,3 +745,5 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Successful Fork status remains reinspectable until its returned child verifies against the original source.
 
 - Failed manual native-model lookup grants no accepted operation ownership; allow correction until discovery acknowledgment or verified status retains the original unsettled job.
+
+- Missing, foreign and wrong-kind manual observation responses remain correctable only when no original unsettled job has been retained.
