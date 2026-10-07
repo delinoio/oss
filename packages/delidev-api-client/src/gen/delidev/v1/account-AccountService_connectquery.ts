@@ -5,6 +5,11 @@
 import { AccountService } from "./account_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.AccountService.ChangeAccountApiFormat
+ */
+export const changeAccountApiFormat = AccountService.method.changeAccountApiFormat;
+
+/**
  * @generated from rpc delidev.v1.AccountService.ConnectAccount
  */
 export const connectAccount = AccountService.method.connectAccount;

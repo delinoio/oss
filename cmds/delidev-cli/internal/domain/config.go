@@ -293,7 +293,7 @@ func (a Agent) Validate() error {
 	if !a.Harness.Valid() {
 		return Fail(InvalidArgument, "Unknown harness.", "Choose codex, claude-code, opencode, or grok-build.")
 	}
-	if len(a.Routes) > 0 && (a.ModelID != "" || len(a.Accounts) != 0 || a.Routing != nil || a.ReconfigurationRequired) {
+	if len(a.Routes) > 0 && (a.ModelID != "" || len(a.Accounts) != 0 || a.Routing != nil) {
 		return Fail(InvalidArgument, "Worker configuration mixes account route formats.", "Use ordered source routes or the legacy single source, with one authority.")
 	}
 	ids := []ID{}
@@ -624,6 +624,7 @@ type QuotaWindow struct {
 	State           ObservationState `json:"state"`
 }
 type AccountConnection struct {
+	CredentialID   ID                 `json:"credential_id,omitempty"`
 	ID             ID                 `json:"id"`
 	Authentication Authentication     `json:"authentication"`
 	ConnectedAt    time.Time          `json:"connected_at"`
@@ -637,25 +638,29 @@ type AccountRemoval struct {
 	ExpectedRevision uint64 `json:"expected_revision"`
 }
 type Account struct {
-	Alias                 string              `json:"alias"`
-	ProviderID            ID                  `json:"provider_id,omitempty"`
-	SubscriptionService   SubscriptionService `json:"subscription_service,omitempty"`
-	Type                  AccountType         `json:"type"`
-	APIProtocol           APIProtocol         `json:"api_protocol,omitempty"`
-	Enabled               bool                `json:"enabled"`
-	ExcludeAutomatic      bool                `json:"exclude_automatic"`
-	RecoveryNotifications bool                `json:"recovery_notifications"`
-	Health                AccountHealth       `json:"health"`
-	Quota                 []QuotaWindow       `json:"quota"`
-	ConfirmedExhausted    bool                `json:"confirmed_exhausted"`
-	Connection            *AccountConnection  `json:"connection,omitempty"`
-	Removal               *AccountRemoval     `json:"removal,omitempty"`
-	Validation            *AccountValidation  `json:"validation,omitempty"`
-	Catalog               *CatalogObservation `json:"catalog,omitempty"`
-	Subscription          *SubscriptionState  `json:"subscription,omitempty"`
+	RetainedConnections   []AccountConnectionGeneration `json:"retained_connections,omitempty"`
+	Alias                 string                        `json:"alias"`
+	ProviderID            ID                            `json:"provider_id,omitempty"`
+	SubscriptionService   SubscriptionService           `json:"subscription_service,omitempty"`
+	Type                  AccountType                   `json:"type"`
+	APIProtocol           APIProtocol                   `json:"api_protocol,omitempty"`
+	Enabled               bool                          `json:"enabled"`
+	ExcludeAutomatic      bool                          `json:"exclude_automatic"`
+	RecoveryNotifications bool                          `json:"recovery_notifications"`
+	Health                AccountHealth                 `json:"health"`
+	Quota                 []QuotaWindow                 `json:"quota"`
+	ConfirmedExhausted    bool                          `json:"confirmed_exhausted"`
+	Connection            *AccountConnection            `json:"connection,omitempty"`
+	Removal               *AccountRemoval               `json:"removal,omitempty"`
+	Validation            *AccountValidation            `json:"validation,omitempty"`
+	Catalog               *CatalogObservation           `json:"catalog,omitempty"`
+	Subscription          *SubscriptionState            `json:"subscription,omitempty"`
 }
 
 func (a Account) Validate() error {
+	if err := a.validateConnectionGenerations(); err != nil {
+		return err
+	}
 	if a.APIProtocol != "" && (a.Type != APIAccount || !a.APIProtocol.API()) {
 		return Fail(InvalidArgument, "Invalid account API format.", "Select one supported API format for an API account.")
 	}

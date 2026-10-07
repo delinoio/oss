@@ -53,7 +53,7 @@ func titleProfileAvailable(tx *store.Tx, input domain.ExecutionJobInput) (domain
 	}
 	provider, err := store.Decode[domain.Provider](record)
 	if err == nil {
-		_, account, e := accountFromTx(tx, input.AccountID, 0)
+		_, account, e := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 		if e != nil {
 			return domain.Provider{}, false, nil
 		}
@@ -124,7 +124,7 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 			return nil
 		}
 	}
-	_, account, err := accountFromTx(tx, input.AccountID, 0)
+	_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 	if err != nil || !account.Enabled || account.Type != domain.APIAccount || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID || account.Connection.Authentication != provider.Authentication {
 		session.TitleState, session.TitleReason = domain.TitleSkipped, domain.TitleReasonAuthorityLost
 		return nil

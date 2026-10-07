@@ -2,14 +2,15 @@
 
 ## Key-preserving API format change reservations
 
-Issue #964 reserves ProviderInventory capability
+PR #1666 established the complete reservations on main before activation.
+Issue #964 owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
 reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
-reserves request fields mutation 1, api_protocol 2, alias 3, enabled 4,
-exclude_automatic 5 and recovery_notifications 6; its response reserves account 1,
+uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
 request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
-Establish these complete allocations on main before implementation. Reservations
-alone grant no format change, key access or execution authority.
+Capability 9 now activates this dedicated operation. The reservation-only PR
+granted no format change, key access or execution authority.
 
 The approved extension permits changing a connected API account's format while
 keeping its protected key. Go owns atomic preference/profile publication and
@@ -49,7 +50,8 @@ actor/login/credential ownership, once-only exchange and cleanup stay intact.
 The desktop uses one provider-metadata-driven format presentation for manual and
 OAuth connections: explicitly choose among multiple formats, or display the sole
 format. Preserve Google project binding and device approval. Existing accounts
-require Disconnect and confirmed cleanup before format changes. No historical
+may use capability 9 for the key-preserving change without a new OAuth exchange;
+capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
 account/execution rewrite, protocol conversion or native change is authorized.
 
 Capability 8 is advertised independently of provider registration/acceptance.
