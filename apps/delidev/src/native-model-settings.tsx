@@ -1,12 +1,16 @@
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import { useNativeModelPages } from "./model-pagination";
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, NativeModelQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, NativeModelQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text, type Document } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
-import { ServiceProblem, More, Problem  } from "./ui";
+import { ServiceProblem, Failure, Problem  } from "./ui";
 
 export function NativeModelSettings({ active, createModel, selectedAccounts, pendingOperation }: { active: boolean; createModel: (data: Document) => void; selectedAccounts?: Resource[]; pendingOperation?: (pending: boolean) => void }) {
   useLocale();
@@ -17,11 +21,11 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   const [jobID, setJobID] = useState("");
   const [lookup, setLookup] = useState("");
   const [observationID, setObservationID] = useState("");
-  const [page, setPage] = useState("");
+  const listRoot = useRef<HTMLDivElement>(null);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && opened });
   const supported = status.data?.capabilities.includes(SystemCapability.NATIVE_CODEX_MODEL_DISCOVERY_V1) === true;
   const discovery = useRetainedMutation("native-models:discover", NativeModelQuery.discoverNativeModels, (result) => {
-    if (result.job) { setJobID(result.job.id); setObservationID(""); setPage(""); }
+    if (result.job) { setJobID(result.job.id); setObservationID(""); }
   }, (result, request) => {
     const scope = object(document(result.job).input);
     return document(result.job).type === "native-codex-models" && scope.machine_id === request.mutation?.id && scope.account_id === request.accountId;
@@ -31,23 +35,12 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   const job = operation.data?.job;
   const state = text(document(job).state);
   const source = observationID || (state === "succeeded" ? jobID : "");
-  const models = useQuery(NativeModelQuery.listNativeModels, { jobId: source, pageSize: 50, pageToken: page }, { enabled: active && opened && supported && Boolean(source) });
-  let entries: Document[] = [];
-  let malformed = false;
-  if (models.data) {
-    try {
-      if (models.data.modelsJson.byteLength > 768 * 1024 || models.data.job?.id !== source) throw new Error();
-      const data: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(models.data.modelsJson));
-      if (!Array.isArray(data) || data.length > 200 || data.some((entry) => !entry || typeof entry !== "object" || typeof entry.id !== "string" || typeof entry.model !== "string" || typeof entry.display_name !== "string" || entry.id.length > 256 || entry.model.length > 256 || entry.display_name.length > 256)) throw new Error();
-      entries = data;
-    } catch { malformed = true; }
-  }
-  const observedScope = object(document(models.data?.job).input);
-  const accountSelected = !selectedAccounts || selectedAccounts.some(row => row.id === account?.id);
-  const canRegister = accountSelected && observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
   const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain;
+  const models = useNativeModelPages(source, active && opened && supported && Boolean(source) && !blocked);
+  const accountSelected = !selectedAccounts || selectedAccounts.some(row => row.id === account?.id);
+
   useEffect(() => { pendingOperation?.(blocked); return () => pendingOperation?.(false); }, [blocked, pendingOperation]);
-  const reset = () => { setJobID(""); setObservationID(""); setPage(""); };
+  const reset = () => { setJobID(""); setObservationID(""); };
   return <details onToggle={(event) => setOpened(event.currentTarget.open)}><summary>{copy("native-model-settings.nativeCodexModelObservations_e3a909")}</summary>{opened ? <section aria-label={copy("native-model-settings.nativeCodexModelObservations_e3a909")}>
     <h2>{copy("native-model-settings.observeNativeCodexModels_7d4b36")}</h2>
     <p>{copy("native-model-settings.chooseARunnerDeviceWithCodex_8f2ab4")}</p>
@@ -63,24 +56,29 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
     <Problem error={discovery.error} />
     {discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>{copy("native-model-settings.retryTheSameObservationRequest_0b6c58")}</button> : null}
     <label>{copy("native-model-settings.originalObservationId_949ead")}<input value={lookup} maxLength={36} disabled={blocked} onChange={(event) => setLookup(event.target.value)} /></label>
-    <button type="button" disabled={!supported || blocked || !lookup} onClick={() => { setJobID(lookup); setObservationID(""); setPage(""); }}>{copy("native-model-settings.inspectObservation_ded69a")}</button>
+    <button type="button" disabled={!supported || blocked || !lookup} onClick={() => { setJobID(lookup); setObservationID(""); }}>{copy("native-model-settings.inspectObservation_ded69a")}</button>
     {job ? <div><p role="status"><LocalizedText id="native-model-settings.observation_48f31e" components={{ s0: <>{job.id}</>, s1: <>{state}</>, s2: <>{formatTimestamp(text(object(document(job).output).observed_at))}</> }} /></p>
       <button type="button" disabled={!active || operation.isFetching} onClick={() => void operation.refetch()}>{copy("native-model-settings.refreshObservationStatus_2714ea")}</button>
       {["queued", "claimed"].includes(state) ? <button type="button" disabled={blocked} onClick={() => void cancellation.send({ mutation: { requestId: newRequestId(), id: job.id, expectedRevision: job.revision } })}>{copy("native-model-settings.cancelObservation_0f4be7")}</button> : null}
       {document(job).problem ? <ServiceProblem code={text(object(document(job).problem).code) || text(object(document(job).problem).problem_code)}><p role="alert">{text(object(document(job).problem).message)}</p></ServiceProblem> : null}
-      {state !== "succeeded" && operation.data?.lastSuccess ? <button type="button" onClick={() => { setObservationID(operation.data!.lastSuccess!.id); setPage(""); }}>{copy("native-model-settings.showLastSuccessfulObservation_e2c0d6")}</button> : null}
+      {state !== "succeeded" && operation.data?.lastSuccess ? <button type="button" onClick={() => { setObservationID(operation.data!.lastSuccess!.id); }}>{copy("native-model-settings.showLastSuccessfulObservation_e2c0d6")}</button> : null}
     </div> : null}
     <Problem error={operation.error} /><Problem error={cancellation.error} />
     {cancellation.uncertain ? <button type="button" disabled={cancellation.busy} onClick={cancellation.retry}>{copy("native-model-settings.retryTheSameCancellation_0bc7e1")}</button> : null}
-    <Problem error={models.error} />
-    {malformed ? <p role="alert">{copy("native-model-settings.theObservationPageIsMalformedNo_ac73dd")}</p> : null}
-    {models.data && !malformed ? <><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{models.data.job?.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p>
+    <Failure failure={models.error?.failure} />
+    {models.error?.failure.code === FailureCode.Internal ? <p role="alert">{copy("native-model-settings.theObservationPageIsMalformedNo_ac73dd")}</p> : null}
+    {models.loaded && !models.rows.length && !models.error ? <p>{copy("native-model-settings.noNativeModelsInThisObservation_a24b4f")}</p> : null}
+    <div ref={listRoot} className="conversation-page-scroll"><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={models} root={listRoot} active={active && opened && !blocked}>{payload => {
+      if (!payload.length) return null;
+      const page = payload[0], entries = payload.map(row => row.entry), observedScope = object(document(page.job).input);
+      const canRegister = accountSelected && !models.error && observedScope.account_id === account?.id && observedScope.machine_id === machine?.id && observedScope.provider_id === document(account).provider_id;
+      return <><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{page.job.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p>
       {entries.length === 0 ? <p>{copy("native-model-settings.noNativeModelsInThisObservation_a24b4f")}</p> : entries.map((entry) => <article key={text(entry.id)}>
         <h3>{text(entry.display_name)}</h3><p><LocalizedText id="native-model-settings.pickerIdExecutableModel_ea304e" components={{ s0: <>{text(entry.id)}</>, s1: <>{text(entry.model)}</> }} /></p>
         <p>{text(entry.description)}</p><p><LocalizedText id="native-model-settings.reasoningInputServiceTiers_aa5c58" components={{ s0: <>{items(entry.reasoning).map(text).join(", ")}</>, s1: <>{items(entry.modalities).map(text).join(", ")}</>, s2: <>{items(entry.service_tiers).map(text).join(", ")}</>, s3: <>{entry.hidden === true ? copy("native-model-settings.hidden_7e6fef") : copy("native-model-settings.visible_8411f5")}</> }} /></p>
         <button type="button" disabled={!canRegister || blocked} onClick={() => createModel({ name: text(entry.display_name), provider_id: text(observedScope.provider_id), native_id: text(entry.model), alias: "", harnesses: ["codex"], hidden: false, order: 0, manual: true, new: false, metadata_source: "unknown" })}>{selectedAccounts ? <>{copy("native-model-settings.useModel")} {text(entry.display_name)}…</> : <LocalizedText id="native-model-settings.register_55d230" components={{ s0: <>{text(entry.display_name)}</> }} />}</button>
       </article>)}
-      <button type="button" disabled={!page || models.isFetching} onClick={() => setPage("")}>{copy("native-model-settings.firstObservationPage_e0db18")}</button><More available={Boolean(models.data.nextPageToken)} busy={models.isFetching} load={() => setPage(models.data!.nextPageToken)} />
-    </> : null}
+    </>;
+    }}</ScrollPayloadWindow><ScrollContinuation query={models} root={listRoot} active={active && opened && supported && Boolean(source) && !blocked} label={copy("native-model-settings.nativeCodexModelObservations_e3a909")} /></div>
   </section> : null}</details>;
 }
