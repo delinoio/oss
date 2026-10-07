@@ -118,3 +118,16 @@ it("retains explicit provider-read recovery and rejects foreign provider proof",
   expect(f.getProvider.mock.calls.every(([request]) => request.id === f.provider.id && request.kind === EntityKind.PROVIDER)).toBe(true);
   expect(f.discover).not.toHaveBeenCalled();
 });
+
+it("pauses referenced provider reads with the background verification owner", async () => {
+  const f = fixture(); const view = render(f.view(f.row, false, null));
+  expect(f.getProvider).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", true);
+  view.rerender(f.view(f.row, true, null));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false));
+  expect(f.getProvider).toHaveBeenCalledTimes(1);
+  view.rerender(f.view(f.row, false, null));
+  expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", true);
+  expect(f.validate).not.toHaveBeenCalled();
+  expect(f.discover).not.toHaveBeenCalled();
+});
