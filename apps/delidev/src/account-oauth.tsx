@@ -281,23 +281,29 @@ function recoveryMessage(provider: AccountProviderSummary): string {
   return profileOf(provider) === AccountOAuthProfile.OpenRouter ? "The original result requires recovery. Inspect the OpenRouter keys dashboard; local cancellation cannot revoke a provider key. Recover only the original saved local result." : `The original ${provider.displayName} result requires recovery. Local cancellation cannot revoke provider access. Recover only the original saved local result, or cancel and reconnect.`;
 }
 
-export function AccountOAuth({ flow, back, manual, edit, manage, done, metadataReady = true, metadataProblem }: { metadataReady?: boolean; metadataProblem?: ReactNode; flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; edit: (account: Resource) => void; manage: (account: Resource) => void; done: () => void }) {
+export function AccountOAuth({ flow, back, manual, done, metadataReady = true, metadataProblem }: { metadataReady?: boolean; metadataProblem?: ReactNode; flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; done: (account: Resource) => void }) {
   useLocale();
   const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
   const [project, setProject] = useState("");
   const [protocolChoice, setProtocol] = useState<APIFormatId | "">("");
   useEffect(() => { if (visible) heading.current?.focus(); }, [view?.provider.providerId, visible]);
-  if (!view) return null;
+  const connected = view?.stage === Stage.Connected ? view.account : undefined;
+  useEffect(() => {
+    if (!visible || !connected) return;
+    // Reuse Done's original-attempt cleanup. abandon clears pending ownership
+    // synchronously for connected attempts, so effect replay cannot finish twice.
+    void flow.abandon(false, () => done(connected));
+  }, [visible, connected, flow, done]);
+  if (!view || connected) return null;
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;
-  const connected = view.stage === Stage.Connected && view.account;
   const waiting = view.stage === Stage.Awaiting;
   const configuring = view.stage === Stage.Configure;
   const gemini = profileOf(view.provider) === AccountOAuthProfile.GoogleGemini;
   const selecting = view.provider.oauthFormatSelectingAvailable;
   const formats = selecting ? oauthFormats(view.provider) : providerAPIFormats(document(view.provider.provider)).filter(profile => profile.protocol === document(view.provider.provider).protocol);
   const protocol = protocolChoice || (formats.length === 1 ? formats[0].protocol : "");
-  const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : connected ? copy("account-oauth.providerConnected_5a9a4f", { v0: view.provider.displayName }) : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
+  const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());
   return <section className="api-keys-view account-oauth-card" aria-labelledby="account-oauth-title">
     <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>{copy("account-oauth.connectProvider", { v0: view.provider.displayName })}</h2>
@@ -315,11 +321,9 @@ export function AccountOAuth({ flow, back, manual, edit, manage, done, metadataR
     {!configuring ? <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div> : null}
     {waiting && view.userCode ? <div className="account-oauth-device"><p>{copy("account-oauth.ifAskedEnterThisCode_6d3a1f")}</p><output aria-label={copy("account-oauth.temporaryAuthorizationCode_1d4e7a")} className="account-oauth-user-code">{view.userCode}</output></div> : null}
     {view.problem ? <p role="alert">{resolveMessage(view.problem)}</p> : null}
-    {connected ? <SettingsTaskActions><button onClick={() => leave(false, () => edit(connected))}>{copy("account-oauth.editAccount_ab6a16")}</button><button onClick={() => leave(false, () => manage(connected))}>{copy("account-oauth.manageAccount_ddb585")}</button><button onClick={() => leave(false, done)}>{copy("account-oauth.done_11a676")}</button></SettingsTaskActions> : <>
-      <SettingsTaskActions>{configuring ? <button className="primary" disabled={!metadataReady || !protocol || gemini && !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)} onClick={() => flow.continueInBrowser(project, protocol)}>{copy("account-oauth.continueInBrowser_7c2d9b")}</button> : <button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button>}<button hidden={configuring} data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></SettingsTaskActions>
-      <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>{copy("account-oauth.useAnApiKeyInstead_b728ab")}</button>
-      {view.problem && !configuring ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>{copy("account-oauth.inspectOriginalAttempt_887b78")}</button>{!view.attempt ? <button onClick={flow.retryStart}>{copy("account-oauth.retryOriginalStart_eefc3a")}</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>{copy("account-oauth.recoverSavedResult_3cb5e6")}</button> : null}</SettingsTaskActions> : null}
-    </>}
+    <SettingsTaskActions>{configuring ? <button className="primary" disabled={!metadataReady || !protocol || gemini && !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)} onClick={() => flow.continueInBrowser(project, protocol)}>{copy("account-oauth.continueInBrowser_7c2d9b")}</button> : <button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button>}<button hidden={configuring} data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></SettingsTaskActions>
+    <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>{copy("account-oauth.useAnApiKeyInstead_b728ab")}</button>
+    {view.problem && !configuring ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>{copy("account-oauth.inspectOriginalAttempt_887b78")}</button>{!view.attempt ? <button onClick={flow.retryStart}>{copy("account-oauth.retryOriginalStart_eefc3a")}</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>{copy("account-oauth.recoverSavedResult_3cb5e6")}</button> : null}</SettingsTaskActions> : null}
     <footer><p>{copy("account-oauth.yourCredentialWillBeStoredSecurely_26be74")}</p>{!configuring ? <p>{copy("account-oauth.youCanValidateYourAccountAfter_70f97e")}</p> : null}</footer>
   </section>;
 }

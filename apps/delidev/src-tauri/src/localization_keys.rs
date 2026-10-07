@@ -92,6 +92,9 @@ pub enum Message {
     Month11,
     Month12,
     WidgetEstimateUnavailable,
+    StartupConflict,
+    StartupIncompatible,
+    StartupUnavailable,
 }
 impl Message {
     pub fn key(self) -> &'static str {
@@ -186,6 +189,9 @@ impl Message {
             Self::Month11 => "month11",
             Self::Month12 => "month12",
             Self::WidgetEstimateUnavailable => "widgetEstimateUnavailable",
+            Self::StartupConflict => "startupConflict",
+            Self::StartupIncompatible => "startupIncompatible",
+            Self::StartupUnavailable => "startupUnavailable",
         }
     }
 }

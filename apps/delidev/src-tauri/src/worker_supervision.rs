@@ -272,7 +272,7 @@ impl Connector {
             attempts,
             ..LocalWorkerManagement::default()
         });
-        let prepared = self.run(&[
+        let prepared = self.worker_request(&[
             "worker".into(),
             "desktop-prepare".into(),
             "--mode".into(),
@@ -307,14 +307,18 @@ impl Connector {
         if value.get("state").and_then(|v| v.as_str()) == Some("service-managed") {
             return Err(NativeFailure::ServiceManaged);
         }
-        let proof = self.local_worker_proof_inner()?;
+        let proof = self.local_worker_proof_for_worker_admission()?;
         let status = crate::local_worker::worker_status(
             value
                 .get("worker")
                 .cloned()
                 .ok_or(NativeFailure::InvalidEvidence)?,
             &proof.server_id,
-            &proof.endpoint,
+            // Automatic Worker admission reports the paired Go server
+            // endpoint. The public Local proof may expose the resident
+            // desktop runtime endpoint, but that is not the Worker identity
+            // being admitted here.
+            &proof.paired_endpoint,
             &proof.machine_id,
         )?;
         Ok(self.managed_worker_status(status))

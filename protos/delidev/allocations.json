@@ -8453,6 +8453,85 @@
       "declaration": "AccountOAuthAttempt",
       "member": "api_protocol",
       "number": 7
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ProviderInventoryCapability",
+      "member": "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1",
+      "number": 9
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatRequest",
+      "member": "api_protocol",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatRequest",
+      "member": "alias",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatRequest",
+      "member": "enabled",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatRequest",
+      "member": "exclude_automatic",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatRequest",
+      "member": "recovery_notifications",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ChangeAccountApiFormatResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
     }
   ]
 }

@@ -1,5 +1,30 @@
 # DeliDev provider and model catalog
 
+## Key-preserving API format change reservations
+
+Issue #964 reserves ProviderInventory capability
+`ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
+reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+reserves request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response reserves account 1,
+request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
+Establish these complete allocations on main before implementation. Reservations
+alone grant no format change, key access or execution authority.
+
+The approved extension permits changing a connected API account's format while
+keeping its protected key. Go owns atomic preference/profile publication and
+new connection generations sharing the original protected credential reference.
+Running executions and existing-session continuation retain their original
+connection/profile and admission evidence. New sessions use the new format only
+after explicit validation; saving sends no provider request. Preserve original
+OAuth receipts, account/Worker/history attribution, immutable referenced profiles,
+exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
+across all generations. Do not convert formats or change Provider identity or
+keyless credential ownership. No SQLite migration or native change is authorized.
+Capability 7 and its existing cleanup-required configuration operation remain
+unchanged; capability 9 owns the dedicated extension.
+
+
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)

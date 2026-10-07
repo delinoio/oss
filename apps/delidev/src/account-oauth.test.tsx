@@ -4,7 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { APIFormatId, ApiProtocol, AccountService, AccountOAuthFlow, ErrorDetailSchema, AccountOAuthAttemptSchema, AccountOAuthState as State, EntityKind, ResourceSchema, newRequestId, type CompleteAccountOAuthRequest } from "@delinoio/delidev-api-client";
 import { OpenRouterOAuth, AccountOAuthProfile, OAuthNativeAction, OAuthNativeProvider, useOpenRouterOAuth, type OAuthNativeControl, type OAuthNativeResult } from "./account-oauth";
@@ -18,7 +18,7 @@ function connectSelected() {
   if (next && !(next as HTMLButtonElement).disabled) fireEvent.click(next);
 }
 
-function fixture(args: { selecting?: boolean; metadataReady?: boolean;  huggingFace?: boolean; gemini?: boolean; baseten?: boolean; wrongFlow?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
+function fixture(args: { selecting?: boolean; metadataReady?: boolean; huggingFace?: boolean; gemini?: boolean; baseten?: boolean; statusGate?: (state: State) => Promise<void>; missingAccount?: boolean; invalidAccount?: boolean; wrongFlow?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
   const name = args.huggingFace ? "Hugging Face Inference Providers" : args.gemini ? "Google Gemini" : args.baseten ? "Baseten" : "OpenRouter";
   const providerId = newRequestId(), attemptId = newRequestId(), nativeGeneration = newRequestId();
   const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: args.selecting ? 3 : 1, revision: 1n, documentJson: encode({ name, preset_id: args.huggingFace ? "hugging-face" : args.gemini ? "gemini" : args.baseten ? "baseten" : "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true, ...(args.selecting ? { api_formats: (args.gemini ? [APIFormatId.ChatCompletions] : args.baseten ? [APIFormatId.ChatCompletions, APIFormatId.Messages] : Object.values(APIFormatId)).map(protocol => ({ protocol, endpoint: "https://openrouter.ai/api/v1", authentication: "bearer" })) } : {}) }) });
@@ -30,9 +30,9 @@ function fixture(args: { selecting?: boolean; metadataReady?: boolean;  huggingF
   const rawCode = Array.from(new TextEncoder().encode("renderer-oauth-code-sentinel"));
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 2n, documentJson: encode({ alias: "OpenRouter", provider_id: providerId, type: "api", health: "unverified", enabled: true, recovery_notifications: true }) });
   const start = vi.fn(async (request) => { selectedProtocol = request.apiProtocol; retained = attempt(); if (args.selecting) { account.schemaVersion = 3; account.documentJson = encode({ alias: name, provider_id: providerId, type: "api", api_protocol: selectedProtocol === ApiProtocol.OPENAI_RESPONSES ? APIFormatId.Responses : selectedProtocol === ApiProtocol.ANTHROPIC_MESSAGES ? APIFormatId.Messages : APIFormatId.ChatCompletions, health: "unverified", enabled: true }); } await args.startDelay; if (args.startError) throw args.startError; if(args.interruptedStart) {retained=attempt(State.ACCOUNT_OAUTH_STATE_INTERRUPTED,2n);retained.problem=create(ErrorDetailSchema,{code:"conflict"});return {attempt:retained,requestId:request.provider?.requestId};} return { attempt: retained, requestId: request.provider?.requestId, flow: args.wrongFlow ? AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_UNSPECIFIED : args.baseten ? AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_DEVICE : AccountOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE, userCode: args.baseten ? "ABCD-EFGH" : undefined, authorizationUrl: "https://openrouter.ai/auth?fixture-live-start" }; });
-  const complete = vi.fn(async (request: CompleteAccountOAuthRequest) => { if (args.complete) await args.complete(request); retained = attempt(State.ACCOUNT_OAUTH_STATE_CONNECTED, 5n); return { attempt: retained, account, requestId: request.mutation?.requestId }; });
+  const complete = vi.fn(async (request: CompleteAccountOAuthRequest) => { if (args.complete) await args.complete(request); retained = attempt(State.ACCOUNT_OAUTH_STATE_CONNECTED, 5n); return { attempt: retained, account: args.missingAccount ? undefined : args.invalidAccount ? create(ResourceSchema, { ...account, kind: EntityKind.PROVIDER }) : account, requestId: request.mutation?.requestId }; });
   const cancel = vi.fn(async (request) => { retained = attempt(State.ACCOUNT_OAUTH_STATE_CANCELED, 2n); return { attempt: retained, requestId: request.mutation?.requestId }; });
-  const status = vi.fn(async () => ({ attempt: retained, requestId:args.baseten ? deviceReceipt : "", account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED ? account : undefined }));
+  const status = vi.fn(async () => { const result = { attempt: retained, requestId:args.baseten ? deviceReceipt : "", account: retained.state === State.ACCOUNT_OAUTH_STATE_CONNECTED && !args.missingAccount ? args.invalidAccount ? create(ResourceSchema, { ...account, kind: EntityKind.PROVIDER }) : account : undefined }; await args.statusGate?.(result.attempt.state); return result; });
   const transport = createRouterTransport(router => router.service(AccountService, { startAccountOAuth: start, completeAccountOAuth: complete, cancelAccountOAuth: cancel, getAccountOAuthStatus: status }));
   const native = vi.fn<OAuthNativeControl>(args.native ?? (async (_opening, action, generation): Promise<OAuthNativeResult> => {
     if (action === OAuthNativeAction.Profiles) return { generation: "", profiles: args.oldNative ? [] : [AccountOAuthProfile.OpenRouter, AccountOAuthProfile.HuggingFace, AccountOAuthProfile.GoogleGemini, AccountOAuthProfile.Baseten] };
@@ -42,13 +42,15 @@ function fixture(args: { selecting?: boolean; metadataReady?: boolean;  huggingF
     return { generation };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const back = vi.fn(), manual = vi.fn(), edit = vi.fn(), manage = vi.fn(), done = vi.fn();
+  const back = vi.fn(), manual = vi.fn(), done = vi.fn();
+  let inspect!: () => void;
   function Harness() {
     const flow = useOpenRouterOAuth();
-    return <><button onClick={() => flow.start(selected)}>Connect selected OpenRouter</button><OpenRouterOAuth metadataReady={args.metadataReady} flow={flow} back={back} manual={manual} edit={edit} manage={manage} done={done} /></>;
+    inspect = flow.observe;
+    return <><button onClick={() => flow.start(selected)}>Connect selected OpenRouter</button><OpenRouterOAuth metadataReady={args.metadataReady} flow={flow} back={back} manual={manual} done={done} /></>;
   }
   const view = render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><SettingsLifetime>{() => <Harness />}</SettingsLifetime></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>);
-  return { start, complete, cancel, status, native, client, view, rawCode, rawState, manual, back, edit, account, recoverDevice: () => { deviceReceipt = newRequestId(); retained=attempt(State.ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED,3n); retained.problem=create(ErrorDetailSchema,{code:"recovery_required"}); }, trigger: () => { callback = true; }, change: (state: State, revision: bigint) => { retained = attempt(state, revision); } };
+  return { inspect: () => inspect(), start, complete, cancel, status, native, client, view, rawCode, rawState, manual, back, done, account, recoverDevice: () => { deviceReceipt = newRequestId(); retained=attempt(State.ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED,3n); retained.problem=create(ErrorDetailSchema,{code:"recovery_required"}); }, trigger: () => { callback = true; }, change: (state: State, revision: bigint) => { retained = attempt(state, revision); } };
 }
 
 it("starts and opens exactly once on deliberate action under Strict Mode, with no mount authentication", async () => {
@@ -71,15 +73,17 @@ it("forwards a callback once through a write-only RPC and clears code buffers wi
   const f = fixture({ complete: async request => { observed = new TextDecoder().decode(request.authorizationCode); } });
   connectSelected();
   await screen.findByText("Waiting for authorization…"); f.trigger();
-  await screen.findByText("OpenRouter connected", {}, { timeout: 2500 });
+  await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 1 })), { timeout: 2500 });
   expect(observed).toBe("renderer-oauth-code-sentinel"); expect(f.complete).toHaveBeenCalledTimes(1);
   expect(f.rawCode.every(byte => byte === 0)).toBe(true);
   expect(f.client.getMutationCache().getAll()).toHaveLength(0);
   const cache = JSON.stringify(f.client.getQueryCache().getAll(), (_key, value) => typeof value === "bigint" ? value.toString() : value);
   expect(cache).not.toContain("renderer-oauth-code-sentinel");
   expect(screen.queryByText(/verified|ready/i)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Edit account" }));
-  await waitFor(() => expect(f.edit).toHaveBeenCalledWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 1 }))); expect(f.cancel).not.toHaveBeenCalled();
+  expect(screen.queryByRole("heading", { name: "Connect OpenRouter" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+  expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose)).toHaveLength(1);
+  expect(f.start).toHaveBeenCalledTimes(1); expect(f.cancel).not.toHaveBeenCalled();
 });
 
 it("requires a confirmed business cancellation before manual fallback and retains original provider", async () => {
@@ -113,8 +117,9 @@ it("an uncertain completion uses only its original code-free recovery identity",
   const f = fixture({ complete: async request => { if (first) { first = false; throw new ConnectError("lost response", Code.Unavailable); } expect(request.authorizationCode.byteLength).toBe(0); } });
   connectSelected(); await screen.findByText("Waiting for authorization…"); f.trigger();
   await screen.findByText("Completion was not confirmed. Inspect the original attempt. An uncertain exchange is never repeated.", {}, { timeout: 2500 });
+  expect(f.done).not.toHaveBeenCalled();
   const original = f.complete.mock.calls[0][0].mutation;
-  fireEvent.click(screen.getByRole("button", { name: "Recover saved result" })); await screen.findByText("OpenRouter connected");
+  fireEvent.click(screen.getByRole("button", { name: "Recover saved result" })); await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 1 })), { timeout: 2500 });
   expect(f.complete.mock.calls[1][0].mutation).toEqual(original); expect(f.complete).toHaveBeenCalledTimes(2); expect(f.start).toHaveBeenCalledTimes(1);
 });
 
@@ -217,7 +222,7 @@ it("uses the selected Hugging Face copy and forwards state outside caches", asyn
   await screen.findByRole("heading", { name: "Connect Hugging Face Inference Providers" });
   expect(screen.getByText("Approve access on Hugging Face. DeliDev will finish connecting automatically.")).toBeTruthy();
   await screen.findByText("Waiting for authorization…"); f.trigger();
-  await screen.findByText("Hugging Face Inference Providers connected", {}, { timeout: 2500 });
+  await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 1 })), { timeout: 2500 });
   expect(observedState).toBe("s".repeat(43));
   expect(f.rawState.every(byte => byte === 0)).toBe(true);
   expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BeginHuggingFace)).toHaveLength(1);
@@ -251,7 +256,7 @@ it.each([false, true])("asks for the Google quota project before any browser or 
  expect(f.start).toHaveBeenCalledWith(expect.objectContaining({ google: expect.objectContaining({ quotaProjectId: "my-ai-project" }) }), expect.anything());
  expect(f.start.mock.calls[0][0].apiProtocol).toBe(selecting ? ApiProtocol.OPENAI_CHAT : ApiProtocol.UNSPECIFIED);
  expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.BeginGoogleGemini)).toHaveLength(1);
- f.trigger(); await screen.findByText("Google Gemini connected", {}, { timeout: 2500 });
+ f.trigger(); await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: selecting ? 3 : 1 })), { timeout: 2500 });
 });
 
 it("observes server-owned Device approval without taking a callback and clears the temporary code", async () => {
@@ -265,7 +270,7 @@ it("observes server-owned Device approval without taking a callback and clears t
  expect(f.complete).not.toHaveBeenCalled();
  expect(f.start.mock.calls[0][0].callbackUrl).toBe("");
  f.change(State.ACCOUNT_OAUTH_STATE_CONNECTED,5n);
- await screen.findByText("Baseten connected",{},{timeout:2000});
+ await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 1 })), { timeout: 2500 });
  expect(screen.queryByText("ABCD-EFGH")).toBeNull();
  expect(f.client.getMutationCache().getAll()).toHaveLength(0);
  expect(JSON.stringify(f.client.getQueryCache().getAll())).not.toContain("ABCD-EFGH");
@@ -287,7 +292,7 @@ it("recovers the original protected Device receipt without a callback or poll di
  connectSelected();
  await screen.findByText("ABCD-EFGH");f.recoverDevice();
  fireEvent.click(await screen.findByRole("button",{name:"Recover saved result"},{timeout:2000}));
- await screen.findByText("Baseten connected");
+ await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 1 })), { timeout: 2500 });
  expect(f.complete).toHaveBeenCalledTimes(1);
  expect(f.complete.mock.calls[0][0].authorizationCode).toHaveLength(0);
  expect(f.complete.mock.calls[0][0].mutation?.expectedRevision).toBe(1n);
@@ -332,7 +337,8 @@ it.each([APIFormatId.Responses, APIFormatId.ChatCompletions, APIFormatId.Message
   expect(f.start).toHaveBeenCalledTimes(1);
   expect(f.start.mock.calls[0][0].apiProtocol).toBe(protocol === APIFormatId.Responses ? ApiProtocol.OPENAI_RESPONSES : protocol === APIFormatId.ChatCompletions ? ApiProtocol.OPENAI_CHAT : ApiProtocol.ANTHROPIC_MESSAGES);
   expect(screen.queryByRole("combobox")).toBeNull();
-  f.trigger(); await screen.findByText("OpenRouter connected", {}, { timeout: 2500 });
+  f.trigger();
+  await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 3 })), { timeout: 2500 });
   expect(f.account.schemaVersion).toBe(3);
   expect(new TextDecoder().decode(f.account.documentJson)).toContain(protocol);
 });
@@ -346,7 +352,8 @@ it("uses shared metadata choices for Hugging Face and preserves its native authe
   fireEvent.click(screen.getByRole("button", { name: "Continue in browser" }));
   await screen.findByText("Waiting for authorization…");
   expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.BeginHuggingFace)).toBe(true);
-  f.trigger(); await screen.findByText("Hugging Face Inference Providers connected", {}, { timeout: 2500 });
+  f.trigger();
+  await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 3 })), { timeout: 2500 });
   expect(f.start.mock.calls[0][0].apiProtocol).toBe(ApiProtocol.ANTHROPIC_MESSAGES);
 });
 
@@ -380,4 +387,45 @@ it("keeps the selected format on exact Start retry after a lost reply", async ()
   await waitFor(() => expect(f.start).toHaveBeenCalledTimes(2));
   expect(f.start.mock.calls[1][0]).toEqual(f.start.mock.calls[0][0]);
   expect(f.start.mock.calls[1][0].apiProtocol).toBe(ApiProtocol.OPENAI_RESPONSES);
+});
+
+it.each(["missingAccount", "invalidAccount"] as const)("keeps the task open for a connected receipt with %s", async outcome => {
+  const f = fixture({ [outcome]: true });
+  connectSelected();
+  await screen.findByText("Waiting for authorization…"); f.trigger();
+  await waitFor(() => expect(f.complete).toHaveBeenCalledTimes(1), { timeout: 2500 });
+  await waitFor(() => expect(f.status).toHaveBeenCalled());
+  expect(screen.getByRole("heading", { name: "Connect OpenRouter" })).toBeTruthy();
+  expect(f.done).not.toHaveBeenCalled(); expect(f.cancel).not.toHaveBeenCalled();
+});
+
+it("does not finish a task for a late accepted completion after departure", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const f = fixture({ complete: async () => pending });
+  connectSelected();
+  await screen.findByText("Waiting for authorization…"); f.trigger();
+  await waitFor(() => expect(f.complete).toHaveBeenCalledTimes(1), { timeout: 2500 });
+  f.view.unmount(); release();
+  await waitFor(() => expect(f.rawCode.every(byte => byte === 0)).toBe(true));
+  expect(f.done).not.toHaveBeenCalled(); expect(f.cancel).not.toHaveBeenCalled();
+});
+
+
+it("finishes once when duplicate connected observations arrive after original cleanup", async () => {
+  const releases: (() => void)[] = [];
+  const f = fixture({ baseten: true, statusGate: async state => {
+    if (state === State.ACCOUNT_OAUTH_STATE_CONNECTED) await new Promise<void>(resolve => { releases.push(resolve); });
+  } });
+  await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Profiles)).toBe(true));
+  connectSelected();
+  await screen.findByText("ABCD-EFGH"); f.change(State.ACCOUNT_OAUTH_STATE_CONNECTED, 5n);
+  act(() => { f.inspect(); f.inspect(); });
+  await waitFor(() => expect(releases.length).toBeGreaterThanOrEqual(2));
+  await act(async () => releases[0]());
+  await waitFor(() => expect(f.done).toHaveBeenCalledTimes(1));
+  await act(async () => { for (const release of releases.slice(1)) release(); });
+  expect(f.done).toHaveBeenCalledTimes(1);
+  expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.Dispose)).toHaveLength(1);
+  expect(f.cancel).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
 });

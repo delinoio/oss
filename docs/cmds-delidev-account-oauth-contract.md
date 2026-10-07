@@ -112,7 +112,7 @@ Every native flow retains original window/server/attempt lifetime ownership;
 PKCE also retains the original state. The common AccountOAuth card preserves the
 approved 760px width, 20px padding, 12px radius, theme, wrapped actions, keyboard
 focus, status announcements, narrow-window and 200% zoom behavior. Switch to an
-API key only after cancellation is confirmed; success never auto-validates.
+API key only after cancellation is confirmed. A confirmed Connected result with a valid saved account immediately closes the addition task, disposes only its original local native callback authority and refreshes the account list once per attempt. This also applies after explicit original recovery. Missing or invalid saved accounts, failures and uncertain results cannot close the task. Existing task focus restoration applies; editing and management remain in the account list. Success never auto-validates.
 
 ## Common lifecycle and Hugging Face
 
