@@ -58,7 +58,7 @@ The negotiated v4 assignment replaces mandatory pre-inspected installation
 evidence with an immutable startup selection. Historical v1/v2/v3 assignments
 retain their exact attribution and remain readable. Adapter capabilities report
 implemented code, independently of installed executable or account readiness.
-Workers lacking the new capability receive no new assignment; clients receive an
+Workers lacking the new capability receive no new execution assignment; clients receive an
 update requirement rather than an instruction to run manual inspection.
 
 Acceptance retains atomic input, configuration, routing and job ownership. The
@@ -74,6 +74,9 @@ gate. Unknown versions stay unavailable; never substitute a baseline version.
 Unsupported protocol shapes, methods and feature semantics fail explicitly.
 Version-dependent interpretation must derive from actual negotiated/observed
 protocol evidence. Existing schema, ownership and bounded-content checks remain.
+Grok Build retains its bounded native configuration-integrity reads for effective
+settings and configuration sources. These reads do not discover Worker readiness,
+probe a separate ACP session or run a version command.
 
 `ReportExecutionStartup` binds the exact claimed job/revision and original
 machine/device/instance/server epoch. Its receipt is durable and exact replay
@@ -88,6 +91,10 @@ checkpoint, executable identity, account, Worker, workspace and history checks.
 No installation refresh can silently replace historical native ownership. Title
 initialization follows its actual title process; title failure cannot prevent the
 accepted conversation execution. Existing feature and platform limits remain.
+Source validation preserves the original assignment bytes, including legacy
+v1/v2/v3 installation identity. It does not convert a completed source to v4 or
+require Worker 23 for an already supported legacy source operation; each native
+operation retains its own capability, protocol and original-executable checks.
 
 ### Failure presentation and retry
 
@@ -144,7 +151,8 @@ Check protocol allocations and generated parity with `pnpm proto:check`. Run
 temporary accounts/state and cannot invoke inference or user login.
 
 Cover absent inspection records across manual/continued/scheduled execution,
-single actual-process startup without version/probe children, compatible protocol
+one original protocol initialization without version or separate protocol-probe
+children, compatible protocol
 responses from versions outside former gates, incompatible protocol and settings,
 missing executables, denial, timeout, revocation, Stop/Archive races, duplicate
 requests, reconnect/restart and uncertain delivery/cleanup. Verify old Worker and

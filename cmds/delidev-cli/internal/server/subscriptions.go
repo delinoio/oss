@@ -488,7 +488,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				if err != nil || machineErr != nil || !machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1) || session.CompactionJobID != jr.ID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || !session.OwnsExecution(compact.Assignment) {
 					return nil, subscriptionDenied()
 				}
-				if _, err := checkedExecutionAssignment(tx, sr, session, machine, compact.Assignment); err != nil {
+				if err := checkedExecutionSource(tx, sr, session, machine, compact.Assignment); err != nil {
 					return nil, err
 				}
 				if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {

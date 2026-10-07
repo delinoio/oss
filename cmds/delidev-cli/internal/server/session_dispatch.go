@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"slices"
@@ -149,6 +150,13 @@ func initialExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 }
 
 func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
+	if !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "This Runner Device needs an update before execution.", "Update and reconnect the selected Runner Device to start the actual process directly.")
+	}
+	return checkedExecutionConfiguration(tx, session, machine, input)
+}
+
+func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
 	var empty domain.Installation
 	c := input.Configuration
 	if err := requireSidechatParent(tx, session); err != nil {
@@ -193,9 +201,6 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 		protocol = domain.OpenAIChat
 	default:
 		return empty, domain.Fail(domain.Unsupported, "This harness has no integrated execution profile yet.", "Select a supported installed profile; no harness fallback is performed.")
-	}
-	if !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
-		return empty, domain.Fail(domain.Unsupported, "This Runner Device needs an update before execution.", "Update and reconnect the selected Runner Device to start the actual process directly.")
 	}
 	installation := domain.Installation{Harness: c.Harness}
 	if input.Startup != nil {
@@ -278,7 +283,57 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err != nil {
 		return empty, err
 	}
-	c := input.Configuration
+	job, err := checkedExecutionWorkspace(tx, sr, session, machine, input.Configuration)
+	if err != nil {
+		return empty, err
+	}
+	selection := &domain.ExecutionStartupSelection{Harness: input.Configuration.Harness, ExplicitPath: installation.ExplicitPath}
+	if input.Continuation != nil || input.Fork != nil {
+		selection.ExecutableSHA256 = input.Installation.ExecutableSHA256
+		if input.Startup != nil {
+			selection.ExecutableSHA256 = input.Startup.ExecutableSHA256
+		}
+		if session.Startup != nil && session.Startup.Ready != nil {
+			selection.ExecutableSHA256 = session.Startup.Ready.ExecutableSHA256
+		}
+	}
+	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
+	input.Preparation, input.Manifest = job.Input, job.Output
+	return input, input.Validate()
+}
+
+// Source operations recheck current policy and workspace ownership without
+// converting or replacing the original native assignment. Legacy operations
+// retain their existing capability contract; only new executions require v4.
+func checkedExecutionSource(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) error {
+	if input.Validate() != nil || !session.OwnsExecution(input) {
+		return continuationConflict()
+	}
+	candidate := input
+	if input.Version != 4 {
+		candidate.Startup = &domain.ExecutionStartupSelection{Harness: input.Configuration.Harness, ExplicitPath: input.Installation.ResolvedPath, ExecutableSHA256: input.Installation.ExecutableSHA256}
+	}
+	var err error
+	if input.Version == 4 {
+		_, err = checkedExecutionSelection(tx, session, machine, candidate)
+	} else {
+		_, err = checkedExecutionConfiguration(tx, session, machine, candidate)
+	}
+	if err != nil {
+		return err
+	}
+	job, err := checkedExecutionWorkspace(tx, sr, session, machine, input.Configuration)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(job.Input, input.Preparation) || !bytes.Equal(job.Output, input.Manifest) {
+		return workspace.ResultUncertain()
+	}
+	return nil
+}
+
+func checkedExecutionWorkspace(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, c domain.ExecutionConfiguration) (domain.Job, error) {
+	var empty domain.Job
 	prepared, err := tx.Get(domain.JobKind, session.Preparation.JobID)
 	if err != nil {
 		return empty, err
@@ -314,19 +369,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 			return empty, err
 		}
 	}
-	selection := &domain.ExecutionStartupSelection{Harness: c.Harness, ExplicitPath: installation.ExplicitPath}
-	if input.Continuation != nil || input.Fork != nil {
-		selection.ExecutableSHA256 = input.Installation.ExecutableSHA256
-		if input.Startup != nil {
-			selection.ExecutableSHA256 = input.Startup.ExecutableSHA256
-		}
-		if session.Startup != nil && session.Startup.Ready != nil {
-			selection.ExecutableSHA256 = session.Startup.Ready.ExecutableSHA256
-		}
-	}
-	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
-	input.Preparation, input.Manifest = job.Input, job.Output
-	return input, input.Validate()
+	return job, nil
 }
 
 func (s *Service) dispatchExecution(ctx context.Context, record store.Record) error {

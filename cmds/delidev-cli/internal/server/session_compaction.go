@@ -2,10 +2,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"reflect"
 	"slices"
 	"time"
 
@@ -22,15 +20,6 @@ func compactionActor(ctx context.Context) error {
 		return domain.Fail(domain.PermissionDenied, "Only an owner or paired client can request session compaction.", "Use an authenticated product client.")
 	}
 	return nil
-}
-
-func sameCompactionInstallation(current, assigned domain.Installation) bool {
-	// Discovery timestamps describe when the current observation was made, not
-	// the executable identity assigned to the original native action. Every
-	// other installation field remains immutable so a changed path, version,
-	// digest, protocol or capability set cannot receive the old action.
-	current.ObservedAt, assigned.ObservedAt = nil, nil
-	return reflect.DeepEqual(current, assigned)
 }
 
 // Source verification shares current account/installation eligibility, but never
@@ -90,12 +79,8 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 	if instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
 		return empty, domain.Fail(domain.Unavailable, "The original Worker is unavailable.", "Reconnect it before requesting compaction.")
 	}
-	checked, err := checkedExecutionAssignment(tx, sr, session, machine, original)
-	if err != nil {
+	if err := checkedExecutionSource(tx, sr, session, machine, original); err != nil {
 		return empty, err
-	}
-	if !sameCompactionInstallation(checked.Installation, original.Installation) || !bytes.Equal(checked.Preparation, original.Preparation) || !bytes.Equal(checked.Manifest, original.Manifest) {
-		return empty, domain.CompactionUncertain()
 	}
 	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
 		return empty, err

@@ -52,12 +52,8 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	if err != nil {
 		return r, session, input, err
 	}
-	installation, err := checkedExecutionSelection(tx, session, machine, input.SourceAssignment)
-	if err != nil {
+	if err := checkedExecutionSource(tx, r, session, machine, input.SourceAssignment); err != nil {
 		return r, session, input, err
-	}
-	if installation.Version != input.SourceAssignment.Installation.Version || installation.ResolvedPath != input.SourceAssignment.Installation.ResolvedPath {
-		return r, session, input, forkConflict()
 	}
 	instance, seen, err := tx.WorkerInstance(session.MachineID)
 	if err != nil || instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
