@@ -123,6 +123,17 @@ func (p oauthProfile) callback(raw string) error {
 	return nil
 }
 
+// OAuth eligibility is established independently by oauthProfile. Only a
+// declared Bearer inference profile can consume its protected access credential.
+func oauthInferenceProfile(p domain.Provider, protocol domain.APIProtocol) (*domain.ProviderAPIFormat, error) {
+	for _, profile := range providers.APIFormats(p) {
+		if profile.Protocol == protocol && profile.Authentication == domain.BearerAuth {
+			return &profile, nil
+		}
+	}
+	return nil, domain.Fail(domain.Unsupported, "The selected OAuth API format is unavailable.", "Choose a declared Bearer API format for this provider.")
+}
+
 // Provider identity alone cannot substitute another adapter during durable
 // replay or local recovery. Legacy version 1 belongs exclusively to OpenRouter.
 func (s *Service) oauthAttemptProvider(tx *store.Tx, a domain.AccountOAuthAttempt) error {
@@ -140,6 +151,12 @@ func (s *Service) oauthAttemptProvider(tx *store.Tx, a domain.AccountOAuthAttemp
 	expected := a.Preset
 	if a.Version == 1 {
 		expected = domain.PresetOpenRouter
+	}
+	if a.APIFormat != nil {
+		selected, err := oauthInferenceProfile(p, a.APIFormat.Protocol)
+		if err != nil || *selected != *a.APIFormat {
+			return oauthUnsupported()
+		}
 	}
 	if p.PresetID == nil || *p.PresetID != expected {
 		return oauthUnsupported()

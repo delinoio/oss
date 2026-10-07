@@ -163,9 +163,10 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 		Revision           uint64
 		Actor              domain.Principal
 		CallbackCommitment string
-		GoogleProject      string `json:",omitempty"`
-		GoogleOptions      bool   `json:",omitempty"`
-	}{domain.ID(m.Id), m.ExpectedRevision, actor, s.oauthCommitment("callback", domain.ID(m.RequestId), []byte(req.Msg.CallbackUrl)), req.Msg.GetGoogle().GetQuotaProjectId(), req.Msg.Google != nil}
+		GoogleProject      string             `json:",omitempty"`
+		GoogleOptions      bool               `json:",omitempty"`
+		APIProtocol        domain.APIProtocol `json:",omitempty"`
+	}{domain.ID(m.Id), m.ExpectedRevision, actor, s.oauthCommitment("callback", domain.ID(m.RequestId), []byte(req.Msg.CallbackUrl)), req.Msg.GetGoogle().GetQuotaProjectId(), req.Msg.Google != nil, rpc.APIProtocol(req.Msg.ApiProtocol)}
 	result, replayed, err := s.Store.Replay(ctx, domain.ID(m.RequestId), "oauth.start", input)
 	var original domain.ID
 	var live *oauthLive
@@ -203,6 +204,12 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 			profile, e := s.oauthProfile(provider)
 			if e != nil {
 				return nil, oauthStartNotAdmitted(e)
+			}
+			if input.APIProtocol != "" {
+				a.APIFormat, e = oauthInferenceProfile(provider, input.APIProtocol)
+				if e != nil {
+					return nil, oauthStartNotAdmitted(e)
+				}
 			}
 			if e = profile.callback(req.Msg.CallbackUrl); e != nil {
 				return nil, e
@@ -338,7 +345,7 @@ func (s *Service) StartAccountOAuth(ctx context.Context, req *connect.Request[pb
 			}
 		}
 	}
-	s.logger.InfoContext(ctx, "account_oauth_started", "attempt_id", a.ID, "state", a.State, "replayed", result.Replayed, "correlation_id", c)
+	s.logger.InfoContext(ctx, "account_oauth_started", "attempt_id", a.ID, "state", a.State, "api_protocol", input.APIProtocol, "replayed", result.Replayed, "correlation_id", c)
 	r := connect.NewResponse(response)
 	rpc.CopyCorrelation(r, req.Header())
 	return r, nil
@@ -350,6 +357,9 @@ func oauthProjection(a domain.AccountOAuthAttempt) *pb.AccountOAuthAttempt {
 		state = pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_EXPIRED
 	}
 	r := &pb.AccountOAuthAttempt{Id: string(a.ID), Revision: a.Revision, State: state, ExpiresAt: a.ExpiresAt.Format(time.RFC3339Nano), ProviderId: string(a.ProviderID)}
+	if a.APIFormat != nil {
+		r.ApiProtocol = rpc.WireAPIFormat(*a.APIFormat).Protocol
+	}
 	if a.Problem != nil {
 		r.Problem = &pb.ErrorDetail{Code: string(a.Problem.Code), Guidance: a.Problem.Guidance, Cause: a.Problem.Cause}
 	}
@@ -523,6 +533,9 @@ func (s *Service) oauthFinishLocalLocked(ctx context.Context, a domain.AccountOA
 		alias = profile.name
 	}
 	account := domain.Account{Alias: alias, ProviderID: a.ProviderID, Type: domain.APIAccount, Enabled: true, RecoveryNotifications: true, Health: domain.AccountDisconnected}
+	if a.APIFormat != nil {
+		account.APIProtocol = a.APIFormat.Protocol
+	}
 	// Reuse ordinary configuration admission/validation and the reserved exact
 	// creation receipt. A deleted or edited account never becomes a fresh create.
 	raw, _ := json.Marshal(account)
