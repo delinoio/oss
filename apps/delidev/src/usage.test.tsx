@@ -92,6 +92,7 @@ it.each([false, true])("keeps native-only groups and models out of response view
   expect(within(responseModelTable).queryByText(native.modelId)).toBeNull();
   expect(within(responseModelTable).getAllByRole("row")).toHaveLength(mixed ? 2 : 1);
   if (mixed) expect(within(responseModelTable).getByText("Original model")).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Native accounting" }));
   const nativeSection = screen.getByRole("region", { name: "Verified Grok closed inputs" });
   expect(within(nativeSection).getByText("Grok-only session")).toBeTruthy();
   const nativeModelTable = within(nativeSection).getByRole("table", { name: "Verified Grok inputs by model" });
@@ -119,6 +120,7 @@ it("explains separate response and Grok completion times across a day boundary",
   await screen.findByText("Incomplete coverage");
   const applied = screen.getByRole("group", { name: "Applied conditions" });
   expect(within(applied).getByText(/^Response times show when the server first retained each response/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Native accounting" }));
   const nativeSection = screen.getByRole("region", { name: "Verified Grok closed inputs" });
   expect(within(nativeSection).getByText(/Grok input times use the server's first retention of verified completion after confirmed cleanup/)).toBeTruthy();
   expect(within(nativeSection).getByText(/Filters and daily buckets use that time/)).toBeTruthy();
@@ -153,7 +155,7 @@ it.each([[0, 0], [12, 0], [0, 3]])("shows six empty recorded summary zeros while
   render(f.view());
   await screen.findByText("Incomplete coverage");
   const summary = screen.getByRole("region", { name: "Known token totals" });
-  expect([...summary.querySelectorAll("dd")].map((value) => value.textContent)).toEqual(Array(6).fill("0"));
+  expect([...summary.querySelectorAll("[data-token-measure] dd")].map((value) => value.textContent)).toEqual(Array(6).fill("0"));
   expect(within(summary).getAllByText("0 measured · 0 unavailable responses")).toHaveLength(6);
   expect(screen.getByText(new RegExp(`${executions} accepted executions`))).toBeTruthy();
   expect(screen.getByText(new RegExp(`${compactions} native context actions`))).toBeTruthy();
@@ -162,7 +164,7 @@ it.each([[0, 0], [12, 0], [0, 3]])("shows six empty recorded summary zeros while
   f.read.mockRejectedValueOnce(new ConnectError("Fixture unavailable", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText(/These are the last successfully retrieved values/);
-  expect([...summary.querySelectorAll("dd")].map((value) => value.textContent)).toEqual(Array(6).fill("0"));
+  expect([...summary.querySelectorAll("[data-token-measure] dd")].map((value) => value.textContent)).toEqual(Array(6).fill("0"));
   expect(screen.getByText(/Stale values from the last successful/)).toBeTruthy();
 });
 
@@ -183,14 +185,15 @@ it.each(["missing measure", "unavailable count", "measured count", "nonempty sub
   render(f.view());
   await screen.findByText("Incomplete coverage");
   const summary = screen.getByRole("region", { name: "Known token totals" });
-  expect([...summary.querySelectorAll("dd")].map((value) => value.textContent)).toEqual(Array(6).fill("Unavailable"));
+  expect([...summary.querySelectorAll("[data-token-measure] dd")].map((value) => value.textContent)).toEqual(Array(6).fill("Unavailable"));
 });
 
 it("does not invent zero for empty telemetry and marks retained data stale after a failed refresh", async () => {
   const f = fixture(); f.data.groups = []; f.data.totals = undefined;
   render(f.view());
   await screen.findByText(/No exact response usage is recorded/);
-  expect(screen.getAllByText("Unavailable").length).toBe(6);
+  expect(screen.getByRole("region", { name: "Known token totals" }).querySelectorAll("[data-token-measure] dd")).toHaveLength(6);
+  expect([...screen.getByRole("region", { name: "Known token totals" }).querySelectorAll("[data-token-measure] dd")].every(value => value.textContent === "Unavailable")).toBe(true);
   f.read.mockRejectedValueOnce(new ConnectError("Fixture unavailable", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText(/These are the last successfully retrieved values/);
@@ -338,4 +341,55 @@ it("does not reuse old scope data when a new valid selection fails", async () =>
   await screen.findByRole("alert");
   expect(screen.queryByText("Retained session")).toBeNull();
   expect(screen.queryByText(/These are the last successfully retrieved values/)).toBeNull();
+});
+
+it("defaults to a table-first Responses tab with collapsed trends and keeps tab state without new reads", async () => {
+  const f = fixture(); const view = render(f.view()); await screen.findByText("Incomplete coverage");
+  const tabs = screen.getAllByRole("tab");
+  expect(tabs.map(tab => tab.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
+  expect(tabs.map(tab => tab.tabIndex)).toEqual([0, -1, -1]);
+  const panel = screen.getByRole("tabpanel", { name: "Responses" });
+  const details = [...panel.querySelectorAll("details")];
+  const trends = details.find(value => value.querySelector("summary")?.textContent === "Daily and model trends")!;
+  expect(trends.open).toBe(false);
+  expect(details.find(value => value.querySelector("summary")?.textContent === "Accounting definitions and coverage")!.open).toBe(false);
+  expect(panel.querySelector("table")!.compareDocumentPosition(trends) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  for (const name of ["Input tokens", "Output tokens", "Known total tokens", "Recorded responses", "Token-price estimate"]) expect(within(panel).getByRole("columnheader", { name })).toBeTruthy();
+  tabs[0].focus(); fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
+  expect(document.activeElement).toBe(tabs[2]);
+  expect(screen.getByRole("tabpanel", { name: "Cost evidence" })).toBeTruthy();
+  fireEvent.keyDown(tabs[2], { key: "Home" }); expect(document.activeElement).toBe(tabs[0]);
+  fireEvent.keyDown(tabs[0], { key: "ArrowRight" }); expect(document.activeElement).toBe(tabs[1]);
+  fireEvent.keyDown(tabs[1], { key: "End" }); expect(document.activeElement).toBe(tabs[2]);
+  view.rerender(f.view(false)); view.rerender(f.view());
+  expect(screen.getByRole("tab", { name: "Cost evidence" }).getAttribute("aria-selected")).toBe("true");
+  expect(f.read).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Incomplete coverage")).toBeTruthy();
+});
+
+it("shows supported empty source rows collapsed and retains a user source choice across navigation and refresh", async () => {
+  const f = fixture();
+  f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
+  f.data.nativeAccounting = create(GetUsageSummaryResponseSchema, { nativeAccounting: [
+    { totals: { kind: AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT } },
+    { totals: { kind: AccountingUnitKind.OPENCODE_STEP, units: 1, input: { knownTotal: "9007199254740993", measuredUnits: 1 } } },
+  ] }).nativeAccounting;
+  const view = render(f.view()); await screen.findByText("Incomplete coverage");
+  fireEvent.click(screen.getByRole("tab", { name: "Native accounting" }));
+  const panel = screen.getByRole("tabpanel", { name: "Native accounting" });
+  const claude = within(panel).getByRole("region", { name: "Claude main-loop inputs" });
+  const grok = within(panel).getByRole("region", { name: "Verified Grok closed inputs" });
+  const opencode = within(panel).getByRole("region", { name: "OpenCode steps" });
+  expect(claude.querySelector("details")!.open).toBe(false);
+  expect(grok.querySelector("details")!.open).toBe(false);
+  expect(opencode.querySelector("details")!.open).toBe(true);
+  expect(within(claude).getAllByText("No records does not establish zero usage or cost").length).toBeGreaterThan(0);
+  const disclosure = opencode.querySelector("details")!;
+  disclosure.open = false; fireEvent(disclosure, new Event("toggle"));
+  view.rerender(f.view(false)); view.rerender(f.view());
+  expect(screen.getByRole("tab", { name: "Native accounting" }).getAttribute("aria-selected")).toBe("true");
+  expect(disclosure.open).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" })); await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+  expect(disclosure.open).toBe(false);
+  expect(within(panel).getByText(BigInt("9007199254740993").toLocaleString())).toBeTruthy();
 });

@@ -88,5 +88,19 @@
   "usage.range": "{{from}} – {{until}} (exclusive)",
   "usage.pendingStart": "30 days before server now",
   "usage.waitingForDateInput": "Waiting for date input to finish. The results still use the applied conditions.",
-  "usage.invalidFiltersRetained": "The date range is invalid. The results still use the last valid conditions."
+  "usage.invalidFiltersRetained": "The date range is invalid. The results still use the last valid conditions.",
+  "usage.responsesTab": "Responses",
+  "usage.nativeAccountingTab": "Native accounting",
+  "usage.analysisTabs": "Usage analysis",
+  "usage.recordedResponses": "Recorded responses",
+  "usage.exactResponseRecords": "Exact response records",
+  "usage.timeRange": "Time range",
+  "usage.scope": "Scope",
+  "usage.source": "Source",
+  "usage.dailyAndModelTrends": "Daily and model trends",
+  "usage.accountingDefinitions": "Accounting definitions and coverage",
+  "usage.sourceRecords": "{{count}} records",
+  "usage.emptySourceWarning": "No records does not establish zero usage or cost",
+  "usage.sourceDefinitions": "Source definitions",
+  "usage.historicalSourcePricing": "Historical price evidence"
 }

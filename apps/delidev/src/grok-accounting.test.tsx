@@ -26,6 +26,9 @@ it("shows distinct exact Grok totals in summary, day, model and session views wi
 it("distinguishes measured zero, missing units and an unnegotiated older server", () => {
   const data = create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 });
   const view = render(<GrokAccounting data={data} open={() => {}} />);
+  expect(screen.getByRole("status").textContent).toContain("unavailable from this server version");
+  data.totals = create(GetUsageSummaryResponseSchema, { totals: {} }).totals;
+  view.rerender(<GrokAccounting data={data} open={() => {}} />);
   expect(screen.getByText(/No verified Grok closed inputs/)).toBeTruthy();
   data.totals = create(GetUsageSummaryResponseSchema, { totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "0", measuredUnits: 1 }] } }).totals;
   view.rerender(<GrokAccounting data={data} open={() => {}} />);
@@ -75,4 +78,17 @@ it("retains original project IDs beside duplicate and renamed project labels", (
   expect(within(table).getByText("Renamed project")).toBeTruthy();
   expect(within(table).getByText("Shared project label")).toBeTruthy();
   for (const project of projects) expect(within(table).getByText(project)).toBeTruthy();
+});
+
+it.each(["duplicate", "unknown"])("does not render an invalid %s source as an empty supported source", kind => {
+  const accounting = kind === "duplicate" ? [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT }, { kind: AccountingUnitKind.GROK_CLOSED_INPUT }] : [{ kind: 99 as AccountingUnitKind }];
+  render(<GrokAccounting data={create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, totals: { accounting } })} open={vi.fn()} />);
+  expect(screen.getByRole("status").textContent).toContain("unavailable from this server version");
+  expect(screen.queryByText("No records does not establish zero usage or cost")).toBeNull();
+});
+
+it("keeps missing overall accounting evidence unavailable", () => {
+  render(<GrokAccounting data={create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 })} open={vi.fn()} />);
+  expect(screen.getByRole("status").textContent).toContain("unavailable from this server version");
+  expect(screen.queryByText("No records does not establish zero usage or cost")).toBeNull();
 });
