@@ -1,3 +1,4 @@
+import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
@@ -8,7 +9,7 @@ import { statusLabel } from "./product-status";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, newRequestId, isEntityId, type ListSchedulesResponse, type ListScheduleOccurrencesResponse, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, WorkerCapability, newRequestId, isEntityId, supportsResourceSchema, type ListSchedulesResponse, type ListScheduleOccurrencesResponse, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, Mode, object, text, Workspace, type Document } from "./documents";
 import { ReferenceFields, ResourceChoice, TextField } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
@@ -45,20 +46,31 @@ export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker
   useLocale();
   const localProof = useLocalWorkerProof(readLocalWorker);
   const [definition, setDefinition] = useState<Document>(() => initial ? object(document(initial).definition) : emptyDefinition());
+  const runnerProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: text(definition.project_id) }, { enabled: active && !initial && Boolean(definition.project_id), retry: false });
+  const projectKnown = !definition.project_id || !runnerProject.isFetching && !runnerProject.error && runnerProject.data?.resource?.id === definition.project_id && supportsResourceSchema(runnerProject.data.resource);
+  const runnerEligible = (row: Resource) => projectKnown && (definition.workspace !== Workspace.Worktree || !definition.project_id || !items(document(runnerProject.data?.resource).repositories).length || items(document(row).worker_capabilities).some(capability => capability === "remote-workspace-clone-v1" || capability === WorkerCapability.REMOTE_WORKSPACE_CLONE_V1));
+  const runner = useRunnerPreference(RunnerWorkflow.Schedule, active && !initial && projectKnown, runnerEligible, false, `${text(definition.project_id)}:${text(definition.workspace)}:${runnerProject.data?.resource?.revision ?? ""}`);
+  const automaticRunner = useRef("");
+  const runnerTouched = useRef(Boolean(initial));
   const [limit, setLimit] = useProductMessage("");
   const current = useQuery(ScheduleQuery.getSchedule, { id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
-  const mutation = useRetainedMutation(`schedule-save:${initial?.id ?? "new"}`, ScheduleQuery.saveSchedule, (response) => saved(response.schedule));
+  const mutation = useRetainedMutation(`schedule-save:${initial?.id ?? "new"}`, ScheduleQuery.saveSchedule, (response, request) => { if (response.schedule?.kind === EntityKind.SCHEDULE && response.schedule.revision > 0n && isEntityId(response.schedule.id) && supportsResourceSchema(response.schedule)) { const submitted = object(JSON.parse(new TextDecoder().decode(request.definitionJson))); runner.remember(text(submitted.machine_id)); } saved(response.schedule); });
+  const automaticRunnerBlocked = Boolean(!initial && !runnerTouched.current && automaticRunner.current && definition.machine_id === automaticRunner.current && (runner.reading || !projectKnown || !runner.suggestion || !runnerEligible(runner.suggestion)));
   const blocked = mutation.busy || mutation.uncertain || localProof.busy;
   useEffect(() => protectedChange(true), [protectedChange]);
   const stale = Boolean(initial && current.data?.schedule && initial.revision !== current.data.schedule.revision);
   const local = definition.workspace === Workspace.Local;
+  useEffect(() => { if (active && !runnerTouched.current && !mutation.busy && !mutation.uncertain && !localProof.busy && definition.workspace !== Workspace.Local && runner.suggestion && runnerEligible(runner.suggestion) && (!definition.machine_id || definition.machine_id === automaticRunner.current)) { automaticRunner.current = runner.suggestion.id; setDefinition(value => value.machine_id === runner.suggestion!.id ? value : ({ ...value, machine_id: runner.suggestion!.id })); } }, [active, runner.suggestion, blocked, projectKnown, definition.project_id, runnerProject.data?.resource, definition.workspace, definition.machine_id]);
+  useEffect(() => { if (active && !runnerTouched.current && !blocked && projectKnown && !runner.reading && !runner.lookupFailed && !runner.suggestion && automaticRunner.current && definition.machine_id === automaticRunner.current) { automaticRunner.current = ""; setDefinition(value => ({ ...value, machine_id: "" })); } }, [active, blocked, projectKnown, runner.reading, runner.lookupFailed, runner.suggestion, definition.machine_id]);
   const change = (next: Document) => {
+    if (next.machine_id !== definition.machine_id || next.workspace !== definition.workspace) { runnerTouched.current = true; runner.touch(); }
     if (encode(next).byteLength > 1 << 20 || new TextEncoder().encode(text(next.prompt)).byteLength > 256 << 10) { setLimit(ownedMessage("schedules.extra.1a9ab790643b")); return false; }
     setDefinition(next); setLimit(""); return true;
   };
   const field = (key: string) => (value: unknown) => change({ ...definition, [key]: value });
   const submit = async () => {
-    if (blocked || stale || (initial && current.error)) return;
+    if (blocked || automaticRunnerBlocked || stale || (initial && current.error)) return;
+    runner.touch();
     const original = object(document(initial).definition);
     const retainedLocal = local && original.workspace === Workspace.Local && original.machine_id === definition.machine_id;
     const input = { mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, definitionJson: encode(definition) };
@@ -67,11 +79,11 @@ export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker
     void mutation.send({ ...input, localWorkerToken: proof?.token });
   };
   if (!initial) {
-    const props: ScheduleCreationProps = { definition, change, active, blocked, cancel, submit,
+    const props: ScheduleCreationProps = { definition, change, active, blocked, submitBlocked: automaticRunnerBlocked, cancel, submit,
       localAvailable: localProof.available,
       selectLocal: () => { void localProof.load().then((proof) => { if (proof) change({ ...definition, workspace: Workspace.Local, machine_id: proof.machineId, starting: [] }); }); },
       references: local ? null : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />,
-      errors: <>{limit ? <p role="alert">{limit}</p> : null}{localProof.problem ? <p role="alert">{localProof.problem}</p> : null}<Problem error={mutation.error} /></>,
+      errors: <><Problem error={runnerProject.error} />{runner.guidance}{limit ? <p role="alert">{limit}</p> : null}{localProof.problem ? <p role="alert">{localProof.problem}</p> : null}<Problem error={mutation.error} /></>,
       retry: mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("schedules.retryTheSameSchedule_7702b8")}</button> : null };
     return <ScheduleCreation {...props} />;
   }

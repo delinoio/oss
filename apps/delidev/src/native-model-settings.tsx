@@ -1,3 +1,4 @@
+import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { OperationStatus } from "./jobs";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useNativeModelPages } from "./model-pagination";
@@ -7,7 +8,7 @@ import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, FailureCode, NativeModelQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, NativeModelQuery, SystemCapability, SystemQuery, newRequestId, isEntityId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text, type Document } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
@@ -17,6 +18,8 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   useLocale();
   const [opened, setOpened] = useState(false);
   const [machine, setMachine] = useState<Resource>();
+  const runner = useRunnerPreference(RunnerWorkflow.NativeObservation, active && opened, row => { const data = document(row); return items(data.worker_capabilities).includes("native-codex-model-discovery-v1") && items(data.installations).map(object).some(installation => installation.harness === "codex" && installation.state === "detected"); });
+  const runnerTouched = useRef(false);
   const [account, setAccount] = useState<Resource>();
   const [hidden, setHidden] = useState(false);
   const [jobID, setJobID] = useState("");
@@ -26,7 +29,8 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   const listRoot = useRef<HTMLDivElement>(null);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && opened });
   const supported = status.data?.capabilities.includes(SystemCapability.NATIVE_CODEX_MODEL_DISCOVERY_V1) === true;
-  const discovery = useRetainedMutation("native-models:discover", NativeModelQuery.discoverNativeModels, (result) => {
+  const discovery = useRetainedMutation("native-models:discover", NativeModelQuery.discoverNativeModels, (result, request) => {
+    if (result.job && isEntityId(result.job.id) && result.job.revision > 0n && supportsResourceSchema(result.job)) { runner.remember(request.mutation?.id ?? ""); }
     if (result.job) { setRetainedJobID(result.job.id); setJobID(result.job.id); setObservationID(""); }
   }, (result, request) => {
     const scope = object(document(result.job).input);
@@ -45,6 +49,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   const unverifiedLookupFailed = !operation.isFetching && Boolean(operation.error || operation.data && !job);
   const observationPending = Boolean(jobID && (retainedJobID === jobID || !unverifiedLookupFailed) && !["succeeded", "failed", "canceled"].includes(state));
   const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain;
+  useEffect(() => { if (active && !runnerTouched.current && !blocked && !observationPending && !machine && runner.suggestion) setMachine(runner.suggestion); }, [active, runner.suggestion, blocked, observationPending, machine]);
   const models = useNativeModelPages(source, active && opened && supported && Boolean(source) && !blocked);
   const selectedObservation = models.payloadPages.flatMap(page => page.payload)[0]?.job ?? (job?.id === source && state === "succeeded" ? job : operation.data?.lastSuccess?.id === source ? operation.data.lastSuccess : undefined);
   const observedScope = object(document(selectedObservation).input);
@@ -59,12 +64,12 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
     {status.data && !supported ? <p>{copy("native-model-settings.thisServerDoesNotSupportNative_b59968")}</p> : null}
     <fieldset disabled={!supported || blocked || observationPending}>
       <legend>{copy("native-model-settings.observationScope_329506")}</legend>
-      <ResourceChoice label={copy("native-model-settings.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setMachine(row); reset(); }} />
+      <ResourceChoice label={copy("native-model-settings.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine?.id ?? ""} active={active && supported} change={(_id, _data, row) => { runnerTouched.current = true; runner.touch(); setMachine(row); reset(); }} />
       {selectedAccounts ? <label>{copy("native-model-settings.connectedSelectedAccount")}<select value={account?.id ?? ""} onChange={event => { setAccount(selectedAccounts.find(row => row.id === event.target.value)); reset(); }}><option value="">{copy("native-model-settings.selectAccount")}</option>{selectedAccounts.map(row => <option key={row.id} value={row.id}>{text(document(row).alias) || row.id}</option>)}</select></label> : <ResourceChoice label={copy("native-model-settings.connectedAccount_3903f0")} kind={EntityKind.ACCOUNT} value={account?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setAccount(row); reset(); }} />}
       <label><input type="checkbox" checked={hidden} onChange={(event) => { setHidden(event.target.checked); reset(); }} />{copy("native-model-settings.includeHiddenModels_64799e")}</label>
-      <button type="button" disabled={!machine || !account || !accountSelected || !document(account).connection} onClick={() => void discovery.send({ mutation: { requestId: newRequestId(), id: machine!.id, expectedRevision: machine!.revision }, accountId: account!.id, accountRevision: account!.revision, includeHidden: hidden })}>{copy("native-model-settings.observeModels_cf8865")}</button>
+      <button type="button" disabled={!machine || !account || !accountSelected || !document(account).connection} onClick={() => { runner.touch(); void discovery.send({ mutation: { requestId: newRequestId(), id: machine!.id, expectedRevision: machine!.revision }, accountId: account!.id, accountRevision: account!.revision, includeHidden: hidden }); }}>{copy("native-model-settings.observeModels_cf8865")}</button>
     </fieldset>
-    <Problem error={discovery.error} />
+    {runner.guidance}<Problem error={discovery.error} />
     {discovery.uncertain ? <button type="button" disabled={discovery.busy} onClick={discovery.retry}>{copy("native-model-settings.retryTheSameObservationRequest_0b6c58")}</button> : null}
     <label>{copy("native-model-settings.originalObservationId_949ead")}<input value={lookup} maxLength={36} disabled={blocked || observationPending} onChange={(event) => setLookup(event.target.value)} /></label>
     <button type="button" disabled={!supported || blocked || observationPending || !lookup} onClick={() => { setJobID(lookup); setObservationID(""); }}>{copy("native-model-settings.inspectObservation_ded69a")}</button>

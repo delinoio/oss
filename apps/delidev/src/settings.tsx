@@ -1,3 +1,4 @@
+import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskDismissButton } from "./settings-task";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
@@ -13,7 +14,7 @@ import { NotificationSettings } from "./notification-settings";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { AccountQuery, apiFormatToWire, ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, apiFormat, apiFormatProfileFromWire, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, SystemQuery, SystemCapability, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { AccountQuery, apiFormatToWire, ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, apiFormat, apiFormatProfileFromWire, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, SystemQuery, SystemCapability, isEntityId, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { accountPreferencesDocument } from "./account-preferences";
 import { revealRepositoryInvalidControl } from "./repository-editor";
@@ -57,6 +58,8 @@ export enum ConfigurationEditorPresentation { Workflow, InlineServerPreferences 
 
 export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, serverPreferenceSection = ServerPreferenceSection.All, active, saved, cancel, presentation = ConfigurationEditorPresentation.Workflow, preferencesObservation }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; active: boolean; saved: () => void; cancel: () => void; presentation?: ConfigurationEditorPresentation; preferencesObservation?: ServerPreferencesObservation }) {
   useLocale();
+  const checkoutPreference = useRunnerPreference(RunnerWorkflow.Checkout, false);
+  const remediationPreference = useRunnerPreference(kind === EntityKind.SETTINGS ? RunnerWorkflow.ServerRemediation : RunnerWorkflow.RepositoryRemediation, false);
   const notifications = useNotifications();
   const inline = kind === EntityKind.SETTINGS && presentation === ConfigurationEditorPresentation.InlineServerPreferences;
   const [baseline, setBaseline] = useState(initial);
@@ -82,6 +85,15 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const repositoryStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.REPOSITORY, retry: false });
   const savedKind = { [EntityKind.AGENT]: "settings.savedKind.AGENT" as const, [EntityKind.TEMPLATE]: "settings.savedKind.TEMPLATE" as const, [EntityKind.PROJECT]: "settings.savedKind.PROJECT" as const, [EntityKind.REPOSITORY]: "settings.savedKind.REPOSITORY" as const, [EntityKind.ACCOUNT]: "settings.savedKind.ACCOUNT" as const, [EntityKind.MACHINE]: "settings.savedKind.MACHINE" as const, [EntityKind.PROVIDER]: "settings.savedKind.PROVIDER" as const, [EntityKind.MODEL]: "settings.savedKind.MODEL" as const, [EntityKind.SETTINGS]: "settings.savedKind.SETTINGS" as const };
   const mutation = useRetainedMutation(`configuration:${kind}:${source?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result, request) => {
+    if (result.requestId === request.mutation?.requestId && (result.resource?.kind === kind && isEntityId(result.resource.id) && supportsResourceSchema(result.resource) && result.resource.revision > 0n || result.job?.kind === EntityKind.JOB && isEntityId(result.job.id) && supportsResourceSchema(result.job) && result.job.revision > 0n)) {
+      const submitted = object(JSON.parse(new TextDecoder().decode(request.documentJson)));
+      if (kind === EntityKind.SETTINGS || kind === EntityKind.REPOSITORY) remediationPreference.remember(text(object(submitted.remediation).machine_id));
+      if (kind === EntityKind.REPOSITORY) {
+        const original = items(document(initial).checkouts).map(object);
+        const added = items(submitted.checkouts).map(object).filter(row => !original.some(old => old.machine_id === row.machine_id && old.path === row.path));
+        if (added.length) checkoutPreference.remember(text(added[added.length - 1].machine_id));
+      }
+    }
     if (result.job) setJob(result.job);
     else if (result.resource) {
       if (inline) { setBaseline(result.resource); setData(document(result.resource)); setProblem(""); }

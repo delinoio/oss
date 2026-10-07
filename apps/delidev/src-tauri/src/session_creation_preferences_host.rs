@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use delidev_desktop::{
     NativeFailure,
-    session_creation_preferences::{CreationKind, Pair, Scope, Snapshot, Store},
+    session_creation_preferences::{CreationKind, DeviceSnapshot, Pair, Scope, Snapshot, Store},
 };
 use tauri::WebviewWindow;
 use tauri_runtime_cef::CefRuntime;
@@ -75,6 +75,46 @@ pub async fn update_session_creation_preferences(
             },
             expected_revision,
         ))
+    })
+    .await
+    .map_err(|_| NativeFailure::StorageUnavailable)??;
+    super::recheck_authority(&window, &original)?;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub async fn read_runner_device_preferences(
+    window: WebviewWindow<CefRuntime>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    store: tauri::State<'_, Arc<Store>>,
+    kind: CreationKind,
+) -> Result<DeviceSnapshot, NativeFailure> {
+    let original = super::capture_authority(&window)?;
+    let selected = scope(&window, &windows, &original)?;
+    let store = Arc::clone(store.inner());
+    let snapshot = tauri::async_runtime::spawn_blocking(move || store.read_device(selected, kind))
+        .await
+        .map_err(|_| NativeFailure::StorageUnavailable)?;
+    super::recheck_authority(&window, &original)?;
+    Ok(snapshot)
+}
+#[tauri::command]
+pub async fn update_runner_device_preferences(
+    window: WebviewWindow<CefRuntime>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    store: tauri::State<'_, Arc<Store>>,
+    kind: CreationKind,
+    machine_id: String,
+    expected_revision: u32,
+) -> Result<DeviceSnapshot, NativeFailure> {
+    let original = super::capture_authority(&window)?;
+    let selected = scope(&window, &windows, &original)?;
+    let store = Arc::clone(store.inner());
+    let response_window = window.clone();
+    let authority = original.clone();
+    let snapshot = tauri::async_runtime::spawn_blocking(move || {
+        super::recheck_authority(&response_window, &authority)?;
+        Ok(store.update_device(selected, kind, machine_id, expected_revision))
     })
     .await
     .map_err(|_| NativeFailure::StorageUnavailable)??;

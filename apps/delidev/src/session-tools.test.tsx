@@ -247,9 +247,10 @@ it("reads fresh matching Local Worker proof for creation and retains that exact 
   render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} readLocalWorker={proof} />));
   await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
   await chooseScrollOption(screen.getByRole("combobox", { name: "Project" }), value.project.id);
+  const metadataReads = proof.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).dataset.value).toBe(value.machine.id));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Use this computer's Local checkouts" }).getAttribute("aria-pressed")).toBe("true"));
   expect((screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).disabled).toBe(true);
   const choices = within(screen.getByRole("combobox", { name: "Agent Worker" }).closest(".resource-choice")!);
   fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
@@ -259,12 +260,12 @@ it("reads fresh matching Local Worker proof for creation and retains that exact 
   fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Local prompt" } });
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await screen.findByRole("button", { name: "Retry the same session creation" });
-  expect(proof).toHaveBeenCalledTimes(2);
+  expect(proof).toHaveBeenCalledTimes(metadataReads + 2);
   proof.mockResolvedValue({ machineId: newRequestId(), token: "B".repeat(42) + "A" });
   fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
   await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(2));
   expect(value.createSession.mock.calls[0][0]).toEqual(value.createSession.mock.calls[1][0]);
-  expect(proof).toHaveBeenCalledTimes(2);
+  expect(proof).toHaveBeenCalledTimes(metadataReads + 2);
   const request = value.createSession.mock.calls[0][0] as { documentJson: Uint8Array; localWorkerToken: string };
   expect(request.localWorkerToken).toBe("A".repeat(43));
   expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ workspace: "local", machine_id: value.machine.id });
@@ -284,10 +285,11 @@ it("locks Project selection while Local proof or session creation is pending or 
   await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
   const project = screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement;
   await chooseScrollOption(project, value.project.id);
+  const metadataReads = proof.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
   await waitFor(() => {
-    expect(proof).toHaveBeenCalledTimes(1);
+    expect(proof).toHaveBeenCalledTimes(metadataReads + 1);
     expect(project.disabled).toBe(true);
   });
   finishProof({ machineId: value.machine.id, token: "A".repeat(43) });

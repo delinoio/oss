@@ -26,6 +26,7 @@ export interface ScheduleCreationProps {
   change: (next: Document) => boolean;
   active: boolean;
   blocked: boolean;
+  submitBlocked?: boolean;
   localAvailable: boolean;
   selectLocal: () => void;
   submit: () => Promise<void>;
@@ -35,7 +36,7 @@ export interface ScheduleCreationProps {
   retry: ReactNode;
 }
 
-export function ScheduleCreation({ definition, change, active, blocked, localAvailable, selectLocal, submit, cancel, references, errors, retry }: ScheduleCreationProps) {
+export function ScheduleCreation({ definition, change, active, blocked, submitBlocked = false, localAvailable, selectLocal, submit, cancel, references, errors, retry }: ScheduleCreationProps) {
   useLocale();
   const [frequency, setFrequency] = useState(Frequency.Weekdays);
   const [time, setTime] = useState("09:00");
@@ -77,7 +78,7 @@ export function ScheduleCreation({ definition, change, active, blocked, localAva
   const summary = preset
     ? timeInvalid ? copy("schedule-creation.extra.9cd18d06fde1") : copy("schedule-creation.sentence.6caab2b232d7", { v0: frequency === Frequency.Weekly ? copy("schedule-creation.weeklyOn", { day: weekdayNames[weekday] }) : frequencyNames[frequency], v1: time, v2: text(definition.timezone) })
     : copy("schedule-creation.sentence.2a3f85460313", { v0: text(definition.timezone) });
-  return <section className="schedule-creation"><form onSubmit={(event) => { event.preventDefault(); if (!blocked && !timeInvalid) void submit(); }}>
+  return <section className="schedule-creation"><form onSubmit={(event) => { event.preventDefault(); if (!blocked && !submitBlocked && !timeInvalid) void submit(); }}>
     <div className="schedule-creation-scroll">
       <header className="schedule-creation-header"><h2>{copy("schedule-creation.newSchedule_3bfe90")}</h2><p>{copy("schedule-creation.setUpARecurringTaskFor_a7ff02")}</p></header>
       <fieldset className="schedule-creation-grid" disabled={blocked}>
@@ -121,7 +122,7 @@ export function ScheduleCreation({ definition, change, active, blocked, localAva
     </div>
     <footer className="schedule-creation-footer"><div className="schedule-creation-footer-inner">
       <p>{definition.enabled === true ? copy("schedule-creation.enabledOnCreation_f6e986") : copy("schedule-creation.pausedOnCreation_484218")}<small>{local ? copy("schedule-creation.localComputer_09d55f") : copy("schedule-creation.worktree_c893ba")} · {definition.mode === Mode.Plan ? copy("schedule-creation.plan_fa8ed0") : copy("schedule-creation.execute_e3a67d")}</small></p>
-      <div className="actions">{retry}<button type="button" disabled={blocked} onClick={cancel}>{copy("schedule-creation.cancel_19766e")}</button><button className="primary" disabled={blocked || timeInvalid}>{copy("schedule-creation.createSchedule_5b08f3")}</button></div>
+      <div className="actions">{retry}<button type="button" disabled={blocked} onClick={cancel}>{copy("schedule-creation.cancel_19766e")}</button><button className="primary" disabled={blocked || submitBlocked || timeInvalid}>{copy("schedule-creation.createSchedule_5b08f3")}</button></div>
     </div></footer>
   </form></section>;
 }

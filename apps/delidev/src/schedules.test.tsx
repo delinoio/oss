@@ -324,3 +324,17 @@ it("discards a Local selection proof that arrives after creation disposal", asyn
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" })); rendered.unmount();
   ready({ machineId: value.machine.id, token: "a".repeat(42) + "A" }); await Promise.resolve(); expect(value.save).not.toHaveBeenCalled();
 });
+
+it("revalidates untouched Runner defaults against the selected Worktree project",async()=>{
+ const value=fixture(), history=newRequestId(), local=newRequestId(), server=newRequestId(), device=newRequestId();
+ const machines=[history,local].map(id=>create(ResourceSchema,{id,kind:EntityKind.MACHINE,schemaVersion:1,revision:1n,documentJson:encode({name:id,enabled:true,...(id===local?{worker_capabilities:["remote-workspace-clone-v1"]}:{})})}));
+ const project=create(ResourceSchema,{id:value.definition.project_id,kind:EntityKind.PROJECT,schemaVersion:1,revision:1n,documentJson:encode({name:"Worktree project",repositories:[newRequestId()]})});
+ const get=vi.fn(async (request:{id:string})=>({resource:request.id===project.id?project:machines.find(row=>row.id===request.id)}));
+ const transport=createRouterTransport(router=>{router.service(ResourceService,{getResource:get,listResources:request=>({resources:request.filter?.kind===EntityKind.PROJECT?[project]:request.filter?.kind===EntityKind.MACHINE?machines:[]})});router.service(ScheduleService,{saveSchedule:value.save});});
+ const bridge={read:vi.fn(async()=>({revision:1,scope:{server_id:server,device_id:device},machine_id:history,problem:null})),update:vi.fn()};
+ const {RunnerPreferenceProvider}=await import("./runner-device-preferences");
+ render(<TransportProvider transport={transport}><QueryClientProvider client={value.client}><MutationIntents><RunnerPreferenceProvider bridge={bridge} readLocalWorker={async()=>({machineId:local,token:"discarded"})}><ScheduleEditor active saved={()=>{}} cancel={()=>{}}/></RunnerPreferenceProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ await waitFor(()=>expect(screen.getByRole("combobox",{name:"Runner Device"}).getAttribute("data-value")).toBe(history));
+ const {chooseScrollOption}=await import("./test-scroll-picker");await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),project.id);
+ await waitFor(()=>expect(screen.getByRole("combobox",{name:"Runner Device"}).getAttribute("data-value")).toBe(local));expect(value.save).not.toHaveBeenCalled();expect(bridge.update).not.toHaveBeenCalled();
+});

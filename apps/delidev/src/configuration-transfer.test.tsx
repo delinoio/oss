@@ -241,3 +241,26 @@ it.each(["foreign ID", "wrong kind"])("keeps polling and retries the original im
   expect(value.getResource.mock.calls.every(([request]) => request.id === value.jobId && request.kind === EntityKind.JOB)).toBe(true);
   expect(value.apply).toHaveBeenCalledTimes(1);
 });
+
+it("requires explicit confirmation of every unique suggested import target", async () => {
+  const value = fixture(), sourceA = newRequestId(), sourceB = newRequestId(), targetA = newRequestId(), targetB = newRequestId();
+  const bundle = { ...value.bundle, machines: [{ id: sourceA, name: "Source A", os: "darwin", architecture: "arm64" }, { id: sourceB, name: "Source B", os: "darwin", architecture: "arm64" }] };
+  const targets = [targetA, targetB].map(id => create(ResourceSchema, { id, kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({name:id,enabled:true}) }));
+  const get = vi.fn((input: {id:string}) => ({ resource: targets.find(row=>row.id===input.id) }));
+  const transport = createRouterTransport(router => {
+    router.service(ConfigurationService, { previewConfigurationImport:value.preview });
+    router.service(ResourceService, { getResource:get, listResources:()=>({resources:targets}) });
+  });
+  const bridge = {read:vi.fn(async()=>({revision:1,scope:{server_id:newRequestId(),device_id:newRequestId()},machine_id:targetA,problem:null})),update:vi.fn()};
+  const { RunnerPreferenceProvider } = await import("./runner-device-preferences");
+  render(<TransportProvider transport={transport}><QueryClientProvider client={value.client}><MutationIntents><RunnerPreferenceProvider bridge={bridge} readLocalWorker={async()=>({machineId:targetB,token:"discard-me"})}><ConfigurationTransfer active/></RunnerPreferenceProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+  load(bundle);
+  await waitFor(()=>expect(get).toHaveBeenCalledWith(expect.objectContaining({id:targetB}),expect.anything()));
+  const preview=screen.getByRole("button",{name:"Preview configuration changes"}) as HTMLButtonElement;
+  expect(preview.disabled).toBe(true);
+  const confirmations=screen.getAllByRole("checkbox",{name:"Confirm this target device"});
+  fireEvent.click(confirmations[0]);expect(preview.disabled).toBe(true);fireEvent.click(confirmations[1]);expect(preview.disabled).toBe(false);
+  fireEvent.click(preview);await waitFor(()=>expect(value.preview).toHaveBeenCalledTimes(1));
+  const selection=JSON.parse(new TextDecoder().decode((value.preview.mock.calls[0][0] as {selectionJson:Uint8Array}).selectionJson));
+  expect(selection.machines).toEqual([{source_id:sourceA,target_id:targetA},{source_id:sourceB,target_id:targetB}]);expect(bridge.update).not.toHaveBeenCalled();
+});
