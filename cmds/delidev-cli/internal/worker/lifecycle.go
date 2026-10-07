@@ -118,6 +118,20 @@ func newLifecycle(root string, c Credential, previous Lifecycle, phase RuntimePh
 // A previously reserved child may still arrive, so retries wait on that original
 // generation instead of launching another child. Explicit stop can cancel it.
 func PrepareStart(root string) (RuntimeStatus, bool, error) {
+	return prepareStart(root, true, "")
+}
+
+// PrepareDesktopStart distinguishes intentional fresh-process Start from
+// supervision. Only native observation of the exact original child's exit may
+// replace incomplete controller evidence; native session journals are retained.
+func PrepareDesktopStart(root string, reopen bool, exited domain.ID) (RuntimeStatus, bool, error) {
+	if exited != "" && exited.Validate() != nil {
+		return RuntimeStatus{}, false, lifecycleConflict()
+	}
+	return prepareStart(root, reopen, exited)
+}
+
+func prepareStart(root string, reopen bool, exited domain.ID) (RuntimeStatus, bool, error) {
 	c, err := workerCredential(root)
 	if err != nil {
 		return RuntimeStatus{}, false, err
@@ -143,7 +157,23 @@ func PrepareStart(root string) (RuntimeStatus, bool, error) {
 		return status, false, nil
 	}
 	defer process.Close()
+	if !reopen {
+		status := runtimeStatus(current, false)
+		if current.Version == 0 || current.Desired == WorkerStopped {
+			return status, false, nil
+		}
+		if current.Phase != RuntimeExited && (exited == "" || exited != current.Generation) {
+			if current.Phase == RuntimeReserved {
+				return status, false, nil
+			}
+			return status, false, lifecycleConflict()
+		}
+	}
 	if current.Phase == RuntimeReserved && current.Desired == WorkerRunning {
+		if exited == current.Generation {
+			value, err := newLifecycle(root, c, current, RuntimeReserved)
+			return RuntimeStatus{Lifecycle: value, State: StateStarting}, err == nil, err
+		}
 		if current.WorkerVersion != rpc.Version {
 			return RuntimeStatus{}, false, lifecycleConflict()
 		}

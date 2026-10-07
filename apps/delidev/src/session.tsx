@@ -25,7 +25,7 @@ import { NativeReasoning } from "./native-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
@@ -34,7 +34,9 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { ServiceProblem, Failure, Problem  } from "./ui";
+import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
+import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
+import "./session.css";
 import { Interaction } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
 import { SessionForkAction } from "./session-fork";
@@ -198,7 +200,8 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
   </article>;
 });
 
-enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics" }
+enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics", Info = "info" }
+enum InfoTarget { Status = "status", Budget = "budget" }
 
 export function SessionView({ id, draft, setDraft }: { id: string; draft: string; setDraft: (value: string) => void }) {
   useLocale();
@@ -209,6 +212,26 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const diffButton = useRef<HTMLButtonElement>(null);
   const diagnosticsButton = useRef<HTMLButtonElement>(null);
   const browserButton = useRef<HTMLButtonElement>(null);
+  const infoButton = useRef<HTMLButtonElement>(null);
+  const panelOpener = useRef<HTMLButtonElement | null>(null);
+  const infoHeading = useRef<HTMLHeadingElement>(null);
+  const infoEvidence = useRef<HTMLDivElement>(null);
+  const budgetDetails = useRef<HTMLDetailsElement>(null);
+  const information = useRef<HTMLElement>(null);
+  const [infoReveal, setInfoReveal] = useState<{ target: InfoTarget }>();
+  useLayoutEffect(() => { if (panel === SessionPanel.Info) infoHeading.current?.focus({ preventScroll: true }); }, [panel]);
+  useLayoutEffect(() => {
+    if (!infoReveal) return;
+    const target = infoReveal.target === InfoTarget.Budget ? budgetDetails.current : infoEvidence.current;
+    if (target instanceof HTMLDetailsElement) target.open = true;
+    else {
+      target?.querySelectorAll("details").forEach(details => { details.open = true; });
+      const recovery = information.current?.querySelector<HTMLDetailsElement>(".session-tools");
+      if (recovery) recovery.open = true;
+    }
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView?.({ block: "nearest" });
+  }, [infoReveal]);
  const [budgetBlocked,setBudgetBlocked]=useState(false);
   const [page, setPage] = useState("");
   const [queuePage, setQueuePage] = useState("");
@@ -256,34 +279,132 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     if (!session) return;
     void control.send({ mutation: { id, expectedRevision: session.revision, requestId: newRequestId() }, action: value });
   };
-  return <div className={`session-workspace${panel !== SessionPanel.Closed ? " files-open" : ""}`}><section className="session" aria-label={copy("session.currentSession_a32789")}>
-    <header className="session-header"><div><h2>{resourceName(session)}</h2><p>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")} · {statusLabel(text(data.outcome))} · {statusLabel(text(data.dispatch))} · {statusLabel(text(data.archive))}</p>{titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? copy("session.message_2fa20b", { v0: titlePresentation.detail }) : ""}</p> : null}</div>
-      <div className="actions">{session ? <SessionForkAction source={session} /> : null}<button disabled={Boolean(object(data.fork).sidechat_parent_snapshot)} ref={terminalsButton} aria-expanded={panel === SessionPanel.Terminals} aria-controls={`terminals-${id}`} onClick={() => setPanel(panel === SessionPanel.Terminals ? SessionPanel.Closed : SessionPanel.Terminals)}>{copy("session.terminals_7482c4")}</button><button ref={filesButton} aria-expanded={panel === SessionPanel.Files} aria-controls={`files-${id}`} onClick={() => setPanel(panel === SessionPanel.Files ? SessionPanel.Closed : SessionPanel.Files)}>{copy("session.files_abc7e9")}</button><button ref={diffButton} aria-expanded={panel === SessionPanel.Diff} aria-controls={`diff-${id}`} onClick={() => setPanel(panel === SessionPanel.Diff ? SessionPanel.Closed : SessionPanel.Diff)}>{copy("session.diff_7ecf46")}</button><button ref={diagnosticsButton} aria-expanded={panel === SessionPanel.Diagnostics} aria-controls={`diagnostics-${id}`} onClick={() => setPanel(panel === SessionPanel.Diagnostics ? SessionPanel.Closed : SessionPanel.Diagnostics)}>{copy("session.diagnostics_268f14")}</button><button ref={browserButton} aria-expanded={panel === SessionPanel.Browser} aria-controls={`browser-${id}`} onClick={() => setPanel(panel === SessionPanel.Browser ? SessionPanel.Closed : SessionPanel.Browser)}>{copy("session.browser_d31de1")}</button><button disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
-        <button disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
-        <button disabled={!session || control.busy || control.uncertain || budgetBlocked || Object.hasOwn(data, "startup_rejection") || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>{copy("session.resume_d640c7")}</button></div></header>
-    <p className="connection" role="status">{live.state === ConnectionState.Live ? copy("session.connected_229655") : live.state === ConnectionState.Reconnecting ? copy("session.connectionLostRetainedStateShown_8cc737") : live.state === ConnectionState.Failed ? copy("session.connectionRequiresAttention_160d4a") : copy("session.connecting_72021e")}</p>
-    <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
-    {text(data.recovery) !== "none" && text(data.recovery) ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
-    {object(data.problem).message ? <ServiceProblem code={text(object(data.problem).code) || text(object(data.problem).problem_code)}><p className="notice">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p></ServiceProblem> : null}
-    {session ? <StartupRejection session={session} /> : null}
-    <Problem error={control.error} />{control.uncertain ? <button onClick={control.retry} disabled={control.busy}>{copy("session.retryTheSameControlRequest_609aff")}</button> : null}
-    {session ? <><SessionTools resource={session} changed={setAcknowledged} /><SessionStorageAction source={session} /><SessionPullRequests key={id} session={session} /><ExecutionConfiguration resource={session} /><NativeUsage session={session} /><SessionContext key={id} session={session} /><Subagents key={id} sessionId={id} revision={session.revision.toString()} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></> : null}
-    <details className="requests" open={requests.some((r) => readDocument(r).closure === "open")}><summary><LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} /></summary><Problem error={interactions.error} />
-      {requests.map((row) => <Interaction key={row.id} resource={row} refresh={() => void interactions.refetch()} />)}
-      <nav aria-label={copy("session.requestPages_d06a30")}><button disabled={!interactionPage || interactions.isFetching} onClick={() => setInteractionPage("")}>{copy("session.firstPage_0bdbb7")}</button><button disabled={!interactions.data?.nextPageToken || interactions.isFetching} onClick={() => setInteractionPage(interactions.data!.nextPageToken)}>{copy("session.nextPage_c08ac7")}</button></nav>
-    </details>
-    {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
-    <div className="transcript" aria-label={copy("session.conversation_ccca18")}><Problem error={messages.error} />{messages.isPending ? <p>{copy("session.loadingConversation_5eb1e4")}</p> : rows.length ? rows.map((row) => <TranscriptItem key={row.id} resource={row} />) : <p className="empty">{copy("session.theConversationWillAppearHereAfter_24857a")}</p>}
-      <nav aria-label={copy("session.conversationPages_72b1b9")}><button disabled={!page || messages.isFetching} onClick={() => { setPage(""); setPrevious([]); }}>{copy("session.firstPage_0bdbb7")}</button><button disabled={previous.length === 0 || messages.isFetching} onClick={() => { setPage(previous.at(-1)!); setPrevious(previous.slice(0, -1)); }}>{copy("session.previous_a57b08")}</button><button disabled={!next || messages.isFetching} onClick={() => { setPrevious([...previous.slice(-99), page]); setPage(next!); }}>{copy("session.next_1ff57a")}</button></nav>
+  const panelButtons = {
+    [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
+    [SessionPanel.Terminals]: terminalsButton, [SessionPanel.Browser]: browserButton,
+    [SessionPanel.Diagnostics]: diagnosticsButton, [SessionPanel.Info]: infoButton,
+  };
+  const closePanel = () => {
+    setPanel(SessionPanel.Closed);
+    if (panel !== SessionPanel.Closed) {
+      const opener = panelOpener.current;
+      if (opener?.isConnected && !opener.closest("[hidden], [inert]")) opener.focus();
+      else panelButtons[panel].current?.focus();
+    }
+  };
+  const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
+    if (panel === next) closePanel();
+    else { panelOpener.current = panelButtons[next].current; setPanel(next); }
+  };
+  const showInfo = (opener: HTMLButtonElement, target = InfoTarget.Status) => {
+    panelOpener.current = opener;
+    setPanel(SessionPanel.Info); setInfoReveal({ target });
+  };
+  const problem = object(data.problem);
+  const recovering = text(data.recovery) !== "none" && Boolean(text(data.recovery));
+  const connectionLabel = live.state === ConnectionState.Live ? copy("session.connected_229655")
+    : live.state === ConnectionState.Reconnecting ? copy("session.connectionLostRetainedStateShown_8cc737")
+    : live.state === ConnectionState.Failed ? copy("session.connectionRequiresAttention_160d4a") : copy("session.connecting_72021e");
+  const tools = [
+    { panel: SessionPanel.Diff, icon: SessionIconKind.Diff, label: copy("session.diff_7ecf46") },
+    { panel: SessionPanel.Files, icon: SessionIconKind.Files, label: copy("session.files_abc7e9") },
+    { panel: SessionPanel.Terminals, icon: SessionIconKind.Terminals, label: copy("session.terminals_7482c4") },
+    { panel: SessionPanel.Browser, icon: SessionIconKind.Browser, label: copy("session.browser_d31de1") },
+    { panel: SessionPanel.Diagnostics, icon: SessionIconKind.Diagnostics, label: copy("session.diagnostics_268f14") },
+    { panel: SessionPanel.Info, icon: SessionIconKind.Info, label: copy("session.info") },
+  ] as const;
+  return <section className={`session-workspace${panel !== SessionPanel.Closed ? " panel-open" : ""}`} aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
+    if (event.key === "Escape" && panel !== SessionPanel.Closed && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
+      event.stopPropagation(); closePanel();
+    }
+  }}>
+    <header className="session-header">
+      <div className="session-heading">
+        <div className="session-heading-line"><h2>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div>
+        <p>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")} · {statusLabel(text(data.outcome))} · {statusLabel(text(data.dispatch))} · {statusLabel(text(data.archive))}</p>
+        {titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? copy("session.message_2fa20b", { v0: titlePresentation.detail }) : ""}</p> : null}
+      </div>
+      <div className="session-controls">
+        <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
+        <button type="button" disabled={!session || control.busy || control.uncertain || budgetBlocked || Object.hasOwn(data, "startup_rejection") || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>{copy("session.resume_d640c7")}</button>
+        <SessionActions>
+          {session ? <SessionForkAction source={session} /> : null}
+          <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
+        </SessionActions>
+      </div>
+    </header>
+    <div className="session-toolbar">
+      <strong>{copy("session.conversation_ccca18")}</strong>
+      <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}</div>
     </div>
-    <details className="queue"><summary><LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.filter((r) => text(readDocument(r).delivery) === "queued").length}</> }} /></summary><Problem error={queue.error} />
-      {queued.map((r) => <QueuedInput key={r.id} resource={r} session={session} refresh={() => void queue.refetch()} />)}
-      <nav aria-label={copy("session.queuePages_1acdd8")}><button disabled={!queuePage || queue.isFetching} onClick={() => setQueuePage("")}>{copy("session.firstPage_0bdbb7")}</button><button disabled={!queue.data?.nextPageToken || queue.isFetching} onClick={() => setQueuePage(queue.data!.nextPageToken)}>{copy("session.nextPage_c08ac7")}</button></nav>
-    </details>
-    <form className="composer" onSubmit={(event) => { event.preventDefault(); enqueue(); }}>
-      <label htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label><textarea ref={composer} onKeyDown={shortcuts.onKeyDown} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
-      <div className="actions"><label>{copy("session.mode_cd20bc")}<select value={mode} disabled={locked} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("session.plan_fa8ed0")}</option></select></label><button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}>{copy("session.queueMessage_891d4e")}</button></div>
-      <Problem error={send.error} />{send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
-    </form>
-  </section>{panel === SessionPanel.Terminals && session ? <div id={`terminals-${id}`} className="session-app-panel"><SessionTerminals key={id} session={session} close={() => { setPanel(SessionPanel.Closed); terminalsButton.current?.focus(); }} /></div> : panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); filesButton.current?.focus(); }} /></div> : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={() => { setPanel(SessionPanel.Closed); diffButton.current?.focus(); }} /></div> : panel === SessionPanel.Diagnostics ? <div id={`diagnostics-${id}`} className="session-app-panel"><RequestDiagnostics key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); diagnosticsButton.current?.focus(); }} /></div> : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={() => { setPanel(SessionPanel.Closed); browserButton.current?.focus(); }} /></div> : null}</div>;
+    <div className="session-body">
+      <div className="session-notices">
+        {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={opener => showInfo(opener)}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
+        {text(problem.message) ? <SessionNotice details={opener => showInfo(opener)}><strong>{text(data.dispatch) === "blocked" ? copy("session.executionBlocked") : copy("session.attentionRequired")}</strong><span>{failureSummary(text(problem.code) || text(problem.problem_code))}</span></SessionNotice> : null}
+        {recovering ? <SessionNotice details={opener => showInfo(opener)}><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></SessionNotice> : null}
+        {Object.hasOwn(data, "startup_rejection") ? <SessionNotice details={opener => showInfo(opener)}>{copy("startup-rejection.agentDidNotStart_32a1e1")}</SessionNotice> : null}
+        {budgetBlocked ? <SessionNotice details={opener => showInfo(opener, InfoTarget.Budget)}>{copy("session-budget.budgetThresholdReachedNewTurnsAnd_6236ce")}</SessionNotice> : null}
+        {control.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(control.error).code)}</SessionNotice> : null}
+        {control.uncertain ? <SessionNotice details={opener => showInfo(opener)}>{copy("session.retryTheSameControlRequest_609aff")}</SessionNotice> : null}
+        {send.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(send.error).code)}</SessionNotice> : null}
+      </div>
+      <div className="transcript" aria-label={copy("session.conversation_ccca18")}>
+        <Problem error={messages.error} />
+        {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length ? rows.map(row => <TranscriptItem key={row.id} resource={row} />) : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {page || next ? <nav aria-label={copy("session.conversationPages_72b1b9")}><button disabled={!page || messages.isFetching} onClick={() => { setPage(""); setPrevious([]); }}>{copy("session.firstPage_0bdbb7")}</button><button disabled={previous.length === 0 || messages.isFetching} onClick={() => { setPage(previous.at(-1)!); setPrevious(previous.slice(0, -1)); }}>{copy("session.previous_a57b08")}</button><button disabled={!next || messages.isFetching} onClick={() => { setPrevious([...previous.slice(-99), page]); setPage(next!); }}>{copy("session.next_1ff57a")}</button></nav> : null}
+        {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
+      </div>
+      <div className="session-input-tray">
+        <details className="requests" open={requests.some(r => readDocument(r).closure === "open")}><summary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</summary>
+          <div className="session-tray-content"><Problem error={interactions.error} />
+            {requests.map(row => <Interaction key={row.id} resource={row} refresh={() => void interactions.refetch()} />)}
+            <nav aria-label={copy("session.requestPages_d06a30")}><button disabled={!interactionPage || interactions.isFetching} onClick={() => setInteractionPage("")}>{copy("session.firstPage_0bdbb7")}</button><button disabled={!interactions.data?.nextPageToken || interactions.isFetching} onClick={() => setInteractionPage(interactions.data!.nextPageToken)}>{copy("session.nextPage_c08ac7")}</button></nav>
+          </div>
+        </details>
+        <details className="queue"><summary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.filter(r => text(readDocument(r).delivery) === "queued").length}</> }} />}</summary>
+          <div className="session-tray-content"><Problem error={queue.error} />
+            {queued.map(r => <QueuedInput key={r.id} resource={r} session={session} refresh={() => void queue.refetch()} />)}
+            <nav aria-label={copy("session.queuePages_1acdd8")}><button disabled={!queuePage || queue.isFetching} onClick={() => setQueuePage("")}>{copy("session.firstPage_0bdbb7")}</button><button disabled={!queue.data?.nextPageToken || queue.isFetching} onClick={() => setQueuePage(queue.data!.nextPageToken)}>{copy("session.nextPage_c08ac7")}</button></nav>
+          </div>
+        </details>
+      </div>
+      <form className="composer" onSubmit={event => { event.preventDefault(); enqueue(); }}>
+        <label className="sidebar-sr-only" htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label>
+        <textarea ref={composer} onKeyDown={shortcuts.onKeyDown} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={event => setDraft(event.target.value)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
+        <div className="composer-actions">
+          <label>{copy("session.mode_cd20bc")}<select value={mode} disabled={locked} onChange={event => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("session.plan_fa8ed0")}</option></select></label>
+          <button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}>{copy("session.queueMessage_891d4e")}</button>
+          {send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
+        </div>
+      </form>
+    </div>
+    <aside ref={information} id={`info-${id}`} className="session-app-panel session-information" hidden={panel !== SessionPanel.Info} aria-labelledby={`info-title-${id}`}>
+      <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2><button type="button" onClick={closePanel} aria-label={copy("session.closeInformation")}>×</button></header>
+      <div className="session-information-body">
+        {session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen /> : null}
+        <div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
+          <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
+          {recovering ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
+          {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p>{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
+          {session ? <StartupRejection session={session} /> : null}
+          <Problem error={control.error} />{control.uncertain ? <button onClick={control.retry} disabled={control.busy}>{copy("session.retryTheSameControlRequest_609aff")}</button> : null}
+          <Problem error={send.error} />
+        </div>
+        {session ? <>
+          <details className="session-information-section"><summary>{copy("session.pullRequests")}</summary><SessionPullRequests key={id} session={session} /></details>
+          <details className="session-information-section"><summary>{copy("session.executionSettings")}</summary><ExecutionConfiguration resource={session} /></details>
+          <details className="session-information-section"><summary>{copy("session.context")}</summary><SessionContext key={id} session={session} /></details>
+          <details className="session-information-section"><summary>{copy("session.subagents")}</summary><Subagents key={id} sessionId={id} revision={session.revision.toString()} /></details>
+          <details ref={budgetDetails} className="session-information-section" tabIndex={-1}><summary>{copy("session.usageAndBudget")}</summary><NativeUsage session={session} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></details>
+          <SessionStorageAction source={session} />
+        </> : null}
+      </div>
+    </aside>
+    {panel === SessionPanel.Terminals && session ? <div id={`terminals-${id}`} className="session-app-panel"><SessionTerminals key={id} session={session} close={closePanel} /></div>
+      : panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={closePanel} /></div>
+      : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={closePanel} /></div>
+      : panel === SessionPanel.Diagnostics ? <div id={`diagnostics-${id}`} className="session-app-panel"><RequestDiagnostics key={id} sessionId={id} close={closePanel} /></div>
+      : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} /></div> : null}
+  </section>;
 }

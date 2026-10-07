@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { AccountTypeFilter, KnownSubscriptionModelCatalogSource, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SubscriptionServiceIdentity, SystemCapability, SystemQuery, newRequestId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { AccountTypeFilter, KnownSubscriptionModelCatalogSource, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SystemCapability, SystemQuery, newRequestId, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationFields, Harness, Routing, newConfiguration } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -11,37 +11,21 @@ import { revealAgentInvalidControl } from "./agent-configuration";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import { copy, useLocale } from "./localization";
 import "./agent-worker-wizard.css";
+import { SourceKind, SelectedAccount, fromKey, modelSource, sameSource, sourceKey, wireService, type Source } from "./worker-source";
+import { WorkerHarnessPicker } from "./worker-harness-picker";
+import { AgentWorkerSourceWizard } from "./agent-worker-source-wizard";
 
 enum Step { Harness = 1, Accounts, Model, Configure }
-enum SourceKind { Api = "api", Subscription = "subscription" }
 enum AccountHealth { Disconnected = "disconnected", Unverified = "unverified", Ready = "ready", Expired = "expired", Revoked = "revoked", Failed = "failed" }
 enum SuggestionKind { Known = "Known", Saved = "Saved" }
 interface ModelSuggestion { nativeId: string; name: string; kind: SuggestionKind; resource?: Resource }
-interface Source { kind: SourceKind; id: string }
 const steps = [Step.Harness, Step.Accounts, Step.Model, Step.Configure];
 const stepName = (step: Step) => copy(step === Step.Harness ? "agent-worker-wizard.harnessStep" : step === Step.Accounts ? "agent-worker-wizard.accountsStep" : step === Step.Model ? "agent-worker-wizard.modelStep" : "agent-worker-wizard.configureStep");
 const harnessNames: Record<Harness, string> = { [Harness.Codex]: "Codex", [Harness.Claude]: "Claude Code", [Harness.OpenCode]: "OpenCode", [Harness.Grok]: "Grok Build" };
-const harnesses = Object.values(Harness);
-const harnessOrigins: Record<Harness, string> = { [Harness.Codex]: "OpenAI", [Harness.Claude]: "Anthropic", [Harness.OpenCode]: "Open source", [Harness.Grok]: "xAI" };
 function validCatalogDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}
-const sourceKey = (source?: Source) => source ? `${source.kind}:${source.id}` : "";
-function fromKey(value: string): Source | undefined {
-  const [kind, id] = value.split(":");
-  return id && (kind === SourceKind.Api || kind === SourceKind.Subscription && subscriptionService(id)) ? { kind: kind as SourceKind, id } : undefined;
-}
-function wireService(source?: Source) {
-  if (source?.kind !== SourceKind.Subscription) return SubscriptionServiceIdentity.UNSPECIFIED;
-  return { [SubscriptionServiceId.ChatGPT]: SubscriptionServiceIdentity.CHATGPT, [SubscriptionServiceId.Claude]: SubscriptionServiceIdentity.CLAUDE, [SubscriptionServiceId.Grok]: SubscriptionServiceIdentity.GROK }[source.id as SubscriptionServiceId];
-}
-function sameSource(row: Resource, source?: Source) {
-  const data = document(row);
-  return row.kind === EntityKind.ACCOUNT && supportsResourceSchema(row) && data.retired !== true && (source?.kind === SourceKind.Subscription
-    ? data.type === "subscription" && data.subscription_service === source.id && !data.provider_id
-    : source?.kind === SourceKind.Api && data.type === "api" && data.provider_id === source.id);
 }
 // Choice visibility does not change retained selections or execution eligibility.
 // Keep the complete source page for validation, pagination and selected reads.
@@ -50,24 +34,8 @@ function showAccountChoice(row: Resource) {
   return data.connection !== null && typeof data.connection === "object" && !Array.isArray(data.connection) && !data.removal
     && (data.health === AccountHealth.Ready || data.health === AccountHealth.Unverified);
 }
-function modelSource(row: Resource): Source | undefined {
-  const data = document(row);
-  if (row.kind !== EntityKind.MODEL || data.retired === true || !supportsResourceSchema(row)) return undefined;
-  if (data.source_kind === "subscription" && subscriptionService(data.subscription_service)) return { kind: SourceKind.Subscription, id: text(data.subscription_service) };
-  return text(data.provider_id) ? { kind: SourceKind.Api, id: text(data.provider_id) } : undefined;
-}
 
-// Off-page selections keep their original identity and are read independently
-// of the bounded source page. No list fallback can substitute another account.
-function SelectedAccount({ id, active, refresh, read }: { id: string; active: boolean; refresh: number; read: (id: string, row?: Resource) => void }) {
-  const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.ACCOUNT, id }, { enabled: active, refetchInterval: active ? 5000 : false });
-  useEffect(() => { if (active && refresh) void current.refetch(); }, [active, refresh, current.refetch]);
-  useEffect(() => { if (current.data || current.error) read(id, current.error ? undefined : current.data?.resource); }, [current.data, current.error, id, read]);
-  useLocale();
-  return <><Problem error={current.error} />{!current.data && !current.error ? <p role="status">{copy("agent-worker-wizard.loadingSelectedAccount")}</p> : null}</>;
-}
-
-export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
+function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
   useLocale();
   const [data, setData] = useState<Document>(() => initial ? document(initial) : newConfiguration(EntityKind.AGENT));
   const [step, setStep] = useState(Step.Harness);
@@ -235,32 +203,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     {initial && data.reconfiguration_required === true ? <p role="status">{copy("agent-worker-wizard.reconfigurationRequired")}</p> : null}
     <fieldset disabled={blocked || !supported}>
       <section hidden={step !== Step.Harness}>
-        <p id={`${listID}-harness-help`}>{copy("agent-worker-wizard.chooseTool")}</p>
-        <div className="worker-harness-grid" role="radiogroup" aria-label={copy("agent-worker-wizard.harness")} aria-describedby={`${listID}-harness-help ${listID}-harness-guidance`}>
-          {harnesses.map((harness, index) => {
-            const selected = data.harness === harness;
-            const entry = selected || !harnesses.includes(data.harness as Harness) && index === 0;
-            return <button key={harness} type="button" role="radio" className="worker-harness-card" aria-checked={selected} aria-label={harnessNames[harness]} aria-describedby={`${listID}-${harness}-origin`} tabIndex={entry ? 0 : -1} data-wizard-field={entry ? "harness" : undefined} data-harness={harness} disabled={blocked || !active || !supported} onClick={() => confirmHarness(harness)} onKeyDown={event => {
-              if (blocked || !active || !supported) return;
-              let next: number;
-              switch (event.key) {
-                case "ArrowRight": case "ArrowDown": next = (index + 1) % harnesses.length; break;
-                case "ArrowLeft": case "ArrowUp": next = (index + harnesses.length - 1) % harnesses.length; break;
-                case "Home": next = 0; break;
-                case "End": next = harnesses.length - 1; break;
-                default: return;
-              }
-              event.preventDefault(); if (!chooseHarness(harnesses[next]!)) return;
-              event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[data-harness="${harnesses[next]}"]`)?.focus();
-            }}>
-              <span className={`worker-harness-mark worker-harness-mark-${harness}`} aria-hidden="true" />
-              <span className="worker-harness-indicator" aria-hidden="true">{selected ? <svg viewBox="0 0 16 16" width="16" height="16"><path d="m3.5 8 3 3 6-6" /></svg> : null}</span>
-              <strong className="worker-harness-name">{harnessNames[harness]}</strong>
-              <small id={`${listID}-${harness}-origin`}>{harnessOrigins[harness]}</small>
-            </button>;
-          })}
-        </div>
-        <p id={`${listID}-harness-guidance`} className="worker-harness-guidance">{copy("agent-worker-wizard.chooseHarnessToContinueToAccounts")}</p>
+        <WorkerHarnessPicker value={data.harness} disabled={blocked || !active || !supported} change={chooseHarness} confirm={confirmHarness} />
       </section>
       <section hidden={step !== Step.Accounts} aria-label={copy("agent-worker-wizard.chooseAccounts")}>
         <p>{harnessNames[data.harness as Harness]} <button type="button" onClick={() => { setStep(Step.Harness); setFocusField(""); }}>{copy("agent-worker-wizard.changeHarness")}</button></p>
@@ -317,4 +260,12 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     <div className="worker-footer"><button type="button" disabled={blocked} onClick={cancel}>{copy("agent-worker-wizard.cancel")}</button>{step > Step.Harness ? <div><button type="button" disabled={blocked} onClick={() => { setStep(step - 1); setFocusField(""); setProblem(""); }}>{copy("agent-worker-wizard.back")}</button><button type="submit" className="primary" disabled={blocked || !active || !supported || step === Step.Configure && (stale || currentModel.isLoading || Boolean(initial && (current.error || !current.data?.resource)))}>{mutation.busy ? copy("agent-worker-wizard.saving") : step === Step.Configure ? copy("agent-worker-wizard.saveAgentWorker") : copy("agent-worker-wizard.next")}</button></div> : null}</div>
     {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("agent-worker-wizard.retryWorkerSave")}</button> : null}
   </form>;
+}
+
+export function AgentWorkerWizard(props: { initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
+  useLocale();
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: props.active });
+  if (status.data?.capabilities.includes(SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1)) return <AgentWorkerSourceWizard {...props} />;
+  if (props.initial?.schemaVersion === 3) return <><p role="alert">{copy("agent-worker-wizard.updateSourceServer")}</p><button onClick={props.cancel}>{copy("agent-worker-wizard.cancel")}</button></>;
+  return <LegacyAgentWorkerWizard {...props} />;
 }

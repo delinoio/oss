@@ -25,6 +25,9 @@ message SaveAgentWorkerRequest {
   bytes document_json = 2;
   AgentWorkerModelSelection model = 3;
   uint32 schema_version = 4;
+  // Ordered selections corresponding exactly to schema-3 source routes.
+  // Exclusive with model. Sources are derived from current accounts by Go.
+  repeated AgentWorkerModelSelection route_models = 5;
 }
 
 message AgentWorkerModelSelection {
