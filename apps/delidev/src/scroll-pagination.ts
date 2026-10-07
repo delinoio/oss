@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { clientFailure, FailureCode, type ClientFailure } from "@delinoio/delidev-api-client";
 
 export interface PaginationRow { id: string; revision: bigint }

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { type DescMessage, type DescMethodUnary, type MessageInitShape, type MessageShape } from "@bufbuild/protobuf";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { newRequestId } from "@delinoio/delidev-api-client";
-import { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+import { QueryClientContext, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FailureCode, newRequestId } from "@delinoio/delidev-api-client";
+import { useContext, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { PaginationChain, type PaginationBatch, type PaginationReader, type PaginationRow } from "./scroll-pagination";
 
 /** scopeKey contains stable connection/query/domain identity, never locale or
@@ -11,7 +11,9 @@ import { PaginationChain, type PaginationBatch, type PaginationReader, type Pagi
 export function usePaginationChain<Row extends PaginationRow, Payload = never>(
   scopeKey: string, active: boolean, reader: PaginationReader<Row, Payload>, initialRead = true,
 ) {
-  const client = useQueryClient();
+  // Native/local adapters do not require a business QueryClient provider.
+  // Connect adapters still bind the authenticated provider identity here.
+  const client = useContext(QueryClientContext);
   const chain = useMemo(() => new PaginationChain<Row, Payload>(), [scopeKey, client]);
   useLayoutEffect(() => {
     if (active) {
@@ -26,6 +28,12 @@ export function usePaginationChain<Row extends PaginationRow, Payload = never>(
     retry: () => { void chain.retry(reader); },
     reload: () => { void chain.reload(reader); },
     refresh: () => { void chain.refresh(reader); },
+    refreshExplicit: () => {
+      const error = chain.getSnapshot().error;
+      if (!error) void chain.refresh(reader);
+      else if (error.stalled || error.failure.code === FailureCode.CursorExpired) void chain.reload(reader);
+      else void chain.retry(reader);
+    },
     restore: (token: string) => { void chain.restore(token, reader); },
     measure: (token: string, height: number) => chain.measure(token, height),
     protect: (token?: string) => chain.protect(token),
