@@ -141,5 +141,7 @@
   "settings.repositoryEmptyHelp": "Choose Add repository to register a Git repository for your projects.",
   "settings.repositoryPageEmpty": "No repositories on this page.",
   "settings.repositoryPageCount_one": "{{count}} repository on this page",
-  "settings.repositoryPageCount_other": "{{count}} repositories on this page"
+  "settings.repositoryPageCount_other": "{{count}} repositories on this page",
+  "settings.repositoryServerUpdateRequired": "Update the selected server before saving a repository.",
+  "settings.retryRepositoryCapability": "Retry repository capability check"
 }

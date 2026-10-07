@@ -14,7 +14,7 @@ it("projects independent closed Claude exclusion causes without interpreting nat
   expect(claudeRunnerObservation(observed({ installations: [installation, installation] })).cause).toBe("duplicate");
   for (const [state, cause] of [["permission-denied", "permission"], ["failed", "installationFailed"], ["unchecked", "unchecked"], ["missing", "missing"], ["incompatible", "version"]]) expect(claudeRunnerObservation(observed({ installations: [{ ...installation, state, problem: { message: "/private/credential.txt" } }] })).cause).toBe(cause);
   expect(claudeRunnerObservation(observed({ installations: [{ ...installation, version: "2.1.235" }] }))).toEqual({ cause: "version", detectedVersion: "2.1.235" });
-  expect(claudeRunnerObservation(observed({ installations: [{ ...installation, protocol: { state: "failed", problem: { message: "secret native output" } }, protocol_verified: false }] })).cause).toBe("protocol");
+  expect(claudeRunnerObservation(observed({ installations: [{ ...installation, protocol: { state: "failed", problem: { message: "secret native output" } }, protocol_verified: false }] })).cause).toBe("protocolFailed");
 });
 it("treats malformed and unknown evidence as unavailable without exposing content", () => {
   for (const patch of [{ disabled: "true" }, { worker_capabilities: [20] }, { installations: "native secret" }, { installations: [{ ...installation, state: "future-state", version: "/private/native" }] }, { installations: [{ ...installation, version: "/private/native" }] }]) {

@@ -76,5 +76,7 @@
   "claude-subscription.excluded.permission": "The Runner cannot execute Claude Code. Review executable and operating system access on that computer, then inspect it again.",
   "claude-subscription.excluded.installationFailed": "Claude Code inspection failed. Review the installation on that Runner and inspect it again; no readiness was established.",
   "claude-subscription.excluded.version": "This Claude Code version is unsupported. Install Claude Code 2.1.236 on the Runner, select its executable if needed, then inspect it again.",
-  "claude-subscription.excluded.protocol": "The native Claude protocol is not verified. Inspect this Runner with native protocol verification enabled; version detection alone does not establish readiness."
+  "claude-subscription.excluded.protocol": "The native Claude protocol is not verified. Inspect this Runner with native protocol verification enabled; version detection alone does not establish readiness.",
+  "claude-subscription.excluded.protocolFailed": "Native protocol verification failed. Review the installation on this Runner, then explicitly verify its native protocol again.",
+  "claude-subscription.excluded.protocolUnsupported": "This installation has no supported native protocol. Install a supported harness version on the Runner, then explicitly verify its native protocol."
 }

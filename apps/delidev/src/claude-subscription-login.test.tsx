@@ -352,3 +352,48 @@ it("appends Runner display choices without clearing the selected exact machine o
   expect(f.list.mock.calls.map(([request]) => request.filter?.pageToken)).toEqual(["", "original-next"]);
   expect(f.save).not.toHaveBeenCalled(); expect(f.login).not.toHaveBeenCalled();
 });
+
+it("distinguishes failed inventory from a final empty read and retries only the original read", async () => {
+  const f = fixture(); f.list.mockImplementationOnce(() => { throw new ConnectError("opaque native private path", Code.PermissionDenied); });
+  render(f.view()); fireEvent.click(screen.getByText("Add Claude"));
+  await screen.findByText("Runner Devices could not be read. Check your access and connection, then read the list again.");
+  expect(screen.getByText("This connection is not authorized for the action. Check its access.")).toBeTruthy();
+  expect(screen.queryByText(/opaque native private path/)).toBeNull();
+  expect(screen.queryByText("No Runner Devices were returned. Register a Runner Device with this server, then check this list again.")).toBeNull();
+  f.list.mockReturnValue({ resources: [], nextPageToken: "" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Runner Devices" }));
+  await screen.findByText("No Runner Devices were returned. Register a Runner Device with this server, then check this list again.");
+  expect(f.save).not.toHaveBeenCalled(); expect(f.login).not.toHaveBeenCalled();
+});
+it("distinguishes a current page with no eligible Runner from final absence and keeps excluded choices disabled", async () => {
+  const f = fixture();
+  const excluded = create(ResourceSchema, { ...f.machine, id: newRequestId(), documentJson: encode({ ...document(f.machine), name: "Disabled Runner", disabled: true }) });
+  f.list.mockImplementation(request => ({ resources: request.filter?.pageToken ? [f.machine] : [excluded], nextPageToken: request.filter?.pageToken ? "" : "next-page" }));
+  render(f.view()); fireEvent.click(screen.getByText("Add Claude"));
+  await screen.findByText("No eligible Runner is in the loaded pages. Load more Runner Devices before deciding none are available.");
+  const picker = screen.getByRole("combobox", { name: "Runner Device" }); fireEvent.click(picker);
+  const disabled = await screen.findByRole("option", { name: "Disabled Runner" }); expect((disabled as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(disabled); expect(picker.getAttribute("data-value")).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Load more Runner Device" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Remote Linux" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Start sign-in" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(f.save).not.toHaveBeenCalled(); expect(f.login).not.toHaveBeenCalled();
+});
+it("retains selected Runner after failed refresh and grants no new sign-in while its retry is pending", async () => {
+  const f = fixture(); render(f.view()); fireEvent.click(screen.getByText("Add Claude"));
+  const picker = await screen.findByRole("combobox", { name: "Runner Device" }); fireEvent.click(picker); fireEvent.click(await screen.findByRole("option", { name: "Remote Linux" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Start sign-in" }) as HTMLButtonElement).disabled).toBe(false));
+  f.list.mockImplementationOnce(() => { throw new ConnectError("refresh lost", Code.Unavailable); });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Runner Devices" }));
+  await screen.findByText("Runner observations could not be refreshed. Previous observations are unconfirmed; check the list again before starting sign-in.");
+  expect(picker.getAttribute("data-value")).toBe(f.machine.id);
+  expect((screen.getByRole("button", { name: "Start sign-in" }) as HTMLButtonElement).disabled).toBe(true);
+  let resolve: (result: { resources: typeof f.machine[]; nextPageToken: string }) => void = () => {};
+  f.list.mockImplementationOnce(() => new Promise(done => { resolve = done; }) as unknown as { resources: typeof f.machine[]; nextPageToken: string });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh Runner Devices" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Start sign-in" }) as HTMLButtonElement).disabled).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Start sign-in" }));
+  expect(f.save).not.toHaveBeenCalled(); expect(f.login).not.toHaveBeenCalled();
+  await act(async () => resolve({ resources: [f.machine], nextPageToken: "" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Start sign-in" }) as HTMLButtonElement).disabled).toBe(false));
+});

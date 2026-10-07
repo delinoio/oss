@@ -3,7 +3,7 @@ import { EntityKind, isEntityId, supportsResourceSchema, type Resource } from "@
 import { document, items, object } from "./documents";
 
 /** Closed presentation evidence only. It never grants execution authority. */
-export type RunnerExclusion = "unavailable" | "disabled" | "capability" | "missing" | "duplicate" | "unchecked" | "permission" | "installationFailed" | "version" | "protocol";
+export type RunnerExclusion = "unavailable" | "disabled" | "capability" | "missing" | "duplicate" | "unchecked" | "permission" | "installationFailed" | "version" | "protocol" | "protocolFailed" | "protocolUnsupported";
 export interface RunnerObservation { cause?: RunnerExclusion; detectedVersion?: string }
 export function validRunnerObservation(resource?: Resource): resource is Resource {
   return Boolean(resource && resource.kind === EntityKind.MACHINE && isEntityId(resource.id) && resource.revision > 0n && supportsResourceSchema(resource) && resource.documentJson.byteLength <= 1 << 20 && Object.keys(document(resource)).length);
@@ -35,6 +35,11 @@ export function installationObservation(installation: Record<string, unknown>, r
   if (requiredVersion && detectedVersion !== requiredVersion) return { cause: "version", detectedVersion };
   if (installation.problem) return { cause: "unavailable", detectedVersion };
   const protocol = object(installation.protocol);
-  if (installation.protocol_verified !== true || protocol.state !== "verified" || protocol.problem) return { cause: "protocol", detectedVersion };
+  if (installation.protocol_verified !== undefined && typeof installation.protocol_verified !== "boolean") return { cause: "unavailable", detectedVersion };
+  if (protocol.state !== undefined && !["verified", "failed", "unsupported"].includes(String(protocol.state))) return { cause: "unavailable", detectedVersion };
+  if (protocol.state === "failed" && installation.protocol_verified !== true) return { cause: "protocolFailed", detectedVersion };
+  if (protocol.state === "unsupported" && installation.protocol_verified !== true) return { cause: "protocolUnsupported", detectedVersion };
+  if (protocol.state === "verified" && protocol.problem || installation.protocol_verified === true && protocol.state !== "verified") return { cause: "unavailable", detectedVersion };
+  if (installation.protocol_verified !== true || protocol.state !== "verified") return { cause: "protocol", detectedVersion };
   return { detectedVersion };
 }

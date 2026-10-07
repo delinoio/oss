@@ -24,16 +24,18 @@ export function useMachineSettingsController(initial: Resource, active: boolean)
   const current = [initial, result.data?.resource, acknowledged].filter(exact).reduce<Resource | undefined>((a, b) => !a || b.revision > a.revision ? b : a, undefined);
   const data = useMemo(() => document(current), [current]);
   const [edit, setEdit] = useState<{ revision: bigint; paths: Record<string, string> }>();
-  const [verify, setVerify] = useState(false);
+  const [verify, setVerifyValue] = useState(false);
+  const [verifyEdited, setVerifyEdited] = useState(false);
+  const setVerify = useMemo(() => (next: boolean) => { setVerifyValue(next); setVerifyEdited(next); }, []);
   const [job, setJob] = useState<Resource | "unknown">();
-  const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response) => { if (exact(response.machine)) setAcknowledged(response.machine); setJob(response.job ?? "unknown"); });
+  const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response) => { if (exact(response.machine)) setAcknowledged(response.machine); setJob(response.job ?? "unknown"); setVerifyEdited(false); });
   const pending = discovery.busy || discovery.uncertain || Boolean(job);
   const stale = Boolean(edit && edit.revision !== current?.revision);
   const readError = useMemo(() => result.error || (result.data && !exact(result.data.resource) ? new ConnectError("Runner observation is unavailable.", Code.DataLoss) : undefined), [result.error, result.data, initial.id]);
   const mutation = useRef(discovery); mutation.current = discovery;
   const actions = useMemo(() => ({ send: (...args: Parameters<typeof discovery.send>) => mutation.current.send(...args), retry: () => mutation.current.retry() }), []);
   const retainedDiscovery = useMemo(() => ({ ...actions, busy: discovery.busy, uncertain: discovery.uncertain, error: discovery.error }), [actions, discovery.busy, discovery.uncertain, discovery.error]);
-  return useMemo(() => ({ initial, current, data, edit, setEdit, verify, setVerify, job, setJob, discovery: retainedDiscovery, pending, stale, readError, refetch: result.refetch, loading: result.isFetching, locked: Boolean(edit || pending) }), [initial, current, data, edit, verify, job, retainedDiscovery, pending, stale, readError, result.refetch, result.isFetching]);
+  return useMemo(() => ({ initial, current, data, edit, setEdit, verify, setVerify, job, setJob, discovery: retainedDiscovery, pending, stale, readError, refetch: result.refetch, loading: result.isFetching, locked: Boolean(edit || pending || verifyEdited) }), [initial, current, data, edit, verify, verifyEdited, setVerify, job, retainedDiscovery, pending, stale, readError, result.refetch, result.isFetching]);
 }
 export type MachineSettingsController = ReturnType<typeof useMachineSettingsController>;
 export function MachineSettings({ initial, active, close, authority }: { initial: Resource; active: boolean; close: () => void; authority?: PairingAuthority }) {

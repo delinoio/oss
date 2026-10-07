@@ -1,3 +1,6 @@
+import { useRunnerRemediation } from "./runner-remediation";
+import { claudeRunnerObservation, validRunnerObservation, type RunnerObservation } from "./runner-observation";
+import { Failure, Problem, InlineRemediation, failureSummary } from "./ui";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -244,18 +247,20 @@ export function useClaudeSubscriptionLogin(
   }, [active]);
   const machineRequest = useCallback((token: string) => ({ filter: { kind: EntityKind.MACHINE, pageSize: 50, pageToken: token } }), []);
   const machineProject = useCallback((response: { resources: Resource[]; nextPageToken: string }) => {
-    if (response.resources.length > 50 || new Set(response.resources.map(row => row.id)).size !== response.resources.length || response.resources.some(row => row.kind !== EntityKind.MACHINE || !isEntityId(row.id) || row.revision < 1n)) throw new ConnectError("The Runner page is unavailable.", Code.DataLoss);
-    return { rows: response.resources.map(row => ({ id: row.id, revision: row.revision, label: resourceName(row), eligible: eligibleRunner(row) })), nextPageToken: response.nextPageToken };
+    if (response.resources.length > 50 || new Set(response.resources.map(row => row.id)).size !== response.resources.length || response.resources.some(row => row.kind !== EntityKind.MACHINE || !isEntityId(row.id) || row.revision < 1n || row.documentJson.byteLength > 1 << 20)) throw new ConnectError("The Runner page is unavailable.", Code.DataLoss);
+    return { rows: response.resources.map(row => ({ id: row.id, revision: row.revision, label: resourceName(row), eligible: eligibleRunner(row), observation: claudeRunnerObservation(row) })), payload: response.resources, nextPageToken: response.nextPageToken };
   }, []);
   const machineReader = useConnectPaginationReader(ResourceQuery.listResources, machineRequest, machineProject);
+  const inspectRunner = useRunnerRemediation();
   const machinesActive = active && !hidden && view?.step === Step.Runner && !view.busy;
   const machines = usePaginationChain(`claude-runners:${pending.current?.opening ?? ""}`, machinesActive, machineReader);
   usePaginationRefresh(ResourceQuery.listResources, machineRequest(""), machinesActive, machines.refresh);
   // Only the exact selected machine owns a full record. Scrolling retains
   // eligibility/name projections and never substitutes a page row for it.
   const ownerRunner = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: view?.machine ?? "" }, { enabled: active && Boolean(view?.machine), gcTime: 0 });
+  const ownerReadError = ownerRunner.error || (ownerRunner.data && (!validRunnerObservation(ownerRunner.data.resource) || ownerRunner.data.resource.id !== view?.machine) ? new ConnectError("Runner ownership could not be confirmed.", Code.DataLoss) : undefined);
   const selectedRunner = ownerRunner.data?.resource?.kind === EntityKind.MACHINE && ownerRunner.data.resource.id === view?.machine && ownerRunner.data.resource.revision > 0n ? ownerRunner.data.resource : undefined;
-  const runnerOptions = machines.rows.filter(row => row.eligible).map(({ id, label }) => ({ id, label }));
+  const runnerOptions = machines.rows.map(({ id, label, eligible }) => ({ id, label, disabled: !eligible }));
   const fresh = async (p: Pending) => {
     const result = await clients.resource.getResource({
       kind: EntityKind.ACCOUNT,
@@ -533,7 +538,7 @@ export function useClaudeSubscriptionLogin(
   }, [active, Boolean(view), clients, native]);
   const start = () => {
     const p = pending.current;
-    if (p?.start && view?.step === Step.Runner && selectedRunner && eligibleRunner(selectedRunner) && !ownerRunner.error && !ownerRunner.isFetching && !machines.error)
+    if (p?.start && view?.step === Step.Runner && selectedRunner && eligibleRunner(selectedRunner) && !ownerReadError && !ownerRunner.isFetching && machines.loaded && !machines.loading && !machines.error && !inspectRunner?.pendingFor(view.machine))
       void run(p, p.start, "claude-subscription.requestUnconfirmed", true);
   };
   const cancel = () => {
@@ -683,11 +688,17 @@ export function useClaudeSubscriptionLogin(
       view={view}
       setApprovalInput={(input) => { approvalInput.current = input; }}
       runners={runnerOptions}
+      observations={machines.rows}
+      runnerReadError={ownerReadError}
+      inspectRunner={selectedRunner && inspectRunner && !ownerReadError && !ownerRunner.isFetching ? () => inspectRunner(selectedRunner) : undefined}
+      inspection={inspectRunner?.body}
+      inspectable={machines.payloadPages.flatMap(page => page.payload).map(row => row.id)}
+      inspectExcluded={inspectRunner && !inspectRunner.locked ? id => { const original = machines.payloadPages.flatMap(page => page.payload).find(row => row.id === id); if (original) inspectRunner(original); } : undefined}
       selectedRunner={selectedRunner}
       runnerQuery={machines}
-      canStart={Boolean(selectedRunner && eligibleRunner(selectedRunner) && !ownerRunner.error && !ownerRunner.isFetching)}
+      canStart={Boolean(selectedRunner && eligibleRunner(selectedRunner) && !ownerReadError && !ownerRunner.isFetching && machines.loaded && !machines.loading && !machines.error && !inspectRunner?.pendingFor(view.machine))}
       loading={Boolean(machines.loading) || ownerRunner.isFetching}
-      readFailed={Boolean(machines.error || ownerRunner.error)}
+      readFailed={Boolean(machines.error || ownerReadError)}
       refreshRunners={() => { machines.refreshExplicit(); if (view?.machine) void ownerRunner.refetch(); }}
       fixedRunner={Boolean(p?.fixedRunner)}
       active={active}
@@ -738,6 +749,12 @@ interface OnboardingProps {
   view: View;
   setApprovalInput: (input: HTMLInputElement | null) => void;
   runners: ScrollPickerOption[];
+  observations: { id: string; label: string; eligible: boolean; observation: RunnerObservation }[];
+  runnerReadError: unknown;
+  inspectRunner?: () => void;
+  inspection: React.ReactNode;
+  inspectable: string[];
+  inspectExcluded?: (id: string) => void;
   selectedRunner?: Resource;
   runnerQuery: ScrollContinuationQuery;
   canStart: boolean;
@@ -826,18 +843,15 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
         >
           <ScrollPicker label={copy("claude-subscription.runner")} value={v.machine} selectedLabel={v.machine ? runnerName : undefined} placeholder={copy("claude-subscription.selectRunner")} disabled={busy || p.fixedRunner} active={p.active && visible && v.step === Step.Runner} query={p.runnerQuery} options={p.runners} change={p.select} />
           <p>{copy("claude-subscription.runnerHelp")}</p>
-          {p.readFailed || (!p.loading && !p.runners.length) ? (
-            <p role="alert">{copy("claude-subscription.noRunner")}</p>
-          ) : null}
-          {p.readFailed || (!p.loading && !p.runners.length) ? (
-            <button
-              type="button"
-              disabled={busy || p.loading}
-              onClick={p.refreshRunners}
-            >
-              {copy("claude-subscription.refreshRunners")}
-            </button>
-          ) : null}
+          {p.runnerQuery.error ? <Failure failure={p.runnerQuery.error.failure} summary={<>{copy(p.runnerQuery.loaded ? "claude-subscription.inventoryStale" : "claude-subscription.inventoryFailed")}<p>{failureSummary(p.runnerQuery.error.failure.code)}</p></>} /> : null}
+          <Problem error={p.runnerReadError} summary={copy("claude-subscription.selectedReadFailed")} />
+          {p.loading ? <p role="status">{copy("claude-subscription.inventoryLoading")}</p> : null}
+          {!p.readFailed && !p.loading && p.runnerQuery.loaded && !p.runners.some(row => !row.disabled) ? <InlineRemediation summary={copy(p.runnerQuery.nextPageToken ? "claude-subscription.inventoryPageEmpty" : p.runners.length ? "claude-subscription.inventoryNoEligible" : "claude-subscription.inventoryEmpty")} /> : null}
+          {p.runnerQuery.nextPageToken && !p.runnerQuery.error ? <button type="button" disabled={busy || p.loading} onClick={p.runnerQuery.append}>{copy("pagination.loadMore")}</button> : null}
+          <button type="button" disabled={busy || p.loading} onClick={p.refreshRunners}>{copy("claude-subscription.refreshRunners")}</button>
+          {p.observations.filter(row => !row.eligible).map(row => <article className="result" key={row.id}><h4>{row.label}</h4><InlineRemediation summary={<><p>{copy(`claude-subscription.excluded.${row.observation.cause ?? "unavailable"}`)}</p>{row.observation.detectedVersion ? <p>{copy("claude-subscription.detectedVersion", { version: row.observation.detectedVersion })}</p> : null}</>} actions={p.inspectExcluded && p.inspectable.includes(row.id) ? <button type="button" disabled={busy || p.loading || p.readFailed} onClick={() => p.inspectExcluded?.(row.id)}>{copy("claude-subscription.inspectRunner")}</button> : undefined} /></article>)}
+          {p.inspectRunner ? <button type="button" disabled={busy || p.loading || p.readFailed} onClick={p.inspectRunner}>{copy("claude-subscription.inspectRunner")}</button> : null}
+          {p.inspection}
           <SettingsTaskActions form={id}>
             <button
               className="primary"

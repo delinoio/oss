@@ -1,3 +1,4 @@
+import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { OperationStatus } from "./jobs";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
@@ -12,10 +13,11 @@ import { EntityKind, FailureCode, NativeModelQuery, SystemCapability, SystemQuer
 import { document, items, object, text, type Document } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
-import { ServiceProblem, Failure, Problem  } from "./ui";
+import { ServiceProblem, Failure, Problem, failureSummary  } from "./ui";
 
 export function NativeModelSettings({ active, createModel, selectedAccounts, pendingOperation }: { active: boolean; createModel: (data: Document) => void; selectedAccounts?: Resource[]; pendingOperation?: (pending: boolean) => void }) {
   useLocale();
+  const inspection = useRunnerRemediation();
   const [opened, setOpened] = useState(false);
   const [machine, setMachine] = useState<Resource>();
   const runner = useRunnerPreference(RunnerWorkflow.NativeObservation, active && opened, row => { const data = document(row); return items(data.worker_capabilities).includes("native-codex-model-discovery-v1") && items(data.installations).map(object).some(installation => installation.harness === "codex" && installation.state === "detected"); });
@@ -48,7 +50,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   useEffect(() => { if (job) setRetainedJobID(job.id); }, [job]);
   const unverifiedLookupFailed = !operation.isFetching && Boolean(operation.error || operation.data && !job);
   const observationPending = Boolean(jobID && (retainedJobID === jobID || !unverifiedLookupFailed) && !["succeeded", "failed", "canceled"].includes(state));
-  const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain;
+  const blocked = discovery.busy || discovery.uncertain || cancellation.busy || cancellation.uncertain || inspection?.pendingFor(machine?.id ?? "") === true;
   useEffect(() => { if (active && !runnerTouched.current && !blocked && !observationPending && !machine && runner.suggestion) setMachine(runner.suggestion); }, [active, runner.suggestion, blocked, observationPending, machine]);
   const models = useNativeModelPages(source, active && opened && supported && Boolean(source) && !blocked);
   const selectedObservation = models.payloadPages.flatMap(page => page.payload)[0]?.job ?? (job?.id === source && state === "succeeded" ? job : operation.data?.lastSuccess?.id === source ? operation.data.lastSuccess : undefined);
@@ -60,7 +62,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
   return <details onToggle={(event) => setOpened(event.currentTarget.open)}><summary>{copy("native-model-settings.nativeCodexModelObservations_e3a909")}</summary>{opened ? <section aria-label={copy("native-model-settings.nativeCodexModelObservations_e3a909")}>
     <h2>{copy("native-model-settings.observeNativeCodexModels_7d4b36")}</h2>
     <p>{copy("native-model-settings.chooseARunnerDeviceWithCodex_8f2ab4")}</p>
-    <Problem error={status.error} />
+    <Problem error={status.error} actions={<button type="button" disabled={!active || blocked || observationPending || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} />
     {status.data && !supported ? <p>{copy("native-model-settings.thisServerDoesNotSupportNative_b59968")}</p> : null}
     <fieldset disabled={!supported || blocked || observationPending}>
       <legend>{copy("native-model-settings.observationScope_329506")}</legend>
@@ -75,7 +77,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
     <button type="button" disabled={!supported || blocked || observationPending || !lookup} onClick={() => { setJobID(lookup); setObservationID(""); }}>{copy("native-model-settings.inspectObservation_ded69a")}</button>
     {job && (state !== "succeeded" || text(object(document(job).problem).message)) ? <div><OperationStatus state={state} />
       {["queued", "claimed"].includes(state) ? <button type="button" disabled={blocked} onClick={() => void cancellation.send({ mutation: { requestId: newRequestId(), id: job.id, expectedRevision: job.revision } })}>{copy("native-model-settings.cancelObservation_0f4be7")}</button> : null}
-      {text(object(document(job).problem).message) ? <ServiceProblem code={text(object(document(job).problem).code) || text(object(document(job).problem).problem_code)}><p role="alert">{text(object(document(job).problem).message)}</p></ServiceProblem> : null}
+      {text(object(document(job).problem).message) ? <ServiceProblem code={text(object(document(job).problem).code) || text(object(document(job).problem).problem_code)}><p>{failureSummary(text(object(document(job).problem).code) || text(object(document(job).problem).problem_code))}</p></ServiceProblem> : null}
       {state !== "succeeded" && operation.data?.lastSuccess ? <button type="button" onClick={() => { setObservationID(operation.data!.lastSuccess!.id); }}>{copy("native-model-settings.showLastSuccessfulObservation_e2c0d6")}</button> : null}
     </div> : null}
     <Problem error={operation.error} />{operation.error || job && !["queued", "claimed", "succeeded", "failed", "canceled"].includes(state) || operation.data && !job ? <button type="button" disabled={!active || operation.isFetching} onClick={() => void operation.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}<Problem error={cancellation.error} />
