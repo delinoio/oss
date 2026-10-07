@@ -193,11 +193,21 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	catalogDone := make(chan struct{})
 	go func() {
 		defer close(catalogDone)
-		if !config.disableCatalogMaintenance {
+		if !config.disableCatalogMaintenance && !config.DisableBackgroundMaintenanceForTesting {
 			service.runCatalogMaintenance(catalogCtx)
 		}
 	}()
 	defer func() { stopCatalog(); <-catalogDone }()
+	knownCtx, stopKnown := context.WithCancel(child)
+	knownDone := make(chan struct{})
+	go func() {
+		defer close(knownDone)
+		if !config.disableKnownModelMaintenance && !config.DisableBackgroundMaintenanceForTesting {
+			service.knownSubscriptionModels().Run(knownCtx)
+		}
+	}()
+	defer func() { stopKnown(); <-knownDone }()
+
 	dispatchCtx, stopDispatch := context.WithCancel(child)
 	dispatchDone := make(chan struct{})
 	go func() {
@@ -257,6 +267,11 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	}
 	stopCatalog()
 	<-catalogDone
+	// Catalog refresh may be resolving the account-backed outbound route. Join
+	// it before releasing account secrets so no maintenance request can touch a
+	// closed vault during the explicit shutdown path.
+	stopKnown()
+	<-knownDone
 	stopRemediation()
 	<-remediationDone
 	stopDispatch()

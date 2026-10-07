@@ -1,5 +1,9 @@
 # DeliDev domain ownership
 
+- GitHub draft form URLs may omit an undeclared fine-grained owner while retaining the closed read-only prefills. Saved-profile form URLs and profile validation still require that owner. The native presentation validator admits only the exact canonical draft or saved form, rejecting empty explicit parameters, extra/duplicate query parameters and write permissions. Follow the integration contract; URL preparation grants no repository access.
+
+- Repository clone inputs accept only credential-free HTTPS, ssh:// and SCP-style SSH, with bounded portable folder names and no encoded path separators. Keep helper transports, local paths, controls and URL passwords/tokens outside that contract. When GitHub repository metadata accompanies a remote URL, it must match the parsed GitHub owner/name. GitHub source identities normalize only the GitHub owner/repository namespace case; generic hosts retain security-significant path and transport distinctions. GitHub picker entries use validated numeric/node/owner/name identity and constructed GitHub.com URLs; metadata observations never provide Git credentials or execution authority.
+
 - Sidechat uses a closed Codex read-only overlay of the complete original API account snapshot, with no child-account or permission expansion. Preserve the separate parent snapshot, version-3 fork seed and ordinary omitted-purpose bytes; follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
@@ -125,3 +129,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Subscription server_operation is optional server-owned closed metadata. A machine-less pending claim is valid only for its exact server operation/actor; native_started requires no Worker lease and the original generation. Active/recovery ownership retains pending authority. Terminal metadata grants no credential use. Keep APIs, immutable historical service attribution and real migrations unchanged.
 
 - Codex diagnostics are optional bounded existing-document metadata with closed phases/codes and locally reconstructed safe text. Validate actual version attribution and original operation correlation; no diagnostic grants native/account authority or requires a SQLite migration.
+
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
+- Repository remote_url is required on explicit save/import and accepts credential-free HTTPS, SSH or SCP syntax. Empty checkouts are valid. Keep historical omitted URLs readable without migration, extraction or rewriting; pinned preparation source kinds remain closed enums.

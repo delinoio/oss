@@ -102,6 +102,15 @@ it("accepts a late successful result while hidden without reopening or taking an
   expect(save).toHaveBeenCalledTimes(1);
 });
 
+it("restores opener focus when a successful save closes the task programmatically", async () => {
+  fixture();
+  const opener = screen.getByRole("button", { name: "New project task" });
+  fireEvent.click(opener);
+  submit();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.activeElement).toBe(opener);
+});
+
 it("uses one native dialog for a confirmation step and restores its original body without remounting", async () => {
   let mounts = 0;
   function Body() {

@@ -1,6 +1,8 @@
 - Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history and legacy accountless APIs; capability 33 is configuration support, never native readiness.
 # DeliDev delidev-api-client ownership
 
+- Repository listing/Clone use generated IntegrationQuery/WorkerQuery under the protocol/client contracts, with independent System 31/32 / Worker 18 negotiation. Preserve explicit profile revision/generation/page, transient fresh local proof and identical uncertain request bytes. No PAT read model, client-side Git, persistent draft or frontend registration follow-up is permitted.
+
 - Buf generates service-specific files; `scripts/delidev/proto-compat.mjs` generates historical TypeScript import facades. Keep both package-root exports and legacy `./gen/*` paths working. Regenerate facades through `pnpm proto:generate`, never by hand.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
@@ -84,8 +86,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
 
-- PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `docs/repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
 
-- CI fixture executable reuse follows `docs/repository-workflow-contract.md`: accept only the runner-owned absolute `DELIDEV_TEST_BINARY` test input, preserve local source-build fallback and keep every server/process/credential/data lifetime private to its fixture. Client/Vitest integration is uncached; desktop CI retains the complete checks/two-shard inventory.
-
-- Capability 34 GitHub onboarding uses generated IntegrationService directly for PAT inspection and creation-time connection, outside query/mutation caches. Preserve closed states, exact echoed request/form binding and bounded identity validation. A verified PAT draft belongs only to the live new wizard and must be erased at every failure/back/cancel/disposal/final-save boundary; uncertainty retains only non-secret original requests/identities and requires token reentry. Follow the integration contract.
+- Remote repository clients negotiate generated System 37 before saves/imports and preserve Worker 19 independent managed-clone gates. Retain original request bytes and source-kind/URL identity, optional checkout semantics and legacy immutable records under the protocol/workspace contracts.

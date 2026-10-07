@@ -201,7 +201,7 @@ it("keeps historical currency subtotals, partial coverage and source basis separ
   const f = fixture();
   f.data.estimates = create(EstimateTotalsSchema, { unpricedResponses: 1, currencies: [{ currency: "USD", knownAmount: "9223.372036854775807", completeResponses: 1 }, { currency: "EUR", knownAmount: "0", partialResponses: 1 }] });
   f.data.pricing = [create(PricingUsageSchema, { pricing: { id: newRequestId(), modelId: f.ids.model, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Retained original source", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "0.000000001", exclusions: ["Fixture fee excluded"] } }, totals: { currency: "USD", knownAmount: "9223.372036854775807", completeResponses: 1 }, input: { knownTokens: "9223372036854775807", knownAmount: "9223.372036854775807", pricedResponses: 1 }, output: { missingPriceResponses: 1 } })];
-  render(f.view()); await screen.findByText("USD 9223.372036854775807");
+  render(f.view()); await screen.findByText("USD 9,223.372036854775807");
   expect(screen.getByText("EUR 0")).toBeTruthy();
   expect(screen.getByText(/1 responses have no matching historical price/)).toBeTruthy();
   expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");

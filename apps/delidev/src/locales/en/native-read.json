@@ -1,0 +1,23 @@
+{
+  "native-read.pending_331551": "Pending",
+  "native-read.running_f4ccae": "Running",
+  "native-read.completed_22a970": "Completed",
+  "native-read.failed_031a8f": "Failed",
+  "native-read.requestedPath_a7d291": "Requested path",
+  "native-read.requestedOffset_262ecb": "Requested offset",
+  "native-read.requestedLimit_ee2a77": "Requested limit",
+  "native-read.readUnavailable_c88714": "Read · Unavailable",
+  "native-read.theRetainedReadOperationIsUnavailable_1b346a": "The retained Read operation is unavailable or inconsistent.",
+  "native-read.read_b6b49e": "Read · <s0/>",
+  "native-read.readResult_7000d0": "Read result",
+  "native-read.readError_dbb719": "Read error",
+  "native-read.theNativeReadResultIsTruncated_827385": "The native Read result is truncated.",
+  "native-read.theNativeReadResultIsNot_846aa5": "The native Read result is not truncated.",
+  "native-read.observed_64fa8a": "Observed",
+  "native-read.notObserved_1d3efc": "Not observed",
+  "native-read.nativeInterruption_edde92": "Native interruption: <s0/>",
+  "native-read.originalProposalAndObservations_8d63b6": "Original proposal and observations",
+  "native-read.message_2fa20b": " · {{v0}}",
+  "native-read.nativePreview_31ab5c": "Native preview",
+  "native-read.loadedInstructionFiles_2266b4": "Loaded instruction files: <s0/>"
+}

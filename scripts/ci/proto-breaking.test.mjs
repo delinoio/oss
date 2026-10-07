@@ -25,6 +25,8 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   git("config", "commit.gpgsign", "false");
   git("config", "core.hooksPath", join(temporary, "empty-hooks"));
   git("lfs", "install", "--skip-repo");
+  git("commit", "--allow-empty", "-m", "before protocol schemas");
+  const noSchema = git("rev-parse", "HEAD");
   write("buf.yaml", "version: v2\nmodules:\n  - path: protos\nbreaking:\n  use:\n    - FILE\n");
   write("package.json", JSON.stringify({ private: true, packageManager: "pnpm@10.26.2" }));
   write(".gitignore", "node_modules\n");
@@ -39,17 +41,47 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   git("commit", "-m", "schema baseline with unavailable LFS asset");
   const baseline = git("rev-parse", "HEAD");
   symlinkSync(join(root, "node_modules"), join(cwd, "node_modules"), process.platform === "win32" ? "junction" : "dir");
-  const run = (ref) => spawnSync("bash", [script], {
-    cwd, env: { ...env, DEVHUD_PROTO_BASELINE: ref }, encoding: "utf8", timeout: 30_000,
-  });
+  const run = (ref) => {
+    const runEnv = { ...env };
+    delete runEnv.DEVHUD_PROTO_BASELINE;
+    if (ref !== undefined) runEnv.DEVHUD_PROTO_BASELINE = ref;
+    // Git cloning and two Buf processes compete with native contract fixtures.
+    // Keep this fixture-only budget bounded; return to 30 seconds when those
+    // workloads no longer contend during the parallel contract suite.
+    const result = spawnSync("bash", [script], { cwd, env: runEnv, encoding: "utf8", timeout: 120_000 });
+    assert.ifError(result.error);
+    return result;
+  };
   let result = run(baseline);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(existsSync(join(cwd, ".git/lfs/objects/aa/aa", oid)), false);
-  write("protos/devhud/v1/common.proto", schema.replace(" string value = 1; ", ""));
+  write("protos/devhud/v1/common.proto", schema.replace("string value = 1;", "string value = 1; string added = 2;"));
   result = run(baseline);
-  assert.notEqual(result.status, 0, "Removing a baseline field must fail comparison");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  write("protos/devhud/v1/common.proto", schema.replace(" string value = 1; ", ""));
+  git("add", "protos/devhud/v1/common.proto");
+  git("commit", "-m", "delete existing wire field");
+  git("update-ref", "refs/remotes/origin/main", "HEAD");
+  // A pushed current-main ref compares the deletion with itself. Only the
+  // event's pre-push revision retains the field that Buf must protect.
+  for (const ref of [undefined, ""]) {
+    result = run(ref);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  }
+  result = run(baseline);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /Previously present field.*value/u);
-  result = run("no-schema-baseline");
+  write("unrelated.txt", "final commit in the same push\n");
+  git("add", "unrelated.txt");
+  git("commit", "-m", "unrelated final push commit");
+  git("update-ref", "refs/remotes/origin/main", "HEAD");
+  result = run("HEAD^");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  result = run(baseline);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /Previously present field.*value/u);
+  assert.equal(existsSync(join(cwd, ".git/lfs/objects/aa/aa", oid)), false);
+  result = run(noSchema);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /treating this change as the v1 baseline/u);
 });

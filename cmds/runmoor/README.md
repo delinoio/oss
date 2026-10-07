@@ -250,6 +250,11 @@ Status and doctor JSON use `schema_version: 1`. Status includes image revisions 
 
 `pause` stops acquisition/new capacity and preserves running jobs. `drain` additionally waits for jobs/local cleanup. `stop` drains before exiting and waits for open image setup and pending image removal, including with `--force`. Finish setup by shutting down its VM or sealing the revision, and retry pending removal as needed. New image work requires restarting the manager after stop; `stop --pool NAME` drains that pool while the manager keeps serving other pools. Only explicit `--force` terminates owned work. `resume` revalidates the pool. Pool control commands without `--pool` apply to all pools. A validated reload automatically resumes a suspended pool only when a setting related to its reported failure changed; a verified managed image can also recover image, version or repeated startup failures. Otherwise, correct the cause and use `resume`.
 
+> **Unreleased pause recovery fix:** A late dependency failure and corrected
+> reload preserve an explicit `pause --pool NAME` or `stop --pool NAME`,
+> including scoped force-stop. Correct the cause, then use `resume --pool NAME`
+> to enable new work.
+
 Reload validates the entire candidate first. Existing jobs retain their original configuration and timeout. Removed/changed pools drain their previous generation; a new generation with the same GitHub scale-set identity waits until the old one retires. A failed configuration validation does not replace the last accepted configuration.
 
 > **Unreleased service reload:** After you install a newer Runmoor CLI,
@@ -281,6 +286,19 @@ daemon_resources = { cpu = 1, memory_mib = 1024 }
 DinD requires cgroup v2 and a privileged daemon container. Its CPU/memory must fit alongside the runner. Omitted daemon resources default to 1 CPU and 1024 MiB; its immutable image remains an explicit choice. Plain mode is still the default. Every execution has its own daemon/socket/storage, matching workspace/externals paths and network namespace. The host Docker socket, personal directories, SSH agents and management credentials are never passed to jobs. Remote Docker endpoints are rejected.
 
 Docker and privileged DinD share a kernel; they are not secure isolation for arbitrary hostile workloads. Run trusted developer/team workflows and control external fork execution through GitHub policy. Job containers, daemon, networks and volumes are destroyed after completion/cancellation. Base images remain reusable; use GitHub Actions cache instead of persistent local job/build-cache volumes.
+
+### Docker volume cleanup (unreleased)
+
+The unreleased cleanup correction checks each volume's current ownership
+immediately before removal. A conflicting volume is preserved and reported as
+`OWNERSHIP_AMBIGUOUS`; cleanup remains incomplete. If inspection fails, restore
+Docker access so cleanup can retry. Removal stays non-force, including during
+`stop --force`, and a volume confirmed absent needs no removal.
+
+Docker cannot make this ownership check and removal one atomic operation. Avoid
+replacing execution volumes while cleanup runs: a replacement after inspection
+can still be affected. Check the containing release before relying on this
+correction. See the [Docker guide](https://oss.delino.io/runmoor/docker#docker-volume-cleanup-unreleased).
 
 ### DinD CPU admission (unreleased)
 
@@ -435,6 +453,13 @@ also rejected; use the installed absolute configuration path directly.
 
 Manager-only restart reconciles local state with verified Docker/Tart/host execution and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 
+With the **unreleased Docker cleanup fix**, a container that replaces a
+stopped runner or daemon remains untouched, even if its Runmoor labels
+were copied. Cleanup reports `OWNERSHIP_AMBIGUOUS` and remains incomplete.
+The original execution remains confirmed stopped and its capacity stays
+released. Preserve the replacement and Runmoor state while investigating;
+copied labels do not prove ownership.
+
 A recorded job completion continues through cleanup even if GitHub has already removed its ephemeral runner registration. Capacity becomes available once the owned execution is confirmed stopped, while any remaining cleanup is retried. An upgrade does not automatically recover existing quarantines. For a previously affected completed job, confirm completion in GitHub and verify the exact ownership and stopped state of its local resources before recovering the affected pool with `runmoor stop --pool NAME --force`.
 
 Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. Version 0.2.0 upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
@@ -447,6 +472,13 @@ configuration. Inspect status and the OS user service, correct the reported
 problem and retry with the same installed CLI/configuration. Preserve state and
 managed data; never roll back to an incompatible binary. See the
 [service reload guide](https://oss.delino.io/runmoor/operations#reload-an-installed-service-after-upgrading-the-cli).
+
+If Stop completed after an interrupted service reload, wait for the reload
+command to finish, then use `runmoor service start` with the same installed CLI
+and configuration. One Start resumes a verified inactive target after cleanup
+completes. Uncertain ownership or unfinished cleanup blocks recovery; preserve
+the service definition, recovery files, state and managed data for inspection.
+This recovery is part of the unreleased service reload workflow.
 
 Jobs retain timeout accounting across restart/sleep. Active work requests OS sleep inhibition; warm idle capacity does not keep the machine awake indefinitely. Failure is a warning and does not change system power settings. Forced sleep, lid closure, shutdown and power loss can still interrupt work.
 

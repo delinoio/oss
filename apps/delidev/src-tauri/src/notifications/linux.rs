@@ -77,7 +77,10 @@ pub async fn present(notice: &Notice) -> Result<Presented, PresentationResult> {
                     "",
                     notice.kind.title(),
                     notice.kind.body(),
-                    vec!["default", "Open DeliDev"],
+                    vec![
+                        "default",
+                        crate::localization::text(crate::localization::Message::Open),
+                    ],
                     hints,
                     -1i32,
                 ),

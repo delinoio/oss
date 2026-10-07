@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/testgit"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -130,7 +131,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	if harness == domain.OpenCode {
-		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1}})); err != nil {
+		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -195,6 +196,21 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 		t.Fatal("invalid preparation")
 	}
 	manager := workspace.Manager{Root: filepath.Join(t.TempDir(), "worker")}
+	if workspaceType == domain.Worktree {
+		sources := map[string]string{}
+		for _, spec := range request.Repositories {
+			row, err := service.Store.Get(ctx, domain.RepositoryKind, spec.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			repo, err := store.Decode[domain.Repository](row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sources[repo.RemoteURL] = repo.Checkouts[0].Path
+		}
+		manager.Git.Executable = testgit.Executable(t, sources)
+	}
 	manifest, err := manager.Prepare(ctx, request)
 	f.workerRoot = manager.Root
 	if err != nil {

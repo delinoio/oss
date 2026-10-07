@@ -6,6 +6,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
+import { RepositoryRow } from "./repository-list";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { MutationIntents } from "./mutation";
@@ -13,7 +14,7 @@ import { encode, type Document } from "./documents";
 import { NotificationProvider } from "./toast-notifications";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
+function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -22,7 +23,7 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   const disconnect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] }) });
+    router.service(SystemService, { getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1] }); } });
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
     router.service(ResourceService, { listResources: list, getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
@@ -178,7 +179,6 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
   expect(screen.getByRole("heading", { name: "Harness" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
-  expect(screen.getByRole("radio", { name: "Codex", checked: true })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
   expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -506,11 +506,12 @@ it("preserves explicit empty restrictions and requires a primary repository afte
 });
 
 it("keeps repository save acknowledgment separate from completed Worker validation", async () => {
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
   const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
   const value = fixture([repository, job]), saved = vi.fn();
   value.save.mockResolvedValue({ job });
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await screen.findByText("Worker operation: queued");
   expect(saved).not.toHaveBeenCalled();
@@ -528,6 +529,30 @@ it("keeps repository save acknowledgment separate from completed Worker validati
   expect(saved).toHaveBeenCalledTimes(1);
 });
 
+it("keeps repository saving blocked and offers a retry when the capability check fails", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  const value = fixture([repository], { systemStatusError: new ConnectError("status unavailable", Code.Unavailable) });
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  const save = await screen.findByRole("button", { name: "Save Repository" });
+  await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(true));
+  expect(screen.queryByText("Update the selected server before saving a repository.")).toBeNull();
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry repository capability check" })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("keeps legacy checkout repository editing available without remote capability", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Legacy repository", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  const value = fixture([repository], { systemCapabilities: [] });
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed legacy repository" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
+  expect(saved).toEqual({ name: "Renamed legacy repository", checkouts: [{ machine_id: expect.any(String), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  expect(saved).not.toHaveProperty("remote_url");
+});
+
 it("retries an original checkout inspection and uses only its owning Worker's canonical root", async () => {
   const machine = resource(EntityKind.MACHINE, { name: "Owned Worker" });
   const job = resource(EntityKind.JOB, { type: "inspect-repository", state: "succeeded", machine_id: machine.id, output: { root: "/canonical/checkout", remotes: ["origin"], default_refs: { origin: "main" } } });
@@ -535,6 +560,7 @@ it("retries an original checkout inspection and uses only its owning Worker's ca
   value.inspect.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Repository" } });
+  fireEvent.change(screen.getByLabelText("Remote Git URL"), { target: { value: "https://github.com/fixture/repo.git" } });
   await screen.findByRole("option", { name: "Owned Worker" });
   fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: machine.id } });
   fireEvent.change(screen.getByLabelText("Absolute checkout path on this Worker"), { target: { value: "/alias/checkout" } });
@@ -543,6 +569,7 @@ it("retries an original checkout inspection and uses only its owning Worker's ca
   expect((screen.getByRole("button", { name: "Cancel edit" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry);
   fireEvent.click(await screen.findByRole("button", { name: "Add inspected checkout" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(value.inspect.mock.calls[0][0]).toEqual(value.inspect.mock.calls[1][0]);
@@ -582,7 +609,7 @@ it("edits global routing preferences without rewriting unrelated policy or creat
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Delete Server preferences/ })).toBeNull();
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
-  expect(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeTruthy();
+  expect(screen.queryByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
@@ -660,7 +687,7 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
 });
 
 it("starts a repository override with automation off and removes it only through explicit inheritance", async () => {
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true });
   const value = fixture([repository]);
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
   expect(screen.getByText(/inherits the complete server remediation policy/)).toBeTruthy();
@@ -671,21 +698,23 @@ it("starts a repository override with automation off and removes it only through
   fireEvent.click(screen.getByLabelText("Automatically fix required CI failures"));
   fireEvent.click(screen.getByRole("button", { name: "Use server remediation policy" }));
   expect(screen.queryByLabelText("Automatically fix required CI failures")).toBeNull();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
-  expect(saved).toEqual({ name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  expect(saved).toEqual({ name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true });
 });
 
 it("retains empty repository selectors and clears incompatible identity fields when changing selector type", async () => {
   const policy = { ci_failure: false, review_feedback: true, merge_conflict: false, conflict_strategy: "merge", session_strategy: "reuse", attempt_limit: 3, reviewer_selectors: [{ kind: "app", id: "42", node_id: "A_exact" }] };
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true, remediation: policy }, 4n);
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true, remediation: policy }, 4n);
   const value = fixture([repository]);
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Selector 1 type"), { target: { value: "minimum-permission" } });
   expect(screen.queryByLabelText("Selector 1 GitHub numeric ID")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Remove reviewer selector 1" }));
   expect(screen.getByText(/No reviewer selectors/)).toBeTruthy();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = input(value.save.mock.calls[0][0]);
@@ -880,4 +909,51 @@ it("scopes Transfer presentation and discards it on category departure", async (
   expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Retry the same configuration import" })).toBeNull();
   for (const button of within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")) expect((button as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("keeps repository source metadata inert and preserves schema-bound actions", () => {
+  const row = resource(EntityKind.REPOSITORY, { name: "Remote repository", remote_url: "https://user:private-value@example.invalid/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/saved/checkout" }], github_owner: "example", github_name: "repo", integration_id: newRequestId() });
+  const value = fixture([row]), edit = vi.fn(), remove = vi.fn();
+  const view = render(value.view(<RepositoryRow row={row} active edit={edit} remove={remove} />));
+  expect(screen.getByText("Git remote repository")).toBeTruthy();
+  expect(screen.getByText("GitHub configured")).toBeTruthy();
+  expect(screen.getByText("Saved settings only. Inspect access to check permissions.")).toBeTruthy();
+  expect(screen.getByText("/saved/checkout")).toBeTruthy();
+  expect(screen.getByText(row.id)).toBeTruthy();
+  expect(view.container.textContent).not.toContain("private-value");
+  expect(view.container.textContent).not.toContain("example.invalid");
+  expect((screen.getByRole("button", { name: "Edit Remote repository" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Edit Remote repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete Remote repository" }));
+  expect(edit).toHaveBeenCalledTimes(1); expect(remove).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole("button", { name: "Delete Remote repository" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Inspect GitHub access" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(value.list).not.toHaveBeenCalled(); expect(value.inspect).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled();
+  view.rerender(value.view(<RepositoryRow row={create(ResourceSchema, { ...row, schemaVersion: 99 })} active edit={edit} remove={remove} />));
+  expect(screen.getByText("Unsupported format")).toBeTruthy();
+  expect(screen.getAllByRole("button").every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+  expect(screen.queryByText("/saved/checkout")).toBeNull();
+  expect(screen.getByText(row.id)).toBeTruthy();
+});
+
+it("keeps repository continuation empties and failed refreshes distinct from a final empty first page", async () => {
+  let fail = false;
+  const value = fixture([], { readResources: (kind, token) => {
+    if (kind !== EntityKind.REPOSITORY) return { resources: [] };
+    if (fail) throw new ConnectError("Synthetic read failure", Code.PermissionDenied);
+    return { resources: [], nextPageToken: token ? "" : "repository-page-2" };
+  } });
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+  await screen.findByText("No repositories on this page.");
+  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  fail = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  expect(screen.queryByText("No repositories on this page.")).toBeNull();
+  expect(screen.queryByText("No saved entries.")).toBeNull();
 });

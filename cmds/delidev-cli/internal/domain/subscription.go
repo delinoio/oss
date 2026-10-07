@@ -124,6 +124,14 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
+		if o.CleanupPhase != "" {
+			if o.Action != SubscriptionLogin || o.Generation != "" || account.Connection != nil || s.Generation != "" || s.IdentityCommitment != "" || s.Lease != nil || s.OwnerMachineID != "" || s.Observation != nil || s.ResetCredits != nil || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting || (o.CleanupPhase != SubscriptionNativeCleanupConfirmed && o.CleanupPhase != SubscriptionCredentialCleanupConfirmed) {
+				return invalid()
+			}
+			if o.CleanupPhase == SubscriptionCredentialCleanupConfirmed && (o.Active() || o.State == SubscriptionSucceeded || o.NativeStarted || s.RecoveryRequired || s.Pending != nil) {
+				return invalid()
+			}
+		}
 		if o.NativeStarted && (s.Lease != nil || s.Pending == nil || s.Pending.ID != o.ID || s.Pending.Phase != SubscriptionClaimed || s.Pending.MachineID != "" || o.Generation != s.Generation) {
 			return invalid()
 		}
@@ -137,19 +145,30 @@ func (s SubscriptionState) Validate(account Account) error {
 // Server operations retain no executable paths, login URLs, codes or identity
 // suggestions. NativeStarted is the independent server credential lease.
 type ServerSubscriptionOperation struct {
-	ID                ID                     `json:"id"`
-	Action            SubscriptionAction     `json:"action"`
-	Epoch             ID                     `json:"epoch"`
-	FinishID          ID                     `json:"finish_id"`
-	Generation        ID                     `json:"generation,omitempty"`
-	Actor             Principal              `json:"actor"`
-	State             SubscriptionLoginState `json:"state"`
-	NativeStarted     bool                   `json:"native_started"`
-	CallbackForwarded bool                   `json:"callback_forwarded"`
-	StartedAt         time.Time              `json:"started_at"`
-	ExpiresAt         time.Time              `json:"expires_at"`
-	Diagnostic        *CodexDiagnostic       `json:"diagnostic,omitempty"`
+	ID                ID                       `json:"id"`
+	Action            SubscriptionAction       `json:"action"`
+	Epoch             ID                       `json:"epoch"`
+	FinishID          ID                       `json:"finish_id"`
+	Generation        ID                       `json:"generation,omitempty"`
+	Actor             Principal                `json:"actor"`
+	State             SubscriptionLoginState   `json:"state"`
+	NativeStarted     bool                     `json:"native_started"`
+	CallbackForwarded bool                     `json:"callback_forwarded"`
+	StartedAt         time.Time                `json:"started_at"`
+	ExpiresAt         time.Time                `json:"expires_at"`
+	Diagnostic        *CodexDiagnostic         `json:"diagnostic,omitempty"`
+	CleanupPhase      SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
 }
+
+// Cleanup checkpoints release only a failed initial server login. They cannot
+// authorize authentication, replace a Worker lease or prove provider revocation.
+type SubscriptionCleanupPhase string
+
+const (
+	SubscriptionNativeCleanupConfirmed     SubscriptionCleanupPhase = "native-confirmed"
+	SubscriptionCredentialCleanupConfirmed SubscriptionCleanupPhase = "credentials-confirmed"
+)
+
 type SubscriptionLoginState string
 
 const (

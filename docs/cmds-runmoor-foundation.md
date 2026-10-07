@@ -41,6 +41,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - An expired preparation after restart remains ambiguous and follows busy-aware cleanup. A busy rejection preserves the job and derives an unobserved start from the persisted creation time, never a new recovery-time deadline. Forced termination is reserved for an explicit force-stop or an established busy-job timeout.
 - A delayed busy-removal response can restore `Busy` only if the runner still exists in the exact lifecycle phase that initiated removal and no completion, force, remote removal, confirmed termination, or quarantine outcome committed while the request was in flight. Late responses preserve later phases and absent records. When no job start was observed, the original creation-time-based deadline remains authoritative; capacity stays reserved until termination is confirmed.
 - `pause` stops acquisition/provisioning, preserves busy work, and retires idle runners. `drain` pauses and waits. `stop` drains and exits after local termination/cleanup; unresolved remote cleanup remains durable and visible. `stop --pool NAME` drains just that pool, including its older generations; offline drain/stop waits use the same pool selection if the manager becomes unavailable; `stop --pool NAME --force` restricts forced termination to it. `stop --force` immediately cancels in-flight preparation and terminates only verified owned work. It never permits deletion of unrelated resources.
+- The existing `Paused` phase owns the scoped operator decision for manually pinned pools. Late session or preparation failures retain that phase while recording safe problems, counting non-forced preparation failures and preserving busy-aware runner cleanup. A validated correction may replace the generation but retains `Paused`; only explicit Resume clears the decision. Managed/global pause flags remain independent, and unpaused pools retain their existing failure-specific reload recovery. This fix adds no TOML, SQLite or JSON schema change.
 - Resume revalidates credentials, backend/image and resource conditions. Reload validates the candidate before accepting one new generation. A validated reload resumes a suspended replacement only when the prior failure's relevant input changed: connection or runner group for authentication; target, group or scale-set identity for a recorded remote scale-set ownership failure; image, runner version, platform or startup environment for their matching failures. Local execution ownership conflicts and legacy ownership failures without a recorded source stay suspended until ownership is resolved and the operator explicitly resumes them. Runner-version recovery requires a change to the runner-bearing image, source, path, version or platform; a DinD daemon image alone is unrelated. For a preparation failure, only the affected backend's preparation timeout and its Docker socket or Tart executable count as relevant global settings; the job timeout and the other backend's settings do not. A relevant global setting change alone replaces the suspended generation. Other suspensions carry their exact safe problem and preparation-failure count into the replacement. Rejected configuration leaves the committed configuration unchanged; unchanged configuration, missing prior reason, operator pause and stop never auto-resume. Existing jobs retain original generation/configuration/deadlines. Changed or removed pools drain; a replacement using the same remote identity waits for old ownership to retire and still verifies ownership before creation. Storage relocation is not a live reload operation. Reload serializes with image operations and cannot clear an already requested manager stop.
 - Status and doctor report a safe `DEPENDENCY_RETRY` diagnostic when legacy state has a suspended pool with no recorded problem, without guessing the original cause or automatically resuming it. A verified managed image replacement may clear only a matching image/version suspension or a three-failure startup preparation circuit breaker; unrelated authentication/ownership failures, operator pause, drain and stop remain authoritative.
 - Lifecycle transitions, reservation publication, GitHub ownership, and cleanup progress are persisted. Restart reconciles actual Docker/Tart resources and GitHub registrations, preserves verified live work, resumes cleanup idempotently, and quarantines ambiguous state. Reservations are not released until termination is confirmed. No automatic GitHub job rerun is performed.
@@ -60,10 +61,14 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Releases through 0.2.7 reserve both runner and daemon CPU. The runner-only CPU change is unreleased and adds no configuration field or storage migration. Preserve persisted execution and in-flight preparation reservations exactly across restart/reload; do not lower their CPU costs under the new policy. They release only through existing confirmed-termination/cleanup boundaries. Newly created reservations use the new policy. Docker image preparation continues to reserve and limit its actual preparation container resources.
 - DinD reconciliation inspects the daemon's recorded identity and ownership as well as the runner. Missing/stopped/paused/restarting daemons make the execution unavailable for busy-aware cleanup without claiming termination; ownership changes quarantine it, and transient inspection errors preserve reservations for retry.
 - Termination checks deterministic runner/daemon/init names and recorded container IDs independently of label-filtered discovery, before stopping resources and again before confirming termination. Foreign replacements or identity mismatches quarantine the execution and retain its reservation even during force-stop; an empty filtered list alone never proves termination.
+- Volume cleanup treats label-filtered discovery as candidate metadata only. Immediately before each non-force removal, inspect the exact current name and require matching installation and runner labels, a supported `work`, `socket`, `externals` or `docker` role, and the corresponding deterministic execution name. The inspection response must identify the requested name. Confirmed absence is idempotent. A mismatch returns `OWNERSHIP_AMBIGUOUS` without DELETE and quarantines the execution while preserving its unfinished local-cleanup record. Inspection errors return a safe dependency failure without DELETE and retain cleanup for retry. Confirmed termination and remote removal remain committed independently of local cleanup. Docker provides no immutable volume ID or conditional delete, so another replacement after the fresh check remains possible; this boundary does not establish atomic race protection. This correction is unreleased.
+- Every cleanup attempt repeats that identity, ownership-label and stopped-state verification before any destructive processing, even after durable termination allows the manager to skip Stop. A different-ID replacement with copied labels remains untouched; identity mismatches quarantine with `OWNERSHIP_AMBIGUOUS` and keep local cleanup incomplete. Transient verification failure permits no deletion and retains retry state. Matching stopped originals and confirmed absence remain cleanable. Previously confirmed original termination and its released reservation remain authoritative; unrelated replacements never restore that reservation. This cleanup fix is unreleased and changes no public schema or migration.
 - Paused or restarting runner containers are also unavailable, including in plain mode. They enter the same busy-aware cleanup path, retaining their capacity reservation until confirmed termination permits a replacement.
 - Never mount the host socket, personal host directories, SSH agents, configuration, or credentials into jobs. JIT is sent through stdin rather than Docker configuration/environment. All execution containers disable Docker log retention; the nested DinD daemon also defaults to the `none` log driver so container actions and service output are not retained in its storage. Clean up job/daemon/init containers, networks and volumes; retain only base images. Build caches belong in GitHub Actions cache.
 
 ### Tart images and jobs
+
+- Prepared-guest validation accepts an absent or successfully listed empty runner workspace. An existing workspace whose enumeration fails returns the bounded invalid-image result, even when listing stdout is empty. Automatic preparation rejects that image after one validation call and never invokes runner installation or directory replacement. Actual Guest Agent RPC failures retain preparation retries and redacted diagnostics.
 
 - Image mutations require a running manager; the CLI never executes them offline. The manager retains sleep inhibition for open setup/validation revisions after the request returns. Whole-manager stop, including force-stop and service stop/uninstall, waits for open setup and pending image removal; pool-scoped waits do not. Shutdown rejects new image operations but permits sealing an already open revision and retrying pending removal. Close the setup VM normally or seal it before expecting stop to finish. Offline image listing remains available. Initial setup accepts automatic or explicit host budgets with no pools/connections; add the Tart pool and reload after sealing.
 
@@ -74,6 +79,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Image open polls the owned VM until Tart confirms it running, bounded by the Tart preparation deadline. A spawned process alone is insufficient. Persist detached setup and validation Tart PIDs with OS-reported process-start identities in private SQLite state and keep that image process state out of status JSON. An image retry confirms the prior process exited before replacing its run alias or launching another Tart process. Compare both PID and process-start identity before treating a recorded Tart process as alive; older state without an identity remains conservatively reserved while its PID exists. Unconfirmed startup records a safe preparation error and holds its reservation until reconciliation confirms both the VM and Tart process stopped. Pending image removal also retains capacity while a recorded Tart process may still be alive.
 - Owned-image sealing and validation retain the verified VM directory descriptor while hashing `config.json`, `nvram.bin`, and `disk.img`; open each file relative to that descriptor so a Tart rename cannot redirect a digest to a replacement VM path.
 - Seal runner paths use the same validation as TOML pools: a leading `/`, no `..` substring, NUL or line breaks. Reject invalid paths before reservation or guest preparation; store accepted strings unchanged so the pool can match sealed metadata exactly.
+- Automatic sealing with an omitted or `latest` runner version also requires a dedicated, already clean directory with at least two `/` separators. Root, shallow directories, redundant separators, `.` segments and trailing separators are invalid. Reject these known invalid paths as `CONFIG_INVALID` before VM metadata inspection, reservation or boot, without changing the image phase, diagnostic or recorded process identity. Manual exact-version sealing retains the basic path rules above; accepted automatic and manual path strings remain unchanged.
 - Every Tart invocation uses argv/stdin and an allowlisted environment containing private `TART_HOME` and `TART_NO_AUTO_PRUNE=1`. No external automatic pruning is permitted. Each job clones a sealed base, configures limits and boots that clone only. Pool validation and every sealed-base clone (including a new setup revision) recompute the recorded digest and reject missing or altered files before cloning.
 - The same arm64 Runmoor binary provides a private guest supervisor, transferred by stdin without management credentials. Its detached runner and the detached native Tart process inherit real null output descriptors, not parent-owned pipes, and survive a manager-only restart. Guest status contains bounded execution metadata, never JIT credentials or job output. Bootstrap checks matching supervisor identity and unfinished readiness after the runner survives a one-second startup observation; missing/non-executable launchers and immediate exits are preparation failures and do not reset the pool circuit breaker. The guest's private state root is fixed alongside the uploaded helper, independent of inherited temporary-directory settings. Reacquisition checks the live supervisor command as well as its persisted identity and startup readiness; rebooted or missing guest state remains uncertain until reconciliation or the original deadline.
 - Tart ownership requires an exact match between the owner-only durable Runmoor record and an owner-only marker inside the current VM directory, including installation, image/execution identity, and VM name. Creation reserves the durable record first and runs create, import, or clone in a private per-entity staging `TART_HOME` that shares only Tart's private content cache. A per-entity lock spans the Tart operation and publication. Once Tart succeeds, Runmoor opens the staged VM directory, publishes the marker atomically through that descriptor, then exposes the canonical name by a no-replace rename of that same directory. The canonical destination remains absent until marker publication, so a concurrent VM at that name is never stamped as Runmoor-owned. Before treating the canonical VM as absent, inspection and recovery promote a staged VM only when its embedded marker and durable record match. An active creation retains its reservation; a markerless interrupted stage remains ambiguous and is preserved. Never overwrite an existing VM marker. For inspection, configuration, boot, guest execution and stop, open the verified VM directory without following symlinks and pass that descriptor through a one-command Tart name alias; Tart resolves the alias through the already-open directory even if the recorded name changes. Keep the per-entity alias used by `tart run` until termination is confirmed. Persist each detached Tart PID with its OS-reported process-start identity in private SQLite state, and keep image process state out of status JSON. Compare both values before treating the recorded Tart process as alive; state without an identity remains conservatively reserved while its PID exists. If the canonical path disappears, preserve ownership and its reservation while the run alias or recorded Tart process may still be live; only treat absence as confirmed after the process exits, then remove a stale alias before dropping the owner record. When Tart confirms an owned VM is stopped, cleanup polls its recorded PID and process-start identity within the caller context. Keep the run alias and reservation while that exact process remains alive; a deadline returns retryable cleanup, and a PID/start mismatch confirms the recorded process exited. The caller context flows through the owned start precheck, and cancellation is checked again immediately before detached Tart start. A missing, malformed, symlinked, unsafe-permission, or mismatching marker on an existing VM is `OWNERSHIP_AMBIGUOUS`; preserve the VM, durable record and reservation, including on force-stop. Known VM absence remains idempotent after liveness reconciliation. Before delete, hold Tart's config lock while atomically moving the verified directory to a stable per-entity name with a no-replace rename, and keep that same lock open until Tart confirms deletion. When recovering a staged deletion after restart, reopen and verify the staged VM, acquire its config lock, and keep it through the delete attempt. Invoke Tart's name-based delete only on that staged name, so a replacement at the recorded VM name cannot become the target. A retry can verify and finish a staged deletion after a manager restart. Legacy record-only state and crashes before marker publication are ambiguous and are never adopted by name; recovery requires a paired backup that retains the embedded marker or reimporting the source as a new revision/identity while preserving the uncertain VM and its records. Clones receive a fresh execution identity and leave the sealed source marker unchanged. Finished/failed owned clones and workspaces are destroyed; bases persist until explicit deletion. Tart and Guest Agent are external dependencies with version-specific licenses. The previously pinned Tart 2.37.0 and Guest Agent 0.14.2 sources use FSL-1.1-ALv2; operators must check the license of their installed Tart release. Runmoor neither bundles them nor distributes macOS/Xcode images.
@@ -102,6 +108,15 @@ configuration has an installed service. An unreachable manager does not start a
 stopped service. Stable SemVer triplets compare numerically; equal/newer managers
 reload configuration without changing their service definition or downgrading.
 
+Without a pending recovery journal, failed native PID inspection falls back to
+ordinary reload of the authenticated socket peer. Bind that request to the PID
+observed by status and return its result unchanged, including candidate-validation
+and Stop errors. This fallback acquires no service lock, writes no definition or
+journal, and performs no native mutation. A changed or unreachable peer remains
+an error. Log only a structured diagnostic with the platform and safe error code;
+omit raw native errors and output. Pending-journal recovery retains its native
+inspection requirements and fails closed when inspection is unavailable.
+
 Before replacement, the newer CLI reads state without migration and applies the
 same whole-candidate capacity, backend and remote validation as manager reload.
 Managed pools defer image preparation as before. Verify the installed executable
@@ -113,6 +128,18 @@ and service reload. A private `.runmoor-service-reload.json` journals the
 installation, configuration/storage references, original/target definitions and
 file identities, native process identity, UUID-v7 token and typed operation stage.
 It contains no credentials and adds no public field or SQLite migration.
+
+The journal records the reload CLI's PID and process-start identity as its
+completion owner. While holding the service-operation lock, an authenticated
+retry atomically replaces that identity with its own verified identity through
+the exact-record private-file checks. Transfer ownership before resumed native
+actions, replacement readiness checks or completion, including when the target
+is already ready. Identity or journal-update failure preserves recovery intent
+and permits no native mutation. Replacement startup retains the journal while
+the current owner is live. A confirmed exited owner permits reclamation; legacy
+records without an initiator remain conservative until recovery claims them.
+The retry removes its journal only after readiness and final normal reload
+acceptance succeed.
 
 Linux atomically publishes the target definition, performs `daemon-reload`,
 revalidates the original active invocation against its captured definition, and
@@ -130,9 +157,18 @@ cached executable as well as its on-disk reference; `AbandonProcessGroup=true`
 continues to protect independent executions. An inactive unverified loaded job
 or a changed native/definition identity remains an error.
 
-Only the actual replacement service may use the journal to load the last
-committed requested configuration before reading the candidate TOML. Its
-startup acceptance preserves durable Stop and pool/global pause decisions.
+The actual replacement service and a verified restart of the exact previous
+service invocation/version use the journal-owned snapshot to load the last
+committed requested configuration before reading the candidate TOML. Require
+matching journal platform, unit, configuration path and snapshot installation;
+an unavailable or mismatched snapshot fails before startup acceptance. Changed,
+malformed or relocated candidate TOML cannot authorize this startup. Both
+startup paths preserve durable Stop and pool/global pause decisions. The previous
+manager retains the handoff journal and receives no retirement authority; only
+replacement startup returns a retirement handle. The initiating CLI keeps its
+existing completion authority. Foreground runs and no-journal explicit Start
+retain ordinary candidate loading and completed-Stop recovery.
+
 Complete startup acceptance and session reset before exposing control; entering
 the manager loop must not overwrite a reload or Stop accepted after readiness.
 Independent executions, original generations, reservations, deadlines, image
@@ -141,6 +177,26 @@ boundaries. A final normal reload revalidates and atomically accepts the candida
 The existing two-minute CLI context covers preflight, native replacement,
 readiness and configuration acceptance. Success requires the new native
 invocation, matching live socket peer/version, and non-stopping status.
+
+After an interrupted replacement honors Stop and exits, one later explicit
+`service start` must resume the inactive target service. Under the existing
+service-operation lock, verify the private journal, matching installed CLI,
+installation, configuration/storage references and exact target definition
+contents/file identity. Confirm the reload initiator has exited or its PID now
+has a different nonempty process-start identity; permission errors, unreadable
+identities and legacy journals without initiator authority do not confirm exit.
+Acquire exclusive manager-state ownership without creating or migrating the
+database, then require durable Stop and complete runner, image, artifact and
+host cleanup through the existing completed-stop boundaries. Recheck native
+inactivity, initiator and definition authority before exact-record journal
+retirement. Retire before native Start so ordinary startup acceptance clears
+Stop on the first attempt while retaining pool/global pauses. Active services,
+unknown ownership, changed definitions and pending cleanup fail closed before
+native mutation and preserve recovery intent and reservations. Generic manager
+startup must never clear Stop merely because the initiating CLI disappeared.
+Structured recovery logs use safe event names and codes without private paths
+or native output. This recovery behavior is part of the unreleased service
+version reload workflow and adds no public field or migration.
 
 Persist intent before native actions. After interruption, observe a matching
 replacement or the journaled helper before continuing; never blindly repeat a

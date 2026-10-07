@@ -5,3 +5,8 @@
 - `cmd/guidance` generates `apps/delidev/src-tauri/provider-guidance.generated.json` from reconciled static official documentation/key-creation metadata. Regenerate with `go -C cmds/delidev-cli run ./internal/providers/cmd/guidance > apps/delidev/src-tauri/provider-guidance.generated.json` from the repository root. Keep the freshness test and native compiled selector aligned; guidance grants no account, discovery or execution capability.
 
 - Keep generated native guidance byte-identical across hosts through its exact-path LF attribute; regenerate from the registry and preserve the freshness check rather than accepting platform-specific JSON bytes.
+
+- oauth_clients.json contains only compiled DeliDev public registration/ordinary API acceptance metadata, shared with native. Pending/unverified profiles cannot advertise support. Never copy other applications client IDs or accept user-selected OAuth authorities. Follow `docs/cmds-delidev-account-oauth-contract.md`.
+- OAuth Google inspection uses the server-resolved connection quota project, Bearer access token and fixed Google destination. Preserve API-key inspection separately, refuse foreign provider/project combinations and never forward downstream quota headers. Follow `docs/cmds-delidev-account-oauth-contract.md`.
+
+- Baseten OAuth activation also requires an exact provider-approved compiled HTTPS approval URI. Keep the pending URI empty until registration evidence exists; never guess its browser path or reuse the official CLI client ID. Scope metadata and accepted registration do not substitute for actual inference token compatibility.

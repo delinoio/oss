@@ -1,19 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useMemo, useRef, useState } from "react";
+import { copy, useLocale } from "./localization";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
-import { useQuery, useTransport } from "@connectrpc/connect-query";
+import { useTransport } from "@connectrpc/connect-query";
 import {
-  BrowserQuery, ConfigurationService, DeleteConfigurationRequestSchema, EntityKind, FailureCode,
+  ConfigurationService, DeleteConfigurationRequestSchema, EntityKind, FailureCode,
   RequestSubscriptionRequestSchema, ResourceSchema, ResourceService, SubscriptionAction, SubscriptionLoginState,
   SubscriptionService, SubscriptionServiceId, SystemCapability, SystemService, clientFailure, isEntityId, newRequestId,
   type ClientFailure, type DeleteConfigurationRequest, type RequestSubscriptionRequest, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
 import { useSettingsOpening } from "./settings-lifetime";
+import { SettingsTaskContext, SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
 import { serviceAccount } from "./subscription-resource";
 import { safeDiagnostic } from "./subscription-onboarding";
-import { Failure, Problem } from "./ui";
+import { Failure } from "./ui";
 import "./account-deletion.css";
 
 enum Stage { Confirmation, Checking, Logout, Deleting, Paused, Deleted }
@@ -44,23 +46,23 @@ function cleared(resource: Resource) {
     !state.recovery_required && !state.generation && !object(state.server_operation).native_started;
 }
 
-export function AccountDeletionResult({ initial, active, deleted }: { initial: Resource; active: boolean; deleted: () => void }) {
-  const isApi = document(initial).type === "api";
-  const isChatGPT = serviceAccount(initial, undefined, SubscriptionServiceId.ChatGPT);
-  const cleanup = useQuery(BrowserQuery.getAccountBrowserCleanup, { accountId: initial.id }, { enabled: active, retry: false });
-  const actions = <><button disabled={!active || cleanup.isFetching} onClick={() => void cleanup.refetch()}>Refresh cleanup status</button><button disabled={!active} onClick={deleted}>{isApi ? "Return to AI API Keys" : "Return to accounts"}</button></>;
-  return <section className={isApi ? "api-entry-workflow" : isChatGPT ? "subscription-account-create account-deletion" : undefined}>
-    {isApi ? <header className="api-entry-heading"><h2>API key entry deleted</h2><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3>Account configuration deleted</h3>}
-    <p>Browser cleanup is tracked separately. Offline devices remain pending until their native browser has shut down, the full profile has been removed and the owning server confirms the acknowledgment.</p>
-    <Problem error={cleanup.error} />
-    {cleanup.data ? <p>{cleanup.data.pending} profile cleanup obligations pending · {cleanup.data.removed} confirmed removed</p> : <p>Cleanup status is unavailable until the owning server can be read.</p>}
-    {isChatGPT ? <div className="actions">{actions}</div> : actions}
-  </section>;
+export function useAccountDeletionCompletion(accepted: boolean, active: boolean, deleted: () => void) {
+  const opening = useSettingsOpening(), completed = useRef(false);
+  const retireOpener = useContext(SettingsTaskContext)?.retireOpener;
+  useEffect(() => {
+    if (!accepted || !active || opening?.disposed || completed.current) return;
+    // Commit cleared retention before parent teardown. A confirmed-deleted row
+    // is no longer a focus destination, even while inventory refresh is pending.
+    completed.current = true;
+    retireOpener?.(node => Boolean(node.closest(".subscription-row, .api-entry-row")));
+    deleted();
+  }, [accepted, active, opening, retireOpener, deleted]);
 }
 
 // This category owns only the confirmed client sequence. Go retains every
 // credential, execution, revision, reference and native-cleanup authority.
 export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { initial: Resource; active: boolean; deleted: () => void; close: () => void }) {
+  useLocale();
   const transport = useTransport(), opening = useSettingsOpening();
   const clients = useMemo(() => ({
     resource: createClient(ResourceService, transport), system: createClient(SystemService, transport),
@@ -69,6 +71,12 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
   const [confirmed, setConfirmed] = useState(initial);
   const [view, setView] = useState<View>({ stage: Stage.Confirmation });
   const pending = useRef<Attempt | undefined>(undefined);
+  const waiting = [Stage.Checking, Stage.Logout, Stage.Deleting].includes(view.stage);
+  // Direct clients bypass mutation retention. Keep original operations mounted
+  // through uncertainty, then release retention before completing the dialog.
+  const retained = view.stage !== Stage.Deleted && (waiting || Boolean(pending.current?.logout || pending.current?.operation || pending.current?.deletion));
+  useRetainSettingsTask(retained, waiting ? SettingsTaskStatus.Pending : pending.current?.retry !== undefined ? SettingsTaskStatus.Uncertain : SettingsTaskStatus.AwaitingConfirmation);
+  useAccountDeletionCompletion(view.stage === Stage.Deleted, active, deleted);
   const mounted = useRef(false), activeRef = useRef(active);
   activeRef.current = active;
   const live = (p: Attempt) => mounted.current && activeRef.current && !opening?.disposed && !p.disposed && pending.current === p;
@@ -89,7 +97,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     p.retry = retry;
     setView({ stage: Stage.Paused, failure: error ? clientFailure(error) : { code: FailureCode.ConfirmationRequired, message, guidance } });
   };
-  const changed = (p: Attempt) => pause(p, "The account changed or its cleanup could not be verified.", "Refresh the account and confirm its current state before deleting it.");
+  const changed = (p: Attempt) => pause(p, copy("account-deletion.extra.36a29426269b"), copy("account-deletion.extra.3811b20f1087"));
   const remove = async (p: Attempt, resource?: Resource) => {
     if (!live(p) || p.busy) return;
     if (!p.deletion) {
@@ -101,7 +109,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       const result = await clients.configuration.deleteConfiguration(p.deletion);
       if (!live(p)) return;
       if (result.id !== p.confirmed.id || result.requestId !== p.deletion.mutation!.requestId) {
-        pause(p, "The original deletion response could not be verified.", "Retry only the original deletion request.", Retry.Delete); return;
+        pause(p, copy("account-deletion.extra.011cbdc78098"), copy("account-deletion.extra.7e70cd1f1e1b"), Retry.Delete); return;
       }
       p.disposed = true;
       setView({ stage: Stage.Deleted });
@@ -116,7 +124,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       if (!live(p)) return;
       const state = object(document(result.account).subscription), operation = object(state.server_operation);
       if (result.operationId !== p.logout.mutation!.requestId || !unchanged(result.account, p) || operation.id !== result.operationId || operation.action !== "logout") {
-        pause(p, "The original logout response could not be verified.", "Retry only the original logout request.", Retry.Logout); return;
+        pause(p, copy("account-deletion.extra.9cbf6853e01d"), copy("account-deletion.extra.a59a4ec6ba3c"), Retry.Logout); return;
       }
       const connection = text(object(document(result.account).connection).id);
       if (connection && connection !== p.connection) { changed(p); return; }
@@ -142,14 +150,14 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       if (progress.state !== SubscriptionLoginState.SUCCEEDED || progress.canceled) {
         const diagnostic = safeDiagnostic(progress.diagnostic);
         const reasons: Partial<Record<SubscriptionLoginState, string>> = {
-          [SubscriptionLoginState.FAILED]: "ChatGPT logout failed.",
-          [SubscriptionLoginState.CANCELED]: "ChatGPT logout was canceled.",
-          [SubscriptionLoginState.EXPIRED]: "ChatGPT logout expired.",
-          [SubscriptionLoginState.UNSUPPORTED]: "ChatGPT logout is not supported by this server.",
-          [SubscriptionLoginState.RECOVERY_REQUIRED]: "ChatGPT credential cleanup requires recovery.",
+          [SubscriptionLoginState.FAILED]: copy("account-deletion.extra.76d4a13459c6"),
+          [SubscriptionLoginState.CANCELED]: copy("account-deletion.extra.491112623c4d"),
+          [SubscriptionLoginState.EXPIRED]: copy("account-deletion.extra.af1abd00d38a"),
+          [SubscriptionLoginState.UNSUPPORTED]: copy("account-deletion.extra.28727cc37ddb"),
+          [SubscriptionLoginState.RECOVERY_REQUIRED]: copy("account-deletion.extra.8c8625da5c7c"),
         };
-        const reason = reasons[progress.state] ?? "The original logout result could not be verified.";
-        pause(p, diagnostic?.message ?? reason, `The account has been kept. Check Connection & diagnostics before another deletion.${diagnostic?.correlation ? ` Reference: ${diagnostic.correlation}` : ""}`); return;
+        const reason = reasons[progress.state] ?? copy("account-deletion.extra.8d3007d5bd3d");
+        pause(p, diagnostic?.message ?? reason, copy("account-deletion.sentence.1ab129957de8", { v0: diagnostic?.correlation ? ` Reference: ${diagnostic.correlation}` : "" })); return;
       }
       const result = await clients.resource.getResource({ kind: EntityKind.ACCOUNT, id: p.confirmed.id });
       if (!live(p)) return;
@@ -185,16 +193,16 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       if (cleared(current)) { p.busy = false; await remove(p, current); return; }
       const data = document(current), state = object(data.subscription), operation = object(state.server_operation), pendingOperation = object(state.pending);
       if (state.recovery_required || data.removal) {
-        pause(p, "The account still requires protected-resource cleanup.", "Complete recovery in Connection & diagnostics before deleting this account."); return;
+        pause(p, copy("account-deletion.extra.775c54df4fb5"), copy("account-deletion.extra.a395ee1c2744")); return;
       }
       const status = await clients.system.getStatus({});
       if (!live(p)) return;
       if (!status.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1)) {
-        pause(p, "ChatGPT logout is not supported by this server.", "Update the selected server or complete its supported logout flow before deleting the account."); return;
+        pause(p, copy("account-deletion.extra.28727cc37ddb"), copy("account-deletion.extra.432a2d9f1fe9")); return;
       }
       if (state.pending) {
         if (pendingOperation.action !== "logout" || pendingOperation.machine_id || !isEntityId(text(pendingOperation.id)) || operation.id !== pendingOperation.id || operation.action !== "logout" || pendingOperation.canceled) {
-          pause(p, "Another account operation is still pending.", "Complete the original operation and confirm deletion again."); return;
+          pause(p, copy("account-deletion.extra.2ce284085b03"), copy("account-deletion.extra.37108ca03e31")); return;
         }
         p.operation = text(pendingOperation.id); p.minimumRevision = current.revision; p.observing = true;
         setView({ stage: Stage.Logout }); return;
@@ -230,20 +238,19 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     else if (p.retry === Retry.Progress) { p.observing = true; setView({ stage: Stage.Logout }); void inspect(p); }
   };
   const leave = () => { if (pending.current) pending.current.disposed = true; close(); };
-  if (view.stage === Stage.Deleted) return <AccountDeletionResult initial={confirmed} active={active} deleted={deleted} />;
-  const waiting = [Stage.Checking, Stage.Logout, Stage.Deleting].includes(view.stage);
+  if (view.stage === Stage.Deleted) return null;
   return <section className="subscription-account-create account-deletion">
-    <h3>{waiting ? `Deleting ${resourceName(confirmed)}` : `Delete ${resourceName(confirmed)}?`}</h3>
+    <h3>{waiting ? copy("account-deletion.deleting_983c74", { v0: resourceName(confirmed) }) : copy("account-deletion.delete_a19801", { v0: resourceName(confirmed) })}</h3>
     {view.stage === Stage.Confirmation ? <>
-      <p>This logs out the account and removes its protected credentials before deleting its saved configuration.</p>
-      <p>Active executions will be canceled. Retained sessions and history remain. Referenced accounts cannot be deleted.</p>
-      <div className="actions"><button className="account-deletion-confirm" disabled={!active} onClick={() => void confirm()}>Disconnect and delete account</button><button disabled={!active} onClick={leave}>Keep account</button></div>
+      <p>{copy("account-deletion.thisLogsOutTheAccountAnd_bc0446")}</p>
+      <p>{copy("account-deletion.activeExecutionsWillBeCanceledRetained_066584")}</p>
+      <div className="actions"><button className="account-deletion-confirm" disabled={!active} onClick={() => void confirm()}>{copy("account-deletion.disconnectAndDeleteAccount_fdb5f5")}</button><button disabled={!active} onClick={leave}>{copy("account-deletion.keepAccount_9be7d9")}</button></div>
     </> : <>
-      <p role="status">{view.stage === Stage.Checking ? "Checking the current account..." : view.stage === Stage.Logout ? "Logging out and cleaning up credentials..." : view.stage === Stage.Deleting ? "Deleting the account configuration..." : "Account deletion paused."}</p>
-      {view.stage === Stage.Logout ? <p>The account will be deleted after cleanup is confirmed.</p> : null}
+      <p role="status">{view.stage === Stage.Checking ? copy("account-deletion.checkingTheCurrentAccount_9c2ed5") : view.stage === Stage.Logout ? copy("account-deletion.loggingOutAndCleaningUpCredentials_6b3730") : view.stage === Stage.Deleting ? copy("account-deletion.deletingTheAccountConfiguration_9b97e4") : copy("account-deletion.accountDeletionPaused_df3fd2")}</p>
+      {view.stage === Stage.Logout ? <p>{copy("account-deletion.theAccountWillBeDeletedAfter_6b177a")}</p> : null}
       <Failure failure={view.failure} />
-      <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <button disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? "Retry original logout request" : pending.current.retry === Retry.Delete ? "Retry the same deletion" : "Retry original status check"}</button> : <button disabled={!active || pending.current?.busy} onClick={() => void refresh()}>Refresh account for confirmation</button> : null}<button disabled={!active} onClick={leave}>Back to subscriptions</button></div>
-      <p className="settings-scope">Leaving this screen stops automatic deletion. Accepted logout continues.</p>
+      <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <button disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? copy("account-deletion.retryOriginalLogoutRequest_ce84e9") : pending.current.retry === Retry.Delete ? copy("account-deletion.retryTheSameDeletion_b32bf6") : copy("account-deletion.retryOriginalStatusCheck_88bd61")}</button> : <button disabled={!active || pending.current?.busy} onClick={() => void refresh()}>{copy("account-deletion.refreshAccountForConfirmation_deba05")}</button> : null}<button disabled={!active} onClick={leave}>{copy("account-deletion.backToSubscriptions_257d53")}</button></div>
+      <p className="settings-scope">{copy("account-deletion.leavingThisScreenStopsAutomaticDeletion_7a5a3c")}</p>
     </>}
   </section>;
 }

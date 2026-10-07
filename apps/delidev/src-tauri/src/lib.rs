@@ -18,9 +18,11 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
 mod browser_opener;
+pub mod language;
 pub mod oauth;
 pub mod provider_guidance;
 pub mod updater;
+pub mod widget_writer;
 pub mod window_registry;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
@@ -868,3 +870,5 @@ mod repository_folder_tests {
         );
     }
 }
+
+pub mod localization;

@@ -1,3 +1,4 @@
+import { useLocale } from "./localization";
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 import { addStaticKeyToTransport, TransportProvider, useTransport } from "@connectrpc/connect-query";
@@ -92,6 +93,7 @@ export class SettingsOpening {
 }
 
 export function SettingsLifetime({ children }: { children: (opening: SettingsOpening) => ReactNode }) {
+  useLocale();
   const transport = useTransport();
   const upstream = useRef(transport);
   upstream.current = transport;

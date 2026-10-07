@@ -9,6 +9,23 @@ enum SnapshotFailure: Error { case invalid, storage }
 enum SnapshotState: String, Codable { case observed, stale, unavailable }
 enum QuotaState: String, Codable { case observed, unknown, stale, failed, unsupported }
 
+enum LanguagePreference: String, Codable { case system, english = "en", korean = "ko" }
+enum WidgetLanguage: String { case english = "en", korean = "ko" }
+struct WidgetLanguageDocument: Codable {
+    let version: UInt32
+    let language: LanguagePreference
+    func validate() throws { guard version == 1 else { throw SnapshotFailure.invalid } }
+}
+func resolveWidgetLanguage(_ preference: LanguagePreference, languages: [String] = Locale.preferredLanguages) -> WidgetLanguage {
+    switch preference { case .english: return .english; case .korean: return .korean; case .system: break }
+    for locale in languages.prefix(64) where locale.utf8.count <= 128 {
+        let base = locale.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first
+        if base == "en" { return .english }
+        if base == "ko" { return .korean }
+    }
+    return .english
+}
+
 func widgetTimestamp(_ value: String) -> Date? {
     guard value.utf8.count <= 40 else { return nil }
     let parser = ISO8601DateFormatter()
@@ -16,9 +33,12 @@ func widgetTimestamp(_ value: String) -> Date? {
     return parser.date(from: value) ?? ISO8601DateFormatter().date(from: value)
 }
 
-func safeAlias(_ value: String) -> String {
+func aliasIsHidden(_ value: String) -> Bool {
     let lower = value.lowercased()
-    if value.contains("@") || ["bearer ", "sk-", "ghp_", "github_pat_", "token=", "password", "api_key"].contains(where: lower.contains) {
+    return value.contains("@") || ["bearer ", "sk-", "ghp_", "github_pat_", "token=", "password", "api_key"].contains(where: lower.contains)
+}
+func safeAlias(_ value: String) -> String {
+    if aliasIsHidden(value) {
         return "Alias hidden"
     }
     return String(value.unicodeScalars.map { CharacterSet.controlCharacters.contains($0) ? " " : String($0) }.joined().prefix(128))
@@ -73,13 +93,14 @@ struct Quota: Codable {
         if snapshotStale || observation > now || now.timeIntervalSince(observation) > 300 || reset_at.flatMap(widgetTimestamp).map({ $0 <= now }) == true { return .stale }
         return .observed
     }
-    func label(at now: Date, snapshotStale: Bool) -> String {
+    func label(at now: Date, snapshotStale: Bool, language: WidgetLanguage = .english) -> String {
         let effective = effectiveState(at: now, snapshotStale: snapshotStale)
-        guard let remaining = remaining_basis_points, effective == .observed || effective == .stale else { return "Quota \(effective.rawValue)" }
-        return String(format: "%d.%02d%% remaining · %@", remaining / 100, remaining % 100, effective.rawValue)
+        let state = widgetCopy(quotaMessage(effective), language)
+        guard let remaining = remaining_basis_points, effective == .observed || effective == .stale else { return widgetCopy(.widgetQuota, language, ["state": state]) }
+        return widgetCopy(.remaining, language, ["amount": String(format: "%d.%02d", remaining / 100, remaining % 100), "state": state])
     }
 }
-struct Account: Codable { var alias: String; let windows: [Quota]; let more: Bool }
+struct Account: Codable { var alias: String; var alias_hidden: Bool? = nil; let windows: [Quota]; let more: Bool }
 struct Accounts: Codable { var entries: [Account]; let more: Bool }
 struct Summary: Codable {
     let overview: Overview?
@@ -97,13 +118,14 @@ struct Summary: Codable {
                           [quota.observed_at, quota.reset_at].allSatisfy({ $0.map({ widgetTimestamp($0) != nil }) ?? true }) else { throw SnapshotFailure.invalid }
                 }
             }
-            self.accounts?.entries = accounts.entries.map { var value = $0; value.alias = safeAlias(value.alias); return value }
+            self.accounts?.entries = accounts.entries.map { var value = $0; if aliasIsHidden(value.alias) { value.alias_hidden = true }; value.alias = safeAlias(value.alias); return value }
         }
     }
 }
 struct ServerSnapshot: Codable, Identifiable {
     let id: String
     var name: String
+    var name_hidden: Bool? = nil
     var state: SnapshotState
     var last_successful_at: String?
     var last_attempted_at: String
@@ -116,7 +138,7 @@ struct ServerSnapshot: Codable, Identifiable {
         guard canonicalServer(id), !name.isEmpty, name.utf8.count <= 256,
               widgetTimestamp(last_attempted_at) != nil,
               last_successful_at.map({ widgetTimestamp($0) != nil }) ?? true else { throw SnapshotFailure.invalid }
-        name = safeAlias(name)
+        if aliasIsHidden(name) { name_hidden = true }; name = safeAlias(name)
         try summary?.validateAndMask()
         if let success = last_successful_at {
             guard let overview = summary?.overview, !overview.stale,
@@ -142,10 +164,36 @@ struct Publication: Decodable {
 
 // Formatting never converts token/currency strings to a floating-point value,
 // pools currencies or treats an absent observation as measured zero.
-func tokenLabel(_ usage: Usage?) -> String {
-    guard let value = usage?.known_tokens else { return "Today's tokens unavailable" }
-    return "\(value) known tokens · incomplete"
+func tokenLabel(_ usage: Usage?, language: WidgetLanguage = .english) -> String {
+    guard let value = usage?.known_tokens else { return widgetCopy(.widgetTokensUnavailable, language) }
+    return widgetCopy(.widgetTokens, language, ["tokens": value])
 }
-func estimateLabels(_ usage: Usage?) -> [String] {
-    (usage?.estimates ?? []).map { "\($0.currency) \($0.known_amount ?? "unavailable") · estimate" }
+func estimateLabels(_ usage: Usage?, language: WidgetLanguage = .english) -> [String] {
+    (usage?.estimates ?? []).map { estimate in
+        if let amount = estimate.known_amount { return widgetCopy(.widgetEstimate, language, ["currency": estimate.currency, "amount": amount]) }
+        return widgetCopy(.widgetEstimateUnavailable, language, ["currency": estimate.currency])
+    }
+}
+
+func quotaMessage(_ state: QuotaState) -> WidgetMessage {
+    switch state {
+    case .observed: return .quotaObserved
+    case .unknown: return .quotaUnknown
+    case .stale: return .quotaStale
+    case .failed: return .quotaFailed
+    case .unsupported: return .quotaUnsupported
+    }
+}
+func widgetNumber(_ value: String) -> String {
+    let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+    let digits = Array(parts[0])
+    let integer = digits.enumerated().map { index, digit in (index > 0 && (digits.count - index) % 3 == 0 ? "," : "") + String(digit) }.joined()
+    return integer + (parts.count > 1 ? "." + parts[1] : "")
+}
+func widgetDate(_ value: Date, _ language: WidgetLanguage) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: language == .korean ? "ko_KR" : "en_US")
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+    return formatter.string(from: value)
 }
