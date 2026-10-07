@@ -53,7 +53,7 @@ function SourceGroup({ value, index, count, step, displayed, revealSource, harne
   update: (key: string, patch: Partial<Draft>) => void; report: (key: string, value: Evidence) => void; move: (key: string, offset: number) => void; remove: (key: string) => void;
 }) {
   useLocale();
-  const [choosing, setChoosing] = useState(!value.source);
+  const [choosing, setChoosing] = useState(!value.source && !value.modelID);
   const [known, setKnown] = useState<Record<string, Resource | undefined>>({});
   const [popup, setPopup] = useState(false);
   const [highlight, setHighlight] = useState(-1);
