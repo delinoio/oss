@@ -12,7 +12,7 @@ import { NotificationSettings } from "./notification-settings";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { AccountQuery, apiFormatToWire, ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, apiFormat, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, SystemQuery, SystemCapability, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { AccountQuery, apiFormatToWire, ConfigurationQuery, configurationSchemaVersion, supportsResourceSchema, apiFormat, apiFormatProfileFromWire, clientFailure, FailureCode, EntityKind, ProviderInventoryCapability, ProviderConnectionMethod, ProviderPresetId, ProviderQuery, ResourceQuery, SystemQuery, SystemCapability, newRequestId, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { accountPreferencesDocument } from "./account-preferences";
 import { ConfigurationFields, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
@@ -426,6 +426,11 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     documentationUrl: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.documentation),
     presetId: providerPresetNames.get(entry.presetId),
     keyCreationUrl: text(presets.get(providerPresetNames.get(entry.presetId) ?? "")?.key_creation_url),
+    apiFormats: capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) ? entry.apiFormats.flatMap(profile => {
+      const normalized = apiFormatProfileFromWire(profile);
+      return normalized ? [normalized] : [];
+    }) : undefined,
+    oauthFormatSelectingAvailable: capabilities.includes(ProviderInventoryCapability.ACCOUNT_OAUTH_API_PROTOCOL_V1) && capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1),
     oauthAvailable: capabilities.includes(entry.presetId === ProviderPresetId.OPENROUTER ? ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 : ProviderInventoryCapability.ACCOUNT_OAUTH_V1) && entry.enabled && (entry.connectionMethod === ProviderConnectionMethod.OAUTH_PKCE || entry.presetId === ProviderPresetId.BASETEN && entry.connectionMethod === ProviderConnectionMethod.OAUTH_DEVICE),
   } : undefined;
   const apiProviders = (apiInventory.data?.entries ?? []).map(entry => providerSummary(entry, apiInventory.data?.capabilities ?? [])).filter((value): value is AccountProviderSummary => value !== undefined);

@@ -67,16 +67,23 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 7 {
+	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 8 {
 		t.Fatalf("fresh inventory was not capability-complete: %+v", initial.Msg)
 	}
-	accountTypeFilterAdvertised, formatChangeAdvertised := false, false
+	accountTypeFilterAdvertised, oauthFormatAdvertised, formatChangeAdvertised := false, false, false
 	for _, capability := range initial.Msg.Capabilities {
 		accountTypeFilterAdvertised = accountTypeFilterAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER
+		oauthFormatAdvertised = oauthFormatAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1
 		formatChangeAdvertised = formatChangeAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1
 	}
 	if !accountTypeFilterAdvertised || !formatChangeAdvertised {
 		t.Fatalf("fresh inventory omitted account-type filtering capability: %+v", initial.Msg.Capabilities)
+	}
+	if !oauthFormatAdvertised {
+		t.Fatalf("fresh inventory omitted OAuth API format capability: %+v", initial.Msg.Capabilities)
+	}
+	if !formatChangeAdvertised {
+		t.Fatalf("fresh inventory omitted account API format change capability: %+v", initial.Msg.Capabilities)
 	}
 	for _, entry := range initial.Msg.Entries {
 		hosted := entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA && entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_LM_STUDIO && entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_VLLM

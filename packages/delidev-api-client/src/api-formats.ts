@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { ApiProtocol } from "./gen/delidev/v1/common_pb.js";
+import { ApiAuthentication, ApiProtocol, type ProviderApiFormat } from "./gen/delidev/v1/common_pb.js";
 
 export enum APIFormatId {
   Responses = "openai-responses",
@@ -22,6 +22,15 @@ export function apiFormatProfile(value: unknown): APIFormatProfile | undefined {
   const protocol = apiFormat(profile.protocol);
   const authentication = Object.values(APIAuthenticationId).find(auth => auth === profile.authentication);
   return protocol && authentication && typeof profile.endpoint === "string" && profile.endpoint.length > 0 ? { protocol, authentication, endpoint: profile.endpoint } : undefined;
+}
+export function apiFormatProfileFromWire(value: ProviderApiFormat): APIFormatProfile | undefined {
+  const protocol = value.protocol === ApiProtocol.OPENAI_RESPONSES ? APIFormatId.Responses :
+    value.protocol === ApiProtocol.OPENAI_CHAT ? APIFormatId.ChatCompletions :
+      value.protocol === ApiProtocol.ANTHROPIC_MESSAGES ? APIFormatId.Messages : undefined;
+  const authentication = value.authentication === ApiAuthentication.BEARER ? APIAuthenticationId.Bearer :
+    value.authentication === ApiAuthentication.API_KEY ? APIAuthenticationId.APIKey :
+      value.authentication === ApiAuthentication.KEYLESS ? APIAuthenticationId.Keyless : undefined;
+  return protocol && authentication && value.endpoint.length > 0 ? { protocol, endpoint: value.endpoint, authentication } : undefined;
 }
 // Provider resources already contain server-projected managed profiles. Legacy
 // servers expose only their original tuple and cannot authorize format editing.

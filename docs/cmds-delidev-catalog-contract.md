@@ -29,9 +29,13 @@ unchanged; capability 9 owns the dedicated extension.
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
-own the main-first capability 8 and Start/attempt format fields. Preserve manual
-format profiles, original defaults and independent OAuth eligibility. Reservations
-alone activate no support and add no database migration.
+own the main-first capability 8 and Start/attempt format fields established
+by reservation PR #1657. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. The common
+manual/OAuth connection UI requires selection for multiple profiles and displays
+a sole profile read-only; server-owned Start pins explicit OAuth selections through
+completion/recovery. Provider registration remains independently gated. No
+database migration is added.
 
 ## API account format selection
 
@@ -86,7 +90,7 @@ configuration writes. The typed atomic Worker save resolves every account throug
 the same profile and compatibility checks within its model/account transaction.
 
 The desktop requires an explicit manual format selection between Entry name and
-API key. Lists, connection details and Worker compatibility use that account's
+API key when multiple formats are supported, or displays the sole format read-only. Lists, connection details and Worker compatibility use that account's
 format. Custom Provider forms use one card per supported format, with URL and
 authentication inputs, and require at least one. Account-referenced cards are
 locked; the server independently verifies every reference. Capability reads,
@@ -99,8 +103,10 @@ an already accepted exact connection handoff.
 Portable configuration version 4 preserves profiles and explicit selections;
 versions 1–3 retain their historical import semantics and cannot carry the new
 fields. Connections, protected credentials, observations and history remain
-excluded. Imported accounts start disconnected. OAuth, native subscription
-profiles and service-specific API protocols are outside this extension.
+excluded. Imported accounts start disconnected. The separate capability-8 OAuth
+extension preserves authentication ownership while selecting inference formats.
+Native subscription profiles and service-specific API protocols are outside this
+extension.
 
 ### Official REST profile registry
 

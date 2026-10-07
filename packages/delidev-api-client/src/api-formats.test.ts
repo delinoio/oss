@@ -2,7 +2,8 @@
 import { create } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
 import { EntityKind, ResourceSchema } from "./gen/delidev/v1/delidev_pb.js";
-import { APIFormatId, APIAuthenticationId, accountAPIProfile, apiFormatMatchesHarness } from "./api-formats.js";
+import { ApiAuthentication, ApiProtocol, ProviderApiFormatSchema } from "./gen/delidev/v1/common_pb.js";
+import { APIFormatId, APIAuthenticationId, accountAPIProfile, apiFormatMatchesHarness, apiFormatProfileFromWire } from "./api-formats.js";
 import { configurationSchemaVersion, supportsResourceSchema } from "./configuration-identity.js";
 
 const responses = { protocol: APIFormatId.Responses, endpoint: "https://openrouter.ai/api/v1", authentication: APIAuthenticationId.Bearer };
@@ -19,6 +20,13 @@ it("uses each key's selected format and preserves a legacy account's original de
   expect(accountAPIProfile(provider, { type: "api" })).toEqual(chat);
   expect(accountAPIProfile(provider, { type: "api", api_protocol: APIFormatId.Messages })).toBeUndefined();
   expect(accountAPIProfile(provider, { type: "subscription" })).toBeUndefined();
+});
+
+it("converts inventory API formats to validated UI profiles", () => {
+  const profile = (protocol: ApiProtocol, endpoint: string, authentication: ApiAuthentication) => create(ProviderApiFormatSchema, { protocol, endpoint, authentication });
+  expect(apiFormatProfileFromWire(profile(ApiProtocol.OPENAI_RESPONSES, "https://api.example.test/v1", ApiAuthentication.BEARER))).toEqual({ protocol: APIFormatId.Responses, endpoint: "https://api.example.test/v1", authentication: APIAuthenticationId.Bearer });
+  expect(apiFormatProfileFromWire(profile(ApiProtocol.UNSPECIFIED, "https://api.example.test/v1", ApiAuthentication.BEARER))).toBeUndefined();
+  expect(apiFormatProfileFromWire(profile(ApiProtocol.OPENAI_CHAT, "", ApiAuthentication.BEARER))).toBeUndefined();
 });
 
 it("protects explicit API families with schema 3 and rejects unknown or duplicate profiles", () => {

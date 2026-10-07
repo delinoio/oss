@@ -49,9 +49,13 @@ their existing modal visibility and security boundaries.
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
-own the main-first capability 8 and Start/attempt format fields. Preserve manual
-format profiles, original defaults and independent OAuth eligibility. Reservations
-alone activate no support and add no database migration.
+own the main-first capability 8 and Start/attempt format fields established
+by reservation PR #1657. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. The common
+manual/OAuth connection UI requires selection for multiple profiles and displays
+a sole profile read-only; server-owned Start pins explicit OAuth selections through
+completion/recovery. Provider registration remains independently gated. No
+database migration is added.
 
 ## API key format selection
 
@@ -1161,6 +1165,8 @@ Selecting Local identifies this computer's paired machine, clears starting overr
 ### Automatic main-window local Worker management
 
 A fresh trusted main desktop process owns one joined Worker supervision task in addition to server supervision. After authenticated local server connection, it automatically registers/reuses and starts the fixed local Worker through Go-owned desktop preparation/admission. Settings, renderer mounts, polling, tray restoration and saved-server windows cannot create another automatic controller. Normal/paused states are observed every five seconds; transient failures use exponential equal-jitter backoff capped at 30 seconds, and blocked authority/ownership is inspected at most once per minute. Server disconnect uses the existing outbound Worker's reconnect rather than replacing a live process. A retained reserved admission or readiness wait remains on its original generation; native observation of original child exit and Go admission gates are required for replacement of incomplete controller evidence. Active updater ownership blocks competing recovery.
+
+Short Worker preparation and host controllers load the private same-server runtime locator instead of the ordinary fixed-port discovery endpoint. They retain its execution generation during admission and use the existing challenge-proved transport for client authority, pairing and Worker registration. Preserve original device IDs, tokens, immutable pairing addresses and the fixed Worker's local-pairing proof. Persist the existing no-fallback follow marker only after authenticated registration succeeds. Missing, foreign or failed runtime proof cannot send credentials to the old pairing address or admit a replacement. The surviving Worker uses its existing Local transport to reconnect to later proved desktop generations; update polling and original update-outcome reporting use that same protected outbound boundary. Preparation failures log only the bounded stage and safe error code.
 
 The main-only existing `local_worker_control` enum retains its action/generation interface and adds optional metadata-only `management`: closed state (`checking`, `registering`, `starting`, `running`, `retrying`, `paused`, `blocked`), bounded attempts/delay, typed failure and `owned_by_app`. Read/status cannot pair or start. Main Start uses native-owned admission; saved/retained connections preserve legacy explicit detached controls without automatic metadata. Local proof remains a separate fresh read and grants no bootstrap or session recovery.
 

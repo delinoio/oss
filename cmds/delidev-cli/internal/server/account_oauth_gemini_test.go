@@ -29,7 +29,7 @@ func TestGeminiProjectIsImmutableAndConnectionScoped(t *testing.T) {
 		_, e = f.s.StartAccountOAuth(f.ctx, connect.NewRequest(&pb.StartAccountOAuthRequest{Provider: acctMutation(f.provider, domain.NewID()), CallbackUrl: "http://127.0.0.1:55451/oauth/google-gemini/callback", Google: &pb.AccountOAuthGoogleOptions{QuotaProjectId: project}}))
 		wantAccountCode(t, e, domain.InvalidArgument)
 	}
-	start := &pb.StartAccountOAuthRequest{Provider: acctMutation(f.provider, domain.NewID()), CallbackUrl: "http://127.0.0.1:55451/oauth/google-gemini/callback", Google: &pb.AccountOAuthGoogleOptions{QuotaProjectId: "my-ai-project"}}
+	start := &pb.StartAccountOAuthRequest{ApiProtocol: pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT, Provider: acctMutation(f.provider, domain.NewID()), CallbackUrl: "http://127.0.0.1:55451/oauth/google-gemini/callback", Google: &pb.AccountOAuthGoogleOptions{QuotaProjectId: "my-ai-project"}}
 	r, e := f.s.StartAccountOAuth(f.ctx, connect.NewRequest(start))
 	if e != nil {
 		t.Fatal(e)
@@ -37,6 +37,9 @@ func TestGeminiProjectIsImmutableAndConnectionScoped(t *testing.T) {
 	u, _ := url.Parse(r.Msg.AuthorizationUrl)
 	if u.Host != "accounts.google.com" || u.Query().Get("access_type") != "offline" || u.Query().Get("prompt") != "consent" || u.Query().Get("scope") != "https://www.googleapis.com/auth/cloud-platform" {
 		t.Fatal("wrong Google authorization")
+	}
+	if r.Msg.Attempt.ApiProtocol != pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT {
+		t.Fatal("Google selected format was lost")
 	}
 	start.Google.QuotaProjectId = "another-project"
 	_, e = f.s.StartAccountOAuth(f.ctx, connect.NewRequest(start))
