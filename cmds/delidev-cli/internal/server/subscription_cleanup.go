@@ -73,12 +73,12 @@ func (s *Service) recoverFailedServerLogin(ctx context.Context, id, operation do
 // native checkpoint precedes vault work, so an interrupted cleanup can resume
 // without replaying login, callback forwarding or credential publication.
 func (s *Service) cleanupFailedServerLoginLocked(ctx context.Context, id, operation domain.ID, nativeConfirmed bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic) (domain.SubscriptionLoginState, error) {
-	return s.cleanupFailedServerLoginCheckpointLocked(ctx, id, operation, nativeConfirmed, result, diagnostic, nil)
+	return s.cleanupFailedServerLoginCheckpointLocked(ctx, id, operation, nativeConfirmed, result, diagnostic, nil, nil)
 }
 
 // A batch checkpoint advances its original expected revision in the same
 // transaction as account cleanup. Unrelated edits never become delete authority.
-func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, id, operation domain.ID, nativeConfirmed bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic, checkpoint func(*store.Tx, store.Record, store.Record) error) (domain.SubscriptionLoginState, error) {
+func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, id, operation domain.ID, nativeConfirmed bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic, checkpoint func(*store.Tx, store.Record, store.Record) error, credentialAttempt func() error) (domain.SubscriptionLoginState, error) {
 	var a domain.Account
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -141,6 +141,11 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 			return "", err
 		}
 		s.logger.InfoContext(ctx, "server_subscription_cleanup_confirmed", "operation_id", operation, "phase", domain.SubscriptionNativeCleanupConfirmed)
+	}
+	if credentialAttempt != nil {
+		if err := credentialAttempt(); err != nil {
+			return "", err
+		}
 	}
 	vault, err := s.secrets()
 	if err != nil {

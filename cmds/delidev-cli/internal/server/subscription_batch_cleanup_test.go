@@ -255,8 +255,15 @@ func TestFailedSubscriptionCleanupCompleteInventoryAndPartialSuccess(t *testing.
 }
 
 func TestFailedSubscriptionCleanupRestartUsesOnlyOriginalCheckpoint(t *testing.T) {
-	for _, nativeConfirmed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "interrupted-unconfirmed", true: "native-confirmed"}[nativeConfirmed], func(t *testing.T) {
+	for _, scenario := range []struct {
+		name                                string
+		nativeConfirmed, credentialsStarted bool
+	}{
+		{"interrupted-unconfirmed", false, false},
+		{"native-confirmed", true, false},
+		{"interrupted-vault", true, true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
 			f := batchFailedAccount(t, false)
 			accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
 			parent := domain.ID(accepted.Job.Id)
@@ -270,8 +277,8 @@ func TestFailedSubscriptionCleanupRestartUsesOnlyOriginalCheckpoint(t *testing.T
 				if err != nil {
 					return nil, err
 				}
-				out.Started = true
-				if nativeConfirmed {
+				out.Started, out.CredentialsStarted = true, scenario.credentialsStarted
+				if scenario.nativeConfirmed {
 					ar, a, err := subscriptionAccount(tx, in.AccountID, out.Revision)
 					if err != nil {
 						return nil, err
@@ -307,7 +314,7 @@ func TestFailedSubscriptionCleanupRestartUsesOnlyOriginalCheckpoint(t *testing.T
 			}
 			runFailedCleanup(t, f, accepted.Job.Id)
 			result := readFailedCleanup(t, f, accepted.Job.Id, "")
-			if nativeConfirmed {
+			if scenario.nativeConfirmed && !scenario.credentialsStarted {
 				if result.Job.Deleted != 1 {
 					t.Fatal("confirmed original cleanup did not resume", result)
 				}
