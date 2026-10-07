@@ -227,6 +227,41 @@ func TestTerminalReportSanitizesWorkerProblemsAndPreservesExactReceipt(t *testin
 	}
 }
 
+func TestTerminalClaimsAndReportsStayOnSelectedMachine(t *testing.T) {
+	f, session, selectedWorker, client, selectedInstance, manifest := terminalFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	otherWorker, otherDevice := pairedWorker(t, ctx, f.endpoint, f.identity)
+	otherInstance := domain.NewID()
+	if _, err := client.AttachWorker(ctx, ownerRequest(otherWorker, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: otherDevice.Machine.Id, InstanceId: string(otherInstance), Version: "0.1.0", Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}})); err != nil {
+		t.Fatal("second Worker could not attach", err)
+	}
+	product := delidevv1connect.NewTerminalServiceClient(http.DefaultClient, f.endpoint.URL)
+	created, err := product.CreateTerminal(ctx, ownerRequest(f.identity, &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value domain.Terminal
+	if domain.Decode(created.Msg.Terminal.DocumentJson, &value) != nil {
+		t.Fatal("invalid terminal")
+	}
+	foreign := &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: otherDevice.Machine.Id, InstanceId: string(otherInstance), TerminalId: created.Msg.Terminal.Id, OperationId: string(value.Pending.ID)}
+	if _, err := client.ClaimTerminal(ctx, ownerRequest(otherWorker, foreign)); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatal("another machine claimed the selected Worker's terminal", err)
+	}
+	result, err := json.Marshal(terminal.Result{State: domain.TerminalRunning, Rows: 24, Columns: 80, Shell: "/fixture/shell", Cwd: manifest.PrimaryPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ReportTerminal(ctx, ownerRequest(otherWorker, &pb.ReportTerminalRequest{RequestId: string(domain.NewID()), MachineId: foreign.MachineId, InstanceId: foreign.InstanceId, TerminalId: foreign.TerminalId, OperationId: foreign.OperationId, ResultJson: result})); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatal("another machine reported a result for the selected Worker's terminal", err)
+	}
+	selected := &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: string(value.MachineID), InstanceId: selectedInstance, TerminalId: created.Msg.Terminal.Id, OperationId: string(value.Pending.ID)}
+	if _, err := client.ClaimTerminal(ctx, ownerRequest(selectedWorker, selected)); err != nil {
+		t.Fatal("the selected Worker could not claim after rejected cross-machine requests", err)
+	}
+}
+
 func TestTerminalCloseBeforeCreateReportAndExitRacingQueuedInput(t *testing.T) {
 	f, session, worker, client, instance, manifest := terminalFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

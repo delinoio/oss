@@ -47,6 +47,10 @@ terminal. Terminal creation, input/resize acceptance and non-close dispatch/clai
 receipt reads require present storage in their owning transaction; a pending,
 uncertain or stored workspace cannot authorize native work. Original close claims
 and cleanup reports remain available to reconcile retained process ownership.
+Claim, report and output mutations must stay on the machine selected when the
+terminal was created. This is a routing invariant on the immutable assignment,
+not actor authorization; the Worker independently rechecks the assigned machine
+and preparation before starting or controlling a shell.
 The terminal retains the session/project, machine, original Worker instance and
 claimed paired device. Input and resize require the current running terminal,
 its revision and an available owning Worker. Close is a separate durable intent

@@ -189,8 +189,13 @@ func (m *terminalManager) reportInstance(ctx context.Context, instance, id, oper
 func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if assignment.ID.Validate() != nil || assignment.SessionID.Validate() != nil || assignment.Operation.ID.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(assignment.Terminal.MachineID), assignment.Terminal.MachineID != m.credential.MachineID) {
+	if assignment.ID.Validate() != nil || assignment.SessionID.Validate() != nil || assignment.Operation.ID.Validate() != nil {
+		return domain.TerminalUnavailable()
+	}
+	if assignment.Terminal.MachineID != m.credential.MachineID {
+		if m.config.Logger != nil {
+			m.config.Logger.WarnContext(ctx, "terminal_assignment_machine_mismatch", "terminal_id", assignment.ID, "selected_machine_id", assignment.Terminal.MachineID, "worker_machine_id", m.credential.MachineID, "next_action", "leave_unclaimed")
+		}
 		return domain.TerminalUnavailable()
 	}
 	switch assignment.Operation.Action {
@@ -303,7 +308,7 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 		}
 		if a.Preparation == nil || a.Manifest == nil ||
 			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(a.Preparation.SessionID), a.Preparation.SessionID != a.SessionID) ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(a.Preparation.MachineID), a.Preparation.MachineID != m.credential.MachineID) {
+			a.Preparation.MachineID != m.credential.MachineID {
 			result.State, result.Problem = domain.TerminalUncertain, workspace.ResultUncertain()
 			return result
 		}

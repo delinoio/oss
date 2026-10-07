@@ -17,6 +17,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/terminal"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -44,6 +45,34 @@ func (f *terminalJournalReportFixture) ReportTerminal(_ context.Context, request
 func TestTerminalJournalLargeValidResultRetriesExactFinishedReport(t *testing.T) {
 	t.Run("escaped-paths", func(t *testing.T) { terminalJournalReportRetry(t, false) })
 	t.Run("maximum-report", func(t *testing.T) { terminalJournalReportRetry(t, true) })
+}
+
+func TestTerminalManagerRejectsAssignmentForDifferentMachine(t *testing.T) {
+	manager := newTerminalManager(context.Background(), Config{Root: t.TempDir()}, nil, Credential{MachineID: domain.NewID()}, domain.NewID())
+	assignment := terminal.Assignment{ID: domain.NewID(), SessionID: domain.NewID(), Terminal: domain.Terminal{MachineID: domain.NewID()}, Operation: domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalCreate}}
+	if err := manager.apply(context.Background(), assignment); err == nil {
+		t.Fatal("Worker accepted a terminal assignment for another machine")
+	}
+	if len(manager.live) != 0 {
+		t.Fatal("mismatched assignment started a native terminal")
+	}
+}
+
+func TestTerminalManagerRejectsPreparationForDifferentMachine(t *testing.T) {
+	machine, session := domain.NewID(), domain.NewID()
+	manager := newTerminalManager(context.Background(), Config{Root: t.TempDir()}, nil, Credential{MachineID: machine}, domain.NewID())
+	assignment := terminal.Assignment{
+		ID:          domain.NewID(),
+		SessionID:   session,
+		Terminal:    domain.Terminal{MachineID: machine, State: domain.TerminalStarting, Rows: 24, Columns: 80},
+		Operation:   domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalCreate},
+		Preparation: &workspace.PrepareRequest{SessionID: session, MachineID: domain.NewID(), Type: domain.GeneralChat},
+		Manifest:    &workspace.Manifest{SessionID: session, MachineID: machine, Type: domain.GeneralChat, State: workspace.Ready},
+	}
+	result := manager.execute(assignment)
+	if result.State != domain.TerminalUncertain || domain.SafeError(result.Problem).Code != domain.RecoveryRequired || len(manager.live) != 0 {
+		t.Fatal("Worker accepted mismatched preparation machine authority", result)
+	}
 }
 
 func terminalJournalReportRetry(t *testing.T, maximum bool) {

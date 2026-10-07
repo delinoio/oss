@@ -33,6 +33,14 @@ func terminalRecord(tx *store.Tx, id domain.ID) (store.Record, domain.Terminal, 
 	return r, value, err
 }
 
+func (s *Service) requireTerminalMachine(ctx context.Context, terminalID, selected, request domain.ID) error {
+	if selected == request {
+		return nil
+	}
+	s.logger.WarnContext(ctx, "terminal_selected_machine_mismatch", "terminal_id", terminalID, "selected_machine_id", selected, "request_machine_id", request, "next_action", "use_selected_worker")
+	return domain.TerminalUnavailable()
+}
+
 func terminalSize(rows, columns uint32) error {
 	if rows > 500 || columns > 1000 {
 		return domain.Fail(domain.InvalidArgument, "Terminal dimensions exceed their bounds.", "Use 1–500 rows and 1–1000 columns.")
@@ -406,6 +414,9 @@ func (s *Service) ClaimTerminal(ctx context.Context, req *connect.Request[pb.Cla
 		if !value.Live() {
 			return nil, domain.TerminalUnavailable()
 		}
+		if err := s.requireTerminalMachine(ctx, r.ID, value.MachineID, machine); err != nil {
+			return nil, err
+		}
 		if value.CloseRequestID == domain.ID(req.Msg.OperationId) {
 			value.InstanceID, value.DeviceID = instance, actor.DeviceID
 		} else {
@@ -563,6 +574,9 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 		}
 		r, value, err := terminalRecord(tx, domain.ID(req.Msg.TerminalId))
 		if err != nil {
+			return nil, err
+		}
+		if err := s.requireTerminalMachine(ctx, r.ID, value.MachineID, machine); err != nil {
 			return nil, err
 		}
 		if !value.Live() {

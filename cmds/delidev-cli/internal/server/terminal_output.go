@@ -81,6 +81,9 @@ func (s *Service) PublishTerminalOutput(ctx context.Context, req *connect.Reques
 		if err != nil {
 			return err
 		}
+		if err := s.requireTerminalMachine(ctx, domain.ID(req.Msg.TerminalId), value.MachineID, domain.ID(req.Msg.MachineId)); err != nil {
+			return err
+		}
 		if !value.Live() {
 			return domain.TerminalUnavailable()
 		}
