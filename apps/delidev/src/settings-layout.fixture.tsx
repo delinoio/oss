@@ -2,7 +2,7 @@
 // Browser-only synthetic inventory. Never included in the product entry point.
 import { createRoot } from "react-dom/client";
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { SubscriptionService, FailedSubscriptionCleanupState, FailedSubscriptionCleanupOutcome, FailedSubscriptionCleanupReason, AccountService, AccountTypeFilter, BackupCreationState, ConfigurationService, EntityKind, GitHubTokenIdentityState, InboxService, IntegrationService, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageService, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
@@ -24,6 +24,7 @@ function ToastFixtureControls() {
   return <div><button>Connection controls</button>{Object.values(ToastKind).map(kind => <button type="button" key={kind} onClick={() => notifications.notify({ id: `fixture-${kind}`, kind, message: messages[kind], durationMs: 0 })}>Show {kind} toast</button>)}</div>;
 }
 const populated = args.get("populated") === "true";
+const routingFixture = args.get("routingFixture");
 const githubOnboarding = args.get("github-onboarding") === "true";
 const apiFormatEdit = args.get("apiFormatEdit") === "true";
 const apiUsage = apiFormatEdit || args.get("apiUsage") === "true";
@@ -66,6 +67,11 @@ const fixtureWorker: LocalWorkerStatus = {
 
 const subscription = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: "ChatGPT fixture", type: "subscription", subscription_service: "chatgpt", enabled: true, exclude_automatic: false, recovery_notifications: false, health: "disconnected", quota: [] }) });
 const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, schemaVersion: 1, revision: 1n, documentJson: encode({ name: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: false }) });
+// Opt-in routing fixtures contain display metadata only, never account/native authority.
+const routingAccounts = [
+  create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: longNames ? "Complete-account-alias-".repeat(10) : "ChatGPT Personal", type: "subscription", subscription_service: "chatgpt" }) }),
+  create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias: "Work API", type: "api", provider_id: provider.id }) }),
+];
 if (apiFormatEdit) {
   const original = resourceDocument(provider);
   provider.schemaVersion = 3;
@@ -76,7 +82,7 @@ const extraModels = args.get("manyModels") === "true" ? Array.from({ length: 20 
 const backup = { id: newRequestId(), revision: 1n, sizeBytes: 9007199254740993n, modifiedAt: "2026-09-29T00:00:00.123Z" };
 const creationId = newRequestId();
 const records = populated ? [
-  ...[EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY, EntityKind.MACHINE].map(kind => create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision: 1n, documentJson: encode({ name: `Example ${EntityKind[kind]} ${"long-name-".repeat(15)}`, harness: "codex", contents: "Complete fixture instruction text.\nSecond line retained.", repositories: [], accounts: [], templates: [] }) })),
+  ...[EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY, EntityKind.MACHINE].map(kind => create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision: 1n, documentJson: encode({ name: routingFixture && !longNames && kind === EntityKind.AGENT ? "Luna MAX" : routingFixture && !longNames && kind === EntityKind.PROJECT ? "oss" : `Example ${EntityKind[kind]} ${"long-name-".repeat(15)}`, harness: "codex", contents: "Complete fixture instruction text.\nSecond line retained.", repositories: [], accounts: [], templates: [] }) })),
   model, ...extraModels,
   ...["Personal API", "Team API", "Backup API"].map((alias, index) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias, type: "api", provider_id: provider.id, enabled: true, health: "unverified", ...(index < 2 && !hiddenWorkerChoices ? { connection: { authentication: "keyless", ...(accountStorageFixture ? { id: newRequestId() } : {}) } } : {}) }) })),
   ...["api", "subscription"].map(type => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias: apiUsage && type === "api" ? longNames ? "OpenRouter-long-identity-".repeat(10) : "OpenRouter" : `Fixture ${type} entry`, type, provider_id: provider.id, connection: apiUsage && type === "api" ? { id: newRequestId() } : "disconnected", health: "unverified", enabled: true, quota: [] }) })),
@@ -105,7 +111,7 @@ const fixtureTransport = createRouterTransport(router => {
     return { schemaVersion: 1, documentJson: encode({ profile_id: profile.id, profile_revision: String(request.expectedRevision), generation_id: resourceDocument(profile).connection && (resourceDocument(profile).connection as { generation_id: string }).generation_id, observed_at: "2026-10-07T00:00:00Z", page: request.page, page_size: 50, next_page: request.page === 1 ? 2 : 0, repositories }) };
   } });
   router.service(UsageService, { getUsageSummary: () => ({ fromUnixMs: 1788642000000n, untilUnixMs: 1791234000000n, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, totals: { responses: 126, total: { knownTotal: "1284920", measuredResponses: 126 } }, estimatedCost: UsageCostState.KNOWN_SUBTOTAL, estimates: { currencies: [{ currency: "USD", knownAmount: "12.48", completeResponses: 126 }] } }) });
-  router.service(ResourceService, { listResources: request => { return { resources: hoverFixture && request.filter?.kind === EntityKind.PROJECT ? [hoverProject] : subscriptionBackground && request.filter?.kind === EntityKind.ACCOUNT && request.accountType === AccountTypeFilter.SUBSCRIPTION ? [subscription] : records.filter(row => row.kind === request.filter?.kind && (row.kind !== EntityKind.ACCOUNT || resourceDocument(row).type === (request.accountType === AccountTypeFilter.API ? "api" : "subscription"))) }; }, getResource: request => ({ resource: [provider, ...(subscriptionBackground ? [subscription] : []), ...hoverSessions, ...records].find(row => row.id === request.id) }) });
+  router.service(ResourceService, { listResources: request => { return { resources: hoverFixture && request.filter?.kind === EntityKind.PROJECT ? [hoverProject] : subscriptionBackground && request.filter?.kind === EntityKind.ACCOUNT && request.accountType === AccountTypeFilter.SUBSCRIPTION ? [subscription] : records.filter(row => row.kind === request.filter?.kind && (row.kind !== EntityKind.ACCOUNT || resourceDocument(row).type === (request.accountType === AccountTypeFilter.API ? "api" : "subscription"))) }; }, getResource: request => ({ resource: [provider, ...(routingFixture ? routingAccounts : []), ...(subscriptionBackground ? [subscription] : []), ...hoverSessions, ...records].find(row => row.id === request.id) }) });
   router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, presetId: ProviderPresetId.OLLAMA, displayName: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, accountCountsAvailable: true, totalAccounts: 0n, connectedAccounts: 0n }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: populated ? [model, ...extraModels] : [], providers: [provider] }) });
   router.service(SessionService, { listSessions: () => ({ sessions: hoverSessions }) });
   router.service(InboxService, { getNotificationPreferences: () => ({ preferences: notificationPreferences }), setNotificationPreferences: request => { notificationPreferences = { revision: notificationPreferences.revision + 1n, interactions: request.preferences!.interactions, terminals: request.preferences!.terminals }; return { preferences: notificationPreferences }; }, listInbox: () => ({ entries: [] }) });
@@ -119,7 +125,16 @@ const fixtureTransport = createRouterTransport(router => {
     },
   });
   router.service(AccountService, { getAccountStatus: () => ({}) });
-  router.service(ConfigurationService, { previewRouting: () => ({ routeJson: encode({ policy: "fixed", selected: "", candidates: [] }) }), saveConfiguration: projectWizard ? request => {
+  router.service(ConfigurationService, { previewRouting: () => {
+    if (!routingFixture) return { routeJson: encode({ policy: "fixed", selected: "", candidates: [] }) };
+    document.documentElement.dataset.fixtureRoutingReads = String(Number(document.documentElement.dataset.fixtureRoutingReads ?? "0") + 1);
+    if (routingFixture === "denied") throw new ConnectError("Synthetic routing denial", Code.PermissionDenied);
+    if (routingFixture === "invalid") return { routeJson: encode({}) };
+    const candidate = (account: typeof subscription, eligibility: string) => ({ id: account.id, weight: 1, eligibility, quota_state: "unknown" });
+    const first = { policy: "priority", selected: "", candidates: [candidate(routingAccounts[0], "unauthenticated")] };
+    const selected = { policy: "remaining-quota", selected: routingAccounts[1].id, fallback: true, candidates: [{ ...candidate(routingAccounts[1], "eligible"), score: 0.75, reset_at: "2026-10-07T00:00:00Z" }] };
+    return { routeJson: encode(routingFixture === "empty" ? { ...first, candidates: [] } : routingFixture === "selected" ? selected : routingFixture === "sources" ? { ...selected, source_index: 1, sources: [{ source: "subscription:chatgpt", model_id: model.id, native_model: "Fixture subscription model", route: first, problem: { code: "missing_input", message: "Synthetic account state" } }, { source: `api:${provider.id}`, model_id: model.id, native_model: "Fixture API model", route: selected }] } : first) };
+  }, saveConfiguration: projectWizard ? request => {
     // Synthetic acceptance makes accidental writes during Next observable.
     document.documentElement.dataset.fixtureProjectSaveCount = String(Number(document.documentElement.dataset.fixtureProjectSaveCount ?? "0") + 1);
     return { resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, schemaVersion: request.schemaVersion, revision: 1n, documentJson: request.documentJson }) };

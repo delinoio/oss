@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
@@ -174,7 +174,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   fireEvent.click(row.getByRole("button", { name: `Preview routing for ${name}` }));
   await waitFor(() => expect(value.preview).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id }), expect.anything()));
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
-  fireEvent.click(screen.getByRole("button", { name: "Back to Agent Workers" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
   expect(screen.getByRole("heading", { name: "Harness" })).toBeTruthy();
@@ -593,10 +593,10 @@ it("renders unknown quota and server candidate reasons without performing select
   const agent = resource(EntityKind.AGENT, { name: "Agent" }), project = resource(EntityKind.PROJECT, { name: "Restricted project" }), value = fixture([agent, project]);
   value.preview.mockResolvedValue({ routeJson: encode({ policy: "remaining-quota", fallback: true, candidates: [{ id: newRequestId(), weight: 1, eligibility: "project-restricted", quota_state: "unknown" }] }) });
   render(value.view(<RoutingPreview agent={agent} active close={() => {}} />));
-  await screen.findByText(/Quota: unknown/);
+  await screen.findByText("unknown", { exact: true });
   fireEvent.change(screen.getByLabelText("Project"), { target: { value: project.id } });
   await waitFor(() => expect(value.preview).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: agent.id, projectId: project.id }), expect.anything()));
-  expect(screen.getByText(/None eligible/)).toBeTruthy();
+  expect(screen.getByText("No eligible account")).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
 });
 
@@ -964,4 +964,21 @@ it("keeps repository continuation empties and failed refreshes distinct from a f
   expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
   expect(screen.queryByText("No repositories on this page.")).toBeNull();
   expect(screen.queryByText("No saved entries.")).toBeNull();
+});
+
+// Localization changes presentation without disposing the original read-only task.
+it("keeps the routing dialog and its read when the Settings language changes", async () => {
+  const agent = resource(EntityKind.AGENT, { name: "Luna MAX" }), account = resource(EntityKind.ACCOUNT, { alias: "ChatGPT Personal", type: "subscription", subscription_service: "chatgpt" });
+  const value = fixture([agent, account]);
+  value.preview.mockResolvedValue({ routeJson: encode({ policy: "priority", candidates: [{ id: account.id, weight: 1, eligibility: "unauthenticated", quota_state: "unknown" }] }) });
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Preview routing for Luna MAX" }));
+  await screen.findByText("ChatGPT Personal");
+  const dialog = screen.getByRole("dialog");
+  const { i18n, SupportedLanguage } = await import("./localization");
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect(screen.getByText("후보 계정")).toBeTruthy();
+  expect(value.preview).toHaveBeenCalledTimes(1);
 });
