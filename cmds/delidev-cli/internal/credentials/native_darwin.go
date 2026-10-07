@@ -131,11 +131,20 @@ func CheckRuntime(ctx context.Context) error {
 		return err
 	}
 	var code uintptr
-	if status := a.copySelf(0, &code); status != 0 || code == 0 {
-		return unavailable()
+	if status := a.copySelf(0, &code); status != 0 {
+		return macCodeError(status)
+	}
+	if code == 0 {
+		return invalidExecutable()
 	}
 	defer a.release(code)
 	return macCodeError(a.checkValidity(code, 0, 0))
+}
+
+func invalidExecutable() error {
+	err := domain.Fail(domain.RecoveryRequired, "The running server code signature could not be verified.", "Use a valid signed server executable. Preserve existing credentials and review active work before explicitly stopping and restarting the server.")
+	err.Cause = ExecutableInvalidCause
+	return err
 }
 
 func macCodeError(status int32) error {
@@ -147,9 +156,7 @@ func macCodeError(status int32) error {
 		err.Cause = ExecutableChangedCause
 		return err
 	}
-	err := domain.Fail(domain.RecoveryRequired, "The running server code signature could not be verified.", "Use a valid signed server executable. Preserve existing credentials and review active work before explicitly stopping and restarting the server.")
-	err.Cause = ExecutableInvalidCause
-	return err
+	return invalidExecutable()
 }
 func (s *macStore) query(name string, adding bool) uintptr {
 	a := s.api
@@ -261,7 +268,7 @@ func (s *macStore) create(ctx context.Context, name string, value []byte) error 
 	return macError(a.add(q, nil))
 }
 func (s *macStore) remove(ctx context.Context, name string) error {
-	if err := ctx.Err(); err != nil {
+	if err := CheckRuntime(ctx); err != nil {
 		return err
 	}
 	q := s.query(name, false)

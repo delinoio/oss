@@ -64,6 +64,9 @@ func TestMacCredentialProcessHelper(t *testing.T) {
 			if domain.SafeError(err).Cause != "credential_executable_changed" {
 				t.Fatal("changed executable was not classified independently of keychain lock")
 			}
+			if err := s.remove(ctx, name); domain.SafeError(err).Cause != "credential_executable_changed" {
+				t.Fatalf("changed executable allowed native deletion: %v", err)
+			}
 		}
 	case "get":
 		value, err := s.get(ctx, name)
