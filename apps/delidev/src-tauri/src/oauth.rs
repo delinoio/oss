@@ -29,6 +29,8 @@ pub enum OAuthAction {
     BindOpen,
     SubscriptionOpen,
     SubscriptionReopen,
+    ClaudeSubscriptionOpen,
+    ClaudeSubscriptionReopen,
     Reopen,
     Take,
     Dispose,
@@ -142,7 +144,14 @@ struct Shared {
     stop: AtomicBool,
     code: Mutex<Option<Zeroizing<Vec<u8>>>>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BrowserBindingKind {
+    Provider,
+    CodexSubscription,
+    ClaudeSubscription,
+}
 struct Attempt {
+    kind: BrowserBindingKind,
     profile: OAuthProfile,
     scope: OAuthScope,
     generation: String,
@@ -299,8 +308,20 @@ impl OAuthHost {
         }
         if matches!(
             action,
-            OAuthAction::SubscriptionOpen | OAuthAction::SubscriptionReopen
+            OAuthAction::SubscriptionOpen
+                | OAuthAction::SubscriptionReopen
+                | OAuthAction::ClaudeSubscriptionOpen
+                | OAuthAction::ClaudeSubscriptionReopen
         ) {
+            let claude = matches!(
+                action,
+                OAuthAction::ClaudeSubscriptionOpen | OAuthAction::ClaudeSubscriptionReopen
+            );
+            let kind = if claude {
+                BrowserBindingKind::ClaudeSubscription
+            } else {
+                BrowserBindingKind::CodexSubscription
+            };
             canonical_id(attempt_id)?;
             if self
                 .disposed
@@ -315,14 +336,18 @@ impl OAuthHost {
                     || original.attempt != attempt_id
                     || original.authorization.as_str() != authorization
                     || !generation.is_empty() && original.generation != generation
-                    || original.shared.expected_state.is_none()
+                    || original.kind != kind
+                    || !claude && original.shared.expected_state.is_none()
                 {
                     return Err(NativeFailure::InvalidEvidence);
                 }
                 // Exact initial binding replay never opens another browser.
                 // Deliberate reopen recovers a lost binding reply and opens
                 // this same original address exactly once.
-                if action == OAuthAction::SubscriptionReopen {
+                if matches!(
+                    action,
+                    OAuthAction::SubscriptionReopen | OAuthAction::ClaudeSubscriptionReopen
+                ) {
                     let shared = Arc::clone(&original.shared);
                     let url = Zeroizing::new(original.authorization.to_string());
                     let generation = original.generation.clone();
@@ -352,7 +377,11 @@ impl OAuthHost {
             {
                 return Err(NativeFailure::Busy);
             }
-            let original = begin_subscription(scope, attempt_id, authorization, local)?;
+            let original = if claude {
+                begin_claude_subscription(scope, attempt_id, authorization)?
+            } else {
+                begin_subscription(scope, attempt_id, authorization, local)?
+            };
             let result = OAuthResult {
                 generation: original.generation.clone(),
                 callback_url: String::new(),
@@ -414,7 +443,10 @@ impl OAuthHost {
                 return Err(NativeFailure::InvalidInput);
             }
             if let Some(original) = attempts.get(&scope.window) {
-                if original.scope == scope && original.profile == profile {
+                if original.scope == scope
+                    && original.profile == profile
+                    && original.kind == BrowserBindingKind::Provider
+                {
                     return Ok(OAuthResult {
                         generation: original.generation.clone(),
                         callback_url: original.callback.clone(),
@@ -475,6 +507,9 @@ impl OAuthHost {
         }
         match action {
             OAuthAction::BindOpen => {
+                if original.kind != BrowserBindingKind::Provider {
+                    return Err(NativeFailure::InvalidEvidence);
+                }
                 canonical_id(attempt_id)?;
                 if !original.attempt.is_empty() {
                     if original.attempt != attempt_id
@@ -531,7 +566,9 @@ impl OAuthHost {
                 }
             }
             OAuthAction::Take => {
-                if original.profile == OAuthProfile::Baseten {
+                if original.profile == OAuthProfile::Baseten
+                    || original.kind == BrowserBindingKind::ClaudeSubscription
+                {
                     return Err(NativeFailure::InvalidEvidence);
                 }
                 if original.attempt != attempt_id || !authorization.is_empty() {
@@ -620,6 +657,7 @@ impl Drop for OAuthHost {
 fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, NativeFailure> {
     if profile == OAuthProfile::Baseten {
         return Ok(Attempt {
+            kind: BrowserBindingKind::Provider,
             profile,
             scope,
             generation: uuid::Uuid::now_v7().to_string(),
@@ -708,6 +746,7 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
         })
         .map_err(|_| NativeFailure::SidecarFailed)?;
     Ok(Attempt {
+        kind: BrowserBindingKind::Provider,
         profile,
         scope,
         generation,
@@ -1054,6 +1093,18 @@ fn open_authorization(url: &str, stopped: &AtomicBool) -> Result<(), NativeFailu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Parallel OAuth tests can reuse an ephemeral callback port just after its
+    // owner closes it, which makes post-disposal connection probes flaky.
+    // Serialize only tests that create these loopback listeners.
+    static LOOPBACK_LISTENER_TESTS: Mutex<()> = Mutex::new(());
+
+    fn loopback_listener_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        LOOPBACK_LISTENER_TESTS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn scope() -> OAuthScope {
         OAuthScope {
             window: "main".into(),
@@ -1115,6 +1166,7 @@ mod tests {
 
     #[test]
     fn google_profile_binds_loopback_scope_and_closed_callback_fields() {
+        let _listener_guard = loopback_listener_test_guard();
         assert!(registered_client(OAuthProfile::GoogleGemini).is_none());
         let attempt = begin_profile(scope(), OAuthProfile::GoogleGemini).unwrap();
         assert!(attempt.callback.starts_with("http://127.0.0.1:"));
@@ -1187,6 +1239,7 @@ mod tests {
 
     #[test]
     fn hugging_face_profile_requires_registration_and_original_state() {
+        let _listener_guard = loopback_listener_test_guard();
         assert!(registered_client(OAuthProfile::HuggingFace).is_none());
         let host = OAuthHost::default();
         let profiles = host
@@ -1249,6 +1302,7 @@ mod tests {
 
     #[test]
     fn lost_begin_replays_and_disposal_or_window_close_blocks_late_begin() {
+        let _listener_guard = loopback_listener_test_guard();
         let host = OAuthHost::default();
         let scope = scope();
         let first = host
@@ -1285,6 +1339,7 @@ mod tests {
     }
     #[test]
     fn dual_loopback_callback_is_one_shot_and_clears_displayed_url() {
+        let _listener_guard = loopback_listener_test_guard();
         for v6 in [false, true] {
             let host = OAuthHost::default();
             let scope = scope();
@@ -1418,6 +1473,7 @@ mod tests {
     }
     #[test]
     fn original_window_server_generation_and_closed_opener_remain_authoritative() {
+        let _listener_guard = loopback_listener_test_guard();
         let host = OAuthHost::default();
         let scope = scope();
         let initial = host
@@ -1666,6 +1722,7 @@ fn begin_subscription(
         )
     };
     Ok(Attempt {
+        kind: BrowserBindingKind::CodexSubscription,
         profile: OAuthProfile::Openrouter,
         scope,
         generation: uuid::Uuid::now_v7().to_string(),
@@ -1972,6 +2029,265 @@ mod subscription_tests {
             let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 1457)).unwrap();
             drop(listener);
             drop(TcpListener::bind((Ipv6Addr::LOCALHOST, 1457)).unwrap());
+        }
+    }
+}
+
+// This is a browser-only binding to the original CLI's subscription URL. The
+// selected Runner retains the native callback/readline process and exchanges
+// the code. Desktop never creates a Claude callback listener or token client.
+fn begin_claude_subscription(
+    scope: OAuthScope,
+    attempt_id: &str,
+    raw: &str,
+) -> Result<Attempt, NativeFailure> {
+    validate_claude_subscription_authorization(raw)?;
+    Ok(Attempt {
+        kind: BrowserBindingKind::ClaudeSubscription,
+        profile: OAuthProfile::Openrouter,
+        scope,
+        generation: uuid::Uuid::now_v7().to_string(),
+        callback: String::new(),
+        attempt: attempt_id.into(),
+        authorization: Zeroizing::new(raw.into()),
+        until: Instant::now() + Duration::from_secs(900),
+        shared: Arc::new(Shared {
+            expected_state: None,
+            api_state: Mutex::new(None),
+            api_profile: None,
+            bound: AtomicBool::new(true),
+            consumed: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            code: Mutex::new(None),
+        }),
+        thread: None,
+    })
+}
+
+fn validate_claude_subscription_authorization(raw: &str) -> Result<(), NativeFailure> {
+    let invalid = NativeFailure::InvalidInput;
+    if raw.len() > 8192 || !raw.bytes().all(|b| (33..=126).contains(&b)) {
+        return Err(invalid);
+    }
+    let url = url::Url::parse(raw).map_err(|_| invalid)?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("claude.com")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/cai/oauth/authorize"
+        || url.fragment().is_some()
+        || url.as_str() != raw
+    {
+        return Err(invalid);
+    }
+    let mut fields = BTreeMap::new();
+    let allowed = [
+        "code",
+        "client_id",
+        "response_type",
+        "redirect_uri",
+        "scope",
+        "code_challenge",
+        "code_challenge_method",
+        "state",
+        "orgUUID",
+        "login_hint",
+        "login_method",
+    ];
+    for (key, value) in url.query_pairs() {
+        if !allowed.contains(&key.as_ref())
+            || value.len() > 2048
+            || value.chars().any(char::is_control)
+            || fields
+                .insert(key.into_owned(), value.into_owned())
+                .is_some()
+        {
+            return Err(invalid);
+        }
+    }
+    let field = |name| fields.get(name).map(String::as_str).unwrap_or("");
+    let opaque = |value: &str| {
+        (16..=512).contains(&value.len())
+            && value
+                .bytes()
+                .all(|v| v.is_ascii_alphanumeric() || v == b'-' || v == b'_')
+    };
+    if field("client_id") != "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        || field("response_type") != "code"
+        || field("code_challenge_method") != "S256"
+        || field("code_challenge").len() != 43
+        || !opaque(field("code_challenge"))
+        || !opaque(field("state"))
+        || !["", "true"].contains(&field("code"))
+    {
+        return Err(invalid);
+    }
+    if field("redirect_uri") != "https://platform.claude.com/oauth/code/callback" {
+        let callback = url::Url::parse(field("redirect_uri")).map_err(|_| invalid)?;
+        if callback.scheme() != "http"
+            || callback.host_str() != Some("localhost")
+            || callback.port().is_none_or(|port| port == 0)
+            || !callback.username().is_empty()
+            || callback.password().is_some()
+            || callback.path() != "/callback"
+            || callback.query().is_some()
+            || callback.fragment().is_some()
+            || callback.as_str() != field("redirect_uri")
+        {
+            return Err(invalid);
+        }
+    }
+    let scopes: Vec<_> = field("scope").split_whitespace().collect();
+    if !scopes.contains(&"user:profile") || !scopes.contains(&"user:inference") {
+        return Err(invalid);
+    }
+    let allowed_scopes = [
+        "org:create_api_key",
+        "user:profile",
+        "user:inference",
+        "user:sessions:claude_code",
+        "user:mcp_servers",
+        "user:file_upload",
+    ];
+    for (index, scope) in scopes.iter().enumerate() {
+        if !allowed_scopes.contains(scope) || scopes[..index].contains(scope) {
+            return Err(invalid);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod claude_subscription_tests {
+    use std::sync::atomic::AtomicUsize;
+
+    use super::*;
+    fn authorization() -> String {
+        let mut u = url::Url::parse("https://claude.com/cai/oauth/authorize").unwrap();
+        u.query_pairs_mut()
+            .append_pair("client_id", "9d1c250a-e61b-44d9-88ed-5944d1962f5e")
+            .append_pair("response_type", "code")
+            .append_pair(
+                "redirect_uri",
+                "https://platform.claude.com/oauth/code/callback",
+            )
+            .append_pair(
+                "scope",
+                "user:profile user:inference user:sessions:claude_code",
+            )
+            .append_pair("code_challenge", &"a".repeat(43))
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("state", &"b".repeat(32))
+            .append_pair("code", "true");
+        u.into()
+    }
+    #[test]
+    fn original_claude_browser_has_no_listener_or_code_receiver() {
+        let host = OAuthHost::default();
+        let server = uuid::Uuid::now_v7().to_string();
+        let opening = uuid::Uuid::now_v7().to_string();
+        let attempt = uuid::Uuid::now_v7().to_string();
+        let scope = OAuthScope {
+            window: "main".into(),
+            instance: uuid::Uuid::now_v7().to_string(),
+            server,
+            opening,
+            window_epoch: host.window_epoch("main").unwrap(),
+        };
+        let url = authorization();
+        let opened = AtomicUsize::new(0);
+        let result = host
+            .control_with_opener(
+                scope.clone(),
+                OAuthAction::ClaudeSubscriptionOpen,
+                "",
+                &attempt,
+                &url,
+                |observed, _| {
+                    assert_eq!(observed, url);
+                    opened.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
+        assert!(result.callback_url.is_empty());
+        let replay = host
+            .control_with_opener(
+                scope.clone(),
+                OAuthAction::ClaudeSubscriptionOpen,
+                "",
+                &attempt,
+                &url,
+                |_, _| panic!("replayed opener"),
+            )
+            .unwrap();
+        assert_eq!(replay.generation, result.generation);
+        assert!(
+            host.control_with_opener(
+                scope.clone(),
+                OAuthAction::Take,
+                &result.generation,
+                &attempt,
+                "",
+                |_, _| panic!("code receiver")
+            )
+            .is_err()
+        );
+        assert!(
+            host.control_with_opener(
+                scope.clone(),
+                OAuthAction::SubscriptionOpen,
+                "",
+                &attempt,
+                &url,
+                |_, _| panic!("other service")
+            )
+            .is_err()
+        );
+        host.control_with_opener(
+            scope.clone(),
+            OAuthAction::ClaudeSubscriptionReopen,
+            &result.generation,
+            &attempt,
+            &url,
+            |observed, _| {
+                assert_eq!(observed, url);
+                opened.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 2);
+        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        assert!(
+            host.control_with_opener(
+                scope,
+                OAuthAction::ClaudeSubscriptionOpen,
+                "",
+                &attempt,
+                &url,
+                |_, _| panic!("disposed opener")
+            )
+            .is_err()
+        );
+    }
+    #[test]
+    fn claude_browser_rejects_substituted_authority() {
+        let url = authorization();
+        assert!(validate_claude_subscription_authorization(&url).is_ok());
+        for changed in [
+            url.replace("claude.com/cai", "attacker.invalid/cai"),
+            url.clone() + "&state=replacement-state-value",
+            url.replace(
+                "client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+                "client_id=replacement",
+            ),
+            url.replace("user%3Ainference", "unknown%3Ainference"),
+        ] {
+            assert!(validate_claude_subscription_authorization(&changed).is_err());
         }
     }
 }

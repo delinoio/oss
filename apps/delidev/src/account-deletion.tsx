@@ -7,7 +7,7 @@ import { useTransport } from "@connectrpc/connect-query";
 import {
   ConfigurationService, DeleteConfigurationRequestSchema, EntityKind, FailureCode,
   RequestSubscriptionRequestSchema, ResourceSchema, ResourceService, SubscriptionAction, SubscriptionLoginState,
-  SubscriptionService, SubscriptionServiceId, SystemCapability, SystemService, clientFailure, isEntityId, newRequestId,
+  SubscriptionService, SubscriptionServiceId, SystemCapability, SystemService, clientFailure, isEntityId, newRequestId, subscriptionService,
   type ClientFailure, type DeleteConfigurationRequest, type RequestSubscriptionRequest, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
@@ -36,7 +36,7 @@ interface View { stage: Stage; failure?: ClientFailure }
 const preferences = ["alias", "type", "subscription_service", "enabled", "exclude_automatic", "recovery_notifications"] as const;
 const uncertain = (error: unknown) => [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(clientFailure(error).code);
 function unchanged(resource: Resource | undefined, attempt: Attempt): resource is Resource {
-  if (!serviceAccount(resource, attempt.confirmed.id, SubscriptionServiceId.ChatGPT, attempt.minimumRevision)) return false;
+  if (!serviceAccount(resource, attempt.confirmed.id, subscriptionService(document(attempt.confirmed).subscription_service), attempt.minimumRevision)) return false;
   const current = document(resource), confirmed = document(attempt.confirmed);
   return preferences.every((key) => current[key] === confirmed[key]);
 }
@@ -48,7 +48,7 @@ function failedInitialLogin(resource: Resource) {
 function cleared(resource: Resource) {
   const data = document(resource), state = object(data.subscription);
   return data.health === "disconnected" && !data.connection && !data.removal && !state.pending && !state.lease &&
-    !state.recovery_required && !state.generation && !object(state.server_operation).native_started;
+    !state.recovery_required && !state.generation && !state.native_profile_id && !state.owner_machine_id && !object(state.server_operation).native_started;
 }
 
 export function useAccountDeletionCompletion(accepted: boolean, active: boolean, deleted: () => void) {
@@ -68,6 +68,9 @@ export function useAccountDeletionCompletion(accepted: boolean, active: boolean,
 // credential, execution, revision, reference and native-cleanup authority.
 export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { initial: Resource; active: boolean; deleted: () => void; close: () => void }) {
   useLocale();
+  const service = subscriptionService(document(initial).subscription_service)!;
+  const claude = service === SubscriptionServiceId.Claude;
+  const operationOf = (state: ReturnType<typeof object>) => object(claude ? state.native_operation : state.server_operation);
   const transport = useTransport(), opening = useSettingsOpening();
   const clients = useMemo(() => ({
     resource: createClient(ResourceService, transport), system: createClient(SystemService, transport),
@@ -123,7 +126,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     try {
       const result = await clients.subscription.requestSubscription(p.logout);
       if (!live(p)) return;
-      const state = object(document(result.account).subscription), operation = object(state.server_operation);
+      const state = object(document(result.account).subscription), operation = operationOf(state);
       if (result.operationId !== p.logout.mutation!.requestId || !unchanged(result.account, p) || operation.id !== result.operationId || operation.action !== "logout") {
         pause(p, copy("account-deletion.extra.9cbf6853e01d"), copy("account-deletion.extra.a59a4ec6ba3c"), Retry.Logout); return;
       }
@@ -162,7 +165,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       }
       const result = await clients.resource.getResource({ kind: EntityKind.ACCOUNT, id: p.confirmed.id });
       if (!live(p)) return;
-      const operation = object(object(document(result.resource).subscription).server_operation);
+      const operation = operationOf(object(document(result.resource).subscription));
       if (!unchanged(result.resource, p) || !cleared(result.resource) || operation.id !== p.operation || operation.action !== "logout" || operation.state !== "succeeded") {
         changed(p); return;
       }
@@ -192,26 +195,26 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       current = result.resource;
       if (!unchanged(current, p) || current.revision !== confirmed.revision) { changed(p); return; }
       if (cleared(current) || failedInitialLogin(current)) { p.busy = false; await remove(p, current); return; }
-      const data = document(current), state = object(data.subscription), operation = object(state.server_operation), pendingOperation = object(state.pending);
+      const data = document(current), state = object(data.subscription), operation = operationOf(state), pendingOperation = object(state.pending);
       if (state.recovery_required || data.removal) {
         pause(p, copy("account-deletion.extra.775c54df4fb5"), copy("account-deletion.extra.a395ee1c2744")); return;
       }
       const status = await clients.system.getStatus({});
       if (!live(p)) return;
-      if (!status.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1)) {
+      if (!status.capabilities.includes((claude ? SystemCapability.CLAUDE_SUBSCRIPTIONS_V1 : SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1))) {
         pause(p, copy("account-deletion.extra.28727cc37ddb"), copy("account-deletion.extra.432a2d9f1fe9")); return;
       }
       if (state.pending) {
-        if (pendingOperation.action !== "logout" || pendingOperation.machine_id || !isEntityId(text(pendingOperation.id)) || operation.id !== pendingOperation.id || operation.action !== "logout" || pendingOperation.canceled) {
+        if (pendingOperation.action !== "logout" || (claude ? pendingOperation.machine_id !== state.owner_machine_id : Boolean(pendingOperation.machine_id)) || !isEntityId(text(pendingOperation.id)) || operation.id !== pendingOperation.id || operation.action !== "logout" || pendingOperation.canceled) {
           pause(p, copy("account-deletion.extra.2ce284085b03"), copy("account-deletion.extra.37108ca03e31")); return;
         }
         p.operation = text(pendingOperation.id); p.minimumRevision = current.revision; p.observing = true;
         setView({ stage: Stage.Logout }); return;
       }
-      if (!isEntityId(p.connection) || !isEntityId(text(state.generation)) || object(state.lease).action && object(state.lease).action !== "execute" || operation.native_started) {
+      if (claude && (!isEntityId(text(state.owner_machine_id)) || !isEntityId(text(state.native_profile_id))) || !isEntityId(p.connection) || !isEntityId(text(state.generation)) || object(state.lease).action && object(state.lease).action !== "execute" || operation.native_started) {
         changed(p); return;
       }
-      p.logout = create(RequestSubscriptionRequestSchema, { mutation: { id: current.id, expectedRevision: current.revision, requestId: newRequestId() }, action: SubscriptionAction.LOGOUT });
+      p.logout = create(RequestSubscriptionRequestSchema, { mutation: { id: current.id, expectedRevision: current.revision, requestId: newRequestId() }, action: SubscriptionAction.LOGOUT, ...(claude ? {machineId:text(state.owner_machine_id)} : {}) });
     } catch (error) { pause(p, "", "", undefined, error); }
     finally { p.busy = false; }
     if (p.logout && live(p)) await logout(p);
@@ -225,7 +228,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     try {
       const result = await clients.resource.getResource({ kind: EntityKind.ACCOUNT, id: initial.id });
       if (!live(p)) return;
-      if (!serviceAccount(result.resource, initial.id, SubscriptionServiceId.ChatGPT)) { changed(p); return; }
+      if (!serviceAccount(result.resource, initial.id, service)) { changed(p); return; }
       setConfirmed(result.resource); p.disposed = true;
       setView({ stage: Stage.Confirmation });
     } catch (error) { pause(p, "", "", undefined, error); }

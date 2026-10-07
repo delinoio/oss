@@ -34,9 +34,12 @@ type nativeCommand struct {
 }
 
 type probeAccount struct {
-	TokenSource  string `json:"tokenSource"`
-	APIProvider  string `json:"apiProvider"`
-	APIKeySource string `json:"apiKeySource,omitempty"`
+	TokenSource      string  `json:"tokenSource"`
+	APIProvider      string  `json:"apiProvider"`
+	APIKeySource     string  `json:"apiKeySource,omitempty"`
+	Email            *string `json:"email,omitempty"`
+	Organization     *string `json:"organization,omitempty"`
+	SubscriptionType *string `json:"subscriptionType,omitempty"`
 }
 
 type probeAgent struct {
@@ -87,16 +90,28 @@ func validateInitialize(raw []byte, expected domain.ID) error {
 }
 
 func validateInitializeProfile(raw []byte, permission, apiKeySource string) error {
+	return validateInitializeMode(raw, permission, apiKeySource, false)
+}
+
+func validateInitializeMode(raw []byte, permission, apiKeySource string, subscription bool) error {
 	var result initializeResult
 	tokenSource := "none"
 	if apiKeySource != "" {
 		tokenSource = "ANTHROPIC_AUTH_TOKEN"
 	}
 	if domain.Decode(raw, &result) != nil || result.Commands == nil ||
-		result.Account == nil || result.Account.TokenSource != tokenSource || result.Account.APIProvider != "firstParty" || result.Account.APIKeySource != apiKeySource ||
+		result.Account == nil || result.Account.APIProvider != "firstParty" ||
 		result.PID <= 0 || result.CurrentPermissionMode != permission || result.OutputStyle != "default" ||
 		!explicitFalse(result.RemoteControlAutoEnable) || !explicitFalse(result.RemoteControlAutoOnByDefault) || !explicitFalse(result.IDERCAutoEnableGate) ||
 		result.FastModeState != "off" || result.FastModeDisabledReason != "sdk_opt_in_required" {
+		return incompatible()
+	}
+	account := result.Account
+	if subscription {
+		if account.TokenSource != "" || account.APIKeySource != "" || account.Email == nil || domain.Text(*account.Email, "native identity", 512, true) != nil || account.SubscriptionType == nil || !slices.Contains([]string{"pro", "max", "team", "enterprise"}, *account.SubscriptionType) || account.Organization != nil && domain.Text(*account.Organization, "native organization", 512, false) != nil {
+			return incompatible()
+		}
+	} else if account.TokenSource != tokenSource || account.APIKeySource != apiKeySource || account.Email != nil || account.Organization != nil || account.SubscriptionType != nil {
 		return incompatible()
 	}
 	if apiKeySource == "" {
@@ -110,8 +125,19 @@ func validateInitializeProfile(raw []byte, permission, apiKeySource string) erro
 		Account map[string]json.RawMessage `json:"account"`
 	}
 	_ = json.Unmarshal(raw, &fields)
-	if _, declared := fields.Account["apiKeySource"]; declared != (apiKeySource != "") {
+	if _, declared := fields.Account["apiKeySource"]; declared != (apiKeySource != "" && !subscription) {
 		return incompatible()
+	}
+	if subscription {
+		if _, declared := fields.Account["tokenSource"]; declared {
+			return incompatible()
+		}
+	} else {
+		for _, key := range []string{"email", "organization", "subscriptionType"} {
+			if _, declared := fields.Account[key]; declared {
+				return incompatible()
+			}
+		}
 	}
 	if !uniqueText(result.AvailableOutputStyles, 32, 128) || !slices.Contains(result.AvailableOutputStyles, result.OutputStyle) ||
 		len(result.Agents) == 0 || len(result.Agents) > 64 || len(result.Models) == 0 || len(result.Models) > 256 {

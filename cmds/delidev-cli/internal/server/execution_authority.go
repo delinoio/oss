@@ -124,7 +124,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
 		return empty, executionDenied()
 	}
-	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService == domain.SubscriptionChatGPT && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && input.Configuration.Harness == domain.Codex
+	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService.Harness() == input.Configuration.Harness && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && (input.Configuration.Harness == domain.Codex || input.Configuration.Harness == domain.ClaudeCode)
 	var provider domain.Provider
 	var operations []apiproxy.Operation
 	if !managed {
@@ -144,6 +144,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if managed {
 		state := account.Subscription
 		if state == nil || state.RecoveryRequired || state.Lease == nil {
+			return empty, executionDenied()
+		}
+		if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
 			return empty, executionDenied()
 		}
 		lease := state.Lease

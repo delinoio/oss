@@ -10,7 +10,7 @@ import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
 
-export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", BeginGoogleGemini = "begin-google-gemini", BeginBaseten = "begin-baseten", Profiles = "profiles", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
+export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", BeginGoogleGemini = "begin-google-gemini", BeginBaseten = "begin-baseten", Profiles = "profiles", ClaudeSubscriptionOpen = "claude-subscription-open", ClaudeSubscriptionReopen = "claude-subscription-reopen", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
 export enum AccountOAuthProfile { OpenRouter = "openrouter", HuggingFace = "hugging-face", GoogleGemini = "google-gemini", Baseten = "baseten" }
 export interface OAuthNativeResult { generation: string; callback_url?: string; code?: number[]; state?: number[]; profiles?: AccountOAuthProfile[]; denied?: boolean }
 export type OAuthNativeControl = (opening: string, action: OAuthNativeAction, generation: string, attempt: string, authorization: string) => Promise<OAuthNativeResult>;

@@ -128,8 +128,8 @@ func (c ExecutionConfiguration) Validate() error {
 	if c.SubscriptionService != "" && (!c.Subscription || !c.SubscriptionService.Valid() || c.SubscriptionService.Harness() != c.Harness || c.ProviderID != "") {
 		return Fail(RecoveryRequired, "Invalid retained subscription identity.", "Preserve the original snapshot; create a new explicitly configured session.")
 	}
-	if c.Subscription && c.Harness != Codex {
-		return Fail(Unsupported, "Only Codex has a managed subscription execution profile.", "Keep other harnesses on their separately supported API profiles.")
+	if c.Subscription && c.Harness != Codex && (c.Harness != ClaudeCode || c.SubscriptionService != SubscriptionClaude) {
+		return Fail(Unsupported, "This harness has no subscription execution profile.", "Select a supported native subscription profile.")
 	}
 	if c.OpenCodeContext != nil && (c.Harness != OpenCode || c.OpenCodeContext.Validate() != nil) {
 		return Fail(RecoveryRequired, "The retained OpenCode context metadata is invalid.", "Preserve the original model selection and metadata provenance.")
