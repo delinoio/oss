@@ -411,10 +411,18 @@ function projectRepository() {
 }
 
 async function fillProject(repository: Resource, name = "Direct project") {
-  fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: name } });
-  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Creation repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const projectName = await screen.findByRole("textbox", { name: "Project name" });
+  fireEvent.change(projectName, { target: { value: name } });
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  return projectName;
+}
+
+async function chooseProjectRepository() {
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Creation repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
 }
 
 it.each([false, true])("preserves the mounted conversation or New session draft while creating a project (new session %s)", async newSession => {
@@ -427,7 +435,7 @@ it.each([false, true])("preserves the mounted conversation or New session draft 
   fireEvent.click(opener);
   await fillProject(repository);
   expect(screen.getByRole("textbox", { name: newSession ? "First message" : "Message" })).toBe(composer);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
   fireEvent.click(opener);
@@ -463,7 +471,7 @@ it.each([false, true])("closes the compact drawer before creation and returns fo
   const dialog = await screen.findByRole("dialog", { name: "New Project" });
   expect(drawer.hasAttribute("open")).toBe(false);
   expect(document.querySelectorAll("dialog[open]")).toHaveLength(1);
-  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Name" })));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("searchbox", { name: "Search repository names" })));
   if (pending) {
     await fillProject(repository);
     fireEvent.click(within(dialog).getByRole("button", { name: "Save Project" }));
@@ -481,8 +489,7 @@ it("retains the original uncertain project request when either external creation
   value.saveConfiguration.mockRejectedValueOnce(new ConnectError("The original response was lost.", Code.Unavailable));
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
   fireEvent.click(await screen.findByRole("button", { name: "New project" }));
-  await fillProject(repository);
-  const name = screen.getByRole("textbox", { name: "Name" });
+  const name = await fillProject(repository);
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
   const original = value.saveConfiguration.mock.calls[0][0];
@@ -491,7 +498,7 @@ it("retains the original uncertain project request when either external creation
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "New project" })));
   expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create a project" }));
-  expect(await screen.findByRole("textbox", { name: "Name" })).toBe(name);
+  expect(name.isConnected).toBe(true);
   expect((name as HTMLInputElement).value).toBe("Direct project");
   expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.saveConfiguration).toHaveBeenCalledOnce();
@@ -525,11 +532,12 @@ it.each(["surface", "conversation", "connection"] as const)("disposes a hidden p
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   }
   fireEvent.click(await screen.findByRole("button", { name: "New project" }));
-  const name = await screen.findByRole("textbox", { name: "Name" });
+  await chooseProjectRepository();
+  const name = await screen.findByRole("textbox", { name: "Project name" });
   fireEvent.change(name, { target: { value: "Replacement draft" } });
   await waitFor(() => expect(document.activeElement).toBe(name));
   await act(async () => resolve({ resource: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Original accepted project" }) }) }));
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect(screen.getByRole("textbox", { name: "Project name" })).toBe(name);
   expect((name as HTMLInputElement).value).toBe("Replacement draft");
   expect(document.activeElement).toBe(name);
   expect(value.saveConfiguration).toHaveBeenCalledOnce();
@@ -542,17 +550,16 @@ it("retains the creation draft through same-identity reconnect and preserves a d
   const authority = { endpoint: "http://127.0.0.1:9090", serverId: newRequestId() }, deviceId = newRequestId();
   const view = render(<App transport={value.transport} pairingAuthority={authority} currentDeviceId={deviceId} />);
   fireEvent.click(await screen.findByRole("button", { name: "New project" }));
-  await fillProject(repository);
-  const name = screen.getByRole("textbox", { name: "Name" });
+  const name = await fillProject(repository);
   view.rerender(<App transport={replacement.transport} pairingAuthority={authority} currentDeviceId={deviceId} connectionEpoch={1} />);
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect(name.isConnected).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect((name as HTMLInputElement).value).toBe("Direct project");
   expect(value.saveConfiguration).not.toHaveBeenCalled();
   expect(replacement.saveConfiguration).toHaveBeenCalledOnce();
   expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
 }, fullShellTimeoutMs);
 
