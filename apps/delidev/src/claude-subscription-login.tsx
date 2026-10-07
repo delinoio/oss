@@ -248,7 +248,7 @@ export function useClaudeSubscriptionLogin(
   const machineRequest = useCallback((token: string) => ({ filter: { kind: EntityKind.MACHINE, pageSize: 50, pageToken: token } }), []);
   const machineProject = useCallback((response: { resources: Resource[]; nextPageToken: string }) => {
     if (response.resources.length > 50 || new Set(response.resources.map(row => row.id)).size !== response.resources.length || response.resources.some(row => row.kind !== EntityKind.MACHINE || !isEntityId(row.id) || row.revision < 1n || row.documentJson.byteLength > 1 << 20)) throw new ConnectError("The Runner page is unavailable.", Code.DataLoss);
-    return { rows: response.resources.map(row => ({ id: row.id, revision: row.revision, label: resourceName(row), eligible: eligibleRunner(row), observation: claudeRunnerObservation(row) })), payload: response.resources, nextPageToken: response.nextPageToken };
+    return { rows: response.resources.map(row => ({ id: row.id, revision: row.revision, label: resourceName(row), eligible: validRunnerObservation(row) && eligibleRunner(row), observation: claudeRunnerObservation(row) })), payload: response.resources, nextPageToken: response.nextPageToken };
   }, []);
   const machineReader = useConnectPaginationReader(ResourceQuery.listResources, machineRequest, machineProject);
   const inspectRunner = useRunnerRemediation();

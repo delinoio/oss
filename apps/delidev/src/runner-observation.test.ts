@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { expect, it } from "vitest";
 import { encode } from "./documents";
-import { claudeRunnerObservation } from "./runner-observation";
+import { claudeRunnerObservation, validRunnerObservation } from "./runner-observation";
 const installation = { harness: "claude-code", state: "detected", version: "2.1.236", protocol_verified: true, protocol: { state: "verified" } };
 const observed = (overrides: Record<string, unknown> = {}) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 9007199254740993n, documentJson: encode({ name: "Runner", disabled: false, worker_capabilities: ["native-claude-subscriptions-v1"], installations: [installation], ...overrides }) });
 it("projects independent closed Claude exclusion causes without interpreting native messages", () => {
@@ -22,4 +22,11 @@ it("treats malformed and unknown evidence as unavailable without exposing conten
     expect(projection.cause).toBe("unavailable"); expect(JSON.stringify(projection)).not.toContain("private"); expect(JSON.stringify(projection)).not.toContain("secret");
   }
   expect(claudeRunnerObservation(create(ResourceSchema, { ...observed(), documentJson: new TextEncoder().encode("{bad native secret") })).cause).toBe("unavailable");
+});
+
+it("does not accept malformed flags or unbounded observations as current Runner ownership", () => {
+  expect(validRunnerObservation(observed({ disabled: "false" }))).toBe(false);
+  expect(validRunnerObservation(observed({ installations: [null] }))).toBe(false);
+  expect(validRunnerObservation(observed({ worker_capabilities: Array(257).fill("unknown") }))).toBe(false);
+  expect(validRunnerObservation(observed({ disabled: undefined }))).toBe(true);
 });
