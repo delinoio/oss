@@ -46,6 +46,8 @@ GitHub PATs now have the separate direct native storage primitive below. The acc
 
 The [doctor inspection boundary](cmds-delidev-diagnostics-contract.md) may open only an existing private vault with its original lock and server pin. It holds a non-creating exclusive lock, performs no scratch reconciliation or scope initialization, rejects writes/deletes and closes after inspection. Reading an exact sealed reference proves decryptability only; it never establishes provider readiness or enumerates unrelated native credentials.
 
+Subscription `AccountLogin` read failures omit the private generation/reference ID from vault logs, retaining only safe operation, owner, purpose and closed error classification. API reads keep their original reference diagnostics. This redaction changes no native access, exact-reference selection, ownership or mutation behavior.
+
 ## Envelope and persistence
 
 Each reference accepts 1–65,536 bytes. Its native OS record contains exactly 64 bytes: a random 256-bit wrapping root and a 256-bit keyed content commitment. Domain-separated HMAC-SHA256 derivation produces independent encryption and commitment keys. AES-256-GCM protects the payload with a fresh 96-bit nonce. Authenticated context binds the format/service version, server scope, owner, mutation and purpose. The private JSON record contains only that context, state and ciphertext. Neither a raw secret nor an unkeyed digest is persisted. The keyed commitment can bind internal receipt metadata; it is not an execution credential.

@@ -161,7 +161,10 @@ of successful device-language commit and existing tray availability.
 catalogs and native `.strings` from reconciled sources. Preparation, frontend
 build, widget build/tests and native packaging use it. `test:localization` checks
 catalog parity, interpolation, plural families, source hardcoding exceptions and
-reproducible outputs. Never hand-edit generated translations.
+reproducible outputs. Concurrent preparation skips unchanged output and publishes
+each generated compiler input through a unique same-directory atomic replacement.
+Compiler readers must observe complete old or complete new content; failed staging
+is removed. Never hand-edit generated translations.
 
 Run app-local `pnpm test`, root `cargo test`, native compilation, widget fixtures,
 `pnpm ci:contracts`, `pnpm ci:workflows` and changed-dependency security checks.

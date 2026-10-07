@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { AccountService, ConfigurationService, EntityKind, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
@@ -12,6 +12,16 @@ import { document, encode } from "./documents";
 import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
+
+async function choose(control: HTMLElement, name: string | RegExp) {
+  await waitFor(() => expect(control.matches(":disabled")).toBe(false));
+  fireEvent.click(control);
+  const popup = window.document.getElementById(control.getAttribute("aria-controls")!)!;
+  const option = await within(popup).findByRole("option", { name });
+  const id = option.dataset.pickerId;
+  fireEvent.click(option);
+  await waitFor(() => expect(control.dataset.value).toBe(id));
+}
 
 it("persists native Claude permission selection through the desktop and real Go configuration service", async () => {
   const { transport, providerOrigin } = fixture;
@@ -40,13 +50,19 @@ it("persists native Claude permission selection through the desktop and real Go 
   const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("radio", { name: "Claude Code" }));
-  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByRole("option", { name: "Claude settings API" }, { timeout: 5000 });
-  change("Account source", `api:${provider.id}`);
-  fireEvent.click(await screen.findByRole("checkbox", { name: /Claude API account/ })); next();
-  fireEvent.focus(screen.getByRole("combobox", { name: /^Model for / }));
+  const next = async () => {
+    await act(async () => {});
+    const button = screen.getByRole("button", { name: "Next" });
+    await waitFor(() => expect(button.matches(":disabled")).toBe(false));
+    fireEvent.click(button);
+  };
+  await choose(screen.getByRole("combobox", { name: "Account source 1" }), "Claude settings API");
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Claude API account/ }));
+  await waitFor(() => expect(window.document.querySelector("[data-source-group] .worker-routing ol strong")?.textContent).toBe("Claude API account"));
+  await next();
+  fireEvent.focus(await screen.findByRole("combobox", { name: /^Model for / }));
   fireEvent.click(await screen.findByRole("option", { name: /Claude settings model/ }, { timeout: 5000 }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false)); next();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false)); await next();
   change("Name", "Native Claude settings"); change("Claude permission mode", "dontAsk");
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
