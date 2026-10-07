@@ -8014,6 +8014,13 @@
       "declaration": "NativeAccountingGroup",
       "member": "model",
       "number": 8
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "RequestDiagnostic",
+      "member": "model",
+      "number": 33
     }
   ]
 }
