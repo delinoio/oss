@@ -95,6 +95,22 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
+	var nativeProfile *nativeClaudeProfile
+	nativeJoined := true
+	expectedProxyPath := "/api-proxy/v1"
+	if input.Configuration.Subscription {
+		expectedProxyPath = ""
+		var finish func(bool) error
+		nativeProfile, finish, err = beginClaudeSubscriptionExecution(ctx, config, owner, input)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err := finish(nativeJoined); err != nil {
+				output, returned = nil, err
+			}
+		}()
+	}
 	rawToken, err := security.RandomToken()
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -118,7 +134,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
-	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
+	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != expectedProxyPath {
 		return nil, publicationUncertain()
 	}
 	nativeCtx, cancelNative := context.WithCancel(config.executionContext)
@@ -131,6 +147,16 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger},
 		Version: input.Installation.Version, Home: filepath.Join(home, "claude"), Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: input.SessionID, Model: input.Configuration.NativeModel,
 		Permission: permission, Effort: effort, Instructions: input.Configuration.Instructions, API: claude.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token},
+	}
+	if nativeProfile != nil {
+		nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: nativeProfile.home}
+		if err := security.PrivateDir(filepath.Join(manager.Root, "processes", string(owner))); err != nil {
+			return nil, err
+		}
+		nativeProfile.managedLease.journal.ExecutionStarted = true
+		if err := writeJSON(nativeProfile.managedLease.journalPath, nativeProfile.managedLease.journal); err != nil {
+			return nil, publicationUncertain()
+		}
 	}
 	config.startup.setPhase(domain.StartupInitialize)
 	var api *claude.APISession
@@ -153,11 +179,17 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		api, err = claude.OpenAPISession(nativeCtx, nativeConfig)
 	}
 	if err != nil {
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			nativeJoined = false
+		}
 		return nil, err
 	}
 	defer func() {
 		if err := api.Close(); err != nil {
-			output, returned = nil, config.startup.cleanupFailure(returned, err)
+			if err := api.Close(); err != nil {
+				nativeJoined = false
+				output, returned = nil, config.startup.cleanupFailure(returned, err)
+			}
 		}
 	}()
 	if err := config.startup.ready(ctx, ""); err != nil {

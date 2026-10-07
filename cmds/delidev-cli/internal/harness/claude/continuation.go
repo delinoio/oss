@@ -135,7 +135,7 @@ func (s *APISession) readRetainedTranscript(ctx context.Context) (TranscriptObse
 	if err != nil {
 		return TranscriptObservation{}, err
 	}
-	observed, err := readMainTranscriptWithInlineTools(ctx, s.config.Home, s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, &tools, s.config.Process.Logger)
+	observed, err := readMainTranscriptWithInlineTools(ctx, historyHome(s.config), s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, &tools, s.config.Process.Logger)
 	if err != nil {
 		return TranscriptObservation{}, err
 	}

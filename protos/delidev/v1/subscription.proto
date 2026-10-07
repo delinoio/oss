@@ -42,6 +42,8 @@ service SubscriptionService {
   rpc RequestSubscription(RequestSubscriptionRequest) returns (RequestSubscriptionResponse);
   rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
   rpc GetSubscriptionProgress(GetSubscriptionProgressRequest) returns (GetSubscriptionProgressResponse);
+  rpc SubmitSubscriptionLoginCode(SubmitSubscriptionLoginCodeRequest) returns (SubmitSubscriptionLoginCodeResponse);
+  rpc TakeSubscriptionLoginCode(TakeSubscriptionLoginCodeRequest) returns (TakeSubscriptionLoginCodeResponse);
   rpc ForwardSubscriptionCallback(ForwardSubscriptionCallbackRequest) returns (ForwardSubscriptionCallbackResponse);
   rpc WatchSubscription(WatchSubscriptionRequest) returns (stream WatchSubscriptionResponse);
   rpc TakeSubscription(TakeSubscriptionRequest) returns (TakeSubscriptionResponse);
@@ -140,6 +142,8 @@ message GetSubscriptionProgressResponse {
   string generation = 6;
   // Safe metadata for the original native failure; absent on older servers.
   CodexDiagnostic diagnostic = 7;
+  SubscriptionLoginMethod login_method = 8;
+  NativeSubscriptionDiagnostic native_diagnostic = 9;
 }
 message WatchSubscriptionRequest {
   string machine_id = 1;
@@ -162,6 +166,8 @@ message TakeSubscriptionResponse {
   bytes bundle = 3;
   uint64 lease_revision = 4;
   bytes installation_json = 5;
+  // Opaque original-Runner profile reference, never authentication bytes.
+  string native_profile_id = 6;
 }
 message PublishSubscriptionProgressRequest {
   string account_id = 1;
@@ -170,6 +176,10 @@ message PublishSubscriptionProgressRequest {
   string instance_id = 4;
   string url = 5;
   string user_code = 6;
+  SubscriptionLoginState state = 7;
+  SubscriptionLoginMethod login_method = 8;
+  NativeSubscriptionDiagnostic native_diagnostic = 9;
+  string suggested_name = 10;
 }
 message PublishSubscriptionProgressResponse {
   bool canceled = 1;
@@ -184,10 +194,61 @@ message FinishSubscriptionRequest {
   bool cleanup_confirmed = 7;
   bool refresh_confirmed = 8;
   bool succeeded = 9;
+  NativeSubscriptionIdentity native_identity = 10;
 }
 message FinishSubscriptionResponse {
   Resource account = 1;
   bool replayed = 2;
+}
+
+enum SubscriptionLoginMethod {
+  SUBSCRIPTION_LOGIN_METHOD_UNSPECIFIED = 0;
+  SUBSCRIPTION_LOGIN_METHOD_BROWSER_CALLBACK = 1;
+  SUBSCRIPTION_LOGIN_METHOD_BROWSER_CODE = 2;
+}
+enum NativeSubscriptionDiagnosticPhase {
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_UNSPECIFIED = 0;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_DISCOVERY = 1;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_VERSION = 2;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_RUNTIME = 3;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_LAUNCH = 4;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_LOGIN = 5;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_STATUS = 6;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_EXECUTION = 7;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_HISTORY = 8;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_CLEANUP = 9;
+}
+message NativeSubscriptionDiagnostic {
+  string detected_version = 1;
+  string required_version = 2;
+  NativeSubscriptionDiagnosticPhase phase = 3;
+  string code = 4;
+  string correlation_id = 5;
+}
+message NativeSubscriptionIdentity {
+  string profile_id = 1;
+  // Worker-local keyed identity comparison, never raw native account content.
+  string identity_commitment = 2;
+}
+message SubmitSubscriptionLoginCodeRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  // Transient original CLI input. Excluded from receipts, resources and logs.
+  bytes code = 3;
+}
+message SubmitSubscriptionLoginCodeResponse {
+  bool accepted = 1;
+}
+message TakeSubscriptionLoginCodeRequest {
+  string account_id = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string operation_id = 5;
+}
+message TakeSubscriptionLoginCodeResponse {
+  bytes code = 1;
+  string submission_id = 2;
 }
 
 // Quota reads and explicit credit consumption share the original native owner.
