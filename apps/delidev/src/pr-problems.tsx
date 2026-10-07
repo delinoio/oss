@@ -1,6 +1,10 @@
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
+import { useStablePageRevisions, paginationError, invalidGitHubPage, resourceProjection, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, IntegrationQuery, ResourceQuery, PullRequestProblemCollectionKind, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
@@ -126,23 +130,39 @@ function ProblemRow({ row, set, value, selection, disabled, refreshed }: { row: 
 }
 export function PRProblemHistory({ selection }: { selection: PRProblemSelection }) {
   useLocale();
-  const [page, setPage] = useState("");
+  const { root, bindRoot } = useGitHubScrollRoot();
+  const binding = useRef<string | undefined>(undefined);
+  const validateBoundary = useStablePageRevisions(JSON.stringify([selection.remoteRepositoryId, selection.pullRequestId]));
   const workflow = usePRWorkflow();
   const collectionKey = prSelectionKey(selection);
   const kind = workflow.collectionKinds.get(collectionKey) ?? PullRequestProblemCollectionKind.FEEDBACK;
-  const history = useQuery(IntegrationQuery.listPullRequestProblems, { remoteRepositoryId: selection.remoteRepositoryId, pullRequestId: selection.pullRequestId, pageSize: 20, pageToken: page }, options);
-  const refreshed = () => { if (page) setPage(""); else void history.refetch(); };
+  const request = useCallback((token: string) => ({ remoteRepositoryId: selection.remoteRepositoryId, pullRequestId: selection.pullRequestId, pageSize: 20, pageToken: token }), [selection.remoteRepositoryId, selection.pullRequestId]);
+  const project = useCallback((reply: { problemSet?: Resource; problems: Resource[]; nextPageToken: string }, token: string) => {
+    const set = reply.problemSet, rows = reply.problems;
+    if (rows.length > 20 || new Set(rows.map(row => row.id)).size !== rows.length || (set ? !readPRProblemSet(set, selection) || rows.some(row => !readPRProblem(row, set, selection)) : rows.length > 0 || Boolean(reply.nextPageToken))) invalidGitHubPage();
+    const identity = set ? set.id + ':' + set.revision.toString() : "";
+    if (!token) binding.current = identity;
+    else if (binding.current !== identity) invalidGitHubPage();
+    validateBoundary(token, rows.map(resourceProjection));
+    return { rows: rows.map(resourceProjection), nextPageToken: reply.nextPageToken, payload: [reply] };
+  }, [selection.repositoryId, selection.remoteRepositoryId, selection.pullRequestId, selection.number, validateBoundary]);
+  const reader = useConnectPaginationReader(IntegrationQuery.listPullRequestProblems, request, project);
+  const traversal = usePaginationChain(JSON.stringify([selection.remoteRepositoryId, selection.pullRequestId]), true, reader);
+
+  const history = { data: traversal.payloadPages.at(-1)?.payload[0], isFetching: Boolean(traversal.loading), isPending: !traversal.loaded && !traversal.error, error: paginationError(traversal.error?.failure) };
+  const refreshed = traversal.refresh;
   const collect = useRetainedMutation(`pr-problem-refresh:${selection.repositoryId}:${selection.number}`, IntegrationQuery.refreshPullRequestProblems, refreshed);
   const set = history.data?.problemSet, rows = history.data?.problems ?? [];
   const summary = document(set), latestCI = object(summary.ci), latestConflict = object(summary.conflict);
   const values = set ? rows.map(row => readPRProblem(row, set, selection)) : [];
   const valid = rows.length <= 20 && new Set(rows.map(row => row.id)).size === rows.length && (set ? Boolean(readPRProblemSet(set, selection)) && values.every(Boolean) : !rows.length && !history.data?.nextPageToken) && (!history.data?.nextPageToken || rows.length > 0);
   const busy = collect.busy || collect.uncertain || history.isFetching;
-  return <section aria-label={copy("pr-problems.retainedPrProblems_cf443b")}><h4>{copy("pr-problems.retainedPrProblems_cf443b")}</h4><p>{copy("pr-problems.originalFeedbackRequiredCiFailuresAnd_cfc64c")}</p>
+  usePaginationRefresh(IntegrationQuery.listPullRequestProblems, request(""), !collect.busy && !collect.uncertain, traversal.refresh);
+  return <section ref={bindRoot} aria-label={copy("pr-problems.retainedPrProblems_cf443b")}><h4>{copy("pr-problems.retainedPrProblems_cf443b")}</h4><p>{copy("pr-problems.originalFeedbackRequiredCiFailuresAnd_cfc64c")}</p>
     <label>{copy("pr-problems.problemCollectionKind_8e764b")}<select disabled={busy} value={kind} onChange={event => workflow.setCollectionKind(collectionKey, Number(event.target.value) as PullRequestProblemCollectionKind)}><option value={PullRequestProblemCollectionKind.FEEDBACK}>{copy("pr-problems.publishedFeedback_12d23d")}</option><option value={PullRequestProblemCollectionKind.CI}>{copy("pr-problems.requiredCi_5cd645")}</option><option value={PullRequestProblemCollectionKind.CONFLICT}>{copy("pr-problems.mergeConflict_d6b6f5")}</option></select></label><button disabled={busy} onClick={() => void collect.send({ repositoryId: selection.repositoryId, number: selection.number, requestId: newRequestId(), kind })}>{copy("pr-problems.collectSelectedPrProblems_224d57")}</button><button disabled={history.isFetching} onClick={refreshed}>{copy("pr-problems.refreshRetainedHistory_f50db9")}</button>
     <Problem error={collect.error || history.error} />{collect.uncertain ? <button disabled={collect.busy} onClick={collect.retry}>{copy("pr-problems.retryOriginalProblemCollection_31fab2")}</button> : null}
-    {history.isPending ? <p role="status">{copy("pr-problems.readingRetainedPrProblems_b5a9b7")}</p> : !valid ? <p role="alert">{copy("pr-problems.theRetainedProblemPageIsInconsistent_6cec39")}</p> : <>{history.error ? <p>{copy("pr-problems.previousRetainedHistoryIsShownRefresh_37aacd")}</p> : null}{set ? <div><p><LocalizedText id="pr-problems.inventoryRevision_c7429c" components={{ s0: <>{set.revision.toString()}</> }} /></p>{summary.feedback != null ? <p><LocalizedText id="pr-problems.latestFeedbackCollection_43b0c1" components={{ s0: <>{formatTimestamp(text(object(summary.feedback).observed_at))}</> }} /></p> : null}{summary.ci != null ? <p><LocalizedText id="pr-problems.latestCiEvaluation_7dc33a" components={{ s0: <>{text(latestCI.state)}</>, s1: <>{text(latestCI.reason)}</>, s2: <>{formatTimestamp(text(object(latestCI.observation).observed_at))}</> }} /></p> : null}{summary.conflict != null ? <p><LocalizedText id="pr-problems.latestMergeability_2446bf" components={{ s0: <>{text(latestConflict.state)}</>, s1: <>{formatTimestamp(text(object(latestConflict.observation).observed_at))}</> }} /></p> : null}</div> : <p>{copy("pr-problems.noProblemsHaveBeenCollectedFor_2e8578")}</p>}{rows.map((row, index) => <ProblemRow key={row.id} row={row} set={set!} value={values[index]!} selection={selection} disabled={busy || Boolean(history.error)} refreshed={refreshed} />)}{set && !rows.length ? <p>{copy("pr-problems.noRetainedProblemsOnThisPage_c6abc5")}</p> : null}</>}
-    <nav aria-label={copy("pr-problems.retainedProblemPages_3c24f7")}><button disabled={!page || busy} onClick={() => setPage("")}>{copy("pr-problems.firstProblemPage_cdd66d")}</button><button disabled={!valid || !history.data?.nextPageToken || busy || Boolean(history.error)} onClick={() => setPage(history.data!.nextPageToken)}>{copy("pr-problems.nextProblemPage_de4c68")}</button></nav>
+    {history.isPending ? <p role="status">{copy("pr-problems.readingRetainedPrProblems_b5a9b7")}</p> : !valid ? <p role="alert">{copy("pr-problems.theRetainedProblemPageIsInconsistent_6cec39")}</p> : <>{history.error ? <p>{copy("pr-problems.previousRetainedHistoryIsShownRefresh_37aacd")}</p> : null}{set ? <div><p><LocalizedText id="pr-problems.inventoryRevision_c7429c" components={{ s0: <>{set.revision.toString()}</> }} /></p>{summary.feedback != null ? <p><LocalizedText id="pr-problems.latestFeedbackCollection_43b0c1" components={{ s0: <>{formatTimestamp(text(object(summary.feedback).observed_at))}</> }} /></p> : null}{summary.ci != null ? <p><LocalizedText id="pr-problems.latestCiEvaluation_7dc33a" components={{ s0: <>{text(latestCI.state)}</>, s1: <>{text(latestCI.reason)}</>, s2: <>{formatTimestamp(text(object(latestCI.observation).observed_at))}</> }} /></p> : null}{summary.conflict != null ? <p><LocalizedText id="pr-problems.latestMergeability_2446bf" components={{ s0: <>{text(latestConflict.state)}</>, s1: <>{formatTimestamp(text(object(latestConflict.observation).observed_at))}</> }} /></p> : null}</div> : history.data ? <p>{copy("pr-problems.noProblemsHaveBeenCollectedFor_2e8578")}</p> : null}<ScrollPayloadWindow query={traversal} root={root} active={!collect.busy && !collect.uncertain}>{(payload, projections) => payload.map(reply => { const pageSet = reply.problemSet, ids = visiblePageIds(traversal.pages, projections); return reply.problems.filter(row => ids.has(row.id)).map(row => <ProblemRow key={row.id} row={row} set={pageSet!} value={readPRProblem(row, pageSet!, selection)!} selection={selection} disabled={busy || Boolean(history.error)} refreshed={refreshed} />); })}</ScrollPayloadWindow>{set && !rows.length ? <p>{copy("pr-problems.noRetainedProblemsOnThisPage_c6abc5")}</p> : null}</>}
+    <ScrollContinuation query={traversal} root={root} active={!collect.busy && !collect.uncertain} label={copy("pr-problems.retainedPrProblems_cf443b")} />
   </section>;
 }
 export function OpenPRProblemHistory({ selection }: { selection: PRProblemSelection }) {

@@ -145,7 +145,7 @@ it("retries an uncertain original link after closing without replacing its input
 it("rejects a foreign or malformed retained page and discards it when closed", async () => {
   const f = fixture(); expect(readSessionPR(f.rows[0], f.session.id)).toBeTruthy();
   f.replace([{ ...f.rows[0], sessionId: newRequestId() }]); render(f.view); fireEvent.click(screen.getByRole("button", { name: "Show PR associations" }));
-  await screen.findByText("The association page is inconsistent and cannot be displayed."); expect(screen.queryByRole("button", { name: "Unlink #17" })).toBeNull();
+  await screen.findByRole("alert"); expect(screen.queryByRole("button", { name: "Unlink #17" })).toBeNull();
   expect(readSessionPR({ ...f.rows[0], documentJson: encode({ ...f.value, remote_repository_id: 9007199254740993 }) }, f.session.id)).toBeUndefined();
   fireEvent.click(screen.getByRole("button", { name: "Close PR associations" })); await waitFor(() => expect(f.client.getQueryCache().getAll().filter(q => JSON.stringify(q.queryKey).includes("sessionId"))).toHaveLength(0));
 });

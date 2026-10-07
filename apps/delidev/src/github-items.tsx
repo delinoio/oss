@@ -1,6 +1,10 @@
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
+import { useStablePageRevisions, paginationError, invalidGitHubPage, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { IntegrationQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text, type Document } from "./documents";
@@ -43,15 +47,57 @@ export function githubResult(raw: Uint8Array, selected: Resource, query: GitHubQ
   if (!validPRObservation(result, query, object(result.items[0]))) return;
   return result;
 }
-function QueryResult({ selected, query, change, back, active = true }: { selected: Resource; query: GitHubQuery; change: (query: GitHubQuery) => void; back?: () => void; active?: boolean }) {
+function QueryResultPage({ selected, query, change, back, result, validated }: { selected: Resource; query: GitHubQuery; change: (query: GitHubQuery) => void; back?: () => void; result: { data?: unknown; error?: unknown; isFetching: boolean; refetch: () => void }; validated?: Document }) {
   useLocale();
-  const result = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: selected.id, schemaVersion: 1, queryJson: encode(query) }, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0, staleTime: 0 });
-  const data = result.data?.schemaVersion === 1 ? githubResult(result.data.documentJson, selected, query) : undefined;
+  const data = validated;
+
   return <section aria-label={copy("github-items.githubQueryResults_66fac2")}>{query.operation === QueryOperation.Checks || query.operation === QueryOperation.Statuses ? <label>{copy("github-items.prResultPageSize_70aca4")}<select value={query.page_size} disabled={result.isFetching} onChange={(event) => change({ ...query, page: 1, page_size: Number(event.target.value) })}><option value={1}>1</option><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option></select></label> : null}<div className="actions">{back ? <button onClick={back}>{copy("github-items.backToResults_c7ef0e")}</button> : null}<button disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("github-items.refreshGithubResults_bd77c0")}</button></div>{result.isFetching ? <p role="status">{copy("github-items.readingGithub_ebcef8")}</p> : null}<Problem error={result.error} />{result.data && !data ? <p role="alert">{copy("github-items.theGithubResultDoesNotMatch_3c7624")}</p> : null}
     {data ? <><p>{result.error || result.isFetching ? copy("github-items.previousObservation_1bd8a6") : copy("github-items.observed_64fa8a")}: {formatTimestamp(text(data.observed_at))} · {query.kind === ItemKind.PullRequest ? copy("github-items.pullRequests_d9e3f2") : copy("github-items.issues_666067")}{query.page ? copy("github-items.page_bff0c8", { v0: query.operation, v1: query.state ? copy("github-items.message_2fa20b", { v0: query.state }) : "", v2: query.page }) : ""}</p>{data.total_count != null ? <p><LocalizedText id="github-items.githubReportsMatchesSearchExposesAt_f846ae" components={{ s0: <>{text(data.total_count)}</> }} /></p> : null}{data.incomplete ? <p role="status">{copy("github-items.githubReturnedIncompleteSearchResultsMissing_29a156")}</p> : null}{data.search_limit_reached ? <p role="status">{copy("github-items.githubSSearchLimitHasBeen_c17e40")}</p> : null}
       {items(data.items).map((raw) => { const item = object(raw), author = object(item.author); return <article className="result" key={`${text(item.identity_source)}:${text(item.id)}`}><h4>#{text(item.number)} {text(item.title)}</h4><p><LocalizedText id="github-items.updated_e646db" components={{ s0: <>{text(item.state)}</>, s1: <>{item.draft ? copy("github-items.draft_e98b44") : ""}</>, s2: <>{text(author.login) || copy("github-items.extra.a326f4758492")}</>, s3: <>{author.kind === "unknown" ? copy("github-items.unverifiedAuthorType_716680") : ""}</>, s4: <>{formatTimestamp(text(item.updated_at))}</> }} /></p>{query.operation === QueryOperation.Detail || isObservation(query) ? <><p><LocalizedText id="github-items.githubAddress_e2d25b" components={{ s0: <code>{text(item.url)}</code> }} /></p><OpenGitHub url={text(item.url)} disabled={result.isFetching || Boolean(result.error)} />{query.kind === ItemKind.PullRequest ? <><p>{text(item.head_ref)} → {text(item.base_ref)}</p><p><LocalizedText id="github-items.head_20fc49" components={{ s0: <code>{text(item.head_sha)}</code> }} /></p><PRSource value={item.head_repository} /><p><LocalizedText id="github-items.mergedMergeability_7591f8" components={{ s0: <>{item.merged ? copy("github-items.yes_85a39a") : copy("github-items.no_1ea442")}</>, s1: <>{item.mergeable == null ? copy("github-items.unknown_b764cd") : item.mergeable ? copy("github-items.mergeable_e8007a") : copy("github-items.notMergeable_89299a")}</> }} /></p><p>{copy("github-items.mergeabilityDoesNotEstablishCiStatus_54c5f6")}</p>{query.operation === QueryOperation.Detail ? <div className="actions"><button disabled={result.isFetching} onClick={() => change({ kind: ItemKind.PullRequest, operation: QueryOperation.Diff, number: text(item.number) })}>{copy("github-items.readPrDiff_ae38b9")}</button><button disabled={result.isFetching} onClick={() => change({ kind: ItemKind.PullRequest, operation: QueryOperation.Checks, number: text(item.number), page: 1, page_size: 20 })}>{copy("github-items.readPrChecks_6a6724")}</button><button disabled={result.isFetching} onClick={() => change({ kind: ItemKind.PullRequest, operation: QueryOperation.Statuses, number: text(item.number), page: 1, page_size: 20 })}>{copy("github-items.readPrCommitStatuses_8b822d")}</button><button disabled={result.isFetching} onClick={() => change({ kind: ItemKind.PullRequest, operation: QueryOperation.Rules, number: text(item.number) })}>{copy("github-items.readActivePrRules_54e2ce")}</button><button disabled={result.isFetching} onClick={() => change({ kind: ItemKind.PullRequest, operation: QueryOperation.CI, number: text(item.number) })}>{copy("github-items.evaluateRequiredCi_397b69")}</button><button disabled={result.isFetching} onClick={() => change({ kind: ItemKind.PullRequest, operation: QueryOperation.Feedback, number: text(item.number) })}>{copy("github-items.readPublishedFeedback_a07548")}</button><button disabled={result.isFetching} onClick={() => change({ kind: ItemKind.PullRequest, operation: QueryOperation.Reviewers, number: text(item.number) })}>{copy("github-items.verifyFeedbackAuthors_8f3a58")}</button></div> : null}</> : null}{query.kind === ItemKind.PullRequest ? <OpenPRProblemHistory selection={{ repositoryId: selected.id, remoteRepositoryId: text(object(data.repository).id), pullRequestId: text(item.id), number: text(item.number) }} /> : null}{isObservation(query) ? <PRObservation value={data} query={query} item={item} /> : <pre>{text(item.body) || copy("github-items.extra.c8c2e1d98310")}</pre>}</> : <button disabled={result.isFetching} onClick={() => change({ kind: query.kind, operation: QueryOperation.Detail, number: text(item.number) })}><LocalizedText id="github-items.read_37b452" components={{ s0: <>{text(item.number)}</> }} /></button>}</article>; })}
-      {items(data.items).length === 0 ? <p><LocalizedText id="github-items.noOnThisReturnedPage_87c317" components={{ s0: <>{query.kind === ItemKind.Issue ? copy("github-items.issues_02e3fe") : copy("github-items.pullRequests_dcf2de")}</> }} /></p> : null}{query.page ? <nav aria-label={copy("github-items.githubResultPages_52bc9b")}><button disabled={result.isFetching || query.page === 1} onClick={() => change({ ...query, page: 1 })}>{copy("github-items.firstGithubPage_fbf165")}</button><button disabled={result.isFetching || !data.next_page} onClick={() => change({ ...query, page: Number(data.next_page) })}>{copy("github-items.nextGithubPage_1ae370")}</button></nav> : null}</> : null}
+      {items(data.items).length === 0 ? <p><LocalizedText id="github-items.noOnThisReturnedPage_87c317" components={{ s0: <>{query.kind === ItemKind.Issue ? copy("github-items.issues_02e3fe") : copy("github-items.pullRequests_dcf2de")}</> }} /></p> : null}</> : null}
   </section>;
+}
+
+type QueryProps = { selected: Resource; query: GitHubQuery; change: (query: GitHubQuery) => void; back?: () => void; active?: boolean };
+function QueryResult(props: QueryProps) { return props.query.page ? <PaginatedQueryResult {...props} /> : <SingleQueryResult {...props} />; }
+function SingleQueryResult({ active = true, ...props }: QueryProps) {
+  const result = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: props.selected.id, schemaVersion: 1, queryJson: encode(props.query) }, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0, staleTime: 0 });
+  const data = result.data?.schemaVersion === 1 ? githubResult(result.data.documentJson, props.selected, props.query) : undefined;
+  return <QueryResultPage {...props} result={result} validated={data} />;
+}
+function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
+  const { root, bindRoot } = useGitHubScrollRoot();
+  const scope = JSON.stringify([props.selected.id, String(props.selected.revision), props.query]);
+  const binding = useMemo(() => ({ head: "" }), [scope]);
+  const validateBoundary = useStablePageRevisions(scope);
+  const request = useCallback((token: string) => ({ repositoryId: props.selected.id, schemaVersion: 1, queryJson: encode({ ...props.query, page: token ? Number(token) : props.query.page }) }), [props.selected, props.query]);
+  const project = useCallback((reply: { schemaVersion: number; documentJson: Uint8Array }, token: string) => {
+    const query = { ...props.query, page: token ? Number(token) : props.query.page };
+    const data = reply.schemaVersion === 1 ? githubResult(reply.documentJson, props.selected, query) : undefined;
+    if (!data) invalidGitHubPage();
+    // Checks and statuses page their observations, while the PR envelope is
+    // repeated. Retain the original head and deduplicate the observed rows.
+    const item = object(items(data.items)[0]);
+    const observation = query.operation === QueryOperation.Checks ? "checks" : query.operation === QueryOperation.Statuses ? "statuses" : undefined;
+    if (observation) {
+      const head = text(item.id) + ":" + text(item.head_sha) + ":" + text(item.base_sha);
+      if (!token) binding.head = head;
+      else if (binding.head !== head) invalidGitHubPage();
+    }
+    const source = observation ? items(object(data[observation])[observation === "checks" ? "runs" : "contexts"]) : items(data.items);
+    const rows = source.map(raw => { const row = object(raw); return { id: observation ? observation + ":" + text(row.id) : text(row.identity_source) + ":" + text(row.id), revision: BigInt(Date.parse(text(row.updated_at) || text(item.updated_at))) }; });
+    validateBoundary(token, rows);
+    return { rows, nextPageToken: data.next_page ? String(data.next_page) : "", payload: [{ data, query }] };
+  }, [props.selected, props.query, validateBoundary, binding]);
+  const reader = useConnectPaginationReader(IntegrationQuery.queryRepositoryIntegration, request, project);
+  const chain = usePaginationChain(scope, active, reader);
+  usePaginationRefresh(IntegrationQuery.queryRepositoryIntegration, request(""), active, chain.refresh);
+  return <div ref={bindRoot}>
+    <Problem error={paginationError(chain.error?.failure)} />
+    <ScrollPayloadWindow query={chain} root={root} active={active}>{(payload, projections) => payload.map(({ data, query }) => { const ids = visiblePageIds(chain.pages, projections); const observation = query.operation === QueryOperation.Checks ? "checks" : query.operation === QueryOperation.Statuses ? "statuses" : undefined; const field = observation === "checks" ? "runs" : "contexts";
+      const visible = observation ? { ...data, [observation]: { ...object(data[observation]), [field]: items(object(data[observation])[field]).filter(raw => ids.has(observation + ":" + text(object(raw).id))) } } : { ...data, items: items(data.items).filter(raw => { const item = object(raw); return ids.has(text(item.identity_source) + ":" + text(item.id)); }) }; return <QueryResultPage key={query.page} {...props} query={query} validated={visible} result={{ data, error: paginationError(chain.error?.failure), isFetching: Boolean(chain.loading), refetch: chain.refresh }} />; })}</ScrollPayloadWindow>
+    <ScrollContinuation query={chain} root={root} active={active} label={copy("github-items.githubQueryResults_66fac2")} />
+  </div>;
 }
 
 export interface PullRequestNavigation {

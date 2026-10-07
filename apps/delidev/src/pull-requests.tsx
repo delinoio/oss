@@ -1,3 +1,5 @@
+import { ScrollContinuation } from "./scroll-continuation";
+import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -102,7 +104,7 @@ function PendingPRActions() {
 
 export function PullRequests({ active, openSettings }: { active: boolean; openSettings: (destination?: SettingsEntryDestination) => void }) {
   useLocale();
-  const [repositoryPage, setRepositoryPage] = useState("");
+  const { root, bindRoot } = useGitHubScrollRoot();
   const [repositoryId, setRepositoryId] = useState("");
   const [expandedRepositoryId, setExpandedRepositoryId] = useState("");
   const [state, setState] = useState(ItemState.Open);
@@ -112,10 +114,9 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const [loaded, setLoaded] = useState<LoadedPullRequests>();
   const [navigation, setNavigation] = useState<PullRequestNavigation>();
   const closeDrawer = useCloseSidebarDrawer();
-  const repositories = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.REPOSITORY, pageSize: 50, pageToken: repositoryPage } }, { enabled: active });
-  const selectedOnPage = repositories.data?.resources.find((row) => row.id === repositoryId);
-  const selectedQuery = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: repositoryId }, { enabled: active && Boolean(repositoryId) && !selectedOnPage });
-  const selected = selectedOnPage ?? selectedQuery.data?.resource;
+  const repositories = useGitHubCatalog(EntityKind.REPOSITORY, active);
+  const selectedQuery = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: repositoryId }, { enabled: active && Boolean(repositoryId) });
+  const selected = selectedQuery.data?.resource;
   const config = document(selected);
   const configured = Boolean(selected && selected.schemaVersion === 1 && text(config.integration_id) && text(config.github_owner) && text(config.github_name));
   const searchValid = plainSearch(search.trim());
@@ -150,13 +151,13 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const filtersChanged = Boolean(loaded && (loaded.state !== state || loaded.search !== search.trim() || loaded.pageSize !== pageSize));
   return <>
     <SidebarSurface active={active} title={copy("pull-requests.pullRequests_d9e3f2")}>
-      <header className="sidebar-list-heading"><h3>{copy("pull-requests.repositories_1e32af")}</h3><button type="button" disabled={!active || repositories.isFetching} onClick={() => { if (repositoryPage) setRepositoryPage(""); else void repositories.refetch(); }}><Icon name="refresh" />{copy("pull-requests.refresh_0e9161")}</button></header>
-      <Problem error={repositories.error} />
+      <div ref={bindRoot}><header className="sidebar-list-heading"><h3>{copy("pull-requests.repositories_1e32af")}</h3><button type="button" disabled={!active || repositories.isFetching} onClick={repositories.refetch}><Icon name="refresh" />{copy("pull-requests.refresh_0e9161")}</button></header>
+      <Problem error={paginationError(repositories.error?.failure)} />
       {repositories.isPending && active ? <p role="status">{copy("pull-requests.loadingRepositories_460ca9")}</p> : null}
       {repositories.error && repositories.data ? <p className="sidebar-help">{copy("pull-requests.refreshFailedShowingThePreviousRepository_6c5a34")}</p> : null}
       {repositories.data?.resources.map((row) => <RepositoryNavigationRow key={row.id} row={row} selected={repositoryId === row.id} expanded={expandedRepositoryId === row.id} choose={() => chooseRepository(row)} toggleDetails={() => setExpandedRepositoryId((current) => current === row.id ? "" : row.id)} />)}
       {!repositories.error && repositories.data?.resources.length === 0 ? <div className="sidebar-repository-empty"><svg className="sidebar-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h7l2 2h9v11H3z" /></svg><p>{copy("pull-requests.noRepositoriesOnThisPage_249a41")}</p></div> : null}
-      <nav className="sidebar-repository-pages" aria-label={copy("pull-requests.repositoryPages_eeaada")}><button disabled={!repositoryPage || repositories.isFetching} onClick={() => setRepositoryPage("")}>{copy("pull-requests.first_a151ce")}</button><button disabled={!repositories.data?.nextPageToken || repositories.isFetching} onClick={() => setRepositoryPage(repositories.data!.nextPageToken)}>{copy("pull-requests.next_1ff57a")}</button></nav>
+      <ScrollContinuation query={repositories} root={root} active={active} label={copy("pull-requests.repositories_1e32af")} showInitial={false} /></div>
       {repositoryId ? <>
         <section className="sidebar-query-options" aria-label={copy("pull-requests.queryOptions_aeced2")}><h3>{copy("pull-requests.queryOptions_aeced2")}</h3>
         <form className="sidebar-form" onSubmit={load}>
@@ -167,7 +168,7 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
           {!searchValid ? <p role="alert">{copy("pull-requests.usePlainWordsNumbersSpacesHyphens_0bce88")}</p> : null}
           {selectedQuery.error ? <Problem error={selectedQuery.error} /> : null}
           {selected && !configured ? <p className="sidebar-help">{copy("pull-requests.setASupportedGithubProfileOwner_c9cd89")}</p> : null}
-          {repositoryId && !selectedOnPage && selectedQuery.isPending ? <p role="status">{copy("pull-requests.loadingRepositorySettings_98ac56")}</p> : null}
+          {repositoryId && selectedQuery.isPending ? <p role="status">{copy("pull-requests.loadingRepositorySettings_98ac56")}</p> : null}
           <label>{copy("pull-requests.prPageSize_f04cb9")}<select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>{[1, 5, 10, 20].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
           <p className="sidebar-help">{copy("pull-requests.noGithubRequestIsMadeUntil_55d1b2")}</p>
           <button className="primary" disabled={!canLoad}>{copy("pull-requests.loadPullRequests_c952ba")}</button>

@@ -3,7 +3,7 @@ import { feedbackObservation } from "./github-feedback-fixture";
 import { ciObservation } from "./github-ci-fixture";
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -50,7 +50,7 @@ it("sends plain issue search separately and discloses incomplete search", async 
   await screen.findByText(/GitHub returned incomplete search results/);
   const args = JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson));
   expect(args).toMatchObject({ kind: "issue", operation: "search", search: "fix OR 오류", page: 1 });
-  fireEvent.click(screen.getByRole("button", { name: "Next GitHub page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
   await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson)).page).toBe(2));
 });
 it("rejects a foreign revision without rendering partial items", async () => {
@@ -171,4 +171,47 @@ it("rejects inconsistent source identities and source data outside PR detail", a
     const value = JSON.parse(new TextDecoder().decode(read.documentJson)); value.items[0].head_repository = forkSource();
     expect(githubResult(encode(value), f.repository, other)).toBeUndefined();
   }
+});
+
+
+it("retains accepted rows after a failed append and explicitly retries the same numeric page", async () => {
+  const f = fixture(), original = f.query.getMockImplementation()!;
+  let failed = false;
+  f.query.mockImplementation(async request => {
+    const query = JSON.parse(new TextDecoder().decode(request.queryJson));
+    if (query.page === 2 && !failed) { failed = true; throw new ConnectError("Read unavailable", Code.Unavailable); }
+    const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson));
+    if (query.page === 2) data.items = [{ ...data.items[0], id: "9007199254740994", node_id: "ITEM_18", number: "18", title: "Later fixture title", url: "https://github.com/fixture-owner/repo/pull/18" }];
+    return { ...reply, documentJson: encode(data) };
+  });
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" })); await screen.findByRole("button", { name: "Read #17" });
+  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" })); await screen.findByRole("button", { name: "Retry" });
+  expect(screen.getByRole("button", { name: "Read #17" })).toBeTruthy(); expect(f.query).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" })); await screen.findByRole("button", { name: "Read #18" });
+  expect(f.query.mock.calls[2][0]).toEqual(f.query.mock.calls[1][0]);
+  expect(screen.getByRole("button", { name: "Read #17" })).toBeTruthy();
+});
+
+it.each(["checks", "statuses"])("appends %s observations and deduplicates their IDs instead of the repeated PR envelope", async operation => {
+  const f = fixture(), original = f.query.getMockImplementation()!;
+  f.query.mockImplementation(async request => {
+    const query = JSON.parse(new TextDecoder().decode(request.queryJson)), reply = await original(request);
+    if (query.operation !== operation) return reply;
+    const data = JSON.parse(new TextDecoder().decode(reply.documentJson));
+    if (operation === "checks") {
+      const first = data.checks.runs[0]; data.checks.total_count = "2";
+      data.checks.runs = query.page === 1 ? [first] : [first, { ...first, id: "54", node_id: "CHECK_54", name: "Later observed check" }];
+    } else {
+      const first = { id: "61", node_id: "STATUS_61", context: "First observed status", native_state: "pending", state: "pending", created_at: "2026-09-27T00:00:00Z", updated_at: "2026-09-28T00:00:00Z" };
+      data.statuses.total_count = "2";
+      data.statuses.contexts = query.page === 1 ? [first] : [first, { ...first, id: "62", node_id: "STATUS_62", context: "Later observed status" }];
+    }
+    if (query.page === 1) data.next_page = 2;
+    return { ...reply, documentJson: encode(data) };
+  });
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" })); fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
+  fireEvent.click(await screen.findByRole("button", { name: operation === "checks" ? "Read PR checks" : "Read PR commit statuses" }));
+  await screen.findByRole("table"); fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
+  await screen.findByText(operation === "checks" ? "Later observed check" : "Later observed status");
+  expect(screen.getAllByText(operation === "checks" ? "Fixture Check" : "First observed status")).toHaveLength(1);
 });
