@@ -20,7 +20,7 @@ func (c ExecutionConfiguration) OpenCodePrimaryForInput(mode SessionMode) (OpenC
 		return "", err
 	}
 	o := c.Options
-	if c.Harness != OpenCode || c.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+	if c.Harness != OpenCode || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 		return "", Fail(Unsupported, "The selected OpenCode options need an additional native settings adapter.", "Preserve every explicit selection; unsupported settings cannot be omitted or translated.")
 	}
 	return o.OpenCodePrimaryForInput(mode)

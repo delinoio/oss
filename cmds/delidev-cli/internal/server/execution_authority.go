@@ -202,7 +202,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 	case domain.OpenCode:
 		o := input.Configuration.Options
 		validGeneration := input.Version == 4 && input.Validate() == nil || input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
-		if !validGeneration || (input.Version != 4 && input.Installation.Version != domain.OpenCodeProtocolVersion) || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+		if !validGeneration || (input.Version != 4 && input.Installation.Version != domain.OpenCodeProtocolVersion) || protocol != domain.OpenAIChat || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 			return nil
 		}
 		if _, err := o.OpenCodePrimaryForInput(input.Input.Mode); err == nil {

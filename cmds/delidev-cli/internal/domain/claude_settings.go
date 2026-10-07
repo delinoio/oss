@@ -10,11 +10,12 @@ const (
 	ClaudePermissionAcceptEdits ClaudePermissionMode = "acceptEdits"
 	ClaudePermissionDontAsk     ClaudePermissionMode = "dontAsk"
 	ClaudePermissionBypass      ClaudePermissionMode = "bypassPermissions"
+	ClaudePermissionAuto        ClaudePermissionMode = "auto"
 )
 
 func (p ClaudePermissionMode) Valid() bool {
 	switch p {
-	case ClaudePermissionDefault, ClaudePermissionPlan, ClaudePermissionAcceptEdits, ClaudePermissionDontAsk, ClaudePermissionBypass:
+	case ClaudePermissionDefault, ClaudePermissionPlan, ClaudePermissionAcceptEdits, ClaudePermissionDontAsk, ClaudePermissionBypass, ClaudePermissionAuto:
 		return true
 	default:
 		return false
@@ -59,16 +60,11 @@ func (c ExecutionConfiguration) ClaudeAPIInputPermission(mode SessionMode) (Clau
 	if c.Harness != ClaudeCode || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 		return "", Fail(Unsupported, "The selected Claude options need an additional native settings adapter.", "Preserve the explicit selection; unsupported settings cannot be omitted or translated.")
 	}
-	if c.Effort != "" && !validClaudeEffort(c.Effort) {
-		return "", Fail(Unsupported, "The selected effort is not supported by this Claude profile.", "Use an exact supported native effort or leave it unspecified.")
-	}
 	return o.ClaudePermissionForInput(mode)
 }
 
+// Effort values are forwarded unchanged. The native CLI determines support;
+// retained and observed values still require bounded, well-formed text.
 func validClaudeEffort(value string) bool {
-	switch value {
-	case "low", "medium", "high", "xhigh", "max":
-		return true
-	}
-	return false
+	return Text(value, "native effort", 256, true) == nil
 }

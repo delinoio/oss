@@ -171,9 +171,6 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		clear(managed.response.Bundle)
 	}()
 	if i.Assignment.Configuration.Subscription {
-		if settings.Options.Permission != domain.PermissionReadOnly && settings.Options.Permission != domain.PermissionWorkspaceWrite {
-			return nil, domain.CompactionUncertain()
-		}
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}

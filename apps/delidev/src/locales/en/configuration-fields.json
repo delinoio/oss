@@ -34,7 +34,7 @@
   "configuration-fields.savingSettingsDoesNotEnableClaude_05773c": "Saving settings does not enable Claude execution; its public execution integration is still unavailable.",
   "configuration-fields.permissionMode_c7a8e6": "Permission mode",
   "configuration-fields.usesTheHarnessDefaultReviewPermissions_077a8d": "Uses the harness default. Review permissions before execution.",
-  "configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a": "Full access permits native operations beyond the workspace when supported. Review this scope before using the Agent Worker.",
+  "configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a": "Full access permits operations beyond the workspace. With a Codex subscription, native tools can also access the managed authentication file.",
   "configuration-fields.aClaudePermissionSelectionIsRetained_c20333": "A Claude permission selection is retained: <s0/>. It cannot be applied to this harness.",
   "configuration-fields.clearClaudePermissionSelection_e65f5d": "Clear Claude permission selection",
   "configuration-fields.select_586618": "Select {{v0}}",
@@ -95,7 +95,7 @@
   "configuration-fields.approvalPolicy_89d24f": "Approval policy",
   "configuration-fields.approvalReviewModel_ef091f": "Approval review model",
   "configuration-fields.serviceTier_e9cf60": "Service tier",
-  "configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d": "Unsupported native options produce a server error; no fallback harness or account is selected.",
+  "configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d": "Selected options are passed unchanged to the native tool, which determines support. Native errors are shown without retrying with different settings.",
   "configuration-fields.restrict_b3faa2": "Restrict {{v0}}",
   "configuration-fields.anEmptySelectionPermitsNoneTurning_60a4d7": "An empty selection permits none. Turning this restriction off permits every otherwise eligible entry.",
   "configuration-fields.allowed_54fcb8": "Allowed {{v0}}",
@@ -171,5 +171,8 @@
   "configuration-fields.choices.request": "The latest request for these choices failed.",
   "configuration-fields.choices.requestRetrying": "The latest request for these choices failed; retrying.",
   "configuration-fields.accountFormatKeepsKey": "Your saved API key is kept. The new format applies to future executions.",
-  "configuration-fields.accountFormatFutureExecutions": "Running executions keep their original format. Validate the new format before starting new executions."
+  "configuration-fields.accountFormatFutureExecutions": "Running executions keep their original format. Validate the new format before starting new executions.",
+  "configuration-fields.nativeOptionUnavailable": "This execution interface has no corresponding setting. Saved values are retained until you explicitly clear them.",
+  "configuration-fields.clearRetainedNativeOption": "Clear retained option",
+  "configuration-fields.nativePermissionUnavailable": "This tool uses its native permissions. Codex filesystem sandbox modes have no corresponding setting in this execution interface."
 }

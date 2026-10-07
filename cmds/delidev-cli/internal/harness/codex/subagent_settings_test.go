@@ -31,17 +31,25 @@ func TestNativeSubagentConfigurationUsesTypedOriginalStartAndResume(t *testing.T
 	}
 }
 
-func TestNativeSubagentCompatibilityRejectsBeforeThreadSend(t *testing.T) {
-	for _, incompatible := range []domain.AgentOptions{{SubagentModel: "unavailable-model"}, {SubagentModel: "child-model", SubagentEffort: "ultra"}} {
+func TestNativeSubagentSelectionIsForwardedWithoutAdvertisementGate(t *testing.T) {
+	for _, selected := range []domain.AgentOptions{{SubagentModel: "unadvertised-model", SubagentEffort: "future-effort", MaxConcurrency: 1024}, {SubagentModel: "child-model", SubagentEffort: "ultra"}} {
 		client, capture := openThreadFixture(t, "thread-ready")
 		settings := threadSettings(t)
-		settings.Options.SubagentModel, settings.Options.SubagentEffort = incompatible.SubagentModel, incompatible.SubagentEffort
+		settings.Options.SubagentModel, settings.Options.SubagentEffort, settings.Options.MaxConcurrency = selected.SubagentModel, selected.SubagentEffort, selected.MaxConcurrency
 		_, err := client.StartThread(context.Background(), domain.NewID(), settings)
-		if domain.SafeError(err).Code != domain.Unsupported {
-			t.Fatal("unsupported native child configuration admitted", err)
+		if err != nil {
+			t.Fatal("advertisement gate retained", err)
 		}
-		if entries := capturedThreads(t, capture); len(entries) != 0 {
-			t.Fatal("incompatible child configuration sent a native thread request")
+		entries := capturedThreads(t, capture)
+		if len(entries) != 1 {
+			t.Fatal("native thread request was omitted or repeated")
+		}
+		config := entries[0]["params"].(map[string]any)["config"].(map[string]any)
+		if config["agents.default_subagent_model"] != selected.SubagentModel || config["agents.default_subagent_reasoning_effort"] != selected.SubagentEffort {
+			t.Fatal("selected values changed")
+		}
+		if selected.MaxConcurrency != 0 && config["agents.max_concurrent_threads_per_session"] != float64(selected.MaxConcurrency) {
+			t.Fatal("native concurrency was capped")
 		}
 	}
 }

@@ -36,7 +36,7 @@ func TestOpenCodeRequestedSettingsPreserveImmutableSelections(t *testing.T) {
 	}
 	for _, change := range []func(*domain.ExecutionConfiguration){
 		func(c *domain.ExecutionConfiguration) { c.Harness = domain.Codex },
-		func(c *domain.ExecutionConfiguration) { c.Effort = "high" },
+		func(c *domain.ExecutionConfiguration) { c.Effort = "invalid\x00effort" },
 		func(c *domain.ExecutionConfiguration) { c.Options.Permission = domain.PermissionReadOnly },
 		func(c *domain.ExecutionConfiguration) { c.Options.ApprovalPolicy = "never" },
 		func(c *domain.ExecutionConfiguration) { c.Options.ClaudePermission = domain.ClaudePermissionPlan },

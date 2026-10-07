@@ -21,7 +21,7 @@ export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Ant
 export enum Authentication { Bearer = "bearer", Key = "api-key", Keyless = "keyless", Subscription = "subscription" }
 export enum Routing { Fixed = "fixed", Priority = "priority", RoundRobin = "round-robin", Quota = "remaining-quota", Reset = "reset-window", Sequential = "sequential-exhaustion" }
 enum Permission { Default = "default", Read = "read-only", Workspace = "workspace-write", Full = "full-access" }
-enum ClaudePermission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions" }
+enum ClaudePermission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions", Auto = "auto" }
 export const editableKinds = [EntityKind.PROVIDER, EntityKind.MODEL, EntityKind.ACCOUNT, EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY, EntityKind.SETTINGS];
 export const kindNames: Partial<Record<EntityKind, string>> = { get [EntityKind.INTEGRATION]() { return copy("configuration-fields.githubProfile_5a175c"); }, get [EntityKind.PROVIDER]() { return copy("configuration-fields.provider_472590"); }, get [EntityKind.MODEL]() { return copy("configuration-fields.model_5e2c61"); }, get [EntityKind.ACCOUNT]() { return copy("configuration-fields.aiAccount_042001"); }, get [EntityKind.AGENT]() { return copy("configuration-fields.agentWorker_a4caa7"); }, get [EntityKind.TEMPLATE]() { return copy("configuration-fields.instructions_934652"); }, get [EntityKind.PROJECT]() { return copy("configuration-fields.project_985959"); }, get [EntityKind.MACHINE]() { return copy("configuration-fields.runnerDevice_37efe3"); }, get [EntityKind.REPOSITORY]() { return copy("configuration-fields.repository_13d6ff"); }, get [EntityKind.SETTINGS]() { return copy("configuration-fields.serverPreferences_eba66b"); } };
 export function newConfiguration(kind: EntityKind): Document {
@@ -37,9 +37,15 @@ export function newConfiguration(kind: EntityKind): Document {
     default: throw new Error("Unsupported configuration editor");
   }
 }
-export function TextField({ label, value, change, required = false, max = 256, disabled = false, markRequired = false, placeholder }: { label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean; markRequired?: boolean; placeholder?: string }) {
+export function NativeOptionExplanation({ value, clear, label }: { value: unknown; clear: () => void; label: string }) {
   useLocale();
-  return <label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<input aria-label={markRequired ? label : undefined} placeholder={placeholder} value={text(value)} required={required} maxLength={max} disabled={disabled} onChange={(event) => change(event.target.value)} /></label>;
+  const retained = value !== undefined && value !== "" && value !== 0;
+  return <><p>{copy("configuration-fields.nativeOptionUnavailable")}</p>{retained ? <button type="button" aria-label={`${copy("configuration-fields.clearRetainedNativeOption")}: ${label}`} onClick={clear}>{copy("configuration-fields.clearRetainedNativeOption")}</button> : null}</>;
+}
+export function TextField({ label, value, change, required = false, max = 256, disabled = false, markRequired = false, placeholder, unavailable = false }: { label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean; markRequired?: boolean; placeholder?: string; unavailable?: boolean }) {
+  useLocale();
+  const help = useId();
+  return <><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<input aria-label={markRequired ? label : undefined} aria-describedby={unavailable ? help : undefined} placeholder={placeholder} value={text(value)} required={required} maxLength={max} disabled={disabled || unavailable} onChange={(event) => change(event.target.value)} /></label>{unavailable ? <div id={help}><NativeOptionExplanation label={label} value={value} clear={() => change("")} /></div> : null}</>;
 }
 function Choice({ label, value, choices, change, disabled = false, inherited = false }: { label: string; value: unknown; choices: readonly string[]; change: (value: string) => void; disabled?: boolean; inherited?: boolean }) {
   useLocale();
@@ -63,8 +69,9 @@ function AgentPermissions({ harness, options, change }: { harness: unknown; opti
     </fieldset>;
   }
   return <>
-    <Choice label={copy("configuration-fields.permissionMode_c7a8e6")} value={options.permission} choices={Object.values(Permission)} change={(permission) => change({ ...options, permission })} />
+    <Choice label={copy("configuration-fields.permissionMode_c7a8e6")} value={options.permission} choices={harness === Harness.Codex ? Object.values(Permission) : [Permission.Default]} change={(permission) => change({ ...options, permission })} />
     {options.permission === Permission.Default ? <p>{copy("configuration-fields.usesTheHarnessDefaultReviewPermissions_077a8d")}</p> : null}
+    {harness !== Harness.Codex ? <p>{copy("configuration-fields.nativePermissionUnavailable")}</p> : null}
     {options.permission === Permission.Full ? <p className="notice">{copy("configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a")}</p> : null}
     {options.claude_permission !== undefined ? <><p role="alert"><LocalizedText id="configuration-fields.aClaudePermissionSelectionIsRetained_c20333" components={{ s0: <>{text(options.claude_permission)}</> }} /></p><button type="button" onClick={() => { const next = { ...options }; delete next.claude_permission; change(next); }}>{copy("configuration-fields.clearClaudePermissionSelection_e65f5d")}</button></> : null}
   </>;
@@ -182,10 +189,22 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
     return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
       core={<>{!props.workerWizard ? <AgentReconfiguration data={data} change={change} active={active} /> : null}<TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label={copy("configuration-fields.model_5e2c61")} kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required markRequired /></div> : null}</>}
       permissions={<AgentPermissions harness={data.harness} options={options} change={field("options")} />}
-      reasoning={<ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />}
+      reasoning={<><ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</>}
       accounts={props.workerWizard ? undefined : <><Choice label={copy("configuration-fields.accountRouting_0c3707")} value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label={copy("configuration-fields.accounts_8a7c8b")} kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
       instructions={<OrderedLinks label={copy("configuration-fields.instructionTemplates_6b009f")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}
-      native={<>{data.harness === Harness.Codex ? <CodexSubagentConfiguration options={options} active={active} change={(key, value) => option(key)(value)} /> : <><TextField label={copy("configuration-fields.subagentModel_28463c")} value={options.subagent_model} change={option("subagent_model")} /><ReasoningEffortField label={copy("configuration-fields.subagentEffort_eea2b1")} value={options.subagent_effort} change={option("subagent_effort")} /><label>{copy("configuration-fields.maximumConcurrency0UsesNativeDefault_451d39")}<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label></>}{data.harness !== Harness.Claude ? <TextField label={copy("configuration-fields.approvalPolicy_89d24f")} value={options.approval_policy} change={option("approval_policy")} /> : null}<TextField label={copy("configuration-fields.approvalReviewModel_ef091f")} value={options.approval_review_model} change={option("approval_review_model")} /><TextField label={copy("configuration-fields.serviceTier_e9cf60")} value={options.service_tier} change={option("service_tier")} /><p>{copy("configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d")}</p></>}
+      native={<>
+        {data.harness === Harness.Codex ? <CodexSubagentConfiguration options={options} active={active} change={(key, value) => option(key)(value)} /> : <>
+          <TextField label={copy("configuration-fields.subagentModel_28463c")} value={options.subagent_model} change={option("subagent_model")} unavailable />
+          <ReasoningEffortField label={copy("configuration-fields.subagentEffort_eea2b1")} value={options.subagent_effort} change={option("subagent_effort")} disabled />
+          <NativeOptionExplanation label={copy("configuration-fields.subagentEffort_eea2b1")} value={options.subagent_effort} clear={() => option("subagent_effort")("")} />
+          <label>{copy("configuration-fields.maximumConcurrency0UsesNativeDefault_451d39")}<input type="number" min={0} max={4294967295} step={1} value={Number(options.max_concurrency ?? 0)} disabled /></label>
+          <NativeOptionExplanation label={copy("configuration-fields.maximumConcurrency0UsesNativeDefault_451d39")} value={options.max_concurrency} clear={() => option("max_concurrency")(0)} />
+        </>}
+        <TextField label={copy("configuration-fields.approvalPolicy_89d24f")} value={options.approval_policy} change={option("approval_policy")} unavailable={data.harness !== Harness.Codex} />
+        <TextField label={copy("configuration-fields.approvalReviewModel_ef091f")} value={options.approval_review_model} change={option("approval_review_model")} unavailable />
+        <TextField label={copy("configuration-fields.serviceTier_e9cf60")} value={options.service_tier} change={option("service_tier")} unavailable={data.harness !== Harness.Codex} />
+        <p>{copy("configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d")}</p>
+      </>}
     />;
   }
   return null;

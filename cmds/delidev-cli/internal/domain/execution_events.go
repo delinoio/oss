@@ -100,7 +100,7 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 	}
 	switch configuration.Harness {
 	case Codex:
-		if o.OpenCodeAgent != "" || o.ClaudePermission != "" || configuration.Options.ClaudePermission != "" || !slices.Contains([]PermissionMode{PermissionReadOnly, PermissionWorkspaceWrite, PermissionFullAccess}, o.Permission) || !slices.Contains([]string{"untrusted", "on-request", "never"}, o.ApprovalPolicy) {
+		if o.OpenCodeAgent != "" || o.ClaudePermission != "" || configuration.Options.ClaudePermission != "" || !slices.Contains([]PermissionMode{PermissionReadOnly, PermissionWorkspaceWrite, PermissionFullAccess}, o.Permission) || Text(o.ApprovalPolicy, "observed approval policy", 256, true) != nil {
 			return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")
 		}
 	case ClaudeCode:
@@ -119,8 +119,8 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 		if err != nil {
 			return err
 		}
-		if !o.OpenCodeAgent.Valid() || o.ClaudePermission != "" || o.Permission != PermissionDefault || o.ApprovalPolicy != "" || o.Effort != nil || o.ServiceTier != nil || configuration.Effort != "" || configuration.Options.ServiceTier != "" {
-			return Fail(Unsupported, "The observed OpenCode settings contain an unsupported native policy.", "Preserve native primary-agent observations without invented sandbox, effort, approval or service-tier settings.")
+		if !o.OpenCodeAgent.Valid() || o.ClaudePermission != "" || o.Permission != PermissionDefault || o.ApprovalPolicy != "" || (configuration.Effort == "" && o.Effort != nil) || o.ServiceTier != nil || configuration.Options.ServiceTier != "" {
+			return Fail(Unsupported, "The observed OpenCode settings contain an unsupported native policy.", "Preserve native primary-agent permissions and independently verified effort without invented sandbox, approval or service-tier settings.")
 		}
 		if o.OpenCodeAgent != agent {
 			return Fail(RecoveryRequired, "The native OpenCode primary agent changed.", "Reconcile the original selection and input mode before sending input.")
