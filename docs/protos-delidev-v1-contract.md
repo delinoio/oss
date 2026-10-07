@@ -1,5 +1,17 @@
 # DeliDev v1 Connect contract
 
+## Grok Build subscription reservations
+
+The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
+reserves System login 39, System execution 40, Worker managed execution 21 and
+progress diagnostic field 10 under issue #964. The ledger also owns the new
+GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Establish
+the complete closure on main before active schemas, generated bindings or runtime
+support. Codex field 7 and existing System 30/35/36/37 and Worker 19 ownership
+remain unchanged. Reservations activate nothing and add no migration.
+
+
+
 ## Native Claude subscription reservations
 
 Issue #964 reserves System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker

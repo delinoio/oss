@@ -7194,6 +7194,186 @@
       "member": "submission_id",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1",
+      "number": 39
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1",
+      "number": 40
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MANAGED_GROK_SUBSCRIPTIONS_V1",
+      "number": 21
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressResponse",
+      "member": "grok_diagnostic",
+      "number": 10
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GrokDiagnostic",
+      "member": "detected_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GrokDiagnostic",
+      "member": "supported_version",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GrokDiagnostic",
+      "member": "phase",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GrokDiagnostic",
+      "member": "code",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GrokDiagnostic",
+      "member": "message",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GrokDiagnostic",
+      "member": "guidance",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GrokDiagnostic",
+      "member": "correlation_id",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_DISCOVERY",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_VERSION",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_PROFILE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_RUNTIME",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_LOGIN",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_REFRESH",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_LOGOUT",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_MODELS",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_EXECUTION",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_HISTORY",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "GrokDiagnosticPhase",
+      "member": "GROK_DIAGNOSTIC_PHASE_CLEANUP",
+      "number": 11,
+      "newDeclaration": true
     }
   ]
 }
