@@ -109,6 +109,21 @@ func TestClaudeCodeApprovalOnceAndMetadataOnly(t *testing.T) {
 	if a.Connection == nil || a.Health != domain.AccountReady || a.Subscription.OwnerMachineID != f.input.MachineID || a.Subscription.Lease != nil {
 		t.Fatal("native ownership was not committed")
 	}
+	connection, generation, profile := a.Connection.ID, a.Subscription.Generation, a.Subscription.NativeProfileID
+	reauthentication := claudeStart(t, f, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	refreshed, err := f.take(reauthentication, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finish.Mutation = &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: refreshed.LeaseRevision}
+	finish.LeaseId, finish.GenerationId = refreshed.LeaseId, refreshed.GenerationId
+	if _, err = f.client.FinishSubscription(ctx, subscriptionRequest(f.workerToken, finish)); err != nil {
+		t.Fatal(err)
+	}
+	_, a = f.record()
+	if a.Connection == nil || a.Connection.ID != connection || a.Subscription.Generation == generation || a.Subscription.NativeProfileID != profile || a.Subscription.OwnerMachineID != f.input.MachineID || a.Subscription.Lease != nil {
+		t.Fatal("reauthentication replaced the original profile or connection")
+	}
 	logout := claudeStart(t, f, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
 	ending, err := f.take(logout, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
 	if err != nil {
