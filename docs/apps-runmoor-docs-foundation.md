@@ -26,7 +26,10 @@
 - Development uses the consolidated `public-docs` server at `127.0.0.1:46302`; it owns the Runmoor section alongside the other project sections.
 - Public content is curated from the Runmoor project and command contracts. User-owned configuration and guest runner paths are public interfaces; repository-internal architecture and operational details remain in `docs/`.
 - Tart recovery guidance explains that ambiguous ownership keeps the VM, Runmoor state/data and capacity reservation intact even during force-stop. It directs users to restore a paired backup that contains the VM identity proof or to reimport the source under a new Runmoor identity while preserving uncertain resources; it never suggests repairing markers manually or deleting a same-named VM.
+- The Docker guide and CLI README describe volume deletion revalidation as unreleased until a containing release is verified. Explain preservation of conflicting volumes and incomplete cleanup, retry after failed inspection, non-force removal and the remaining replacement window between inspection and deletion. Keep label keys, internal records and API implementation details in the command contract; public guidance must not claim atomic race protection.
+- Docker cleanup guidance labels replacement-container preservation as unreleased. Explain that ambiguous ownership keeps cleanup incomplete while confirmed original termination and released capacity remain authoritative. Users preserve the replacement and Runmoor state while investigating; copied labels do not establish ownership.
 - The CLI release README remains in `cmds/runmoor/README.md` with a link to the consolidated Runmoor subpath.
+- The commands guide and CLI README label the scoped pause recovery fix as unreleased. Explain that late dependency failures and corrected reload cannot clear an explicit pause or scoped stop; the operator uses Resume after correcting the cause. Keep internal phase ownership in the command contract.
 
 ## Storage
 - Markdown sources live in `apps/public-docs/docs/runmoor`.
@@ -95,6 +98,8 @@ reload never starts a stopped service, downloads a release or downgrades.
 Explain that an interrupted operation can have changed the service executable
 before configuration acceptance. Users inspect status/the user service and retry
 with the same CLI/configuration; incompatible rollback remains prohibited.
+Explain that manual or tool-written service-definition edits that conflict with
+publication remain preserved and block native replacement until reconciliation.
 Keep the internal journal, temporary helper and native command choreography out
 of public guides. Preserve manual package installation and drained backup/rollback
 workflows and distinguish fixtures/builds from actual platform and job acceptance.

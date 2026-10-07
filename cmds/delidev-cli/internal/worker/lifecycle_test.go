@@ -27,6 +27,56 @@ func lifecycleFixture(t *testing.T) (string, Credential) {
 	}
 	return root, c
 }
+
+func TestDesktopRecoveryPreservesStopAndReservedAdmission(t *testing.T) {
+	root, _ := lifecycleFixture(t)
+	if status, launch, err := PrepareDesktopStart(root, false, ""); err != nil || launch || status.State != StateIdle {
+		t.Fatal(status, launch, err)
+	}
+	first, launch, err := PrepareDesktopStart(root, true, "")
+	if err != nil || !launch {
+		t.Fatal(first, launch, err)
+	}
+	if next, launch, err := PrepareDesktopStart(root, false, ""); err != nil || launch || next.Lifecycle.Generation != first.Lifecycle.Generation {
+		t.Fatal("unconfirmed admission replay", next, err)
+	}
+	if err := RequestStop(root, first.Lifecycle.Generation); err != nil {
+		t.Fatal(err)
+	}
+	if stopped, launch, err := PrepareDesktopStart(root, false, first.Lifecycle.Generation); err != nil || launch || stopped.Lifecycle.Desired != WorkerStopped {
+		t.Fatal("supervision reopened Stop", stopped, err)
+	}
+	second, launch, err := PrepareDesktopStart(root, true, "")
+	if err != nil || !launch || second.Lifecycle.Generation == first.Lifecycle.Generation {
+		t.Fatal("fresh launch", second, err)
+	}
+}
+
+func TestDesktopRecoveryRequiresExactOriginalExitAndPreservesHistory(t *testing.T) {
+	root, credential := lifecycleFixture(t)
+	first, _, err := PrepareStart(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := enterLifecycle(root, credential, first.Lifecycle.Generation); err != nil {
+		t.Fatal(err)
+	}
+	for _, exited := range []domain.ID{"", domain.NewID()} {
+		if _, launch, err := PrepareDesktopStart(root, false, exited); err == nil || launch {
+			t.Fatal("unknown exit authorized recovery")
+		}
+	}
+	second, launch, err := PrepareDesktopStart(root, false, first.Lifecycle.Generation)
+	if err != nil || !launch || second.Lifecycle.Generation == first.Lifecycle.Generation {
+		t.Fatal(second, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "worker-lifecycle-history", string(first.Lifecycle.Generation)+".json")); err != nil {
+		t.Fatal("original uncertainty erased", err)
+	}
+	if _, launch, err := PrepareDesktopStart(root, false, first.Lifecycle.Generation); err != nil || launch {
+		t.Fatal("old native exit replayed", err)
+	}
+}
 func TestLifecycleCancelReservedChildAndKeepOriginalGeneration(t *testing.T) {
 	root, _ := lifecycleFixture(t)
 	first, launch, err := PrepareStart(root)

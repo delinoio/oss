@@ -6,6 +6,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
+import { RepositoryRow } from "./repository-list";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { MutationIntents } from "./mutation";
@@ -908,4 +909,51 @@ it("scopes Transfer presentation and discards it on category departure", async (
   expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Retry the same configuration import" })).toBeNull();
   for (const button of within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")) expect((button as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("keeps repository source metadata inert and preserves schema-bound actions", () => {
+  const row = resource(EntityKind.REPOSITORY, { name: "Remote repository", remote_url: "https://user:private-value@example.invalid/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/saved/checkout" }], github_owner: "example", github_name: "repo", integration_id: newRequestId() });
+  const value = fixture([row]), edit = vi.fn(), remove = vi.fn();
+  const view = render(value.view(<RepositoryRow row={row} active edit={edit} remove={remove} />));
+  expect(screen.getByText("Git remote repository")).toBeTruthy();
+  expect(screen.getByText("GitHub configured")).toBeTruthy();
+  expect(screen.getByText("Saved settings only. Inspect access to check permissions.")).toBeTruthy();
+  expect(screen.getByText("/saved/checkout")).toBeTruthy();
+  expect(screen.getByText(row.id)).toBeTruthy();
+  expect(view.container.textContent).not.toContain("private-value");
+  expect(view.container.textContent).not.toContain("example.invalid");
+  expect((screen.getByRole("button", { name: "Edit Remote repository" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Edit Remote repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete Remote repository" }));
+  expect(edit).toHaveBeenCalledTimes(1); expect(remove).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole("button", { name: "Delete Remote repository" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Inspect GitHub access" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(value.list).not.toHaveBeenCalled(); expect(value.inspect).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled();
+  view.rerender(value.view(<RepositoryRow row={create(ResourceSchema, { ...row, schemaVersion: 99 })} active edit={edit} remove={remove} />));
+  expect(screen.getByText("Unsupported format")).toBeTruthy();
+  expect(screen.getAllByRole("button").every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+  expect(screen.queryByText("/saved/checkout")).toBeNull();
+  expect(screen.getByText(row.id)).toBeTruthy();
+});
+
+it("keeps repository continuation empties and failed refreshes distinct from a final empty first page", async () => {
+  let fail = false;
+  const value = fixture([], { readResources: (kind, token) => {
+    if (kind !== EntityKind.REPOSITORY) return { resources: [] };
+    if (fail) throw new ConnectError("Synthetic read failure", Code.PermissionDenied);
+    return { resources: [], nextPageToken: token ? "" : "repository-page-2" };
+  } });
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+  await screen.findByText("No repositories on this page.");
+  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  fail = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  expect(screen.queryByText("No repositories on this page.")).toBeNull();
+  expect(screen.queryByText("No saved entries.")).toBeNull();
 });

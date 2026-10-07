@@ -8,6 +8,21 @@ import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("./generate-checksums.sh", import.meta.url));
 
+test("unsigned candidates never invoke an installed cosign, even when signing is otherwise required", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "checksum-unsigned-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, "bin");
+  const artifacts = join(root, "artifacts");
+  mkdirSync(bin);
+  mkdirSync(artifacts);
+  writeFileSync(join(bin, "cosign"), '#!/bin/sh\necho "Unexpected signing call" >&2\nexit 1\n', { mode: 0o755 });
+  writeFileSync(join(artifacts, "binary"), "abc");
+  execFileSync("bash", [script, "--artifacts-dir", artifacts, "--skip-signing"], {
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, REQUIRE_COSIGN: "1" }, stdio: "pipe",
+  });
+  assert.equal(readFileSync(join(artifacts, "SHA256SUMS"), "utf8"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  binary\n");
+});
+
 function run(artifacts, sigstore) {
   const bin = mkdtempSync(join(tmpdir(), "checksum-signing-stub-"));
   writeFileSync(join(bin, "cosign"), '#!/bin/sh\nwhile [ "$#" -gt 1 ]; do shift; done\ntest -f "$1"\n', { mode: 0o755 });

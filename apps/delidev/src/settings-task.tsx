@@ -25,11 +25,16 @@ export function SettingsTasks({ children }: { children: ReactNode }) {
   return <HostContext.Provider value={host}>{children}<div className="settings-task-outlet" ref={setOutlet} /></HostContext.Provider>;
 }
 
+export function SettingsTaskStatusOutlet({ className = "" }: { className?: string }) {
+  const host = useContext(HostContext);
+  return <div className={`settings-task-status ${className}`} ref={host?.setStatusTarget} />;
+}
+
 export function SettingsTaskBackground({ children }: { children: ReactNode }) {
   const host = useContext(HostContext);
   // Dialogs are portaled outside this fieldset. A hidden unresolved task still
   // disables replacement writes, while its explicit outcome opener stays usable.
-  return <><div className="settings-task-status" ref={host?.setStatusTarget} /><fieldset className="settings-task-background" disabled={host?.locked} inert={host?.modal || undefined} aria-hidden={host?.modal || undefined} onClickCapture={event => {
+  return <><SettingsTaskStatusOutlet /><fieldset className="settings-task-background" disabled={host?.locked} inert={host?.modal || undefined} aria-hidden={host?.modal || undefined} onClickCapture={event => {
     if (event.target instanceof Element) event.target.closest<HTMLButtonElement>("button")?.focus({ preventScroll: true });
   }}>{children}</fieldset></>;
 }
@@ -55,7 +60,7 @@ function containTab(event: KeyboardEvent<HTMLDialogElement>) {
   else if (!event.shiftKey && (active === last || !controls.includes(active as HTMLElement))) { event.preventDefault(); first.focus(); }
 }
 
-interface DialogProps extends SettingsTaskPresentation { close: () => void; children: ReactNode; retained?: boolean; onDismiss?: () => void }
+interface DialogProps extends SettingsTaskPresentation { close: () => void; children: ReactNode; retained?: boolean; onDismiss?: () => void; activation?: number; fallbackFocus?: () => HTMLElement | null }
 export function SettingsTaskDialog(props: DialogProps) {
   const parent = useContext(SettingsTaskContext);
   return parent ? <SettingsTaskStep {...props} /> : <SettingsTaskWindow {...props} />;
@@ -73,11 +78,16 @@ function SettingsTaskStep({ title, size, focus, children, retained = false, onDi
   const context = useMemo(() => ({ ...task, stepId: id }), [task, id]);
   return task.stepTarget ? createPortal(<SettingsTaskContext.Provider value={context}><div data-settings-task-step hidden={task.activeStep !== id}>{children}</div></SettingsTaskContext.Provider>, task.stepTarget) : null;
 }
-function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, retained = false, onDismiss: dismissed }: DialogProps) {
+function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, retained = false, onDismiss: dismissed, activation, fallbackFocus }: DialogProps) {
   useLocale();
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const lastActivation = useRef(activation);
+  const returnFocus = useRef(fallbackFocus);
+  returnFocus.current = fallbackFocus;
+  const openerRetired = useRef(false);
   const closeRequested = useRef(false);
+  const retainedDismissal = useRef(false);
   const categoryContent = useRef(document.querySelector<HTMLElement>(".settings-content"));
   const [visible, setVisible] = useState(true), [actions, setActions] = useState<HTMLDivElement | null>(null);
   const [presentation, setPresentation] = useState<SettingsTaskPresentation>();
@@ -99,18 +109,33 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     setActiveStep([...presentations.current.keys()].at(-1));
   }, []);
   const current = presentation ?? { title, size, focus };
-  const dismissWithClose = useCallback((idleClose?: () => void) => {
-    const keep = retained || signals.current.size > 0;
+  // A confirmed completion can run before child retention effects observe the
+  // cleared mutation. Only an authoritative completion may force close here.
+  const dismissWithClose = useCallback((idleClose?: () => void, force = false) => {
+    const keep = !force && (retained || signals.current.size > 0);
     dismissed?.();
     for (const action of dismissals.current.values()) action();
-    if (keep) setVisible(false); else { closeRequested.current = true; (idleClose ?? close)(); }
+    if (keep) { retainedDismissal.current = true; setVisible(false); } else { closeRequested.current = true; (idleClose ?? close)(); }
   }, [retained, dismissed, close]);
   const dismiss = useCallback(() => dismissWithClose(), [dismissWithClose]);
-  const context = useMemo(() => ({ visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present }), [visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present]);
+  const retireOpener = useCallback((removed: (node: HTMLElement) => boolean) => {
+    if (opener.current && removed(opener.current)) openerRetired.current = true;
+  }, []);
+  const context = useMemo(() => ({ visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present, retireOpener }), [visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present, retireOpener]);
+  useLayoutEffect(() => {
+    if (lastActivation.current === activation) return;
+    lastActivation.current = activation;
+    if (visible) return;
+    // External creation entries reopen the original retained controller rather
+    // than replacing its immutable pending or uncertain request.
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setVisible(true);
+  }, [activation, visible]);
   useLayoutEffect(() => { register?.(id, true, visible); return () => register?.(id, false); }, [id, register, visible]);
   useLayoutEffect(() => {
     const node = dialog.current;
     if (!visible || !node) return;
+    retainedDismissal.current = false;
     // React Strict Mode replays this layout effect before the first microtask.
     // A later unmount without dismissWithClose is a programmatic completion
     // (for example, a successful save closing its parent task), so it must use
@@ -132,26 +157,31 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
       // StrictMode and retained-task visibility changes also clean up this
       // effect. They must not unlock the background or steal focus.
       if (!closeRequested.current && !committed.current) return;
-      // A retained operation is hidden, not dismissed. Keep its background
-      // locked and leave focus on the retained-operation destination.
-      if (retained || signals.current.size > 0) return;
+      // Settings keeps its retained background locked. External creation can
+      // return to its visible Home opener after an explicit pending dismissal.
+      // A forced confirmed completion already marked closeRequested, even if a
+      // stale child retention signal is still present during this cleanup.
+      if ((retained || signals.current.size > 0) && !closeRequested.current && !(returnFocus.current && retainedDismissal.current)) return;
       // A category departure or replacement dialog cannot restore a stale opener.
       if (anotherModal(node)) return;
       const restoreFocus = () => {
         if (anotherModal(node)) return;
         const focused = document.activeElement;
         if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return;
-        const openerTarget = opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") ? opener.current : null;
-        const fallback = categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null;
+        const openerDialog = opener.current?.closest("dialog");
+        const openerTarget = !openerRetired.current && opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") && !opener.current.closest("[hidden]") && (!openerDialog || openerDialog.open) && (!returnFocus.current || available(opener.current)) ? opener.current : null;
+        const fallback = returnFocus.current?.() ?? (categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null);
+        // The opener or category fallback can still be inert until this parent
+        // teardown commits. Release their task backgrounds before checking
+        // visibility, while preserving unrelated hidden/disabled boundaries.
+        for (const candidate of [openerTarget, fallback]) {
+          const background = candidate?.closest("fieldset.settings-task-background");
+          background?.removeAttribute("disabled");
+          background?.removeAttribute("inert");
+          background?.removeAttribute("aria-hidden");
+        }
         const target = openerTarget ?? (available(fallback) ? fallback : null);
         if (target?.matches("h1")) target.tabIndex = -1;
-        // The opener can remain inside the task background until the parent
-        // state update commits. Temporarily clear that synchronous focus
-        // boundary so close restores focus in the same event turn.
-        const background = target?.closest("fieldset.settings-task-background");
-        background?.removeAttribute("disabled");
-        background?.removeAttribute("inert");
-        background?.removeAttribute("aria-hidden");
         target?.focus({ preventScroll: true });
         if (target && document.activeElement !== target) requestAnimationFrame(() => { if (target.isConnected) target.focus({ preventScroll: true }); });
         return target;

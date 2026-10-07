@@ -1,13 +1,4 @@
 {
-  "account-deletion.refreshCleanupStatus_fb7773": "정리 상태 새로고침",
-  "account-deletion.returnToAiApiKeys_4b92a5": "AI API 키로 돌아가기",
-  "account-deletion.returnToAccounts_4b7a6d": "계정으로 돌아가기",
-  "account-deletion.apiKeyEntryDeleted_3200d9": "API 키 항목 삭제됨",
-  "account-deletion.savedOnTheSelectedServer_93dbee": "선택한 서버에 저장됩니다.",
-  "account-deletion.accountConfigurationDeleted_2a5579": "계정 설정 삭제됨",
-  "account-deletion.browserCleanupIsTrackedSeparatelyOffline_5550d1": "브라우저 정리는 별도로 추적합니다. 오프라인 기기는 네이티브 브라우저 종료, 전체 프로필 제거와 소유 서버의 접수 확인이 끝날 때까지 대기 상태입니다.",
-  "account-deletion.profileCleanupObligationsPendingConfirmedRemoved_063eba": "프로필 정리 의무 <s0/>개 대기 중 · <s1/>개 제거 확인됨",
-  "account-deletion.cleanupStatusIsUnavailableUntilThe_de4aa8": "소유 서버를 읽을 수 있을 때까지 정리 상태를 확인할 수 없습니다.",
   "account-deletion.deleting_983c74": "{{v0}} 삭제 중",
   "account-deletion.delete_a19801": "{{v0}}을(를) 삭제할까요?",
   "account-deletion.thisLogsOutTheAccountAnd_bc0446": "계정을 로그아웃하고 보호된 인증 정보를 제거한 뒤 저장된 설정을 삭제합니다.",

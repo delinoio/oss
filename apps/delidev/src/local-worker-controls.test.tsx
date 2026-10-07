@@ -1,10 +1,41 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { newRequestId } from "@delinoio/delidev-api-client";
-import { LocalWorkerAction, LocalWorkerControls, LocalWorkerPresentation, LocalWorkerState, type LocalWorkerStatus } from "./local-worker-controls";
+import { LocalWorkerAction, LocalWorkerControls, LocalWorkerPresentation, LocalWorkerState, LocalWorkerManagementState, type ControlLocalWorker, type LocalWorkerStatus } from "./local-worker-controls";
 
 afterEach(cleanup);
 const running = (): LocalWorkerStatus => ({ state: LocalWorkerState.Running, machine_id: newRequestId(), generation: newRequestId(), controller_active: true });
+it("observes automatic management without starting or pairing from the renderer", async () => {
+  const value = { ...running(), management: { state: LocalWorkerManagementState.Running, attempts: 0, retry_ms: 0, owned_by_app: true } };
+  const control: ControlLocalWorker = Object.assign(vi.fn(async () => value), { automatic: true });
+  render(<LocalWorkerControls presentation={LocalWorkerPresentation.RunnerDevices} control={control} active changed={() => {}} />);
+  await screen.findByText(/This app started the Worker/);
+  expect(screen.getByText(/automatically starts and maintains/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Register this computer" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Start local Worker" })).toBeNull();
+  expect((control as ReturnType<typeof vi.fn>).mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+});
+it("keeps automatic management paused until an explicit Start", async () => {
+  const value: LocalWorkerStatus = { ...running(), state: LocalWorkerState.Exited, controller_active: false, management: { state: LocalWorkerManagementState.Paused, attempts: 0, retry_ms: 0, owned_by_app: false } };
+  const control = vi.fn(async (_action: LocalWorkerAction) => value);
+  render(<LocalWorkerControls control={control} active changed={() => {}} />);
+  await screen.findByText(/You stopped this Worker/);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh local Worker" }));
+  await waitFor(() => expect(control.mock.calls.length).toBeGreaterThan(1));
+  expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Start local Worker" }));
+  await waitFor(() => expect(control.mock.calls.filter(([action]) => action === LocalWorkerAction.Start)).toHaveLength(1));
+});
+it("reports blocked original ownership and navigates to diagnostics without replacing it", async () => {
+  const value: LocalWorkerStatus = { ...running(), state: LocalWorkerState.Uncertain, controller_active: false, management: { state: LocalWorkerManagementState.Blocked, attempts: 1, retry_ms: 0, failure: "invalid-evidence", owned_by_app: false } };
+  const diagnostics = vi.fn(), control = vi.fn(async () => value);
+  render(<LocalWorkerControls control={control} active onDiagnostics={diagnostics} changed={() => {}} />);
+  await screen.findByRole("alert");
+  expect(screen.queryByRole("button", { name: "Start local Worker" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
+  expect(diagnostics).toHaveBeenCalledOnce();
+  expect(control).toHaveBeenCalledOnce();
+});
 it("registers separately from explicit startup and never automatically retries an uncertain start", async () => {
   let value: LocalWorkerStatus | undefined;
   const control = vi.fn(async (action: LocalWorkerAction) => {

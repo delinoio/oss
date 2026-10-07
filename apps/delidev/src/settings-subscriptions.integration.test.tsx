@@ -42,9 +42,39 @@ it("manages service-native subscription metadata through real authenticated RPC 
   const saved = (await createClient(ResourceService, fixture.transport).getResource({ kind: EntityKind.ACCOUNT, id: account.id })).resource!;
   expect(saved.schemaVersion).toBe(2); expect(document(saved)).toMatchObject({ alias: "Edited subscription", subscription_service: "chatgpt", recovery_notifications: false }); expect(document(saved)).not.toHaveProperty("provider_id");
   fireEvent.click(screen.getByRole("button", { name: "More actions for Edited subscription" })); fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Disconnect and delete account" })); await screen.findByRole("heading", { name: "Account configuration deleted" });
-  expect(await screen.findByText("0 profile cleanup obligations pending · 0 confirmed removed")).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Return to accounts" })); await screen.findByRole("heading", { name: "No subscriptions yet" });
+  fireEvent.click(await screen.findByRole("button", { name: "Disconnect and delete account" }));
+  await screen.findByRole("heading", { name: "No subscriptions yet" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Account configuration deleted" })).toBeNull();
   expect((screen.getByRole("button", { name: "Claude · Coming soon" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" })); fireEvent.click(screen.getByRole("button", { name: "Open Settings fixture" }));
   expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page"); expect(screen.queryByLabelText("Account name")).toBeNull(); expect(unexpected).not.toHaveBeenCalled();
+}, 30000);
+
+it("automatically closes API entry deletion and refreshes the current inventory through real authenticated RPC", async () => {
+  const configurations = createClient(ConfigurationService, fixture.transport);
+  const provider = (await configurations.saveConfiguration({ kind: EntityKind.PROVIDER, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ name: "Deletion keyless provider", endpoint: fixture.providerOrigin, protocol: "openai-chat", authentication: "keyless", discovery: false }) })).resource!;
+  const metadata = { provider_id: provider.id, type: "api", enabled: true, exclude_automatic: false, recovery_notifications: false, health: "disconnected", quota: [], confirmed_exhausted: false };
+  const account = (await configurations.saveConfiguration({ kind: EntityKind.ACCOUNT, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ ...metadata, alias: "Deleted API entry" }) })).resource!;
+  await configurations.saveConfiguration({ kind: EntityKind.ACCOUNT, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ ...metadata, alias: "Retained API entry" }) });
+  const cleanupRead = vi.fn();
+  const transport: Transport = { ...fixture.transport, unary: (method, ...args) => {
+    if (method.name === "GetAccountBrowserCleanup") cleanupRead();
+    return fixture.transport.unary(method, ...args);
+  } };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Settings /></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
+  await screen.findByRole("article", { name: "Deleted API entry" });
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Deleted API entry" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("article", { name: "Deleted API entry" })).toBeNull());
+  expect(screen.getByRole("heading", { name: "AI API Keys", level: 1 })).toBeTruthy();
+  expect(await screen.findByRole("article", { name: "Retained API entry" })).toBeTruthy();
+  expect(screen.queryByText("API key entry deleted")).toBeNull();
+  expect(cleanupRead).not.toHaveBeenCalled();
+  const remaining = await createClient(ResourceService, fixture.transport).listResources({ filter: { kind: EntityKind.ACCOUNT } });
+  expect(remaining.resources.some(row => row.id === account.id)).toBe(false);
 }, 30000);

@@ -70,6 +70,10 @@ new running version and configuration acceptance. Keep state and managed data;
 never use an older binary with a newer database. The drained backup and rollback
 procedure below remains available.
 
+If another tool or a manual edit conflicts with publication of the updated
+service definition, Runmoor preserves that edit and reports a conflict before
+replacing the running service. Resolve the conflicting definitions before retrying.
+
 In this unreleased workflow, if Stop completed after an interrupted reload,
 wait for the reload command to finish and run `runmoor service start` with the
 same installed CLI and configuration. One Start resumes the verified inactive
@@ -203,6 +207,13 @@ user service starts after logout or reboot only if your Ubuntu user-session
 policy keeps its systemd user manager running.
 
 Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
+
+With the **unreleased Docker cleanup fix**, a container that replaces a
+stopped runner or daemon remains untouched, even if its Runmoor labels
+were copied. Cleanup reports `OWNERSHIP_AMBIGUOUS` and remains incomplete.
+The original execution remains confirmed stopped and its capacity stays
+released. Preserve the replacement and Runmoor state while investigating;
+copied labels do not prove ownership.
 
 For Tart, `OWNERSHIP_AMBIGUOUS` keeps the VM, its Runmoor records and its
 capacity reservation intact, including after `stop --force`. Do not remove or

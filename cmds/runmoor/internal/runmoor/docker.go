@@ -375,8 +375,8 @@ func (d *DockerDriver) Inspect(ctx context.Context, c Config, r Runner, s Snapsh
 
 // Label discovery alone cannot prove absence: a replacement with foreign labels
 // is omitted by that query. Check both deterministic names and persisted IDs,
-// including partial preparations, before stopping anything and before releasing
-// the execution's reservation.
+// including partial preparations, before stopping or removing anything and
+// before releasing the execution's reservation.
 func verifyDockerContainers(ctx context.Context, cli *client.Client, r Runner, s Snapshot, stopped bool) error {
 	refs := []struct{ ref, id, role string }{
 		{r.Name, r.Handle.Container, "runner"},
@@ -397,11 +397,50 @@ func verifyDockerContainers(ctx context.Context, cli *client.Client, r Runner, s
 			return dockerProblem()
 		}
 		if v.Container.Config == nil || !ownedDocker(v.Container.Config.Labels, s, r) || v.Container.Config.Labels[roleKey] != ref.role || (ref.id != "" && v.Container.ID != ref.id) {
-			return problem(ErrOwnership, "Docker container ownership is ambiguous during termination.", "Keep the execution quarantined and inspect its recorded container identities and ownership labels.")
+			return problem(ErrOwnership, "Docker container ownership is ambiguous during termination or cleanup.", "Keep the execution quarantined and inspect its recorded container identities and ownership labels.")
 		}
 		if stopped && (v.Container.State == nil || v.Container.State.Running || v.Container.State.Restarting) {
-			return problem(ErrCleanup, "Container termination is not confirmed.", "Restore Docker access and retry cleanup; reservations remain held.")
+			return problem(ErrCleanup, "Container termination is not confirmed.", "Restore Docker access and retry cleanup; preserve unresolved resources.")
 		}
+	}
+	return nil
+}
+
+func dockerSummaryHasName(v container.Summary, name string) bool {
+	for _, candidate := range v.Names {
+		if strings.TrimPrefix(candidate, "/") == name {
+			return true
+		}
+	}
+	return false
+}
+
+// A container list is filtered by labels only. Validate each returned item
+// against the durable ID when one exists, or the deterministic name used while
+// preparing an unrecorded partial container, before any item is stopped or
+// removed. This preserves the no-mutation boundary when the list contains a
+// copied-label replacement with an unrelated name.
+func verifyDockerContainerSummary(v container.Summary, r Runner, s Snapshot) error {
+	if !ownedDocker(v.Labels, s, r) {
+		return problem(ErrOwnership, "Container ownership changed during termination or cleanup.", "Inspect the resource before retrying cleanup.")
+	}
+	valid := false
+	switch v.Labels[roleKey] {
+	case "runner":
+		valid = r.Handle.Container != "" && v.ID == r.Handle.Container
+		if r.Handle.Container == "" {
+			valid = dockerSummaryHasName(v, r.Name)
+		}
+	case "daemon":
+		valid = r.Handle.Daemon != "" && v.ID == r.Handle.Daemon
+		if r.Handle.Daemon == "" {
+			valid = dockerSummaryHasName(v, r.Name+"-daemon")
+		}
+	case "init":
+		valid = dockerSummaryHasName(v, r.Name+"-init")
+	}
+	if !valid {
+		return problem(ErrOwnership, "Container ownership is ambiguous during termination or cleanup.", "Keep the execution quarantined and inspect its recorded container identities and ownership labels.")
 	}
 	return nil
 }
@@ -420,9 +459,11 @@ func (d *DockerDriver) Stop(ctx context.Context, c Config, r Runner, s Snapshot)
 		return dockerProblem()
 	}
 	for _, v := range list.Items {
-		if !ownedDocker(v.Labels, s, r) {
-			return problem(ErrOwnership, "Container ownership changed during termination.", "Inspect the resource before retrying cleanup.")
+		if e = verifyDockerContainerSummary(v, r, s); e != nil {
+			return e
 		}
+	}
+	for _, v := range list.Items {
 		seconds := 10
 		if _, e = cli.ContainerStop(ctx, v.ID, client.ContainerStopOptions{Timeout: &seconds}); e != nil && !errdefs.IsNotFound(e) && !errdefs.IsNotModified(e) {
 			return dockerProblem()
@@ -443,9 +484,19 @@ func (d *DockerDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapsh
 		return e
 	}
 	defer cli.Close()
+	// Cleanup retries skip Stop after durable termination. Recheck current
+	// identities before removal so copied labels cannot authorize replacements.
+	if e = verifyDockerContainers(ctx, cli, r, s, true); e != nil {
+		return e
+	}
 	list, e := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: dockerFilter(s, r)})
 	if e != nil {
 		return dockerProblem()
+	}
+	for _, v := range list.Items {
+		if e = verifyDockerContainerSummary(v, r, s); e != nil {
+			return e
+		}
 	}
 	for _, v := range list.Items {
 		if v.State == "running" || v.State == "restarting" {
@@ -469,6 +520,21 @@ func (d *DockerDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapsh
 		return dockerProblem()
 	}
 	for _, v := range vols.Items {
+		// Volume deletion resolves a name, so discovery labels can belong to
+		// a volume that has since been replaced. Recheck the current volume.
+		// Docker has no immutable volume ID or conditional delete; this does
+		// not prevent a further replacement between inspection and removal.
+		current, err := cli.VolumeInspect(ctx, v.Name, client.VolumeInspectOptions{})
+		if errdefs.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return dockerProblem()
+		}
+		role := current.Volume.Labels[roleKey]
+		if !ownedDocker(current.Volume.Labels, s, r) || current.Volume.Name != v.Name || v.Name != r.Name+"-"+role || (role != "work" && role != "socket" && role != "externals" && role != "docker") {
+			return problem(ErrOwnership, "Docker volume ownership is ambiguous during cleanup.", "Preserve the volume and inspect its execution name and ownership labels before retrying cleanup.")
+		}
 		if _, e = cli.VolumeRemove(ctx, v.Name, client.VolumeRemoveOptions{Force: false}); e != nil && !errdefs.IsNotFound(e) {
 			return dockerProblem()
 		}

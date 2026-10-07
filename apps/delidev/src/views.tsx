@@ -26,7 +26,7 @@ const activityNames: Partial<Record<ActivityKind, import("./localization").Messa
   [ActivityKind.PR_VERIFIED_HANDLED]: "views.activity.PR_VERIFIED_HANDLED"
 };
 
-export enum Surface { Sessions = "sessions", NewSession = "new-session", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search", Settings = "settings" }
+export enum Surface { Sessions = "sessions", NewSession = "new-session", NewGeneralChat = "new-general-chat", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search", Settings = "settings" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
   useLocale();
   return <nav aria-label={copy("views.resultsPages_9c69dd")}><button disabled={!page || busy} onClick={() => setPage("")}>{copy("views.firstPage_0bdbb7")}</button><button disabled={!next || busy} onClick={() => setPage(next!)}>{copy("views.nextPage_c08ac7")}</button></nav>;
