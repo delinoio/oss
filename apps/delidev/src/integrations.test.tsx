@@ -105,7 +105,7 @@ it("distinguishes an initial loading read from a successful empty inventory and 
   const f = fixture(); let release!: () => void;
   f.list.mockImplementationOnce(async () => { await new Promise<void>((resolve) => { release = resolve; }); return { resources: [], nextPageToken: "" }; });
   render(f.view());
-  expect(screen.getByRole("status").textContent).toBe("Loading GitHub profiles…");
+  expect(screen.getAllByRole("status").some(node => node.textContent === "Loading GitHub profiles…")).toBe(true);
   expect(screen.queryByText("Add your first GitHub profile")).toBeNull();
   expect(screen.getAllByRole("button", { name: "New GitHub profile" })).toHaveLength(1);
   await waitFor(() => expect(f.list).toHaveBeenCalledTimes(1)); release();
@@ -148,12 +148,13 @@ it("keeps an empty page with continuation distinct and uses the original opaque 
   render(f.view()); await screen.findByText("No GitHub profiles on this page.");
   expect(screen.queryByText("Add your first GitHub profile")).toBeNull();
   expect(screen.getAllByRole("button", { name: "New GitHub profile" })).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub profile pages" }));
   await waitFor(() => expect(f.list.mock.calls.at(-1)?.[0].filter).toMatchObject({ pageToken: "opaque-next", pageSize: 50 }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "First page" }).hasAttribute("disabled")).toBe(false));
-  expect(screen.getByText("No GitHub profiles on this page.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  await waitFor(() => expect(f.list.mock.calls.at(-1)?.[0].filter).toMatchObject({ pageToken: "", pageSize: 50 }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more GitHub profile pages" })).toBeNull());
+  expect(screen.getByText("Add your first GitHub profile")).toBeTruthy();
+  const beforeRefresh = f.list.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub profiles" }));
+  await waitFor(() => expect(f.list.mock.calls.slice(beforeRefresh).some(([request]) => request.filter?.pageToken === "" && request.filter?.pageSize === 50)).toBe(true));
 });
 it("renders separate storage and identity facts with readable immutable metadata and named actions", async () => {
   const f = fixture();

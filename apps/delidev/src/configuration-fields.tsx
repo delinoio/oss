@@ -9,7 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { ScrollPicker } from "./scroll-picker";
 import type { MessageShape } from "@bufbuild/protobuf";
-import { EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { FailureCode, clientFailure, EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text, type Document } from "./documents";
 import { Problem, ServiceProblem } from "./ui";
 import { useRetainedMutation } from "./mutation";
@@ -126,6 +126,11 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: kind === EntityKind.MODEL ? text(selectedData.provider_id) : "" }, { enabled: active && needsProviderCapability && kind === EntityKind.MODEL && Boolean(text(selectedData.provider_id)) });
   const selectedProviderOff = needsProviderCapability && (kind === EntityKind.PROVIDER ? selectedData.protocol !== Protocol.Subscription && selectedData.enabled === false : document(selectedProvider.data?.resource).enabled === false);
   const failure = selectionError ?? inventory.error ?? selected.error ?? selectedProvider.error;
+  const choiceFailure = result.error?.failure ?? (failure ? clientFailure(failure) : undefined);
+  const reason = choiceFailure?.code === FailureCode.PermissionDenied || choiceFailure?.code === FailureCode.Unauthenticated
+    ? copy("configuration-fields.choices.denied")
+    : choiceFailure?.code === FailureCode.Unavailable || choiceFailure?.code === FailureCode.DeadlineExceeded
+      ? copy("configuration-fields.choices.connection") : copy("configuration-fields.choices.request");
   const readProblem = Boolean(failure || result.error || selectedProviderOff || active && needsProviderCapability && inventory.data && !ready);
   useEffect(() => { reportRead?.(readIdentity, readProblem); return () => reportRead?.(readIdentity, false); }, [readIdentity, readProblem, reportRead]);
   useLayoutEffect(() => { generation.current++; setSelectionBusy(false); setSelectionError(undefined); return () => { generation.current++; }; }, [active, disabled, kind, allowedKey, transport]);
@@ -153,6 +158,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
     {(showStatus || reportRead) && result.loading ? <p role="status">{copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel })}</p> : null}
     {(showStatus || reportRead) && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy("configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}
     {(showStatus || reportRead) && value && selected.data?.resource && !result.rows.some(row => row.id === value) ? <p role="status">{copy("configuration-fields.sentence.5398fd2fa5b0", { v0: resourceLabel })}</p> : null}
+    {(showStatus || reportRead) && choiceFailure ? <p role="status">{copy(result.loaded ? "configuration-fields.sentence.054bff468121" : "configuration-fields.sentence.1ad5938a045c", { v0: result.loaded ? resourceLabel : reason, v1: reason })}</p> : null}
     {result.error ? <ServiceProblem code={result.error.failure.code}><p>{result.error.failure.message}</p><p>{result.error.failure.guidance}</p></ServiceProblem> : null}
     <Problem error={failure} />
   </div>;

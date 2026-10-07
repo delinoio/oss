@@ -23,7 +23,7 @@ function fixture(lose = false, native?: (machine: string, action: WorkerNetworkA
   const save = vi.fn(request => ({ resource: create(ResourceSchema, { ...row, documentJson: request.documentJson }) }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SERVER_OUTBOUND_PROXY_V1, SystemCapability.WORKER_NETWORK_BOOTSTRAP_V1, SystemCapability.WORKER_CODEX_PROXY_V1] }) });
-    router.service(ResourceService, { listResources: () => { reads(); return { resources: [row] }; } });
+    router.service(ResourceService, { getResource: () => ({ resource: row }), listResources: () => { reads(); return { resources: [row] }; } });
     router.service(NetworkService, { getNetworkRoute: () => ({ route }), getWorkerNetworkStatus: () => ({ statusJson: encode({ version: 1, machine_id: machine, desired_generation: "9007199254740994", effective_generation: "9007199254740993", native_generation: "9007199254740993", control_state: "stale", native_state: "stale" }) }), selectNetworkProfile: select, saveNetworkProfile: save });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -41,8 +41,9 @@ it("keeps network reads collapsed and distinct exact control/native generations"
 it("retains the exact original route revision after response loss", async () => {
   const f = fixture(true);
   fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
-  await screen.findByRole("option", { name: /Pinned proxy/ });
-  fireEvent.change(screen.getByLabelText("Profile to select"), { target: { value: f.row.id } });
+  fireEvent.click(await screen.findByRole("combobox", { name: "Profile to select" }));
+  fireEvent.click(await screen.findByRole("option", { name: /Pinned proxy/ }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Profile to select" }).dataset.value).toBe(f.row.id));
   fireEvent.click(screen.getByRole("button", { name: "Select this revision" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry original route selection" }));
   await waitFor(() => expect(f.requests).toHaveLength(2));
