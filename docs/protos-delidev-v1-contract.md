@@ -1,5 +1,27 @@
 # DeliDev v1 Connect contract
 
+## Failed subscription cleanup reservations
+
+Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the
+`CleanupFailedSubscriptions` and `GetFailedSubscriptionCleanup` request/response
+messages, `FailedSubscriptionCleanupJob` and `FailedSubscriptionCleanupResult`,
+and the closed cleanup state/outcome/reason enums in `allocations.json`.
+Establish this complete reservation on main before dependent implementation.
+The request reserves the original request ID; status reserves original job ID
+and pagination token. Responses reserve the job, original receipt identity,
+replay flag and bounded result pagination. Job metadata reserves ID/revision,
+state, total/processed/deleted/retained counts and safe problem code. Results
+reserve account ID/alias, outcome, reason and safe problem code.
+
+The planned button deliberately starts one server-wide cleanup without another
+confirmation. Only failed, canceled, expired, unsupported or interrupted initial
+ChatGPT server logins without independent authentication or Worker ownership are
+candidates. Original native and protected-credential cleanup, fresh revisions,
+complete retained-reference checks and deletion receipts remain authoritative.
+Ordinary disconnected accounts and active logins remain outside the batch.
+Reservations introduce no active schemas, generated bindings, capability
+advertisement, native cleanup, configuration deletion or database migration.
+
 ## Grok Build subscription reservations
 
 The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
