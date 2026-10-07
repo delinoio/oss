@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
 import { dryRunEnvironment } from "./bundle-macos-dry-run.mjs";
 import { acquireNativeBuildLock, cefCredits, targets } from "./native-package.mjs";
-import { DevelopmentSigningError, inspectDevelopmentIdentity, publishDevelopmentBundle, readSigningIdentity, signingCommand } from "./development-signing.mjs";
+import { DevelopmentSigningError, developmentBundleDirectory, inspectDevelopmentIdentity, publishDevelopmentBundle, readSigningIdentity, signingCommand } from "./development-signing.mjs";
 
 const app = fileURLToPath(new URL("..", import.meta.url));
 const root = resolve(app, "../..");
@@ -96,7 +96,7 @@ export async function runDesktop(args, {
       stage = "sign-and-publish";
       report("started");
       const output = env.CARGO_TARGET_DIR ?? join(root, "target");
-      const executable = await publish(join(output, "debug/bundle/macos/DeliDev.app"), join(output, "delidev-development"), identity, options, command);
+      const executable = await publish(join(output, "debug/bundle/macos/DeliDev.app"), developmentBundleDirectory(), identity, options, command);
       release();
       release = undefined;
       stage = "run";

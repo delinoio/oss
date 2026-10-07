@@ -27,6 +27,12 @@ export function signingDirectory(home = homedir()) {
   return join(home, "Library/Application Support/delidev-development");
 }
 
+export function developmentBundleDirectory(home = homedir()) {
+  // Cargo cleanup owns its target directory. Surviving servers/Workers require
+  // files outside that build cache until explicit lifecycle cleanup proves exit.
+  return join(signingDirectory(home), "bundles");
+}
+
 export function readSigningIdentity(directory = signingDirectory()) {
   if (!existsSync(directory)) fail("development-signing-not-configured");
   const stat = lstatSync(directory);

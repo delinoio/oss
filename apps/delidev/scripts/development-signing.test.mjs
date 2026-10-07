@@ -10,6 +10,9 @@ import test from "node:test";
 import { developmentCertificateName, developmentServerIdentifier, publishDevelopmentBundle, readSigningIdentity, registerDevelopmentIdentity, serverRequirement, validateDevelopmentCertificate } from "./development-signing.mjs";
 
 const identity = "A".repeat(40);
+// These fixtures require Unix owner permissions and OpenSSL. Native macOS
+// identity acceptance belongs to the separate temporary-keychain Go tests.
+const unixFixture = { skip: process.platform === "win32" };
 function temporary(t) {
   const root = mkdtempSync(join(tmpdir(), "delidev-development-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -24,7 +27,7 @@ function certificate(t) {
   return { pem, fingerprint: new X509Certificate(pem).fingerprint.replaceAll(":", "") };
 }
 
-test("development identity requires the exact dedicated self-signed, unexpired code certificate", t => {
+test("development identity requires the exact dedicated self-signed, unexpired code certificate", unixFixture, t => {
   const { pem, fingerprint } = certificate(t);
   assert.equal(validateDevelopmentCertificate(pem, fingerprint.toLowerCase()), fingerprint);
   assert.throws(() => validateDevelopmentCertificate(pem, identity), /development-certificate-missing/);
@@ -32,7 +35,7 @@ test("development identity requires the exact dedicated self-signed, unexpired c
   assert.throws(() => validateDevelopmentCertificate(pem, fingerprint, Date.now() + 2 * 86400_000), /development-certificate-expired/);
 });
 
-test("registration persists only a fingerprint and rejects unsafe or malformed local configuration", async t => {
+test("registration persists only a fingerprint and rejects unsafe or malformed local configuration", unixFixture, async t => {
   const root = temporary(t), directory = join(root, "config");
   const { pem, fingerprint } = certificate(t);
   const calls = [];
@@ -54,7 +57,7 @@ test("registration persists only a fingerprint and rejects unsafe or malformed l
   assert.throws(() => readSigningIdentity(directory), /signing-config-invalid/);
 });
 
-test("published bundles retain original server bytes across rebuild", async t => {
+test("published bundles retain original server bytes across rebuild and build-cache removal", unixFixture, async t => {
   const root = temporary(t), source = join(root, "source.app"), output = join(root, "runs");
   const binaries = join(source, "Contents/MacOS");
   mkdirSync(binaries, { recursive: true });
@@ -69,6 +72,9 @@ test("published bundles retain original server bytes across rebuild", async t =>
   assert.equal(readFileSync(join(first, "../delidev"), "utf8"), "first-server");
   assert.equal(readFileSync(join(second, "../delidev"), "utf8"), "second-server");
   assert.equal(readdirSync(output).length, 2);
+  rmSync(source, { recursive: true, force: true });
+  assert.equal(readFileSync(join(first, "../delidev"), "utf8"), "first-server");
+  assert.equal(readFileSync(join(second, "../delidev"), "utf8"), "second-server");
   for (const args of calls.filter(args => args.includes("--force"))) assert.ok(!args.includes("--deep"));
   assert.ok(calls.some(args => args.includes(serverRequirement(identity))));
 });
@@ -140,7 +146,7 @@ test("a forced desktop exit preserves simulated server/Worker processes and thei
   for (const pid of pids) process.kill(pid, 0);
 });
 
-test("signing failure discards only unpublished output and keeps earlier live bundles", async t => {
+test("signing failure discards only unpublished output and keeps earlier live bundles", unixFixture, async t => {
   const root = temporary(t), source = join(root, "source.app"), output = join(root, "runs");
   mkdirSync(join(source, "Contents/MacOS"), { recursive: true });
   for (const name of ["delidev", "delidev-desktop"]) writeFileSync(join(source, "Contents/MacOS", name), "original");

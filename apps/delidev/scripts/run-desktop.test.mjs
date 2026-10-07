@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { desktopArguments, desktopEnvironment, runDesktop } from "./run-desktop.mjs";
-import { DevelopmentSigningError } from "./development-signing.mjs";
+import { DevelopmentSigningError, developmentBundleDirectory } from "./development-signing.mjs";
 
 const success = { code: 0, signal: null };
 const environment = { npm_execpath: "/tools/pnpm.cjs", PATH: "/tools", HOME: "/fixture" };
@@ -23,7 +23,7 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
     platform: "darwin", arch: "arm64", environment,
     ...macFixtures,
     lock: () => () => { released = true; },
-    publish: async (_source, _output, pinned) => { assert.equal(pinned, identity); assert.equal(released, false); return macFixtures.publish(); },
+    publish: async (_source, output, pinned) => { assert.equal(output, developmentBundleDirectory()); assert.equal(pinned, identity); assert.equal(released, false); return macFixtures.publish(); },
     creditsFor: () => "/cef/CREDITS.html",
     log: entry => logs.push(entry),
     run: async (...call) => { calls.push(call); return success; },
