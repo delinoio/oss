@@ -44,5 +44,6 @@
   "pull-requests.selectOneConfiguredRepositoryInThe_6c065a": "사이드바에서 구성된 저장소 하나를 선택하여 시작하세요.",
   "pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad": "이 저장소를 더 이상 사용할 수 없습니다. 저장소 목록을 새로 고쳐 다른 항목을 선택하세요.",
   "pull-requests.configureThisRepositorySGithubProfile_86db03": "요청을 불러오기 전에 저장소 설정에서 이 저장소의 GitHub 프로필, 소유자와 이름을 설정하세요.",
-  "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "상태와 선택적 제목·본문 검색어를 선택한 후 풀 리퀘스트 불러오기를 누르세요. 이 화면으로 돌아오면 직접 다시 불러와야 합니다."
+  "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "상태와 선택적 제목·본문 검색어를 선택한 후 풀 리퀘스트 불러오기를 누르세요. 이 화면으로 돌아오면 직접 다시 불러와야 합니다.",
+  "pull-requests.pendingFix": "수동 PR 수정 · 원격 저장소 <s0/> · PR ID <s1/>"
 }

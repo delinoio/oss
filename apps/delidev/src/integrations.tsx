@@ -96,8 +96,8 @@ function IntegrationCreation({ active, close, connected }: { active: boolean; cl
   // Keep a settled older-server editor mounted across inactive query states so
   // its exact metadata retry cannot be replaced by the negotiation placeholder.
   if (!status.isPending) negotiated.current = Boolean(supported);
-  if (negotiated.current === undefined) return <><SettingsLoading label="Checking GitHub connection support…" /><SettingsTaskDismissButton onClick={close}>Cancel</SettingsTaskDismissButton></>;
-  return negotiated.current ? <GitHubOnboarding active={active} close={close} connected={connected} /> : <><p role="status">Update the selected server to verify a token before creating a profile. You can still create a profile first below.</p><IntegrationEditor active={active} close={close} /></>;
+  if (negotiated.current === undefined) return <><SettingsLoading label={copy("integrations.checkingSupport")} /><SettingsTaskDismissButton onClick={close}>{copy("integrations.cancelEdit_6fa271")}</SettingsTaskDismissButton></>;
+  return negotiated.current ? <GitHubOnboarding active={active} close={close} connected={connected} /> : <>{status.error ? <Problem error={status.error} actions={<button type="button" disabled={!active || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} /> : <p role="status">{copy("integrations.onboardingUnsupported")}</p>}<IntegrationEditor active={active} close={close} /></>;
 }
 function IntegrationConnection({ initial, active, close, initialRetry, initialProblem }: { initial: Resource; active: boolean; close: () => void; initialRetry?: GitHubTokenRetry; initialProblem?: Document }) {
   useLocale();
