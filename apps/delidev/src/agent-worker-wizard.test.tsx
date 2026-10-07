@@ -1029,3 +1029,60 @@ it("waits for independent account proof before the legacy fixture advances", asy
   expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
+
+it("scrolls the exact highlighted model option through payload wrappers", async () => {
+  const value = fixture();
+  await start(value); await accounts(value);
+  const input = screen.getByRole("combobox", { name: "Model" });
+  fireEvent.focus(input);
+  const first = await screen.findByRole("option", { name: /Example A/ });
+  const second = screen.getByRole("option", { name: /Example B/ });
+  expect(first.parentElement?.getAttribute("role")).not.toBe("listbox");
+  const firstScroll = vi.fn(); const secondScroll = vi.fn();
+  Object.defineProperty(first, "scrollIntoView", { value: firstScroll });
+  Object.defineProperty(second, "scrollIntoView", { value: secondScroll });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(input.getAttribute("aria-activedescendant")).toBe(first.id);
+  expect(firstScroll).toHaveBeenLastCalledWith({ block: "nearest" });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(input.getAttribute("aria-activedescendant")).toBe(second.id);
+  expect(secondScroll).toHaveBeenLastCalledWith({ block: "nearest" });
+  expect(second.getAttribute("aria-selected")).toBe("true");
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it("translates retained routed account status after its independent read fails", async () => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
+  await screen.findByRole("checkbox", { name: "Select ChatGPT account" });
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select ChatGPT account" }).closest("label")!.textContent).toContain("Connected · Quota unknown"));
+  value.get.mockImplementation(request => { if (request.id === value.subscription.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  await screen.findByRole("alert");
+  const reads = value.get.mock.calls.length;
+  await act(() => i18n.changeLanguage("ko"));
+  const selected = screen.getByRole("checkbox", { name: /ChatGPT account/ }).closest("label")!;
+  expect(selected.textContent).toContain("연결됨 · 할당량 알 수 없음");
+  expect(selected.textContent).not.toContain("Connected");
+  expect(value.get).toHaveBeenCalledTimes(reads); expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+  await act(() => i18n.changeLanguage("en"));
+});
+
+
+it("seeds routed account display metadata without replacing failed independent proof", async () => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
+  value.get.mockImplementation(request => { if (request.id === value.subscription.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
+  await screen.findByRole("alert");
+  const selected = screen.getByRole("checkbox", { name: "Select ChatGPT account" });
+  expect(selected).toHaveProperty("checked", true);
+  expect(selected.closest("label")!.textContent).toContain("ChatGPT accountConnected · Quota unknown");
+  next();
+  expect(screen.queryByRole("combobox", { name: "Model for ChatGPT subscription" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
