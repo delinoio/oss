@@ -59,7 +59,12 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
   useEffect(() => {
     if (!active) { epoch.current++; request.current?.abort(); clearSecrets(); setToken(""); setIdentity(undefined); setStage(Stage.Token); close(); }
   }, [active]);
-  useEffect(() => { if (active) (stage === Stage.Token ? tokenInput : nameInput).current?.focus(); }, [active, stage]);
+  useEffect(() => {
+    // The confirmation input stays disabled until inspection cleanup finishes.
+    // Wait for the busy state to clear so the parent dialog cannot leave focus
+    // on its body after trying to focus a disabled input.
+    if (active && !busy) (stage === Stage.Token ? tokenInput : nameInput).current?.focus();
+  }, [active, busy, stage]);
 
   const verify = async () => {
     if (!active || working.current || saveUncertain || !tokenValid(token)) return;

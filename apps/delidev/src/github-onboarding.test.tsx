@@ -53,7 +53,7 @@ it("focuses token first, verifies without an owner, then saves the explicit orga
   expect(screen.getByRole("button", { name: "Classic" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Fine grained" })).toBeTruthy();
   expect(screen.queryByLabelText("Profile name")).toBeNull(); expect(f.inspect).not.toHaveBeenCalled();
-  const name = await f.verify(); expect(name.value).toBe("fixture-user"); expect(document.activeElement).toBe(name);
+  const name = await f.verify(); expect(name.value).toBe("fixture-user"); await waitFor(() => expect(document.activeElement).toBe(name));
   expect((screen.getByLabelText("Resource owner") as HTMLInputElement).value).toBe("");
   expect((screen.getByRole("button", { name: "Save and connect" }) as HTMLButtonElement).disabled).toBe(true);
   expect(f.save).not.toHaveBeenCalled(); f.erased();
