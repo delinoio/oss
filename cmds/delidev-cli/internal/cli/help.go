@@ -43,6 +43,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   worker status --worker-dir PATH
   worker stop --worker-dir PATH --generation UUID-V7
   worker start --worker-dir PATH [--detach]
+  agent create|edit|save --input FILE|- [--id ID --revision N]
+    (--model-revision N | --native-model-id ID | --route-models-file PATH)
   repository inspect --machine-id ID --path PATH [--preferred-remote NAME] [--wait]
   update check --component desktop|worker --target TARGET --current-version VERSION [--machine-id ID --machine-revision N]
   update get --id ID

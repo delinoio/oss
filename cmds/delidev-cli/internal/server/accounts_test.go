@@ -157,11 +157,20 @@ func (f *accountFixture) save(kind pb.EntityKind, value any) *pb.Resource {
 	}
 	if kind == pb.EntityKind_ENTITY_KIND_AGENT {
 		agent := value.(domain.Agent)
-		model, err := f.resources.GetResource(context.Background(), ownerRequest(f.identity, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_MODEL, Id: string(agent.ModelID)}))
-		if err != nil {
-			f.t.Fatal(err)
+		request := &pb.SaveAgentWorkerRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, SchemaVersion: rpc.ResourceSchemaVersion(domain.AgentKind, raw), DocumentJson: raw}
+		for _, route := range agent.SourceRoutes() {
+			model, err := f.resources.GetResource(context.Background(), ownerRequest(f.identity, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_MODEL, Id: string(route.ModelID)}))
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			selection := &pb.AgentWorkerModelSelection{Selection: &pb.AgentWorkerModelSelection_ModelId{ModelId: string(route.ModelID)}, ExpectedModelRevision: model.Msg.Resource.Revision}
+			if len(agent.Routes) > 0 {
+				request.RouteModels = append(request.RouteModels, selection)
+			} else {
+				request.Model = selection
+			}
 		}
-		response, err := f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, &pb.SaveAgentWorkerRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, SchemaVersion: 1, DocumentJson: raw, Model: &pb.AgentWorkerModelSelection{Selection: &pb.AgentWorkerModelSelection_ModelId{ModelId: string(agent.ModelID)}, ExpectedModelRevision: model.Msg.Resource.Revision}}))
+		response, err := f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, request))
 		if err != nil {
 			f.t.Fatal(err)
 		}

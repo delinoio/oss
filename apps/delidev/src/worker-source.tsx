@@ -19,13 +19,13 @@ export function wireService(source?: Source) {
 }
 export function sameSource(row: Resource, source?: Source) {
   const data = document(row);
-  return row.kind === EntityKind.ACCOUNT && supportsResourceSchema(row) && data.retired !== true && (source?.kind === SourceKind.Subscription
+  return row.kind === EntityKind.ACCOUNT && supportsResourceSchema(row) && (source?.kind === SourceKind.Subscription
     ? data.type === "subscription" && data.subscription_service === source.id && !data.provider_id
     : source?.kind === SourceKind.Api && data.type === "api" && data.provider_id === source.id);
 }
 export function modelSource(row: Resource): Source | undefined {
   const data = document(row);
-  if (row.kind !== EntityKind.MODEL || data.retired === true || !supportsResourceSchema(row)) return undefined;
+  if (row.kind !== EntityKind.MODEL || !supportsResourceSchema(row)) return undefined;
   if (data.source_kind === "subscription" && subscriptionService(data.subscription_service)) return { kind: SourceKind.Subscription, id: text(data.subscription_service) };
   return text(data.provider_id) ? { kind: SourceKind.Api, id: text(data.provider_id) } : undefined;
 }

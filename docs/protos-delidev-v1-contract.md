@@ -66,13 +66,14 @@ database migration. Follow the subscription and structure contracts.
 PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
 `SaveAgentWorkerRequest.route_models = 5` on main before implementation. The
 active repeated field reuses `AgentWorkerModelSelection`, aligned with ordered
-Agent schema-3 routes and exclusive with the legacy singular model. The existing
+Agent schema-3 routes and exclusive with the current singular model. The existing
 mutation/revision/receipt response remains unchanged. Capability 36 advertises
 this complete configuration extension; capability 35 retains its separate known
-subscription catalog reservation. Schema 1/2 APIs and accountless CLI writes
-remain compatible; current clients retain schema 3 even with one remaining source.
-Resource reads expose schema 3 only for ordered-source Agents. Older clients must
-treat that family as unsupported and cannot overwrite it through legacy saves.
+subscription catalog reservation. Current single-source Agents use schema 1 and
+ordered-source Agents use schema 3, including with one remaining source. Every
+source requires at least one account. Retirement-only Agent schema 2 is unsupported.
+Resource reads expose schema 3 only for ordered-source Agents; single-source
+writes cannot overwrite that family.
 No Worker protocol shape or database migration changes. The selected-source native
 configuration remains unchanged; complete source decisions are additive server-owned
 initial-execution JSON under the [catalog contract](cmds-delidev-catalog-contract.md).
@@ -257,9 +258,9 @@ original Worker authority.
 
 Issue #1235 reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
 under its owning issue identity. This independent capability will negotiate
-service-bearing subscription Accounts/native Models and retired-reference
-projections at resource schema version 2; unchanged API resources remain version
-1. It must not depend on API provider inventory capabilities. Establish this
+service-bearing subscription Accounts/native Models at resource schema version
+2; unchanged API resources remain version 1. Retirement-reference projections
+were removed by the pre-release compatibility reset. It must not depend on API provider inventory capabilities. Establish this
 allocation and migration 28 on main before dependent implementation. This
 prerequisite changes no active schema, generated binding or capability
 advertisement; generate clients from reconciled schemas when implementation

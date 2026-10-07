@@ -36,7 +36,7 @@ func TestExecutionConfigurationPreservesOrderedInstructionsAndOptions(t *testing
 
 func TestExecutionInstructionsNeverTruncateToFit(t *testing.T) {
 	first, second := NewID(), NewID()
-	agent := Agent{Name: "Fixture", Harness: Codex, ModelID: NewID(), Templates: []ID{first, second}, Options: AgentOptions{Permission: PermissionDefault}}
+	agent := Agent{Name: "Fixture", Harness: Codex, ModelID: NewID(), Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Templates: []ID{first, second}, Options: AgentOptions{Permission: PermissionDefault}}
 	model := Model{Name: "Fixture", NativeID: "fixture", ProviderID: NewID(), Harnesses: []Harness{Codex}, MetadataSource: UserDeclared}
 	templates := []AppliedTemplate{{ID: first, Revision: 1, Contents: strings.Repeat("a", 128<<10)}, {ID: second, Revision: 1, Contents: strings.Repeat("b", 128<<10)}}
 	_, err := ResolveExecutionConfiguration(NewID(), 1, agent, 1, model, Priority, templates)
@@ -81,7 +81,7 @@ func managedSubscriptionExecutionConfiguration(t *testing.T, permission Permissi
 
 func TestOpenCodeContextSnapshotRequiresKnownSource(t *testing.T) {
 	limit := uint64(128000)
-	agent := Agent{Name: "Fixture", Harness: OpenCode, ModelID: NewID(), Options: AgentOptions{Permission: PermissionDefault}}
+	agent := Agent{Name: "Fixture", Harness: OpenCode, ModelID: NewID(), Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Options: AgentOptions{Permission: PermissionDefault}}
 	model := Model{Name: "Fixture", NativeID: "fixture", ProviderID: NewID(), Harnesses: []Harness{OpenCode}, ContextLimit: &limit}
 	agentID := NewID()
 	for _, source := range []EvidenceSource{Unknown, Known, UserDeclared} {

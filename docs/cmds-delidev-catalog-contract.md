@@ -9,14 +9,15 @@ execution authority. No SQLite migration is added.
 
 Agent schema 3 uses an ordered nonempty `routes` list. Each route contains
 `model_id`, ordered `accounts` with weights 1–1,000, and an optional `routing`
-override. The legacy top-level model/accounts/routing and routes are exclusive.
+override. The single-source top-level model/accounts/routing and routes are exclusive.
 One Worker retains one Harness, name, instructions and native options. Every
 route uses one live API Provider or service-native subscription identity; sources
 and accounts cannot repeat. Across all routes the existing 1,000-account bound
-applies. Legacy schema 1, retired schema 2 and accountless CLI/RPC writes remain
-compatible. Adding another source upgrades a Worker to schema 3; removing sources
-keeps schema 3, including when one remains. Legacy writes cannot replace an
-existing schema-3 Worker. Historical documents and sessions are never migrated.
+applies. Current single-source schema 1 and ordered-source schema 3 are supported.
+Every source requires at least one account; retirement-only schema 2 is rejected.
+Adding another source selects schema 3; removing sources keeps schema 3, including
+when one remains. A single-source document cannot replace an existing schema-3
+Worker. Historical execution snapshots remain immutable.
 
 `SaveAgentWorker.route_models` aligns typed selections exactly with the route
 order and is exclusive with `model`. Go derives every source from current account

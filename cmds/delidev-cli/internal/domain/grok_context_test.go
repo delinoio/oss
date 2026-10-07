@@ -17,7 +17,7 @@ func TestGrokContextSnapshotPreservesSourceAndRejectsInventedDefaults(t *testing
 	}
 	for _, source := range []EvidenceSource{Known, UserDeclared} {
 		limit := uint64(48000)
-		a := Agent{Name: "Original", Harness: GrokBuild, ModelID: c.ModelID, Options: c.Options}
+		a := Agent{Name: "Original", Harness: GrokBuild, ModelID: c.ModelID, Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Options: c.Options}
 		m := Model{Name: "Original", NativeID: c.NativeModel, ProviderID: c.ProviderID, Harnesses: []Harness{GrokBuild}, ContextLimit: &limit, MetadataSource: source}
 		selected, err := ResolveExecutionConfiguration(c.AgentID, 1, a, 2, m, Priority, nil)
 		if err != nil || selected.GrokContext == nil || selected.GrokContext.Source != source {

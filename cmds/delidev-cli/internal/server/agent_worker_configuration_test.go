@@ -251,9 +251,9 @@ func TestAgentWorkerWizardPreservesModelMetadataAndConcurrentCreation(t *testing
 	}
 }
 
-func TestWorkerSourceRoutesAtomicSaveAndLegacyProtection(t *testing.T) {
+func TestWorkerSourceRoutesAtomicSaveAndFormatProtection(t *testing.T) {
 	f := newAccountFixture(t)
-	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Responses", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Responses", Enabled: new(true), Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
 	api := wizardAccount(f, provider, "API")
 	sub := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Subscription", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
 	priority := domain.Priority

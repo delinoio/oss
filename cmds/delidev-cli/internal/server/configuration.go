@@ -56,9 +56,6 @@ func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
 		}
 
 	}
-	if agent, ok := value.(*domain.Agent); ok && len(agent.Accounts) == 0 {
-		return nil, domain.Fail(domain.MissingInput, "Select at least one account.", "Choose accounts from the selected model source.")
-	}
 	if err := value.Validate(); err != nil {
 		return nil, err
 	}

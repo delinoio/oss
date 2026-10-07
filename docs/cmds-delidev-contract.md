@@ -259,3 +259,16 @@ implicit `server ensure` recovery before replacement. Inspection or status never
 restores credentials, Worker files or historical execution. See the
 [storage contract](cmds-delidev-storage-contract.md) for settled ownership,
 permanent-deletion enforcement, bounded staging and startup recovery.
+
+## Current Agent Worker saves
+
+`agent create|edit|save` uses `SaveAgentWorker`. Single-source documents require
+`--model-revision N` for their canonical `model_id`, or `--native-model-id ID` for
+an exact native selection. Ordered-source documents use `--route-models-file PATH`
+instead. The bounded JSON file contains one selection per route, in source order:
+`{"model_id":"UUID","model_revision":N}` or `{"native_id":"exact-native-id"}`.
+Canonical IDs must match the document and include their current revision; native
+selections have no canonical revision. Both current Agent formats require at
+least one account in every source. All account/model validation and Worker/model
+saves share one receipt transaction. Generic configuration saves cannot write
+Agents. Exact retries retain their request ID, document and selections.

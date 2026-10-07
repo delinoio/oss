@@ -136,14 +136,14 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   let generalSessionId = "";
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={(id) => { generalSessionId = id; }} created={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   expect(screen.queryByLabelText("Project")).toBeNull();
-  change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
+  change("Agent Worker", (await screen.findByRole("option", { name: "Configured schedule agent" }) as HTMLOptionElement).value);
   change("Runs on", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   change("First message", "General Chat acceptance fixture without inference");
   fireEvent.click(screen.getByRole("button", { name: "Start general chat" }));
   await waitFor(() => expect(generalSessionId).not.toBe(""));
   const generalSession = (await createClient(ResourceService, transport).getResource({ kind: EntityKind.SESSION, id: generalSessionId })).resource!;
   expect(generalSession.projectId).toBe("");
-  expect(document(generalSession)).toMatchObject({ workspace: "general-chat", name_mode: "automatic", source: "MANUAL", agent_id: accountlessAgent.id });
+  expect(document(generalSession)).toMatchObject({ workspace: "general-chat", name_mode: "automatic", source: "MANUAL", agent_id: configuredAgent.id });
   expect(document(generalSession).local_origin).toBeUndefined();
   expect(document(generalSession).project_id).toBeUndefined();
   cleanup();

@@ -330,9 +330,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	accountType := fs.String("account-type", "", "account type: api or subscription")
 	providerID := fs.String("provider-id", "", "account provider ID")
 	var modelRevision uint64
-	var nativeModelID string
+	var nativeModelID, routeModelsFile string
 	if kind == domain.AgentKind {
 		fs.Uint64Var(&modelRevision, "model-revision", 0, "required revision of the canonical selected model")
+		fs.StringVar(&routeModelsFile, "route-models-file", "", "JSON file containing ordered model_id/model_revision or native_id selections")
 		fs.StringVar(&nativeModelID, "native-model-id", "", "exact native model ID to register atomically with this Agent Worker")
 	}
 	if err := parse(fs, rest); err != nil {
@@ -415,23 +416,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		mutation := &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}
 		var response *connect.Response[pb.SaveConfigurationResponse]
 		if kind == domain.AgentKind {
-			var agent domain.Agent
-			if err := domain.Decode(body, &agent); err != nil {
-				return emit(nil, err)
+			agentRequest, requestErr := agentWorkerRequest(mutation, body, modelRevision, nativeModelID, routeModelsFile)
+			if requestErr != nil {
+				return emit(nil, requestErr)
 			}
-			selection := &pb.AgentWorkerModelSelection{ExpectedModelRevision: modelRevision}
-			if nativeModelID != "" {
-				if modelRevision != 0 {
-					return emit(nil, domain.Fail(domain.InvalidArgument, "Native model selection has no canonical revision.", "Omit --model-revision with --native-model-id."))
-				}
-				selection.Selection = &pb.AgentWorkerModelSelection_NativeId{NativeId: nativeModelID}
-			} else {
-				if modelRevision == 0 {
-					return emit(nil, domain.Fail(domain.MissingInput, "Canonical model selection requires its revision.", "Pass --model-revision, or select an exact --native-model-id."))
-				}
-				selection.Selection = &pb.AgentWorkerModelSelection_ModelId{ModelId: string(agent.ModelID)}
-			}
-			response, err = c.configuration.SaveAgentWorker(ctx, request(c, &pb.SaveAgentWorkerRequest{Mutation: mutation, DocumentJson: body, SchemaVersion: 1, Model: selection}))
+			response, err = c.configuration.SaveAgentWorker(ctx, request(c, agentRequest))
 		} else {
 			response, err = c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: mutation, Kind: rpc.WireKind(kind), SchemaVersion: rpc.ResourceSchemaVersion(kind, body), DocumentJson: body}))
 		}

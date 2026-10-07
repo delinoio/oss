@@ -126,7 +126,7 @@ function validWeightedAccounts(value: unknown, requireOne: boolean): value is Do
 }
 function validAgentConfiguration(value: Document, schemaVersion: number): boolean {
   if (!harnesses.has(text(value.harness))) return false;
-  if (schemaVersion === 1) return isEntityId(text(value.model_id)) && Array.isArray(value.accounts);
+  if (schemaVersion === 1) return isEntityId(text(value.model_id)) && validWeightedAccounts(value.accounts, true);
   if (schemaVersion !== 3 || !Array.isArray(value.routes) || value.routes.length === 0 || value.routes.length > 1000 || value.model_id !== undefined || value.accounts !== undefined || value.routing !== undefined) return false;
   const accountIDs = new Set<string>();
   return value.routes.every(item => {
