@@ -191,6 +191,56 @@ func TestPortableConfigurationFormatsVersionFour(t *testing.T) {
 		if err != nil || plan.Version != 4 {
 			t.Fatal("portable bundle compatibility failed", version, err)
 		}
+		transferApply(t, s, transferPreview(t, s, selection), domain.NewID())
+		exported, err := s.ExportConfiguration(transferOwner(), connect.NewRequest(&pb.ExportConfigurationRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var bundle domain.ConfigurationBundle
+		if err := domain.Decode(exported.Msg.DocumentJson, &bundle); err != nil || bundle.Version != 4 {
+			t.Fatal("round-trip export did not use version four", err)
+		}
+		target, _ := newDoctorFixture(t)
+		reimport := domain.ConfigurationImportSelection{Bundle: bundle}
+		presets, err := target.Store.List(context.Background(), store.Filter{Kind: domain.ProviderKind, Limit: 200})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range bundle.Entries {
+			if entry.Kind != domain.ProviderKind {
+				continue
+			}
+			var incoming domain.Provider
+			if err := domain.Decode(entry.Document, &incoming); err != nil {
+				t.Fatal(err)
+			}
+			if incoming.PresetID == nil {
+				continue
+			}
+			for _, preset := range presets {
+				current, decodeErr := store.Decode[domain.Provider](preset)
+				if decodeErr != nil {
+					t.Fatal(decodeErr)
+				}
+				if current.PresetID != nil && *current.PresetID == *incoming.PresetID {
+					reimport.Bindings = append(reimport.Bindings, domain.ConfigurationBinding{SourceID: entry.ID, TargetID: preset.ID, ExpectedRevision: preset.Revision, Action: domain.ConfigurationReuse})
+				}
+			}
+		}
+		result := transferApply(t, target, transferPreview(t, target, reimport), domain.NewID())
+		for _, imported := range result.Resources {
+			if imported.Kind != domain.AccountKind {
+				continue
+			}
+			row, getErr := target.Store.Get(context.Background(), domain.AccountKind, imported.ID)
+			if getErr != nil {
+				t.Fatal(getErr)
+			}
+			account, decodeErr := store.Decode[domain.Account](row)
+			if decodeErr != nil || account.Health != domain.AccountDisconnected || account.Connection != nil || (version == 4) != (account.APIProtocol == domain.OpenAIResponses) {
+				t.Fatal("round-trip account lost its original format or gained connection authority", decodeErr)
+			}
+		}
 		if version == 4 {
 			selection.Bundle.Version = 3
 			if err := s.Store.Read(context.Background(), func(tx *store.Tx) error { _, err := buildConfigurationPlan(tx, selection); return err }); err == nil {
@@ -236,6 +286,11 @@ func TestOpenRouterAccountFormatsAndCodexConfiguration(t *testing.T) {
 		_, err := saveAPIFormatConfiguration(f, domain.AgentKind, agent, nil)
 		if i == 0 && err != nil || i == 1 && domain.SafeError(err).Code != domain.Unsupported {
 			t.Fatal("Codex ignored the selected account format", err)
+		}
+		request := wizardRequest([]*pb.Resource{a}, "provider/model")
+		_, err = f.s.SaveAgentWorker(f.ctx, connect.NewRequest(request))
+		if i == 0 && err != nil || i == 1 && domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+			t.Fatal("atomic Worker save ignored the selected account format", err)
 		}
 	}
 	listed, err := f.s.ListResources(f.ctx, connect.NewRequest(&pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT, PageSize: 1}, ProviderId: f.provider.Id, ApiProtocol: pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES}))

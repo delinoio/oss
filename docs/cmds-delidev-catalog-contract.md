@@ -48,7 +48,8 @@ compatibility does not establish model access or native readiness.
 Legacy JSON configuration writes and version 1–3 imports retain their original
 configuration semantics. Their execution admission still checks the resolved
 original protocol. Explicit account selections reject incompatible Worker
-configuration writes; the typed atomic Worker save always checks every account.
+configuration writes. The typed atomic Worker save resolves every account through
+the same profile and compatibility checks within its model/account transaction.
 
 The desktop requires an explicit manual format selection between Entry name and
 API key. Lists, connection details and Worker compatibility use that account's
