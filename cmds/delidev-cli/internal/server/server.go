@@ -94,6 +94,7 @@ type Service struct {
 	subscriptionOnce              sync.Once
 	subscriptionEpoch             domain.ID
 	subscriptionProgress          map[domain.ID]subscriptionProgress
+	claudeLoginCodes              map[domain.ID][]byte
 	accountOnce                   sync.Once
 	accountGate                   chan struct{}
 	oauthGeneration               domain.ID

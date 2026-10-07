@@ -45,6 +45,16 @@ export const cancelSubscription = SubscriptionService.method.cancelSubscription;
 export const getSubscriptionProgress = SubscriptionService.method.getSubscriptionProgress;
 
 /**
+ * @generated from rpc delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode
+ */
+export const submitSubscriptionLoginCode = SubscriptionService.method.submitSubscriptionLoginCode;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.TakeSubscriptionLoginCode
+ */
+export const takeSubscriptionLoginCode = SubscriptionService.method.takeSubscriptionLoginCode;
+
+/**
  * @generated from rpc delidev.v1.SubscriptionService.ForwardSubscriptionCallback
  */
 export const forwardSubscriptionCallback = SubscriptionService.method.forwardSubscriptionCallback;
