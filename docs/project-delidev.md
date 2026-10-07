@@ -146,7 +146,9 @@ Update the owning domain contract when behavior changes. Update this index only 
 
 ## Home navigation invariant
 
-Home (Sessions/New Session) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
+The desktop provides a dedicated New general chat action and projectless start screen under the [desktop contract](apps-delidev-desktop-contract.md#dedicated-general-chat-creation). Reuse ordinary Agent Worker session execution, with independent connection-memory creation drafts and exact requests; no new protocol, migration or tool-free authority is introduced.
+
+Home (Sessions/New Session/New General Chat) keeps independent bounded 50-record reads and connection-owned minimal navigation projections with no row-count cutoff. Accepted Home metadata grows with reached inventory; ordinary query payloads keep their eight-inactive-query bound. Preserve original resource/project identity, selected conversation/drafts, scope generation cancellation, and the mounted local/saved server controllers. Other destinations retain manual paging. See the [desktop contract](apps-delidev-desktop-contract.md).
 
 - Workspace storage and Codex forks share source ownership exclusion: forks require present storage at acceptance, claim and publication, and storage waits for unresolved fork jobs. Stored workspaces require explicit restoration before a fork.
 
