@@ -371,13 +371,14 @@ try {
         if (category === "Repositories") {
           // Local checkout inspection is optional in remote-first registration.
           // Exercise its manual entry without inventing native folder authority.
-          await page.getByRole("button", { name: l("Connect a Local folder (optional)"), exact: true }).click();
-          await page.getByRole("button", { name: l("Enter a path…"), exact: true }).click();
-          await page.getByRole("textbox", { name: l("Absolute checkout path"), exact: true }).waitFor();
+          // These remote-first controls currently use English in both languages.
+          await page.getByRole("button", { name: "Connect a Local folder (optional)", exact: true }).click();
+          await page.getByRole("button", { name: "Enter a path…", exact: true }).click();
+          await page.getByRole("textbox", { name: "Absolute checkout path", exact: true }).waitFor();
           assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Repository registration overflow");
           assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
           formsChecked++;
-          await page.getByRole("button", { name: l("Back to repositories"), exact: true }).click();
+          await page.getByRole("button", { name: "Back to repositories", exact: true }).click();
           continue;
         }
         if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
