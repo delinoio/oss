@@ -47,17 +47,18 @@ export function RunnerRemediationProvider({ children, active, authority }: { chi
   const value = useMemo(() => ({ request, release, presenter, controller, active, authority }), [request, release, presenter, controller, active, authority]);
   return <Context.Provider value={value}>{children}{selected ? <SettingsLifetime key={selected.id}>{() => <MutationIntents><ControllerOwner initial={selected} active={active && Boolean(presenter)} publish={setController} /></MutationIntents>}</SettingsLifetime> : null}</Context.Provider>;
 }
-export type RunnerRemediationOpener = ((resource: Resource) => void) & { body: ReactNode; close: () => void; locked: boolean };
+export type RunnerRemediationOpener = ((resource: Resource) => void) & { body: ReactNode; close: () => void; locked: boolean; pending: boolean };
 /** Render `opener.body` within the caller's original task. A nested Step shares
  * its presentation and focus, while the inspection controller stays retained. */
 export function useRunnerRemediation(): RunnerRemediationOpener | undefined {
   useLocale();
   const owner = useContext(Context), presenter = useId();
   const [requested, setRequested] = useState<string>();
+  const lastRequested = useRef<string | undefined>(undefined);
   const close = useCallback(() => { setRequested(undefined); owner?.release(presenter); }, [owner?.release, presenter]);
   useLayoutEffect(() => () => owner?.release(presenter), [owner?.release, presenter]);
-  const open = useCallback((resource: Resource) => { if (owner?.request(resource, presenter)) setRequested(resource.id); }, [owner?.request, presenter]);
+  const open = useCallback((resource: Resource) => { if (owner?.request(resource, presenter)) { lastRequested.current = resource.id; setRequested(resource.id); } }, [owner?.request, presenter]);
   const controller = owner?.controller;
   const body = requested && owner?.presenter === presenter && owner?.active && controller?.initial.id === requested ? <SettingsTaskDialog title={copy("settings.inspectInstalledHarnesses_45e943")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={close} onDismiss={close}><MachineSettingsView controller={controller} active={owner.active} authority={owner.authority} close={close} compact /></SettingsTaskDialog> : null;
-  return owner ? Object.assign(open, { body, close, locked: Boolean(controller?.locked && controller.initial.id !== requested) }) : undefined;
+  return owner ? Object.assign(open, { body, close, locked: Boolean(controller?.locked && controller.initial.id !== lastRequested.current), pending: Boolean(controller?.locked && controller.initial.id === lastRequested.current) }) : undefined;
 }
