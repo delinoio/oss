@@ -291,6 +291,8 @@ independent exceptions and bounds. Files retain directory metadata only, their
 separately bounded. A changed digest requires explicit list reload.
 
 
+The synthetic `test-scroll-pagination-layout.mjs` browser check exercises the actual shared chain, continuation, payload window and picker in English/Korean, both themes and narrow effective 200% reflow. Its five-page fixtures verify explicit first Load, bounded payload eviction, original-token restoration and keyboard/focus continuity. Keep generated bundles and screenshots outside the checkout; effective CSS reflow does not establish actual browser chrome zoom, real account or packaged CEF acceptance.
+
 ### Project-grouped Home navigation
 Sessions, New Session and New General Chat share one connection-owned Home navigation/scroll scope. The 52px rail, 288px pane (256px at <=1,100px), native 960×640 minimum and <760px native modal drawer remain unchanged. The static DeliDev header with existing Inbox/Search and the stacked 36px New session/New general chat actions stay above the independently scrolling inventory. Projects and named/fallback groups precede General Chat. Home uses system fonts, an 18px brand, 14px conversation titles, 12px secondary text, 34px flat rows, 8px ordinary radii, and 4/8/12/16/24px spacing. Its pane is `#F7F8FA`, text `#202632`, secondary text `#5B6577` and separators `#E3E6EB`; blue is reserved for primary action, selection and focus. Keep the New project plus at 34×34px with its existing 6px radius. Other menu contexts use the shared continuation contract; conversation/composer, native title bar and right panels retain their behavior.
 
