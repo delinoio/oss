@@ -792,9 +792,12 @@ Routing preview remains a read-only 768px Settings task. Its fixed header shows
 `Preview routing`, the complete Agent Worker name and selected-server scope. The
 scrolling body orders read-only context, server selection result, project scope
 and refresh, routing policy, ordered source decisions and candidate evidence.
-The fixed footer has one neutral Close action. X, Escape and Close share task
-disposal, background release and original-opener focus restoration. No account
-management, login, credential validation or execution action is added.
+The top-level task delegates dismissal to its fixed header Close control (X)
+and Escape, without a duplicate footer Close action or empty footer spacing.
+Both dismissal paths share task disposal, background release and
+original-opener focus restoration. A standalone preview retains its Close
+action. No account management, login, credential validation or execution action
+is added.
 
 Use stored account names/aliases as the primary identity and the explicit
 subscription service or saved API provider name as secondary context. Resolve
