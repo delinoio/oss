@@ -1,5 +1,9 @@
 # Project: DeliDev
 
+The desktop owns shared scroll-continuation state and presentation with domain
+adapters retaining response-validation, initial-read, payload-disposal and
+mutation authority. See the [shared desktop pagination contract](apps-delidev-desktop-contract.md#shared-scroll-continuation).
+
 ## Key-preserving format amendment
 
 After main reservation PR #1666, ProviderInventory capability 9 owns connected API

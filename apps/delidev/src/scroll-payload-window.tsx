@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: Apache-2.0
+import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
+import { copy, useLocale } from "./localization";
+import { continuationDistance } from "./scroll-continuation";
+import { type PaginationPage, type PaginationPayloadPage, type PaginationRow } from "./scroll-pagination";
+
+export interface PayloadWindowQuery<Row extends PaginationRow, Payload> {
+  pages: PaginationPage<Row>[];
+  payloadPages: PaginationPayloadPage<Payload>[];
+  loading?: unknown;
+  error?: unknown;
+  restore: (token: string) => void;
+  measure: (token: string, height: number) => void;
+  protect?: (token?: string) => void;
+}
+
+function PayloadPage<Row extends PaginationRow, Payload>({ page, payload, query, root, active, children }: {
+  page: PaginationPage<Row>; payload?: Payload[]; query: PayloadWindowQuery<Row, Payload>;
+  root: RefObject<HTMLElement | null>; active: boolean; children: (payload: Payload[], rows: Row[]) => ReactNode;
+}) {
+  useLocale();
+  const element = useRef<HTMLDivElement>(null);
+  const attemptedPosition = useRef<number | undefined>(undefined);
+  const previous = useRef<{ height: number; above: boolean } | undefined>(undefined);
+  useLayoutEffect(() => {
+    const node = element.current, container = root.current;
+    if (!node || !container) return;
+    const bounds = container.getBoundingClientRect();
+    if (payload) {
+      const height = node.getBoundingClientRect().height;
+      // A restored page above the viewport must not move the visible anchor.
+      if (previous.current?.above) container.scrollTop += height - previous.current.height;
+      previous.current = undefined;
+      query.measure(page.token, height);
+      const resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => query.measure(page.token, node.getBoundingClientRect().height)) : undefined;
+      resize?.observe(node);
+      return () => resize?.disconnect();
+    }
+    previous.current = { height: page.height ?? node.getBoundingClientRect().height, above: node.getBoundingClientRect().bottom <= bounds.top };
+    if (!active || query.loading || query.error) return;
+    const check = () => {
+      if (document.visibilityState === "hidden" || container.clientHeight <= 0 || node.closest("[hidden], [inert], [aria-hidden='true']")) return;
+      for (let parent: HTMLElement | null = node; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement && !parent.open) return;
+      const viewport = container.getBoundingClientRect(), position = node.getBoundingClientRect();
+      if (position.top <= viewport.bottom + continuationDistance && position.bottom >= viewport.top - continuationDistance && attemptedPosition.current !== container.scrollTop) {
+        attemptedPosition.current = container.scrollTop;
+        query.restore(page.token);
+      }
+    };
+    const observer = typeof IntersectionObserver === "function" ? new IntersectionObserver(check, { root: container, rootMargin: `${continuationDistance}px 0px` }) : undefined;
+    observer?.observe(node);
+    container.addEventListener("scroll", check, { passive: true });
+    document.addEventListener("visibilitychange", check);
+    check();
+    return () => { observer?.disconnect(); container.removeEventListener("scroll", check); document.removeEventListener("visibilitychange", check); };
+  }, [active, page.token, page.height, payload, query.loading, query.error, query.restore, query.measure, root]);
+  return <div ref={element} style={payload ? undefined : { minHeight: page.height ?? 48 }} data-payload-page onFocusCapture={() => query.protect?.(page.token)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}>
+    {payload ? children(payload, page.rows) : <button type="button" disabled={!active || Boolean(query.loading) || Boolean(query.error)} onClick={() => query.restore(page.token)}>{copy("pagination.restore")}</button>}
+  </div>;
+}
+
+/** Retains measured placeholders for reached pages whose full payload expired
+ * from the three-page window. Render callbacks receive authoritative payloads
+ * only for restored ranges; adapters keep mutations separate from projections. */
+export function ScrollPayloadWindow<Row extends PaginationRow, Payload>({ query, root, active, children }: {
+  query: PayloadWindowQuery<Row, Payload>; root: RefObject<HTMLElement | null>; active: boolean;
+  children: (payload: Payload[], rows: Row[]) => ReactNode;
+}) {
+  return query.pages.map(page => <PayloadPage key={page.token} page={page} payload={query.payloadPages.find(value => value.token === page.token)?.payload} query={query} root={root} active={active}>{children}</PayloadPage>);
+}

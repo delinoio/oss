@@ -10,6 +10,7 @@ import { Surface } from "./views";
 import { useShortcutHelp, useGlobalShortcutAria } from "./shortcut-provider";
 import { ShortcutId } from "./shortcuts";
 import type { SettingsEntryDestination } from "./settings";
+import { ScrollContinuation } from "./scroll-continuation";
 import { HomeNavigation, ReadStage, type NavigationRow } from "./home-navigation";
 import { HomeScope, useNavigationQuery } from "./home-navigation-query";
 import { ServerPresentationKind, type ServerPresentation } from "./server-presentation";
@@ -79,28 +80,6 @@ function QueryProblem({ query, label, retryLabel }: { query: NavigationQuery; la
   </div>;
 }
 
-function Continuation({ query, label, root, active }: { query: NavigationQuery; label: string; root: RefObject<HTMLDivElement | null>; active: boolean }) {
-  useLocale();
-  const anchor = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const container = root.current, element = anchor.current;
-    if (!container || !element || !active || !query.nextPageToken || query.error || query.loading) return;
-    const check = () => {
-      if (container.clientHeight <= 0 || window.document.visibilityState === "hidden") return;
-      const bounds = container.getBoundingClientRect(), position = element.getBoundingClientRect();
-      if (position.top <= bounds.bottom + 96 && position.bottom >= bounds.top) query.append();
-    };
-    const observer = typeof IntersectionObserver === "function" ? new IntersectionObserver(check, { root: container, rootMargin: "0px 0px 96px 0px" }) : undefined;
-    observer?.observe(element);
-    const resize = typeof ResizeObserver === "function" ? new ResizeObserver(check) : undefined;
-    resize?.observe(container);
-    container.addEventListener("scroll", check, { passive: true });
-    window.addEventListener("resize", check);
-    check();
-    return () => { observer?.disconnect(); resize?.disconnect(); container.removeEventListener("scroll", check); window.removeEventListener("resize", check); };
-  }, [query, root, active]);
-  return <div ref={anchor} className="sidebar-continuation" data-continuation={label}>{query.loading === ReadStage.Additional ? <span role="status"><LocalizedText id="sidebar.loadingMore_33652b" components={{ s0: <>{label}</> }} /></span> : null}</div>;
-}
 
 function workspaceLabel(raw: string): string {
   if (Object.values(Workspace).includes(raw as Workspace)) return workspaceNames[raw as Workspace];
@@ -200,7 +179,7 @@ function ProjectSessions({ projectId, label, fallback = false, fallbackRows, hom
     {!fallback && !sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status"><LocalizedText id="sidebar.loadingSessions_bd5fbc" components={{ s0: <>{label}</> }} /></p> : null}
     {rows.map((row) => <SessionRow key={row.id} row={row} selected={selected === row.id} open={open} />)}
     {!fallback && sessions.loaded && !sessions.error && rows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">{copy("sidebar.noConversationsLoaded_b94bd7")}</p> : null}
-    <Continuation query={sessions} label={copy("sidebar.sessions_f70c94", { v0: label })} root={root} active={active && !fallback} />
+    <ScrollContinuation showInitial={false} showErrors={false} query={sessions} label={copy("sidebar.sessions_f70c94", { v0: label })} root={root} active={active && !fallback} />
   </div>;
 }
 
@@ -410,14 +389,14 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
         {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingProjects_6970a1")}</p> : null}
         {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>{copy("sidebar.noProjectsLoaded_9b9e01")}</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); setNewProjectTooltip(undefined); newProject(); }}>{copy("sidebar.createAProject_c52af0")}</button></div> : null}
         {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} newSession={chooseNewSession} projectSelectionBlocked={projectSelectionBlocked} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
-        <Continuation query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
+        <ScrollContinuation showInitial={false} showErrors={false} query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat">
           <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>
           {generalExpanded ? <>
             {!sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingSessions_c4141f")}</p> : null}
             {generalRows.map((row) => <SessionRow key={row.id} row={row} selected={selectedSessionId === row.id} open={chooseSession} />)}
             {sessions.loaded && !sessions.error && generalRows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">{copy("sidebar.noConversationsLoaded_b94bd7")}</p> : null}
-            <Continuation query={sessions} label={copy("sidebar.sessions_1225ae")} root={list} active={active && generalExpanded} />
+            <ScrollContinuation showInitial={false} showErrors={false} query={sessions} label={copy("sidebar.sessions_1225ae")} root={list} active={active && generalExpanded} />
           </> : null}
         </section>
         </div>
