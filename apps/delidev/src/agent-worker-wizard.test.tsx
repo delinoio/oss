@@ -7,7 +7,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountTypeFilter, ConfigurationQuery, KnownSubscriptionModelCatalogSource, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, SubscriptionServiceIdentity, SystemCapability, SystemService, newRequestId, type SaveAgentWorkerRequest, type ListKnownSubscriptionModelsRequest, type SearchModelsRequest } from "@delinoio/delidev-api-client";
+import { AccountTypeFilter, ConfigurationQuery, KnownSubscriptionModelCatalogSource, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, SubscriptionServiceIdentity, SystemCapability, SystemService, newRequestId, type SaveAgentWorkerRequest, type ListKnownSubscriptionModelsRequest, type SearchModelsRequest, type Resource } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { document, encode } from "./documents";
 import { AgentWorkerWizard } from "./agent-worker-wizard";
@@ -61,6 +61,21 @@ async function nextAfterAccountRead() {
   // read before advancing, including slow CI transport/effect delivery.
   await waitFor(() => expect(screen.queryByText("Loading selected account…")).toBeNull());
   next();
+}
+
+async function nextAfterSourceProof(value: ReturnType<typeof fixture>, accounts: Resource[]) {
+  // Source cards retain advisory labels immediately. Only the independent
+  // exact GetResource result can establish each selected account's proof.
+  await waitFor(() => {
+    for (const account of accounts) expect(value.client.getQueryCache().getAll().some(query => {
+      const resource = (query.state.data as { resource?: Resource } | undefined)?.resource;
+      return query.state.status === "success" && query.state.fetchStatus === "idle" && resource?.id === account.id && resource.kind === EntityKind.ACCOUNT && resource.revision === account.revision;
+    })).toBe(true);
+  });
+  await act(async () => {});
+  await waitFor(() => expect(screen.getByRole("button", { name: "Next" }).matches(":disabled")).toBe(false));
+  next();
+  await screen.findByRole("heading", { name: "Model", level: 3 });
 }
 
 async function subscriptionModels(value: ReturnType<typeof fixture>) {
@@ -796,7 +811,7 @@ it("saves subscription then API source models atomically and preserves drafts ac
   await chooseScrollOption(sourceChoice("Account source 2"), `api:${value.provider.id}`);
   fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select Personal API" })).toBeTruthy());
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false)); next();
+  await nextAfterSourceProof(value, [value.subscription, value.accounts[0]]);
   const subscriptionModel = screen.getByRole("combobox", { name: "Model for ChatGPT subscription" });
   const apiModel = screen.getByRole("combobox", { name: "Model for OpenAI API" });
   fireEvent.change(subscriptionModel, { target: { value: "subscription-exact" } }); fireEvent.keyDown(subscriptionModel, { key: "Escape" });
@@ -856,7 +871,7 @@ it("saves known candidates as exact native IDs on source-route servers", async (
   value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
   await start(value); confirmHarness();
   await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await screen.findByRole("checkbox", { name: "Select ChatGPT account" }); await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false)); next();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await screen.findByRole("checkbox", { name: "Select ChatGPT account" }); await nextAfterSourceProof(value, [value.subscription]);
   const input = await screen.findByRole("combobox", { name: "Model for ChatGPT subscription" });
   fireEvent.focus(input); fireEvent.click(await screen.findByRole("option", { name: /GPT Known Current/ }));
   expect(value.known).toHaveBeenCalledTimes(1); expect(value.save).not.toHaveBeenCalled();
@@ -874,7 +889,7 @@ it("keeps later-page saved revisions ahead of known duplicates for each source",
   value.search.mockImplementation(async request => ({ models: request.pageToken ? [saved] : [], providers: [], nextPageToken: request.pageToken ? "" : "later" }));
   await start(value); confirmHarness();
   await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await screen.findByRole("checkbox", { name: "Select ChatGPT account" }); await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false)); next();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await screen.findByRole("checkbox", { name: "Select ChatGPT account" }); await nextAfterSourceProof(value, [value.subscription]);
   const input = await screen.findByRole("combobox", { name: "Model for ChatGPT subscription" }); fireEvent.focus(input);
   await waitFor(() => expect(value.known).toHaveBeenCalledTimes(1));
   expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull();
@@ -893,7 +908,7 @@ it("changes source-route language without replacing drafts, focus or read identi
   const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
   await start(value); confirmHarness();
   await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await screen.findByRole("checkbox", { name: "Select ChatGPT account" }); await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false)); next();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await screen.findByRole("checkbox", { name: "Select ChatGPT account" }); await nextAfterSourceProof(value, [value.subscription]);
   const input = await screen.findByRole("combobox", { name: "Model for ChatGPT subscription" });
   fireEvent.change(input, { target: { value: "retained-exact-model" } }); input.focus();
   await waitFor(() => expect(value.search.mock.calls.at(-1)?.[0].query).toBe("retained-exact-model"));
@@ -1084,5 +1099,48 @@ it("seeds routed account display metadata without replacing failed independent p
   next();
   expect(screen.queryByRole("combobox", { name: "Model for ChatGPT subscription" })).toBeNull();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+
+it.each([false, true])("shows initial selected-provider failure outside the collapsed source picker (routes=%s)", async routes => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, ...(routes ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
+  let unavailable = true;
+  value.get.mockImplementation(request => { if (unavailable && request.id === value.provider.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice(routes ? "Account source 1" : "Account source"), `api:${value.provider.id}`);
+  await screen.findAllByRole("alert");
+  const retry = screen.getByRole("button", { name: "Retry source details" });
+  expect(screen.getByRole("button", { name: "Change source" }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("combobox", { name: routes ? "Account source 1" : "Account source" })).toBeNull();
+  const providerReads = value.get.mock.calls.filter(([request]) => request.id === value.provider.id).length;
+  unavailable = false; fireEvent.click(retry);
+  await screen.findByRole("checkbox", { name: /Personal API/ });
+  expect(value.get.mock.calls.filter(([request]) => request.id === value.provider.id)).toHaveLength(providerReads + 1);
+  expect(screen.queryByRole("button", { name: "Retry source details" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Change source" }).getAttribute("aria-expanded")).toBe("false");
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("retains account choice and weight while retrying selected-provider details (routes=%s)", async routes => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, ...(routes ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice(routes ? "Account source 1" : "Account source"), `api:${value.provider.id}`);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
+  await waitFor(() => expect(screen.queryByText("Loading selected account…")).toBeNull());
+  fireEvent.click(screen.getByText(/^Routing options/));
+  const weight = screen.getByLabelText("Weight for account 1");
+  fireEvent.change(weight, { target: { value: "9" } });
+  let unavailable = true;
+  value.get.mockImplementation(request => { if (unavailable && request.id === value.provider.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  const retry = await screen.findByRole("button", { name: "Retry source details" });
+  expect(screen.getByRole("checkbox", { name: /Personal API/ })).toHaveProperty("checked", true);
+  expect(weight).toHaveProperty("value", "9");
+  unavailable = false; fireEvent.click(retry);
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry source details" })).toBeNull());
+  expect(screen.getByRole("checkbox", { name: /Personal API/ })).toHaveProperty("checked", true);
+  expect(screen.getByLabelText("Weight for account 1")).toBe(weight);
+  expect(weight).toHaveProperty("value", "9");
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
