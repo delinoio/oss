@@ -50,6 +50,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
+const languageOnly = process.env.DELIDEV_LAYOUT_LANGUAGE_ONLY === "1";
 let language = "en";
 const messages = new Map();
 for (const file of await readdir(join(app, "src/locales/en"))) {
@@ -64,7 +65,7 @@ const l = value => {
   return value;
 };
 const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [1280,800], [960,640], [640,480]];
-let checked = 0, formsChecked = 0, harnessChecks = 0, gitChecks = 0, keyboardChecks = 0, hiddenChoicesChecked = 0;
+let checked = 0, formsChecked = 0, harnessChecks = 0, gitChecks = 0, keyboardChecks = 0, hiddenChoicesChecked = 0, languagePickerChecks = 0;
 try {
   const build = await createRsbuild({ cwd: app, rsbuildConfig: { plugins: [pluginReact()], source: { entry: { index: join(app, "src/settings-layout.fixture.tsx") } }, html: { template: join(app, "index.html") }, output: { distPath: { root: directory }, assetPrefix: "/", sourceMap: false, cleanDistPath: true } } });
   await build.build();
@@ -209,7 +210,46 @@ try {
     }
     gitChecks++; keyboardChecks += 4;
   };
-  if (githubOnly) {
+  if (languageOnly) {
+    if (screenshotDirectory) await mkdir(screenshotDirectory, { recursive: true });
+    for (const fixtureLanguage of ["en", "ko"]) for (const theme of ["light", "dark", "system"]) for (const [width, height] of [[1280,800], [640,480], [480,320], [320,240]]) {
+      language = fixtureLanguage;
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: theme === "system" ? "dark" : theme });
+      await page.goto(`${origin}/?theme=${theme}&language=${language}`);
+      await page.getByRole("button", { name: l("Settings"), exact: true }).click(); await select("Appearance");
+      const input = page.locator(".language-settings input[role=combobox]");
+      const committed = fixtureLanguage === "en" ? "English - English" : "Korean - 한국어";
+      const system = fixtureLanguage === "en" ? "Follow system" : "시스템 설정 따르기";
+      await input.click();
+      assert.equal(await input.inputValue(), "");
+      assert.deepEqual(await page.locator(".language-options [role=option]").allTextContents(), [system, "English - English", "Korean - 한국어"]);
+      const geometry = await input.evaluate(node => {
+        const input = node.getBoundingClientRect(), picker = node.closest(".language-picker"), list = picker.querySelector(".language-options").getBoundingClientRect(), content = node.closest(".settings-content"), style = getComputedStyle(node);
+        return { width: input.width, bodyWidth: node.closest(".settings-content-column").getBoundingClientRect().width, height: input.height, listWidth: list.width, gap: list.top - input.bottom, radius: style.borderRadius, outlineStyle: style.outlineStyle, pickerOverflow: picker.scrollWidth > picker.clientWidth, contentOverflow: content.scrollWidth > content.clientWidth, rows: [...picker.querySelectorAll("[role=option]")].map(row => row.getBoundingClientRect().height) };
+      });
+      assert(geometry.height >= 40 && geometry.width > 0 && geometry.width <= (geometry.bodyWidth < 640 ? geometry.bodyWidth : 320), JSON.stringify(geometry));
+      if (geometry.bodyWidth < 640) assert.equal(geometry.width, geometry.bodyWidth);
+      assert.equal(geometry.width, geometry.listWidth); assert.equal(geometry.gap, 4); assert.equal(geometry.radius, "8px"); assert.equal(geometry.outlineStyle, "none", JSON.stringify(geometry));
+      assert(!geometry.pickerOverflow && !geometry.contentOverflow && geometry.rows.every(height => height >= 40), JSON.stringify(geometry));
+      if (screenshotDirectory && width === 1280 && fixtureLanguage === "en" && theme === "light") await page.screenshot({ path: join(screenshotDirectory, "language-light-all.png") });
+      await input.fill(" KOR ");
+      assert.deepEqual(await page.locator(".language-options [role=option]").allTextContents(), ["Korean - 한국어"]);
+      await input.fill("한");
+      assert.deepEqual(await page.locator(".language-options [role=option]").allTextContents(), ["Korean - 한국어"]);
+      if (screenshotDirectory && width === 1280 && fixtureLanguage === "ko" && theme === "dark") await page.screenshot({ path: join(screenshotDirectory, "language-dark-filtered.png") });
+      await input.press("Escape"); assert.equal(await input.inputValue(), committed);
+      await input.click(); await input.fill("unsupported language");
+      await page.getByText(fixtureLanguage === "en" ? "No matching languages." : "일치하는 언어가 없습니다.", { exact: true }).waitFor();
+      await input.press("Enter"); assert.equal(await page.locator("html").getAttribute("lang"), fixtureLanguage);
+      await input.press("Escape"); await input.click(); await input.fill("한"); await input.press("Enter");
+      await page.locator(".language-settings [role=status]").filter({ hasText: "언어를 저장했습니다." }).waitFor();
+      assert.equal(await input.inputValue(), "Korean - 한국어");
+      assert.equal(await input.evaluate(node => node === document.activeElement), true);
+      assert.equal(await input.getAttribute("aria-expanded"), "false");
+      languagePickerChecks++;
+    }
+  } else if (githubOnly) {
     let onboardingChecks = 0;
     // Half-size CSS viewports cover effective 200% layout, not native chrome zoom.
     for (const [width, height] of [[1440, 900], [960, 640], [640, 480], [720, 450], [480, 320]]) {
@@ -406,12 +446,15 @@ try {
   await page.goto(`${origin}/?theme=light&language=en`); language = "en";
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Appearance");
-  const languageSelect = page.locator(".language-settings select");
-  await languageSelect.selectOption("ko"); language = "ko";
+  const languageSelect = page.locator(".language-settings input[role=combobox]");
+  await languageSelect.click();
+  assert.deepEqual(await page.locator(".language-options [role=option]").allTextContents(), ["Follow system", "English - English", "Korean - 한국어"]);
+  await languageSelect.fill("한");
+  await languageSelect.press("Enter"); language = "ko";
   await page.locator(".language-settings [role=status]").filter({ hasText: "언어를 저장했습니다." }).waitFor();
   const languageBounds = await languageSelect.boundingBox();
   assert(languageBounds.width <= 320 && languageBounds.height >= 40);
-  assert.equal(await page.locator(".language-settings select").inputValue(), "ko");
+  assert.equal(await languageSelect.inputValue(), "Korean - 한국어");
   assert.equal(await page.locator(".language-settings").getByText("기본값은 시스템 언어입니다. 변경하면 모든 DeliDev 창에 바로 적용됩니다.").count(), 1);
   if (process.env.DELIDEV_LAYOUT_SCREENSHOT) await page.screenshot({ path: process.env.DELIDEV_LAYOUT_SCREENSHOT });
   for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
@@ -450,8 +493,8 @@ try {
     await page.getByRole("button", { name: /^Edit Example PROJECT/ }).click(); await page.getByRole("dialog").waitFor();
     await page.screenshot({ path: screenshotPath });
   }
-  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length * 2, primarySurfaceChecks: 16, keyboardChecks, nativeAcceptance: "not-performed" }));
   }
+  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

@@ -201,20 +201,22 @@ function ProjectSessions({ projectId, label, fallback = false, fallbackRows, hom
   </div>;
 }
 
-function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, home, includeArchived, selected, open, active, root }: {
+function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, newSession, projectSelectionBlocked, home, includeArchived, selected, open, active, root }: {
   projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
+  newSession: (projectId: string) => void; projectSelectionBlocked: boolean;
 }) {
   useLocale();
-  return <section className="sidebar-project-group" data-project-id={projectId}>
+  return <section className={`sidebar-project-group${fallback ? "" : " has-new-session"}`} data-project-id={projectId}>
     <button type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: projectId })} aria-expanded={expanded} onClick={toggle}>
       <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span><Icon name="chevron" className={`sidebar-disclosure ${expanded ? "is-expanded" : ""}`} />
     </button>
+    {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProjectId", { v0: label, v1: projectId })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
     {expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} open={open} active={active} root={root} /> : null}
   </section>;
 }
 
-export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: () => void; newGeneralChat: () => void; newProject: () => void; openSettings: (destination?: SettingsEntryDestination) => void;
+export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   useLocale();
@@ -367,6 +369,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   };
 
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
+  const chooseNewSession = (projectId?: string) => { newSession(projectId); setDrawerOpen(false); };
   return <SessionHoverProvider enabled={active} scope={surface}><aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
     <nav ref={rail} className="sidebar-rail" aria-label={copy("sidebar.primaryNavigation_e1bfe7")}>
       <SidebarButton label={copy("sidebar.sessions_6fa3cb")} icon="sessions" current={sessionNavigation} onClick={() => navigate(Surface.Sessions)} />
@@ -398,7 +401,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
         <QueryProblem query={sessions} label={copy("sidebar.sessions_1225ae")} retryLabel={copy("sidebar.retryGlobalSessions_4d93c1")} />
         {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingProjects_6970a1")}</p> : null}
         {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>{copy("sidebar.noProjectsLoaded_9b9e01")}</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); setNewProjectTooltip(undefined); newProject(); }}>{copy("sidebar.createAProject_c52af0")}</button></div> : null}
-        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
+        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} newSession={chooseNewSession} projectSelectionBlocked={projectSelectionBlocked} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
         <Continuation query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat">
           <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>
