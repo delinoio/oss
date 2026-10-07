@@ -111,6 +111,17 @@ attempt, retaining the failed history and original configuration/account/Worker.
 Uncertain delivery or cleanup requires original recovery, not another send.
 Retain original startup failure separately from a later cleanup failure.
 
+Successful resolution leaves fresh execution process-index publication to the
+workspace claim. A definite resolver failure before workspace/native admission
+may retain a fresh empty index only through exclusive creation and synchronized
+parent publication. Existing scopes, failed creation/synchronization, original
+history mismatch and uncertain executable-journal publication remain uncertain.
+Cleanup reconciliation requires this attempt's original index ownership; an
+empty retained directory alone cannot grant proof. Resolution success advances
+to Launch before workspace/runtime admission; actual native opening advances to
+Initialize.
+
+
 Keep the existing sidebar, composer, semantic color tokens and information drawer.
 Support contained keyboard navigation, Escape, opener restoration, narrow
 overlays, long-value wrapping and 200% zoom. Missing setup links directly to its
