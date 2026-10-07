@@ -12,6 +12,7 @@
     "account-oauth",
     "provider-guidance",
     "device-appearance",
+    "session-creation-preferences",
     "device-language",
     "browser-presentation",
     "repository-folder",

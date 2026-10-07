@@ -88,7 +88,7 @@ export const ResourceSelectionPending = createContext<((identity: string, pendin
 
 // Selectors accumulate bounded display projections. Exact resources are read
 // only for the retained selection and a deliberate selection callback.
-export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string }) {
+export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
   useLocale();
   const reportRead = useContext(AgentReadProblem), reportPending = useContext(ResourceSelectionPending), readIdentity = useId();
   const transport = useTransport(), client = useQueryClient(), generation = useRef(0);
@@ -125,7 +125,11 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   usePaginationRefresh(ProviderQuery.listProviderInventory, requestProviders(""), active && needsProviderCapability && kind === EntityKind.PROVIDER, providers.refresh);
   usePaginationRefresh(ProviderQuery.searchModels, requestModels(""), active && needsProviderCapability && kind === EntityKind.MODEL, models.refresh);
   const selected = useQuery(ResourceQuery.getResource, { kind, id: value }, { enabled: active && Boolean(value) });
-  const selectedData = document(selected.data?.resource);
+  // Creation owns this independently verified exact-ID record. It supplies only
+  // the selected label; reached pages continue to retain metadata projections.
+  const resolvedSelection = resolvedChoice?.id === value && resolvedChoice.kind === kind && resolvedChoice.revision > 0n && supportsResourceSchema(resolvedChoice) && (allowedKey === "*" || (JSON.parse(allowedKey) as unknown[]).includes(value)) ? resolvedChoice : undefined;
+  const selectedResource = selected.data?.resource?.id === value && selected.data.resource.kind === kind ? selected.data.resource : resolvedSelection;
+  const selectedData = document(selectedResource);
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: kind === EntityKind.MODEL ? text(selectedData.provider_id) : "" }, { enabled: active && needsProviderCapability && kind === EntityKind.MODEL && Boolean(text(selectedData.provider_id)) });
   const selectedProviderOff = needsProviderCapability && (kind === EntityKind.PROVIDER ? selectedData.protocol !== Protocol.Subscription && selectedData.enabled === false : document(selectedProvider.data?.resource).enabled === false);
   const failure = selectionError ?? (needsProviderCapability ? inventory.error : undefined) ?? selected.error ?? (needsProviderCapability && kind === EntityKind.MODEL ? selectedProvider.error : undefined);
@@ -158,7 +162,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
     finally { if (generation.current === original) setSelectionBusy(false); }
   };
   const options = [{ id: "", label: emptyLabel ?? copy("configuration-fields.select_586618", { v0: resourceLabel.toLowerCase() }) }, ...result.rows.map(row => ({ id: row.id, label: (row.name || copy("documents.extra.e504e6152194")) + (kind === EntityKind.ACCOUNT ? copy("configuration-fields.message_2fa20b", { v0: statusLabel(row.health) }) : ""), disabled: row.id === value && selectedProviderOff }))];
-  return <div className="resource-choice"><ScrollPicker label={label} options={options} value={value} selectedLabel={value ? selected.data?.resource ? resourceName(selected.data.resource) : copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel }) : undefined} placeholder={emptyLabel} change={id => void select(id)} query={result} active={active} disabled={disabled || selectionBusy} required={required} autoFocus={autoFocus} markRequired={markRequired} />
+  return <div className="resource-choice"><ScrollPicker label={label} options={options} value={value} selectedLabel={value ? selectedResource ? resourceName(selectedResource) : copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel }) : undefined} placeholder={emptyLabel} change={id => void select(id)} query={result} active={active} disabled={disabled || selectionBusy} required={required} autoFocus={autoFocus} markRequired={markRequired} />
     {needsProviderCapability && active && !ready ? <p role="status">{copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}</p> : null}
     {(showStatus || reportRead || markRequired) && result.loading ? <p role="status">{copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel })}</p> : null}
     {(showStatus || reportRead || markRequired) && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy(result.nextPageToken ? "configuration-fields.sentence.244a41434b15" : "configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}

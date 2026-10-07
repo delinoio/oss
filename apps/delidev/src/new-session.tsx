@@ -1,7 +1,9 @@
 import { productError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource, WorkerCapability, supportsResourceSchema } from "@delinoio/delidev-api-client";
+import { creationPreferenceProblemMessage, useCreationPreferences, type CreationPreferenceBridge, type CreationPreferenceScope } from "./session-creation-preferences";
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
 import { document, encode, items, Mode, object, text, Workspace } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
@@ -13,6 +15,12 @@ import { Surface } from "./surface";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
 
+// A failed connection cannot prove that an existing choice became ineligible.
+// Explicit denial/missing responses can; successful reads validate the resource.
+function eligibilityReadSettled(fetching: boolean, error: unknown) {
+  return !fetching && (!error || [Code.PermissionDenied, Code.Unauthenticated, Code.NotFound].includes(ConnectError.from(error).code));
+}
+
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export enum NewSessionKind { Session = "session", GeneralChat = "general-chat" }
@@ -21,7 +29,7 @@ function sessionResource(resource?: Resource): resource is Resource {
   return Boolean(resource && resource.kind === EntityKind.SESSION && resource.schemaVersion === 1 && resource.revision > 0n && UUID_V7.test(resource.id));
 }
 
-export function NewSession({ kind = NewSessionKind.Session, active, ownsActivation, activation, entryProjectId, projectSelectionBlockedChanged, readLocalWorker, back, openSettings, open, created }: {
+export function NewSession({ kind = NewSessionKind.Session, active, ownsActivation, activation, entryProjectId, projectSelectionBlockedChanged, readLocalWorker, preferenceBridge, preferenceScope, back, openSettings, open, created }: {
   kind?: NewSessionKind;
   active: boolean;
   ownsActivation: boolean;
@@ -29,6 +37,8 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   entryProjectId?: string;
   projectSelectionBlockedChanged?: (blocked: boolean) => void;
   readLocalWorker?: ReadLocalWorkerProof;
+  preferenceBridge?: CreationPreferenceBridge;
+  preferenceScope?: CreationPreferenceScope;
   back: () => void;
   openSettings: () => void;
   open: (id: string) => void;
@@ -38,6 +48,9 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const generalChat = kind === NewSessionKind.GeneralChat;
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
   const local = useLocalWorkerProof(readLocalWorker);
+  const preferences = useCreationPreferences(kind, active, preferenceBridge, preferenceScope);
+  const touched = useRef(false);
+  const restoration = useRef({ agent: false, machine: false });
   const [workspace, setWorkspace] = useState(Workspace.GeneralChat);
   const [project, setProject] = useState("");
   const [agent, setAgent] = useState("");
@@ -65,12 +78,15 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
   const automaticTitles = status.data?.capabilities.includes(SystemCapability.AUTOMATIC_TITLES_V1) ?? false;
   const selectedProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: generalChat ? "" : project }, { enabled: active && !generalChat && Boolean(project) });
-  const accepted = useCallback((result: { change?: { session?: Resource } }) => {
+  const accepted = useCallback((result: { change?: { session?: Resource } }, request: { documentJson: Uint8Array }) => {
     const session = result.change?.session;
     if (!sessionResource(session)) {
       setInvalidAcknowledgment(true);
       return;
     }
+    // The original retained request, including receipt retries, owns history.
+    const submitted = JSON.parse(new TextDecoder().decode(request.documentJson));
+    if (UUID_V7.test(submitted.agent_id) && UUID_V7.test(submitted.machine_id)) preferences.remember({ agent_id: submitted.agent_id, machine_id: submitted.machine_id });
     setPrompt("");
     setCreatedElsewhere(undefined);
     created();
@@ -79,12 +95,14 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     } else {
       setCreatedElsewhere(session);
     }
-  }, [created, open]);
+  }, [created, open, preferences.remember]);
   const submittedActivation = useRef(-1);
   const mutation = useRetainedMutation(generalChat ? "create-general-chat" : "create-session", SessionQuery.createSession, accepted);
   const restrictions = object(document(selectedProject.data?.resource).agents);
   const blocked = mutation.busy || mutation.uncertain || local.busy || invalidAcknowledgment;
   const projectChanged = useCallback((id: string) => {
+    touched.current = false;
+    restoration.current = { agent: false, machine: false };
     setProject(id);
     setAgent("");
     setMachine("");
@@ -102,7 +120,31 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     if (entryProjectId && !blocked && entryProjectId !== project) projectChanged(entryProjectId);
   }, [active, activation, entryProjectId, blocked, project, projectChanged]);
 
-  const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked;
+  const rememberedAgent = useQuery(ResourceQuery.getResource, { kind: EntityKind.AGENT, id: preferences.pair?.agent_id ?? "" }, { enabled: active && Boolean(preferences.pair?.agent_id), retry: false });
+  const rememberedMachine = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: preferences.pair?.machine_id ?? "" }, { enabled: active && Boolean(preferences.pair?.machine_id), retry: false });
+  const agentChoice = rememberedAgent.data?.resource;
+  const machineChoice = rememberedMachine.data?.resource;
+  const restorationBlocked = useRef(false);
+  restorationBlocked.current = blocked;
+  const projectEligible = !project || !selectedProject.isFetching && !selectedProject.error && selectedProject.data?.resource?.id === project && selectedProject.data.resource.kind === EntityKind.PROJECT && supportsResourceSchema(selectedProject.data.resource);
+  const agentEligible = projectEligible && !rememberedAgent.isFetching && !rememberedAgent.error && agentChoice?.id === preferences.pair?.agent_id && agentChoice?.kind === EntityKind.AGENT && supportsResourceSchema(agentChoice) && agentChoice.revision > 0n && document(agentChoice).disabled !== true && document(agentChoice).enabled !== false && document(agentChoice).reconfiguration_required !== true && (restrictions.configured !== true || items(restrictions.ids).includes(agentChoice.id));
+  const machineCapabilities = items(document(machineChoice).worker_capabilities);
+  const machineEligible = projectEligible && !rememberedMachine.isFetching && !rememberedMachine.error && machineChoice?.id === preferences.pair?.machine_id && machineChoice?.kind === EntityKind.MACHINE && supportsResourceSchema(machineChoice) && machineChoice.revision > 0n && document(machineChoice).disabled !== true && document(machineChoice).enabled !== false && (!project || workspace !== Workspace.Worktree || items(document(selectedProject.data?.resource).repositories).length === 0 || machineCapabilities.includes("remote-workspace-clone-v1") || machineCapabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1));
+  useEffect(() => {
+    if (!active || restorationBlocked.current || !preferences.pair) return;
+    // Automatic ownership is independent per field. Draft edits stop restoration,
+    // but only a manual choice releases that field from eligibility revalidation.
+    if (restoration.current.agent && eligibilityReadSettled(rememberedAgent.isFetching, rememberedAgent.error) && (!project || eligibilityReadSettled(selectedProject.isFetching, selectedProject.error)) && !agentEligible) setAgent(value => value === preferences.pair?.agent_id ? "" : value);
+    if (restoration.current.machine && workspace !== Workspace.Local && eligibilityReadSettled(rememberedMachine.isFetching, rememberedMachine.error) && (!project || eligibilityReadSettled(selectedProject.isFetching, selectedProject.error)) && !machineEligible) setMachine(value => value === preferences.pair?.machine_id ? "" : value);
+    if (touched.current || !projectEligible) return;
+    if (!restoration.current.agent && agentEligible) { restoration.current.agent = true; setAgent(agentChoice!.id); }
+    if (!restoration.current.machine && workspace !== Workspace.Local && machineEligible) { restoration.current.machine = true; setMachine(machineChoice!.id); }
+  }, [active, preferences.pair, agentChoice, machineChoice, agentEligible, machineEligible, projectEligible, rememberedAgent.isFetching, rememberedAgent.error, rememberedMachine.isFetching, rememberedMachine.error, selectedProject.isFetching, selectedProject.error, project, workspace, blocked]);
+  const editAgent = (id: string) => { touched.current = true; restoration.current.agent = false; setAgent(id); };
+  const editMachine = (id: string) => { touched.current = true; restoration.current.machine = false; setMachine(id); };
+
+  const automaticChoicesEligible = (!restoration.current.agent || agent !== preferences.pair?.agent_id || agentEligible) && (!restoration.current.machine || workspace === Workspace.Local || machine !== preferences.pair?.machine_id || machineEligible);
+  const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked && automaticChoicesEligible;
 
   const submit = async () => {
     if (!canCreate) return;
@@ -130,6 +172,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     };
     const proof = workspaceType === Workspace.Local ? await local.load(machine) : undefined;
     if (workspaceType === Workspace.Local && !proof) return;
+    touched.current = true;
     submittedActivation.current = navigation.current.activation;
     void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), localWorkerToken: proof?.token });
   };
@@ -145,6 +188,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       setPromptLimit(true);
       return;
     }
+    touched.current = true;
     setPrompt(value);
     setPromptLimit(false);
   };
@@ -184,9 +228,9 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
             />
             <div className="new-session-toolbar">
               <div className="new-session-selectors">
-                <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} change={setAgent} />
-                <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required change={setMachine} />
-                <label className="new-session-mode">{copy("new-session.mode_5e23ec")}<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("new-session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("new-session.plan_fa8ed0")}</option></select></label>
+                <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />
+                <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required resolvedChoice={machineChoice} change={editMachine} />
+                <label className="new-session-mode">{copy("new-session.mode_5e23ec")}<select value={mode} onChange={(event) => { touched.current = true; setMode(event.target.value as Mode); }}><option value={Mode.Execute}>{copy("new-session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("new-session.plan_fa8ed0")}</option></select></label>
               </div>
               <div className="new-session-submit-row">
                 <button type="button" className="new-session-options-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((value) => !value)}>{copy("new-session.options_d0db8b")}</button>
@@ -201,17 +245,22 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
             {!generalChat && project ? <>
               <p>{copy("new-session.aSeparateDetachedWorktreeIsPrepared_8c300d")}</p>
               <div className="actions">
-                <button type="button" aria-pressed={workspace === Workspace.Worktree} onClick={() => { setWorkspace(Workspace.Worktree); setMachine(""); setStarting([]); }}>{copy("new-session.useSeparateWorktrees_5cd0b6")}</button>
-                <button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { void local.load().then((proof) => { if (proof) { setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>{copy("new-session.useThisComputerSLocalCheckouts_eadaad")}</button>
+                <button type="button" aria-pressed={workspace === Workspace.Worktree} onClick={() => { touched.current = true; setWorkspace(Workspace.Worktree); setMachine(""); setStarting([]); }}>{copy("new-session.useSeparateWorktrees_5cd0b6")}</button>
+                <button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { void local.load().then((proof) => { if (proof) { touched.current = true; setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>{copy("new-session.useThisComputerSLocalCheckouts_eadaad")}</button>
               </div>
-              {workspace === Workspace.Local ? <p>{copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}</p> : <StartingReferences key={project} project={project} starting={starting} change={setStarting} active={active} />}
+              {workspace === Workspace.Local ? <p>{copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}</p> : <StartingReferences key={project} project={project} starting={starting} change={(value) => { touched.current = true; setStarting(value); }} active={active} />}
             </> : !generalChat ? <p>{copy("new-session.generalChatUsesAPrivateProjectless_64e0ee")}</p> : null}
-            <details><summary>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</summary><BudgetFields draft={budget} change={setBudget} /><p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p></details>
+            <details><summary>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</summary><BudgetFields draft={budget} change={(value) => { touched.current = true; setBudget(value); }} /><p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p></details>
           </section> : null}
         </fieldset>
       </form>
       {restrictions.configured === true && items(restrictions.ids).length === 0 ? <p role="alert">{copy("new-session.thisProjectExplicitlyAllowsNoAgent_7e04ae")}</p> : null}
       {!automaticTitles ? <div className="notice" role="status"><strong>{copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}</strong><p>{copy("new-session.updateTheDelidevServerAndConnect_039a1d")}</p><button type="button" onClick={openSettings}>{copy("new-session.openSettings_3f9401")}</button><Problem error={status.error} /></div> : null}
+      {preferences.pair && (rememberedAgent.isFetching || rememberedMachine.isFetching) ? <p role="status">{copy("new-session.preferencesResolving")}</p> : null}
+      {preferences.reading ? <p role="status">{copy("new-session.preferencesReading")}</p> : null}
+      {preferences.problem ? <div role="alert"><p>{copy("new-session.preferencesProblem", { v0: creationPreferenceProblemMessage(preferences.problem) })}</p><button type="button" disabled={preferences.reading} onClick={() => void preferences.reinspect()}>{copy("new-session.preferencesInspect")}</button></div> : null}
+      {preferences.canRetry ? <button type="button" onClick={preferences.retrySave}>{copy("new-session.preferencesSave")}</button> : null}
+      <Problem error={rememberedAgent.error || rememberedMachine.error} />
       {budgetProblem ? <p role="alert">{budgetProblem}</p> : null}
       {promptLimit ? <p role="alert">{copy("new-session.theFirstMessageExceeds256Kib_9ced04")}</p> : null}
       {local.problem ? <p role="alert">{local.problem}</p> : null}

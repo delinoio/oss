@@ -42,6 +42,7 @@ pub struct Registry {
     stopping: bool,
     pub local_revision: u64,
     local_identity: Option<[u8; 32]>,
+    local_preference_scope: Option<(u64, crate::session_creation_preferences::Scope)>,
 }
 
 impl Registry {
@@ -191,6 +192,37 @@ impl Registry {
         self.adopt_local(identity)
     }
 
+    // The caller holds the registry lock through both publications. A late
+    // observer cannot label its old scope with a replacement's revision.
+    pub fn adopt_local_scope_at(
+        &mut self,
+        identity: [u8; 32],
+        expected: u64,
+        scope: crate::session_creation_preferences::Scope,
+    ) -> Result<(bool, u64)> {
+        if !scope.valid() {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let changed = self.adopt_local_at(identity, expected)?;
+        let revision = self.local_revision;
+        self.local_preference_scope = Some((revision, scope));
+        Ok((changed, revision))
+    }
+
+    pub fn local_preference_scope_at(
+        &self,
+        expected: u64,
+    ) -> Result<crate::session_creation_preferences::Scope> {
+        let (revision, scope) = self
+            .local_preference_scope
+            .as_ref()
+            .ok_or(NativeFailure::InvalidEvidence)?;
+        if *revision != expected || self.local_revision != expected {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(scope.clone())
+    }
+
     pub fn stop(&mut self) {
         self.stopping = true;
     }
@@ -255,6 +287,38 @@ mod tests {
         );
         assert!(!r.adopt_local_at([2; 32], 0).unwrap());
         assert_eq!(r.local_revision, 1);
+    }
+    #[test]
+    fn late_older_adoption_cannot_publish_scope_under_replacement_revision() {
+        use crate::session_creation_preferences::Scope;
+        let old = Scope {
+            server_id: "11111111-1111-4111-8111-111111111111".into(),
+            device_id: "22222222-2222-4222-8222-222222222222".into(),
+        };
+        let replacement = Scope {
+            server_id: "33333333-3333-4333-8333-333333333333".into(),
+            device_id: "44444444-4444-4444-8444-444444444444".into(),
+        };
+        let mut r = Registry::default();
+        assert_eq!(
+            r.adopt_local_scope_at([1; 32], 0, old.clone()),
+            Ok((false, 0))
+        );
+        assert_eq!(
+            r.adopt_local_scope_at([2; 32], 0, replacement.clone()),
+            Ok((true, 1))
+        );
+        // An earlier command resumes after replacement. Its captured revision
+        // cannot authorize publication or preference access on the new scope.
+        assert_eq!(
+            r.adopt_local_scope_at([1; 32], 0, old),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert_eq!(
+            r.local_preference_scope_at(0),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert_eq!(r.local_preference_scope_at(1), Ok(replacement));
     }
     #[test]
     fn shutdown_rejects_pending_creation_and_authority_publication() {

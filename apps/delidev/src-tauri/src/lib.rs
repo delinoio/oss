@@ -22,6 +22,7 @@ mod browser_opener;
 pub mod language;
 pub mod oauth;
 pub mod provider_guidance;
+pub mod session_creation_preferences;
 pub mod updater;
 pub mod widget_writer;
 pub mod window_registry;

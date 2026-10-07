@@ -42,5 +42,18 @@
   "new-session.startGeneralChat": "일반 대화 시작",
   "new-session.conversationsAreNamedAutomatically": "대화 이름은 자동으로 지정됩니다.",
   "new-session.conversationCreatedAs": "대화 “<s0/>”을 생성했습니다. ",
-  "new-session.openConversation": "대화 열기"
+  "new-session.openConversation": "대화 열기",
+  "new-session.preferencesReading": "저장된 Agent Worker와 Runner Device를 복원하는 중…",
+  "new-session.preferencesInspect": "저장된 선택 확인",
+  "new-session.preferencesSave": "승인된 선택 저장 다시 시도",
+  "new-session.preferencesProblem": "승인된 세션은 변경되지 않습니다. 저장된 선택을 확인해야 합니다: {{v0}}. 다시 저장하기 전에 저장된 선택을 확인하세요.",
+  "new-session.preferencesUnavailable": "선택 저장소를 사용할 수 없습니다",
+  "new-session.preferencesReadFailed": "저장된 선택을 읽지 못했습니다",
+  "new-session.preferencesInvalidDocument": "저장된 선택 문서가 올바르지 않아 원본을 유지했습니다",
+  "new-session.preferencesUnsupportedVersion": "저장된 선택 문서의 버전을 지원하지 않아 원본을 유지했습니다",
+  "new-session.preferencesWriteFailed": "선택을 저장하지 못했습니다",
+  "new-session.preferencesOutcomeUnknown": "저장 결과를 확인할 수 없습니다",
+  "new-session.preferencesChanged": "다른 곳에서 저장된 선택이 변경되었습니다",
+  "new-session.preferencesCapacity": "이 기기에 저장할 수 있는 선택 개수 한도에 도달했습니다",
+  "new-session.preferencesResolving": "저장된 Agent Worker와 Runner Device를 확인하는 중…"
 }
