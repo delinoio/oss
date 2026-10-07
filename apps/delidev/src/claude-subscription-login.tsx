@@ -1,3 +1,4 @@
+import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
@@ -189,6 +190,9 @@ export function useClaudeSubscriptionLogin(
     [hidden, setHidden] = useState(false),
     approvalInput = useRef<HTMLInputElement>(null);
 
+  const runner = useRunnerPreference(RunnerWorkflow.ClaudeLogin, active && Boolean(view && view.step === Step.Runner), eligibleRunner);
+  const runnerTouched = useRef(false);
+  useEffect(() => { const p = pending.current; if (active && !runnerTouched.current && p && !p.fixedRunner && !p.busy && !p.operation && !p.machine && runner.suggestion) { p.machine = runner.suggestion.id; setView(current => current && { ...current, machine: p.machine }); } }, [active, runner.suggestion, view]);
   const live = (p: Pending) =>
     pending.current === p && !p.disposed && !opening?.disposed;
   const update = (p: Pending, v: Partial<View>) => {
@@ -309,6 +313,7 @@ export function useClaudeSubscriptionLogin(
   };
   const begin = (initial?: Resource, reauth = false) => {
     if (!active || pending.current || opening?.disposed) return;
+    runnerTouched.current = false;
     const machine = initial
       ? text(object(document(initial).subscription).owner_machine_id)
       : "";
@@ -401,6 +406,7 @@ export function useClaudeSubscriptionLogin(
         throw new Error("Invalid original operation");
       p.account = result.account;
       p.operation = result.operationId;
+      runner.remember(request.machineId ?? "");
       changed();
     };
     if (reauth)
@@ -673,7 +679,7 @@ export function useClaudeSubscriptionLogin(
   };
   const p = pending.current;
   const body = view && !hidden ? (
-    <ClaudeSubscriptionOnboarding
+    <>{view.step === Step.Runner ? runner.guidance : null}<ClaudeSubscriptionOnboarding
       view={view}
       setApprovalInput={(input) => { approvalInput.current = input; }}
       runners={runnerOptions}
@@ -687,6 +693,7 @@ export function useClaudeSubscriptionLogin(
       active={active}
       select={(machine) => {
         if (p && !p.busy && !p.operation) {
+          runnerTouched.current = true; runner.touch();
           p.machine = machine;
           update(p, { machine });
         }
@@ -713,7 +720,7 @@ export function useClaudeSubscriptionLogin(
             }
           : undefined
       }
-    />
+    /></>
   ) : null;
   return {
     begin,

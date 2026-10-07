@@ -1,8 +1,8 @@
 import { productError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { useQuery } from "@connectrpc/connect-query";
-import { Code, ConnectError } from "@connectrpc/connect";
-import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource, WorkerCapability, supportsResourceSchema } from "@delinoio/delidev-api-client";
+import { useQuery, useTransport } from "@connectrpc/connect-query";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
+import { EntityKind, ResourceService, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource, WorkerCapability, supportsResourceSchema } from "@delinoio/delidev-api-client";
 import { creationPreferenceProblemMessage, useCreationPreferences, type CreationPreferenceBridge, type CreationPreferenceScope } from "./session-creation-preferences";
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
 import { document, encode, items, Mode, object, text, Workspace } from "./documents";
@@ -48,6 +48,9 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const generalChat = kind === NewSessionKind.GeneralChat;
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
   const local = useLocalWorkerProof(readLocalWorker);
+  const transport = useTransport();
+  const [defaultProblem, setDefaultProblem] = useState<unknown>();
+  const localIdentity = useRef<Promise<string>>(undefined);
   const preferences = useCreationPreferences(kind, active, preferenceBridge, preferenceScope);
   const touched = useRef(false);
   const restoration = useRef({ agent: false, machine: false });
@@ -55,6 +58,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const [project, setProject] = useState("");
   const [agent, setAgent] = useState("");
   const [machine, setMachine] = useState("");
+  const [localDefaultID, setLocalDefaultID] = useState("");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState(Mode.Execute);
   const [starting, setStarting] = useState<unknown[]>([]);
@@ -141,9 +145,28 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     if (!restoration.current.machine && workspace !== Workspace.Local && machineEligible) { restoration.current.machine = true; setMachine(machineChoice!.id); }
   }, [active, preferences.pair, agentChoice, machineChoice, agentEligible, machineEligible, projectEligible, rememberedAgent.isFetching, rememberedAgent.error, rememberedMachine.isFetching, rememberedMachine.error, selectedProject.isFetching, selectedProject.error, project, workspace, blocked]);
   const editAgent = (id: string) => { touched.current = true; restoration.current.agent = false; setAgent(id); };
-  const editMachine = (id: string) => { touched.current = true; restoration.current.machine = false; setMachine(id); };
+  const editMachine = (id: string) => { touched.current = true; restoration.current.machine = false; setLocalDefaultID(""); setMachine(id); };
 
-  const automaticChoicesEligible = (!restoration.current.agent || agent !== preferences.pair?.agent_id || agentEligible) && (!restoration.current.machine || workspace === Workspace.Local || machine !== preferences.pair?.machine_id || machineEligible);
+  useEffect(() => {
+    if (!active || blocked || touched.current || machine || workspace === Workspace.Local || !projectEligible || preferences.reading || !readLocalWorker || preferences.pair && (!eligibilityReadSettled(rememberedMachine.isFetching, rememberedMachine.error) || machineEligible)) return;
+    let disposed = false;
+    const originalProject = project;
+    localIdentity.current ??= readLocalWorker().then(proof => proof.machineId);
+    void localIdentity.current.then(async machineId => {
+      if (disposed || touched.current || restorationBlocked.current) return;
+      // This metadata default does not adopt the native proof or change modes.
+      const result = await createClient(ResourceService, transport).getResource({ kind: EntityKind.MACHINE, id: machineId });
+      if (disposed || touched.current || restorationBlocked.current) return;
+      const row = result.resource, data = document(row), capabilities = items(data.worker_capabilities);
+      if (row?.id === machineId && row.kind === EntityKind.MACHINE && row.revision > 0n && supportsResourceSchema(row) && data.disabled !== true && data.enabled !== false && (!originalProject || workspace !== Workspace.Worktree || !items(document(selectedProject.data?.resource).repositories).length || capabilities.includes("remote-workspace-clone-v1") || capabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1))) { setLocalDefaultID(row.id); setMachine(row.id); }
+    }).catch(error => { if (!disposed && !touched.current) setDefaultProblem(error); });
+    return () => { disposed = true; };
+  }, [active, blocked, machine, workspace, project, projectEligible, preferences.reading, preferences.pair, rememberedMachine.isFetching, rememberedMachine.error, machineEligible, readLocalWorker, transport]);
+  const localDefault = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: localDefaultID }, { enabled: active && Boolean(localDefaultID) && machine === localDefaultID, retry: false });
+  const localDefaultRow = localDefault.data?.resource, localDefaultData = document(localDefaultRow), localDefaultCapabilities = items(localDefaultData.worker_capabilities);
+  const localDefaultEligible = !localDefault.isFetching && !localDefault.error && localDefaultRow?.id === localDefaultID && localDefaultRow.kind === EntityKind.MACHINE && localDefaultRow.revision > 0n && supportsResourceSchema(localDefaultRow) && localDefaultData.disabled !== true && localDefaultData.enabled !== false && projectEligible && (!project || workspace !== Workspace.Worktree || !items(document(selectedProject.data?.resource).repositories).length || localDefaultCapabilities.includes("remote-workspace-clone-v1") || localDefaultCapabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1));
+  useEffect(() => { if (!blocked && workspace !== Workspace.Local && machine === localDefaultID && localDefaultID && eligibilityReadSettled(localDefault.isFetching, localDefault.error) && projectEligible && !localDefaultEligible) { setMachine(""); setLocalDefaultID(""); } }, [blocked, workspace, machine, localDefaultID, localDefault.isFetching, localDefault.error, projectEligible, localDefaultEligible]);
+  const automaticChoicesEligible = (!localDefaultID || machine !== localDefaultID || workspace === Workspace.Local || localDefaultEligible) && (!restoration.current.agent || agent !== preferences.pair?.agent_id || agentEligible) && (!restoration.current.machine || workspace === Workspace.Local || machine !== preferences.pair?.machine_id || machineEligible);
   const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked && automaticChoicesEligible;
 
   const submit = async () => {
@@ -246,7 +269,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               <p>{copy("new-session.aSeparateDetachedWorktreeIsPrepared_8c300d")}</p>
               <div className="actions">
                 <button type="button" aria-pressed={workspace === Workspace.Worktree} onClick={() => { touched.current = true; setWorkspace(Workspace.Worktree); setMachine(""); setStarting([]); }}>{copy("new-session.useSeparateWorktrees_5cd0b6")}</button>
-                <button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { void local.load().then((proof) => { if (proof) { touched.current = true; setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>{copy("new-session.useThisComputerSLocalCheckouts_eadaad")}</button>
+                <button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { touched.current = true; void local.load().then((proof) => { if (proof) { touched.current = true; setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>{copy("new-session.useThisComputerSLocalCheckouts_eadaad")}</button>
               </div>
               {workspace === Workspace.Local ? <p>{copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}</p> : <StartingReferences key={project} project={project} starting={starting} change={(value) => { touched.current = true; setStarting(value); }} active={active} />}
             </> : !generalChat ? <p>{copy("new-session.generalChatUsesAPrivateProjectless_64e0ee")}</p> : null}
@@ -260,7 +283,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       {preferences.reading ? <p role="status">{copy("new-session.preferencesReading")}</p> : null}
       {preferences.problem ? <div role="alert"><p>{copy("new-session.preferencesProblem", { v0: creationPreferenceProblemMessage(preferences.problem) })}</p><button type="button" disabled={preferences.reading} onClick={() => void preferences.reinspect()}>{copy("new-session.preferencesInspect")}</button></div> : null}
       {preferences.canRetry ? <button type="button" onClick={preferences.retrySave}>{copy("new-session.preferencesSave")}</button> : null}
-      <Problem error={rememberedAgent.error || rememberedMachine.error} />
+      <Problem error={defaultProblem || localDefault.error} /><Problem error={rememberedAgent.error || rememberedMachine.error} />
       {budgetProblem ? <p role="alert">{budgetProblem}</p> : null}
       {promptLimit ? <p role="alert">{copy("new-session.theFirstMessageExceeds256Kib_9ced04")}</p> : null}
       {local.problem ? <p role="alert">{local.problem}</p> : null}

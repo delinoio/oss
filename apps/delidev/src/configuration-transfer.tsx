@@ -1,3 +1,4 @@
+import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { productError, ProductError,  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
@@ -105,6 +106,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const [loaded, setLoaded] = useState<{ raw: string; bundle: Bundle }>();
   const [bindings, setBindings] = useState<Record<string, Binding>>({});
   const [machines, setMachines] = useState<Record<string, string>>({});
+  const [confirmedMachines, setConfirmedMachines] = useState<Record<string, boolean>>({});
+  const runner = useRunnerPreference(RunnerWorkflow.ImportTarget, active);
+  const originalLastTarget = useRef<string>(undefined);
   const [paths, setPaths] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<Preview>();
   const [report, setReport] = useState<Document>();
@@ -130,6 +134,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     const value = object(JSON.parse(decoder.decode(result.resultJson)));
     if (!canonicalId.test(text(value.job_id)) || !Object.values(JobState).includes(value.state as JobState)) { setReport({ state: "unknown" }); return; }
     setReport(value);
+    if (originalLastTarget.current) runner.remember(originalLastTarget.current);
     void queryClient.invalidateQueries({ refetchType: "active" });
   });
   const jobId = text(report?.job_id);
@@ -140,6 +145,19 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const importProblem = object(jobValue?.problem ?? report?.problem);
   const blocked = loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain || Boolean(report) || statusPending || statusFailed || remoteUnsupported;
   useEffect(() => {
+    if (!loaded || blocked || !runner.candidates.length) return;
+    setMachines(previous => {
+      const next = { ...previous }, used = new Set(Object.values(previous).filter(Boolean));
+      for (const row of loaded.bundle.machines) {
+        if (Object.hasOwn(previous, row.id)) continue;
+        const choice = runner.candidates.find(candidate => !used.has(candidate.id));
+        if (choice) { next[row.id] = choice.id; used.add(choice.id); }
+      }
+      return Object.keys(next).length === Object.keys(previous).length ? previous : next;
+    });
+  }, [loaded, blocked, runner.candidates]);
+  const mappingsConfirmed = Boolean(loaded && loaded.bundle.machines.every(row => confirmedMachines[row.id] && machines[row.id]) && new Set(Object.values(machines).filter(Boolean)).size === loaded.bundle.machines.length);
+  useEffect(() => {
     onWorkflowReadyChange?.(Boolean(draft || loaded || preview || report || problem || loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain));
     return () => onWorkflowReadyChange?.(false);
   }, [draft, exportRead.isPending, loaded, loading, mutation.busy, mutation.uncertain, onWorkflowReadyChange, preview, previewRead.isPending, problem, report]);
@@ -147,7 +165,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const invalidate = () => { generation.current++; setPreview(undefined); setProblem(""); };
   const load = (raw: string) => {
     invalidate(); setLoaded(undefined);
-    try { const bundle = readBundle(raw); setLoaded({ raw, bundle }); setBindings({}); setMachines({}); setPaths({}); }
+    try { const bundle = readBundle(raw); setLoaded({ raw, bundle }); setBindings({}); setMachines({}); setConfirmedMachines({}); setPaths({}); }
     catch (error) { setProblem(productError(error, "configuration-transfer.extra.33bf406051e7")); }
   };
   const exportNow = async () => {
@@ -158,7 +176,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     finally { exportRead.reset(); gate.current = false; }
   };
   const inspect = async () => {
-    if (gate.current || blocked || !loaded || !active || remoteUnsupported) return;
+    if (gate.current || blocked || !loaded || !active || remoteUnsupported || !mappingsConfirmed) return;
     gate.current = true; setProblem(""); setPreview(undefined);
     const original = generation.current;
     try {
@@ -217,9 +235,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     {status.error ? <Problem error={status.error} /> : null}
     {status.error ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry server capability check</button> : null}
     {loaded ? <fieldset className="transfer-panel transfer-mapping" disabled={blocked}>
-      <legend>{copy("configuration-transfer.mapImportedConfiguration_d0218d")}</legend>
+      <legend>{copy("configuration-transfer.mapImportedConfiguration_d0218d")}</legend>{runner.guidance}
       <p>{copy("configuration-transfer.newEntriesKeepTheirOriginalContents_63b0dc")}</p>
-      {loaded.bundle.machines.map((machine) => <section key={machine.id}><p><LocalizedText id="configuration-transfer.sourceMachine_b09a79" components={{ s0: <>{machine.name}</>, s1: <>{machine.os}</>, s2: <>{machine.architecture}</> }} /></p><ResourceChoice label={copy("configuration-transfer.targetFor_183f6f", { v0: machine.name })} kind={EntityKind.MACHINE} value={machines[machine.id] ?? ""} required active={active} disabled={blocked} change={(id) => { invalidate(); setMachines((values) => ({ ...values, [machine.id]: id })); }} /></section>)}
+      {loaded.bundle.machines.map((machine) => <section key={machine.id}><p><LocalizedText id="configuration-transfer.sourceMachine_b09a79" components={{ s0: <>{machine.name}</>, s1: <>{machine.os}</>, s2: <>{machine.architecture}</> }} /></p><ResourceChoice label={copy("configuration-transfer.targetFor_183f6f", { v0: machine.name })} kind={EntityKind.MACHINE} value={machines[machine.id] ?? ""} required active={active} disabled={blocked} change={(id) => { invalidate(); setConfirmedMachines(values => ({ ...values, [machine.id]: false })); setMachines((values) => ({ ...values, [machine.id]: id })); }} /><label><input type="checkbox" checked={confirmedMachines[machine.id] === true} disabled={!machines[machine.id] || Object.entries(machines).some(([source, target]) => source !== machine.id && target === machines[machine.id])} onChange={event => { invalidate(); setConfirmedMachines(values => ({ ...values, [machine.id]: event.target.checked })); }} />{copy("runner-preferences.confirm")}</label></section>)}
       {loaded.bundle.entries.map((entry) => {
         const binding = bindings[entry.id] ?? { action: ImportAction.Create, target: "" };
         return <section key={entry.id}><h4>{name(entry)} · {entry.kind}</h4>
@@ -231,9 +249,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
           }) : null}
         </section>;
       })}
-       <button disabled={!active || blocked || remoteUnsupported} onClick={() => void inspect()}>{copy("configuration-transfer.previewConfigurationChanges_97d7ba")}</button>
+       <button disabled={!active || blocked || remoteUnsupported || !mappingsConfirmed} onClick={() => void inspect()}>{copy("configuration-transfer.previewConfigurationChanges_97d7ba")}</button>
     </fieldset> : null}
-     {preview ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationChangePreview_226628")}><h3>{copy("configuration-transfer.reviewChangesBeforeApplying_294dcf")}</h3><p>{copy("configuration-transfer.newRepositoryPathsMustPassValidation_178644")}</p>{preview.machines.map((machine) => <p key={text(machine.id)}><LocalizedText id="configuration-transfer.targetWorker_aa1b09" components={{ s0: <>{text(machine.name)}</>, s1: <>{text(machine.os)}</>, s2: <>{text(machine.architecture)}</>, s3: <>{text(machine.id)}</> }} /></p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || copy("configuration-transfer.extra.eba66b2c00bb")} · {text(change.kind)}</h4><p><LocalizedText id="configuration-transfer.target_8daa2b" components={{ s0: <>{text(change.id)}</> }} /></p><p>{change.before ? copy("configuration-transfer.currentAndImportedValuesAreBoth_99d4dd") : copy("configuration-transfer.newValuesAreIncludedInThe_88d082")}</p></article>)}<label>{copy("configuration-transfer.completeChangeDetails_79b757")}<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active || remoteUnsupported} onClick={() => { if (!blocked && !remoteUnsupported) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>{copy("configuration-transfer.applyReviewedConfiguration_1229a2")}</button></section> : null}
+     {preview ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationChangePreview_226628")}><h3>{copy("configuration-transfer.reviewChangesBeforeApplying_294dcf")}</h3><p>{copy("configuration-transfer.newRepositoryPathsMustPassValidation_178644")}</p>{preview.machines.map((machine) => <p key={text(machine.id)}><LocalizedText id="configuration-transfer.targetWorker_aa1b09" components={{ s0: <>{text(machine.name)}</>, s1: <>{text(machine.os)}</>, s2: <>{text(machine.architecture)}</>, s3: <>{text(machine.id)}</> }} /></p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || copy("configuration-transfer.extra.eba66b2c00bb")} · {text(change.kind)}</h4><p><LocalizedText id="configuration-transfer.target_8daa2b" components={{ s0: <>{text(change.id)}</> }} /></p><p>{change.before ? copy("configuration-transfer.currentAndImportedValuesAreBoth_99d4dd") : copy("configuration-transfer.newValuesAreIncludedInThe_88d082")}</p></article>)}<label>{copy("configuration-transfer.completeChangeDetails_79b757")}<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active || remoteUnsupported} onClick={() => { if (!blocked && !remoteUnsupported && mappingsConfirmed) { runner.touch(); originalLastTarget.current = loaded?.bundle.machines.length ? machines[loaded.bundle.machines[loaded.bundle.machines.length - 1].id] : undefined; void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); } }}>{copy("configuration-transfer.applyReviewedConfiguration_1229a2")}</button></section> : null}
     {mutation.uncertain ? <section className="transfer-panel" aria-label={copy("configuration-transfer.uncertainConfigurationImport_4b21c6")}><button disabled={mutation.busy || !active} onClick={mutation.retry}>{copy("configuration-transfer.retryTheSameConfigurationImport_9d3291")}</button></section> : null}
     {report ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationImportResult_7c1375")}><p role="status">{state === JobState.Succeeded ? copy("configuration-transfer.configurationImportCompletedConnectEachImported_2af629") : state === JobState.Failed || state === JobState.Canceled ? copy("configuration-transfer.configurationImportFailedExistingConfigurationWas_c7e5ad") : state === JobState.Queued || state === JobState.Claimed ? copy("configuration-transfer.importAcceptedWaitingForConfirmationOf_8ed561") : copy("configuration-transfer.theImportOutcomeIsUnavailableInspect_7a2ebb")}</p>{jobId && (job.error || (job.data && !jobValue)) ? <button disabled={job.isFetching || !active} onClick={() => void job.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}{text(importProblem.message) ? <ServiceProblem code={text(importProblem.code) || text(importProblem.problem_code)}><p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p></ServiceProblem> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setReport(undefined); invalidate(); }}>{copy("configuration-transfer.returnToRetainedImportDocument_9a833a")}</button> : null}</section> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />

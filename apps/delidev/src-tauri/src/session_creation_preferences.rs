@@ -14,6 +14,14 @@ use serde::{Deserialize, Serialize};
 pub enum CreationKind {
     Session,
     GeneralChat,
+    Schedule,
+    Checkout,
+    RemoteRepository,
+    NativeObservation,
+    ClaudeLogin,
+    ServerRemediation,
+    RepositoryRemediation,
+    ImportTarget,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(deny_unknown_fields)]
@@ -53,16 +61,33 @@ struct Record {
     kind: CreationKind,
     pair: Pair,
 }
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct DeviceRecord {
+    scope: Scope,
+    kind: CreationKind,
+    machine_id: String,
+}
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct DeviceSnapshot {
+    pub revision: u32,
+    pub scope: Scope,
+    pub machine_id: Option<String>,
+    pub problem: Option<Problem>,
+}
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Document {
     version: u32,
     records: Vec<Record>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    devices: Vec<DeviceRecord>,
 }
 struct State {
     revision: u32,
     selected: Option<(Scope, CreationKind)>,
     records: Vec<Record>,
+    devices: Vec<DeviceRecord>,
     problem: Option<Problem>,
 }
 pub struct Store {
@@ -113,6 +138,7 @@ impl Store {
                 revision: 0,
                 selected: None,
                 records: vec![],
+                devices: vec![],
                 problem: Some(Problem::Unavailable),
             }),
         }
@@ -125,10 +151,16 @@ impl Store {
             .as_deref()
             .ok_or(Problem::Unavailable)
             .and_then(inspect);
-        let previous = (state.records.clone(), state.problem, state.selected.clone());
+        let previous = (
+            state.records.clone(),
+            state.devices.clone(),
+            state.problem,
+            state.selected.clone(),
+        );
         match observed {
-            Ok(records) if scope.valid() => {
+            Ok((records, devices)) if scope.valid() => {
                 state.records = records;
+                state.devices = devices;
                 state.problem = None;
             }
             Ok(_) => state.problem = Some(Problem::InvalidDocument),
@@ -139,7 +171,13 @@ impl Store {
         }
         state.selected = Some((scope.clone(), kind));
         if state.revision == 0
-            || previous != (state.records.clone(), state.problem, state.selected.clone())
+            || previous
+                != (
+                    state.records.clone(),
+                    state.devices.clone(),
+                    state.problem,
+                    state.selected.clone(),
+                )
         {
             state.advance();
         }
@@ -153,7 +191,15 @@ impl Store {
         pair: Pair,
         expected_revision: u32,
     ) -> Snapshot {
-        self.update_with(scope, kind, pair, expected_revision, persist)
+        let devices = self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .devices
+            .clone();
+        self.update_with(scope, kind, pair, expected_revision, |path, records| {
+            persist_all(path, records, &devices)
+        })
     }
 
     fn update_with(
@@ -176,11 +222,14 @@ impl Store {
             return state.snapshot(&scope, kind);
         }
         let result = (|| {
-            if !scope.valid() || !pair.valid() {
+            if !scope.valid()
+                || !pair.valid()
+                || !matches!(kind, CreationKind::Session | CreationKind::GeneralChat)
+            {
                 return Err(Problem::InvalidDocument);
             }
             let path = self.path.as_deref().ok_or(Problem::Unavailable)?;
-            if inspect(path)? != state.records {
+            if inspect(path)? != (state.records.clone(), state.devices.clone()) {
                 return Err(Problem::Changed);
             }
             let mut records = state.records.clone();
@@ -190,7 +239,7 @@ impl Store {
             {
                 record.pair = pair;
             } else {
-                if records.len() >= 128 {
+                if records.len() + state.devices.len() >= 128 {
                     return Err(Problem::Capacity);
                 }
                 records.push(Record {
@@ -218,11 +267,99 @@ impl Store {
         state.advance();
         state.snapshot(&scope, kind)
     }
+
+    pub fn read_device(&self, scope: Scope, kind: CreationKind) -> DeviceSnapshot {
+        self.read(scope.clone(), kind);
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        DeviceSnapshot {
+            revision: state.revision,
+            scope: scope.clone(),
+            machine_id: state
+                .devices
+                .iter()
+                .find(|r| r.scope == scope && r.kind == kind)
+                .map(|r| r.machine_id.clone()),
+            problem: state.problem,
+        }
+    }
+
+    pub fn update_device(
+        &self,
+        scope: Scope,
+        kind: CreationKind,
+        machine_id: String,
+        expected_revision: u32,
+    ) -> DeviceSnapshot {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let snapshot = |state: &State, problem| DeviceSnapshot {
+            revision: state.revision,
+            scope: scope.clone(),
+            machine_id: state
+                .devices
+                .iter()
+                .find(|r| r.scope == scope && r.kind == kind)
+                .map(|r| r.machine_id.clone()),
+            problem,
+        };
+        if state.revision != expected_revision
+            || state.selected.as_ref() != Some(&(scope.clone(), kind))
+        {
+            return snapshot(&state, Some(Problem::Changed));
+        }
+        if state.problem.is_some() || state.revision == u32::MAX {
+            return snapshot(&state, state.problem);
+        }
+        let result = (|| {
+            if !scope.valid()
+                || !valid_id(&machine_id)
+                || matches!(kind, CreationKind::Session | CreationKind::GeneralChat)
+            {
+                return Err(Problem::InvalidDocument);
+            }
+            let path = self.path.as_deref().ok_or(Problem::Unavailable)?;
+            if inspect(path)? != (state.records.clone(), state.devices.clone()) {
+                return Err(Problem::Changed);
+            }
+            let mut devices = state.devices.clone();
+            if let Some(record) = devices
+                .iter_mut()
+                .find(|r| r.scope == scope && r.kind == kind)
+            {
+                record.machine_id = machine_id;
+            } else {
+                if state.records.len() + devices.len() >= 128 {
+                    return Err(Problem::Capacity);
+                }
+                devices.push(DeviceRecord {
+                    scope: scope.clone(),
+                    kind,
+                    machine_id,
+                });
+            }
+            persist_all(path, &state.records, &devices)?;
+            Ok(devices)
+        })();
+        match result {
+            Ok(devices) => {
+                state.devices = devices;
+                tracing::info!(
+                    operation = "device_preferences_update",
+                    outcome = "committed"
+                );
+            }
+            Err(problem) => {
+                state.problem = Some(problem);
+                tracing::warn!(operation = "device_preferences_update", ?problem);
+            }
+        }
+        state.advance();
+        snapshot(&state, state.problem)
+    }
 }
-fn inspect(path: &Path) -> Result<Vec<Record>, Problem> {
+fn inspect(path: &Path) -> Result<(Vec<Record>, Vec<DeviceRecord>), Problem> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((vec![], vec![])),
         Err(_) => return Err(Problem::ReadFailed),
     };
     if !metadata.is_file() || metadata.len() > 64 << 10 {
@@ -237,21 +374,34 @@ fn inspect(path: &Path) -> Result<Vec<Record>, Problem> {
         return Err(Problem::InvalidDocument);
     }
     let value: Document = serde_json::from_slice(&bytes).map_err(|_| Problem::InvalidDocument)?;
-    if value.version != 1 {
+    if !matches!(value.version, 1 | 2) {
         return Err(Problem::UnsupportedVersion);
     }
     let mut keys = BTreeSet::new();
-    if value.records.len() > 128
-        || value
-            .records
-            .iter()
-            .any(|r| !r.scope.valid() || !r.pair.valid() || !keys.insert((r.scope.clone(), r.kind)))
+    if value.records.len() + value.devices.len() > 128
+        || (value.version == 1 && !value.devices.is_empty())
+        || value.records.iter().any(|r| {
+            !r.scope.valid()
+                || !r.pair.valid()
+                || !matches!(r.kind, CreationKind::Session | CreationKind::GeneralChat)
+                || !keys.insert((r.scope.clone(), r.kind))
+        })
+        || value.devices.iter().any(|r| {
+            !r.scope.valid()
+                || !valid_id(&r.machine_id)
+                || matches!(r.kind, CreationKind::Session | CreationKind::GeneralChat)
+                || !keys.insert((r.scope.clone(), r.kind))
+        })
     {
         return Err(Problem::InvalidDocument);
     }
-    Ok(value.records)
+    Ok((value.records, value.devices))
 }
+#[cfg(test)]
 fn persist(path: &Path, records: &[Record]) -> Result<(), Problem> {
+    persist_all(path, records, &[])
+}
+fn persist_all(path: &Path, records: &[Record], devices: &[DeviceRecord]) -> Result<(), Problem> {
     let parent = path.parent().ok_or(Problem::WriteFailed)?;
     fs::create_dir_all(parent).map_err(|_| Problem::WriteFailed)?;
     let scratch = parent.join(format!(".session-creation-{}.tmp", uuid::Uuid::now_v7()));
@@ -265,8 +415,9 @@ fn persist(path: &Path, records: &[Record]) -> Result<(), Problem> {
     let mut file = options.open(&scratch).map_err(|_| Problem::WriteFailed)?;
     let result = (|| {
         let bytes = serde_json::to_vec(&Document {
-            version: 1,
+            version: 2,
             records: records.to_vec(),
+            devices: devices.to_vec(),
         })
         .map_err(|_| Problem::WriteFailed)?;
         if bytes.len() > 64 << 10 {
@@ -301,6 +452,108 @@ mod tests {
             agent_id: uuid::Uuid::now_v7().to_string(),
             machine_id: uuid::Uuid::now_v7().to_string(),
         }
+    }
+    #[test]
+    fn version_one_pairs_survive_device_extension_and_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        let selected = scope();
+        let original = pair();
+        let path = temp.path().join("session-creation-preferences.json");
+        fs::write(
+            &path,
+            serde_json::to_vec(&Document {
+                version: 1,
+                records: vec![Record {
+                    scope: selected.clone(),
+                    kind: CreationKind::Session,
+                    pair: original.clone(),
+                }],
+                devices: vec![],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        let store = Store::new(Some(temp.path().into()));
+        let device = uuid::Uuid::now_v7().to_string();
+        let read = store.read_device(selected.clone(), CreationKind::Schedule);
+        let saved = store.update_device(
+            selected.clone(),
+            CreationKind::Schedule,
+            device.clone(),
+            read.revision,
+        );
+        assert!(saved.problem.is_none());
+        assert_eq!(saved.machine_id, Some(device.clone()));
+        let restarted = Store::new(Some(temp.path().into()));
+        assert_eq!(
+            restarted.read(selected.clone(), CreationKind::Session).pair,
+            Some(original)
+        );
+        assert_eq!(
+            restarted
+                .read_device(selected.clone(), CreationKind::Schedule)
+                .machine_id,
+            Some(device)
+        );
+        assert_eq!(
+            restarted
+                .read_device(selected.clone(), CreationKind::Checkout)
+                .machine_id,
+            None
+        );
+        assert_eq!(
+            restarted
+                .read_device(scope(), CreationKind::Schedule)
+                .machine_id,
+            None
+        );
+        let value: Document = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(value.version, 2);
+        assert_eq!(value.devices.len(), 1);
+        assert_eq!(value.records.len(), 1);
+    }
+    #[test]
+    fn device_records_share_capacity_and_revision_guards() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::new(Some(temp.path().into()));
+        let selected = scope();
+        let read = store.read_device(selected.clone(), CreationKind::Schedule);
+        store.read_device(selected.clone(), CreationKind::Checkout);
+        assert_eq!(
+            store
+                .update_device(
+                    selected.clone(),
+                    CreationKind::Schedule,
+                    uuid::Uuid::now_v7().to_string(),
+                    read.revision
+                )
+                .problem,
+            Some(Problem::Changed)
+        );
+        let records: Vec<Record> = (0..128)
+            .map(|_| Record {
+                scope: scope(),
+                kind: CreationKind::Session,
+                pair: pair(),
+            })
+            .collect();
+        persist(
+            &temp.path().join("session-creation-preferences.json"),
+            &records,
+        )
+        .unwrap();
+        let read = store.read_device(selected.clone(), CreationKind::Schedule);
+        assert_eq!(
+            store
+                .update_device(
+                    selected,
+                    CreationKind::Schedule,
+                    uuid::Uuid::now_v7().to_string(),
+                    read.revision
+                )
+                .problem,
+            Some(Problem::Capacity)
+        );
     }
     #[test]
     fn restart_kind_scope_and_revision_isolation() {
@@ -367,11 +620,12 @@ mod tests {
         let duplicate = serde_json::to_string(&Document {
             version: 1,
             records: vec![record.clone(), record],
+            devices: vec![],
         })
         .unwrap();
         for raw in [
             "{\"version\":1,\"version\":1,\"records\":[]}".to_owned(),
-            "{\"version\":2,\"records\":[]}".into(),
+            "{\"version\":3,\"records\":[]}".into(),
             "{\"version\":1,\"records\":[],\"extra\":true}".into(),
             duplicate,
             "x".repeat((64 << 10) + 1),

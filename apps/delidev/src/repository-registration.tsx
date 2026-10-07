@@ -1,3 +1,4 @@
+import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskDismissButton } from "./settings-task";
 import { SettingsTaskActions } from "./settings-task";
@@ -5,7 +6,7 @@ import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
-import { ConfigurationQuery, EntityKind, ResourceQuery, ResourceService, SystemCapability, SystemQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationQuery, EntityKind, ResourceQuery, ResourceService, SystemCapability, SystemQuery, WorkerQuery, supportsResourceSchema, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { RepositoryFields, ResourceChoice, TextField, newConfiguration } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { JobState, TrackedJob } from "./jobs";
@@ -81,6 +82,8 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const [data, setData] = useState<Document>(() => newConfiguration(EntityKind.REPOSITORY));
   const [manual, setManual] = useState(false), [computer, setComputer] = useState(Computer.Local);
   const [path, setPath] = useState(""), [machine, setMachine] = useState(""), [machineName, setMachineName] = useState("");
+  const runner = useRunnerPreference(RunnerWorkflow.RemoteRepository, active && computer === Computer.Remote, undefined, true);
+  const runnerTouched = useRef(false);
   const [busy, setBusy] = useState(false), [problem, setProblem] = useState("");
   const [source, setSource] = useState<Source>();
   const [inspection, setInspection] = useState<{ job: Resource; source: Source }>();
@@ -114,7 +117,8 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     if (selected && selected.machine === request.machineId && result.job && text(document(result.job).machine_id) === selected.machine) setInspection({ job: result.job, source: selected });
     else setUnknown(true);
   });
-  const save = useRetainedMutation("repository-add:save", ConfigurationQuery.saveConfiguration, (result) => {
+  const save = useRetainedMutation("repository-add:save", ConfigurationQuery.saveConfiguration, (result, request) => {
+    if (result.requestId === request.mutation?.requestId && result.job?.kind === EntityKind.JOB && uuid.test(result.job.id) && supportsResourceSchema(result.job) && result.job.revision > 0n && pendingSource.current && !pendingSource.current.local) { const submitted = object(JSON.parse(new TextDecoder().decode(request.documentJson))); const first = object(items(submitted.checkouts)[0]); if (first.machine_id === pendingSource.current.machine) runner.remember(text(first.machine_id)); }
     if (result.job) setSaveJob(result.job);
     else setSaveJob("unknown");
   });
@@ -123,6 +127,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const lastSeen = Date.parse(text(workerData.last_seen));
   const offline = Boolean(serverMachine.data?.resource && Number.isFinite(lastSeen) && Date.now() - lastSeen > 45_000);
   const blocked = busy || clone.busy || clone.uncertain || Boolean(cloneJob) || inspect.busy || inspect.uncertain || Boolean(inspection) || unknown || save.busy || save.uncertain || Boolean(saveJob) || childPending;
+  useEffect(() => { if (active && !runnerTouched.current && !blocked && computer === Computer.Remote && !machine && runner.suggestion) { setMachine(runner.suggestion.id); setMachineName(resourceName(runner.suggestion)); } }, [active, runner.suggestion, blocked, computer, machine]);
   const taskVisible = useSettingsTaskVisible(), cancelTask = useCloseSettingsTask(cancel), inTask = useInSettingsTask();
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { if (taskVisible) initialAction.current?.focus(); }, [taskVisible]);
@@ -264,7 +269,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
         <p>GitHub detection is metadata only. Select a profile in Optional settings to configure access.</p>
       </section> : <section className="repository-folder-card"><h3>Local folder</h3><p>Add an existing Git repository on this computer.</p><div className="repository-folder-actions"><button type="button" disabled={blocked || !chooseFolder} onClick={() => void start(true)}>Choose folder</button><button type="button" disabled={blocked} aria-expanded={manual} onClick={() => setManual(value => !value)}>Enter a path…</button></div></section>}
       {summary && !manual ? <button type="button" disabled={blocked} onClick={() => setManual(true)}>Enter a path…</button> : null}
-      {manual || (!summary && path) ? <fieldset disabled={blocked}><legend>Repository folder</legend><label>Computer<select value={computer} onChange={event => setComputer(event.target.value as Computer)}><option value={Computer.Local}>This computer</option><option value={Computer.Remote}>Another computer</option></select></label>{computer === Computer.Remote ? <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine} active={active} showStatus change={(id, value, resource) => { setMachine(id); setMachineName(resource ? resourceName(resource) : text(value?.name)); }} /> : null}<TextField label="Absolute checkout path" value={path} max={4096} change={setPath} /><button type="button" disabled={!path || (computer === Computer.Remote && !machine)} onClick={() => void start(false)}>Inspect folder</button></fieldset> : null}
+      {manual || (!summary && path) ? <fieldset disabled={blocked}><legend>Repository folder</legend>{computer === Computer.Remote ? runner.guidance : null}<label>Computer<select value={computer} onChange={event => setComputer(event.target.value as Computer)}><option value={Computer.Local}>This computer</option><option value={Computer.Remote}>Another computer</option></select></label>{computer === Computer.Remote ? <ResourceChoice label="Runner Device" kind={EntityKind.MACHINE} value={machine} active={active} showStatus change={(id, value, resource) => { runnerTouched.current = true; runner.touch(); setMachine(id); setMachineName(resource ? resourceName(resource) : text(value?.name)); }} /> : null}<TextField label="Absolute checkout path" value={path} max={4096} change={setPath} /><button type="button" disabled={!path || (computer === Computer.Remote && !machine)} onClick={() => void start(false)}>Inspect folder</button></fieldset> : null}
       </> : null}
       <button type="button" disabled={blocked || (!cloneLocally && cloneModeBlocked)} aria-expanded={cloneLocally} onClick={() => { if (!cloneLocally) { nameEdited.current = false; setData(current => ({ ...current, name: cloneDirectory })); } setCloneLocally(value => !value); }}>Clone to this computer (optional)</button>
       {!cloneLocally && cloneModeBlocked ? <p role="status">Clone mode is available before editing the repository name or optional settings. Add this draft first to preserve those settings.</p> : null}

@@ -45,7 +45,8 @@ impl Drop for DesktopLifetime {
 
 use appearance_host::{read_appearance, update_appearance};
 use session_creation_preferences_host::{
-    read_session_creation_preferences, update_session_creation_preferences,
+    read_runner_device_preferences, read_session_creation_preferences,
+    update_runner_device_preferences, update_session_creation_preferences,
 };
 mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
@@ -1739,6 +1740,8 @@ fn run() -> Result<(), NativeFailure> {
             desktop_credential_access,
             choose_repository_folder,
             read_appearance,
+            read_runner_device_preferences,
+            update_runner_device_preferences,
             read_session_creation_preferences,
             update_session_creation_preferences,
             update_appearance,

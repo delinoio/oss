@@ -22,7 +22,7 @@ export function parseCreationPreferences(value: unknown): CreationPreferenceSnap
 export function useCreationPreferences(kind: NewSessionKind, active: boolean, bridge = nativeBridge, expectedScope?: CreationPreferenceScope) {
  const [pair,setPair] = useState<CreationPreferencePair>();
  const [problem,setProblem] = useState<CreationPreferenceProblem>();
- const [reading,setReading] = useState(false);
+ const [reading,setReading] = useState(true);
  const [canRetry,setCanRetry] = useState(false);
  const mounted = useRef(true), generation = useRef(0), nonce = useRef(0), initialized = useRef(false), scope = useRef(expectedScope), needsInspection = useRef(false), pending = useRef<CreationPreferencePair | undefined>(undefined), snapshot = useRef<CreationPreferenceSnapshot | undefined>(undefined), queue = useRef(Promise.resolve());
  useEffect(() => { mounted.current=true; return () => {mounted.current=false;generation.current++;initialized.current=false;nonce.current++;}; },[]);
