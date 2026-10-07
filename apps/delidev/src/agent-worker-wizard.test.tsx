@@ -941,3 +941,21 @@ it("switches only displayed source panels and retains mounted drafts and disclos
   expect(globalThis.document.activeElement).toBe(within(firstPanel).getByRole("heading", { name: "2 · ChatGPT subscription" }));
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
+
+it("focuses account validation and the exact later invalid weight in the displayed source", async () => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source 1"), `api:${value.provider.id}`);
+  const personal = await screen.findByRole("checkbox", { name: /Personal API/ });
+  next(); expect(globalThis.document.activeElement).toBe(personal);
+  fireEvent.click(personal);
+  fireEvent.click(screen.getByRole("button", { name: /^Load more.*[Aa]ccount/ }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Team API/ }));
+  await screen.findByRole("checkbox", { name: "Select Team API" });
+  const routing = screen.getByText(/Routing options/).closest("details")!; routing.open = true;
+  const later = screen.getByLabelText("Weight for account 2");
+  fireEvent.change(later, { target: { value: "1001" } });
+  await waitFor(() => expect((later as HTMLInputElement).validity.valid).toBe(false));
+  next(); expect(globalThis.document.activeElement).toBe(later);
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
