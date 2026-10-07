@@ -19,6 +19,8 @@ import { copy, useLocale } from "./localization";
 import "./agent-worker-wizard.css";
 import { SourceKind, SelectedAccount, accountFormatMatches, harnessAPIProtocol, fromKey, modelSource, sameSource, sourceKey, wireService, type Source } from "./worker-source";
 import { WorkerHarnessPicker } from "./worker-harness-picker";
+import { SettingsTaskActions } from "./settings-task";
+import { useInSettingsTask } from "./settings-task-context";
 import { AgentWorkerSourceWizard } from "./agent-worker-source-wizard";
 
 enum Step { Harness = 1, Accounts, Model, Configure }
@@ -46,6 +48,8 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const [data, setData] = useState<Document>(() => initial ? document(initial) : newConfiguration(EntityKind.AGENT));
   const [step, setStep] = useState(Step.Harness);
   const [source, setSource] = useState<Source>();
+
+  const selectedLabels = useRef<Record<string, string>>({});
   const [knownAccounts, setKnownAccounts] = useState<Record<string, Resource | undefined>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [model, setModel] = useState<Resource>();
@@ -63,6 +67,9 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const accountsRoot = useRef<HTMLDivElement>(null);
   const accountScrollRoot = useScrollRoot(accountsRoot);
   const listID = useId();
+  const formID = useId();
+  const inTask = useInSettingsTask();
+  const [changingSource, setChangingSource] = useState(false);
   const notifications = useNotifications();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const supported = status.data?.capabilities.includes(SystemCapability.AGENT_WORKER_WIZARD_V1) === true;
@@ -78,14 +85,15 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const knownValid = knownSupported && source?.kind === SourceKind.Subscription && known.data?.subscriptionService === wireService(source) && known.data.models.length <= 200 && /^sha256:[a-f0-9]{64}$/.test(known.data.catalogVersion) && validCatalogDate(known.data.updatedAt) && [KnownSubscriptionModelCatalogSource.BUNDLED, KnownSubscriptionModelCatalogSource.CACHE, KnownSubscriptionModelCatalogSource.ONLINE].includes(known.data.source) && known.data.models.every(row => row.nativeId && row.displayName) && new Set(known.data.models.map(row => row.nativeId)).size === known.data.models.length;
   const currentModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: model?.id ?? "" }, { enabled: active && supported && Boolean(model), refetchInterval: active && model ? 5000 : false });
   const accountPageValid = accountRows.data?.resources.every(row => sameSource(row, source));
-  const accountChoices = accountPageValid ? accountRows.data!.resources.filter(row => showAccountChoice(row) && accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness))) : [];
+  const pageAccountChoices = accountPageValid ? accountRows.data!.resources.filter(row => showAccountChoice(row) && accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness))) : [];
   const modelPageValid = models.data?.models.every(row => supportsResourceSchema(row) && sourceKey(modelSource(row)) === sourceKey(source));
   const links = items(data.accounts).map(object);
   const ids = links.map(link => text(link.id));
-  const remember = useCallback((id: string, row?: Resource) => setKnownAccounts(previous => previous[id] === row ? previous : { ...previous, [id]: row }), []);
+  const remember = useCallback((id: string, row?: Resource) => { if (row) selectedLabels.current[id] = resourceName(row); setKnownAccounts(previous => previous[id] === row ? previous : { ...previous, [id]: row }); }, []);
   const selectedIDs = JSON.stringify(ids);
   useEffect(() => {
     const selected = new Set<string>(JSON.parse(selectedIDs));
+    selectedLabels.current = Object.fromEntries(Object.entries(selectedLabels.current).filter(([id]) => selected.has(id)));
     setKnownAccounts(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => selected.has(id))));
     if (accountPageValid) for (const row of accountRows.data?.resources ?? []) if (selected.has(row.id)) remember(row.id, row);
   }, [accountRows.data, accountPageValid, selectedIDs, remember]);
@@ -129,6 +137,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
     setStep(Step.Accounts); setFocusField(""); setProblem("");
   };
   const chooseSource = (value: string) => {
+    if (value === sourceKey(source)) return;
     initialized.current = true;
     setSource(fromKey(value)); clearModel();
     change({ ...data, accounts: [], model_id: "" });
@@ -179,7 +188,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const refreshAccount = selectedRows.find(row => Boolean(document(row).connection) && document(row).enabled !== false && !document(row).removal);
   const providerEntries = providers.rows.filter(entry => entry.enabled && entry.providerId);
   const advance = () => { if (validate(step)) { setStep(step + 1); setFocusField(""); setProblem(""); } };
-  return <form ref={form} className="agent-configuration worker-wizard" noValidate onSubmit={event => {
+  return <form id={formID} ref={form} data-wizard-step={step} className="agent-configuration worker-wizard" noValidate onSubmit={event => {
     event.preventDefault(); if (blocked || !active || !supported || step === Step.Harness) return;
     if (step !== Step.Configure) { advance(); return; }
     if (!validate(Step.Configure) || stale || Boolean(initial && (current.error || !current.data?.resource))) return;
@@ -188,7 +197,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
     delete next.reconfiguration_required;
     void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(next), model: { selection: model ? { case: "modelId", value: model.id } : { case: "nativeId", value: input.trim() }, expectedModelRevision: model?.revision ?? 0n } });
   }} onInvalidCapture={revealAgentInvalidControl}>
-    <h2>{initial ? copy("agent-worker-wizard.editAgentWorker") : copy("agent-worker-wizard.newAgentWorker")}</h2>
+    {!inTask ? <h2>{initial ? copy("agent-worker-wizard.editAgentWorker") : copy("agent-worker-wizard.newAgentWorker")}</h2> : null}
     <ol className="worker-steps" aria-label={copy("agent-worker-wizard.workerConfigurationSteps")}>{steps.map(value => <li key={value} aria-current={step === value ? "step" : undefined} data-completed={value < step}><span>{value}</span><span>{stepName(value)}</span></li>)}</ol>
     <h3 ref={heading} tabIndex={-1}>{stepName(step)}</h3>
     <Problem error={status.error} />
@@ -200,17 +209,18 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
       </section>
       <section hidden={step !== Step.Accounts} aria-label={copy("agent-worker-wizard.chooseAccounts")}>
         <p>{harnessNames[data.harness as Harness]} <button type="button" onClick={() => { setStep(Step.Harness); setFocusField(""); }}>{copy("agent-worker-wizard.changeHarness")}</button></p>
-        <h4>{copy("agent-worker-wizard.chooseAccounts")}</h4><p>{copy("agent-worker-wizard.selectAtLeastOneAccount")}</p>
-        <div data-wizard-field="source"><ScrollPicker label={copy("agent-worker-wizard.accountSource")} value={sourceKey(source)} selectedLabel={sourceLabel} change={chooseSource} options={[{ id: "", label: copy("agent-worker-wizard.selectSource") }, ...Object.values(SubscriptionServiceId).filter(value => subscriptionServiceHarnesses[value] === data.harness).map(value => ({ id: `${SourceKind.Subscription}:${value}`, label: `${subscriptionServiceNames[value]} ${copy("agent-worker-wizard.subscription")}` })), ...providerEntries.map(entry => ({ id: `${SourceKind.Api}:${entry.providerId}`, label: entry.displayName }))]} query={providers} active={active && step === Step.Accounts} disabled={blocked || !supported} /></div>
+        <div className="worker-accounts-workspace"><aside className="worker-source-list" aria-label={copy("agent-worker-wizard.accountSources")}><h4>{copy("agent-worker-wizard.accountSources")}</h4><p>{copy("agent-worker-wizard.usedInOrder")}</p><button type="button" aria-pressed="true"><strong>1 · {sourceLabel || copy("agent-worker-wizard.chooseSource")}</strong><small>{copy("agent-worker-wizard.accountsSelected", { v0: ids.length })}</small></button></aside><div className="worker-source-details"><h4 tabIndex={-1}>{sourceLabel || copy("agent-worker-wizard.chooseSource")}</h4><p>{copy(source?.kind === SourceKind.Subscription ? "agent-worker-wizard.subscription" : "agent-worker-wizard.apiProvider")}</p><button type="button" aria-expanded={changingSource || !source || focusField === "source"} onClick={() => setChangingSource(value => !value)}>{copy("agent-worker-wizard.changeSource")}</button><div hidden={!changingSource && Boolean(source) && focusField !== "source"}>
+        <div data-wizard-field="source"><ScrollPicker label={copy("agent-worker-wizard.accountSource")} value={sourceKey(source)} selectedLabel={sourceLabel} change={key => { if (key !== sourceKey(source)) chooseSource(key); setChangingSource(false); setFocusField(""); form.current?.querySelector<HTMLElement>(".worker-source-details h4")?.focus(); }} options={[{ id: "", label: copy("agent-worker-wizard.selectSource") }, ...Object.values(SubscriptionServiceId).filter(value => subscriptionServiceHarnesses[value] === data.harness).map(value => ({ id: `${SourceKind.Subscription}:${value}`, label: `${subscriptionServiceNames[value]} ${copy("agent-worker-wizard.subscription")}` })), ...providerEntries.map(entry => ({ id: `${SourceKind.Api}:${entry.providerId}`, label: entry.displayName }))]} query={providers} active={active && step === Step.Accounts} disabled={blocked || !supported} /></div>
         <Failure failure={providers.error?.failure} /><Problem error={selectedProvider.error} />
         {providers.isLoading ? <p role="status">{copy("agent-worker-wizard.loadingApiSources")}</p> : null}
 
+        </div>
         <Failure failure={accountRows.error?.failure} />
         {source && accountRows.isLoading ? <p role="status">{copy("agent-worker-wizard.loadingAccounts")}</p> : null}
         {accountRows.error && accountRows.data ? <p role="status">{copy("agent-worker-wizard.refreshFailedStaleAccounts")}</p> : null}
         {(accountRows.data && !accountPageValid) || accountRows.error?.failure.code === FailureCode.Internal ? <p role="alert">{copy("agent-worker-wizard.invalidAccountPage")}</p> : null}
-        <div ref={accountsRoot} className="worker-account-list"><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={accountRows} root={accountScrollRoot} active={active && step === Step.Accounts && !blocked}>{payload => payload.filter(row => showAccountChoice(row) && accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness))).map(row => { const value = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" checked={ids.includes(row.id)} onChange={event => { if (event.target.checked) remember(row.id, row); change({ ...data, accounts: event.target.checked ? [...links, { id: row.id, weight: 1 }] : links.filter(link => link.id !== row.id) }); }} /><span><strong>{resourceName(row)}</strong><small>{copy("agent-worker-wizard.connectionHealth", { v0: value.connection ? copy("agent-worker-wizard.connected") : copy("agent-worker-wizard.disconnected"), v1: text(value.health) || copy("agent-worker-wizard.unavailable") })}</small><small>{copy("agent-worker-wizard.executionEligibility", { v0: value.enabled === false ? copy("agent-worker-wizard.disabled") : value.removal ? copy("agent-worker-wizard.removalPending") : copy("agent-worker-wizard.checkedAtExecution") })}</small></span></label>; })}</ScrollPayloadWindow><ScrollContinuation query={accountRows} root={accountScrollRoot} active={active && step === Step.Accounts && !blocked} label={copy("agent-worker-wizard.chooseAccounts")} />
-          {source && accountPageValid && accountRows.data!.resources.length > 0 && !accountRows.error && !accountRows.isFetching && accountChoices.length === 0 ? <div className="worker-account-empty"><p>{copy("agent-worker-wizard.noAccountsToSelectOnThisPage")}</p><p>{copy("agent-worker-wizard.connectAnAccountThenRefresh")}</p></div> : null}
+        <div ref={accountsRoot} className="worker-account-list">{ids.map(id => <label className="worker-account-row" key={id}><input type="checkbox" checked onChange={() => change({ ...data, accounts: links.filter(link => link.id !== id) })} /><span><strong>{knownAccounts[id] ? resourceName(knownAccounts[id]) : selectedLabels.current[id] || id}</strong><small>{copy("agent-worker-wizard.executionCheck")}</small></span></label>)}<ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={accountRows} root={accountScrollRoot} active={active && step === Step.Accounts && !blocked}>{payload => payload.filter(row => !ids.includes(row.id) && showAccountChoice(row) && accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness))).map(row => { const value = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" checked={ids.includes(row.id)} onChange={event => { if (event.target.checked) remember(row.id, row); change({ ...data, accounts: event.target.checked ? [...links, { id: row.id, weight: 1 }] : links.filter(link => link.id !== row.id) }); }} /><span><strong>{resourceName(row)}</strong><small>{copy("agent-worker-wizard.connectionHealth", { v0: value.connection ? copy("agent-worker-wizard.connected") : copy("agent-worker-wizard.disconnected"), v1: text(value.health) || copy("agent-worker-wizard.unavailable") })}</small><small>{copy("agent-worker-wizard.executionEligibility", { v0: value.enabled === false ? copy("agent-worker-wizard.disabled") : value.removal ? copy("agent-worker-wizard.removalPending") : copy("agent-worker-wizard.checkedAtExecution") })}</small></span></label>; })}</ScrollPayloadWindow><ScrollContinuation query={accountRows} root={accountScrollRoot} active={active && step === Step.Accounts && !blocked} label={copy("agent-worker-wizard.chooseAccounts")} />
+          {source && accountPageValid && accountRows.data!.resources.length > 0 && !accountRows.error && !accountRows.isFetching && pageAccountChoices.length === 0 ? <div className="worker-account-empty"><p>{copy("agent-worker-wizard.noAccountsToSelectOnThisPage")}</p><p>{copy("agent-worker-wizard.connectAnAccountThenRefresh")}</p></div> : null}
         </div>
         {source && accountRows.data?.resources.length === 0 && !accountRows.error ? <p>{copy("agent-worker-wizard.noAccountsForSource")}</p> : null}
         {source ? <button type="button" disabled={accountRows.isFetching} onClick={accountRows.refreshExplicit}>{copy("agent-worker-wizard.refreshAccounts")}</button> : null}
@@ -219,7 +229,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
         <details className="worker-routing"><summary>{copy("agent-worker-wizard.routingOptions")} <small>{text(data.routing) || copy("agent-worker-wizard.serverDefault")} · {links.every(link => link.weight === 1) ? copy("agent-worker-wizard.equalWeights") : copy("agent-worker-wizard.customWeights")}</small></summary>
           <label>{copy("agent-worker-wizard.accountRouting")}<select data-wizard-field="routing" value={text(data.routing)} onChange={event => { const next = { ...data }; if (event.target.value) next.routing = event.target.value; else delete next.routing; change(next); }}><option value="">{copy("agent-worker-wizard.serverDefault")}</option>{Object.values(Routing).map(value => <option key={value} value={value} disabled={value === Routing.Fixed && ids.length !== 1}>{value}</option>)}</select></label>
           <ol>{links.map((link, index) => <li key={text(link.id)}><strong>{knownAccounts[text(link.id)] ? resourceName(knownAccounts[text(link.id)]) : text(link.id)}</strong><label>{copy("agent-worker-wizard.weightForAccount", { v0: index + 1 })}<input type="number" min={1} max={1000} value={Number(link.weight)} onChange={event => change({ ...data, accounts: links.map((value, i) => i === index ? { ...value, weight: Number(event.target.value) } : value) })} /></label><div className="actions"><button type="button" disabled={index === 0} aria-label={copy("agent-worker-wizard.moveAccountUp", { v0: index + 1 })} onClick={() => { const next = [...links]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; change({ ...data, accounts: next }); }}>{copy("agent-worker-wizard.up")}</button><button type="button" aria-label={copy("agent-worker-wizard.removeAccount", { v0: index + 1 })} onClick={() => change({ ...data, accounts: links.filter((_, i) => i !== index) })}>{copy("agent-worker-wizard.remove")}</button></div></li>)}</ol>
-        </details>
+        </details></div></div>
       </section>
       <section hidden={step !== Step.Model}>
         <p>{harnessNames[data.harness as Harness]} · {sourceLabel} · {copy("agent-worker-wizard.accountsSelected", { v0: ids.length })}</p>
@@ -243,14 +253,14 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
       </section>
       <fieldset hidden={step !== Step.Configure} disabled={step !== Step.Configure}>
         <ConfigurationFields kind={EntityKind.AGENT} data={data} change={change} active={active && step === Step.Configure} existing={Boolean(initial)} workerWizard />
-        <section className="worker-summary" aria-label={copy("agent-worker-wizard.workerConfigurationSummary")}><h4>{copy("agent-worker-wizard.reviewConfiguration")}</h4><p>{harnessNames[data.harness as Harness]} · {sourceLabel}</p><p>{copy("agent-worker-wizard.modelSummary", { v0: input || copy("agent-worker-wizard.noneSelected") })}</p><ol>{ids.map(id => <li key={id}>{knownAccounts[id] ? resourceName(knownAccounts[id]) : id}</li>)}</ol><p>{copy("agent-worker-wizard.routingSummary", { v0: text(data.routing) || copy("agent-worker-wizard.serverDefault") })}</p><p>{copy("agent-worker-wizard.savedCompatibility")}</p></section>
+        <section className="worker-summary" aria-label={copy("agent-worker-wizard.workerConfigurationSummary")}><h4>{copy("agent-worker-wizard.reviewConfiguration")}</h4><p>{harnessNames[data.harness as Harness]} · {sourceLabel}</p><p>{copy("agent-worker-wizard.modelSummary", { v0: input || copy("agent-worker-wizard.noneSelected") })}</p><ol>{ids.map(id => <li key={id}>{knownAccounts[id] ? resourceName(knownAccounts[id]) : selectedLabels.current[id] || id}</li>)}</ol><p>{copy("agent-worker-wizard.routingSummary", { v0: text(data.routing) || copy("agent-worker-wizard.serverDefault") })}</p><p>{copy("agent-worker-wizard.savedCompatibility")}</p></section>
       </fieldset>
     </fieldset>
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error || current.error || originalModel.error} />
     {stale ? <p role="alert">{copy("agent-worker-wizard.workerChangedElsewhere")}</p> : null}
     {model && currentModel.data?.resource && currentModel.data.resource.revision !== model.revision ? <p role="status">{copy("agent-worker-wizard.selectedModelChanged")}</p> : null}
     {model && currentModel.isLoading ? <p role="status">{copy("agent-worker-wizard.checkingModelRevision")}</p> : null}
-    <div className="worker-footer"><button type="button" disabled={blocked} onClick={cancel}>{copy("agent-worker-wizard.cancel")}</button>{step > Step.Harness ? <div><button type="button" disabled={blocked} onClick={() => { setStep(step - 1); setFocusField(""); setProblem(""); }}>{copy("agent-worker-wizard.back")}</button><button type="submit" className="primary" disabled={blocked || !active || !supported || step === Step.Configure && (stale || currentModel.isLoading || Boolean(initial && (current.error || !current.data?.resource)))}>{mutation.busy ? copy("agent-worker-wizard.saving") : step === Step.Configure ? copy("agent-worker-wizard.saveAgentWorker") : copy("agent-worker-wizard.next")}</button></div> : null}</div>
+    {step > Step.Harness || !inTask ? <SettingsTaskActions className="worker-footer" form={formID}>{!inTask ? <button type="button" disabled={blocked} onClick={cancel}>{copy("agent-worker-wizard.cancel")}</button> : null}{step > Step.Harness ? <div><button type="button" disabled={blocked} onClick={() => { setStep(step - 1); setFocusField(""); setProblem(""); }}>{copy("agent-worker-wizard.back")}</button><button type="submit" form={formID} className="primary" disabled={blocked || !active || !supported || step === Step.Configure && (stale || currentModel.isLoading || Boolean(initial && (current.error || !current.data?.resource)))}>{mutation.busy ? copy("agent-worker-wizard.saving") : step === Step.Configure ? copy("agent-worker-wizard.saveAgentWorker") : copy("agent-worker-wizard.next")}</button></div> : null}</SettingsTaskActions> : null}
     {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("agent-worker-wizard.retryWorkerSave")}</button> : null}
   </form>;
 }

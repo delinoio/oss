@@ -20,6 +20,8 @@ import { revealAgentInvalidControl } from "./agent-configuration";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import { WorkerHarnessPicker } from "./worker-harness-picker";
 import { copy, displayLocale, ownedMessage, useLocale, useProductMessage, type MessageKey, type OwnedMessage } from "./localization";
+import { SettingsTaskActions } from "./settings-task";
+import { useInSettingsTask } from "./settings-task-context";
 import { statusLabel } from "./product-status";
 
 // Groups remain mounted through step changes and reordering. Their stable keys
@@ -46,12 +48,12 @@ function accountStatus(data: Document) {
   return copy("agent-worker-wizard.subscriptionStatus", { v0: connection, v1: health && !["ready", "unverified", "disconnected"].includes(health) ? copy("agent-worker-wizard.healthSuffix", { v0: statusLabel(health) }) : "", v2: quota });
 }
 
-function SourceGroup({ value, index, count, step, harness, active, locked, duplicateSources, update, report, move, remove }: {
-  value: Draft; index: number; count: number; step: Step; harness: Harness; active: boolean; locked: boolean; duplicateSources: string[];
+function SourceGroup({ value, index, count, step, displayed, revealSource, harness, active, locked, duplicateSources, update, report, move, remove }: {
+  value: Draft; index: number; count: number; step: Step; displayed: boolean; revealSource: boolean; harness: Harness; active: boolean; locked: boolean; duplicateSources: string[];
   update: (key: string, patch: Partial<Draft>) => void; report: (key: string, value: Evidence) => void; move: (key: string, offset: number) => void; remove: (key: string) => void;
 }) {
   useLocale();
-  const [choosing, setChoosing] = useState(!value.accounts.length);
+  const [choosing, setChoosing] = useState(!value.source);
   const [known, setKnown] = useState<Record<string, Resource | undefined>>({});
   const [popup, setPopup] = useState(false);
   const [highlight, setHighlight] = useState(-1);
@@ -60,6 +62,7 @@ function SourceGroup({ value, index, count, step, harness, active, locked, dupli
   const group = useRef<HTMLElement>(null), accountRoot = useRef<HTMLDivElement>(null), modelRoot = useRef<HTMLUListElement>(null), modelInput = useRef<HTMLInputElement>(null);
   const [selectionPending, setSelectionPending] = useState(false);
   const selection = useRef<{ generation: number; abort?: AbortController }>({ generation: 0 });
+  useLayoutEffect(() => { if (revealSource) setChoosing(true); }, [revealSource]);
   const source = value.source, ids = value.accounts.map(account => text(account.id));
   const sourceID = sourceKey(source);
   const query = useDeferredValue(value.input);
@@ -86,9 +89,10 @@ function SourceGroup({ value, index, count, step, harness, active, locked, dupli
   const date = knownModels.data?.updatedAt ?? "";
   const parsedDate = new Date(`${date}T00:00:00Z`);
   const knownValid = knownSupported && source?.kind === SourceKind.Subscription && knownModels.data?.subscriptionService === wireService(source) && knownModels.data.models.length <= 200 && /^sha256:[a-f0-9]{64}$/.test(knownModels.data.catalogVersion) && /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === date && [KnownSubscriptionModelCatalogSource.BUNDLED, KnownSubscriptionModelCatalogSource.CACHE, KnownSubscriptionModelCatalogSource.ONLINE].includes(knownModels.data.source) && knownModels.data.models.every(row => row.nativeId && row.displayName) && new Set(knownModels.data.models.map(row => row.nativeId)).size === knownModels.data.models.length;
+  const [labels, setLabels] = useState<Record<string, { name: string; status: string }>>({});
   const selectedIds = ids.join("\u0000");
-  const remember = useCallback((id: string, row?: Resource) => { if (selectedIds.split("\u0000").includes(id)) setKnown(previous => previous[id] === row ? previous : { ...previous, [id]: row }); }, [selectedIds]);
-  useEffect(() => { setKnown(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => ids.includes(id)))); }, [selectedIds]);
+  const remember = useCallback((id: string, row?: Resource) => { if (selectedIds.split("\u0000").includes(id)) { setKnown(previous => previous[id] === row ? previous : { ...previous, [id]: row }); if (row) setLabels(previous => ({ ...previous, [id]: { name: resourceName(row), status: accountStatus(document(row)) } })); } }, [selectedIds]);
+  useEffect(() => { setKnown(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => ids.includes(id)))); setLabels(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => ids.includes(id)))); }, [selectedIds]);
   const pageValid = rows.loaded;
   useEffect(() => {
     const row = initialModel.data?.resource;
@@ -113,7 +117,7 @@ function SourceGroup({ value, index, count, step, harness, active, locked, dupli
   useEffect(() => { report(value.key, { accountError, modelError, pending, label, accounts: accountNames.split("\u0000").filter(Boolean) }); }, [value.key, accountError, modelError, pending, label, accountNames, report]);
   useEffect(() => { if (step !== Step.Model) { setPopup(false); setHighlight(-1); } }, [step]);
   useLayoutEffect(() => { if (popup && highlight >= 0) (modelRoot.current?.children.item(highlight) as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" }); }, [popup, highlight]);
-  const chooseSource = (key: string) => { update(value.key, { source: fromKey(key), accounts: [], modelID: "", model: undefined, input: "" }); setChoosing(true); };
+  const chooseSource = (key: string) => { if (key !== sourceID) update(value.key, { source: fromKey(key), accounts: [], modelID: "", model: undefined, input: "" }); setChoosing(false); group.current?.querySelector<HTMLElement>('[data-wizard-field="source-heading"]')?.focus(); };
   const catalogValid = models.loaded;
   const suggestions: ModelSuggestion[] = catalogValid ? models.rows.map(row => ({ nativeId: row.nativeId, name: row.name, hidden: row.hidden, id: row.id, revision: row.revision, kind: SuggestionKind.Saved })) : [];
   // Metadata tracks every reached native ID; no evicted configuration Resource
@@ -139,12 +143,12 @@ function SourceGroup({ value, index, count, step, harness, active, locked, dupli
   };
   const entries = providers.rows.filter(entry => entry.enabled && entry.providerId);
   const changeRouting = (routing: string) => update(value.key, { routing: routing || undefined });
-  return <section ref={group} className="worker-source-group" data-source-group={value.key} hidden={step !== Step.Accounts && step !== Step.Model} aria-label={copy("agent-worker-wizard.sourceLabel", { v0: index + 1 })}>
+  return <section ref={group} className="worker-source-group" data-source-group={value.key} hidden={step !== Step.Accounts && step !== Step.Model || step === Step.Accounts && !displayed} aria-label={copy("agent-worker-wizard.sourceLabel", { v0: index + 1 })}>
     <fieldset disabled={locked}><header><h4 tabIndex={-1} data-wizard-field="source-heading">{index + 1} · {label}</h4>{step === Step.Accounts ? <div className="actions"><button type="button" disabled={index === 0} aria-label={copy("agent-worker-wizard.moveSourceUp", { v0: index + 1 })} onClick={() => move(value.key, -1)}>{copy("agent-worker-wizard.moveUp")}</button><button type="button" disabled={index === count - 1} aria-label={copy("agent-worker-wizard.moveSourceDown", { v0: index + 1 })} onClick={() => move(value.key, 1)}>{copy("agent-worker-wizard.moveDown")}</button><button type="button" disabled={count === 1} aria-label={copy("agent-worker-wizard.removeSource", { v0: index + 1 })} onClick={() => remove(value.key)}>{copy("agent-worker-wizard.remove")}</button></div> : null}</header>
     {ids.map(id => <SelectedAccount key={id} id={id} active={active} refresh={0} read={remember} />)}
     <div hidden={step !== Step.Accounts}>
-      {selectedRows.map(row => { const data = document(row); return <label className="worker-account-row" key={row.id}><input type="checkbox" aria-label={copy("agent-worker-wizard.selectAccount", { v0: resourceName(row) })} checked onChange={() => update(value.key, { accounts: value.accounts.filter(account => account.id !== row.id) })} /><span><strong>{resourceName(row)}</strong><small>{accountStatus(data)}</small><small>{copy("agent-worker-wizard.executionCheck")}</small></span></label>; })}
-      <button type="button" aria-expanded={choosing} onClick={() => setChoosing(value => !value)}>{copy("agent-worker-wizard.chooseAccounts")}</button>
+
+      <p>{copy(source?.kind === SourceKind.Subscription ? "agent-worker-wizard.subscription" : "agent-worker-wizard.apiProvider")}</p><button type="button" aria-expanded={choosing} onClick={() => setChoosing(value => !value)}>{copy("agent-worker-wizard.changeSource")}</button>
       <div hidden={!choosing}>
         <div data-wizard-field="source"><ScrollPicker label={copy("agent-worker-wizard.sourceLabel", { v0: index + 1 })} value={sourceID} selectedLabel={label} placeholder={copy("agent-worker-wizard.selectSource")} active={active && step === Step.Accounts && choosing} disabled={locked} query={providers} change={chooseSource} options={[
           ...Object.values(SubscriptionServiceId).filter(service => subscriptionServiceHarnesses[service] === harness).map(service => ({ id: `${SourceKind.Subscription}:${service}`, label: `${subscriptionServiceNames[service]} ${copy("agent-worker-wizard.subscription")}`, disabled: duplicateSources.includes(`${SourceKind.Subscription}:${service}`) })),
@@ -152,12 +156,13 @@ function SourceGroup({ value, index, count, step, harness, active, locked, dupli
           ...entries.map(entry => ({ id: `${SourceKind.Api}:${entry.providerId}`, label: entry.displayName, disabled: duplicateSources.includes(`${SourceKind.Api}:${entry.providerId}`) })),
         ]} /></div>
         <Failure failure={providers.error?.failure} /><Problem error={provider.error} />{providers.isLoading ? <p role="status">{copy("agent-worker-wizard.loadingApiSources")}</p> : providers.loaded && entries.length === 0 ? <p>{copy("agent-worker-wizard.noApiSources")}</p> : null}
+      </div>
         <Failure failure={rows.error?.failure} />{source && rows.isLoading ? <p role="status">{copy("agent-worker-wizard.loadingAccounts")}</p> : null}{rows.error && rows.data ? <p role="status">{copy("agent-worker-wizard.refreshFailedStaleAccounts")}</p> : null}{rows.data && !pageValid ? <p role="alert">{copy("agent-worker-wizard.invalidAccountPage")}</p> : null}
-        <div ref={accountRoot} className="conversation-page-scroll"><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={rows} root={accountRoot} active={active && step === Step.Accounts && choosing && !locked}>{payload => payload.filter(row => !ids.includes(row.id) && showAccountChoice(row) && accountFormatMatches(row, provider.data?.resource, harness)).map(row => <label className="worker-account-row" key={row.id}><input type="checkbox" checked={false} disabled={Boolean(rows.error)} onChange={() => update(value.key, { accounts: [...value.accounts, { id: row.id, weight: 1 }] })} /><span><strong>{resourceName(row)}</strong><small>{accountStatus(document(row))}</small><small>{copy("agent-worker-wizard.executionCheck")}</small></span></label>)}</ScrollPayloadWindow><ScrollContinuation query={rows} root={accountRoot} active={active && step === Step.Accounts && choosing && !locked && Boolean(source)} label={copy("agent-worker-wizard.sourceAccountPages", { v0: index + 1 })} /></div>
+        <div ref={accountRoot} className="worker-account-list">{ids.map(id => <label className="worker-account-row" key={id}><input type="checkbox" aria-label={copy("agent-worker-wizard.selectAccount", { v0: known[id] ? resourceName(known[id]) : labels[id]?.name || id })} checked onChange={() => update(value.key, { accounts: value.accounts.filter(account => account.id !== id) })} /><span><strong>{known[id] ? resourceName(known[id]) : labels[id]?.name || id}</strong><small>{known[id] ? accountStatus(document(known[id])) : labels[id]?.status}</small><small>{copy("agent-worker-wizard.executionCheck")}</small></span></label>)}<ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={rows} root={accountRoot} active={active && step === Step.Accounts && displayed && !locked}>{payload => payload.filter(row => !ids.includes(row.id) && showAccountChoice(row) && accountFormatMatches(row, provider.data?.resource, harness)).map(row => <label className="worker-account-row" key={row.id}><input type="checkbox" checked={false} disabled={Boolean(rows.error)} onChange={() => update(value.key, { accounts: [...value.accounts, { id: row.id, weight: 1 }] })} /><span><strong>{resourceName(row)}</strong><small>{accountStatus(document(row))}</small><small>{copy("agent-worker-wizard.executionCheck")}</small></span></label>)}</ScrollPayloadWindow><ScrollContinuation query={rows} root={accountRoot} active={active && step === Step.Accounts && displayed && !locked && Boolean(source)} label={copy("agent-worker-wizard.sourceAccountPages", { v0: index + 1 })} /></div>
         {source && rows.loaded && !rows.rows.length && !rows.error ? <p>{copy("agent-worker-wizard.noAccountsForSource")}</p> : null}
         {source ? <button type="button" disabled={rows.isFetching} onClick={rows.refreshExplicit}>{copy("agent-worker-wizard.refreshAccounts")}</button> : null}
-      </div>
-      <details className="worker-routing"><summary>{copy("agent-worker-wizard.routingOptions")} · {value.routing === Routing.Priority ? copy("agent-worker-wizard.inOrder") : value.routing || copy("agent-worker-wizard.serverDefault")}</summary><label>{copy("agent-worker-wizard.accountRouting")}<select data-wizard-field="routing" value={value.routing || ""} onChange={event => changeRouting(event.target.value)}><option value="">{copy("agent-worker-wizard.serverDefault")}</option>{Object.values(Routing).map(policy => <option key={policy} value={policy} disabled={policy === Routing.Fixed && ids.length !== 1}>{policy === Routing.Priority ? copy("agent-worker-wizard.inOrder") : policy}</option>)}</select></label><ol>{value.accounts.map((account, position) => <li key={text(account.id)}><strong>{known[text(account.id)] ? resourceName(known[text(account.id)]) : text(account.id)}</strong><label>{copy("agent-worker-wizard.weightForAccount", { v0: position + 1 })}<input type="number" min={1} max={1000} value={Number(account.weight)} onChange={event => update(value.key, { accounts: value.accounts.map((item, i) => i === position ? { ...item, weight: Number(event.target.value) } : item) })} /></label><button type="button" disabled={position === 0} aria-label={copy("agent-worker-wizard.moveAccountUp", { v0: position + 1 })} onClick={() => { const accounts = [...value.accounts]; [accounts[position - 1], accounts[position]] = [accounts[position], accounts[position - 1]]; update(value.key, { accounts }); }}>{copy("agent-worker-wizard.up")}</button></li>)}</ol></details>
+      <p>{copy("agent-worker-wizard.accountsSelected", { v0: ids.length })}</p>
+      <details className="worker-routing"><summary>{copy("agent-worker-wizard.routingOptions")} · {value.routing === Routing.Priority ? copy("agent-worker-wizard.inOrder") : value.routing || copy("agent-worker-wizard.serverDefault")}</summary><label>{copy("agent-worker-wizard.accountRouting")}<select data-wizard-field="routing" value={value.routing || ""} onChange={event => changeRouting(event.target.value)}><option value="">{copy("agent-worker-wizard.serverDefault")}</option>{Object.values(Routing).map(policy => <option key={policy} value={policy} disabled={policy === Routing.Fixed && ids.length !== 1}>{policy === Routing.Priority ? copy("agent-worker-wizard.inOrder") : policy}</option>)}</select></label><ol>{value.accounts.map((account, position) => <li key={text(account.id)}><strong>{known[text(account.id)] ? resourceName(known[text(account.id)]) : text(account.id)}</strong><label>{copy("agent-worker-wizard.weightForAccount", { v0: position + 1 })}<input data-wizard-field="weight" type="number" min={1} max={1000} value={Number(account.weight)} onChange={event => update(value.key, { accounts: value.accounts.map((item, i) => i === position ? { ...item, weight: Number(event.target.value) } : item) })} /></label><button type="button" disabled={position === 0} aria-label={copy("agent-worker-wizard.moveAccountUp", { v0: position + 1 })} onClick={() => { const accounts = [...value.accounts]; [accounts[position - 1], accounts[position]] = [accounts[position], accounts[position - 1]]; update(value.key, { accounts }); }}>{copy("agent-worker-wizard.up")}</button></li>)}</ol></details>
     </div>
     <div hidden={step !== Step.Model}>
       <p>{copy("agent-worker-wizard.searchSavedCatalog")}</p>
@@ -181,6 +186,9 @@ function SourceGroup({ value, index, count, step, harness, active, locked, dupli
 export function AgentWorkerSourceWizard({ initial, active, saved, cancel }: { initial?: Resource; active: boolean; saved: () => void; cancel: () => void }) {
   const [data, setData] = useState<Document>(() => initial ? document(initial) : newConfiguration(EntityKind.AGENT));
   const [routes, setRoutes] = useState<Draft[]>(() => initial && items(document(initial).routes).length ? items(document(initial).routes).map(item => draft(object(item))) : [draft(initial ? { model_id: document(initial).model_id, accounts: document(initial).accounts, routing: document(initial).routing } : { routing: Routing.Priority })]);
+  const [selectedKey, setSelectedKey] = useState("");
+  const formID = useId();
+  const inTask = useInSettingsTask();
   const [evidence, setEvidence] = useState<Record<string, Evidence>>({});
   const [step, setStep] = useState(Step.Harness);
   useLocale();
@@ -189,6 +197,7 @@ export function AgentWorkerSourceWizard({ initial, active, saved, cancel }: { in
   const [focusField, setFocusField] = useState("");
   const [focusAttempt, setFocusAttempt] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null), form = useRef<HTMLFormElement>(null);
+  const displayedKey = routes.some(route => route.key === selectedKey) ? selectedKey : routes[0]?.key;
   const notifications = useNotifications();
   const current = useQuery(ResourceQuery.getResource, { kind: EntityKind.AGENT, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: active ? 5000 : false });
   const update = useCallback((key: string, patch: Partial<Draft>) => setRoutes(previous => previous.map(route => route.key === key ? { ...route, ...patch } : route)), []);
@@ -202,7 +211,7 @@ export function AgentWorkerSourceWizard({ initial, active, saved, cancel }: { in
     const control = focusField ? container?.querySelector<HTMLElement>(focusField === "name" ? ".agent-core input" : `[data-wizard-field="${focusField}"]`) : undefined;
     if (control) { const disclosure = control.closest<HTMLDetailsElement>("details"); if (disclosure) disclosure.open = true; const parent = control.closest<HTMLElement>("[hidden]"); if (parent) parent.hidden = false; (control.querySelector<HTMLElement>('[role="combobox"]') ?? control).focus(); } else heading.current?.focus();
   }, [active, step, focusKey, focusField, focusAttempt]);
-  const focus = (key = "", field = "") => { setFocusKey(key); setFocusField(field); setFocusAttempt(value => value + 1); };
+  const focus = (key = "", field = "") => { if (key) setSelectedKey(key); setFocusKey(key); setFocusField(field); setFocusAttempt(value => value + 1); };
   const fail = (target: Step, message: OwnedMessage, key = "", field = "") => { setStep(target); setProblem(message); focus(key, field); return false; };
   const validate = (through: Step) => {
     if (!Object.values(Harness).includes(data.harness as Harness)) return fail(Step.Harness, ownedMessage("agent-worker-wizard.chooseSupportedHarness"), "", "harness");
@@ -210,7 +219,7 @@ export function AgentWorkerSourceWizard({ initial, active, saved, cancel }: { in
     if (through >= Step.Accounts) {
       const count = routes.reduce((count, route) => count + route.accounts.length, 0), ids = routes.flatMap(route => route.accounts.map(account => text(account.id)));
       if (count > 1000 || new Set(ids).size !== count) return fail(Step.Accounts, ownedMessage("agent-worker-wizard.accountLimit"));
-      for (const route of routes) if (!evidence[route.key] || evidence[route.key].accountError || keys.filter(key => key === sourceKey(route.source)).length !== 1) return fail(Step.Accounts, ownedMessage(evidence[route.key]?.accountError || "agent-worker-wizard.distinctSources"), route.key, "source");
+      for (const route of routes) if (!evidence[route.key] || evidence[route.key].accountError || keys.filter(key => key === sourceKey(route.source)).length !== 1) return fail(Step.Accounts, ownedMessage(evidence[route.key]?.accountError || "agent-worker-wizard.distinctSources"), route.key, !route.source || evidence[route.key]?.accountError === "agent-worker-wizard.duplicateSource" ? "source" : route.accounts.some(account => !Number.isInteger(account.weight) || Number(account.weight) < 1 || Number(account.weight) > 1000) ? "weight" : evidence[route.key]?.accountError === "agent-worker-wizard.fixedRoutingWeights" ? "routing" : "account");
     }
     if (through >= Step.Model) for (const route of routes) if (!evidence[route.key] || evidence[route.key].modelError) return fail(Step.Model, ownedMessage(evidence[route.key]?.modelError || "agent-worker-wizard.modelEverySource"), route.key, "model");
     if (through >= Step.Configure && (!text(data.name).trim() || new TextEncoder().encode(text(data.name)).byteLength > 256)) return fail(Step.Configure, ownedMessage("agent-worker-wizard.workerNameByteLimit"), "", "name");
@@ -222,7 +231,7 @@ export function AgentWorkerSourceWizard({ initial, active, saved, cancel }: { in
   };
   const advance = () => { if (validate(step)) { setStep(step + 1); setProblem(""); focus(); } };
   const move = (key: string, offset: number) => { setRoutes(previous => { const next = [...previous], index = next.findIndex(route => route.key === key); [next[index], next[index + offset]] = [next[index + offset], next[index]]; return next; }); setProblem(""); focus(key, "source-heading"); };
-  return <form ref={form} className="agent-configuration worker-wizard worker-source-wizard" noValidate onInvalidCapture={revealAgentInvalidControl} onSubmit={event => {
+  return <form id={formID} ref={form} className="agent-configuration worker-wizard worker-source-wizard" data-wizard-step={step} noValidate onInvalidCapture={revealAgentInvalidControl} onSubmit={event => {
     event.preventDefault(); if (!active || blocked || step === Step.Harness) return; if (step !== Step.Configure) { advance(); return; }
     if (!validate(Step.Configure) || stale || initial && (!current.data?.resource || current.error)) return;
     if (!form.current?.checkValidity()) { revealAgentInvalidControl(event); form.current?.querySelector<HTMLElement>("input:invalid, select:invalid, textarea:invalid")?.focus(); return; }
@@ -234,15 +243,19 @@ export function AgentWorkerSourceWizard({ initial, active, saved, cancel }: { in
     if (encode(next).byteLength > 1 << 20) { fail(Step.Configure, ownedMessage("agent-worker-wizard.configurationTooLarge")); return; }
     void mutation.send({ mutation: { requestId: newRequestId(), id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n }, schemaVersion: expanded ? 3 : 1, documentJson: encode(next), ...(expanded ? { routeModels: selections } : { model: selections[0] }) });
   }}>
-    <h2>{initial ? copy("agent-worker-wizard.editAgentWorker") : copy("agent-worker-wizard.newAgentWorker")}</h2><ol className="worker-steps" aria-label={copy("agent-worker-wizard.workerConfigurationSteps")}>{[Step.Harness, Step.Accounts, Step.Model, Step.Configure].map(value => <li key={value} aria-current={step === value ? "step" : undefined} data-completed={value < step}><span>{value}</span><span>{stepName(value)}</span></li>)}</ol><h3 ref={heading} tabIndex={-1}>{stepName(step)}</h3>
+    {!inTask ? <h2>{initial ? copy("agent-worker-wizard.editAgentWorker") : copy("agent-worker-wizard.newAgentWorker")}</h2> : null}<ol className="worker-steps" aria-label={copy("agent-worker-wizard.workerConfigurationSteps")}>{[Step.Harness, Step.Accounts, Step.Model, Step.Configure].map(value => <li key={value} aria-current={step === value ? "step" : undefined} data-completed={value < step}><span>{value}</span><span>{stepName(value)}</span></li>)}</ol><h3 ref={heading} tabIndex={-1}>{stepName(step)}</h3>
     <fieldset disabled={mutation.busy || mutation.uncertain}>
       <section hidden={step !== Step.Harness}><WorkerHarnessPicker value={data.harness} disabled={blocked || !active} change={chooseHarness} confirm={harness => { chooseHarness(harness); setStep(Step.Accounts); setProblem(""); focus(); }} /></section>
-      <div hidden={step !== Step.Accounts}><p>{harnessNames[data.harness as Harness]} <button type="button" disabled={blocked} onClick={() => { setStep(Step.Harness); focus(); }}>{copy("agent-worker-wizard.changeHarness")}</button></p><h4>{copy("agent-worker-wizard.accountSources")}</h4><p>{copy("agent-worker-wizard.subscriptionFirst")}</p></div>
-      {routes.map((route, index) => <SourceGroup key={route.key} value={route} index={index} count={routes.length} step={step} harness={data.harness as Harness} active={active} locked={blocked} duplicateSources={routes.filter(other => other.key !== route.key).map(other => sourceKey(other.source))} update={update} report={report} move={move} remove={key => { setRoutes(previous => previous.filter(route => route.key !== key)); focus(); }} />)}
-      <div hidden={step !== Step.Accounts}><button type="button" disabled={blocked || routes.length >= 1000} onClick={() => { const next = draft({ routing: Routing.Priority }); setRoutes(previous => [...previous, next]); focus(next.key, "source"); }}>{copy("agent-worker-wizard.addSource")}</button><p>{copy("agent-worker-wizard.newSessions")}</p><p>{copy("agent-worker-wizard.nextModels")}</p></div>
+      <div hidden={step !== Step.Accounts}><p>{harnessNames[data.harness as Harness]} <button type="button" disabled={blocked} onClick={() => { setStep(Step.Harness); focus(); }}>{copy("agent-worker-wizard.changeHarness")}</button></p></div>
+      <div className={step === Step.Accounts ? "worker-accounts-workspace" : undefined}>
+        <aside className="worker-source-list" hidden={step !== Step.Accounts} aria-label={copy("agent-worker-wizard.accountSources")}><h4>{copy("agent-worker-wizard.accountSources")}</h4><p>{copy("agent-worker-wizard.usedInOrder")}</p><ol>{routes.map((route, index) => <li key={route.key}><button type="button" aria-pressed={displayedKey === route.key} onClick={() => setSelectedKey(route.key)}><strong>{index + 1} · {evidence[route.key]?.label || copy("agent-worker-wizard.chooseSource")}</strong><small>{copy("agent-worker-wizard.accountsSelected", { v0: route.accounts.length })}</small></button></li>)}</ol><button type="button" disabled={blocked || routes.length >= 1000} onClick={() => { const next = draft({ routing: Routing.Priority }); setRoutes(previous => [...previous, next]); focus(next.key, "source"); }}>{copy("agent-worker-wizard.addSource")}</button></aside>
+        <div className="worker-source-details">
+      {routes.map((route, index) => <SourceGroup key={route.key} value={route} index={index} count={routes.length} step={step} displayed={displayedKey === route.key} revealSource={focusKey === route.key && focusField === "source"} harness={data.harness as Harness} active={active} locked={blocked} duplicateSources={routes.filter(other => other.key !== route.key).map(other => sourceKey(other.source))} update={update} report={report} move={move} remove={key => { const position = routes.findIndex(route => route.key === key); const remaining = routes.filter(route => route.key !== key); setRoutes(remaining); focus(remaining[Math.min(position, remaining.length - 1)]?.key, "source-heading"); }} />)}
+        </div>
+      </div><div hidden={step !== Step.Accounts}><p>{copy("agent-worker-wizard.newSessions")}</p><p>{copy("agent-worker-wizard.nextModels")}</p></div>
       <fieldset hidden={step !== Step.Configure} disabled={blocked || step !== Step.Configure}><ConfigurationFields kind={EntityKind.AGENT} data={data} change={setData} existing={Boolean(initial)} active={active && step === Step.Configure} workerWizard /><section className="worker-summary" aria-label={copy("agent-worker-wizard.workerConfigurationSummary")}><h4>{copy("agent-worker-wizard.reviewConfiguration")}</h4><p>{harnessNames[data.harness as Harness]}</p><ol>{routes.map(route => <li key={route.key}><strong>{evidence[route.key]?.label}</strong><p>{copy("agent-worker-wizard.modelSummary", { v0: route.input })}</p><p>{copy("agent-worker-wizard.accountsSummary", { v0: evidence[route.key]?.accounts.join(", ") })}</p><p>{copy("agent-worker-wizard.routingSummary", { v0: route.routing === Routing.Priority ? copy("agent-worker-wizard.inOrder") : route.routing || copy("agent-worker-wizard.serverDefault") })}</p></li>)}</ol><p>{copy("agent-worker-wizard.savedCompatibility")}</p></section></fieldset>
     </fieldset>
     {problem ? <p role="alert">{problem}</p> : null}{initial && data.reconfiguration_required === true ? <p role="status">{copy("agent-worker-wizard.reconfigurationRequired")}</p> : null}<Problem error={mutation.error || current.error} />{stale ? <p role="alert">{copy("agent-worker-wizard.workerChangedElsewhere")}</p> : null}
-    <div className="worker-footer"><button type="button" disabled={blocked} onClick={cancel}>{copy("agent-worker-wizard.cancel")}</button>{step > Step.Harness ? <div><button type="button" disabled={blocked} onClick={() => { setStep(step - 1); setProblem(""); focus(); }}>{copy("agent-worker-wizard.back")}</button><button type="submit" className="primary" disabled={!active || blocked || step === Step.Configure && (stale || Boolean(initial && (!current.data?.resource || current.error)))}>{mutation.busy ? copy("agent-worker-wizard.saving") : step === Step.Configure ? copy("agent-worker-wizard.saveAgentWorker") : copy("agent-worker-wizard.next")}</button></div> : null}</div>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("agent-worker-wizard.retryWorkerSave")}</button> : null}
+    {step > Step.Harness || !inTask ? <SettingsTaskActions className="worker-footer" form={formID}>{!inTask ? <button type="button" disabled={blocked} onClick={cancel}>{copy("agent-worker-wizard.cancel")}</button> : null}{step > Step.Harness ? <div><button type="button" disabled={blocked} onClick={() => { setStep(step - 1); setProblem(""); focus(); }}>{copy("agent-worker-wizard.back")}</button><button type="submit" form={formID} className="primary" disabled={!active || blocked || step === Step.Configure && (stale || Boolean(initial && (!current.data?.resource || current.error)))}>{mutation.busy ? copy("agent-worker-wizard.saving") : step === Step.Configure ? copy("agent-worker-wizard.saveAgentWorker") : copy("agent-worker-wizard.next")}</button></div> : null}</SettingsTaskActions> : null}{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("agent-worker-wizard.retryWorkerSave")}</button> : null}
   </form>;
 }

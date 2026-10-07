@@ -94,7 +94,7 @@ try {
   };
   const checkWizard = async () => {
     const form = page.locator(".worker-wizard");
-    assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), "Wizard form cap");
+    assert(await form.evaluate(node => node.dataset.wizardStep === "2" || node.getBoundingClientRect().width <= 720.5), "Non-Accounts wizard form cap");
     assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Wizard content overflow");
     const group = form.getByRole("radiogroup", { name: l("Harness"), exact: true });
     if (await group.isVisible()) {
@@ -133,13 +133,13 @@ try {
       await claude.focus(); await claude.press("Space");
       const accountsHeading = form.getByRole("heading", { name: l("Accounts"), exact: true });
       assert(await accountsHeading.evaluate(node => node === document.activeElement), "Space confirmation focuses Accounts");
-      await form.getByRole("button", { name: l("Back"), exact: true }).click();
+      await page.locator(".settings-task-footer").getByRole("button", { name: l("Back"), exact: true }).click();
       await codex.focus(); await codex.press("Enter");
       assert(await accountsHeading.evaluate(node => node === document.activeElement), "Enter confirmation focuses Accounts without skipping a step");
-      await form.getByRole("button", { name: l("Back"), exact: true }).click();
+      await page.locator(".settings-task-footer").getByRole("button", { name: l("Back"), exact: true }).click();
       await codex.click();
       assert(await accountsHeading.evaluate(node => node === document.activeElement), "Current-card click confirmation focuses Accounts");
-      await form.getByRole("button", { name: l("Back"), exact: true }).click();
+      await page.locator(".settings-task-footer").getByRole("button", { name: l("Back"), exact: true }).click();
       assert.equal(await cards.evaluateAll(nodes => nodes.filter(node => node.tabIndex === 0).length), 1);
       await codex.hover();
       const selection = await codex.evaluate(node => {
@@ -156,8 +156,8 @@ try {
       }
       harnessChecks++;
     }
-    const next = form.getByRole("button", { name: new RegExp(`^(${l("Next")}|${l("Save Agent Worker")})$`) });
-    const action = await next.count() ? next : form.getByRole("button", { name: l("Cancel"), exact: true });
+    const next = page.locator(".settings-task-footer").getByRole("button", { name: new RegExp(`^(${l("Next")}|${l("Save Agent Worker")})$`) });
+    const action = await next.count() ? next : page.locator(".settings-task-close");
     await action.scrollIntoViewIfNeeded();
     const footer = await action.boundingBox();
     assert(footer && footer.y >= 0 && footer.y + footer.height <= page.viewportSize().height + 0.5, "Wizard footer remains visible in document flow");
@@ -166,17 +166,35 @@ try {
     await select("Agent Workers");
     await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
     await page.getByRole("radio", { name: "Codex", exact: true }).click();
-    await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
+    await page.getByRole("combobox", { name: "Account source", exact: true }).click();
+    await page.getByRole("option", { name: "Fixture provider", exact: true }).click();
     const form = page.locator(".worker-wizard");
     await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
     assert.equal(await form.locator(".worker-account-row").count(), 0, "Hidden accounts have no DOM/focusable rows");
     assert.equal(await form.getByRole("checkbox").count(), 0, "Hidden accounts have no accessible checkbox");
-    assert(await form.getByText("0 accounts selected", { exact: true }).isVisible());
+    assert(await form.getByText("0 accounts selected", { exact: true }).first().isVisible());
     assert(await form.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.", { exact: true }).isVisible());
     await form.getByRole("button", { name: "Refresh accounts", exact: true }).click();
     await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    const workspace = form.locator(".worker-accounts-workspace");
+    const geometry = await workspace.evaluate(node => {
+      const form = node.closest("form"), columns = getComputedStyle(node).gridTemplateColumns.split(" ");
+      return { width: form.getBoundingClientRect().width, columns, overflow: node.scrollWidth > node.clientWidth };
+    });
+    assert.equal(geometry.overflow, false, "Accounts workspace has no horizontal overflow");
+    if (geometry.width >= 720) assert.equal(geometry.columns[0], "260px", "Wide Accounts source column");
+    else assert.equal(geometry.columns.length, 1, "Narrow Accounts stacks source list and detail");
+    const footerNext = page.locator(".settings-task-footer").getByRole("button", { name: "Next", exact: true });
+    assert(await footerNext.evaluate(node => node.form === document.querySelector(".worker-wizard")), "Footer Next owns the original form");
+    const actionBox = await footerNext.boundingBox();
+    assert(actionBox.y >= 0 && actionBox.y + actionBox.height <= page.viewportSize().height + 0.5, "Accounts navigation stays visible");
+    if (screenshotDirectory) {
+      await mkdir(screenshotDirectory, { recursive: true });
+      const viewport = page.viewportSize(), theme = await page.locator("html").getAttribute("data-theme");
+      await page.screenshot({ path: join(screenshotDirectory, `accounts-${theme}-${viewport.width}x${viewport.height}.png`) });
+    }
     await checkWizard();
-    await form.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.locator(".settings-task-close").click();
     hiddenChoicesChecked++;
   };
   const checkGit = async () => {
@@ -387,7 +405,8 @@ try {
       await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
       await checkWizard();
       await page.getByRole("radio", { name: "Codex", exact: true }).click();
-      await page.getByRole("combobox", { name: l("Account source"), exact: true }).selectOption({ label: "Fixture provider" });
+      await page.getByRole("combobox", { name: l("Account source"), exact: true }).click();
+      await page.getByRole("option", { name: "Fixture provider", exact: true }).click();
       await page.getByRole("checkbox", { name: /^Personal API/ }).check();
       await page.getByRole("checkbox", { name: /^Team API/ }).check();
       await checkWizard();
