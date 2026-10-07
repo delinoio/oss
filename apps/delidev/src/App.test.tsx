@@ -116,6 +116,33 @@ it.each(["en", "ko"])("omits global Search guidance from %s shortcut help on Ses
   }
 });
 
+it("help shortcuts reuse existing navigation and screen focus without sending background input", async () => {
+  const value = fixture();
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const message = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(message, { target: { value: "Retained help draft" } });
+  for (const destination of ["session", "new-session", "search"]) {
+    if (destination === "new-session") fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    if (destination === "search") fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    const input = screen.getByRole("textbox", { name: destination === "session" ? "Message" : destination === "new-session" ? "First message" : "Search conversations" });
+    const opener = screen.getByRole("button", { name: "Keyboard shortcuts" }); opener.focus(); fireEvent.click(opener);
+    const close = screen.getByRole("button", { name: "Close keyboard shortcuts" });
+    for (const options of [{}, { ctrlKey: true }, { shiftKey: true }]) fireEvent.keyDown(close, { key: "Enter", ...options });
+    expect(value.creates).not.toHaveBeenCalled(); expect(value.enqueues).not.toHaveBeenCalled(); expect(value.searches).not.toHaveBeenCalled();
+    fireEvent.keyDown(close, { key: "i", ctrlKey: true });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(input));
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+  fireEvent.keyDown(screen.getByRole("button", { name: "Close keyboard shortcuts" }), { key: "n", ctrlKey: true, shiftKey: true });
+  expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "First message" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Retained help draft");
+  expect(value.creates).not.toHaveBeenCalled(); expect(value.enqueues).not.toHaveBeenCalled();
+});
+
 function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });

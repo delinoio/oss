@@ -52,17 +52,20 @@ export function availableShortcutTarget(node: HTMLElement | null): boolean {
   const style = getComputedStyle(node);
   return style.display !== "none" && style.visibility !== "hidden";
 }
-export function shortcutModalVisible(): boolean {
-  return [...document.querySelectorAll<HTMLElement>('dialog[open]:not([role="region"]), [aria-modal="true"]')].some(availableShortcutTarget);
+export function shortcutModalVisible(except?: HTMLDialogElement): boolean {
+  return [...document.querySelectorAll<HTMLElement>('dialog[open]:not([role="region"]), [aria-modal="true"]')].some(node => node !== except && availableShortcutTarget(node));
 }
 function editable(node: Element): boolean {
   return Boolean(node.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'));
 }
-export function dispatchShortcut(event: KeyboardEvent, definitions: readonly ShortcutDefinition[], surface: Surface, platform: ShortcutPlatform, local = false): boolean {
-  if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat || event.getModifierState?.("AltGraph") || shortcutModalVisible()) return false;
+export interface ShortcutHelpDispatch { dialog: HTMLDialogElement; beforeRun: () => void }
+export function dispatchShortcut(event: KeyboardEvent, definitions: readonly ShortcutDefinition[], surface: Surface, platform: ShortcutPlatform, local = false, help?: ShortcutHelpDispatch): boolean {
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat || event.getModifierState?.("AltGraph")) return false;
   const node = event.target instanceof Element ? event.target : document.activeElement;
   if (!node || node.closest('[data-shortcuts="passthrough"], [hidden], [inert]')) return false;
-  const candidates = definitions.filter(item => item.active !== false && (item.scope === ShortcutScope.Global || item.scope === surface) && (!local || item.target) && (!item.target || (availableShortcutTarget(item.target.current) && item.target.current!.contains(node))) && (!editable(node) || item.input === ShortcutInput.Allow || (item.input === ShortcutInput.Target && item.target?.current?.contains(node))) && item.bindings.some(binding => bindingMatches(event, binding, platform)));
+  const fromHelp = Boolean(help?.dialog.open && help.dialog.contains(node));
+  if (shortcutModalVisible(fromHelp ? help!.dialog : undefined)) return false;
+  const candidates = definitions.filter(item => item.active !== false && (item.scope === ShortcutScope.Global || item.scope === surface) && (!local || item.target) && (!fromHelp || !item.target) && (!item.target || (availableShortcutTarget(item.target.current) && item.target.current!.contains(node))) && (!editable(node) || item.input === ShortcutInput.Allow || (item.input === ShortcutInput.Target && item.target?.current?.contains(node))) && item.bindings.some(binding => bindingMatches(event, binding, platform)));
   const priority = (item: ShortcutDefinition) => item.target ? 2 : item.scope === ShortcutScope.Global ? 0 : 1;
   const highest = Math.max(-1, ...candidates.map(priority));
   const matches = candidates.filter(item => priority(item) === highest);
@@ -76,7 +79,12 @@ export function dispatchShortcut(event: KeyboardEvent, definitions: readonly Sho
   if (item.execution === ShortcutExecution.Native) return false;
   // A disabled matching action cannot fall through to a broader action or submit.
   event.preventDefault();
-  if (item.enabled !== false) item.run?.();
+  if (item.enabled !== false && item.run) {
+    // Help remains the current modal for its own shortcut and rejected actions.
+    // Closing before the callback releases the native inert/focus boundary.
+    if (fromHelp && item.id !== ShortcutId.Help) help!.beforeRun();
+    item.run();
+  }
   return true;
 }
 
