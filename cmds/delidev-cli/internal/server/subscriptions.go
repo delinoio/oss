@@ -428,6 +428,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
+	directExecution := false
 	result, err := s.Store.Mutate(ctx, input.Lease, "subscription.take", input, func(tx *store.Tx) (any, error) {
 		// Take retains the original observation while another lease or metadata
 		// update advances the account. Lifecycle authority is the exact still-queued
@@ -503,6 +504,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
 					return nil, subscriptionDenied()
 				}
+				directExecution = true
 			} else if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
 				return nil, err
 			}
@@ -554,7 +556,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err == nil {
 			generation = a.Subscription.Generation
 			leaseRevision = a.Subscription.Lease.Revision
-			installation, err = subscriptionInstallation(tx, input.Machine)
+			// The v4 job already owns its immutable startup selection. Protected
+			// bundle delivery cannot reintroduce discovery or version admission.
+			if !directExecution {
+				installation, err = subscriptionInstallation(tx, input.Machine)
+			}
 		}
 		return err
 	})
