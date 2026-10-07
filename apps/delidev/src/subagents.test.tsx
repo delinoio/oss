@@ -44,8 +44,9 @@ test("capability gates original session reads and paging never invokes child con
  const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
  const view = (revision: string) => <QueryClientProvider client={query}><TransportProvider transport={transport}><Subagents sessionId={session} revision={revision} /></TransportProvider></QueryClientProvider>;
  const mounted = render(view("1"));
- await waitFor(() => expect(screen.getByRole("button", { name: "Next child page" }).hasAttribute("disabled")).toBe(false));
- fireEvent.click(screen.getByRole("button", { name: "Next child page" }));
+ fireEvent.click(screen.getByText("Subagents"));
+ await waitFor(() => expect(screen.getByRole("button", { name: "Load more Subagents" }).hasAttribute("disabled")).toBe(false));
+ fireEvent.click(screen.getByRole("button", { name: "Load more Subagents" }));
  await waitFor(() => expect(reads).toContain("original-page"));
  const before = reads.length;
  mounted.rerender(view("2"));

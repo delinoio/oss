@@ -100,13 +100,15 @@ it("retains deletion recovery after removal, pagination and panel reopening with
  expect(original).toMatchObject({ sessionId: f.sessionId, mutation: { id: f.commentId, expectedRevision: 9007199254740993n } });
  expect(original.mutation?.requestId).toBeTruthy();
  fireEvent.click(screen.getByRole("button", { name: "Refresh reviews" }));
+ await screen.findByRole("button", { name: "Reload list" });
+ fireEvent.click(screen.getByRole("button", { name: "Reload list" }));
  await screen.findByText("No local reviews on this page.");
  expect(screen.getByRole("button", { name: "Retry original comment deletion" })).toBeTruthy();
- fireEvent.click(screen.getByRole("button", { name: "Next review page" }));
+ fireEvent.click(screen.getByRole("button", { name: "Load more Review pages" }));
  await waitFor(() => expect(f.list.mock.calls.at(-1)?.[0].filter?.pageToken).toBe("next"));
  expect(screen.getByRole("button", { name: "Retry original comment deletion" })).toBeTruthy();
- fireEvent.click(screen.getByRole("button", { name: "First review page" }));
- await waitFor(() => expect(f.list.mock.calls.at(-1)?.[0].filter?.pageToken).toBe(""));
+ fireEvent.click(screen.getByRole("button", { name: "Refresh reviews" }));
+ await waitFor(() => expect(f.list.mock.calls.slice(-2).map(([request]) => request.filter?.pageToken)).toEqual(["", "next"]));
  fireEvent.click(screen.getByRole("button", { name: "Toggle review" }));
  fireEvent.click(screen.getByRole("button", { name: "Toggle review" }));
  await screen.findByText("No local reviews on this page.");
@@ -126,6 +128,8 @@ it.each(["comment", "request"])("keeps deletion uncertain after a mismatched %s 
  fireEvent.click(await screen.findByRole("button", { name: "Delete comment" }));
  await screen.findByRole("button", { name: "Retry original comment deletion" });
  fireEvent.click(screen.getByRole("button", { name: "Refresh reviews" }));
+ await screen.findByRole("button", { name: "Reload list" });
+ fireEvent.click(screen.getByRole("button", { name: "Reload list" }));
  await screen.findByText("No local reviews on this page.");
  fireEvent.click(screen.getByRole("button", { name: "Retry original comment deletion" }));
  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original comment deletion" })).toBeNull());
@@ -168,6 +172,8 @@ it("clears selection when the original deletion acknowledgement arrives after it
  await screen.findByText("Waiting for comment deletion acknowledgement…");
  const original = f.remove.mock.calls[0][0];
  fireEvent.click(screen.getByRole("button", { name: "Refresh reviews" }));
+ await screen.findByRole("button", { name: "Reload list" });
+ fireEvent.click(screen.getByRole("button", { name: "Reload list" }));
  await screen.findByText("No local reviews on this page.");
  expect(screen.getByText("Selected comments: 1")).toBeTruthy();
  acknowledge!({ id: original.mutation!.id, requestId: original.mutation!.requestId });
@@ -186,6 +192,8 @@ it("shows pending deletion without its row and verifies acknowledgement on expli
  await screen.findByText("Waiting for comment deletion acknowledgement…");
  const original = f.remove.mock.calls[0][0];
  fireEvent.click(screen.getByRole("button", { name: "Refresh reviews" }));
+ await screen.findByRole("button", { name: "Reload list" });
+ fireEvent.click(screen.getByRole("button", { name: "Reload list" }));
  await screen.findByText("No local reviews on this page.");
  fireEvent.click(screen.getByRole("button", { name: "Toggle review" }));
  fireEvent.click(screen.getByRole("button", { name: "Toggle review" }));
@@ -233,6 +241,8 @@ it("isolates retained deletion by Session and preserves historical submissions",
 it("clears normally acknowledged deletion without retaining recovery on reopening", async () => {
  const f = fixture(); render(<f.View />);
  fireEvent.click(await screen.findByRole("button", { name: "Delete comment" }));
+ await screen.findByRole("button", { name: "Reload list" });
+ fireEvent.click(screen.getByRole("button", { name: "Reload list" }));
  await screen.findByText("No local reviews on this page.");
  fireEvent.click(screen.getByRole("button", { name: "Toggle review" }));
  fireEvent.click(screen.getByRole("button", { name: "Toggle review" }));

@@ -1,15 +1,19 @@
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import { useConversationPages } from "./conversation-pagination";
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { formatTimestamp } from "./localization";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionDeletionState, SessionQuery, SystemCapability, SystemQuery, WorkspaceStorageAction, WorkspaceStorageQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
 import { JobState } from "./jobs";
 import { useRetainedMutation } from "./mutation";
-import { ServiceProblem, Modal, Problem  } from "./ui";
+import { ServiceProblem, Modal, Failure, Problem  } from "./ui";
 
 const Context = createContext<((source: Resource) => void) | undefined>(undefined);
 const terminal = (state: string) => [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState);
@@ -35,8 +39,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
   const [confirm, setConfirm] = useState<Confirmation>();
   const [deletionRevision, setDeletionRevision] = useState<bigint>();
   const [deletionAccepted, setDeletionAccepted] = useState(false);
-  const [page, setPage] = useState("");
-  const [previous, setPrevious] = useState<string[]>([]);
+  const snapshotRoot = useRef<HTMLDivElement>(null);
   const client = useQueryClient();
   const refresh = () => void client.invalidateQueries({ refetchType: "active" });
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: Boolean(source) && visible });
@@ -52,7 +55,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
   // Failed/canceled recovery restores the predecessor on the server. Keep the
   // failed attempt visible, but use that refreshed anchor for the next request.
   const recoveryJobId = input.action === "recover" && [JobState.Failed, JobState.Canceled].includes(state as JobState) && storage.state === "uncertain" ? text(storage.job_id) : operationId;
-  const snapshots = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.SNAPSHOT, sessionId: source?.id ?? "", pageSize: 50, pageToken: page } }, { enabled: Boolean(source) && visible && !deletionAccepted && !sourceMissing });
+  const snapshots = useConversationPages(EntityKind.SNAPSHOT, source?.id ?? "", Boolean(source) && visible && !deletionAccepted && !sourceMissing);
   const deletion = useQuery(SessionQuery.getSessionDeletion, { sessionId: source?.id ?? "" }, { enabled: Boolean(source) && (deletionAccepted || sourceMissing), refetchInterval: (query) => query.state.data?.job?.state === SessionDeletionState.SUCCEEDED ? false : 2000 });
   const deleted = Boolean(source && deletion.data?.job && deletion.data.job.sessionId === source.id && deletion.data.job.state === SessionDeletionState.SUCCEEDED);
   const request = useRetainedMutation(`workspace-storage:${source?.id ?? ""}`, WorkspaceStorageQuery.requestWorkspaceStorage, (response) => { setJobId(response.job?.id); setConfirm(undefined); refresh(); }, (response, retained) => response.job?.kind === EntityKind.JOB && response.job.sessionId === retained.mutation?.id);
@@ -61,10 +64,10 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
   const mutations = [request, cancel, remove];
   const blocked = mutations.some((mutation) => mutation.busy || mutation.uncertain);
   const operationPending = Boolean(!sourceMissing && operationId && (!job || !terminal(state)));
-  const reset = () => { setSource(undefined); setJobId(undefined); setConfirm(undefined); setDeletionRevision(undefined); setDeletionAccepted(false); setPage(""); setPrevious([]); setVisible(false); refresh(); };
+  const reset = () => { setSource(undefined); setJobId(undefined); setConfirm(undefined); setDeletionRevision(undefined); setDeletionAccepted(false); setVisible(false); refresh(); };
   const show = (row: Resource) => {
     if (!source) setSource(row);
-    else if (source.id !== row.id && !blocked && !operationPending && (!deletionAccepted || deleted)) { setSource(row); setJobId(undefined); setConfirm(undefined); setDeletionRevision(undefined); setDeletionAccepted(false); setPage(""); setPrevious([]); }
+    else if (source.id !== row.id && !blocked && !operationPending && (!deletionAccepted || deleted)) { setSource(row); setJobId(undefined); setConfirm(undefined); setDeletionRevision(undefined); setDeletionAccepted(false); }
     setVisible(true);
   };
   useEffect(() => { if (job?.revision) void client.invalidateQueries({ refetchType: "active", predicate: (query) => !query.queryKey.includes(WorkspaceStorageQuery.getWorkspaceStorageOperation.name) }); }, [client, job?.id, job?.revision]);
@@ -88,7 +91,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
     {deletionAccepted || sourceMissing ? <section aria-label={copy("session-storage.permanentDeletionOperation_555bb6")}><p role="status">{deleted ? copy("session-storage.permanentDeletionCompleted_aa8dac") : sourceMissing && !deletion.data?.job ? copy("session-storage.thisSessionIsNoLongerAvailable_53b083") : copy("session-storage.permanentDeletionIsPendingOriginalWorker_b121dd")}</p>{deletion.data?.job ? <><p><LocalizedText id="session-storage.workersPendingDatabaseRemovedBackupsRemoved_a7bdf9" components={{ s0: <>{deletion.data.job.workersPending}</>, s1: <>{String(deletion.data.job.databaseRemoved)}</>, s2: <>{String(deletion.data.job.backupsRemoved)}</> }} /></p><small>{deletion.data.job.id}</small></> : null}<Problem error={deletion.error}/><button disabled={deletion.isFetching} onClick={() => void deletion.refetch()}>{copy("session-storage.refreshPermanentDeletion_ea2afc")}</button>{deleted ? <button onClick={reset}>{copy("session-storage.finishDeletionOperation_2d315d")}</button> : sourceMissing && !blocked ? <button onClick={reset}>{copy("session-storage.finishStorageView_4b5b52")}</button> : null}</section> : <>
       <Problem error={current.error}/>
       {sidechat ? <p>{copy("session-storage.sidechatReferencesTheParentSCurrent_00ff51")}</p> : data.workspace === "local" ? <p>{copy("session-storage.originalLocalCheckoutsUseYourOwn_cf2eb0")}</p> : storageSupported ? <section aria-label={copy("session-storage.workspaceStorage_3107f9")}><p><LocalizedText id="session-storage.workspaceStopWorkAndWaitFor_674acb" components={{ s0: <>{statusLabel(text(storage.state) || "present")}</> }} /></p><div className="actions"><button disabled={actionsBlocked || storage.state === "stored"} onClick={() => select(WorkspaceStorageAction.PREVIEW)}>{copy("session-storage.previewWorkspaceUsage_3fc644")}</button><button disabled={actionsBlocked || storage.state === "stored"} onClick={() => select(WorkspaceStorageAction.CREATE)}>{copy("session-storage.createWorkspaceSnapshot_682586")}</button>{previewReady ? <button disabled={actionsBlocked} onClick={() => select(WorkspaceStorageAction.CLEANUP)}>{copy("session-storage.storeAndCleanWorkspace_20141a")}</button> : null}{state === JobState.Uncertain || storage.state === "uncertain" ? <button disabled={blocked || current.isFetching || !recoveryJobId} onClick={() => { if(session) setConfirm({action:WorkspaceStorageAction.RECOVER,revision:session.revision,recoveryJobId}); }}>{copy("session-storage.reconcileOriginalStorageOperation_a6ba97")}</button> : null}</div></section> : <p>{copy("session-storage.updateTheConnectedServerToManage_37cc25")}</p>}
-      {!sidechat && data.workspace !== "local" && storageSupported ? <section aria-label={copy("session-storage.workspaceSnapshots_626fda")}><h3>{copy("session-storage.workspaceSnapshots_626fda")}</h3><Problem error={snapshots.error}/>{snapshots.data?.resources.filter((row) => row.kind === EntityKind.SNAPSHOT && row.sessionId === source.id && !document(row).deleted).map((row) => <article key={row.id}><p>{row.id} · {bytes(document(row).size_bytes)} · {formatTimestamp(text(document(row).created_at))}</p><div className="actions"><button disabled={actionsBlocked} onClick={() => select(WorkspaceStorageAction.INSPECT,row.id)}>{copy("session-storage.inspectSnapshot_10027a")}</button>{storage.state === "stored" && storage.snapshot_id === row.id ? <button disabled={actionsBlocked} onClick={() => select(WorkspaceStorageAction.RESTORE,row.id)}>{copy("session-storage.restoreWorkspace_ae0701")}</button> : <button disabled={actionsBlocked} onClick={() => select(WorkspaceStorageAction.DELETE,row.id)}>{copy("session-storage.permanentlyDeleteSnapshot_9e6a7c")}</button>}</div></article>)}<button disabled={snapshots.isFetching || previous.length===0} onClick={() => {setPage(previous.at(-1) ?? "");setPrevious(previous.slice(0,-1));}}>{copy("session-storage.previousSnapshots_1ead42")}</button><button disabled={snapshots.isFetching || !snapshots.data?.nextPageToken} onClick={() => {setPrevious([...previous,page]);setPage(snapshots.data?.nextPageToken ?? "");}}>{copy("session-storage.nextSnapshots_28f079")}</button></section> : null}
+      {!sidechat && data.workspace !== "local" && storageSupported ? <section aria-label={copy("session-storage.workspaceSnapshots_626fda")}><h3>{copy("session-storage.workspaceSnapshots_626fda")}</h3><Failure failure={snapshots.error?.failure}/><div ref={snapshotRoot} className="conversation-page-scroll"><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={snapshots} root={snapshotRoot} active={!actionsBlocked}>{payload => payload.filter((row) => row.kind === EntityKind.SNAPSHOT && row.sessionId === source.id && !document(row).deleted).map((row) => <article key={row.id}><p>{row.id} · {bytes(document(row).size_bytes)} · {formatTimestamp(text(document(row).created_at))}</p><div className="actions"><button disabled={actionsBlocked || Boolean(snapshots.error)} onClick={() => select(WorkspaceStorageAction.INSPECT,row.id)}>{copy("session-storage.inspectSnapshot_10027a")}</button>{storage.state === "stored" && storage.snapshot_id === row.id ? <button disabled={actionsBlocked || Boolean(snapshots.error)} onClick={() => select(WorkspaceStorageAction.RESTORE,row.id)}>{copy("session-storage.restoreWorkspace_ae0701")}</button> : <button disabled={actionsBlocked || Boolean(snapshots.error)} onClick={() => select(WorkspaceStorageAction.DELETE,row.id)}>{copy("session-storage.permanentlyDeleteSnapshot_9e6a7c")}</button>}</div></article>)}</ScrollPayloadWindow><ScrollContinuation query={snapshots} root={snapshotRoot} active={!actionsBlocked} label={copy("session-storage.workspaceSnapshots_626fda")} /></div></section> : null}
       {deleteSupported ? <button disabled={blocked || current.isFetching || !session} onClick={() => {setConfirm(undefined);setDeletionRevision(session?.revision);}}>{copy("session-storage.permanentlyDeleteSession_c390e7")}</button> : <p>{copy("session-storage.updateTheConnectedServerToPermanently_ca2cef")}</p>}
       {deletionRevision !== undefined ? <section aria-label={copy("session-storage.confirmPermanentSessionDeletion_86b2f8")}><p>{copy("session-storage.permanentlyDeleteThisSessionSManaged_7619eb")}</p>{session?.revision !== deletionRevision ? <p role="alert">{copy("session-storage.theSessionChangedCancelAndInspect_6b4daf")}</p> : null}<button disabled={blocked || current.isFetching || session?.revision !== deletionRevision} onClick={() => void remove.send({mutation:{id:source.id,expectedRevision:deletionRevision,requestId:newRequestId()}})}>{copy("session-storage.confirmPermanentSessionDeletion_86b2f8")}</button><button disabled={blocked} onClick={() => setDeletionRevision(undefined)}>{copy("session-storage.cancelDeletionConfirmation_f5eef6")}</button></section> : null}
     </>}

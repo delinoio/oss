@@ -1,12 +1,15 @@
+import { ConnectError, Code } from "@connectrpc/connect";
+import { ScrollContinuation } from "./scroll-continuation";
+import { usePaginationChain, useConnectPaginationReader } from "./scroll-pagination-query";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
 import { Surface } from "./surface";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { SessionQuery } from "@delinoio/delidev-api-client";
+import { ErrorDetailSchema, FailureCode, clientFailure, SessionQuery } from "@delinoio/delidev-api-client";
 import { encode, object, text } from "./documents";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
 
 enum FileOperation { Roots = "roots", Directory = "directory", File = "file" }
 enum EntryKind { Directory = "directory", File = "file", Link = "link", Other = "other" }
@@ -55,26 +58,47 @@ export function SessionFiles({ sessionId, close }: { sessionId: string; close: (
 
 function WorkspaceFiles({ sessionId, repository }: { sessionId: string; repository: string }) {
   useLocale();
-  const [location, setLocation] = useState({ path: ".", operation: FileOperation.Directory, page: "" });
+  const [location, setLocation] = useState({ path: ".", operation: FileOperation.Directory });
   const [pathDraft, setPathDraft] = useState(".");
   const pathLabel = useRef<HTMLParagraphElement>(null);
-  useEffect(() => { pathLabel.current?.focus(); }, [location.path, location.operation, location.page]);
-  const result = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: location.operation, repository_id: repository, path: location.path, page_token: location.page }) }, readOptions);
+  useEffect(() => { pathLabel.current?.focus(); }, [location.path, location.operation]);
   const directory = location.operation === FileOperation.Directory;
-  const navigate = (path: string, operation: FileOperation = FileOperation.Directory) => { setLocation({ path, operation, page: "" }); setPathDraft(operation === FileOperation.File ? path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "." : path); };
+  const root = useRef<HTMLDivElement>(null);
+  const request = useCallback((token: string) => ({ sessionId, queryJson: encode({ operation: FileOperation.Directory, repository_id: repository, path: location.path, page_token: token }) }), [sessionId, repository, location.path]);
+  const project = useCallback((response: { documentJson: Uint8Array }) => {
+    const page = observation(response.documentJson);
+    // Directory metadata alone accumulates. File previews never enter the chain;
+    // opaque continuation remains bound to the server's enumeration digest.
+    return { rows: page.entries.map(entry => ({ ...entry, id: entry.name, revision: 1n })), nextPageToken: page.next };
+  }, []);
+  const readDirectory = useConnectPaginationReader(SessionQuery.readSessionWorkspace, request, project);
+  const reader = useMemo(() => async (token: string, signal: AbortSignal) => {
+    try { return await readDirectory(token, signal); }
+    catch (error) {
+      // The existing Files protocol reports digest/offset drift as Conflict.
+      // Restart this read-only chain explicitly; retrying that token cannot fix it.
+      if (token && clientFailure(error).code === FailureCode.Conflict) throw new ConnectError("The directory page changed.", Code.OutOfRange, undefined, [{ desc: ErrorDetailSchema, value: { code: FailureCode.CursorExpired, guidance: "Reload this directory to accept its current entries." } }]);
+      throw error;
+    }
+  }, [readDirectory]);
+  const listing = usePaginationChain(`${sessionId}:${repository}:${location.path}`, directory, reader);
+  const preview = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: FileOperation.File, repository_id: repository, path: location.path }) }, { ...readOptions, enabled: !directory });
+  const result = directory ? { data: listing.loaded ? { entries: listing.rows, roots: [], next: listing.nextPageToken, text: "", size: "0", binary: false, truncated: false } : undefined, error: listing.error, isFetching: Boolean(listing.loading), refetch: listing.refresh } : preview;
+  const navigate = (path: string, operation: FileOperation = FileOperation.Directory) => { setLocation({ path, operation }); setPathDraft(operation === FileOperation.File ? path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "." : path); };
   const parent = location.path.includes("/") ? location.path.slice(0, location.path.lastIndexOf("/")) : ".";
   const join = (name: string) => location.path === "." ? name : `${location.path}/${name}`;
   return <>
-    <nav className="actions" aria-label={copy("session-files.workspaceNavigation_30242d")}><button disabled={location.path === "."} onClick={() => navigate(".")}>{copy("session-files.root_44cb00")}</button><button disabled={location.path === "."} onClick={() => navigate(parent)}>{copy("session-files.up_55490a")}</button><button disabled={result.isFetching} onClick={() => { if (location.page) setLocation({ ...location, page: "" }); else void result.refetch(); }}>{copy("session-files.refreshFiles_e2b488")}</button></nav>
+    <nav className="actions" aria-label={copy("session-files.workspaceNavigation_30242d")}><button disabled={location.path === "."} onClick={() => navigate(".")}>{copy("session-files.root_44cb00")}</button><button disabled={location.path === "."} onClick={() => navigate(parent)}>{copy("session-files.up_55490a")}</button><button disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("session-files.refreshFiles_e2b488")}</button></nav>
     <form onSubmit={(event) => { event.preventDefault(); navigate(pathDraft); }}><label>{copy("session-files.relativeDirectory_1ccd46")}<input value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button>{copy("session-files.openDirectory_d62455")}</button></form>
     <p className="file-path" ref={pathLabel} tabIndex={-1}>{location.path}</p>
-    <Problem error={result.error} />
+    {directory ? <Failure failure={listing.error?.failure} /> : <Problem error={preview.error} />}
     {result.isFetching ? <p role="status"><LocalizedText id="session-files.reading_19d2ee" components={{ s0: <>{directory ? copy("session-files.directory_333178") : copy("session-files.file_3b9c35")}</> }} /></p> : null}
     {result.error && result.data ? <p role="alert">{copy("session-files.refreshFailedTheLastObservationIs_876810")}</p> : null}
-    {result.data ? directory ? <>
+    <div ref={root} className="conversation-page-scroll">{result.data ? directory ? <>
       <ul className="file-entries" aria-label={copy("session-files.workspaceEntries_5b2690")}>{result.data.entries.map((entry) => <li key={entry.name}>{entry.kind === EntryKind.Directory || entry.kind === EntryKind.File ? <button onClick={() => navigate(join(entry.name), entry.kind === EntryKind.Directory ? FileOperation.Directory : FileOperation.File)}><span>{entry.name}</span><small>{entry.kind === EntryKind.Directory ? copy("session-files.folder_74ccd4") : copy("session-files.bytes_4c5914", { v0: entry.size })}</small></button> : <span>{entry.name}<small>{entry.kind === EntryKind.Link ? copy("session-files.symbolicLinkPreviewUnavailable_c8f825") : copy("session-files.specialFilePreviewUnavailable_768988")}</small></span>}</li>)}</ul>
       {!result.data.entries.length ? <p>{copy("session-files.thisDirectoryIsEmpty_c450d5")}</p> : null}
-      <nav className="actions" aria-label={copy("session-files.directoryPages_cd4c9e")}><button disabled={!location.page || result.isFetching} onClick={() => setLocation({ ...location, page: "" })}>{copy("session-files.firstDirectoryPage_925688")}</button><button disabled={!result.data.next || result.isFetching} onClick={() => setLocation({ ...location, page: result.data!.next })}>{copy("session-files.nextDirectoryPage_d6d179")}</button></nav>
+
     </> : <section aria-label={copy("session-files.filePreview_71d50a")}><p><LocalizedText id="session-files.bytes_d4ed53" components={{ s0: <>{result.data.size}</>, s1: <>{result.data.truncated ? copy("session-files.previewLimitedTo64Kib_9fd380") : ""}</> }} /></p>{result.data.binary ? <p>{copy("session-files.thisFileHasNoUtf8_c06ed8")}</p> : <pre tabIndex={0}>{result.data.text || "(Empty file)"}</pre>}</section> : null}
+    {directory ? <ScrollContinuation query={listing} root={root} active={directory} label={copy("session-files.directoryPages_cd4c9e")} /> : null}</div>
   </>;
 }

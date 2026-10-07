@@ -1,3 +1,9 @@
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import { useConversationDrafts } from "./conversation-drafts";
+import { initialInteractionDraft, interactionRequestIdentity, type InboxInteractionDraft } from "./inbox-drafts";
+import { useConversationPages } from "./conversation-pagination";
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { executionStartupFailure, canRetryExecutionStartup, startupCorrection, ExecutionStartupDetails } from "./execution-startup";
 
 import { useShortcuts } from "./shortcut-provider";
@@ -46,7 +52,7 @@ import { SidechatFindings } from "./sidechat";
 import { SessionTools } from "./session-tools";
 import { SessionStorageAction } from "./session-storage";
 import { SessionPullRequests } from "./session-pull-requests";
-import { QueuedInput } from "./queue";
+import { QueuedInput, type QueuedInputDraft } from "./queue";
 import { StartupRejection } from "./startup-rejection";
 import { sessionTitlePresentation } from "./session-title";
 
@@ -235,14 +241,18 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
     target?.scrollIntoView?.({ block: "nearest" });
   }, [infoReveal]);
  const [budgetBlocked,setBudgetBlocked]=useState(false);
-  const [page, setPage] = useState("");
-  const [queuePage, setQueuePage] = useState("");
-  const [interactionPage, setInteractionPage] = useState("");
-  const [previous, setPrevious] = useState<string[]>([]);
+  const queueDrafts = useConversationDrafts<QueuedInputDraft>();
+  const requestDrafts = useConversationDrafts<InboxInteractionDraft>();
+  const interactionRow = (row: Resource) => {
+    const draft = requestDrafts.values.get(row.id) ?? initialInteractionDraft(row);
+    return <Interaction key={row.id} resource={row} refresh={interactions.refresh} draft={draft} saveDraft={editable => { if (draft) requestDrafts.save(row.id, { ...draft, editable }); }} clearDraft={() => requestDrafts.save(row.id)} submissionAllowed={!interactions.error && (!draft || draft.requestIdentity === interactionRequestIdentity(row))} />;
+  };
+  const transcriptRoot = useRef<HTMLDivElement>(null), requestsRoot = useRef<HTMLDivElement>(null), queueRoot = useRef<HTMLDivElement>(null);
+  const [requestsOpen, setRequestsOpen] = useState(false), [queueOpen, setQueueOpen] = useState(false);
   const [mode, setMode] = useState(Mode.Execute);
-  const messages = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.MESSAGE, sessionId: id, pageSize: 50, pageToken: page } }, { enabled: live.generation > 0 });
-  const queue = useQuery(SessionQuery.listQueue, { sessionId: id, pageSize: 50, pageToken: queuePage }, { enabled: live.generation > 0 });
-  const interactions = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.INTERACTION, sessionId: id, pageSize: 20, pageToken: interactionPage } }, { enabled: live.generation > 0 });
+  const messages = useConversationPages(EntityKind.MESSAGE, id, live.generation > 0);
+  const queue = useConversationPages(EntityKind.QUEUE, id, live.generation > 0);
+  const interactions = useConversationPages(EntityKind.INTERACTION, id, live.generation > 0, 20);
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const observed = live.resources.get(id);
   const session = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
@@ -273,7 +283,6 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
     { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
     { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter" }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: !locked, unavailableReason: "shortcuts.pending" },
   ]);
-  const next = messages.data?.nextPageToken;
   // Stream arrivals have exact identities even when their JSON sequence exceeds
   // JavaScript's safe-integer range. Append only arrivals on the final page.
   const pending = queueRows(queue.data?.inputs ?? [], live.resources, live.removed, live.newQueueIds, id, !!queue.data && !queue.data.nextPageToken);
@@ -353,24 +362,24 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
         {control.uncertain ? <SessionNotice details={opener => showInfo(opener)}>{copy("session.retryTheSameControlRequest_609aff")}</SessionNotice> : null}
         {send.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(send.error).code)}</SessionNotice> : null}
       </div>
-      <div className="transcript" aria-label={copy("session.conversation_ccca18")}>
-        <Problem error={messages.error} />
+      <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
+        <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length ? rows.map(row => <TranscriptItem key={row.id} resource={row} />) : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
-        {page || next ? <nav aria-label={copy("session.conversationPages_72b1b9")}><button disabled={!page || messages.isFetching} onClick={() => { setPage(""); setPrevious([]); }}>{copy("session.firstPage_0bdbb7")}</button><button disabled={previous.length === 0 || messages.isFetching} onClick={() => { setPage(previous.at(-1)!); setPrevious(previous.slice(0, -1)); }}>{copy("session.previous_a57b08")}</button><button disabled={!next || messages.isFetching} onClick={() => { setPrevious([...previous.slice(-99), page]); setPage(next!); }}>{copy("session.next_1ff57a")}</button></nav> : null}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={messages} root={transcriptRoot} active={true}>{payload => messageRows(payload, live.resources, live.removed, [], id, false).map(row => <TranscriptItem key={row.id} resource={row} />)}</ScrollPayloadWindow>{!messages.nextPageToken ? messageRows([], live.resources, live.removed, live.newMessageIds, id, true).filter(row => !messages.rows.some(known => known.id === row.id)).map(row => <TranscriptItem key={row.id} resource={row} />) : null}</> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        <ScrollContinuation query={messages} root={transcriptRoot} active={live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
         {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
       </div>
       <div className="session-input-tray">
-        <details className="requests" open={requests.some(r => readDocument(r).closure === "open")}><summary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</summary>
-          <div className="session-tray-content"><Problem error={interactions.error} />
-            {requests.map(row => <Interaction key={row.id} resource={row} refresh={() => void interactions.refetch()} />)}
-            <nav aria-label={copy("session.requestPages_d06a30")}><button disabled={!interactionPage || interactions.isFetching} onClick={() => setInteractionPage("")}>{copy("session.firstPage_0bdbb7")}</button><button disabled={!interactions.data?.nextPageToken || interactions.isFetching} onClick={() => setInteractionPage(interactions.data!.nextPageToken)}>{copy("session.nextPage_c08ac7")}</button></nav>
+        <details className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><summary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</summary>
+          <div ref={requestsRoot} className="session-tray-content"><Failure failure={interactions.error?.failure} />
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
+            <ScrollContinuation query={interactions} root={requestsRoot} active={requestsOpen} label={copy("session.requestPages_d06a30")} />
           </div>
         </details>
-        <details className="queue"><summary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.filter(r => text(readDocument(r).delivery) === "queued").length}</> }} />}</summary>
-          <div className="session-tray-content"><Problem error={queue.error} />
-            {queued.map(r => <QueuedInput key={r.id} resource={r} session={session} refresh={() => void queue.refetch()} />)}
-            <nav aria-label={copy("session.queuePages_1acdd8")}><button disabled={!queuePage || queue.isFetching} onClick={() => setQueuePage("")}>{copy("session.firstPage_0bdbb7")}</button><button disabled={!queue.data?.nextPageToken || queue.isFetching} onClick={() => setQueuePage(queue.data!.nextPageToken)}>{copy("session.nextPage_c08ac7")}</button></nav>
+        <details className="queue" onToggle={event => setQueueOpen(event.currentTarget.open)}><summary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.filter(r => text(readDocument(r).delivery) === "queued").length}</> }} />}</summary>
+          <div ref={queueRoot} className="session-tray-content"><Failure failure={queue.error?.failure} />
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(row => text(readDocument(row).delivery) !== "removed").map(row => <QueuedInput key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
+            <ScrollContinuation query={queue} root={queueRoot} active={queueOpen} label={copy("session.queuePages_1acdd8")} />
           </div>
         </details>
       </div>

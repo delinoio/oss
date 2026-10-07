@@ -66,7 +66,7 @@ test.each(["foreign-session", "kind", "schema", "revision", "resource-id", "inva
     expect(await screen.findByText("The retained child page is unavailable or inconsistent.")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByText("Original child output")).toBeNull();
-    expect((screen.getByRole("button", { name: "Next child page" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Load more Subagents" })).toBeNull();
   } finally { dispose(); }
 });
 

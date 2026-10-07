@@ -124,3 +124,8 @@
 
 .execution-startup-details dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px 16px; }
 .execution-startup-details dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Conversation tray lists own bounded scroll roots for shared continuation. */
+.session-tray-content { max-height: 240px; overflow: auto; }
+
+.conversation-page-scroll { max-height: 400px; overflow: auto; }
