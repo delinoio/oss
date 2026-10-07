@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, act } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountService, ProviderService, EntityKind, ResourceSchema, newRequestId, type Resource, type ValidateAccountRequest } from "@delinoio/delidev-api-client";
+import { AccountService, ProviderService, EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource, type ValidateAccountRequest } from "@delinoio/delidev-api-client";
 import { ApiVerification } from "./api-verification";
 import { document, encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
@@ -26,11 +26,12 @@ function fixture(extra: Document = {}, discovery = true) {
     order.push("discover"); expect(request.mutation!.expectedRevision).toBe(2n);
     return { account: row, requestId: request.mutation!.requestId, observationJson: encode({ request_id: request.mutation!.requestId, connection_id: connection, state: "observed" }) };
   });
-  const transport = createRouterTransport(router => { router.service(AccountService, { validateAccount: validate }); router.service(ProviderService, { discoverModels: discover }); });
+  const getProvider = vi.fn(async (_request: { id: string; kind: EntityKind }) => ({ resource: provider }));
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: getProvider }); router.service(AccountService, { validateAccount: validate }); router.service(ProviderService, { discoverModels: discover }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const changed = vi.fn();
-  const view = (resource: Resource = row, active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ApiVerification row={resource} provider={provider} active={active} changed={changed} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { row, provider, connection, validate, discover, order, changed, view };
+  const view = (resource: Resource = row, active = true, suppliedProvider: Resource | null = provider) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ApiVerification row={resource} provider={suppliedProvider ?? undefined} active={active} changed={changed} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  return { row, provider, connection, validate, discover, order, changed, view, getProvider };
 }
 
 it("does not verify on opening and checks validation before discovery with its confirmed revision", async () => {
@@ -93,4 +94,27 @@ it.each(["request", "connection"])("settles original discovery replay after reco
   expect(f.validate).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false);
   expect(screen.queryByText("API authentication verified")).toBeNull();
+});
+
+it("resolves a provider outside the bounded inventory by exact identity before checking", async () => {
+  const f = fixture(); render(f.view(f.row, true, null));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false));
+  expect(f.getProvider).toHaveBeenCalledTimes(1);
+  expect(f.getProvider.mock.calls[0][0]).toMatchObject({ id: f.provider.id, kind: EntityKind.PROVIDER });
+  expect(f.validate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await waitFor(() => expect(f.discover).toHaveBeenCalledTimes(1));
+  expect(f.order).toEqual(["validate", "discover"]);
+});
+it("retains explicit provider-read recovery and rejects foreign provider proof", async () => {
+  const f = fixture();
+  f.getProvider.mockResolvedValueOnce({ resource: create(ResourceSchema, { ...f.provider, id: newRequestId() }) });
+  render(f.view(f.row, true, null));
+  await screen.findByRole("button", { name: "Retry provider details" });
+  expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", true);
+  expect(f.validate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Retry provider details" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false));
+  expect(f.getProvider.mock.calls.every(([request]) => request.id === f.provider.id && request.kind === EntityKind.PROVIDER)).toBe(true);
+  expect(f.discover).not.toHaveBeenCalled();
 });

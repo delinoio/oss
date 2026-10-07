@@ -23,5 +23,6 @@
   "api-verification.limit": "Verification does not establish model inference permission, harness readiness, usage or quota recovery.",
   "api-verification.automatic": "Enabled connections are checked automatically without inference. Unsupported authentication remains unverified.",
   "api-verification.badge": "Verified",
-  "api-verification.unavailable": "Verification authority is unavailable for this account or provider."
+  "api-verification.unavailable": "Verification authority is unavailable for this account or provider.",
+  "api-verification.retryProvider": "Retry provider details"
 }

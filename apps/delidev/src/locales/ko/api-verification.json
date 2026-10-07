@@ -23,5 +23,6 @@
   "api-verification.limit": "인증 확인은 모델 추론 권한, 하네스 준비 상태, 사용량 또는 할당량 복구를 확인하지 않습니다.",
   "api-verification.automatic": "활성화된 연결은 추론 없이 자동으로 확인합니다. 지원되지 않는 인증은 미확인 상태를 유지합니다.",
   "api-verification.badge": "확인 완료",
-  "api-verification.unavailable": "이 계정 또는 공급자의 인증 확인 권한을 사용할 수 없습니다."
+  "api-verification.unavailable": "이 계정 또는 공급자의 인증 확인 권한을 사용할 수 없습니다.",
+  "api-verification.retryProvider": "공급자 상세 정보 다시 읽기"
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useQuery } from "@connectrpc/connect-query";
 import { useRef, useState } from "react";
-import { AccountQuery, ProviderQuery, EntityKind, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { AccountQuery, ProviderQuery, ResourceQuery, EntityKind, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
 import { copy, formatNumber, formatTimestamp, useLocale } from "./localization";
 import { useRetainedMutation } from "./mutation";
@@ -11,11 +12,18 @@ function currentObservation(value: unknown, connection: string) {
   return connection && result.connection_id === connection ? result : {};
 }
 
-export function ApiVerification({ row, provider, active, changed }: { row: Resource; provider?: Resource; active: boolean; changed: () => void }) {
+export function ApiVerification({ row, provider: providedProvider, active, changed }: { row: Resource; provider?: Resource; active: boolean; changed: () => void }) {
   useLocale();
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const current = acknowledged?.id === row.id && acknowledged.revision > row.revision ? acknowledged : row;
-  const data = document(current), metadata = document(provider), connection = text(object(data.connection).id);
+  const data = document(current), providerId = text(data.provider_id), connection = text(object(data.connection).id);
+  const providerMatches = (value?: Resource) => Boolean(value && value.id === providerId && value.kind === EntityKind.PROVIDER && supportsResourceSchema(value));
+  const resolveProvider = active && current.kind === EntityKind.ACCOUNT && data.type === "api" && supportsResourceSchema(current) && Boolean(providerId) && !providerMatches(providedProvider);
+  // Inventory summaries are bounded. A referenced provider outside that page
+  // needs its own exact read; never infer authority from a display name.
+  const providerRead = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: providerId }, { enabled: resolveProvider, retry: false, gcTime: 0 });
+  const provider = providerMatches(providedProvider) ? providedProvider : providerMatches(providerRead.data?.resource) ? providerRead.data?.resource : undefined;
+  const metadata = document(provider);
   const latest = useRef({ row: current, provider, active }); latest.current = { row: current, provider, active };
   const validation = currentObservation(data.validation, connection), catalog = currentObservation(data.catalog, connection);
   const discover = useRetainedMutation(`api-check-models:${row.id}`, ProviderQuery.discoverModels, result => { if (result.account) setAcknowledged(result.account); changed(); });
@@ -68,6 +76,7 @@ export function ApiVerification({ row, provider, active, changed }: { row: Resou
     {validate.uncertain ? <button type="button" disabled={!active || busy} onClick={validate.retry}>{copy("api-verification.retryAuth")}</button> : null}
     {discover.uncertain ? <button type="button" disabled={!active || busy} onClick={discover.retry}>{copy("api-verification.retryModels")}</button> : null}
     <Problem error={validate.error ?? discover.error} />
+    {resolveProvider ? <><Problem error={providerRead.error} />{providerRead.error || providerRead.data && !provider ? <button type="button" disabled={!active || providerRead.isFetching} onClick={() => void providerRead.refetch()}>{copy("api-verification.retryProvider")}</button> : null}</> : null}
     {!authority ? <small>{copy("api-verification.unavailable")}</small> : null}
     <small>{copy("api-verification.limit")}</small>
   </section>;
