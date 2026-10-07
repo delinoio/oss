@@ -99,12 +99,12 @@ func TestSelectedAPIFormatControlsExecutionRelay(t *testing.T) {
 					t.Error("tool declaration was lost")
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
-				stream := "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"tool-call\",\"error\":null}}\n\n"
+				stream := "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"function_call\",\"id\":\"tool-call\",\"call_id\":\"fixture-call\",\"name\":\"fixture\",\"arguments\":\"{}\"}}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"fixture-response\",\"error\":null}}\n\n"
 				if protocol == domain.OpenAIChat {
-					stream = "data: {\"id\":\"tool-call\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"tool-call\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+					stream = "data: {\"id\":\"fixture-response\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"tool-call\",\"type\":\"function\",\"function\":{\"name\":\"fixture\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n"
 				}
 				if protocol == domain.AnthropicMessages {
-					stream = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"tool-call\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+					stream = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"fixture-response\"}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tool-call\",\"name\":\"fixture\",\"input\":{}}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 				}
 				io.WriteString(w, stream)
 				w.(http.Flusher).Flush()
@@ -142,6 +142,9 @@ func TestSelectedAPIFormatControlsExecutionRelay(t *testing.T) {
 			}
 			f.registerGrant(t)
 			body := `{"model":"fixture-model","stream":true,"tools":[{"type":"function","name":"fixture","parameters":{"type":"object"}}]}`
+			if protocol == domain.OpenAIChat {
+				body = `{"model":"fixture-model","messages":[{"role":"user","content":"fixture"}],"stream":true,"tools":[{"type":"function","function":{"name":"fixture","parameters":{"type":"object"}}}]}`
+			}
 			if protocol == domain.AnthropicMessages {
 				body = `{"model":"fixture-model","max_tokens":32,"messages":[{"role":"user","content":"fixture"}],"stream":true,"tools":[{"name":"fixture","input_schema":{"type":"object"}}]}`
 			}
@@ -149,6 +152,10 @@ func TestSelectedAPIFormatControlsExecutionRelay(t *testing.T) {
 			result, err := io.ReadAll(response.Body)
 			if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(result), "tool-call") {
 				t.Fatal("selected relay failed", response.StatusCode, err)
+			}
+			toolField := map[domain.APIProtocol]string{domain.OpenAIResponses: "function_call", domain.OpenAIChat: "tool_calls", domain.AnthropicMessages: "tool_use"}[protocol]
+			if !strings.Contains(string(result), toolField) {
+				t.Fatal("relay lost the selected format's streaming tool call")
 			}
 			other := "/responses"
 			if other == path {
