@@ -29,7 +29,7 @@ func TestManagedBundleRefreshRequiresIndependentFileEvidence(t *testing.T) {
 		"wrong-user":    fixtureBundle("account-fixture", "other-user", "second", at.Add(time.Second)),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if (Refreshed(before, after) == nil) != (name == "wrong-account" || name == "wrong-user") {
+			if Refreshed(before, after) == nil {
 				t.Fatal("incomplete refresh was accepted")
 			}
 		})

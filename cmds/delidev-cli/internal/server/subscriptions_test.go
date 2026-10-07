@@ -24,7 +24,11 @@ import (
 )
 
 func subscriptionTestBundle(account, rotation string, at time.Time) []byte {
-	claims, _ := json.Marshal(map[string]any{"email": "fixture@example.invalid", "nonce": rotation, "https://api.openai.com/auth": map[string]string{"chatgpt_account_id": account, "chatgpt_user_id": "fixture-user", "chatgpt_plan_type": "plus"}})
+	return subscriptionTestBundleIdentity(account, "fixture-user", rotation, at)
+}
+
+func subscriptionTestBundleIdentity(account, user, rotation string, at time.Time) []byte {
+	claims, _ := json.Marshal(map[string]any{"email": "fixture@example.invalid", "nonce": rotation, "https://api.openai.com/auth": map[string]string{"chatgpt_account_id": account, "chatgpt_user_id": user, "chatgpt_plan_type": "plus"}})
 	token := "eyJhbGciOiJSUzI1NiJ9." + base64.RawURLEncoding.EncodeToString(claims) + ".synthetic-signature"
 	raw, _ := json.Marshal(map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]string{"id_token": token, "access_token": token, "refresh_token": "synthetic-refresh-" + rotation, "account_id": account}, "last_refresh": at})
 	return raw
@@ -222,6 +226,53 @@ func TestSubscriptionLifecycleRotationLogoutAndSecretFreeRecords(t *testing.T) {
 	if err != nil || len(refs) != 0 {
 		t.Fatal("logout left protected generations")
 	}
+}
+
+func TestSubscriptionRefreshRejectsDifferentNativeIdentityBeforeStaging(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	before := f.login()
+	defer clear(before)
+	_, original := f.record()
+	if original.Subscription == nil || original.Subscription.Generation == "" || original.Subscription.IdentityCommitment == "" || original.Connection == nil {
+		t.Fatal("login did not commit native identity and generation")
+	}
+	putsBefore, deletesBefore, valuesBefore := f.secrets.counts()
+	oldRef := credentials.Ref{Owner: f.input.AccountID, ID: original.Subscription.Generation, Purpose: credentials.AccountLogin}
+	oldBundle, err := f.secrets.Get(context.Background(), oldRef)
+	if err != nil || !bytes.Equal(oldBundle, before) {
+		t.Fatal("original generation was not retained", err)
+	}
+	clear(oldBundle)
+
+	op := f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	lease, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clear(lease.Bundle)
+	changedIdentity := subscriptionTestBundleIdentity("fixture-account", "different-user", "rotated", time.Now().UTC())
+	defer clear(changedIdentity)
+	if _, err := f.finish(lease, changedIdentity, true, true, true); err == nil {
+		t.Fatal("refresh with a different native identity was accepted")
+	}
+
+	_, retained := f.record()
+	if retained.Subscription == nil || retained.Subscription.Generation != original.Subscription.Generation || retained.Subscription.IdentityCommitment != original.Subscription.IdentityCommitment || retained.Subscription.Lease == nil || !retained.Subscription.RecoveryRequired || retained.Connection == nil || retained.Connection.ID != original.Connection.ID {
+		t.Fatal("identity mismatch changed or released the committed generation")
+	}
+	putsAfter, deletesAfter, valuesAfter := f.secrets.counts()
+	if putsAfter != putsBefore || deletesAfter != deletesBefore || valuesAfter != valuesBefore {
+		t.Fatal("identity mismatch staged or deleted protected credentials")
+	}
+	refs, err := f.secrets.UnremovedReferences(context.Background(), f.input.AccountID)
+	if err != nil || len(refs) != 1 || refs[0] != oldRef {
+		t.Fatal("identity mismatch changed protected references", err)
+	}
+	retainedBundle, err := f.secrets.Get(context.Background(), oldRef)
+	if err != nil || !bytes.Equal(retainedBundle, before) {
+		t.Fatal("identity mismatch changed the original native bundle", err)
+	}
+	clear(retainedBundle)
 }
 
 func TestSubscriptionLeaseRaceAndCanceledCommit(t *testing.T) {

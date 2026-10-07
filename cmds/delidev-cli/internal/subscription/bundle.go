@@ -110,7 +110,7 @@ func Refreshed(before, after []byte) error {
 	if err != nil {
 		return err
 	}
-	if domain.OwnershipBlocks(domain.OwnershipResource, domain.NewID(), ai.Account != bi.Account || ai.User != bi.User) || !b.LastRefresh.After(a.LastRefresh) || bytes.Equal(before, after) || (a.Tokens.Access == b.Tokens.Access && a.Tokens.Refresh == b.Tokens.Refresh) {
+	if ai.Account != bi.Account || ai.User != bi.User || !b.LastRefresh.After(a.LastRefresh) || bytes.Equal(before, after) || (a.Tokens.Access == b.Tokens.Access && a.Tokens.Refresh == b.Tokens.Refresh) {
 		return Invalid()
 	}
 	return nil

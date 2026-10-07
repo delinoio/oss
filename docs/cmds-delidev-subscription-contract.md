@@ -50,7 +50,10 @@ local. Authentication success requires the original login process to exit,
 joined owned descendants and `auth status` proving first-party `claude.ai`
 subscription authentication with no API-key source. Reauthentication reuses the
 same owned profile and identity, creates a new generation and preserves the
-connection ID. A different native identity cannot replace that account.
+connection ID. A ChatGPT refresh bundle must match the committed native
+account and user identity before any replacement credentials are staged. An
+identity mismatch retains the original generation and requires recovery; it is
+credential validation, independent of actor and Worker attribution.
 
 One exclusive account lease serializes login, reauthentication, execution and
 logout. Login/reauthentication cannot enter behind another lease. Logout may

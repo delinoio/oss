@@ -811,7 +811,8 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			identityJSON, _ := json.Marshal(struct{ Account, User string }{identity.Account, identity.User})
 			identityCommitment = s.accountCommitment(s.Identity.ServerID, identityJSON)
 			clear(identityJSON)
-			if domain.OwnershipBlocks(domain.OwnershipResource, input.Account, state.IdentityCommitment != "" && identityCommitment != state.IdentityCommitment) {
+			if state.IdentityCommitment != "" && identityCommitment != state.IdentityCommitment {
+				s.logger.WarnContext(ctx, "subscription_native_identity_mismatch", "account_id", input.Account, "operation_id", lease.OperationID, "action", lease.Action, "next_action", "retain_original_generation")
 				return nil, rpc.Error(subscriptionDenied(), c)
 			}
 			if lease.Action == domain.SubscriptionLogin {
