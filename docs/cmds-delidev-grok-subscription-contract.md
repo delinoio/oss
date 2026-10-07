@@ -171,6 +171,13 @@ protected cleanup; a transport override or reserved capability cannot enable it.
 Fixture/build/package results do not establish actual account or OS acceptance;
 record supported-platform native and packaging evidence separately.
 
+Native renewal acceptance must independently prove that an uncertain response
+cannot cause a repeated official token exchange. Expired/foreign synthetic IdP
+probes are rejected-profile observations only and cannot authorize an account,
+issuer override or product capability. A successful cached-token acknowledgment
+after failed renewal is not fresh credential evidence. Keep server admission and
+Worker advertisement closed when this renewal requirement is unresolved.
+
 ## Dependencies and Integrations
 
 The official [CLI reference](https://docs.x.ai/build/cli/reference) defines browser

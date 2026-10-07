@@ -38,6 +38,24 @@ Native stderr remains discarded. This isolated-home workaround grants no new
 subscription, repository or continuation authority and can be removed only after
 a pinned native profile proves equivalent log isolation.
 
+The private managed profile pins OIDC, headless cached-token authentication and
+one built-in primary/auxiliary model. API credentials and discovery-only API
+endpoint overrides cannot enter it. Validate the complete native authentication
+metadata against the original service/issuer/user/principal. Native settings and
+announcements are bounded discarded presentation; they never grant authority or
+bypass an access/consent gate. Capture the latest protected bundle once while the
+original wire remains live, before terminal session/process closure. A failed
+capture cannot be repeated after closure, and captured bytes alone cannot return
+an account lease. Process exit, exact auth-file comparison and remnant scanning
+retain their independent cleanup requirements.
+
+Subscription activation additionally requires a verified native renewal profile
+that never resends an uncertain OAuth exchange. A successful cached handshake,
+first input or retained-history comparison cannot substitute for that profile or
+complete repository/Resume and actual account/platform acceptance. Keep managed
+Worker dispatch and System/Worker capability advertisement closed until these
+requirements are satisfied; preserve the separate API support boundary.
+
 Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original child-observation profile in the [subagent contract](cmds-delidev-subagents-contract.md). Canonical Codex collaboration/activity plus read-only descendant/history reads and original Claude task/tool/content/history ownership remain distinct sources. Unowned or unsupported child families stay gated; requested models cannot supply observed models. Child-control operations and unproved history continuation remain excluded.
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
