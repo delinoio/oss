@@ -81,7 +81,7 @@ it("renders the approved uncertain/loading hierarchy without duplicate guidance 
   expect(screen.queryByText("No saved entries.")).toBeNull();
   expect(screen.getByRole("button", { name: "Start local Worker" }).className).toBe("primary");
   expect((screen.getByRole("button", { name: "Stop local Worker" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "Load more Settings pages" })).toBeNull();
   await waitFor(() => expect(value.list).toHaveBeenCalledWith(EntityKind.MACHINE, "", 50));
   expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
 });
@@ -102,12 +102,10 @@ it("hides pages only for successful empty first pages without continuation", asy
 it("retains empty continuation/later pages and uses the original opaque cursor", async () => {
   const value = fixture(), token = "opaque/+==?token";
   value.list.mockImplementation(async (_kind, page) => ({ resources: [], nextPageToken: page ? "" : token })); open(value);
-  await screen.findByText("No saved entries on this page."); fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByText("No saved entries on this page."); fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
   await waitFor(() => expect(value.list).toHaveBeenCalledWith(EntityKind.MACHINE, token, 50));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true));
-  expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  expect(screen.getByRole("navigation", { name: "Settings pages" })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Settings pages" })).toBeNull());
+  expect(screen.getByText("No saved entries.")).toBeTruthy();
 });
 it.each([Code.PermissionDenied, Code.Unavailable])("keeps initial failure %s distinct from successful emptiness", async code => {
   const value = fixture(), pending = deferred<Page>(), problem = failure(code); value.list.mockReturnValue(pending.promise); open(value);
@@ -116,7 +114,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])("keeps initial failure %s dis
   expect((await screen.findByRole("alert")).textContent).toContain(problem.correlationId);
   expect(screen.queryByText(/No saved entries/)).toBeNull();
   expect(screen.queryByText("Loading runner devices...")).toBeNull();
-  expect(screen.getByRole("navigation", { name: "Settings pages" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Refresh settings" })).toBeTruthy();
 });
 it.each([false, true])("retains the previous observation on failed refresh (empty=%s) without a Worker read", async empty => {
   const value = fixture(empty ? [] : [machine("Retained machine")]), current = status(), control = vi.fn(async (_action: LocalWorkerAction) => current); open(value, control);

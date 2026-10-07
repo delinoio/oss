@@ -180,7 +180,7 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
   const createButton = useRef<HTMLButtonElement>(null);
   const returning = useRef(false);
   const client = useQueryClient();
-  const result = useResourceScrollQuery(EntityKind.INTEGRATION, active && !editing && !selected);
+  const result = useResourceScrollQuery(EntityKind.INTEGRATION, active);
   const done = () => { returning.current = true; setEditing(undefined); setSelected(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   useEffect(() => {
     onWorkflowReadyChange?.(Boolean(editing || selected));
@@ -191,11 +191,11 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
   const successfulEmpty = Boolean(result.loaded && !result.error && result.rows.length === 0 && !result.nextPageToken);
   const createProfile = <button ref={createButton} className="primary" onClick={() => setEditing({ key: newRequestId() })}><LocalizedText id="integrations.newGithubProfile_faeff2" components={{ s0: <span aria-hidden="true">+ </span> }} /></button>;
   return <section ref={content} className="github-integrations" aria-label={copy("integrations.githubIntegrations_edb779")}>
-    {showCategoryIntro ? <SettingsHeading title={copy("integrations.integrations_090512")} description={copy("integrations.manageGithubProfilesForRepositoryAccess_42adb1")} actions={!editing && !selected ? <><button aria-label={copy("integrations.refreshGithubProfiles_c84a3b")} onClick={() => result.error ? result.retry() : result.refresh()}>{copy("integrations.refresh_0e9161")}</button>{createProfile}</> : undefined} /> : null}
+    {showCategoryIntro ? <SettingsHeading title={copy("integrations.integrations_090512")} description={copy("integrations.manageGithubProfilesForRepositoryAccess_42adb1")} actions={!editing && !selected ? <><button aria-label={copy("integrations.refreshGithubProfiles_c84a3b")} onClick={() => result.refreshExplicit()}>{copy("integrations.refresh_0e9161")}</button>{createProfile}</> : undefined} /> : null}
     <>
       <section className="integration-panel" aria-label={copy("integrations.githubProfiles_e47e4e")} aria-busy={Boolean(result.loading)}>
         <header className="integration-panel-header"><div className="integration-provider"><span className="integration-provider-mark"><IntegrationIcon kind={IntegrationIconKind.GitHub} /></span><div><h3>{copy("integrations.github_f911e4")}</h3><p>{copy("integrations.githubComPersonalAccessTokens_03ef1a")}</p></div></div>
-          {!showCategoryIntro ? <div className="actions"><button aria-label={copy("integrations.refreshGithubProfiles_c84a3b")} onClick={() => result.error ? result.retry() : result.refresh()}>{copy("integrations.refresh_0e9161")}</button>{createProfile}</div> : null}
+          {!showCategoryIntro ? <div className="actions"><button aria-label={copy("integrations.refreshGithubProfiles_c84a3b")} onClick={() => result.refreshExplicit()}>{copy("integrations.refresh_0e9161")}</button>{createProfile}</div> : null}
         </header>
         <div className="integration-panel-body">
           {!result.loaded && Boolean(result.loading) ? <SettingsLoading label={copy("integrations.loadingGithubProfiles_9c7706")} /> : null}
@@ -213,7 +213,7 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
         <p className="integration-access-note">{copy("integrations.identityVerificationDoesNotConfirmRepository_7d904f")}</p>
       </section>
       <p className="integration-storage-note"><IntegrationIcon kind={IntegrationIconKind.Shield} /><span>{tokenStorageNote()}</span></p>
-      <ScrollContinuation query={result} root={root} active={active && !editing && !selected} label={copy("integrations.githubProfilePages_677951")} />
+      <ScrollContinuation showInitial={false} showErrors={false} query={result} root={root} active={active && !editing && !selected} label={copy("integrations.githubProfilePages_677951")} />
     </>
     {editing ? <SettingsTaskDialog key={editing.key} title={editing.initial ? copy("integrations.renameGithubProfile_1f9dd2") : copy("integrations.newGithubProfile_e9e486")} size={SettingsDialogSize.Form} close={done}>{editing.initial ? <IntegrationEditor initial={editing.initial} active={active} close={done} /> : <IntegrationCreation active={active} close={done} connected={connected} />}</SettingsTaskDialog> : null}
     {selected ? <SettingsTaskDialog key={selected.profile.id} title={copy("integrations.manage_e9e199", { v0: resourceName(selected.profile) })} size={SettingsDialogSize.Wide} close={done}><IntegrationConnection initial={selected.profile} initialRetry={selected.retry} initialProblem={selected.problem} active={active} close={done} /></SettingsTaskDialog> : null}

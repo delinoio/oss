@@ -95,7 +95,7 @@ it("uses server-side account type and provider filters and keeps the split view 
   await waitFor(() => expect(value.list).toHaveBeenCalled());
   expect(value.list.mock.calls[0][0]).toMatchObject({ providerId: apiProviderId, accountType: 1, filter: { kind: EntityKind.ACCOUNT, pageSize: 50 } });
   expect(screen.getByRole("button", { name: "Clear provider filter" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Entry pages" }));
   expect(await screen.findByRole("heading", { name: "Second API" })).toBeTruthy();
   expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ providerId: apiProviderId, accountType: 1, filter: { kind: EntityKind.ACCOUNT, pageToken: "api-provider-cursor" } });
 
@@ -430,8 +430,8 @@ it.each([
   render(value.view(value.settings(AccountSettingsSection.Api, { eligibleProviders: [], providerPicker: { ready: true, loaded: true, fetching: false, pageToken: "", nextPageToken: "", retry: retryRead, next: vi.fn(), first: vi.fn(), ...picker } })));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   expect(screen.getByText(new RegExp(message))).toBeTruthy();
-  expect(Boolean(screen.queryByRole("button", { name: "Next page" }))).toBe(next);
-  expect(Boolean(screen.queryByRole("button", { name: "First page" }))).toBe(first);
+  expect(Boolean(screen.queryByRole("button", { name: "Load more Provider pages" }))).toBe(next);
+  expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
   expect(Boolean(screen.queryByRole("button", { name: "Open API Providers" }))).toBe(open);
   if (retry) { fireEvent.click(screen.getByRole("button", { name: "Retry providers" })); expect(retryRead).toHaveBeenCalledTimes(1); }
   expect(value.save).not.toHaveBeenCalled();
@@ -570,9 +570,9 @@ it.each([false, true])("distinguishes scoped empty results and empty continuatio
   expect(screen.queryByRole("heading", { name: "No AI API key entries" })).toBeNull();
   expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
   if (continued) {
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-    await screen.findByRole("button", { name: "First page" });
-    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Load more Entry pages" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Entry pages" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "Load more Entry pages" })).toBeNull();
     expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ providerId, accountType: 1, filter: { pageSize: 50, pageToken: "api-page-2" } });
   } else expect(screen.queryByRole("navigation", { name: "Entry pages" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Clear provider filter" }));
@@ -583,12 +583,12 @@ it.each([false, true])("distinguishes scoped empty results and empty continuatio
 it.each([Code.Unavailable, Code.PermissionDenied])("retries only the failed account page and suppresses cached empty success (%s)", async (code) => {
   const value = fixture({ listPage: (request) => ({ resources: [], nextPageToken: request.filter?.pageToken ? "" : "api-page-2" }) });
   render(value.view(value.settings(AccountSettingsSection.Api)));
-  fireEvent.click(await screen.findByRole("button", { name: "Next page" }));
-  await screen.findByRole("button", { name: "First page" });
-  const original = value.list.mock.calls.at(-1)?.[0];
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Entry pages" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Entry pages" })).toBeNull());
   value.list.mockRejectedValueOnce(new ConnectError("fixture-only read failure", code));
   await value.client.invalidateQueries();
   await screen.findByText("Refresh failed. Showing the last successfully loaded entries.");
+  const original = value.list.mock.calls.at(-1)?.[0];
   expect(screen.queryByText("No entries on this page.")).toBeNull();
   let release!: (value: { resources: Resource[] }) => void;
   value.list.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
@@ -597,7 +597,7 @@ it.each([Code.Unavailable, Code.PermissionDenied])("retries only the failed acco
   await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(true));
   expect(value.list.mock.calls.at(-1)?.[0]).toEqual(original);
   release({ resources: [] });
-  await screen.findByText("No entries on this page.");
+  await screen.findByRole("heading", { name: "No AI API key entries" });
   expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled(); expect(value.other).not.toHaveBeenCalled();
 });
 
@@ -622,20 +622,20 @@ it("keeps inventory loading, denial, missing capabilities and failed cached empt
   expect(screen.getByText(/last successfully loaded entries/)).toBeTruthy();
 });
 
-it("refreshes only the current page's accounts and usage without business mutations", async () => {
+it("refreshes every reached account and usage without business mutations", async () => {
   const first = resource(EntityKind.ACCOUNT, { alias: "First key", type: "api", enabled: true });
   const second = resource(EntityKind.ACCOUNT, { alias: "Second key", type: "api", enabled: true });
   const f = fixture({ listPage: request => request.filter?.pageToken ? { resources: [second] } : { resources: [first], nextPageToken: "next-page" } });
   render(f.view(f.settings(AccountSettingsSection.Api)));
   await waitFor(() => expect(f.usage).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Entry pages" }));
   await screen.findByRole("heading", { name: "Second key" });
   await waitFor(() => expect(f.usage).toHaveBeenCalledTimes(2));
   const refresh = screen.getByRole("button", { name: "Refresh usage" });
   await waitFor(() => expect((refresh as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(refresh);
-  await waitFor(() => expect(f.usage).toHaveBeenCalledTimes(3));
-  expect(f.usage.mock.calls.map(([request]) => request.accountId)).toEqual([first.id, second.id, second.id]);
-  expect(f.list.mock.calls.map(([request]) => request.filter?.pageToken)).toEqual(["", "next-page", "next-page"]);
+  await waitFor(() => expect(f.usage).toHaveBeenCalledTimes(4));
+  expect(f.usage.mock.calls.map(([request]) => request.accountId)).toEqual([first.id, second.id, first.id, second.id]);
+  expect(f.list.mock.calls.map(([request]) => request.filter?.pageToken)).toEqual(["", "next-page", "", "next-page"]);
   expect(f.save).not.toHaveBeenCalled(); expect(f.connect).not.toHaveBeenCalled(); expect(f.other).not.toHaveBeenCalled();
 });

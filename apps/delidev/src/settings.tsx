@@ -27,7 +27,12 @@ import { DeviceAction, DeviceRow, DeviceRevocation, DeviceRevocationExit, Doctor
 import { DoctorTitle } from "./doctor";
 import { AccountConnection } from "./account-connection";
 import { MutationIntents, useRetainedMutation } from "./mutation";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
+import { inventoryIdentity, useProviderPages } from "./model-pagination";
+import { useResourceScrollQuery } from "./resource-scroll-query";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import { AccountSettings, AccountSettingsSection, type AccountProviderPicker, type AccountProviderSummary } from "./account-settings";
@@ -338,18 +343,18 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const [pairingTriggerContainer, setPairingTriggerContainer] = useState<HTMLSpanElement | null>(null);
   const deviceContent = useRef<HTMLDivElement>(null), refreshDevices = useRef<HTMLButtonElement>(null);
   const deviceReturnFocus = useRef<{ id: string; exit: DeviceRevocationExit } | undefined>(undefined);
-  const [page, setPage] = useState("");
+  const page = "";
   const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean } | undefined>(() => entry?.kind === SettingsEntryKind.NewProject ? { key: newRequestId() } : undefined);
   const [machine, setMachine] = useState<Resource>();
   const [deleting, setDeleting] = useState<Resource>();
   const [routing, setRouting] = useState<Resource>();
   const [account, setAccount] = useState<Resource>();
   const [providerList, setProviderList] = useState<ProviderListState>({ query: "", page: "" });
-  const [providerChoicePage, setProviderChoicePage] = useState("");
+
   const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary } | undefined>(() => entry?.kind === SettingsEntryKind.AddAccount ? { key: newRequestId(), providerId: entry.providerId, provider: entry.provider } : undefined);
   const [apiProviderID, setApiProviderID] = useState(() => entry && entry.kind !== SettingsEntryKind.NewProject ? entry.providerId : "");
   const [apiProviderHint, setApiProviderHint] = useState<AccountProviderSummary | undefined>(() => entry && entry.kind !== SettingsEntryKind.NewProject ? entry.provider : undefined);
-  const [apiProviderPage, setApiProviderPage] = useState("");
+
   const client = useQueryClient();
   const selected = settingsCategories[selectedCategory];
   const area = selected.area;
@@ -373,18 +378,27 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     ? copy("settings.extra.302fcd6cacc5")
     : kind === EntityKind.MACHINE && !controlLocalWorker ? copy("settings.extra.bd632b65e652")
     : selected.description;
-  const result = useQuery(ResourceQuery.listResources, { filter: { kind, pageSize: 50, pageToken: page } }, { enabled: visible && area === SettingsArea.Configuration && !hasSpecializedPanel });
+  const inventoryActive = visible && area === SettingsArea.Configuration && !hasSpecializedPanel && !hasOverlay;
+  const inventory = useResourceScrollQuery(kind, visible && area === SettingsArea.Configuration && !hasSpecializedPanel, selectedCategory);
+  const root = useScrollRoot(deviceContent);
+  const resident = new Map<string, Resource>();
+  for (const value of inventory.payloadPages) for (const row of value.payload) if (!resident.has(row.id) || resident.get(row.id)!.revision < row.revision) resident.set(row.id, row);
+  const resources = inventory.rows.flatMap(row => resident.has(row.id) ? [resident.get(row.id)!] : []);
+  const result = { data: inventory.loaded ? { resources, nextPageToken: inventory.nextPageToken } : undefined,
+    error: inventory.error?.failure, isFetching: Boolean(inventory.loading), isPending: !inventory.loaded && !inventory.error,
+    isSuccess: inventory.loaded && !inventory.error && !inventory.loading,
+    refetch: () => inventory.refreshExplicit() };
   // Within this category, only a successful paired page can prune retained
   // identities. Leaving the category disposes every disclosure with its scope.
   useEffect(() => {
     if (!isPairedDevices || !result.isSuccess || !result.data) return;
-    const ids = new Set(result.data.resources.slice(0, 50).map((row) => row.id));
+    const ids = new Set(inventory.rows.map((row) => row.id));
     pairedPageIds.current = ids;
     setExpandedDevices((current) => {
       const retained = new Set([...current].filter((id) => ids.has(id)));
       return retained.size === current.size ? current : retained;
     });
-  }, [isPairedDevices, result.data, result.isSuccess]);
+  }, [isPairedDevices, inventory.rows, result.isSuccess]);
   useLayoutEffect(() => {
     if (device || !isPairedDevices || !deviceReturnFocus.current) return;
     const { id, exit } = deviceReturnFocus.current;
@@ -402,15 +416,17 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     if (next.has(id)) next.delete(id); else if (next.size < 50) next.add(id);
     return next;
   });
-  const choosePage = (token: string) => {
-    if (isPairedDevices) setExpandedDevices(new Set());
-    setPage(token);
+  const apiInventory = useProviderPages("", visible && isApiAccounts, false);
+  const eligibleInventory = useProviderPages("", visible && isApiAccounts, true);
+  const providerPicker: AccountProviderPicker = {
+    ready: Boolean(!eligibleInventory.error && eligibleInventory.data && providerInventoryReady(eligibleInventory.data.capabilities) && eligibleInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER)),
+    loaded: eligibleInventory.loaded, fetching: eligibleInventory.isFetching, failure: eligibleInventory.error?.failure,
+    pageToken: "", nextPageToken: eligibleInventory.nextPageToken, retry: eligibleInventory.refreshExplicit,
+    next: eligibleInventory.append, first: eligibleInventory.reload, query: eligibleInventory,
+    renderOptions: (render, root, active) => <ScrollPayloadWindow query={eligibleInventory} root={root} active={active}>{(responses, rows) => responses.flatMap(response => response.entries.filter(entry => rows.some(row => row.id === inventoryIdentity(entry))).flatMap(entry => { const provider = providerSummary(entry, response.capabilities); return provider && provider.enabled ? [render(provider)] : []; }))}</ScrollPayloadWindow>,
   };
-  const apiInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: false, pageSize: 50, pageToken: apiProviderPage }, { enabled: visible && isApiAccounts });
-  const eligibleInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 50, pageToken: providerChoicePage }, { enabled: visible && area === SettingsArea.Configuration && isApiAccounts });
-  const providerPicker: AccountProviderPicker = { ready: Boolean(eligibleInventory.data && providerInventoryReady(eligibleInventory.data.capabilities) && eligibleInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER)), loaded: Boolean(eligibleInventory.data), fetching: eligibleInventory.isFetching, error: eligibleInventory.error, pageToken: providerChoicePage, nextPageToken: eligibleInventory.data?.nextPageToken ?? "", retry: () => { void eligibleInventory.refetch(); }, next: () => setProviderChoicePage(eligibleInventory.data?.nextPageToken ?? ""), first: () => setProviderChoicePage("") };
   const providerPresets = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: visible && area === SettingsArea.Configuration && isApiAccounts });
-  const apiAccountTypeFilteringReady = Boolean(apiInventory.data && providerInventoryReady(apiInventory.data.capabilities) && apiInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER));
+  const apiAccountTypeFilteringReady = Boolean(!apiInventory.error && apiInventory.data && providerInventoryReady(apiInventory.data.capabilities) && apiInventory.data.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER));
   const presets = new Map<string, Document>();
   try {
     if (providerPresets.data) {
@@ -434,12 +450,11 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     oauthFormatSelectingAvailable: capabilities.includes(ProviderInventoryCapability.ACCOUNT_OAUTH_API_PROTOCOL_V1) && capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1),
     oauthAvailable: capabilities.includes(entry.presetId === ProviderPresetId.OPENROUTER ? ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 : ProviderInventoryCapability.ACCOUNT_OAUTH_V1) && entry.enabled && (entry.connectionMethod === ProviderConnectionMethod.OAUTH_PKCE || entry.presetId === ProviderPresetId.BASETEN && entry.connectionMethod === ProviderConnectionMethod.OAUTH_DEVICE),
   } : undefined;
-  const apiProviders = (apiInventory.data?.entries ?? []).map(entry => providerSummary(entry, apiInventory.data?.capabilities ?? [])).filter((value): value is AccountProviderSummary => value !== undefined);
-  const eligibleProviders = (eligibleInventory.data?.entries ?? []).map(entry => providerSummary(entry, eligibleInventory.data?.capabilities ?? [])).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
+  const apiProviders = apiInventory.payloadPages.flatMap(page => page.payload.flatMap(response => response.entries.map(entry => providerSummary(entry, response.capabilities)))).filter((value): value is AccountProviderSummary => value !== undefined);
+  const eligibleProviders = eligibleInventory.payloadPages.flatMap(page => page.payload.flatMap(response => response.entries.map(entry => providerSummary(entry, response.capabilities)))).filter((value): value is AccountProviderSummary => value !== undefined && value.enabled);
   const configurationList = area === SettingsArea.Configuration && !hasSpecializedPanel;
-  const successfulEmptyFirstPage = !page && Boolean(result.data && result.data.resources.length === 0 && !result.error && !result.data.nextPageToken);
-  const retainedServerEmpty = isPreferenceCategory && !page && Boolean(result.data && result.data.resources.length === 0 && !result.data.nextPageToken);
-  const hidePagination = successfulEmptyFirstPage || (isPreferenceCategory && !page && Boolean(result.data && !result.data.nextPageToken));
+  const successfulEmptyFirstPage = Boolean(inventory.loaded && inventory.rows.length === 0 && !result.error && !inventory.nextPageToken);
+  const retainedServerEmpty = isPreferenceCategory && inventory.loaded && inventory.rows.length === 0 && !inventory.nextPageToken;
   const done = () => { setEditing(undefined); setDeleting(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   const providerEntrySummary = (entry?: ProviderInventoryEntry, capabilities: readonly ProviderInventoryCapability[] = []) => entry ? providerSummary(entry, capabilities) : undefined;
   const closeTask = () => { setDevice(undefined); setMachine(undefined); setDeleting(undefined); setRouting(undefined); setEditing(undefined); setAccount(undefined); };
@@ -473,21 +488,21 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
             {controlLocalWorker && isRunnerDevices ? <div><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} onDiagnostics={openConnectionDiagnostics} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             {isApiAccounts ? <div>
-              <AccountSettings apiFormatSelectingReady={Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && eligibleInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && !apiInventory.error && !eligibleInventory.error)} openUsage={openUsage} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
+              <AccountSettings apiFormatSelectingReady={Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && eligibleInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && !apiInventory.error && !eligibleInventory.error)} openUsage={openUsage} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} providerInventoryFailure={apiInventory.error?.failure} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { apiInventory.refreshExplicit(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={undefined} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
             </div> : null}
             {isSubscriptionAccounts ? <div>
               <SubscriptionAccounts active={visible && isSubscriptionAccounts && !hasOverlay} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} />
             </div> : null}
 
-            {isPreferenceCategory ? <><ServerPreferencesWorkspace resources={result.data?.resources} nextPageToken={result.data?.nextPageToken} page={page} fetching={result.isFetching} error={result.error} section={preferenceSection} active={visible} saved={done} authority={pairingAuthority} />{isGitWorkflow && !hidePagination ? <nav className="settings-pages" aria-label={copy("settings.settingsPages_05ec05")}><button type="button" disabled={!page || result.isFetching} onClick={() => choosePage("")}>{copy("settings.firstPage_0bdbb7")}</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => choosePage(result.data!.nextPageToken)}>{copy("settings.nextPage_c08ac7")}</button></nav> : null}</> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} state={providerList} changeState={setProviderList} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.ManageAccounts, providerId: providerID, provider: providerEntrySummary(entry) })} addAccount={(providerID, entry, oauthSupported) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.AddAccount, providerId: providerID, provider: providerEntrySummary(entry, oauthSupported) })} deleteCustom={setDeleting} /> : isRunnerDevices ? <><SSHSetup active={visible} /><RunnerDeviceInventory resources={result.data?.resources} error={result.error} loading={result.isPending && !result.data} fetching={result.isFetching} page={page} nextPage={result.data?.nextPageToken ?? ""} hidePagination={hidePagination} first={() => setPage("")} next={() => setPage(result.data!.nextPageToken)} inspect={setMachine} /></> : hasSpecializedPanel ? null : <>
+            {isPreferenceCategory ? <><ServerPreferencesWorkspace resources={result.data?.resources} nextPageToken={result.data?.nextPageToken} page={page} fetching={result.isFetching} error={result.error} section={preferenceSection} active={visible} saved={done} authority={pairingAuthority} /><div hidden={!inventoryActive}><ScrollContinuation showInitial={false} showErrors={false} query={inventory} root={root} active={inventoryActive} label={copy("settings.settingsPages_05ec05")} /></div></> : isApiProviders ? <ApiProviderSettings active={visible && isApiProviders} state={providerList} changeState={setProviderList} changed={done} createCustom={(initialData) => setEditing({ kind: EntityKind.PROVIDER, initialData, key: newRequestId() })} editCustom={(initial) => setEditing({ kind: EntityKind.PROVIDER, initial, key: newRequestId() })} manageAccounts={(providerID, entry) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.ManageAccounts, providerId: providerID, provider: providerEntrySummary(entry) })} addAccount={(providerID, entry, oauthSupported) => navigate(SettingsCategory.ApiAccounts, { kind: SettingsEntryKind.AddAccount, providerId: providerID, provider: providerEntrySummary(entry, oauthSupported) })} deleteCustom={setDeleting} /> : isRunnerDevices ? <><SSHSetup active={visible} /><RunnerDeviceInventory query={inventory} root={root} active={inventoryActive} resources={result.data?.resources} error={result.error} loading={result.isPending && !result.data} page={page} nextPage={result.data?.nextPageToken ?? ""} inspect={setMachine} /><div hidden={!inventoryActive}><ScrollContinuation showInitial={false} showErrors={false} query={inventory} root={root} active={inventoryActive} label={copy("settings.settingsPages_05ec05")} /></div></> : hasSpecializedPanel ? null : <>
               {result.isPending && !result.data ? <SettingsLoading label={copy("settings.loading_e6401a", { v0: (isPreferenceCategory ? preferenceLabel : selected.label).toLowerCase() })} /> : null}
               {isServerPreferences ? <NetworkSettings active={visible && isServerPreferences} authority={pairingAuthority} /> : null}
               {isPreferenceCategory && result.isFetching && result.data ? <p role="status">{copy("settings.refreshingServerPreferences_a3769f")}</p> : null}
-              <Problem error={result.error} />
+              <Failure failure={result.error} />
               {result.error && result.data ? <p className="notice" role="status">{copy("settings.refreshFailedShowingTheLastSuccessfully_df6f1e")}</p> : null}
               {isPairedDevices ? <p className="paired-device-explanation">{copy("settings.authorizationDoesNotMeanThisDevice_cfecd2")}</p> : null}
               <div className={selectedCategory === SettingsCategory.Repositories ? "repository-list" : isAgentWorkers && result.data?.resources.length ? "settings-agent-list" : isPairedDevices && result.data?.resources.length ? "paired-device-list" : undefined}>
-              {isProjects ? <ProjectList resources={result.data?.resources ?? []} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : result.data?.resources.map((row) => { if (kind === EntityKind.REPOSITORY) return <RepositoryRow key={row.id} row={row} active={visible && area === SettingsArea.Configuration} edit={() => setEditing({ initial: row, key: newRequestId() })} remove={() => setDeleting(row)} />; if (isPreferenceCategory) return <ServerPreferencesSummary key={row.id} row={row} section={preferenceSection} />; if (isPairedDevices) return <DeviceRow key={row.id} resource={row} currentDeviceId={currentDeviceId} expanded={expandedDevices.has(row.id)} toggle={() => toggleDevice(row.id)} revoke={() => setDevice(row)} />; if (isAgentWorkers) return <AgentWorkerRow key={row.id} row={row} edit={() => setEditing({ initial: row, key: newRequestId() })} preview={() => setRouting(row)} remove={() => setDeleting(row)} />; const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? preferenceLabel : resourceName(row)}</h3>{text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}{text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small><div className="actions">{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}><LocalizedText id="settings.edit_4ec92a" components={{ s0: <>{kind === EntityKind.SETTINGS ? preferenceLabel : resourceName(row)}</> }} /></button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}><LocalizedText id="settings.delete_a1b98e" components={{ s0: <>{resourceName(row)}</> }} /></button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>{copy("settings.previewRouting_02d4d9")}</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>{copy("settings.inspectInstalledHarnesses_45e943")}</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>{copy("settings.manageConnection_ad2892")}</button> : null}</div></article>; })}
+              <ScrollPayloadWindow query={inventory} root={root} active={inventoryActive} identity={paginationIdentity} revision={paginationRevision}>{rows => isProjects ? <ProjectList resources={rows} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : rows.map((row) => { if (kind === EntityKind.REPOSITORY) return <RepositoryRow key={row.id} row={row} active={visible && area === SettingsArea.Configuration} edit={() => setEditing({ initial: row, key: newRequestId() })} remove={() => setDeleting(row)} />; if (isPreferenceCategory) return <ServerPreferencesSummary key={row.id} row={row} section={preferenceSection} />; if (isPairedDevices) return <DeviceRow key={row.id} resource={row} currentDeviceId={currentDeviceId} expanded={expandedDevices.has(row.id)} toggle={() => toggleDevice(row.id)} revoke={() => setDevice(row)} />; if (isAgentWorkers) return <AgentWorkerRow key={row.id} row={row} edit={() => setEditing({ initial: row, key: newRequestId() })} preview={() => setRouting(row)} remove={() => setDeleting(row)} />; const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? preferenceLabel : resourceName(row)}</h3>{text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}{text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small><div className="actions">{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}><LocalizedText id="settings.edit_4ec92a" components={{ s0: <>{kind === EntityKind.SETTINGS ? preferenceLabel : resourceName(row)}</> }} /></button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}><LocalizedText id="settings.delete_a1b98e" components={{ s0: <>{resourceName(row)}</> }} /></button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>{copy("settings.previewRouting_02d4d9")}</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => setMachine(row)}>{copy("settings.inspectInstalledHarnesses_45e943")}</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>{copy("settings.manageConnection_ad2892")}</button> : null}</div></article>; })}</ScrollPayloadWindow>
               </div>
               {selectedCategory === SettingsCategory.Repositories && successfulEmptyFirstPage ? <SettingsEmpty title={copy("settings.repositoryEmptyTitle")} icon={<RepositoryIcon />}><p>{copy("settings.repositoryEmptyHelp")}</p></SettingsEmpty>
                 : selectedCategory === SettingsCategory.Repositories ? result.data?.resources.length === 0 && !result.error ? <p>{copy("settings.repositoryPageEmpty")}</p> : null
@@ -504,7 +519,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
                 : kind === EntityKind.PROVIDER && page === "" && result.data?.resources.length === 0 && !result.error && !result.data.nextPageToken
                 ? <section className="provider-empty" aria-label={copy("settings.noProvidersYet_553273")}><SettingsIcon category={SettingsCategory.Providers} /><h2>{copy("settings.noProvidersYet_553273")}</h2><p>{copy("settings.addAProviderToConfigureYour_e9b95c")}</p></section>
                 : result.data?.resources.length === 0 ? <p>{isAgentWorkers ? copy("settings.noAgentWorkersOnThisPage_624e5b") : kind === EntityKind.PROVIDER ? copy("settings.noProvidersOnThisPage_ea9e7e") : copy("settings.noSavedEntries_a59b83")}</p> : null}
-              {!hidePagination ? <nav className="settings-pages" aria-label={copy("settings.settingsPages_05ec05")}>{selectedCategory === SettingsCategory.Repositories && result.data ? <span className="repository-page-count">{copy("settings.repositoryPageCount", { count: result.data.resources.length })}</span> : null}<button type="button" disabled={!page || result.isFetching} onClick={() => choosePage("")}>{copy("settings.firstPage_0bdbb7")}</button><button type="button" disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => choosePage(result.data!.nextPageToken)}>{copy("settings.nextPage_c08ac7")}</button></nav> : null}
+              <div hidden={!inventoryActive}><ScrollContinuation showInitial={false} showErrors={false} query={inventory} root={root} active={inventoryActive} label={copy("settings.settingsPages_05ec05")} /></div>
               {isPairedDevices ? <p className="paired-device-guidance">{copy("settings.localWorkerRegistrationIsAvailableIn_09876c")}</p> : null}
             </>}
           </div> : null}
@@ -528,22 +543,22 @@ function ProjectList({ resources, edit, remove }: { resources: Resource[]; edit:
   })}</section>;
 }
 
-function RunnerDeviceInventory({ resources, error, loading, fetching, page, nextPage, hidePagination, first, next, inspect }: { resources?: Resource[]; error: unknown; loading: boolean; fetching: boolean; page: string; nextPage: string; hidePagination: boolean; first: () => void; next: () => void; inspect: (row: Resource) => void }) {
+function RunnerDeviceInventory({ query, root, active, resources, error, loading, page, nextPage, inspect }: { query: ReturnType<typeof useResourceScrollQuery>; root: import("react").RefObject<HTMLElement | null>; active: boolean; resources?: Resource[]; error: import("@delinoio/delidev-api-client").ClientFailure | undefined; loading: boolean; page: string; nextPage: string; inspect: (row: Resource) => void }) {
   useLocale();
   return <section className="settings-runner-inventory" aria-label={copy("settings.savedRunnerDevices_9e6092")}>
     <h2>{copy("settings.savedRunnerDevices_9e6092")}</h2>
     {loading ? <><p role="status">{copy("settings.loadingRunnerDevices_a75d73")}</p><div aria-hidden="true" aria-busy="true" className="settings-runner-skeletons">{[0, 1].map((row) => <div aria-hidden="true" className="settings-runner-skeleton-row" key={row}><span /><span /><span /></div>)}</div></> : null}
-    <Problem error={error} />
+    <Failure failure={error} />
     {error && resources ? <p role="status">{copy("settings.refreshFailedShowingTheLastSuccessfully_df6f1e")}</p> : null}
-    {resources?.map((row) => {
+    <ScrollPayloadWindow query={query} root={root} active={active} identity={paginationIdentity} revision={paginationRevision}>{rows => rows.map((row) => {
       const data = document(row);
       return <article className="settings-runner-row" key={row.id}>
         <div className="settings-runner-identity"><h3>{resourceName(row)}</h3>{text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}{text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}<small>{row.id}</small></div>
         <div className="actions"><button type="button" disabled={row.schemaVersion !== 1} onClick={() => inspect(row)}>{copy("settings.inspectInstalledHarnesses_45e943")}</button></div>
       </article>;
-    })}
+    })}</ScrollPayloadWindow>
     {resources?.length === 0 ? <p>{page || nextPage ? copy("settings.noSavedEntriesOnThisPage_ea1b6b") : copy("settings.noSavedEntries_a59b83")}</p> : null}
-    {!hidePagination ? <nav className="settings-pages" aria-label={copy("settings.settingsPages_05ec05")}><button type="button" disabled={!page || fetching} onClick={first}>{copy("settings.firstPage_0bdbb7")}</button><button type="button" disabled={!nextPage || fetching} onClick={next}>{copy("settings.nextPage_c08ac7")}</button></nav> : null}
+
   </section>;
 }
 

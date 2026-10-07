@@ -94,16 +94,12 @@ it("retains disclosure within a category and resets it after category departure"
   expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Revoke DeliDev local Worker" }));
 });
 
-it("resets disclosure only on explicit paired-device paging within a visit", async () => {
+it("preserves disclosure through appended paired-device pages within a visit", async () => {
   const value = fixture(); value.state.next = "opaque-next";
   render(value.view()); await open(); fireEvent.click(workerDetails());
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "opaque-next")).toBe(true));
   expect(workerDetails().getAttribute("aria-expanded")).toBe("true");
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
-  expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(workerDetails()); fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).every(([request]) => request.filter?.pageSize === 50)).toBe(true);
 });
 
@@ -182,15 +178,12 @@ it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes loading and in
   expect(screen.getAllByRole("button", { name: "Create pairing document" })).toHaveLength(1);
 });
 
-it("preserves opaque paging on empty continuation and later pages without unrelated cached rows", async () => {
+it("preserves opaque continuation without unrelated cached rows", async () => {
   const value = fixture([]); value.state.next = "opaque-continuation"; render(value.view());
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" })); await screen.findByText("No paired devices on this page");
-  expect(screen.queryByRole("heading", { name: "No paired devices yet" })).toBeNull();
-  expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(true);
-  value.state.next = ""; fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
-  expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "opaque-continuation"]);
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "opaque-continuation")).toBe(true));
+  expect(screen.queryByRole("button", { name: "Details for DeliDev local Worker" })).toBeNull();
 });
 
 it("retains pairing through reconnect and discards it after category departure", async () => {

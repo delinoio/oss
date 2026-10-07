@@ -82,11 +82,10 @@ it.each(["empty-continuation", "singleton-continuation", "multiple", "unsupporte
   for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
   expect(screen.queryByRole("form")).toBeNull(); expect(value.save).not.toHaveBeenCalled();
   if (variant.endsWith("continuation")) {
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-    await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+    await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "opaque-page-2")).toBe(true));
     expect(screen.queryByRole("form")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "First page" }));
-    await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Git workflow" }));
   }
 });
 
@@ -158,7 +157,7 @@ it("blocks a fresh Git save after a typed revision rejection until explicit disc
 it("keeps the Git save result authoritative over an older pending read", async () => {
   const original = resource(EntityKind.SETTINGS, known), value = fixture([original]);
   let resolve!: (response: { resource: Resource }) => void;
-  value.get.mockImplementation(() => new Promise(done => { resolve = done; }));
+  value.get.mockImplementation(request => request.id === original.id ? new Promise(done => { resolve = done; }) : { resource: undefined });
   render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} initial={original} serverPreferenceSection={ServerPreferenceSection.GitWorkflow} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{ complete: true, resource: original, fetching: false }} active saved={() => {}} cancel={() => {}} />));
   const form = screen.getByRole("form", { name: "Git workflow form" });
   fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
@@ -322,7 +321,7 @@ it("retains the original request and freezes discard after an uncertain save", a
 it("keeps a save response authoritative when a previously started read returns an older revision", async () => {
   const original = resource(EntityKind.SETTINGS, known), value = fixture([original]);
   let resolve!: (response: { resource: Resource }) => void;
-  value.get.mockImplementation(() => new Promise(done => { resolve = done; }));
+  value.get.mockImplementation(request => request.id === original.id ? new Promise(done => { resolve = done; }) : { resource: undefined });
   render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} initial={original} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{ complete: true, resource: original, fetching: false }} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(routing(), { target: { value: "fixed" } }); fireEvent.click(saveButton());
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
@@ -421,13 +420,17 @@ it("preserves mounted disclosure values and resource cursors through collapse an
   expect(details().open).toBe(false);
   expect(screen.getAllByRole("checkbox")).toHaveLength(4);
   fireEvent.click(screen.getByText("Remediation details")); details().open = true;
+  fireEvent.click(screen.getByRole("combobox", { name: "Remediation Agent Worker" }));
   await screen.findByRole("option", { name: "Fix agent" });
-  fireEvent.click(screen.getByRole("button", { name: "More choices" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Remediation Agent Worker" }));
   await screen.findByRole("option", { name: "Second page agent" });
   const limit = screen.getByLabelText("Consecutive automatic attempt limit");
   fireEvent.change(limit, { target: { value: "9" } });
-  fireEvent.change(screen.getByLabelText("Remediation Agent Worker"), { target: { value: secondAgent.id } });
-  fireEvent.change(screen.getByLabelText("Remediation Runner Device"), { target: { value: machine.id } });
+  fireEvent.click(screen.getByRole("option", { name: "Second page agent" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Remediation Agent Worker" }).dataset.value).toBe(secondAgent.id));
+  fireEvent.click(screen.getByRole("combobox", { name: "Remediation Runner Device" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Fix machine" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Remediation Runner Device" }).dataset.value).toBe(machine.id));
   fireEvent.change(screen.getByLabelText("Remediation session strategy"), { target: { value: "dedicated" } });
   fireEvent.click(screen.getByRole("button", { name: "Add reviewer selector" }));
   fireEvent.change(screen.getByLabelText("Selector 1 GitHub numeric ID"), { target: { value: "9007199254740993" } });
@@ -437,8 +440,8 @@ it("preserves mounted disclosure values and resource cursors through collapse an
   expect(details().open).toBe(false); expect(screen.getByLabelText("Consecutive automatic attempt limit")).toBe(limit);
   details().open = true;
   expect((limit as HTMLInputElement).value).toBe("9");
-  expect((screen.getByLabelText("Remediation Agent Worker") as HTMLSelectElement).value).toBe(secondAgent.id);
-  expect((screen.getByLabelText("Remediation Runner Device") as HTMLSelectElement).value).toBe(machine.id);
+  expect(screen.getByRole("combobox", { name: "Remediation Agent Worker" }).dataset.value).toBe(secondAgent.id);
+  expect(screen.getByRole("combobox", { name: "Remediation Runner Device" }).dataset.value).toBe(machine.id);
   expect((screen.getByLabelText("Selector 1 GitHub numeric ID") as HTMLInputElement).value).toBe("9007199254740993");
   // Transport replacement may legitimately refetch. Toggling alone must not.
   await waitFor(() => expect(value.list.mock.calls.length).toBeGreaterThanOrEqual(reads));

@@ -33,7 +33,7 @@ function NetworkWorkspace({ active, machine, authority }: { active: boolean; mac
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const ready = status.data?.capabilities.includes(SystemCapability.SERVER_OUTBOUND_PROXY_V1) === true;
   const bootstrap = status.data?.capabilities.includes(SystemCapability.WORKER_NETWORK_BOOTSTRAP_V1) === true;
-  const profiles = useResourceScrollQuery(EntityKind.NETWORK_PROFILE, active && ready && !draft, machine);
+  const profiles = useResourceScrollQuery(EntityKind.NETWORK_PROFILE, active && ready, machine);
   const route = useQuery(NetworkQuery.getNetworkRoute, { machineId: machine }, { enabled: active && ready });
   const observation = useQuery(NetworkQuery.getWorkerNetworkStatus, { machineId: machine }, { enabled: active && bootstrap && Boolean(machine), refetchInterval: active && bootstrap && machine ? 5000 : false });
   const [selection, setSelection] = useState<Resource>();
@@ -41,7 +41,7 @@ function NetworkWorkspace({ active, machine, authority }: { active: boolean; mac
   const [selected, setSelected] = useState<string>("");
   const current = selection && (!route.data?.route || selection.revision >= route.data.route.revision) ? selection : route.data?.route;
   const currentData = document(current), currentProfile = object(currentData.profile);
-  const changed = () => { profiles.refresh(); void route.refetch(); if (machine) void observation.refetch(); };
+  const changed = () => { profiles.refreshExplicit(); void route.refetch(); if (machine) void observation.refetch(); };
   const select = useRetainedMutation(`network-select:${machine || "server"}`, NetworkQuery.selectNetworkProfile, result => { if (result.resource) setSelection(result.resource); changed(); });
   const remove = useRetainedMutation(`network-delete:${machine || "server"}`, NetworkQuery.deleteNetworkProfile, () => { setDeleting(undefined); changed(); });
   const pending = select.busy || select.uncertain || remove.busy || remove.uncertain;

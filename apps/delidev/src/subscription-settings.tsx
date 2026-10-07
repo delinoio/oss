@@ -54,6 +54,8 @@ export interface SubscriptionAccountRow {
 export interface SubscriptionSettingsViewProps {
   accounts: readonly SubscriptionAccountRow[];
   state: SubscriptionReadState;
+  accountList?: (now: number) => ReactNode;
+  completeEmpty?: boolean;
   problem?: ReactNode;
   retryRead?: () => void;
   /** This one callback owns all pages/filters; presentation never enumerates them. */
@@ -135,7 +137,7 @@ function OperationNotice({ label, operation, retryBlocked = false }: { label: st
   </div>;
 }
 
-function SubscriptionRow({ account, now, unavailable, actionsBlocked = false }: { account: SubscriptionAccountRow; now: number; unavailable: string; actionsBlocked?: boolean }) {
+export function SubscriptionRow({ account, now, unavailable, actionsBlocked = false }: { account: SubscriptionAccountRow; now: number; unavailable: string; actionsBlocked?: boolean }) {
   useLocale();
   const [menu, setMenu] = useState(false);
   const [details, setDetails] = useState(false);
@@ -191,7 +193,7 @@ const readLabels: Partial<Record<SubscriptionReadState, string>> = {
 };
 
 /** Presentation only; the owning controller negotiates every native action. */
-export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, cleanup, cleanupBusy, cleanupBlocked, cleanupUnavailable, cleanupStatus, storageHeader, actionsBlocked = false, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
+export function SubscriptionSettingsView({ accounts, accountList, completeEmpty = true, state, problem, retryRead, refreshAll, refreshAllOperation, cleanup, cleanupBusy, cleanupBlocked, cleanupUnavailable, cleanupStatus, storageHeader, actionsBlocked = false, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
   useLocale();
   const noticeId = useId(), cleanupId = useId();
   const [, expireObservation] = useReducer((revision: number) => revision + 1, 0);
@@ -216,7 +218,7 @@ export function SubscriptionSettingsView({ accounts, state, problem, retryRead, 
       {cleanupStatus}
       {storageHeader}
       {state !== SubscriptionReadState.Ready ? <div role={state === SubscriptionReadState.Loading ? undefined : state === SubscriptionReadState.Failed || state === SubscriptionReadState.PermissionDenied || state === SubscriptionReadState.AuthenticationExpired ? "alert" : "status"}>{state === SubscriptionReadState.Loading ? <SettingsLoading label={copy("subscription-settings.loadingSubscriptions_d98d84")} /> : <p>{readLabels[state]}</p>}{accounts.length && state !== SubscriptionReadState.Loading ? <p>{copy("subscription-settings.showingTheLastSuccessfullyLoadedSubscriptions_3cc29c")}</p> : null}{problem}{retryRead && state !== SubscriptionReadState.Loading && state !== SubscriptionReadState.Unsupported ? <button type="button" onClick={retryRead}>{copy("subscription-settings.retrySubscriptionRead_3772f6")}</button> : null}</div> : null}
-      {accounts.length ? <div className="subscription-list">{accounts.map((account) => <SubscriptionRow key={account.id} account={account} now={presentationNow} unavailable={lifecycleUnavailable} actionsBlocked={actionsBlocked} />)}</div> : state === SubscriptionReadState.Ready ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}
+      {accountList ? accountList(presentationNow) : accounts.length ? <div className="subscription-list">{accounts.map((account) => <SubscriptionRow key={account.id} account={account} now={presentationNow} unavailable={lifecycleUnavailable} actionsBlocked={actionsBlocked} />)}</div> : state === SubscriptionReadState.Ready && completeEmpty ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}
       <OperationNotice label={copy("subscription-settings.refreshAll_3c128b")} operation={refreshAllOperation} />
       {pagination}
     </section>

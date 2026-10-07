@@ -112,19 +112,13 @@ it.each([true, false])("preserves Agent opaque pages when the first page is empt
   if (firstEmpty) await screen.findByText("No agent workers on this page.");
   else await screen.findByRole("heading", { name: "Paged Agent" });
   expect(screen.queryByRole("region", { name: "No agent workers yet" })).toBeNull();
-  const first = screen.getByRole("button", { name: "First page" }) as HTMLButtonElement;
-  expect(first.disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await screen.findByText("No agent workers on this page.");
-  await waitFor(() => expect(first.disabled).toBe(false));
-  expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(first);
-  if (!firstEmpty) await screen.findByRole("heading", { name: "Paged Agent" });
-  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.AGENT)).toHaveLength(3));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Settings pages" })).toBeNull());
+  if (!firstEmpty) expect(screen.getByRole("heading", { name: "Paged Agent" })).toBeTruthy();
+  else expect(screen.getByRole("region", { name: "No agent workers yet" })).toBeTruthy();
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.AGENT).map(([request]) => request.filter)).toEqual([
     expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "" }),
     expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "agent-page-2" }),
-    expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "" }),
   ]);
   expect(value.save).not.toHaveBeenCalled();
 });
@@ -254,8 +248,9 @@ it("keeps model-search cursors out of provider inventory requests", async () => 
     },
   });
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.click(await screen.findByRole("combobox", { name: "Model" }));
   await screen.findByRole("option", { name: "First model" });
-  fireEvent.click(screen.getByRole("button", { name: "More choices" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Model" }));
   await screen.findByRole("option", { name: "Second model" });
   expect(searchTokens).toEqual(["", "model-page-2"]);
   expect(inventoryTokens.every((pageToken) => pageToken === "")).toBe(true);
@@ -380,7 +375,7 @@ it.each(["close", "category change"])("discards account filters, later pages, wi
   };
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
-  const next = await screen.findByRole("button", { name: "Next page" });
+  const next = await screen.findByRole("button", { name: "Load more Entry pages" });
   await waitFor(() => expect((next as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(next);
   await waitFor(() => expect(tokens).toContain("account-page-2"));
@@ -563,8 +558,9 @@ it("retries an original checkout inspection and uses only its owning Worker's ca
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Repository" } });
   fireEvent.change(screen.getByLabelText("Remote Git URL"), { target: { value: "https://github.com/fixture/repo.git" } });
-  await screen.findByRole("option", { name: "Owned Worker" });
-  fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: machine.id } });
+  fireEvent.click(screen.getByRole("combobox", { name: "Runner Device" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Owned Worker" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Runner Device" }).dataset.value).toBe(machine.id));
   fireEvent.change(screen.getByLabelText("Absolute checkout path on this Worker"), { target: { value: "/alias/checkout" } });
   fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
   const retry = await screen.findByRole("button", { name: "Retry the same inspection" });
@@ -594,7 +590,8 @@ it("renders unknown quota and server candidate reasons without performing select
   value.preview.mockResolvedValue({ routeJson: encode({ policy: "remaining-quota", fallback: true, candidates: [{ id: newRequestId(), weight: 1, eligibility: "project-restricted", quota_state: "unknown" }] }) });
   render(value.view(<RoutingPreview agent={agent} active close={() => {}} />));
   await screen.findByText("unknown", { exact: true });
-  fireEvent.change(screen.getByLabelText("Project"), { target: { value: project.id } });
+  fireEvent.click(screen.getByRole("combobox", { name: "Project" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Restricted project" }));
   await waitFor(() => expect(value.preview).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: agent.id, projectId: project.id }), expect.anything()));
   expect(screen.getByText("No eligible account")).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
@@ -669,9 +666,12 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
     fireEvent.click(screen.getByRole("checkbox", { name }));
   }
   screen.getByText("Remediation details").closest("details")!.open = true;
-  await screen.findByRole("option", { name: "Fix agent" });
-  fireEvent.change(screen.getByLabelText("Remediation Agent Worker"), { target: { value: agent.id } });
-  fireEvent.change(screen.getByLabelText("Remediation Runner Device"), { target: { value: machine.id } });
+  fireEvent.click(screen.getByRole("combobox", { name: "Remediation Agent Worker" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Fix agent" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Remediation Agent Worker" }).dataset.value).toBe(agent.id));
+  fireEvent.click(screen.getByRole("combobox", { name: "Remediation Runner Device" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Fix machine" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Remediation Runner Device" }).dataset.value).toBe(machine.id));
   fireEvent.change(screen.getByLabelText("Remediation session strategy"), { target: { value: "dedicated" } });
   fireEvent.change(screen.getByLabelText("Conflict resolution strategy"), { target: { value: "rebase" } });
   fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "7" } });
@@ -755,15 +755,15 @@ it("keeps the unfiltered picker cursor independent and retains an exact provider
   expect(await screen.findByRole("button", { name: "OpenAI API key" })).toBeTruthy();
   expect(screen.queryByRole("searchbox")).toBeNull();
   expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Provider pages" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry providers" }));
   fireEvent.click(await screen.findByRole("button", { name: "Custom API API key" }));
   expect(screen.getByRole("heading", { name: "Connect your entry" })).toBe(window.document.activeElement);
   expect(screen.getByText("Custom API", { selector: "strong" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Change" }));
   expect(screen.getByRole("button", { name: "Custom API API key" })).toBe(window.document.activeElement);
-  expect(screen.getByRole("button", { name: "First page" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Load more Provider pages" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Back to AI API Keys" }));
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
@@ -854,6 +854,7 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   render(value.view(<Settings />));
   const advanced = screen.getByText("Advanced settings").closest("details")!;
   advanced.open = true;
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Subscription account pages" }));
   await screen.findByRole("heading", { name: "No subscriptions yet" });
   expect(requests).toHaveLength(0); expect(screen.queryByLabelText("Search providers")).toBeNull();
   const apiStart = requests.length;
@@ -865,7 +866,7 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   fireEvent.change(screen.getByLabelText("Search API providers"), { target: { value: "Exact" } });
   await waitFor(() => expect(requests.some((request) => request.query === "Exact")).toBe(true));
-  const moreProviders = screen.getByRole("button", { name: "Load more" });
+  const moreProviders = await screen.findByRole("button", { name: "Load more Provider pages" });
   await waitFor(() => expect((moreProviders as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(moreProviders);
   await waitFor(() => expect(requests.some((request) => request.query === "Exact" && request.pageToken === "provider-page-2")).toBe(true));
@@ -873,8 +874,8 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   await screen.findByText("Provider: Exact provider");
   const accountRead = () => value.list.mock.calls.map(([request]) => request).filter((request) => request.filter?.kind === EntityKind.ACCOUNT).at(-1);
   await waitFor(() => expect(accountRead()).toMatchObject({ providerId: provider.id, accountType: 1, filter: { pageToken: "", pageSize: 50 } }));
-  fireEvent.click(await screen.findByRole("button", { name: "Next page" }));
-  await screen.findByRole("button", { name: "First page" });
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Entry pages" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Entry pages" })).toBeNull());
   expect(accountRead()).toMatchObject({ providerId: provider.id, filter: { pageToken: "api-page-2" } });
   fireEvent.click(screen.getByRole("button", { name: "Clear provider filter" }));
   await waitFor(() => expect(accountRead()).toMatchObject({ providerId: "", filter: { pageToken: "" } }));
@@ -955,9 +956,8 @@ it("keeps repository continuation empties and failed refreshes distinct from a f
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   await screen.findByText("No repositories on this page.");
   expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
-  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await screen.findByRole("region", { name: "No repositories yet" });
   fail = true;
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByText("Refresh failed. Showing the last successfully loaded results.");

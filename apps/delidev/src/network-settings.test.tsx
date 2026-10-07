@@ -139,3 +139,29 @@ it.each(["uncertain", "completed"] as const)("discards a %s native import on dis
   expect(screen.queryByRole("button", { name: "Retry original encrypted import" })).toBeNull();
   expect(native).toHaveBeenCalledTimes(state === "completed" ? 2 : 1);
 });
+
+it("retains three network profile payload pages and restores an older accepted range without a mutation", async () => {
+  const pages = [1, 2, 3, 4].map(number => create(ResourceSchema, { kind: EntityKind.NETWORK_PROFILE, id: newRequestId(), revision: 1n, schemaVersion: 1, documentJson: encode({ name: `Profile ${number}`, mode: "direct" }) }));
+  const list = vi.fn(request => { const index = request.filter?.pageToken ? Number(request.filter.pageToken) : 0; return { resources: [pages[index]], nextPageToken: index < 3 ? String(index + 1) : "" }; });
+  const select = vi.fn();
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SERVER_OUTBOUND_PROXY_V1] }) });
+    router.service(ResourceService, { listResources: list, getResource: request => ({ resource: pages.find(row => row.id === request.id) }) });
+    router.service(NetworkService, { getNetworkRoute: () => ({}), selectNetworkProfile: select });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NetworkSettings active /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  await screen.findByRole("heading", { name: "Profile 1" });
+  for (let number = 2; number <= 4; number++) {
+    fireEvent.click(screen.getByRole("button", { name: "Load more Network profile pages" }));
+    await screen.findByRole("heading", { name: `Profile ${number}` });
+  }
+  expect(screen.queryByRole("heading", { name: "Profile 1" })).toBeNull();
+  expect(document.querySelectorAll("[data-payload-page] article")).toHaveLength(3);
+  fireEvent.click(screen.getByRole("button", { name: "Restore previously loaded items" }));
+  await screen.findByRole("heading", { name: "Profile 1" });
+  expect(document.querySelectorAll("[data-payload-page] article")).toHaveLength(3);
+  expect(list.mock.calls.at(-1)?.[0].filter?.pageToken).toBe("");
+  expect(select).not.toHaveBeenCalled();
+});
