@@ -9,6 +9,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- macOS `dev:desktop` must use `tauri.conf.json`'s `bundle.macOS.minimumSystemVersion` as `MACOSX_DEPLOYMENT_TARGET` for both Cargo preparation and Tauri bundling. Do not alternate an ambient/default deployment target with the configured target in the shared Cargo cache.
+
 - Native builds and packaging must run the shared `prepare:assets` preflight before compilation. Hydrate only the exact DeliDev source-icon LFS path, first from the local cache and then by a path-scoped current-ref fetch. Validate the original pointer size/SHA-256 and PNG container, preserve local image/pointer edits, stop on failure or cancellation, and retain credential-free signing environments. A valid PNG needs neither Git nor network access. Follow `docs/apps-delidev-desktop-contract.md`.
 
 - The macOS status widget follows `docs/apps-delidev-widget-contract.md`. Keep macOS 13-compatible explicit per-instance saved-server selection, metadata-only owner-private atomic snapshots, native scope/revision ownership, exact token/per-currency estimate strings and truthful last-success/stale state. No credentials, endpoints, prompts, conversation text, networking or agent actions enter the extensions. Prepare and embed both sandboxed extensions with the exact bundle/App Group entitlements; ad-hoc compilation/signature evidence is separate from provisioned installation and WidgetKit interaction acceptance. Native Swift tests use isolated temporary state only.

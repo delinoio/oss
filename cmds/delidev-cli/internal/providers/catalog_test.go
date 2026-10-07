@@ -31,7 +31,7 @@ func TestOpenRouterCatalogPaginatesOnlyFixedAuthority(t *testing.T) {
 					return w.Result(), nil
 				}
 				query := r.URL.Query()
-				if r.URL.Path != "/api/v1/models" || len(query) != 3 || query.Get("limit") != "500" || query.Get("output_modalities") != "all" || query.Get("offset") != strconv.Itoa((calls-2)*500) {
+				if r.URL.Path != "/api/v1/models" || len(query) != 3 || query.Get("limit") != "500" || query.Get("output_modalities") != "text" || query.Get("offset") != strconv.Itoa((calls-2)*500) {
 					t.Fatal("invalid fixed pagination request")
 				}
 				start, end := (calls-2)*500, (calls-1)*500
@@ -97,7 +97,7 @@ func TestCatalogAdvisoryMetadataRejectsMalformedOrReflectedValues(t *testing.T) 
 		{"architecture": map[string]any{"output_modalities": []string{"Text"}}},
 		{"architecture": map[string]any{"input_modalities": 3}},
 		{"supported_parameters": []any{"tools", 7}},
-		{"context_length": -1}, {"context_length": "1000"},
+		{"context_length": 0}, {"context_length": -1}, {"context_length": "1000"},
 	} {
 		field["id"] = "safe-model"
 		raw, _ := json.Marshal(map[string]any{"data": []any{field}})
