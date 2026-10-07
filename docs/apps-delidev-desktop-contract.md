@@ -558,11 +558,21 @@ button-based single-selection radiogroup with one selected Tab entry, wrapping
 Arrow Up/Down/Left/Right selection, Home/End and native Space/Enter activation.
 With an unsupported saved harness, select no card and use the first card as the
 Tab entry and validation focus target. Preserve the new Codex default and saved
-edit selection. Card selection never advances or saves; Next owns advancement.
+edit selection. Arrows and Home/End only change selection/focus; click or native
+Space/Enter confirmation opens Accounts and focuses its heading, including
+current-card reselection. Harness has no Next button or form-submit advancement.
 Reselecting the current harness preserves account/model choices, while an actual
-change retains the existing explicit reset. Buttons retain visible keyboard focus
-and disabled server-support/mutation guards. Local SVG masks use semantic ink in
-both themes without network access, inline styles or additional dependencies.
+change retains the existing explicit reset. Later steps retain Next. Buttons
+retain visible keyboard focus
+and disabled server-support/mutation guards. Harness cards contain decorative
+official local images in the existing 48px boxes, preserving original colors,
+proportions and transparency without network access, inline styles or additional
+dependencies. OpenCode and Grok use the supplied light/dark variants selected by
+the resolved `data-theme`, with the OS color scheme as the first-paint fallback
+before that attribute exists. Keep these assets and their source/version/hash,
+usage conditions and separate license in `public/harness-marks`; retain the
+subscription provider assets and notices independently. Follow the repository
+license contract for vendor trademark conditions and distribution notices.
 Input/select focus preserves ordinary
 boundaries; buttons/disclosures retain visible focus. The combobox supports
 Arrow Up/Down, Enter and Escape with active-descendant semantics. Stage changes
