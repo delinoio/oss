@@ -1,60 +1,5 @@
 # DeliDev provider and model catalog
 
-## Inline Worker models and endpoint-only completion reservation
-
-The owner-approved replacement under issue #964 removes the independent saved
-Model registry, model-input history and persistent API catalogs. API completion
-uses only the selected Provider model endpoint. Exact direct IDs remain local to
-the selected Agent Worker configuration. Subscription completion retains the
-known official advisory catalog, without merging saved records. Token pricing
-uses the exact `(API Provider UUID or SubscriptionService, native ID)` identity.
-
-Reserve System `INLINE_WORKER_MODELS_V1 = 42`, Worker
-`INLINE_MODEL_EXECUTION_V1 = 22`, `ModelIdentity`, `EndpointModel`,
-`ListEndpointModels` request/response, source/native-ID token-pricing declarations
-and the additive usage/pricing model-identity fields in the allocation ledger on
-main before implementation. Reservations advertise no runtime capability.
-
-Compose the complete feature with the already main-reserved current-only DB
-baseline 32 and protocol 2 reset. Initialize a complete Model-free current
-layout with no conversion of earlier DBs or history. The 2026-10-07 owner
-amendment waives earlier DB retention and permits an explicit DB/sidecar reset.
-Earlier backups remain unsupported; this waiver grants no native cleanup or
-protected-credential deletion authority.
-Worker schema 4 embeds each route's exact native model and required non-secret
-execution metadata, with its source derived and checked against all selected
-Accounts atomically. There is no separate Model UUID/revision or registry write.
-Current portable bundle 4 embeds those values and has no Model entries.
-The earlier reset proposal's portable bundle 2 and atomic Model/Agent saving are
-superseded by this complete feature. Other reset and native-lifetime boundaries
-remain required. Existing wire allocations must retain their meanings when
-obsolete fields and APIs are retired.
-
-`ListEndpointModels` is owner/client-only and read-only. Its request pins Account
-and Provider revisions; Go derives the Provider, reads the original protected
-connection credential and rechecks actor/source/connection authority before
-returning. Reuse fixed model-list profiles, pagination, redaction, explicit
-outbound routing and existing 20-second/32-page/10,000-model/response limits.
-Autocomplete makes no separate credential-validation request and publishes no
-Models, Account changes, catalog observations, events or receipts. No fallback,
-partial response, persistent catalog cache or background catalog refresh is
-allowed. Disconnect, revocation and shutdown cancel and join original requests.
-Logs retain only bounded identities, counts, phase, duration and stable failures.
-
-The editor requests a fresh list on entry/explicit refresh through the first
-connected selected Account, filters the current response and clears it on source,
-Account, connection-generation or editor-lifetime change. Failure clears choices
-and permits exact direct input. The approved existing wizard layout retains
-keyboard/focus/theme/responsive behavior, with one Refresh model list button and
-no Saved badge. Native model observations remain independently read-only; their
-register/use actions are removed. Pricing configuration and immutable historical
-prices/estimates/budgets remain independent of autocomplete and execution grants.
-New prices apply only to future observations. Current external adapters, native
-account ownership, same-account history and actual execution checks remain intact.
-
-Reservations and policy do not establish implementation or native/account
-acceptance. Record validation in PRs and CI, never repository evidence documents.
-
 ## Ordered Agent Worker account sources
 
 PR #1371 established System capability 36 and SaveAgentWorkerRequest field 5 on
@@ -319,3 +264,58 @@ roll back every model write and receipt. Concurrent saves share the existing
 SQLite transaction and model-identity checks; exact replay cannot recreate a
 deleted Worker. Existing model/configuration CLI and RPC paths retain their
 accountless behavior. No migration or historical snapshot rewrite is introduced.
+
+## Inline Worker models and endpoint-only completion reservation
+
+The owner-approved replacement under issue #964 removes the independent saved
+Model registry, model-input history and persistent API catalogs. API completion
+uses only the selected Provider model endpoint. Exact direct IDs remain local to
+the selected Agent Worker configuration. Subscription completion retains the
+known official advisory catalog, without merging saved records. Token pricing
+uses the exact `(API Provider UUID or SubscriptionService, native ID)` identity.
+
+Reserve System `INLINE_WORKER_MODELS_V1 = 42`, Worker
+`INLINE_MODEL_EXECUTION_V1 = 22`, `ModelIdentity`, `EndpointModel`,
+`ListEndpointModels` request/response, source/native-ID token-pricing declarations
+and the additive usage/pricing model-identity fields in the allocation ledger on
+main before implementation. Reservations advertise no runtime capability.
+
+Compose the complete feature with the already main-reserved current-only DB
+baseline 32 and protocol 2 reset. Initialize a complete Model-free current
+layout with no conversion of earlier DBs or history. The 2026-10-07 owner
+amendment waives earlier DB retention and permits an explicit DB/sidecar reset.
+Earlier backups remain unsupported; this waiver grants no native cleanup or
+protected-credential deletion authority.
+Worker schema 4 embeds each route's exact native model and required non-secret
+execution metadata, with its source derived and checked against all selected
+Accounts atomically. There is no separate Model UUID/revision or registry write.
+Current portable bundle 4 embeds those values and has no Model entries.
+The earlier reset proposal's portable bundle 2 and atomic Model/Agent saving are
+superseded by this complete feature. Other reset and native-lifetime boundaries
+remain required. Existing wire allocations must retain their meanings when
+obsolete fields and APIs are retired.
+
+`ListEndpointModels` is owner/client-only and read-only. Its request pins Account
+and Provider revisions; Go derives the Provider, reads the original protected
+connection credential and rechecks actor/source/connection authority before
+returning. Reuse fixed model-list profiles, pagination, redaction, explicit
+outbound routing and existing 20-second/32-page/10,000-model/response limits.
+Autocomplete makes no separate credential-validation request and publishes no
+Models, Account changes, catalog observations, events or receipts. No fallback,
+partial response, persistent catalog cache or background catalog refresh is
+allowed. Disconnect, revocation and shutdown cancel and join original requests.
+Logs retain only bounded identities, counts, phase, duration and stable failures.
+
+The editor requests a fresh list on entry/explicit refresh through the first
+connected selected Account, filters the current response and clears it on source,
+Account, connection-generation or editor-lifetime change. Failure clears choices
+and permits exact direct input. The approved existing wizard layout retains
+keyboard/focus/theme/responsive behavior, with one Refresh model list button and
+no Saved badge. Native model observations remain independently read-only; their
+register/use actions are removed. Pricing configuration and immutable historical
+prices/estimates/budgets remain independent of autocomplete and execution grants.
+New prices apply only to future observations. Current external adapters, native
+account ownership, same-account history and actual execution checks remain intact.
+
+Reservations and policy do not establish implementation or native/account
+acceptance. Record validation in PRs and CI, never repository evidence documents.

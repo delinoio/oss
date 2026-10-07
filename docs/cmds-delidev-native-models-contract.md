@@ -1,11 +1,5 @@
 # DeliDev native Codex model observations
 
-## Inline Worker models and endpoint-only completion reservation
-
-Native model observations remain an independent bounded read-only diagnostic. Remove registration and use-model actions; never feed native observations into API completion or a saved Model registry. Preserve original Account/Worker/native-job ownership and diagnostic acceptance limits.
-
-Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
-
 ## Scope
 
 [Issue #1206](https://github.com/delinoio/oss/issues/1206) requires an explicit,
@@ -207,3 +201,9 @@ established on main before dependent implementation.
 - [Pinned native model protocol](https://github.com/openai/codex/blob/78c290807ce710180111df227df3b7a4fe845452/codex-rs/app-server-protocol/src/protocol/v2/model.rs)
 - [Pinned reasoning enum](https://github.com/openai/codex/blob/78c290807ce710180111df227df3b7a4fe845452/codex-rs/protocol/src/openai_models.rs)
 - [Pinned official model-list tests](https://github.com/openai/codex/blob/78c290807ce710180111df227df3b7a4fe845452/codex-rs/app-server/tests/suite/v2/model_list.rs)
+
+## Inline Worker models and endpoint-only completion reservation
+
+Native model observations remain an independent bounded read-only diagnostic. Remove registration and use-model actions; never feed native observations into API completion or a saved Model registry. Preserve original Account/Worker/native-job ownership and diagnostic acceptance limits.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
