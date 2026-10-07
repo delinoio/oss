@@ -45,5 +45,21 @@
   "account-connection.validation_98c41d": "validation",
   "account-connection.modelRefresh_795dab": "model refresh",
   "account-connection.retryTheSame_4cb78a": "Retry the same <s0/>",
-  "account-connection.extra.b764cdc0eab7": "Unknown"
+  "account-connection.extra.b764cdc0eab7": "Unknown",
+  "account-connection.inline.read": "The current account or provider could not be verified. Saved account details are retained; reread both before changing the connection.",
+  "account-connection.inline.recheck": "Recheck account and provider",
+  "account-connection.inline.cleanup": "The account is disconnected, but protected credential cleanup is not confirmed. Keep the original account and cleanup request; retry only its existing cleanup control.",
+  "account-connection.inline.operation": "This account operation was not confirmed. Use the original request retry when offered; otherwise recheck account status before another explicit action.",
+  "account-connection.inline.provider": "The provider or its selected API format is unavailable or disabled. Ask the selected server administrator to restore that exact provider and format, then recheck here. Existing cleanup remains independent.",
+  "account-connection.inline.permission": "Ask the selected server owner to verify this desktop’s account and provider permissions, then retry the read here. A failed read does not mean no accounts exist.",
+  "account-connection.inline.deletion": "The account has been kept while deletion or credential cleanup is unconfirmed. Use the original retry below when offered. Otherwise refresh this account and confirm again; inspection does not restart a terminal cleanup attempt.",
+  "account-connection.inline.subscriptionRecovery": "The original subscription credential owner needs recovery. Keep this account and its original Runner or server process. Restore its OS credential access and supported installation, then refresh account status here. There is no generic repair or replacement login.",
+  "account-connection.inline.subscriptionPending": "The original subscription operation still owns this account. Refresh its status here; do not start another login or cleanup attempt while its result is unconfirmed.",
+  "account-connection.inline.subscriptionUnsupported": "This server or subscription service does not support the requested lifecycle action. Update the selected server to supported DeliDev software, then recheck support here. No login has been started by this guidance.",
+  "account-connection.inline.supportRecheck": "Recheck subscription support",
+  "account-connection.inline.cleanupTerminal": "Cleanup retained these accounts. Review each retained reason below. Restore the original owner’s access or explicitly reconfigure protected references, then refresh the accounts. A new cleanup batch requires a fresh explicit confirmation.",
+  "account-connection.inline.quota": "Quota observation was not confirmed. Keep the original account, connection and observation owner. Use the original retry when offered; rereading saved evidence cannot prove recovered quota.",
+  "account-connection.inline.railRecheck": "Recheck saved quota evidence",
+  "account-connection.inline.railProblem": "Explain subscription read problem",
+  "account-connection.inline.railPartial": "This bounded account page could not be read. Previously saved evidence is unconfirmed; unread pages do not establish that other accounts are absent."
 }

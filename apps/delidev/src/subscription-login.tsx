@@ -214,7 +214,23 @@ export function useSubscriptionLogin(active: boolean, changed: () => void, close
       leave();
     }, ownedMessage("subscription-login.extra.21ebd4c8705a"));
   };
+  // Read only: never enter the browser/callback path or replenish terminal work.
+  const inspect = () => {
+    const original = pending.current;
+    if (!active || !original || !live(original) || !original.account || !original.operation || original.busy || original.polling) return;
+    original.polling = true; update(original, { busy: true });
+    void (async () => {
+      try {
+        const progress = await clients.subscription.getSubscriptionProgress({ accountId: original.account!.id, operationId: original.operation });
+        if (!live(original)) return;
+        if (!stages[progress.state]) throw new Error("Unsupported original login status");
+        await account(original);
+        update(original, { diagnostic: progress.diagnostic, problem: ownedMessage("subscription-onboarding.inline.inspected") });
+      } catch { update(original, { problem: ownedMessage("subscription-login.extra.0e515dfbf962") }); }
+      finally { original.polling = false; update(original, { busy: original.busy }); }
+    })();
+  };
   const p = pending.current;
-  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={resolveMessage(view.problem)} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? ownedMessage("subscription-login.extra.557b693dbfb7")); }}>{copy("subscription-login.retryOriginalRequest_008780")}</button> : null}</> : null;
+  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={resolveMessage(view.problem)} diagnostic={view.diagnostic} inspect={p?.operation ? inspect : undefined} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? ownedMessage("subscription-login.extra.557b693dbfb7")); }}>{copy("subscription-login.retryOriginalRequest_008780")}</button> : null}</> : null;
   return { service: claude.workflow ? SubscriptionServiceId.Claude : view?.service, begin, body: claude.body ?? body, workflow: Boolean(view) || claude.workflow, retained: claude.retained || Boolean(p?.busy || p?.retry || p?.operation || p?.account), hidden: claude.workflow && claude.hidden, available: Boolean(native), hide: claude.workflow ? claude.hide : leave, show: claude.show, leave: claude.workflow ? claude.leave : leave };
 }

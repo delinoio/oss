@@ -9,7 +9,7 @@ import {
 import { copy, useLocale, type MessageKey } from "./localization";
 import { useRetainedMutation } from "./mutation";
 import { useSettingsOpening } from "./settings-lifetime";
-import { Problem } from "./ui";
+import { InlineRemediation, Problem } from "./ui";
 import { useConnectPaginationReader, usePaginationChain } from "./scroll-pagination-query";
 import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
 
@@ -101,7 +101,8 @@ export function useFailedSubscriptionCleanup(active: boolean, available: boolean
         job?.state === State.PENDING ? copy("subscription-settings.cleanupProgress", { processed: job.processed, total: job.total }) :
         job?.state === State.FAILED ? copy("subscription-settings.cleanupFailed", { deleted: job.deleted, retained: job.retained }) : job?.total === 0 ? copy("subscription-settings.cleanupEmpty") : copy("subscription-settings.cleanupComplete", { deleted: job?.deleted, retained: job?.retained })}</p>
     </div> : null}
-    <Problem error={mutation.error || status.error} />
+    <Problem error={mutation.error || status.error} summary={<p>{copy("account-connection.inline.deletion")}</p>} />
+    {job && job.state !== State.PENDING && job.retained > 0 ? <InlineRemediation summary={<p>{copy("account-connection.inline.cleanupTerminal")}</p>} /> : null}
     {mutation.uncertain ? <button type="button" disabled={mutation.busy || !active} onClick={mutation.retry}>{copy("subscription-settings.cleanupRetryOriginal")}</button> : null}
     {accepted && (status.error || invalid) ? <div><p>{copy("subscription-settings.cleanupStatusUnavailable")}</p><button type="button" disabled={!active || status.isFetching} onClick={() => void status.refetch()}>{copy("subscription-settings.cleanupRetryStatus")}</button></div> : null}
     {job && job.state !== State.PENDING && job.retained > 0 ? <details ref={resultsRoot} className="subscription-cleanup-results" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>

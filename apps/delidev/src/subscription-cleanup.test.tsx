@@ -64,6 +64,8 @@ it("starts once without confirmation, blocks account changes and presents partia
   expect(screen.getByRole("button", { name: "Delete account" }).hasAttribute("disabled")).toBe(true);
   f.complete(); await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
   await screen.findByText("2 deleted · 1 retained");
+  expect(screen.getByText(/A new cleanup batch requires a fresh explicit confirmation/).closest("details")).toBeNull();
+  expect(f.start).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByText("Retained accounts (1)"));
   expect(await screen.findByText(/The account is still referenced by saved work/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Load more Cleanup result pages" }));

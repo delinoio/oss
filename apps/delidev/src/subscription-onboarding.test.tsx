@@ -5,6 +5,8 @@ import { StrictMode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SubscriptionOnboarding, SubscriptionOnboardingStage as Stage, subscriptionNameValid, type SubscriptionOnboardingProps } from "./subscription-onboarding";
+import { LocalConnectionPresentation, LocalConnectionPresentationProvider } from "./local-connection-presentation";
+import { Modal } from "./ui";
 
 function props(overrides: Partial<SubscriptionOnboardingProps> = {}): SubscriptionOnboardingProps {
   return { serviceName: "ChatGPT", stage: Stage.Waiting, active: true, name: "ChatGPT", suggested: false, busy: false, canReopen: true, canCancel: true, changeName: vi.fn(), saveName: vi.fn(), reopen: vi.fn(), cancel: vi.fn(), leave: vi.fn(), ...overrides };
@@ -99,4 +101,23 @@ it("shows actual version metadata without inventing a minimum", () => {
  expect(screen.getByRole("alert").textContent).toContain("The native version metadata is invalid.");
  expect(screen.queryByText("Minimum version:")).toBeNull();
  expect(screen.queryByText(/raw-secret/)).toBeNull();
+});
+
+it("shows local manual recovery and an explicit original inspection without authorizing a new attempt", () => {
+ const inspect=vi.fn();const value=props({stage:Stage.Recovery,canReopen:false,canCancel:false,inspect});
+ render(<SubscriptionOnboarding {...value} />);
+ expect(screen.getByRole("alert").textContent).toContain("Inspection does not retry terminal sign-in or cleanup");
+ expect(screen.queryByText(/Check Connection.*diagnostics/)).toBeNull();expect(inspect).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Inspect original sign-in status"}));expect(inspect).toHaveBeenCalledOnce();expect(value.reopen).not.toHaveBeenCalled();expect(value.cancel).not.toHaveBeenCalled();
+});
+
+it("keeps shared connection controls inside the invoking sign-in modal without starting an account operation", () => {
+ const request=vi.fn();const value=props({stage:Stage.Recovery,canReopen:false,canCancel:false,inspect:vi.fn()});
+ const view=render(<LocalConnectionPresentationProvider inline={false} onRequest={request}><Modal title="Sign-in recovery" close={vi.fn()}><SubscriptionOnboarding {...value} /></Modal><LocalConnectionPresentation><button>Original server retry</button></LocalConnectionPresentation></LocalConnectionPresentationProvider>);
+ expect(screen.queryByRole("button",{name:"Original server retry"})).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Connection controls"}));
+ const original=screen.getByRole("button",{name:"Original server retry"});
+ expect(screen.getByRole("dialog").contains(original)).toBe(true);expect(request).toHaveBeenCalledTimes(1);
+ expect(value.inspect).not.toHaveBeenCalled();expect(value.reopen).not.toHaveBeenCalled();expect(value.cancel).not.toHaveBeenCalled();
+ view.unmount();expect(request).toHaveBeenLastCalledWith(undefined);
 });

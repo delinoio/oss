@@ -1,3 +1,4 @@
+import { LocalConnectionHelp } from "./local-connection-presentation";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
@@ -5,6 +6,7 @@ import { SettingsTaskActions } from "./settings-task";
 import { useEffect, useRef, useId } from "react";
 import { CodexDiagnosticPhase, FailureCode, isEntityId, type CodexDiagnostic } from "@delinoio/delidev-api-client";
 import "./subscription-onboarding.css";
+import { InlineRemediation } from "./ui";
 
 export enum SubscriptionOnboardingStage {
   Preparing = "preparing",
@@ -26,6 +28,7 @@ export interface SubscriptionOnboardingProps {
   busy: boolean;
   problem?: string;
   diagnostic?: CodexDiagnostic;
+  inspect?: () => void;
   canReopen: boolean;
   canCancel: boolean;
   changeName: (name: string) => void;
@@ -78,8 +81,11 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
       {stage === SubscriptionOnboardingStage.Preparing || stage === SubscriptionOnboardingStage.Waiting ? <span className="subscription-onboarding-spinner" aria-hidden="true" /> : null}
       {naming ? <span aria-hidden="true">✓</span> : null}{status}
     </p>
-    {failed ? <div role="alert" className="subscription-onboarding-diagnostic">
+    {failed ? <InlineRemediation summary={<>
       <p>{diagnostic?.message ?? props.problem ?? copy("subscription-onboarding.theServerDidNotReportNative_923694")}</p>
+      <p>{copy(stage === SubscriptionOnboardingStage.Recovery ? "subscription-onboarding.inline.recovery" : diagnostic && [CodexDiagnosticPhase.DISCOVERY, CodexDiagnosticPhase.VERSION, CodexDiagnosticPhase.PROFILE].includes(props.diagnostic!.phase) ? "subscription-onboarding.inline.install" : diagnostic && [CodexDiagnosticPhase.RUNTIME, CodexDiagnosticPhase.CLEANUP].includes(props.diagnostic!.phase) ? "subscription-onboarding.inline.access" : "subscription-onboarding.inline.unknown")}</p>
+      {stage === SubscriptionOnboardingStage.Recovery ? <p>{copy("subscription-onboarding.theOriginalSignInResultRequires_136770")}</p> : null}
+    </>} details={
       <dl>
         <div><dt>{copy("subscription-onboarding.codexVersion_072e4d")}</dt><dd>{diagnostic ? diagnostic.version || copy("subscription-onboarding.extra.9f4a106271aa") : copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         {diagnostic?.minimum ? <div><dt>{copy("subscription-onboarding.minimumVersion_3cab5a")}</dt><dd>{diagnostic.minimum}</dd></div> : null}
@@ -87,9 +93,8 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
         <div><dt>{copy("subscription-onboarding.errorCode_2c35f6")}</dt><dd>{diagnostic?.code ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         {diagnostic?.correlation ? <div><dt>{copy("subscription-onboarding.reference_44dc4a")}</dt><dd>{diagnostic.correlation}</dd></div> : null}
       </dl>
-      {stage === SubscriptionOnboardingStage.Recovery ? <p>{copy("subscription-onboarding.theOriginalSignInResultRequires_136770")}</p> : null}
-      <p>{copy("subscription-onboarding.checkConnectionDiagnosticsBeforeStartingAnother_3836fd")}</p>
-    </div> : null}
+    } actions={props.inspect ? <button type="button" disabled={!active || busy} onClick={props.inspect}>{copy("subscription-onboarding.inline.inspect")}</button> : undefined} /> : null}
+    {failed || props.problem ? <LocalConnectionHelp /> : null}
     {naming ? <form id={`${taskFormId}-1`} onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
       <label htmlFor="subscription-onboarding-name">{copy("subscription-onboarding.accountName_a704d8")}</label>
       <input id="subscription-onboarding-name" ref={nameInput} autoComplete="off" required value={props.name} disabled={!active || busy} onChange={(event) => props.changeName(event.target.value)} aria-describedby="subscription-onboarding-name-help" />
@@ -102,7 +107,7 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
         {props.canCancel ? <button type="button" disabled={!active || busy} onClick={props.cancel}>{copy("subscription-onboarding.cancelLogin_8304c3")}</button> : null}
       </SettingsTaskActions>
     </>}
-    {props.problem && !failed ? <p role="alert">{props.problem}</p> : null}
+    {props.problem && !failed ? <InlineRemediation summary={<><p>{props.problem}</p><p>{copy("subscription-onboarding.inline.browser")}</p></>} actions={props.inspect ? <button type="button" disabled={!active || busy} onClick={props.inspect}>{copy("subscription-onboarding.inline.inspect")}</button> : undefined} /> : null}
     {(stage !== SubscriptionOnboardingStage.Unsupported || failed) ? <p className="subscription-onboarding-footer">{naming ? copy("subscription-onboarding.yourSignedInAccountIsKept_1d2f83") : copy("subscription-onboarding.leavingThisScreenKeepsTheAccount_e209d9")}</p> : null}
   </section>;
 }

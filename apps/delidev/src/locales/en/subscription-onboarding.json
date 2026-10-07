@@ -13,7 +13,7 @@
   "subscription-onboarding.errorCode_2c35f6": "Error code:",
   "subscription-onboarding.reference_44dc4a": "Reference:",
   "subscription-onboarding.theOriginalSignInResultRequires_136770": "The original sign-in result requires recovery.",
-  "subscription-onboarding.checkConnectionDiagnosticsBeforeStartingAnother_3836fd": "Check Connection & diagnostics before starting another sign-in.",
+  "subscription-onboarding.checkConnectionDiagnosticsBeforeStartingAnother_3836fd": "Keep this original sign-in operation. Use its inspection and recovery guidance here before any new explicit sign-in.",
   "subscription-onboarding.suggestedFromYourSignedInAccount_5ddc0f": "Suggested from your signed-in account. You can change it.",
   "subscription-onboarding.chooseANameForYourSigned_6ec79b": "Choose a name for your signed-in account.",
   "subscription-onboarding.saveAccountName_7c6744": "Save account name",
@@ -57,5 +57,12 @@
   "subscription-onboarding.sentence.01720d6af7dc": "Codex requires valid SemVer at or above {{v0}}.",
   "subscription-onboarding.sentence.758270754713": "Codex {{v0}} did not complete {{v1}}. {{v2}}",
   "subscription-onboarding.notDetected": "not detected",
-  "subscription-onboarding.nativeVersionMetadataInvalid": "The native version metadata is invalid."
+  "subscription-onboarding.nativeVersionMetadataInvalid": "The native version metadata is invalid.",
+  "subscription-onboarding.inline.install": "Install the supported Codex release shown below on the selected server and make it available to that server process. Recheck the original sign-in status here; inspection does not launch another sign-in.",
+  "subscription-onboarding.inline.access": "Restore OS permission for the original server process and its protected credential store. Keep the account and original operation; recheck its status here before any new explicit login or deletion.",
+  "subscription-onboarding.inline.recovery": "The original sign-in or credential cleanup result needs recovery. Keep the original account and native owner. Restore that owner’s installation and credential access, then inspect the original status here. Inspection does not retry terminal sign-in or cleanup.",
+  "subscription-onboarding.inline.browser": "Use Open browser again or Cancel login for this original operation when offered. If the browser or callback is blocked, allow it in the operating system and recheck this original status. Do not start a replacement login.",
+  "subscription-onboarding.inline.unknown": "The native cause is unavailable or unsupported. Keep the original account and sign-in request. Recheck their status here; ask the selected server administrator to verify its supported Codex installation and OS access if the failure continues.",
+  "subscription-onboarding.inline.inspect": "Inspect original sign-in status",
+  "subscription-onboarding.inline.inspected": "The original account and sign-in status were read. This inspection did not launch sign-in, repeat a callback or retry cleanup."
 }

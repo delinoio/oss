@@ -206,3 +206,13 @@ it("keeps an uncertain original browser opening visible across later waiting pol
  expect(value.native).toHaveBeenCalledTimes(nativeCalls);
  expect(value.login).toHaveBeenCalledTimes(1);
 });
+
+it("a successful missing account observation is unavailable and offers read recovery without login", async () => {
+ const account=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.ACCOUNT,revision:1n,schemaVersion:2,documentJson:encode({alias:"Original missing account",type:"subscription",subscription_service:"chatgpt",health:"disconnected"})});
+ const read=vi.fn(()=>({}));const login=vi.fn();const native=vi.fn(async()=>({generation:newRequestId()}));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1]})});router.service(ResourceService,{getResource:read});router.service(SubscriptionService,{requestSubscription:login});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={vi.fn()} /></MutationIntents></OAuthNativeProvider></QueryClientProvider></TransportProvider>);
+ await screen.findByText(/The current account could not be verified/);expect((screen.getByRole("button",{name:"Sign in to ChatGPT"}) as HTMLButtonElement).disabled).toBe(true);expect(login).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(read).toHaveBeenCalledTimes(2));expect(login).not.toHaveBeenCalled();
+});

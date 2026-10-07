@@ -423,7 +423,7 @@ it("renders ordered native provider actions, enters once without writes, and ret
 
 it.each([
   { label: "loading", picker: { loaded: false, ready: false, fetching: true }, message: "Loading providers…", next: false, first: false, open: false, retry: false },
-  { label: "permission", picker: { loaded: false, ready: false, error: new ConnectError("Denied", Code.PermissionDenied) }, message: "Provider inventory access is denied", next: false, first: false, open: false, retry: true },
+  { label: "permission", picker: { loaded: false, ready: false, error: new ConnectError("Denied", Code.PermissionDenied) }, message: "Ask the selected server owner", next: false, first: false, open: false, retry: true },
   { label: "unavailable", picker: { loaded: false, ready: false, error: new ConnectError("Failed", Code.Unavailable) }, message: "The DeliDev request could not complete", next: false, first: false, open: false, retry: true },
   { label: "empty first", picker: {}, message: "Enable an API provider", next: false, first: false, open: true, retry: false },
   { label: "empty with continuation", picker: { nextPageToken: "page-2" }, message: "No enabled API providers on this page", next: true, first: false, open: false, retry: false },
@@ -612,7 +612,7 @@ it("keeps inventory loading, denial, missing capabilities and failed cached empt
   expect(screen.getByText("Loading provider capabilities…")).toBeTruthy();
   expect(screen.queryByText(/Update the selected server/)).toBeNull();
   view.rerender(value.view(value.settings(AccountSettingsSection.Api, { accountTypeFilteringReady: false, accountTypeFilteringProblem: new ConnectError("fixture denial", Code.PermissionDenied), retryAccountCapabilities: retry })));
-  expect(screen.getByText(/Entry access is denied/)).toBeTruthy();
+  expect(screen.getByText(/Ask the selected server owner/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Retry provider inventory" }));
   expect(retry).toHaveBeenCalledTimes(1);
   expect(value.list).not.toHaveBeenCalled();

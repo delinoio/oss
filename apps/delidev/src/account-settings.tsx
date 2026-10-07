@@ -1,3 +1,4 @@
+import { LocalConnectionHelp } from "./local-connection-presentation";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskDismissButton } from "./settings-task";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -554,9 +555,9 @@ function AccountCreationWizard({
       {!hasCredentials ? <SettingsTaskActions className=""><button className="primary" type="button" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !selectedProvider?.enabled || (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) || connect.busy || connect.uncertain} onClick={connectExisting}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : keyless ? copy("account-settings.connectLocalEndpoint_f37d68") : copy("account-settings.connectApiKey_0f97e9")}</button>{connect.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || connect.busy} onClick={retryConnection}>{copy("account-settings.retryTheSameConnection_bc857b")}</button> : null}</SettingsTaskActions> : null}
       {providerMismatch ? <p role="alert">{keyless ? copy("account-settings.thisProviderChangedOrIsNo_15d334") : copy("account-settings.thisProviderChangedOrIsNo_0b47f9")}</p> : null}
       {providerChecking || metadataUnavailable ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
-      <Problem error={providerRead.error} />
+      <Problem error={providerRead.error} summary={<p>{copy("account-connection.inline.read")}</p>} actions={<button type="button" disabled={providerRead.isFetching || providerChecking} onClick={() => void providerRead.refetch()}>{copy("account-connection.inline.recheck")}</button>} />
       {unknownResponse ? <p role="alert">{copy("account-settings.theServerAcknowledgedARequestWithout_eb87fb")}</p> : null}
-      <Problem error={connect.error} />
+      <Problem error={connect.error} summary={<p>{copy("account-connection.inline.operation")}</p>} />
       <SettingsTaskActions className=""><button type="button" disabled={unknownResponse || providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>{copy("account-settings.manageConnection_ad2892")}</button><SettingsTaskDismissButton type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={unknownResponse ? closeTask : close}>{copy("account-settings.done_11a676")}</SettingsTaskDismissButton></SettingsTaskActions>
     </section>;
   }
@@ -566,7 +567,8 @@ function AccountCreationWizard({
     const metadataMatches = providerRead.isSuccess && providerRead.data?.resource?.revision === original.provider.revision &&
       providerContractMatches(providerContract(original), providerRead.data?.resource);
     return <AccountOAuth metadataReady={!metadataUnavailable && picker.ready && metadataMatches && accountTypeFilteringReady && (!original.oauthFormatSelectingAvailable || apiFormatSelectingReady)} metadataProblem={<>
-      <Problem error={providerRead.error ?? picker.error} /><Failure failure={picker.failure} />
+      <Problem error={providerRead.error ?? picker.error} summary={<p>{copy("account-connection.inline.read")}</p>} /><Failure failure={picker.failure} />
+      <button type="button" disabled={providerRead.isFetching || picker.fetching} onClick={() => { void providerRead.refetch(); picker.retry(); }}>{copy("account-connection.inline.recheck")}</button>
       {providerRead.isSuccess && !metadataMatches ? <p role="alert">{copy("account-settings.thisProviderChangedOrIsNo_c94fdd")}</p> : null}
       {!accountTypeFilteringReady ? <p role="status">{copy("account-settings.connectionIsPausedUntilThisServer_0528c4")}</p> : null}
     </>} flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} done={resource => { saved(resource); close(); }} />;
@@ -580,7 +582,7 @@ function AccountCreationWizard({
       <p>{copy("account-settings.selectAProviderToConnectYour_585388")}</p>
       {picker.fetching ? <p role="status">{copy("account-settings.loadingProviders_d8de93")}</p> : null}
       <Problem error={picker.error} /><Failure failure={picker.failure} />
-      {(picker.failure?.code ?? (picker.error ? clientFailure(picker.error).code : undefined)) === FailureCode.PermissionDenied ? <p role="status">{copy("account-settings.providerInventoryAccessIsDeniedCheck_6101ae")}</p> : null}
+      {(picker.failure?.code ?? (picker.error ? clientFailure(picker.error).code : undefined)) === FailureCode.PermissionDenied ? <p role="status">{copy("account-connection.inline.permission")}</p> : null}
       {picker.error || picker.failure ? <button type="button" disabled={picker.fetching} onClick={picker.retry}>{copy("account-settings.retryProviders_9bd189")}</button> : null}
       {(picker.error || picker.failure) && picker.loaded ? <p className="notice" role="status">{copy("account-settings.refreshFailedShowingTheLastSuccessfully_058f65")}</p> : null}
       {picker.loaded && (!accountTypeFilteringReady || !picker.ready) ? <p role="status">{copy("account-settings.providerChoicesAreUnavailableBecauseThis_af2379")}</p> : null}
@@ -617,14 +619,14 @@ function AccountCreationWizard({
           </details>
         </fieldset>
         <p className="api-entry-validation-note">{copy("api-verification.manualGuidance")}</p>
-        <Problem error={create.error} />
+        <Problem error={create.error} summary={<p>{copy("account-connection.inline.operation")}</p>} />
         {!apiFormatSelectingReady ? <p role="status">{copy("account-settings.apiFormatUnsupported")}</p> : null}
         {create.busy ? <p role="status">{copy("account-settings.creatingEntry_e95d50")}</p> : null}
         {create.uncertain ? <p role="status">{copy("account-settings.resultNotConfirmedTheEntryRequest_579041")}</p> : null}
         {create.error && !create.uncertain ? <p role="status">{copy("account-settings.entryCreationFailedCorrectTheDetails_72993a")}</p> : null}
         {providerMismatch ? <p role="alert">{keyless ? copy("account-settings.thisProviderChangedOrIsNo_72e318") : copy("account-settings.thisProviderChangedOrIsNo_c94fdd")}</p> : null}
         {providerChecking || metadataUnavailable ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
-        <Problem error={providerRead.error} />
+        <Problem error={providerRead.error} summary={<p>{copy("account-connection.inline.read")}</p>} actions={<button type="button" disabled={providerRead.isFetching || providerChecking} onClick={() => void providerRead.refetch()}>{copy("account-connection.inline.recheck")}</button>} />
         <SettingsTaskActions form={`${taskFormId}-1`} className=""><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain || unknownResponse} onClick={returnToProviders}>{copy("agent-worker-wizard.back")}</button><button className="primary" disabled={!manualReady || metadataUnavailable || !selectedProfile || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : copy("account-settings.addAndConnect_4ffa9b")}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>{copy("account-settings.retryTheSameEntryCreation_8f455b")}</button> : null}</SettingsTaskActions>
       </form>
     </>}
@@ -742,7 +744,8 @@ function ApiAccountSettings({
     {accountTypeFilteringLoading ? <p role="status">{copy("account-settings.loadingProviderCapabilities_012324")}</p> : null}
     <Problem error={inventoryProblem} /><Failure failure={providerInventoryFailure} />
     {hasInventoryProblem ? <button type="button" disabled={accountTypeFilteringFetching || providerSearchLoading} onClick={retryAccountCapabilities}>{copy("account-settings.retryProviderInventory_afa130")}</button> : null}
-    {readDenied ? <p role="status">{copy("account-settings.entryAccessIsDeniedCheckThis_755d6f")}</p> : null}
+    {hasInventoryProblem ? <LocalConnectionHelp /> : null}
+    {readDenied ? <p role="status">{copy("account-connection.inline.permission")}</p> : null}
     {!accountTypeFilteringReady && !accountTypeFilteringLoading && !hasInventoryProblem ? <p role="status">{copy("account-settings.entryListsRequireAServerThat_d168c9")}</p> : null}
     {accountTypeFilteringReady ? <>
       <Failure failure={rows.error} />

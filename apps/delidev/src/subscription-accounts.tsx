@@ -1,3 +1,4 @@
+import { LocalConnectionHelp } from "./local-connection-presentation";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
@@ -17,7 +18,7 @@ import { useSubscriptionLogin } from "./subscription-login";
 import { serviceAccount } from "./subscription-resource";
 import { document, items, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { Failure, Problem } from "./ui";
+import { Failure, InlineRemediation, Problem } from "./ui";
 import { SubscriptionBrand } from "./subscription-catalog";
 import { QuotaObservationState, SubscriptionOperationState, SubscriptionConnectionState, SubscriptionReadState, SubscriptionSettingsView, SubscriptionRow, type SubscriptionAccountRow } from "./subscription-settings";
 
@@ -36,7 +37,7 @@ export function ManagedSubscriptionAccount({ initial, active, close }: { initial
   const observed = read.data?.resource;
   const current = serviceAccount(observed, initial.id, service) && observed.revision >= (accepted?.revision ?? initial.revision) ? observed : accepted ?? initial;
   const data = document(current), state = object(data.subscription), pending = object(state.pending);
-  const validRead = !read.error && (!observed || serviceAccount(observed, initial.id, service));
+  const validRead = !read.error && (!read.isSuccess || serviceAccount(observed, initial.id, service));
   const operation = useRetainedMutation("subscription:lifecycle:" + initial.id, SubscriptionQuery.requestSubscription, (result) => { setAccepted(result.account); void read.refetch(); },
     (result, request) => result.operationId === request.mutation?.requestId && serviceAccount(result.account, initial.id, service, request.mutation?.expectedRevision ?? 1n));
   const blocked = quotaBusy || operation.busy || operation.uncertain;
@@ -46,7 +47,7 @@ export function ManagedSubscriptionAccount({ initial, active, close }: { initial
   const supported = serviceSupported && (service === SubscriptionServiceId.Claude ? status.data?.capabilities.includes(SystemCapability.CLAUDE_SUBSCRIPTIONS_V1) === true : capable);
   const ownerMachine = text(state.owner_machine_id);
   const owner = useQuery(ResourceQuery.getResource,{kind:EntityKind.MACHINE,id:ownerMachine},{enabled:active && service === SubscriptionServiceId.Claude && isEntityId(ownerMachine)});
-  const logoutReady = active && supported && validRead && !blocked && !pendingID && state.recovery_required !== true && !data.removal;
+  const logoutReady = active && supported && !status.error && validRead && !blocked && !pendingID && state.recovery_required !== true && !data.removal;
   const ready = logoutReady && !["queued", "sending", "uncertain"].includes(text(object(state.observation).phase));
   const request = (action: SubscriptionAction) => {
     if (!(action === SubscriptionAction.LOGOUT ? logoutReady : ready)) return;
@@ -56,14 +57,15 @@ export function ManagedSubscriptionAccount({ initial, active, close }: { initial
   return <section className="subscription-account-create" aria-label={copy("subscription-accounts.manageSubscription_5ac1d0", { v0: resourceName(current) })}>
     <h2>{resourceName(current)}</h2><p>{subscriptionServiceNames[service]} · {connected ? copy("subscription-accounts.connected_229655") : copy("subscription-accounts.disconnected_04dfac")}</p>
     {service === SubscriptionServiceId.Claude && ownerMachine ? <p>{copy("claude-subscription.ownerRunner",{runner:owner.data?.resource?.id === ownerMachine ? resourceName(owner.data.resource) : copy("claude-subscription.originalRunner")})}</p> : null}
-    {!supported ? <p role="status">{copy("subscription-accounts.nativeLoginForThisServiceIs_09b215")}</p> : null}
-    {state.recovery_required === true ? <p role="alert">{copy("subscription-accounts.theOriginalCredentialOwnerRequiresRecovery_4da135")}</p> : null}
+    {!supported ? <InlineRemediation summary={<p>{copy("account-connection.inline.subscriptionUnsupported")}</p>} actions={<button type="button" disabled={!active || status.isFetching} onClick={() => void status.refetch()}>{copy("account-connection.inline.supportRecheck")}</button>} /> : null}
+    {state.recovery_required === true ? <InlineRemediation summary={<p>{copy("account-connection.inline.subscriptionRecovery")}</p>} /> : null}
     <SettingsTaskActions className="">{!connected ? <button type="button" disabled={!ready || !flow.available} onClick={() => flow.begin(service, current)}><LocalizedText id="subscription-accounts.signInTo_fa4edf" components={{ s0: <>{subscriptionServiceNames[service]}</> }} /></button> : <><button type="button" disabled={!ready} onClick={() => service === SubscriptionServiceId.Claude ? flow.begin(service,current,true) : request(SubscriptionAction.REFRESH)}>{copy(service === SubscriptionServiceId.Claude ? "claude-subscription.reauth" : "subscription-accounts.refreshLogin_85188a")}</button><button type="button" disabled={!logoutReady} onClick={() => setLogoutConfirmation(current)}>{copy("subscription-accounts.logOut_496161")}</button></>}</SettingsTaskActions>
     {flow.hidden ? <button type="button" onClick={flow.show}>{copy("claude-subscription.viewOriginalOperation")}</button> : null}
     {logoutConfirmation ? <SettingsTaskDialog title={copy("subscription-accounts.logOut_496161")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setLogoutConfirmation(undefined)}><section aria-label={copy("subscription-accounts.confirmSubscriptionLogout_1d058a")}><p><LocalizedText id="subscription-accounts.logOutActiveExecutionsAreCanceled_dc5bf0" components={{ s0: <>{resourceName(logoutConfirmation)}</> }} /></p>{current.revision !== logoutConfirmation.revision ? <p role="alert">{copy("subscription-accounts.theAccountChangedInspectItAnd_316118")}</p> : null}<SettingsTaskActions className=""><button type="button" disabled={!logoutReady || current.revision !== logoutConfirmation.revision} onClick={() => { request(SubscriptionAction.LOGOUT); setLogoutConfirmation(undefined); }}>{copy("subscription-accounts.confirmLogout_2e9d08")}</button><SettingsTaskDismissButton data-settings-task-cancel type="button" disabled={blocked} onClick={() => setLogoutConfirmation(undefined)}>{copy("subscription-accounts.keepAccountConnected_00ae06")}</SettingsTaskDismissButton></SettingsTaskActions></section></SettingsTaskDialog> : null}
-    {pendingID ? <p role="status">{text(pending.action)} · {pending.canceled === true ? copy("subscription-accounts.cancellationRequestedWaitingForOriginalCleanup_4f54b9") : text(pending.phase)}</p> : null}
+    {pendingID ? <><p>{copy("account-connection.inline.subscriptionPending")}</p><p role="status">{text(pending.action)} · {pending.canceled === true ? copy("subscription-accounts.cancellationRequestedWaitingForOriginalCleanup_4f54b9") : text(pending.phase)}</p></> : null}
     {!validRead ? <p role="alert">{copy("subscription-accounts.theCurrentAccountCouldNotBe_9c686a")}</p> : null}
-    <Problem error={read.error || operation.error || status.error} />
+    <Problem error={read.error || operation.error || status.error} summary={<p>{copy(read.error || status.error ? "account-connection.inline.read" : "account-connection.inline.operation")}</p>} actions={read.error || status.error ? <button type="button" disabled={!active || read.isFetching || status.isFetching} onClick={() => { void read.refetch(); void status.refetch(); }}>{copy("subscription-accounts.refreshAccountStatus_fa2870")}</button> : undefined} />
+    {read.error || status.error ? <LocalConnectionHelp /> : null}
     {operation.uncertain ? <button type="button" disabled={operation.busy} onClick={operation.retry}>{copy("subscription-accounts.retryOriginalSubscriptionOperation_691fa2")}</button> : null}
     {service === SubscriptionServiceId.ChatGPT && connected ? <SubscriptionQuotaControls current={current} machine={quotaObservationMachine(state)} active={active && validRead} accepted={setAccepted} busyChanged={setQuotaBusy} /> : null}
     <SettingsTaskActions className=""><button type="button" disabled={blocked} onClick={() => void read.refetch()}>{copy("subscription-accounts.refreshAccountStatus_fa2870")}</button><SettingsTaskDismissButton data-settings-task-cancel type="button" disabled={blocked} onClick={closeTask}>{copy("subscription-accounts.backToSubscriptions_257d53")}</SettingsTaskDismissButton></SettingsTaskActions>
@@ -129,6 +131,6 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
     {flow.hidden ? <button type="button" onClick={flow.show}>{copy("claude-subscription.viewOriginalOperation")}</button> : null}
     {flow.body ? <SettingsTaskDialog title={copy(flow.service === SubscriptionServiceId.Claude ? "claude-subscription.title" : "subscription-accounts.connectSubscription")} size={SettingsDialogSize.Wide} retained={flow.retained} close={flow.hide}>{flow.body}</SettingsTaskDialog> : null}
     {selected ? <SettingsTaskDialog key={selected.id} title={copy("subscription-accounts.manageSubscriptionTitle")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={() => { setSelected(undefined); void rows.refetch(); }}><ManagedSubscriptionAccount initial={selected} active={active} close={() => { setSelected(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
-    <Problem error={quota.error || refreshAll.error} />{quota.uncertain ? <button type="button" disabled={quota.busy} onClick={quota.retry}>{copy("subscription-accounts.retryOriginalQuotaRefresh_8a9eca")}</button> : null}
+    <Problem error={quota.error || refreshAll.error} summary={<p>{copy("account-connection.inline.quota")}</p>} />{quota.uncertain ? <button type="button" disabled={quota.busy} onClick={quota.retry}>{copy("subscription-accounts.retryOriginalQuotaRefresh_8a9eca")}</button> : null}
   </div>;
 }

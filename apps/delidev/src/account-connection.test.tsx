@@ -117,3 +117,16 @@ it.each([
   expect(screen.queryByLabelText("API key")).toBeNull();
   view.unmount();
 });
+
+it("rechecks failed account reads inline without replacing the account or retrying a mutation", async () => {
+ const f=fixture(9n);f.status.mockRejectedValue(new ConnectError("private-transport-path",Code.PermissionDenied));f.mount();
+ const recheck=(await screen.findAllByRole("button",{name:"Recheck account and provider"}))[0];
+ expect(screen.getByText(/Saved account details are retained/).closest("details")).toBeNull();
+ expect(screen.queryByText(/private-transport-path/)).toBeNull();await waitFor(()=>expect((screen.getByRole("button",{name:"Validate connection"}) as HTMLButtonElement).disabled).toBe(true));expect(f.disconnect).not.toHaveBeenCalled();
+ const reads=f.status.mock.calls.length;f.status.mockResolvedValue({account:f.current});fireEvent.click(recheck);await waitFor(()=>expect(f.status).toHaveBeenCalledTimes(reads+1));await waitFor(()=>expect((screen.getByRole("button",{name:"Validate connection"}) as HTMLButtonElement).disabled).toBe(false));expect(f.disconnect).not.toHaveBeenCalled();
+});
+it("keeps original cleanup available while a failed status read blocks fresh actions", async () => {
+ const original=newRequestId();const f=fixture(9n,`{"request_id":"${original}","expected_revision":9007199254740993}`);f.status.mockRejectedValue(new ConnectError("read unavailable",Code.Unavailable));f.mount();
+ const retry=await screen.findByRole("button",{name:cleanupLabel});await screen.findByText(/Saved account details are retained/);expect((retry as HTMLButtonElement).disabled).toBe(false);
+ fireEvent.click(retry);await waitFor(()=>expect(f.disconnect).toHaveBeenCalledOnce());expect(f.disconnect.mock.calls[0][0].mutation).toMatchObject({id:f.id,requestId:original,expectedRevision:9007199254740993n});
+});
