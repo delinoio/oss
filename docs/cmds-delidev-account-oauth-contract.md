@@ -31,6 +31,8 @@ this order: common lifecycle plus Hugging Face, Gemini, then Baseten.
 Go owns exchange, device polling, protected access/refresh tokens and refresh.
 On macOS, check current executable code before a fresh Start admission or
 exchange. A failed check cannot create an attempt or claim/dispatch an exchange.
+Device approval rechecks code before every admitted pending/slow-down poll;
+invalid code settles the original attempt as recovery without another request.
 Retain original replay, status, cancellation and recovery authority. A rolled-back
 Start uses the existing admission-rejection cause; runtime exchange failures and
 retained problems use closed credential-runtime causes. The desktop shows localized
