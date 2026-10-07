@@ -25,7 +25,7 @@ func TestCodexDiagnosticPreservesVersionAndFirstFailure(t *testing.T) {
 	err := WithCodexDiagnostic("0.159.2", CodexInitialize, Fail(Unsupported, "raw-native-sentinel", "secret-login-url"))
 	err = WithCodexDiagnostic("1.0.0", CodexLogin, err)
 	d := CodexErrorDiagnostic(err)
-	if d == nil || d.DetectedVersion != "0.159.2" || d.MinimumVersion != "0.151.0" || d.Phase != CodexInitialize || d.Code != Unsupported {
+	if d == nil || d.DetectedVersion != "0.159.2" || d.MinimumVersion != "" || d.Phase != CodexInitialize || d.Code != Unsupported {
 		t.Fatalf("diagnostic lost original context: %#v", d)
 	}
 	if strings.Contains(SafeError(err).Message, "sentinel") || strings.Contains(SafeError(err).Guidance, "secret") {

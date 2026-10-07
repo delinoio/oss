@@ -30,7 +30,7 @@ React 19.2.8 and TypeScript render the trusted app through Rsbuild. The native T
 The native crate is a root workspace member. Its optional `desktop-host` feature uses CEF from the immutable official Tauri revision `c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975`, sharing the existing workspace CEF pins. The executable routes native helper invocations through `tauri_runtime_cef::cef_entry_point` before parsing product arguments or starting Go controllers. macOS retains the 13.0 minimum. Capabilities match only the trusted `main` and `server-*` webview labels, never every webview in their containing window; external child views receive no app permission by window association. Trusted windows remain incognito and deny external navigation and new-window requests. Account browser persistence, raw CEF isolation and exact cleanup are specified in [the protected browser contract](cmds-delidev-browser-contract.md); native/platform acceptance is recorded separately. The default library tests require no display. The executable is `delidev-desktop`, bundle identifier `io.delino.delidev`.
 
 ## Users and Operators
-One server owner can connect multiple paired desktop clients. The initial prerequisite checklist links to saved settings without installing a harness or overriding existing setup. Automated readiness checks remain pending.
+One server owner can connect multiple paired desktop clients. Ordinary welcome and execution have no prerequisite checklist. Runner Devices retains explicitly requested optional diagnostics and executable-path editing; the actual selected process validates execution readiness.
 
 ## Interfaces and Contracts
 The session Subagents disclosure follows the [child observation contract](cmds-delidev-subagents-contract.md). Require the typed server capability; use generated Connect Query resource reads with bounded pages and revision-driven refresh. Display exact child/parent/root and source identities, independent status, requested versus observed model, partial recent output and unavailable telemetry. Preserve exact nullable decimal counters and original native usage strings without additive billing. Only refresh/page actions are offered; parent completion does not finish descendants or grant native controls.
@@ -1486,29 +1486,25 @@ all native resources. The separate [native package verification contract](apps-d
 defines six native dry-run paths, retained original notices and package inspection;
 actual production signing, release publication and six-platform runtime evidence remain pending.
 
-## First-session checklist
+## Direct execution and failure diagnostics
 
-The welcome screen now connects its checklist to the authenticated server status,
-`SystemService.GetDoctor`, and bounded account/Agent configuration reads. The
-user explicitly chooses **Check prerequisites** or **Refresh prerequisites**;
-opening the welcome screen does not inspect protected account references.
-The check never discovers a harness, logs in, refreshes a provider, installs
-software or invokes inference. Its setup button opens existing settings.
+[Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session
+checklist from welcome and ordinary execution. No welcome opening requests Doctor,
+account inventory, installation inspection or native protocol probes. Existing
+explicit Doctor and Runner Devices diagnostics remain available as separate
+read-only observations, with complete schema, authenticated identity, bounded
+inventory and unknown/failed-refresh checks; they grant no execution readiness.
 
-Server connection, database/storage observations, enabled Workers with active
-streams and retained verified harness handshakes, saved enabled connected account
-health, and Agent configurations are separate facts. No aggregate ready indicator
-or automatic execution is derived from them. The selected session still validates
-its exact model/account/harness/machine choices at acceptance. Repository work
-requires a project; General Chat remains an explicit alternative.
-
-Doctor reports must have the supported schema, original authenticated server
-identity, bounded unique Worker/harness inventories and no inference-probe claim.
-Account/Agent reads validate their expected resource scope and preserve the
-first-page bound. Missing results from a partial page remain unknown; malformed,
-foreign and failed observations cannot leave a previous successful badge visible.
-Inactive welcome/settings presentation starts no checklist read. All results remain
-in the connection's existing nonpersistent query scope.
+Execute on the selected Runner Device directly. Keep account connection, model
+configuration, project/General Chat selection and immutable ownership checks. A
+startup failure shows a session-owned corrective summary. Its Show details action
+opens the existing Info drawer for phase, optional actual version, safe code,
+original correlation and separate input/cleanup facts. Copy only validated metadata
+without another read, probe or native operation. Setup actions open visit-scoped
+Runner Devices. Positive no-send and confirmed original cleanup enable explicit
+Retry startup through the existing revision-checked Resume lane; uncertainty
+requires original recovery. Preserve the sidebar/composer, contained keyboard
+navigation, Escape/opener focus, narrow overlay, long-value wrapping and zoom.
 
 CEF URL authorization uses blocking runtime getters at the pinned revision.
 Commands reaching those getters must run asynchronously outside the native UI

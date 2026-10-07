@@ -98,7 +98,7 @@ func (m *Manager) noActiveExecutionClaim(session domain.ID) error {
 // reused. Continuation requires the exact closed predecessor; its native-history
 // and current account/server authority must still be checked by the caller.
 func (m *Manager) ClaimFirstExecution(ctx context.Context, jobID, executionID domain.ID, input PrepareRequest, expected Manifest) (*ExecutionLease, error) {
-	return m.claimExecution(ctx, jobID, executionID, nil, false, input, expected)
+	return m.claimExecution(ctx, jobID, executionID, nil, false, nil, input, expected)
 }
 
 // ExecutionPredecessor names the original local cleanup proof to retain before
@@ -112,21 +112,31 @@ func (m *Manager) ClaimContinuation(ctx context.Context, jobID, executionID doma
 	if err := domain.UniqueIDs([]domain.ID{input.SessionID, jobID, executionID, previous.JobID, previous.ExecutionID}); err != nil {
 		return nil, err
 	}
-	return m.claimExecution(ctx, jobID, executionID, &previous, false, input, expected)
+	return m.claimExecution(ctx, jobID, executionID, &previous, false, nil, input, expected)
 }
 
 // ClaimUnsentRetry advances only the failed original attempt's closed claim.
 // A failure before workspace admission may instead retain no claim or history;
 // recheck that absence under the same lock before the first claim is written.
 // The caller must already hold positive no-input and native-cleanup proof.
-func (m *Manager) ClaimUnsentRetry(ctx context.Context, jobID, executionID domain.ID, previous ExecutionPredecessor, input PrepareRequest, expected Manifest) (*ExecutionLease, error) {
+func (m *Manager) ClaimUnsentRetry(ctx context.Context, jobID, executionID domain.ID, previous ExecutionPredecessor, input PrepareRequest, expected Manifest, original ...ExecutionPredecessor) (*ExecutionLease, error) {
 	if err := domain.UniqueIDs([]domain.ID{input.SessionID, jobID, executionID, previous.JobID, previous.ExecutionID}); err != nil {
 		return nil, err
 	}
-	return m.claimExecution(ctx, jobID, executionID, &previous, true, input, expected)
+	if len(original) > 1 {
+		return nil, ResultUncertain()
+	}
+	var fallback *ExecutionPredecessor
+	if len(original) == 1 {
+		fallback = &original[0]
+		if domain.UniqueIDs([]domain.ID{input.SessionID, jobID, executionID, previous.JobID, previous.ExecutionID, fallback.JobID, fallback.ExecutionID}) != nil {
+			return nil, ResultUncertain()
+		}
+	}
+	return m.claimExecution(ctx, jobID, executionID, &previous, true, fallback, input, expected)
 }
 
-func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.ID, previous *ExecutionPredecessor, unsentRetry bool, input PrepareRequest, expected Manifest) (lease *ExecutionLease, returned error) {
+func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.ID, previous *ExecutionPredecessor, unsentRetry bool, fallback *ExecutionPredecessor, input PrepareRequest, expected Manifest) (lease *ExecutionLease, returned error) {
 	for _, id := range []domain.ID{jobID, executionID} {
 		if err := id.Validate(); err != nil {
 			return nil, err
@@ -164,7 +174,13 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 		return nil, domain.SessionDeletionPending()
 	}
 	prior, err := m.readExecutionClaim(input.SessionID)
-	if unsentRetry && errors.Is(err, os.ErrNotExist) {
+	// A failure before workspace admission leaves the exact original successful
+	// continuation claim intact. Only its immutable assignment predecessor may
+	// be used; an unrelated closed claim cannot establish cleanup or history.
+	if unsentRetry && err == nil && fallback != nil && prior.JobID == fallback.JobID && prior.ExecutionID == fallback.ExecutionID {
+		previous = fallback
+	}
+	if unsentRetry && fallback == nil && errors.Is(err, os.ErrNotExist) {
 		previous = nil
 	}
 	validation := preparationIdentity

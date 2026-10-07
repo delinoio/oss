@@ -44,7 +44,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	manager := &workspace.Manager{Root: config.Root, Logger: logger}
 	var lease *workspace.ExecutionLease
 	if retry := input.Retry; retry != nil {
-		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest)
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
 	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
@@ -59,7 +59,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	}
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
@@ -92,7 +92,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	}
 	defer func() {
 		if err := binding.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	rawToken, err := security.RandomToken()
@@ -157,7 +157,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	}
 	defer func() {
 		if err := api.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	if err := config.startup.ready(ctx, ""); err != nil {
@@ -176,7 +176,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	defer func() {
 		if finishControls != nil {
 			if err := finishControls(); err != nil {
-				output, returned = nil, err
+				output, returned = nil, config.startup.cleanupFailure(returned, err)
 			}
 		}
 	}()

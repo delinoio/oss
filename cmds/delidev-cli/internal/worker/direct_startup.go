@@ -12,17 +12,20 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"google.golang.org/protobuf/proto"
 )
 
 type executionStartupAttempt struct {
-	config        Config
-	job           domain.ID
-	input         domain.ExecutionJobInput
-	observation   domain.ExecutionStartupObservation
-	executable    string
-	readyReported bool
+	config           Config
+	job              domain.ID
+	input            domain.ExecutionJobInput
+	observation      domain.ExecutionStartupObservation
+	executable       string
+	readyReported    bool
+	firstFailure     error
+	cleanupUncertain bool
 }
 
 func newExecutionStartupAttempt(config Config, job domain.ID, input domain.ExecutionJobInput) *executionStartupAttempt {
@@ -31,8 +34,15 @@ func newExecutionStartupAttempt(config Config, job domain.ID, input domain.Execu
 
 func resolveExecutionStartup(ctx context.Context, config Config, job domain.ID, input domain.ExecutionJobInput) (domain.Installation, error) {
 	selection := *input.Startup
-	if input.Continuation != nil && selection.ExecutableSHA256 != "" {
-		raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(input.Continuation.Previous.JobID), "startup-executable.json"), 8192)
+	source := domain.ID("")
+	if input.Continuation != nil {
+		source = input.Continuation.Previous.JobID
+	}
+	if input.Fork != nil {
+		source = input.Fork.JobID
+	}
+	if source != "" && selection.ExecutableSHA256 != "" {
+		raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(source), "startup-executable.json"), 8192)
 		var previous domain.Installation
 		if errors.Is(err, os.ErrNotExist) && filepath.IsAbs(selection.ExplicitPath) {
 			// Legacy assignments already pin an absolute executable and digest.
@@ -48,7 +58,7 @@ func resolveExecutionStartup(ctx context.Context, config Config, job domain.ID, 
 	if err != nil {
 		return installation, err
 	}
-	if err := writeJSON(filepath.Join(config.Root, "jobs", string(job), "startup-executable.json"), installation); err != nil {
+	if err := writeStartupExecutable(config.Root, job, installation); err != nil {
 		return domain.Installation{}, publicationUncertain()
 	}
 	config.startup.executable = installation.ResolvedPath
@@ -74,7 +84,11 @@ func (a *executionStartupAttempt) report(ctx context.Context, name string, o dom
 	if err != nil {
 		return publicationUncertain()
 	}
-	if err := writeJSON(filepath.Join(a.config.Root, "jobs", string(a.job), "startup-"+name+".json"), struct {
+	directory := filepath.Join(a.config.Root, "jobs", string(a.job))
+	if err := security.PrivateDir(directory); err != nil {
+		return publicationUncertain()
+	}
+	if err := writeJSON(filepath.Join(directory, "startup-"+name+".json"), struct {
 		Request []byte `json:"request"`
 	}{raw}); err != nil {
 		return publicationUncertain()
@@ -130,14 +144,18 @@ func (a *executionStartupAttempt) finish(original error) error {
 		return original
 	}
 	o := a.observation
-	o.State, o.ProblemCode, o.Cleanup = domain.StartupUncertain, domain.SafeError(original).Code, domain.StartupCleanupUncertain
-	if d := domain.CodexErrorDiagnostic(original); d != nil {
+	first := original
+	if a.firstFailure != nil {
+		first = a.firstFailure
+	}
+	o.State, o.ProblemCode, o.Cleanup = domain.StartupUncertain, domain.SafeError(first).Code, domain.StartupCleanupUncertain
+	if d := domain.CodexErrorDiagnostic(first); d != nil {
 		o.ProblemCode = d.Code
 		if domain.ValidNativeVersionMetadata(d.DetectedVersion) {
 			o.NativeVersion = d.DetectedVersion
 		}
 	}
-	if process.ReconcileOwner(filepath.Join(a.config.Root, "processes"), a.job) == nil && domain.SafeError(original).Code != domain.RecoveryRequired {
+	if process.ReconcileOwner(filepath.Join(a.config.Root, "processes"), a.job) == nil && domain.SafeError(original).Code != domain.RecoveryRequired && !a.cleanupUncertain {
 		o.Cleanup = domain.StartupCleanupConfirmed
 	}
 	if o.InputDelivery == domain.StartupNotSent && o.Cleanup == domain.StartupCleanupConfirmed {
@@ -167,4 +185,42 @@ func resolveOriginalStartup(ctx context.Context, config Config, source domain.ID
 		return original, executionCheckpointUncertain()
 	}
 	return harness.ResolveExecution(ctx, domain.ExecutionStartupSelection{Harness: original.Harness, ExplicitPath: original.ResolvedPath, ExecutableSHA256: original.ExecutableSHA256})
+}
+
+func (a *executionStartupAttempt) cleanupFailure(original, cleanup error) error {
+	if a == nil {
+		return errors.Join(cleanup, original)
+	}
+	if a != nil {
+		if a.firstFailure == nil && original != nil {
+			a.firstFailure = original
+		}
+		a.cleanupUncertain = true
+	}
+	return domain.Fail(domain.RecoveryRequired, "Original execution cleanup could not be confirmed.", "Recover the original attempt before another send.")
+}
+
+// A no-send continuation retry may have failed before replacing the original
+// closed workspace claim. Preserve that exact native or compaction predecessor.
+func retryOriginalWorkspace(input domain.ExecutionJobInput) []workspace.ExecutionPredecessor {
+	c := input.Continuation
+	if c == nil {
+		return nil
+	}
+	if c.Compaction != nil {
+		return []workspace.ExecutionPredecessor{{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}}
+	}
+	return []workspace.ExecutionPredecessor{{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}}
+}
+
+func writeStartupExecutable(root string, job domain.ID, installation domain.Installation) error {
+	directory := filepath.Join(root, "jobs", string(job))
+	if err := security.PrivateDir(directory); err != nil {
+		return err
+	}
+	return writeJSON(filepath.Join(directory, "startup-executable.json"), installation)
+}
+
+func prepareStartupProcessIndex(root string, job domain.ID) error {
+	return security.PrivateDir(filepath.Join(root, "processes", string(job)))
 }

@@ -311,8 +311,19 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 			if err := currentInstance(tx, domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)); err != nil {
 				return err
 			}
-			if _, err := subscriptionInstallation(tx, domain.ID(req.Msg.MachineId)); err != nil {
+			_, machine, err := activeMachine(tx, domain.ID(req.Msg.MachineId))
+			if err != nil {
 				return err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+				return subscriptionDenied()
+			}
+			// A current adapter may wait for explicitly accepted lifecycle work
+			// without an installed harness. Acceptance/Take still own authority.
+			if !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
+				if _, err := subscriptionInstallation(tx, domain.ID(req.Msg.MachineId)); err != nil {
+					return err
+				}
 			}
 			accounts, err := all(tx, domain.AccountKind)
 			if err != nil {
@@ -438,8 +449,10 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
 		}
-		if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
-			return nil, err
+		if action != domain.SubscriptionExecute {
+			if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
+				return nil, err
+			}
 		}
 		if action == domain.SubscriptionExecute {
 			if state.Observation != nil && state.Observation.Active() {
@@ -485,6 +498,15 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			default:
 				return nil, subscriptionDenied()
 			}
+			if execution.Version == 4 {
+				_, machine, err := activeMachine(tx, input.Machine)
+				if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
+					return nil, subscriptionDenied()
+				}
+			} else if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
+				return nil, err
+			}
+
 			if execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
 				return nil, subscriptionDenied()
 			}

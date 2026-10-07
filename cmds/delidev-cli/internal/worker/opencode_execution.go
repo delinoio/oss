@@ -46,12 +46,12 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	executable := input.Installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
-		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery before another execution; no PATH fallback is used.")
+		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Review the selected executable path and recover original history; no PATH fallback is used.")
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if retry := input.Retry; retry != nil {
-		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest)
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
 	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
@@ -66,7 +66,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	phase = "workspace-root"
@@ -204,7 +204,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	defer func() {
 		if err := binding.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	nativeConfig.Claim = binding.Claim
@@ -234,7 +234,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := api.Close(cleanup); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	phase = "native-selection"
@@ -303,7 +303,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	finishControls := startOpenCodeControls(ctx, nativeCtx, cancelNative, config, mapper)
 	defer func() {
 		if err := finishControls(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	readContext, publicationContext := ctx, nativeCtx

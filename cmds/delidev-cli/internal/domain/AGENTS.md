@@ -1,3 +1,5 @@
+- Direct startup follows `docs/cmds-delidev-execution-startup-contract.md`. Validate negotiated v4 immutable selections, bounded closed observations and explicit source-bound retry references. Read historical v1/v2/v3 without rewriting attribution. Optional version metadata grants no numeric admission authority; retain native root lineage independently of the initial selection and separate no-send proof from cleanup uncertainty.
+
 # DeliDev domain ownership
 
 - GitHub draft form URLs may omit an undeclared fine-grained owner while retaining the closed read-only prefills. Saved-profile form URLs and profile validation still require that owner. The native presentation validator admits only the exact canonical draft or saved form, rejecting empty explicit parameters, extra/duplicate query parameters and write permissions. Follow the integration contract; URL preparation grants no repository access.

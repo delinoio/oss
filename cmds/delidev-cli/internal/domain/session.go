@@ -321,7 +321,7 @@ func SessionExecutionUnavailable() *Error {
 }
 
 func InitialExecutionPending() *Error {
-	return Fail(Unavailable, "The first execution is waiting for verified dispatch readiness.", "Prepare the workspace, connect the selected Worker and validate its native installation and selected account. Inspect the retained session for the current blocking reason.")
+	return Fail(Unavailable, "The first execution is waiting for its workspace, Runner Device or account.", "Prepare the workspace, connect the selected Runner Device and validate the selected account. Inspect the retained session for the current blocking reason.")
 }
 
 func (s Session) NativeExecutionRoot() ID {

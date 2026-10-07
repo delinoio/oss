@@ -452,7 +452,7 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 		Revision uint64
 		Action   domain.SessionAction
 	}{meta.Id, meta.ExpectedRevision, action}
-	var deniedProviderID domain.ID
+	var deniedProviderID, startupRetryJob domain.ID
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "session.control", identity, func(tx *store.Tx) (any, error) {
 		r, value, err := sessionRecord(tx, domain.ID(meta.Id))
 		if err != nil {
@@ -490,7 +490,8 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 				return nil, err
 			}
 			if value.Startup != nil && value.Startup.Failure != nil && value.Startup.Failure.State == domain.StartupFailed {
-				_, err := queueExecutionStartupRetry(tx, r, value)
+				retry, err := queueExecutionStartupRetry(tx, r, value)
+				startupRetryJob = retry.ID
 				return sessionReceipt{SessionID: r.ID}, err
 			}
 			if value.StartupRejection != nil {
@@ -573,6 +574,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 	change, err := s.sessionResult(ctx, result)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
+	}
+	if startupRetryJob != "" && !result.Replayed {
+		s.logger.Info("execution_startup_retry_admitted", "session_id", meta.Id, "job_id", startupRetryJob, "request_id", meta.RequestId)
 	}
 	s.logger.Info("session_control_committed", "correlation_id", correlation, "session_id", meta.Id, "action", action, "replayed", result.Replayed)
 	response := connect.NewResponse(&pb.ControlSessionResponse{Change: change})

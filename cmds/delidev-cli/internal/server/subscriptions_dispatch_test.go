@@ -50,7 +50,8 @@ func TestSubscriptionDispatchRequiresManagedWorkerCapability(t *testing.T) {
 				if err != nil {
 					return nil, err
 				}
-				machine.WorkerCapabilities = []domain.WorkerCapability{domain.SessionForwardingV1}
+				machine.Installations = nil
+				machine.WorkerCapabilities = []domain.WorkerCapability{domain.SessionForwardingV1, domain.ExecutionStartupV1}
 				if capable {
 					machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1)
 				}

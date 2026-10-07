@@ -43,6 +43,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Version == 4 {
 		config.startup = newExecutionStartupAttempt(config, owner, input)
 		defer func() { returned = config.startup.finish(returned) }()
+		// An empty original process index is positive pre-launch cleanup proof.
+		// Without it, a missing executable could be confused with lost ownership.
+		if err := prepareStartupProcessIndex(config.Root, owner); err != nil {
+			return nil, publicationUncertain()
+		}
 		var err error
 		input.Installation, err = resolveExecutionStartup(ctx, config, owner, input)
 		if err != nil {
@@ -90,12 +95,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	executable := input.Installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
-		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery before another execution; no PATH fallback is used.")
+		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Review the selected executable path and recover original history; no PATH fallback is used.")
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if retry := input.Retry; retry != nil {
-		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest)
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
 	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
@@ -110,7 +115,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, errors.Join(err, returned)
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	var prGit *workspace.PRGitTool
@@ -121,7 +126,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		defer func() {
 			if err := prGit.Close(); err != nil {
-				output, returned = nil, err
+				output, returned = nil, config.startup.cleanupFailure(returned, err)
 			}
 		}()
 	}
@@ -355,7 +360,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
 			defer func() {
 				if err := proxy.Close(); err != nil {
-					output, returned = nil, err
+					output, returned = nil, config.startup.cleanupFailure(returned, err)
 				}
 			}()
 		}
@@ -389,7 +394,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer func() {
 		captureManagedBundle()
 		if err := client.Close(); err != nil {
-			output, returned = nil, domain.SafeError(err)
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 			return
 		}
 		if managed != nil {
@@ -456,13 +461,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	finishSteers := startSteerController(ctx, nativeCtx, cancelNative, config.steerControls, mapper, client)
 	defer func() {
 		if err := finishSteers(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 		if err := finishApprovals(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 		if err := finishResponses(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	readContext, publicationContext := ctx, nativeCtx

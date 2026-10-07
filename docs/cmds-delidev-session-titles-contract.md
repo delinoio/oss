@@ -16,7 +16,17 @@ Owner/client sessions may opt into automatic naming. An authorized outbound Work
 
 `CreateSession.name_mode` is the closed `manual`/`automatic` enum. Omission remains the existing manual request shape and receipt fingerprint. Automatic mode omits `name`; acceptance returns the server-owned `New session` placeholder, automatic owner, generation 1 and `waiting` status immediately with the original first input. Caller-supplied automatic names fail validation. Existing CLI/scheduled creation and manual names remain unchanged.
 
-The additive `SystemService.GetStatus` capability `AUTOMATIC_TITLES_V1` describes server schema support. It is independent of the per-Worker `AUTOMATIC_TITLES_CODEX_V1` capability, which is offered only after an explicit Worker verifies the exact resolved executable from its server-returned detected Codex installation at version `0.151.0` and its native thread protocol. An unrelated executable on the sanitized `PATH` cannot stand in for a configured Codex path. The Worker first attaches without the optional capability, probes the returned installation, then reattaches with the capability only after verification; it opens the auxiliary stream only when that second response echoes the capability. A probe result of `recovery_required` stops the connected Worker before it enters the ordinary execution lane; a definite unsupported profile may continue without title capability. Other harness, version and authentication profiles stay unsupported. Capability negotiation is separate from the ordinary execution stream.
+The additive `SystemService.GetStatus` capability `AUTOMATIC_TITLES_V1` describes
+server schema support. Per-Worker `AUTOMATIC_TITLES_CODEX_V1` describes the implemented
+adapter independently of installation inspection. The auxiliary stream still
+requires echoed negotiation. Under [direct startup](cmds-delidev-execution-startup-contract.md),
+Worker attachment runs no native title probe. Version-2 title assignments retain
+the original execution path/hash and observed optional version. Initialize the
+actual separate title process and validate its effective native settings before
+input. Numeric versions grant no admission authority. Historical version-1
+assignments remain readable. Title failure cannot block the primary conversation;
+existing account, original Worker, inference, cleanup and feature limits remain.
+
 
 The first successful response turn may atomically create at most one immutable title operation after verified native and workspace cleanup. The operation uses the first input accepted by that native conversation, including an edit made before dispatch, and freezes the original Agent, harness/version, model/effort/tier, account/connection, provider, machine, device and Worker instance. It never reruns routing, uses workspace/session history or instructions, creates a conversation input, or claims the conversation workspace lease. A stopped/failed first turn does not queue a title.
 
@@ -54,7 +64,7 @@ Structured records may include correlation/job/session/operation IDs, stable pha
 
 ## Build and Test
 
-Run `go test -race -p 1 ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...`; run root Buf lint, breaking and generation-freshness checks after schema changes. Run `pnpm test` from `apps/delidev` after frontend changes. The opt-in `TestOptInManualCodexTitleProfile` accepts only `DELIDEV_CODEX_TITLE_EXECUTABLE`; it checks the exact installed version/native protocol and cleanup in a private temporary runtime without login, workspace access or inference. `TestOptInInstalledCodexTitleInference` uses that same explicit binary with one private loopback scripted-provider response and checks the installed app-server inference path, exact no-tools request, disabled native retries, original execution usage attribution and cleanup. Neither opt-in test uses a user account or external provider; the scripted fixture does not establish real provider/account billing or native desktop visual acceptance. Record installed-harness evidence separately from fixtures and platform evidence separately from cross-compilation.
+Run `go test -race -p 1 ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...`; run root Buf lint, breaking and generation-freshness checks after schema changes. Run `pnpm test` from `apps/delidev` after frontend changes. The opt-in `TestOptInManualCodexTitleProfile` accepts only `DELIDEV_CODEX_TITLE_EXECUTABLE`; it checks actual observed version/native protocol and cleanup in a private temporary runtime without login, workspace access or inference. `TestOptInInstalledCodexTitleInference` uses that same explicit binary with one private loopback scripted-provider response and checks the installed app-server inference path, exact no-tools request, disabled native retries, original execution usage attribution and cleanup. Neither opt-in test uses a user account or external provider; the scripted fixture does not establish real provider/account billing or native desktop visual acceptance. Record installed-harness evidence separately from fixtures and platform evidence separately from cross-compilation.
 
 ## Dependencies and Integrations
 

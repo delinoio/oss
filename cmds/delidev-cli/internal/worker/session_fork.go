@@ -119,6 +119,12 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
+	if input.Startup != nil && input.Startup.ExecutableSHA256 != installation.ExecutableSHA256 {
+		return nil, executionCheckpointUncertain()
+	}
+	if err := writeStartupExecutable(config.Root, owner, installation); err != nil {
+		return nil, publicationUncertain()
+	}
 	executable := installation.ResolvedPath
 	canonical, err := filepath.EvalSymlinks(executable)
 	if err != nil || canonical != executable || !filepath.IsAbs(executable) {

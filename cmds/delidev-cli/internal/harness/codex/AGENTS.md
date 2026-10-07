@@ -20,4 +20,4 @@
 
 - Manual Sidechat compaction rechecks the complete closed config/read and normalized experimental feature inventory immediately before claiming or sending its one native action. A changed MCP, hook/plugin/notification, sandbox or feature observation cannot inherit the earlier turn's read-only authority.
 
-- Apply the common Codex minimum version policy before every native profile and retain the actual version in protocol/history checks. Preserve the first safe failure phase and version separately from cleanup/recovery; exclude native text, paths and credentials from logs.
+- Direct startup validates the actual original process without a numeric version gate or separate pre-probe under `docs/cmds-delidev-execution-startup-contract.md`. Retain only actual optional version metadata and preserve exact original executable/protocol/history ownership. Keep the first safe failure phase and version separate from cleanup/recovery; exclude native text, paths and credentials from logs.

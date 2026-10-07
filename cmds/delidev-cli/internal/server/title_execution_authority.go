@@ -11,7 +11,7 @@ import (
 
 func matchesInitialTitleExecution(session domain.Session, original domain.ExecutionJobInput) bool {
 	initial := session.InitialExecution
-	return initial != nil && original.Continuation == nil && session.MachineID == original.MachineID && session.AgentID == original.Configuration.AgentID && initial.ID == original.ExecutionID && initial.InputID == original.InputID && initial.InitialAccountID == original.AccountID && initial.ConnectionID == original.ConnectionID && initial.ConfigurationDigest == original.ConfigurationDigest
+	return initial != nil && original.Continuation == nil && session.MachineID == original.MachineID && session.AgentID == original.Configuration.AgentID && session.NativeExecutionRoot() == original.ExecutionID && (initial.InputID == original.InputID || original.Retry != nil) && initial.InitialAccountID == original.AccountID && initial.ConnectionID == original.ConnectionID && initial.ConfigurationDigest == original.ConfigurationDigest
 }
 
 func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant, record store.Record, job domain.Job) (apiproxy.Scope, error) {

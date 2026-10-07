@@ -31,7 +31,7 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 			if returned != nil {
 				config.Probe.Process.Logger.WarnContext(ctx, "OpenCode owned API initialization failed", "owner_id", config.Probe.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code)
 			} else {
-				config.Probe.Process.Logger.InfoContext(ctx, "OpenCode owned API initialization completed", "owner_id", config.Probe.Process.OwnerID, "profile_version", SupportedVersion)
+				config.Probe.Process.Logger.InfoContext(ctx, "OpenCode owned API initialization completed", "owner_id", config.Probe.Process.OwnerID, "native_version", api.nativeVersion)
 			}
 		}
 	}()

@@ -49,7 +49,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	manager := &workspace.Manager{Root: config.Root, Logger: logger}
 	var lease *workspace.ExecutionLease
 	if retry := input.Retry; retry != nil {
-		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest)
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
 	} else {
 		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
 	}
@@ -58,7 +58,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	}
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
@@ -91,7 +91,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	}
 	defer func() {
 		if err := binding.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	rawToken, err := security.RandomToken()
@@ -140,7 +140,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	}
 	defer func() {
 		if err := api.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	publisher.nativeVersion = api.Version()

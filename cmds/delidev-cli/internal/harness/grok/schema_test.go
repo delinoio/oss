@@ -156,7 +156,7 @@ func TestInspectionRejectsInheritedState(t *testing.T) {
 			report := fixtureObject(inspectionFixture)
 			switch change {
 			case "version":
-				report["grokVersion"] = "1.0.42"
+				report["grokVersion"] = "invalid/version"
 			case "cwd":
 				report["cwd"] = "/foreign"
 			case "project":

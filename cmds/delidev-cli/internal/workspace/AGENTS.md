@@ -1,3 +1,5 @@
+- Direct startup retry follows `docs/cmds-delidev-execution-startup-contract.md`. Under the original session lock, advance only the exact closed failed claim or the immutable original continuation/compaction predecessor when failure occurred before workspace admission. First-attempt absence requires no retained execution history. Server-confirmed no-send/cleanup proof grants no foreign adoption or filesystem deletion.
+
 # DeliDev Worker workspace ownership
 
 Follow the root and parent instructions and docs/cmds-delidev-workspace-contract.md.

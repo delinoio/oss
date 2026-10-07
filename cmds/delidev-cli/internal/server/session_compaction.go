@@ -115,7 +115,7 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 			intent = domain.ContinueExplicitly
 		}
 	}
-	restored.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.InitialExecution.ID, HistoryRequestID: domain.NewID(), Previous: *p, Completion: done, AssignmentInputDigest: continuationDigest(j.Input), InputMode: original.Input.Mode, PromptDigest: continuationDigest([]byte(original.Input.Prompt)), Intent: intent, Compaction: previous}
+	restored.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: *p, Completion: done, AssignmentInputDigest: continuationDigest(j.Input), InputMode: original.Input.Mode, PromptDigest: continuationDigest([]byte(original.Input.Prompt)), Intent: intent, Compaction: previous}
 	version := uint32(1)
 	if h == domain.Codex {
 		version = 2

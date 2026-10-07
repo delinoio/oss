@@ -14,13 +14,25 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
-### Codex version admission and attribution
+### Direct startup and native attribution
 
-The minimum applies to discovery, initialization, authentication, model observation, execution, continuation, Fork, Sidechat, compaction and automatic titles. Attempt eligibility is distinct from protocol, account and platform acceptance. Other harness version policies retain their exact pins. Historical schema/evidence references below describe their original baseline rather than an upper version limit.
+[Direct startup](cmds-delidev-execution-startup-contract.md) supersedes numeric
+version admission and required pre-inspection for negotiated execution, continuation,
+Fork, Sidechat, compaction and titles. Resolve only the selected executable and
+initialize its actual original process once. Validate native protocol, effective
+settings, workspace and credential mode before input. No separate execution probe
+or version subprocess runs on attachment or before these operations. Versions are
+optional observed metadata; an unknown version stays unknown. Existing explicit
+model/installation diagnostics retain their separate non-inference authority.
 
-Carry the detected version through immutable assignments, native children, checkpoints, approvals and usage; never substitute the minimum or rewrite historical records. Continuations, approvals and history still match the original executable and exact recorded native version. Private title and managed-auth capability probes use that same current inventory version and reject changed installation identity.
-
-Native errors preserve bounded version, minimum, a closed failure phase and stable safe code. Locally authored explanations exclude provider error text, URLs, secrets, account identity and user paths. Keep the first failure separate from later cleanup/recovery; recovery never authorizes another send.
+Keep original executable identity and actual historical protocol/version evidence
+without rewriting old assignments or substituting a baseline. Adapter capabilities
+describe implemented support independently of inventory readiness. Strict native
+schemas, effective settings and original account/Worker/history still determine
+support. Native errors retain bounded actual version, closed phase and safe code;
+legacy minimum fields remain readable but new diagnostics do not invent a minimum.
+Keep the first failure separate from later cleanup/recovery. Raw native/provider
+text, URLs, secrets and user paths never enter presentation or logs.
 
 ### Codex model observation profile
 
@@ -37,7 +49,7 @@ login, execution grant, provider endpoint, thread creation or inference is used.
 Managed subscriptions remain unsupported until their protected lifecycle exists.
 
 ### Codex automatic title profile
-Automatic titles use an explicitly verified Codex version at or above `0.151.0` with the native Responses profile. Worker startup probes the exact installed binary/version and app-server protocol in a fresh private home without login or inference. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
+Automatic titles reuse the successful original execution executable path/hash with the native Responses profile. Worker attachment performs no title probe; the actual auxiliary process validates its protocol. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
 
 ### Codex JSON-RPC stdio transport
 The internal `nativewire` connection consumes newline-delimited JSON-RPC on distinct native stdout and stdin streams and discards raw stderr. It validates UTF-8, unique JSON keys, required envelope discrimination, request identity type and protocol version, and preserves byte-fragmented Unicode. Codex's optional bounded `emittedAtMs` notification field is retained as provenance, not an ordering or deduplication identity. Unknown envelope shapes fail instead of being silently interpreted.
@@ -49,7 +61,7 @@ Callers allocate and durably record UUID-v7 operation identities before side-eff
 Server requests carry a per-arrival token in addition to their native numeric/string identity. Exactly one concurrent reply may claim that outstanding request, and replaced/already-claimed interactions fail. The adapter must validate answers against the original typed request and current authorization before replying. Successful pipe delivery proves only transmission; native acknowledgment/state must establish semantic acceptance. The transport now exposes exact-arrival request retirement for native cancellation/resolution: it writes no response, cannot remove a replacement arrival and refuses in-flight response ownership. An already absent request is not semantic acceptance. The adapter must establish native ownership before invoking this primitive. Notifications and late replies use the bounded event path; no automatic answer, approval or prompt is synthesized.
 
 ### Codex app-server profile
-The initial schema and native evidence baseline is Codex `0.151.0`. Codex admission uses common SemVer ordering with minimum `0.151.0` and no upper bound, including prerelease ordering and ignored build metadata for comparison. Older or invalid versions fail explicitly; newer versions attempt their actual native protocol and may fail its existing strict schema, effective configuration or ownership checks. This is not evidence of other operating systems, account combinations, or execution features.
+The initial schema and native evidence baseline is Codex `0.151.0`. Native processes attempt their actual protocol without a numeric version gate. Invalid bounded version metadata, strict schema violations, effective configuration mismatches or changed ownership still fail. This is not evidence of other operating systems, account combinations, or execution features.
 
 The adapter starts owned `codex app-server` over stdio with a private `CODEX_HOME`, ephemeral native authentication, automatic update checks disabled and analytics/feedback disabled. Initialization identifies DeliDev, stays on the stable API, validates the returned native version/platform/private home, sends `initialized`, and confirms readiness with a bounded `thread/loaded/list`. A probe must have no loaded native threads or further cursor. It performs no login, account/model refresh, thread creation or inference. Unknown response fields, foreign homes/platforms, changed versions and nonempty loaded state fail explicitly. Failed validation closes and reconciles the process; uncertain cleanup retains the runtime.
 

@@ -83,7 +83,7 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 	if !config.Mode.Valid() || (config.Instructions != "" && config.Mode != domain.ExecuteMode) {
 		return apiProfile{}, apiConfigurationError()
 	}
-	if config.Probe.Version != SupportedVersion {
+	if config.Probe.Version != "" && !domain.ValidNativeVersionMetadata(config.Probe.Version) {
 		return apiProfile{}, incompatible()
 	}
 	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) ||
@@ -202,7 +202,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 			if returned != nil {
 				logger.WarnContext(ctx, "Grok Build private API initialization failed", "owner_id", config.Probe.Process.OwnerID, "phase", phase, "code", domain.SafeError(returned).Code, "elapsed_ms", time.Since(started).Milliseconds())
 			} else {
-				logger.InfoContext(ctx, "Grok Build private API initialized", "owner_id", config.Probe.Process.OwnerID, "profile_version", SupportedVersion)
+				logger.InfoContext(ctx, "Grok Build private API initialized", "owner_id", config.Probe.Process.OwnerID, "native_version", api.nativeVersion)
 			}
 		}
 	}()

@@ -276,16 +276,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			// Capabilities describe implemented adapters, never inventory readiness.
 			// The original actual process validates its protocol before input.
-			executable, version := "", ""
-			var installation *domain.Installation
 			sidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
 			verifiedTitleProfile := true
 			managedCapabilityExpected = true
 			titleCapabilityExpected = true
-			profile := executable + "\x00" + version
-			if installation != nil {
-				profile += "\x00" + installation.ExecutableSHA256
-			}
+			profile := "implemented-adapters-v1"
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}

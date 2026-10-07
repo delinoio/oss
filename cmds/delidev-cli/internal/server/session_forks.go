@@ -73,6 +73,14 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 		}
 		input.Version = 2
 	}
+	if input.SourceAssignment.Version == 4 {
+		if job.Startup == nil || job.Startup.Ready == nil || job.Startup.Failure != nil || job.Startup.Ready.Validate() != nil {
+			return r, session, input, forkConflict()
+		}
+		selected := *input.SourceAssignment.Startup
+		selected.ExecutableSHA256 = job.Startup.Ready.ExecutableSHA256
+		input.Startup = &selected
+	}
 	input.SourceJobID, input.Progress, input.Snapshot = prior.ID, *session.Execution, *session.InitialExecution
 	return r, session, input, nil
 }

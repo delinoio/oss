@@ -208,11 +208,24 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 	return nil
 }
 
+// inferenceScope adds readiness to live account and assignment authority. Registration
+// and original-process initialization use scope alone and cannot infer through it.
+func (a *executionAuthority) inferenceScope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
+	scope, err := a.scope(tx, grant)
+	if err == nil {
+		err = requireExecutionStartupReady(tx, grant.JobID)
+	}
+	return scope, err
+}
+
 func (a *executionAuthority) resolve(ctx context.Context, grant store.ExecutionGrant) (apiproxy.Scope, error) {
 	var scope apiproxy.Scope
 	err := a.service.Store.Read(ctx, func(tx *store.Tx) error {
 		var err error
 		scope, err = a.scope(tx, grant)
+		if err == nil {
+			err = requireExecutionStartupReady(tx, grant.JobID)
+		}
 		return err
 	})
 	return scope, err
@@ -226,7 +239,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		var err error
 		grant, err = tx.ExecutionGrant(digest[:])
 		if err == nil {
-			scope, err = a.scope(tx, grant)
+			scope, err = a.inferenceScope(tx, grant)
 		}
 		if err == nil {
 			err = requireExecutionStartupReady(tx, grant.JobID)
@@ -288,7 +301,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				if leaseContext.Err() != nil {
 					return nil, executionDenied()
 				}
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return nil, err
 				}
 				if scope.Purpose == domain.SessionTitleUsage && value.HTTPAttempted != nil && *value.HTTPAttempted {
@@ -458,7 +471,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				return executionDenied()
 			}
 			return a.service.Store.Read(ctx, func(tx *store.Tx) error {
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return err
 				}
 				_, session, err := sessionRecord(tx, scope.SessionID)
@@ -483,7 +496,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				return executionDenied()
 			}
 			_, err := a.service.Store.Mutate(ctx, domain.NewID(), "execution.observe-reference", reference(kind, nativeID), func(tx *store.Tx) (any, error) {
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return nil, err
 				}
 				return struct{}{}, tx.ObserveExecutionReference(reference(kind, nativeID))
@@ -526,7 +539,7 @@ func (a *executionAuthority) historyObservation(tx *store.Tx, grant store.Execut
 	if err := tx.Authorize(); err != nil {
 		return store.Record{}, domain.Session{}, "", err
 	}
-	scope, err := a.scope(tx, grant)
+	scope, err := a.inferenceScope(tx, grant)
 	if err != nil {
 		return store.Record{}, domain.Session{}, "", err
 	}

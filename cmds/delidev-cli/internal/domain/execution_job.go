@@ -104,7 +104,7 @@ func (i ExecutionJobInput) Validate() error {
 	if !slices.ContainsFunc(i.Configuration.Accounts, func(account WeightedAccount) bool { return account.ID == i.AccountID }) {
 		return Fail(Unsupported, "The execution lacks matching account or native installation evidence.", "Revalidate the accepted configuration on its owning Worker.")
 	}
-	if i.Retry != nil && (i.Version != 4 || UniqueIDs([]ID{i.Retry.JobID, i.Retry.ExecutionID, i.ExecutionID}) != nil || i.Retry.InputID.Validate() != nil || i.Retry.InputID == i.InputID || i.Remediation != nil || i.Fork != nil) {
+	if i.Retry != nil && (i.Version != 4 || UniqueIDs([]ID{i.Retry.JobID, i.Retry.ExecutionID, i.ExecutionID}) != nil || i.Retry.InputID.Validate() != nil || i.Retry.InputID == i.InputID || i.Remediation != nil) {
 		return StartupRejectionUncertain()
 	}
 	if i.Version == 4 {

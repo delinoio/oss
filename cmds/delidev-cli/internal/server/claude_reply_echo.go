@@ -7,7 +7,7 @@ import (
 
 func publishClaudeReplyEcho(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, actor domain.ID, event domain.ExecutionEvent) error {
 	u := event.ClaudeReplyEcho
-	if u == nil || input.Configuration.Harness != domain.ClaudeCode || input.Installation.Version != domain.ClaudeProtocolVersion {
+	if u == nil || input.Configuration.Harness != domain.ClaudeCode || input.Version != 4 && !domain.ValidNativeVersionMetadata(input.Installation.Version) {
 		return executionEventConflict()
 	}
 	r, err := tx.Get(domain.InteractionKind, u.InteractionID)

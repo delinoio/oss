@@ -2,7 +2,7 @@
 
 ## Scope
 
-This planned amendment owns native execution startup in
+This amendment owns native execution startup in
 `cmds/delidev-cli/internal/domain`, `internal/server`, `internal/worker` and
 `internal/harness`, with desktop presentation in `apps/delidev/src` and the
 Worker RPC in `protos/delidev/v1/worker.proto`. It covers first execution,
@@ -11,9 +11,10 @@ operations. It does not activate an unsupported operation or account family.
 
 The owner approved removal of manual Worker inspection, separate execution
 probes, `--version` subprocesses and version-number admission gates on
-2026-10-07. Establish the complete protocol reservation on main before dependent
-implementation. Until the complete feature is active, existing runtime contracts
-remain unchanged; a reservation grants no execution or credential authority.
+2026-10-07. PR #1645 established the complete protocol reservation on main at
+`03429673f2976ab52b98c613f9d3cc1ff4c41d84` before implementation. The active
+schemas use those exact numbers; the prior reservation itself granted no execution
+or credential authority.
 
 ## Runtime and Language
 
@@ -31,10 +32,10 @@ Users retain explicit account connection, installation and executable-path edits
 
 ### Main-first allocation closure
 
-Under issue #964, reserve System `EXECUTION_STARTUP_V1 = 43` and Worker
+Under issue #964, PR #1645 reserved System `EXECUTION_STARTUP_V1 = 43` and Worker
 `EXECUTION_STARTUP_V1 = 23`. Preserve System 42 and Worker 22 for the separate
 inline-model proposal in PR #1642, including while that reservation is pending.
-Reserve these wholly new declarations with `newDeclaration: true`:
+The ledger preserves these declaration reservations with `newDeclaration: true`:
 
 | Declaration | Fields or enum members in numeric order |
 | --- | --- |
@@ -47,10 +48,11 @@ Reserve these wholly new declarations with `newDeclaration: true`:
 | `ExecutionStartupCleanup` | UNSPECIFIED 0, CONFIRMED 1, UNCERTAIN 2 |
 
 Enum member names use their complete upper-snake declaration prefix. The
-reservation changes no active schema, generated binding, capability advertisement,
-assignment, inference route or native operation.
+reservation changed no active schema, generated binding, capability advertisement,
+assignment, inference route or native operation. Runtime activation now exposes
+System 43, Worker 23 and the original-worker ReportExecutionStartup RPC.
 
-### Intended execution behavior
+### Execution behavior
 
 The negotiated v4 assignment replaces mandatory pre-inspected installation
 evidence with an immutable startup selection. Historical v1/v2/v3 assignments
@@ -109,8 +111,9 @@ own settings; normal successful execution shows no prerequisite or ready score.
 
 ## Storage
 
-Use bounded optional startup metadata in existing job JSON with immutable ready
-evidence and independent later failure/cleanup facts. Keep the original assignment
+Use bounded optional startup metadata in existing session JSON and mirror it into
+the original terminal job JSON. Retain immutable ready evidence and independent
+later failure/cleanup facts. Keep the original assignment
 unchanged; do not fabricate native acceptance or rewrite historical snapshots.
 Observation metadata is limited to 4 KiB. Existing durable request receipts and
 native process/outbox journals preserve restart and unknown-write outcomes.
@@ -154,11 +157,11 @@ from fixtures, compilation and packaging.
 
 Reuse Worker Connect streams, native adapters, execution grants, original
 subscription leases, existing job storage and desktop Connect Query. This
-reservation adds no external dependency and activates none of these interfaces.
+implementation adds no external dependency.
 
 ## Change Triggers
 
-Activation updates the owning harness/session/desktop/protocol/diagnostics/title
+Changes update the owning harness/session/desktop/protocol/diagnostics/title
 and subscription contracts, the project index and applicable scoped/root AGENTS.
 Preserve historical declaration numbers and evidence boundaries. Update the
 runtime contracts only with the complete implementation and its actual results.
