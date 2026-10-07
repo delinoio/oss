@@ -735,3 +735,5 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Do not replace an unsettled native-model observation with a new scope, lookup or discovery. Keep its original status read explicitly retryable.
 
 - Empty native-model pages retain exact selected observation provenance without granting model-registration authority.
+
+- Validate original session identity before treating deletion status as terminal; foreign status remains read-only retryable and cannot authorize Finish.
