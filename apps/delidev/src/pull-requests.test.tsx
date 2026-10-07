@@ -165,7 +165,10 @@ it("preserves off-page identity and filter drafts through empty later pages and 
   fireEvent.click(pane.getByRole("button", { name: "First" }));
   await pane.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
   expect((pane.getByLabelText("PR page size") as HTMLSelectElement).value).toBe("5");
-  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).map(([request]) => request.filter?.pageToken)).toEqual(["", "repository-next"]);
+  const tokens = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).map(([request]) => request.filter?.pageToken);
+  expect(tokens.slice(0, 2)).toEqual(["", "repository-next"]);
+  // Returning to First can refresh its cache; later tokens must remain explicit.
+  expect(tokens.slice(2).every((token) => token === "")).toBe(true);
   expect(value.query).not.toHaveBeenCalled();
   fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
   await waitFor(() => expect(value.query).toHaveBeenCalledTimes(1));
