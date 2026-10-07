@@ -67,6 +67,7 @@ function WorkspaceFiles({ sessionId, repository }: { sessionId: string; reposito
   const request = useCallback((token: string) => ({ sessionId, queryJson: encode({ operation: FileOperation.Directory, repository_id: repository, path: location.path, page_token: token }) }), [sessionId, repository, location.path]);
   const project = useCallback((response: { documentJson: Uint8Array }) => {
     const page = observation(response.documentJson);
+    if (new Set(page.entries.map(entry => entry.name)).size !== page.entries.length) throw new ConnectError("The directory page contains duplicate entry identities.", Code.DataLoss, undefined, [{ desc: ErrorDetailSchema, value: { code: FailureCode.Internal } }]);
     // Directory metadata alone accumulates. File previews never enter the chain;
     // opaque continuation remains bound to the server's enumeration digest.
     return { rows: page.entries.map(entry => ({ ...entry, id: entry.name, revision: 1n })), nextPageToken: page.next };

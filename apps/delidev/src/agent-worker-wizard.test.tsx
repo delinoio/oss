@@ -1029,3 +1029,24 @@ it("waits for independent account proof before the legacy fixture advances", asy
   expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
+
+it("scrolls the exact highlighted model option through payload wrappers", async () => {
+  const value = fixture();
+  await start(value); await accounts(value);
+  const input = screen.getByRole("combobox", { name: "Model" });
+  fireEvent.focus(input);
+  const first = await screen.findByRole("option", { name: /Example A/ });
+  const second = screen.getByRole("option", { name: /Example B/ });
+  expect(first.parentElement?.getAttribute("role")).not.toBe("listbox");
+  const firstScroll = vi.fn(); const secondScroll = vi.fn();
+  Object.defineProperty(first, "scrollIntoView", { value: firstScroll });
+  Object.defineProperty(second, "scrollIntoView", { value: secondScroll });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(input.getAttribute("aria-activedescendant")).toBe(first.id);
+  expect(firstScroll).toHaveBeenLastCalledWith({ block: "nearest" });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(input.getAttribute("aria-activedescendant")).toBe(second.id);
+  expect(secondScroll).toHaveBeenLastCalledWith({ block: "nearest" });
+  expect(second.getAttribute("aria-selected")).toBe("true");
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});

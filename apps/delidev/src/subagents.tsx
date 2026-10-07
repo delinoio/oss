@@ -48,7 +48,13 @@ export function Subagents({ sessionId, revision }: { sessionId: string; revision
   // Native events invalidate only this read. No observation can issue a child
   // input, resume, interruption, retry, or mutation.
   useEffect(() => { if (supported) void query.refetch(); }, [revision, supported, query.refetch]);
-  const rows = useMemo(() => query.data ? validateSubagentPage(query.data.resources, sessionId) : undefined, [query.data, sessionId]);
+  const rows = useMemo(() => {
+    if (!query.loaded) return undefined;
+    // The accepted payload window can contain several independently bounded
+    // pages. Keep each page's validation bound before composing its rows.
+    const pages = query.payloadPages.map(page => validateSubagentPage(page.payload, sessionId));
+    return pages.every((page): page is SubagentRow[] => page !== undefined) ? pages.flat() : undefined;
+  }, [query.loaded, query.payloadPages, sessionId]);
   const needsOpenCodeUpdate = rows?.some(row => row.record.harness === "opencode") === true && !openCodeSupported;
   return <details ref={root} className="conversation-page-scroll" onToggle={event => setOpen(event.currentTarget.open)}><summary>{copy("subagents.subagents_88296a")}</summary>
     <p>{copy("subagents.readOnlyNativeHierarchyParentCompletion_036e57")}</p>
