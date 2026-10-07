@@ -198,6 +198,10 @@ func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *test
 				if err := lease.ObserveResponseUsage(ctx, id, domain.NativeResponseUsage{Source: domain.CompactionHTTPResponse, ResponseDigest: strings.Repeat("ab", 32), CostEvidence: domain.UsageCostMissing}); err != nil {
 					t.Fatal("large action response usage", err)
 				}
+				observed, err := f.service.Store.ResponseUsage(ctx, id)
+				if err != nil || observed.Record.Version != domain.CodexProtocolVersion || observed.Record.ExecutionID != input.ActionID {
+					t.Fatal("compaction response lost original startup attribution", err)
+				}
 			}
 			lease.Release()
 			if profile.disconnect {
