@@ -38,7 +38,7 @@ export function SessionTerminals({ session, close }: { session: Resource; close:
   const status = useQuery(SystemQuery.getStatus, {});
   const supported = status.data?.capabilities.includes(SystemCapability.SESSION_TERMINALS_V1) ?? false;
   const list = useConversationPages(EntityKind.TERMINAL, session.id, supported, 50, undefined, 1000);
-  const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal) { setCreatedTerminal(value.terminal); setSelectedTerminal(undefined); setSelected(value.terminal.id); } if (supported) void list.refetch(); });
+  const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal) { setCreatedTerminal(value.terminal); setSelectedTerminal(undefined); setSelected(value.terminal.id); } if (supported) void list.refresh(); });
   const blocked = !supported || create.busy || create.uncertain || text(document(session).archive) !== "active";
   // The accepted resource can be beyond the first history page. Retain just
   // that one explicit selection so history eviction never detaches its shell.
@@ -60,7 +60,7 @@ export function SessionTerminals({ session, close }: { session: Resource; close:
     <Problem error={create.error} />{create.uncertain ? <button disabled={create.busy} onClick={create.retry}>{copy("session-terminals.retryTheSameTerminalCreation_bc3946")}</button> : null}
     <Failure failure={supported ? list.error?.failure : undefined} /><button disabled={!supported || list.isFetching} onClick={() => { if (supported) void list.refetch(); }}>{copy("session-terminals.refreshTerminals_6e87f2")}</button>
     <div ref={listRoot} className="conversation-page-scroll"><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={list} root={listRoot} active={supported}>{payload => <ul>{payload.map((value) => <li key={value.id}><button aria-pressed={selected === value.id} onClick={() => { setSelected(value.id); setSelectedTerminal(value); setCreatedTerminal(undefined); }}><LocalizedText id="session-terminals.terminal_8058ce" components={{ s0: <>{list.rows.findIndex(row => row.id === value.id) + 1}</>, s1: <>{statusLabel(text(document(value).state))}</> }} /></button></li>)}</ul>}</ScrollPayloadWindow><ScrollContinuation query={list} root={listRoot} active={supported} label={copy("session-terminals.terminalHistoryPages_2ace98")} /></div>
-    {resource ? <TerminalView key={resource.id} resource={resource} refresh={() => { if (supported) void list.refetch(); }} /> : null}
+    {resource ? <TerminalView key={resource.id} resource={resource} refresh={() => { if (supported) void list.refresh(); }} /> : null}
   </aside>;
 }
 
