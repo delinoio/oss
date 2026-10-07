@@ -1,5 +1,16 @@
 # DeliDev source ownership and compatibility
 
+## Grok Build subscription reservations
+
+The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
+reserves System login 38, System execution 39, Worker managed execution 20 and
+progress diagnostic field 8 under issue #964. The ledger also owns the new
+GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Establish
+the complete closure on main before active schemas, generated bindings or runtime
+support. Codex field 7 and existing System 30/35/36/37 and Worker 19 ownership
+remain unchanged. Reservations activate nothing and add no migration.
+
+
 ## Agent Worker source-route reservations
 
 Issue #964 reserves System capability `AGENT_WORKER_SOURCE_ROUTES_V1 = 36`
