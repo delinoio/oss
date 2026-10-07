@@ -7,6 +7,8 @@
 
 # DeliDev CLI
 
+- macOS protected credential access allows OS-owned Keychain authentication in the server user's session for reads, writes, deletion, background work and Doctor. Set process interaction once during framework initialization and retain the default per-query allow policy; never toggle it per request. Preserve exact references, executable verification, mutation reconciliation and typed cancellation/denial. Never collect Keychain passwords or use plaintext fallback. Linux/Windows stay noninteractive. Automatic native fixtures suppress UI only inside isolated test processes and use temporary Keychains; interactive acceptance is separate. Follow the credential and diagnostics contracts.
+
 - macOS protected access verifies current executable code on every read/write and before fresh OAuth admission/exchange. Classify changed executable code independently of keychain authentication. Preserve original references/receipts and cancellation/deletion authority. Development signing and immutable original server/Worker files follow `docs/apps-delidev-desktop-contract.md#local-development-signing-and-recovery` and the credential contract. Native fixtures own only temporary keychains and synthetic certificates; never alter user items, default search lists or global trust.
 
 - Native read-only Sidechat additionally follows `docs/cmds-delidev-sidechat-contract.md`. Keep original account/snapshot provenance separate from the immutable child enforcement overlay and reference parent workspace roots without ownership. Parent deletion/storage cleanup must durably stop and join every dependent child before removing parent files; independent Fork lifetime remains unchanged.

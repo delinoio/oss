@@ -2,13 +2,15 @@ package credentials
 
 import (
 	"context"
+	"runtime"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
 // nativeStore stores profile-bounded native material under an exact opaque
 // DeliDev reference. Implementations never enumerate unrelated credentials, launch
-// a password-bearing command, display an authentication prompt, or fall back to disk.
+// a password-bearing command or fall back to disk. On macOS,
+// the OS may display authentication UI in the server user's session.
 // The enclosing Vault or PATStore holds an exclusive scope lock through every operation.
 type nativeStore interface {
 	get(context.Context, string) ([]byte, error)
@@ -23,6 +25,9 @@ func unavailable() error {
 	return domain.Fail(domain.Unavailable, "The OS credential store is unavailable.", "Start the server in a user session with an available OS credential store, then retry the same request.")
 }
 func locked() error {
+	if runtime.GOOS == "darwin" {
+		return domain.Fail(domain.ConfirmationRequired, "The OS credential store requires user authentication.", "Approve the macOS Keychain authentication request in the server user's session. If it was canceled, denied or could not be displayed, retry the same request from a session that can authorize Keychain access. DeliDev does not collect your password or use plaintext storage.")
+	}
 	return domain.Fail(domain.ConfirmationRequired, "The OS credential store requires user authentication.", "Unlock or authorize the OS credential store in the server user's session, then retry the same request. DeliDev does not prompt or use plaintext storage.")
 }
 func missing() error {
