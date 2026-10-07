@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { EntityKind, newRequestId } from "@delinoio/delidev-api-client";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ResourceService, SystemService, SystemCapability } from "@delinoio/delidev-api-client";
@@ -103,4 +103,31 @@ test.each(["codex", "opencode", "oversized", "malformed"])("composes validated c
       expect(tokens.filter(token => token === "original-next")).toHaveLength(1);
     }
     client.clear();
+});
+
+
+test("keeps a failed child read halted across native revisions until explicit refresh", async () => {
+  const session = newRequestId(), tokens: string[] = [];
+  let failed = false;
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBAGENT_OBSERVATION_V1] }) });
+    router.service(ResourceService, { listResources: request => {
+      tokens.push(request.filter?.pageToken ?? "");
+      if (!failed) { failed = true; throw new ConnectError("Fixture unavailable", Code.Unavailable); }
+      return { resources: [], nextPageToken: "" };
+    } });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (revision: string) => <QueryClientProvider client={client}><TransportProvider transport={transport}><Subagents sessionId={session} revision={revision} /></TransportProvider></QueryClientProvider>;
+  const mounted = render(view("1"));
+  fireEvent.click(screen.getByText("Subagents"));
+  await screen.findByRole("button", { name: "Retry" });
+  expect(tokens).toEqual([""]);
+  mounted.rerender(view("2"));
+  expect(tokens).toEqual([""]);
+  expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh subagents" }));
+  await screen.findByText("No native child observations are available.");
+  expect(tokens).toEqual(["", ""]);
+  client.clear();
 });

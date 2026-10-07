@@ -271,8 +271,8 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
     // an append sequence, even when each Worker generates UUID-v7 values.
     return messageRows(messages.data?.resources ?? [], live.resources, live.removed, live.newMessageIds, id, !!messages.data && !messages.data.nextPageToken);
   }, [messages.data, live.resources, live.removed, live.newMessageIds, id]);
-  useEffect(() => { if (live.generation > 1) { void messages.refetch(); void queue.refetch(); void interactions.refetch(); } }, [live.generation]);
-  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refetch(); });
+  useEffect(() => { if (live.generation > 1) { void messages.refresh(); void queue.refresh(); void interactions.refresh(); } }, [live.generation]);
+  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refresh(); });
   const control = useRetainedMutation(`control:${id}`, SessionQuery.controlSession, (value) => { if (value.change?.session) setAcknowledged(value.change.session); });
   const locked = send.busy || send.uncertain;
   const composer = useRef<HTMLTextAreaElement>(null);
