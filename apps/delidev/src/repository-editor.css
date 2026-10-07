@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.settings-task-body form.repository-editor { max-width: none; }
+.repository-edit-sections > section + section { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.repository-edit-sections h4 { margin: 0 0 16px; }
+.repository-edit-sections > section > label { display: block; }
+.repository-github-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.repository-github-columns label { min-width: 0; }
+.repository-edit-sections :is(input, select) { width: 100%; }
+.repository-edit-sections input:is([type=checkbox], [type=radio]) { width: auto; }
+.repository-edit-sections :is(code, p, li) { overflow-wrap: anywhere; }
+.repository-edit-sections .repository-hint, .repository-edit-sections section > .resource-choice + p { font-size: 12px; line-height: 18px; color: var(--muted); }
+.repository-empty { padding: 12px 0; border-block: 1px solid var(--border); }
+.repository-disclosure > summary { font-weight: 600; cursor: pointer; }
+.repository-disclosure > summary > span { display: block; font-size: 12px; line-height: 18px; font-weight: 400; color: var(--muted); }
+.repository-disclosure-body { padding-top: 16px; }
+.repository-disclosure-body > fieldset { margin: 0; padding: 0; border: 0; }
+.repository-disclosure-body > fieldset > legend { display: none; }
+@container settings-body (width < 640px) { .repository-github-columns { grid-template-columns: minmax(0, 1fr); } }
+.repository-edit-sections > section > .repository-disclosure > summary { font-size: 16px; line-height: 24px; }
+.repository-disclosure-body > p { font-size: 12px; line-height: 18px; color: var(--muted); }

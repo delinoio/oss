@@ -174,5 +174,13 @@
   "configuration-fields.accountFormatFutureExecutions": "Running executions keep their original format. Validate the new format before starting new executions.",
   "configuration-fields.nativeOptionUnavailable": "This execution interface has no corresponding setting. Saved values are retained until you explicitly clear them.",
   "configuration-fields.clearRetainedNativeOption": "Clear retained option",
-  "configuration-fields.nativePermissionUnavailable": "This tool uses its native permissions. Codex filesystem sandbox modes have no corresponding setting in this execution interface."
+  "configuration-fields.nativePermissionUnavailable": "This tool uses its native permissions. Codex filesystem sandbox modes have no corresponding setting in this execution interface.",
+  "configuration-fields.repositoryEdit.noCheckouts": "No connected checkouts",
+  "configuration-fields.repositoryEdit.checkouts": "Checkouts",
+  "configuration-fields.repositoryEdit.checkoutHelp": "Connect existing folders on Runner Devices.",
+  "configuration-fields.repositoryEdit.inspectionHelp": "Inspection does not fetch. Saving revalidates connected folders.",
+  "configuration-fields.repositoryEdit.advanced": "Advanced settings",
+  "configuration-fields.repositoryEdit.advancedSummary": "Git remote, base and starting references, automatic fetch, remediation policy",
+  "configuration-fields.repositoryEdit.githubHelp": "Choose a profile for GitHub access. Runner Device Git authentication is configured separately.",
+  "configuration-fields.repositoryEdit.remoteUrl": "Remote Git URL"
 }
