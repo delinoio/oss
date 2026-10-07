@@ -10,6 +10,7 @@ import { EntityKind, ResourceSchema, ResourceService, ProviderService, WorkerSer
 import { MutationIntents } from "./mutation";
 import { RepositoryFields } from "./configuration-fields";
 import { revealRepositoryInvalidControl } from "./repository-editor";
+import { chooseScrollOption, scrollChoiceValue } from "./test-scroll-picker";
 import { encode, type Document } from "./documents";
 
 function fixture(data: Document, registration = false) {
@@ -65,13 +66,12 @@ it("reveals and focuses the first invalid hidden reference before submission", a
 it("retains checkout selection and path through collapse without inspection", async () => {
   const value = fixture(base);
   fireEvent.click(value.container.querySelector("summary")!);
-  await screen.findByRole("option", { name: "Build machine" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: value.machineId } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runner Device" }), value.machineId);
   fireEvent.change(screen.getByLabelText("Absolute checkout path on this Worker"), { target: { value: "/alias/checkout" } });
   fireEvent.click(value.container.querySelector("summary")!);
   fireEvent.click(value.container.querySelector("summary")!);
   expect((screen.getByLabelText("Absolute checkout path on this Worker") as HTMLInputElement).value).toBe("/alias/checkout");
-  expect((screen.getByRole("combobox", { name: "Runner Device" }) as HTMLSelectElement).value).toBe(value.machineId);
+  expect(scrollChoiceValue(screen.getByRole("combobox", { name: "Runner Device" }))).toBe(value.machineId);
   expect(value.inspect).not.toHaveBeenCalled();
 });
 
@@ -79,8 +79,7 @@ it("adds only the canonical inspected root and preserves the original inspection
   const value = fixture(base);
   const summary = value.container.querySelector('summary')!;
   fireEvent.click(summary);
-  await screen.findByRole("option", { name: "Build machine" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: value.machineId } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runner Device" }), value.machineId);
   fireEvent.change(screen.getByLabelText("Absolute checkout path on this Worker"), { target: { value: "/alias/checkout" } });
   fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
   await screen.findByRole("button", { name: "Add inspected checkout" });
@@ -94,8 +93,7 @@ it("reveals an uncertain inspection and retries only its identical retained requ
   value.inspect.mockRejectedValueOnce(new ConnectError("Unavailable", Code.Unavailable));
   const summary = value.container.querySelector('summary')!;
   fireEvent.click(summary);
-  await screen.findByRole("option", { name: "Build machine" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: value.machineId } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runner Device" }), value.machineId);
   fireEvent.change(screen.getByLabelText("Absolute checkout path on this Worker"), { target: { value: "/alias/checkout" } });
   fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
   await screen.findByRole("button", { name: "Retry the same inspection" });
