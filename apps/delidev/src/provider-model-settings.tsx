@@ -132,7 +132,7 @@ export function ApiProviderSettings({
     <SettingsHeading title={copy("provider-model-settings.apiProviders_376855")} description={copy("provider-model-settings.manageApiProvidersAndTheirAvailability_946ee7")} actions={<><button type="button" disabled={result.isFetching} onClick={result.refreshExplicit}>{copy("provider-model-settings.refreshProviders_56b2d1")}</button><button className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>{copy("provider-model-settings.customProvider_fee405")}</button></>} />
     <div className="search-form"><label>{copy("provider-model-settings.searchApiProviders_1b03d9")}<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label></div>
     {result.isFetching && result.data ? <p role="status">{copy("provider-model-settings.refreshingProviderStateDisplayedSwitchesShow_735700")}</p> : null}
-    <Failure failure={result.error?.failure} /><Problem error={activeInventory.error || presetsQuery.error} />
+    {result.error ? <Failure failure={result.error.failure} /> : <Problem error={activeInventory.error || presetsQuery.error} />}
     {!result.error && result.data && !ready ? <p role="alert">{copy("provider-model-settings.thisServerDoesNotReportThe_03ee8f")}</p> : null}
     {result.isLoading ? <SettingsLoading label={copy("provider-model-settings.loadingProviderInventory_fa3bbe")} /> : null}
     {ready && !query && noEnabledProviders ? <p className="notice">{copy("provider-model-settings.noApiProvidersAreEnabledTurn_a639f9")}</p> : null}
