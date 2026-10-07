@@ -19,6 +19,11 @@ export function ServiceProblem({ code, children }: { code?: string; children: Re
   const key = normalized && Object.hasOwn(failureGuidance, normalized) ? failureGuidance[normalized as FailureCode] : "ui.failure.internal";
   return <div className="problem" role="alert"><p>{copy(key)}</p><details><summary>{copy("ui.technicalDetails")}</summary>{children}</details></div>;
 }
+/** Localized summary only; callers retain the original evidence separately. */
+export function failureSummary(code?: string): string {
+  const normalized = code?.replaceAll("-", "_");
+  return copy(normalized && Object.hasOwn(failureGuidance, normalized) ? failureGuidance[normalized as FailureCode] : "ui.failure.internal");
+}
 // Shared native surface; presentation owners control opening and focus lifetime.
 export function DialogSurface(props: ComponentPropsWithRef<"dialog">) {
   return <dialog {...props} onCancel={event => { event.preventDefault(); props.onCancel?.(event); }}>{props.children}</dialog>;

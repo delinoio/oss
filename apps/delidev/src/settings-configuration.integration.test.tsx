@@ -49,7 +49,7 @@ it("configures a real Go server through the settings forms and explicitly valida
   change("Account source", source.value);
   fireEvent.click(await screen.findByRole("checkbox", { name: /Owned keyless account/ }));
   next();
-  change("Model", "fixture-model"); next();
+  fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), { target: { value: "fixture-model" } }); next();
   change("Name", "Configured agent");
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await screen.findByRole("heading", { name: "Configured agent" });

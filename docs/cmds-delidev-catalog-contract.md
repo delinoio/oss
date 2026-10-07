@@ -1,16 +1,57 @@
 # DeliDev provider and model catalog
 
-## Planned Agent Worker source routes
+## Ordered Agent Worker account sources
 
-The owner-approved extension under issue #964 reserves System capability 36
-and SaveAgentWorkerRequest field 5 before implementation. One Agent Worker will
-retain one Harness and ordered source groups, each with same-source accounts
-and its own typed model choice. Model reuse/creation and Worker saving remain
-atomic. A new session may advance only when every account in the preceding group
-has confirmed quota exhaustion; authentication, connection, compatibility and
-unknown quota cannot authorize fallback. Observed quota recovery restores source
-priority for later new sessions. Existing sessions keep their selected account
-and model. Reservations alone grant no support and introduce no migration.
+PR #1371 established System capability 36 and SaveAgentWorkerRequest field 5 on
+main before this extension. Capability 35 remains reserved for known subscription
+models. Capability 36 advertises configuration and routing support, never native
+execution authority. No SQLite migration is added.
+
+Agent schema 3 uses an ordered nonempty `routes` list. Each route contains
+`model_id`, ordered `accounts` with weights 1–1,000, and an optional `routing`
+override. The legacy top-level model/accounts/routing and routes are exclusive.
+One Worker retains one Harness, name, instructions and native options. Every
+route uses one live API Provider or service-native subscription identity; sources
+and accounts cannot repeat. Across all routes the existing 1,000-account bound
+applies. Legacy schema 1, retired schema 2 and accountless CLI/RPC writes remain
+compatible. Adding another source upgrades a Worker to schema 3; removing sources
+keeps schema 3, including when one remains. Legacy writes cannot replace an
+existing schema-3 Worker. Historical documents and sessions are never migrated.
+
+`SaveAgentWorker.route_models` aligns typed selections exactly with the route
+order and is exclusive with `model`. Go derives every source from current account
+records inside one receipt transaction. Canonical selections require exact model
+revisions; direct native IDs reuse/create source-scoped canonical models. All
+model changes, complete relationship checks and the Worker save commit together,
+or roll back together. Replayed original requests retain their exact identities.
+
+The first execution claim of a new session evaluates sources in configured order.
+A source advances only when every configured candidate is classified as confirmed
+quota exhaustion. Missing accounts, project restrictions, disabled accounts,
+invalid authentication/generation/validation, unsupported model/harness/provider
+protocol, and unavailable quota that cannot establish exhaustion are blockers.
+A failed query or elapsed reset time never clears exhaustion. Only observed
+recovery can clear the existing server-owned exhaustion flag; later new sessions
+then prefer the earlier source again. Within the chosen group all six existing
+policies and inherited server defaults remain available. New UI groups default
+to Priority. Sequential, rotation and quota tie state are keyed by stable live
+source identity; only the selected group's state changes atomically with the
+initial snapshot and dispatch. Read-only preview uses the same selector.
+
+The initial Route preserves every source's canonical model ID/revision/native ID,
+policy, ordered weighted candidates, quota evidence and blockers, plus the selected
+source index. ExecutionConfiguration and the native Worker assignment retain their
+existing selected-source shape. Existing executions keep their original model,
+account, connection and Usage/cost attribution. Relationship checks, project
+selection, deletion protection and portable version 3 include all sources.
+Schedules use the ordinary first-execution boundary.
+
+Codex requires an explicitly configured Responses provider. The OpenRouter managed
+Chat preset and existing connections are not rewritten. Use a compatible custom
+provider/account configuration and retain execution-time validation. OpenRouter
+[documents Responses](https://openrouter.ai/docs/api/api-reference/responses/create-responses).
+No automatic harness switch, active-session retry/account switch or new subscription
+execution profile is introduced.
 
 ## Known subscription model suggestions
 

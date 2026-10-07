@@ -671,3 +671,15 @@ cleanup is confirmed and active/recovery/Archive ownership is absent; it never
 resumes the old failed queue. Its current source link and latest attempt session
 still enforce user controls. Historical and manual pauses remain ineligible.
 See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
+
+## Ordered account source first execution
+
+The [catalog contract](cmds-delidev-catalog-contract.md#ordered-agent-worker-account-sources)
+owns schema-3 source selection. The ordinary first-execution claim reads all sources
+from one transaction, freezes the complete Route decision and atomically changes
+only the selected source's routing state with its selected model/account/connection
+snapshot. Native readiness, budgets and protected credential ownership remain
+independent gates; failure rolls back the complete claim/job/state. Preview is
+read-only. Continuation, explicit stopped-account switching, Fork and Sidechat retain
+their original immutable selected-source configuration and existing controls.
+Usage and costs continue to use the actual immutable selected account/model.

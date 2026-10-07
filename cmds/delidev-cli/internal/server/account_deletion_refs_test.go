@@ -10,7 +10,7 @@ import (
 )
 
 func TestAccountDeletionRetainsEveryConfigurationAndSessionReference(t *testing.T) {
-	for _, reference := range []string{"agent", "project", "initial-selection", "current-selection", "snapshot-candidate", "route-selection", "route-candidate", "deleted-project-policy", "unrelated"} {
+	for _, reference := range []string{"agent", "project", "initial-selection", "current-selection", "snapshot-candidate", "route-selection", "route-candidate", "fork-source-candidate", "deleted-project-policy", "unrelated"} {
 		t.Run(reference, func(t *testing.T) {
 			ctx := context.Background()
 			db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
@@ -42,6 +42,11 @@ func TestAccountDeletionRetainsEveryConfigurationAndSessionReference(t *testing.
 					initial.Route.Selected = account
 				case "route-candidate":
 					initial.Route.Candidates = []domain.Candidate{{ID: account}}
+				case "fork-source-candidate":
+					session.Fork = &domain.ForkOrigin{Snapshot: domain.InitialExecution{
+						Configuration: domain.ExecutionConfiguration{ModelID: other},
+						Route:         domain.Route{Sources: []domain.SourceSelection{{Route: domain.Route{Candidates: []domain.Candidate{{ID: account}}}}}},
+					}}
 				case "deleted-project-policy":
 					session.ProjectID = domain.NewID()
 					if _, err := tx.Put(domain.ProjectKind, session.ProjectID, 0, "", "", domain.Project{Accounts: domain.Restriction{Configured: true, IDs: []domain.ID{account}}}); err != nil {
