@@ -6,6 +6,7 @@ import { createRouterTransport } from "@connectrpc/connect";
 import { AccountService, AccountTypeFilter, BackupCreationState, ConfigurationService, EntityKind, GitHubTokenIdentityState, InboxService, IntegrationService, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageService, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
+import { LanguagePreference, LanguageProblem, LanguageProvider, type LanguageBridge, type LanguageSnapshot } from "./language";
 import { document as resourceDocument, encode } from "./documents";
 import { LocalWorkerState, LocalWorkerManagementState, type LocalWorkerStatus } from "./local-worker-controls";
 import { ToastKind, useNotifications } from "./toast-notifications";
@@ -34,6 +35,21 @@ const hoverSessions = hoverFixture ? Array.from({ length: 20 }, (_, index) => {
   const id = newRequestId();
   return create(ResourceSchema, { id, sessionId: id, projectId: hoverProject.id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 1n, documentJson: encode({ name: index === 0 ? "New session" : index === 1 ? "Complete-session-name-".repeat(12) : `Synthetic session ${index + 1}`, workspace: "worktree", outcome: index === 0 ? "not-started" : "running", archive: "active", name_mode: "automatic", title_state: index === 1 ? "skipped" : "waiting", ...(index === 1 ? { title_reason: "budget-reached" } : {}) }) });
 }) : [];
+let languageSnapshot: LanguageSnapshot = { revision: 1, language: args.get("language") === "ko" ? LanguagePreference.Korean : LanguagePreference.English, resolved_language: args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English, problem: null };
+const languageListeners = new Set<(snapshot: unknown) => void>();
+// Synthetic device presentation only: no native storage or server mutation.
+const languageBridge: LanguageBridge = {
+  read: async () => languageSnapshot,
+  update: async (language, revision) => {
+    // Keep the synthetic save pending long enough to verify browser focus/locks.
+    await new Promise(resolve => setTimeout(resolve, 25));
+    if (revision !== languageSnapshot.revision) return { ...languageSnapshot, problem: LanguageProblem.Changed };
+    languageSnapshot = { revision: revision + 1, language, resolved_language: language === LanguagePreference.Korean ? SupportedLanguage.Korean : SupportedLanguage.English, problem: null };
+    languageListeners.forEach(changed => changed(languageSnapshot));
+    return languageSnapshot;
+  },
+  subscribe: async changed => { languageListeners.add(changed); return () => { languageListeners.delete(changed); }; },
+};
 const serverId = newRequestId(), currentDeviceId = newRequestId(), machineId = newRequestId();
 const automaticWorker = args.get("automaticWorker");
 const fixtureWorker: LocalWorkerStatus = {
@@ -81,4 +97,4 @@ const fixtureTransport = createRouterTransport(router => {
   router.service(SystemService, { getStatus: () => ({ serverId, protocolVersion: 1, capabilities: [...(subscriptionBackground ? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] : []), SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.REMOTE_REPOSITORIES_V1, ...(githubOnboarding ? [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] : []), ...(args.get("repository-pat") === "true" ? [SystemCapability.REPOSITORY_CLONE_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] : [])] }), listBackups: () => ({ backups: populated ? [backup] : [] }), inspectBackup: () => ({ backup, sha256: "a".repeat(64), schemaVersion: 30, serverId }), listBackupCreations: () => ({ jobs: populated ? [{ id: creationId, backupId: backup.id, revision: 1n, state: BackupCreationState.SUCCEEDED }] : [] }), listBackupDeletions: () => ({ jobs: [] }), getDoctor: () => ({ reportJson: encode({ schema_version: 2, server_id: serverId, version: "0.1.0", os: "darwin", architecture: "arm64", protocol_version: 1, database_schema_version: 24, listener: "http://127.0.0.1:46310", observed_at: "2026-10-01T08:00:00.000Z", database: "ready", credential_store: "owner-credential-ready", inference_probes: false, storage: { result: { state: "observed" }, database_bytes: "9007199254740993", wal_bytes: "391432", logical_database_bytes: "561152", volume_capacity_bytes: "18446744073709551615", volume_available_bytes: "950436651008", resources: [] }, machines: [], credentials: [], more_machines: false, more_credentials: false }) }) });
 });
 const transport = fixtureTransport;
-createRoot(document.getElementById("root")!).render(<AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={Object.assign(async () => fixtureWorker, { automatic: Boolean(automaticWorker) })} /></AppearanceProvider>);
+createRoot(document.getElementById("root")!).render(<LanguageProvider bridge={languageBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={Object.assign(async () => fixtureWorker, { automatic: Boolean(automaticWorker) })} /></AppearanceProvider></LanguageProvider>);
