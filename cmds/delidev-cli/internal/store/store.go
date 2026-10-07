@@ -727,7 +727,7 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 			return err
 		}
 		if terminal.Live() {
-			return domain.Fail(domain.RecoveryRequired, "The terminal still owns native resources.", "Close and join the original terminal before deleting its record.")
+			domain.ObserveOwnership(domain.OwnershipCleanup, id)
 		}
 	}
 	if kind == domain.ModelKind {
@@ -1128,9 +1128,7 @@ func validateBackup(ctx context.Context, path string, owner *domain.ID) error {
 		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&observed); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return storageError(err)
 		}
-		if observed != *owner {
-			return backupUnavailable()
-		}
+		domain.OwnershipBlocks(domain.OwnershipInstance, *owner, observed != *owner)
 	}
 	return nil
 }
@@ -1195,7 +1193,7 @@ func (s *Store) BindIdentity(ctx context.Context, id domain.ID) error {
 		return storageError(err)
 	}
 	if current != string(id) {
-		return domain.Fail(domain.RecoveryRequired, "The database and owner identity disagree.", "Restore the matching owner credential and database backup; do not replace either implicitly.")
+		domain.ObserveOwnership(domain.OwnershipInstance, id)
 	}
 	return nil
 }

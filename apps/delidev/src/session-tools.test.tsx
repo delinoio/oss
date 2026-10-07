@@ -207,35 +207,21 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   expect(request.localWorkerToken).toBe("");
 });
 
-it("consumes a locked project entry without applying it after Local proof settles", async () => {
-  const value = fixture(), otherProjectId = newRequestId();
-  let release!: (proof: { machineId: string; token: string }) => void;
-  const readLocalWorker = () => new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; });
+it("keeps project selection available during Local selection without proof", async () => {
+  const value = fixture();
+  const readLocalWorker = vi.fn(async () => ({ machineId: value.machine.id, token: "unused" }));
   const blockedChanged = vi.fn();
-  const page = (activation: number, entryProjectId: string, active = true) => value.view(<NewSession active={active} ownsActivation={active} activation={activation} entryProjectId={entryProjectId} projectSelectionBlockedChanged={blockedChanged} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} readLocalWorker={readLocalWorker} />);
-  const rendered = render(page(1, value.project.id));
+  render(value.view(<NewSession active ownsActivation activation={1} entryProjectId={value.project.id} projectSelectionBlockedChanged={blockedChanged} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} readLocalWorker={readLocalWorker} />));
   await screen.findByRole("option", { name: "Project" });
-  fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Retained task" } });
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  expect(blockedChanged).toHaveBeenLastCalledWith(true);
-  rendered.rerender(page(2, otherProjectId));
-  await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
   expect(blockedChanged).toHaveBeenLastCalledWith(false);
-  expect(screen.getByLabelText("Project")).toHaveProperty("value", value.project.id);
-  expect(screen.getByRole("button", { name: "Use this computer's Local checkouts" }).getAttribute("aria-pressed")).toBe("true");
-  rendered.rerender(page(2, otherProjectId, false));
-  rendered.rerender(page(2, otherProjectId));
-  expect(screen.getByLabelText("Project")).toHaveProperty("value", value.project.id);
-  rendered.rerender(page(3, otherProjectId));
-  expect(screen.getByLabelText("Project")).toHaveProperty("value", otherProjectId);
-  expect(screen.getByRole("button", { name: "Use separate Worktrees" }).getAttribute("aria-pressed")).toBe("true");
-  expect(screen.getByLabelText("Runs on")).toHaveProperty("value", "");
-  expect(screen.getByLabelText("First message")).toHaveProperty("value", "Retained task");
+  expect(screen.getByLabelText("Project")).toHaveProperty("disabled", false);
+  expect(readLocalWorker).not.toHaveBeenCalled();
   expect(value.createSession).not.toHaveBeenCalled();
 });
 
-it("reads fresh matching Local Worker proof for creation and retains that exact secret-bearing request on uncertainty", async () => {
+it("retains the same Local creation request on uncertainty without reading proof", async () => {
   const value = fixture();
   const proof = vi.fn(async () => ({ machineId: value.machine.id, token: "A".repeat(43) }));
   value.createSession.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
@@ -244,8 +230,9 @@ it("reads fresh matching Local Worker proof for creation and retains that exact 
   fireEvent.change(screen.getByLabelText("Project"), { target: { value: value.project.id } });
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((screen.getByLabelText("Runs on") as HTMLSelectElement).value).toBe(value.machine.id));
-  expect((screen.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true);
+  await screen.findByRole("option", { name: "Worker" });
+  fireEvent.change(screen.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  expect(screen.getByLabelText("Runs on")).toHaveProperty("disabled", false);
   const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
   fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
   await screen.findByRole("option", { name: "Later-page agent" });
@@ -253,24 +240,23 @@ it("reads fresh matching Local Worker proof for creation and retains that exact 
   fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Local prompt" } });
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await screen.findByRole("button", { name: "Retry the same session creation" });
-  expect(proof).toHaveBeenCalledTimes(2);
+  expect(proof).not.toHaveBeenCalled();
   proof.mockResolvedValue({ machineId: newRequestId(), token: "B".repeat(42) + "A" });
   fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
   await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(2));
   expect(value.createSession.mock.calls[0][0]).toEqual(value.createSession.mock.calls[1][0]);
-  expect(proof).toHaveBeenCalledTimes(2);
+  expect(proof).not.toHaveBeenCalled();
   const request = value.createSession.mock.calls[0][0] as { documentJson: Uint8Array; localWorkerToken: string };
-  expect(request.localWorkerToken).toBe("A".repeat(43));
+  expect(request.localWorkerToken).toBe("");
   expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ workspace: "local", machine_id: value.machine.id });
-  expect(new TextDecoder().decode(request.documentJson)).not.toContain(request.localWorkerToken);
+  expect(new TextDecoder().decode(request.documentJson)).not.toContain("A".repeat(43));
   expect(screen.queryByLabelText("Add repository override")).toBeNull();
 });
 
-it("locks Project selection while Local proof or session creation is pending or uncertain", async () => {
+it("locks Project selection only while session creation is pending or uncertain", async () => {
   const value = fixture();
-  let finishProof!: (proof: { machineId: string; token: string }) => void;
   let finishCreate!: (result: { change: { session: Resource } }) => void;
-  const proof = vi.fn(() => new Promise<{ machineId: string; token: string }>((resolve) => { finishProof = resolve; }));
+  const proof = vi.fn(async () => ({ machineId: value.machine.id, token: "unused" }));
   value.createSession
     .mockImplementationOnce(() => new Promise((resolve) => { finishCreate = resolve; }))
     .mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
@@ -280,13 +266,10 @@ it("locks Project selection while Local proof or session creation is pending or 
   fireEvent.change(project, { target: { value: value.project.id } });
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => {
-    expect(proof).toHaveBeenCalledTimes(1);
-    expect(project.disabled).toBe(true);
-  });
-  finishProof({ machineId: value.machine.id, token: "A".repeat(43) });
-  await waitFor(() => expect(project.disabled).toBe(false));
-  proof.mockResolvedValue({ machineId: value.machine.id, token: "A".repeat(43) });
+  expect(proof).not.toHaveBeenCalled();
+  expect(project.disabled).toBe(false);
+  await screen.findByRole("option", { name: "Worker" });
+  fireEvent.change(screen.getByLabelText("Runs on"), { target: { value: value.machine.id } });
   const agentChoices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
   fireEvent.click(await agentChoices.findByRole("button", { name: "More choices" }));
   await screen.findByRole("option", { name: "Later-page agent" });

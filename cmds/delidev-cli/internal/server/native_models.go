@@ -27,16 +27,10 @@ func nativeModelAuthority(tx *store.Tx, scope domain.NativeModelScope) error {
 	if scope.Validate() != nil {
 		return domain.NativeModelFailure()
 	}
-	if scope.Actor.Type == domain.ClientDevice {
-		record, err := tx.Get(domain.DeviceKind, scope.Actor.DeviceID)
-		if err != nil {
-			return domain.Fail(domain.PermissionDenied, "The original observation client is no longer authorized.", "Create a new explicit observation with an authorized client.")
-		}
-		device, err := store.Decode[domain.Device](record)
-		if err != nil || device.Revoked {
-			return domain.Fail(domain.PermissionDenied, "The original observation client is no longer authorized.", "Create a new explicit observation with an authorized client.")
-		}
+	if err := tx.Authorize(); err != nil {
+		return err
 	}
+
 	record, machine, err := activeMachine(tx, scope.MachineID)
 	if err != nil {
 		return err

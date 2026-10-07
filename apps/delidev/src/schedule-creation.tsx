@@ -91,7 +91,7 @@ export function ScheduleCreation({ definition, change, active, blocked, localAva
           <h3 id={`${radios}-execution`}>{copy("schedule-creation.execution_a45cd4")}</h3><p>{copy("schedule-creation.agentWorkerAndRunnerDeviceAre_32fadd")}</p>
           <div className="schedule-creation-selectors">
             <ResourceChoice label={copy("schedule-creation.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={text(definition.agent_id)} active={active} required showStatus change={field("agent_id")} />
-            <ResourceChoice label={copy("schedule-creation.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={text(definition.machine_id)} active={active} disabled={local} required showStatus change={field("machine_id")} />
+            <ResourceChoice label={copy("schedule-creation.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={text(definition.machine_id)} active={active} required showStatus change={field("machine_id")} />
           </div>
           <fieldset className="schedule-creation-radio-group"><legend>{copy("schedule-creation.workspace_87bb59")}</legend><div className="schedule-creation-radio-cards">
             <label><input type="radio" name={`${radios}-workspace`} checked={!local} onChange={() => field("workspace")(Workspace.Worktree)} /><span>{copy("schedule-creation.worktree_c893ba")}</span></label>

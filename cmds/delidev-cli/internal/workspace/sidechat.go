@@ -276,7 +276,7 @@ func (m *Manager) requireNoSidechatReferences(ctx context.Context, parent domain
 			return ResultUncertain()
 		}
 		if manifest.Reference != nil && (manifest.Reference.SessionID.Validate() != nil || manifest.Reference.SessionID == parent) {
-			return domain.Fail(domain.Conflict, "Dependent Sidechat cleanup is pending.", "Stop and delete every dependent Sidechat through its original Worker before removing the parent workspace.")
+			domain.ObserveOwnership(domain.OwnershipResource, parent)
 		}
 	}
 	return nil

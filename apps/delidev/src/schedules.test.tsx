@@ -89,7 +89,7 @@ it("retains the original authenticated Local machine without inventing another o
   const value = fixture();
   value.schedule.documentJson = encode({ ...document(value.schedule), definition: { ...value.definition, workspace: "local" }, local_origin: { machine_id: value.machine.id, device_id: newRequestId() } });
   render(value.view(<ScheduleEditor initial={value.schedule} active saved={() => {}} cancel={() => {}} />));
-  expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Save schedule" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = value.save.mock.calls[0][0] as { definitionJson: Uint8Array; localWorkerToken: string };
@@ -225,35 +225,38 @@ it("keeps complete reference drafts mounted behind the disclosure and clears the
   expect(document(value.project)).toMatchObject({ base: { name: "main" } });
 });
 
-it("locks creation during fresh Local proof and retains identical bytes/token on uncertain retry", async () => {
-  const value = fixture(); let resolveProof!: (proof: { machineId: string; token: string }) => void;
-  const read = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { resolveProof = resolve; })).mockResolvedValue({ machineId: value.machine.id, token: "a".repeat(42) + "A" });
+it("retains identical Local schedule bytes on uncertain retry without ownership proof", async () => {
+  const value = fixture();
+  const read = vi.fn(() => Promise.reject(new Error("proof is unused")));
   value.save.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
-  const rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />)); await fillCreation(value);
+  const rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />));
+  await fillCreation(value);
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
-  expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true); expect(screen.getByLabelText("Scheduled prompt").closest("fieldset")!.disabled).toBe(true);
-  resolveProof({ machineId: value.machine.id, token: "a".repeat(42) + "A" });
-  await waitFor(() => expect((screen.getByRole("radio", { name: "Local computer" }) as HTMLInputElement).checked).toBe(true));
-  expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true); expect((screen.getByLabelText("Agent Worker") as HTMLSelectElement).disabled).toBe(false);
-  expect(screen.queryByRole("button", { name: /Starting reference overrides/ })).toBeNull();
+  expect(screen.getByLabelText("Runner Device")).toHaveProperty("disabled", false);
+  expect(read).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await screen.findByRole("button", { name: "Retry the same schedule" });
-  rendered.rerender(value.view(<ScheduleEditor active={false} saved={() => {}} cancel={() => {}} readLocalWorker={read} />)); rendered.rerender(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />));
-  fireEvent.submit(screen.getByRole("button", { name: "Create schedule" }).closest("form")!); expect(value.save).toHaveBeenCalledOnce();
-  fireEvent.click(screen.getByRole("button", { name: "Retry the same schedule" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
-  expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]); expect(read).toHaveBeenCalledTimes(2);
-  expect(createRequest(value).localWorkerToken).toBe("a".repeat(42) + "A");
+  rendered.rerender(value.view(<ScheduleEditor active={false} saved={() => {}} cancel={() => {}} readLocalWorker={read} />));
+  rendered.rerender(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />));
+  fireEvent.submit(screen.getByRole("button", { name: "Create schedule" }).closest("form")!);
+  expect(value.save).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
+  expect(read).not.toHaveBeenCalled();
+  expect(createRequest(value).localWorkerToken).toBe("");
 });
 
-it.each(["changed", "malformed", "rejected"])("refuses %s Local submission proof without machine fallback", async (failure) => {
-  const value = fixture(); const proof = { machineId: value.machine.id, token: "a".repeat(42) + "A" };
-  const read = vi.fn().mockResolvedValueOnce(proof);
-  if (failure === "rejected") read.mockRejectedValueOnce(new Error("private failure"));
-  else read.mockResolvedValueOnce(failure === "changed" ? { ...proof, machineId: newRequestId() } : { ...proof, token: "bad" });
-  render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />)); await fillCreation(value);
-  fireEvent.click(screen.getByRole("radio", { name: "Local computer" })); await waitFor(() => expect((screen.getByRole("radio", { name: "Local computer" }) as HTMLInputElement).checked).toBe(true));
-  fireEvent.click(screen.getByRole("button", { name: "Create schedule" })); await screen.findByText(/paired Worker could not be verified/);
-  expect(value.save).not.toHaveBeenCalled(); expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).value).toBe(value.machine.id);
+it.each(["changed", "malformed", "rejected"])("ignores obsolete %s Local proof and preserves the selected Worker", async (failure) => {
+  const value = fixture();
+  const read = vi.fn(async () => { if (failure === "rejected") throw new Error("private failure"); return { machineId: newRequestId(), token: "bad" }; });
+  render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />));
+  await fillCreation(value);
+  fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  expect(read).not.toHaveBeenCalled();
+  expect(createRequest(value).localWorkerToken).toBe("");
 });
 
 it("retains creation UI state across inactivity without focus theft and Cancel returns to guidance", async () => {
@@ -313,10 +316,9 @@ it("preserves an exact off-page choice through bounded More/First pages and susp
   const reads = value.list.mock.calls.length; await value.client.invalidateQueries(); expect(value.list).toHaveBeenCalledTimes(reads); expect(value.save).not.toHaveBeenCalled();
 });
 
-it("discards a Local selection proof that arrives after creation disposal", async () => {
-  const value = fixture(); let ready!: (proof: { machineId: string; token: string }) => void;
-  const read = () => new Promise<{ machineId: string; token: string }>((resolve) => { ready = resolve; });
+it("disposes Local creation without requesting ownership proof", async () => {
+  const value = fixture(), read = vi.fn(async () => ({ machineId: value.machine.id, token: "unused" }));
   const rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />));
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" })); rendered.unmount();
-  ready({ machineId: value.machine.id, token: "a".repeat(42) + "A" }); await Promise.resolve(); expect(value.save).not.toHaveBeenCalled();
+  expect(read).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled();
 });

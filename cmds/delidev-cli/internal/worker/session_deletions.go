@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -48,15 +49,15 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 			for _, raw := range r.Msg.WorkJson {
 				var w domain.SessionDeletionWork
 				if domain.DecodeWithLimit(raw, &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil ||
-					w.ServerID != credential.ServerID ||
-					w.DeviceID != credential.DeviceID ||
-					w.MachineID != credential.MachineID {
+					domain.OwnershipBlocks(domain.OwnershipInstance, w.DeletionID, w.ServerID != credential.ServerID) ||
+					domain.OwnershipBlocks(domain.OwnershipDevice, w.DeletionID, w.DeviceID != credential.DeviceID) ||
+					domain.OwnershipBlocks(domain.OwnershipMachine, w.DeletionID, w.MachineID != credential.MachineID) {
 					config.Logger.WarnContext(ctx, "session_deletion_invalid_work", "code", domain.RecoveryRequired)
 					continue
 				}
 				bounded, cancel := context.WithTimeout(ctx, 2*time.Minute)
 				proof, e := deleteSessionCopies(bounded, config, w)
-				if e == nil {
+				if e == nil && proof.Complete {
 					_, e = client.ReportSessionDeletion(bounded, authenticated(credential, &pb.ReportSessionDeletionRequest{RequestId: string(proof.ReportID), MachineId: string(w.MachineID), InstanceId: string(instance), SessionId: string(w.SessionID), DeletionId: string(w.DeletionID), WorkDigest: w.Digest()}))
 				}
 				cancel()
@@ -141,6 +142,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			jobLocks[i].Close()
 		}
 	}()
+	cleanupConfirmed := true
 	allowAbsentWorkspace := w.Fork == nil
 	if w.Fork != nil && !proof.RemovalStarted {
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
@@ -158,7 +160,8 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 		}
 		if !valid {
-			return proof, domain.SessionDeletionPending()
+			domain.ObserveOwnership(domain.OwnershipCleanup, w.DeletionID)
+			cleanupConfirmed = false
 		}
 	}
 	for _, copy := range w.Copies {
@@ -186,7 +189,12 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		if !proof.RemovalStarted {
 			raw, e := security.ReadPrivate(filepath.Join(root, "jobs", string(copy.JobID)+".json"), 2<<20)
 			if e != nil {
-				return proof, domain.SessionDeletionPending()
+				if !errors.Is(e, os.ErrNotExist) {
+					return proof, e
+				}
+				domain.ObserveOwnership(domain.OwnershipCleanup, w.DeletionID)
+				cleanupConfirmed = false
+				continue
 			}
 			var j journal
 			if domain.Decode(raw, &j) != nil || j.Version != 1 || j.JobID != copy.JobID ||
@@ -199,13 +207,16 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 			ownerRoot := filepath.Join(root, "processes", string(copy.JobID))
 			if _, e := os.Lstat(ownerRoot); e == nil {
-				if e := process.ReconcileOwnerContext(ctx, filepath.Join(root, "processes"), copy.JobID); e != nil {
+				confirmed, e := process.ObserveOwnerContext(ctx, filepath.Join(root, "processes"), copy.JobID)
+				if e != nil {
 					return proof, e
 				}
+				cleanupConfirmed = cleanupConfirmed && confirmed
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
 			} else if copy.Type != domain.WorkspaceStorageJob && (j.State == journalStarted || j.Problem != nil && j.Problem.Code == domain.RecoveryRequired) {
-				return proof, domain.SessionDeletionPending()
+				domain.ObserveOwnership(domain.OwnershipCleanup, w.DeletionID)
+				cleanupConfirmed = false
 			}
 		}
 	}
@@ -244,6 +255,10 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			return e
 		}
 		for _, path := range paths {
+			// Preserve unresolved process journals so retries cannot invent a cleanup receipt.
+			if !cleanupConfirmed && strings.HasPrefix(path, filepath.Join(root, "processes")+string(os.PathSeparator)) {
+				continue
+			}
 			if unpublishedPaths[path] {
 				if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 					return domain.SessionDeletionPending()
@@ -274,7 +289,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			return proof, err
 		}
 	}
-	proof.Complete = true
+	proof.Complete = cleanupConfirmed
 	return proof, writeJSON(path, proof)
 }
 

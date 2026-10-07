@@ -162,7 +162,7 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 			a.Subscription = &domain.SubscriptionState{}
 		}
 		state := a.Subscription
-		if state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
+		if state.Pending != nil || domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
 			return nil, subscriptionDenied()
 		}
 		if action == domain.SubscriptionLogin && (a.Connection != nil || state.Generation != "" || state.Lease != nil) {
@@ -268,7 +268,7 @@ func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Requ
 			return domain.Fail(domain.NotFound, "The original login presentation is unavailable.", "Read account status without starting another login.")
 		}
 		op = a.Subscription.Pending
-		if a.Subscription.RecoveryRequired || (a.Subscription.Lease != nil && a.Subscription.Lease.Epoch != s.subscriptionServerEpoch()) {
+		if domain.OwnershipBlocks(domain.OwnershipCleanup, "", a.Subscription.RecoveryRequired) || (a.Subscription.Lease != nil && a.Subscription.Lease.Epoch != s.subscriptionServerEpoch()) {
 			return subscriptionDenied()
 		}
 		return subscriptionActorValid(tx, op.Actor)
@@ -278,7 +278,7 @@ func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Requ
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
 	if actor != op.Actor {
-		return nil, rpc.Error(subscriptionDenied(), c)
+		domain.ObserveOwnership(domain.OwnershipActor, op.ID)
 	}
 	p := s.subscriptionProgress[op.ID]
 	return connect.NewResponse(&pb.GetSubscriptionProgressResponse{Url: p.URL, UserCode: p.UserCode, Canceled: op.Canceled}), nil
@@ -329,14 +329,14 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 					return err
 				}
 				state := a.Subscription
-				if state != nil && state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued && state.Observation.MachineID == domain.ID(req.Msg.MachineId) && !state.RecoveryRequired && (state.Lease == nil || state.Lease.Action == domain.SubscriptionExecute && state.Lease.InstanceID == domain.ID(req.Msg.InstanceId)) {
+				if state != nil && state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued && state.Observation.MachineID == domain.ID(req.Msg.MachineId) && !domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) && (state.Lease == nil || state.Lease.Action == domain.SubscriptionExecute && state.Lease.InstanceID == domain.ID(req.Msg.InstanceId)) {
 					records = append(records, r)
 					if len(records) == 4 {
 						break
 					}
 					continue
 				}
-				if state != nil && state.Pending != nil && state.Pending.MachineID == domain.ID(req.Msg.MachineId) && state.Pending.Phase == domain.SubscriptionQueued && state.Lease == nil && !state.RecoveryRequired {
+				if state != nil && state.Pending != nil && state.Pending.MachineID == domain.ID(req.Msg.MachineId) && state.Pending.Phase == domain.SubscriptionQueued && state.Lease == nil && !domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) {
 					records = append(records, r)
 					if len(records) == 4 {
 						break
@@ -436,7 +436,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			return nil, domain.Fail(domain.Conflict, "The account revision has not been observed.", "Retain the original queued operation and its observed revision.")
 		}
 		state := a.Subscription
-		if state == nil || state.RecoveryRequired {
+		if state == nil || domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) {
 			return nil, subscriptionDenied()
 		}
 		if state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
@@ -589,7 +589,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			return err
 		}
 		_, a, err := s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
-		if err != nil || a.Subscription.RecoveryRequired {
+		if err != nil || domain.OwnershipBlocks(domain.OwnershipCleanup, "", a.Subscription.RecoveryRequired) {
 			return subscriptionDenied()
 		}
 		if action == domain.SubscriptionExecute {
@@ -647,7 +647,7 @@ func (s *Service) PublishSubscriptionProgress(ctx context.Context, req *connect.
 			return err
 		}
 		op = a.Subscription.Pending
-		if a.Subscription.RecoveryRequired || op == nil || op.Action != domain.SubscriptionLogin {
+		if domain.OwnershipBlocks(domain.OwnershipCleanup, "", a.Subscription.RecoveryRequired) || op == nil || op.Action != domain.SubscriptionLogin {
 			return subscriptionDenied()
 		}
 		return subscriptionActorValid(tx, op.Actor)
@@ -716,7 +716,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 		lease := state.Lease
 		// Receipt replay above is read-only. A new finish cannot resolve an
 		// ownership loss or touch its vault generations through this channel.
-		if state.RecoveryRequired || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
+		if domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) || state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision {
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 		owned = true
@@ -804,7 +804,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				return nil, err
 			}
 			state := a.Subscription
-			if state.RecoveryRequired || state.Generation != input.Generation {
+			if domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) || state.Generation != input.Generation {
 				return nil, subscriptionDenied()
 			}
 			if state.Pending != nil {
@@ -1030,7 +1030,7 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 			if state.Pending != nil {
 				presentations = append(presentations, state.Pending.ID)
 			}
-			if state.RecoveryRequired {
+			if domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) {
 				continue
 			}
 			state.RecoveryRequired = true

@@ -385,7 +385,7 @@ func (s *Service) ReportWorkspaceRead(ctx context.Context, req *connect.Request[
 		pending = reader.pending
 	}
 	s.workspaceReadsMu.Unlock()
-	if reader == nil || reader.instance != domain.ID(req.Msg.InstanceId) || reader.device != actor.DeviceID || pending == nil || pending.request.ID != domain.ID(req.Msg.ReadId) || time.Now().After(pending.request.Deadline) {
+	if reader == nil || domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(req.Msg.ReadId), reader.instance != domain.ID(req.Msg.InstanceId)) || domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(req.Msg.ReadId), reader.device != actor.DeviceID) || pending == nil || pending.request.ID != domain.ID(req.Msg.ReadId) || time.Now().After(pending.request.Deadline) {
 		return fail(workspaceReadUnavailable())
 	}
 	primary, err := s.primaryWorkspaceStream(reader.machine, reader.instance)

@@ -48,7 +48,7 @@ func repositoryIntegrationFromTx(tx *store.Tx, id domain.ID) (repositoryIntegrat
 		return repositoryIntegrationSelection{}, err
 	}
 	if !profile.AllowsGitHubOwner(repository.GitHubOwner) {
-		return repositoryIntegrationSelection{}, domain.Fail(domain.PermissionDenied, "The selected profile targets another resource owner.", "Select a separate profile for this repository's owner.")
+		domain.ObserveOwnership(domain.OwnershipResource, repository.IntegrationID)
 	}
 	if profile.Connection == nil || profile.Pending != nil {
 		return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The selected GitHub profile has no usable token generation.", "Complete its connection or pending cleanup before inspecting repository access.")

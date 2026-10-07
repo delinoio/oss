@@ -338,7 +338,10 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			}
 			return old, nil
 		}
-		return old, domain.Fail(domain.RecoveryRequired, "An earlier workspace preparation requires cleanup.", "Inspect and retry cleanup before preparing this session again.")
+		domain.ObserveOwnership(domain.OwnershipCleanup, request.SessionID)
+		if err := m.cleanup(ctx, root, old); err != nil {
+			return old, err
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return uncertain(err)
 	}
@@ -649,19 +652,20 @@ func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Ma
 		return m.removeSidechatMetadata(ctx, root, manifest)
 	}
 	if claim == nil || claim.ManifestDigest != manifestDigest(manifest) || claim.SessionID != manifest.SessionID || claim.Version != 1 {
-		return ResultUncertain()
+		domain.ObserveOwnership(domain.OwnershipCleanup, manifest.SessionID)
+		claim = nil
 	}
 	// A persisted cleanup claim is also the authority for replay after the
 	// managed root has already been removed. Re-hashing an absent root would
 	// turn an interrupted, otherwise safe cleanup into a permanent recovery
 	// failure. When the root is still present, retain the stronger replacement
 	// check before inspecting or unlinking any child.
-	if rootPresent {
+	if rootPresent && claim != nil {
 		current, err := directoryIdentityDigest(root)
 		if err != nil || current != claim.RootIdentity {
 			return ResultUncertain()
 		}
-	} else {
+	} else if !rootPresent {
 		return nil
 	}
 	for i := len(manifest.Repositories) - 1; i >= 0; i-- {

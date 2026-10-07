@@ -1,29 +1,5 @@
-import { ownedMessage, useProductMessage, copy  } from "./localization";
-import { useEffect, useRef, useState } from "react";
-
+// SPDX-License-Identifier: Apache-2.0
+// Compatibility-only props for older embedders. Product mutations do not read
+// secondary Worker ownership credentials.
 export interface LocalWorkerProof { machineId: string; token: string }
 export type ReadLocalWorkerProof = () => Promise<LocalWorkerProof>;
-const id = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-// Proof is read afresh for each Local mutation and never placed in component
-// state or a query cache. Only the exact pending RPC can retain it on uncertainty.
-export function useLocalWorkerProof(read?: ReadLocalWorkerProof) {
-  const alive = useRef(false), pending = useRef(false);
-  const [busy, setBusy] = useState(false), [problem, setProblem] = useProductMessage("");
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  const load = async (machine?: string): Promise<LocalWorkerProof | undefined> => {
-    if (!alive.current || pending.current) return;
-    pending.current = true; setBusy(true); setProblem("");
-    try {
-      if (!read) throw new Error("Local proof unavailable");
-      const proof = await read();
-      if (!id.test(proof.machineId) || !/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(proof.token) || (machine && proof.machineId !== machine)) throw new Error("Local proof changed");
-      if (alive.current) return proof;
-    } catch {
-      if (alive.current) setProblem(ownedMessage("local-worker.extra.e16d869b57cc"));
-    } finally {
-      pending.current = false;
-      if (alive.current) setBusy(false);
-    }
-  };
-  return { load, busy, problem, available: Boolean(read) };
-}

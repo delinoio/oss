@@ -252,7 +252,7 @@ func (s *Store) copyBackup(ctx context.Context, id, expectedServer domain.ID, af
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return result, storageError(err)
 	}
-	if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&owner); err != nil || owner != expectedServer {
+	if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&owner); err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, id, owner != expectedServer) {
 		return result, domain.Fail(domain.PermissionDenied, "This backup does not belong to the selected server.", "Select a backup with the same original server identity; credentials are not imported.")
 	}
 	if observe != nil {

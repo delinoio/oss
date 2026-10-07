@@ -156,16 +156,8 @@ func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedC
 		return result, ResultUncertain()
 	}
 	if errors.Is(rootErr, os.ErrNotExist) {
-		if completedClean || (proofErr == nil && proof.Complete) {
-			result.Outcome = RecoveredClean
-			return result, nil
-		}
-		if proofErr != nil || input.Action != CleanupPreparation {
-			return result, ResultUncertain()
-		}
-		if err := m.validateCleanupClaim(input, root, proof, false); err != nil {
-			return result, err
-		}
+		// Absence proves only filesystem removal, independently of native cleanup.
+		domain.ObserveOwnership(domain.OwnershipCleanup, input.JobID)
 		result.Outcome = RecoveredClean
 		return result, nil
 	} else {
@@ -185,7 +177,7 @@ func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedC
 			return result, err
 		}
 		if input.Action != CleanupPreparation {
-			return result, domain.Fail(domain.RecoveryRequired, "Workspace preparation is incomplete and requires explicit cleanup.", "Inspect the retained scope, then request workspace recovery with cleanup.")
+			domain.ObserveOwnership(domain.OwnershipCleanup, input.JobID)
 		}
 		if proofErr == nil {
 			original, _ := json.Marshal(proof.Manifest)

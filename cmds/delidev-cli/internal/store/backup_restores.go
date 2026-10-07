@@ -145,7 +145,7 @@ func verifyRestoreHistory(ctx context.Context, db *sql.DB, root string, reserved
 			continue
 		}
 		var digest, result, owner string
-		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&owner); err != nil || owner != string(v.Input.ServerID) {
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='server_id'").Scan(&owner); err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, id, owner != string(v.Input.ServerID)) {
 			return backupUnavailable()
 		}
 		if err := db.QueryRowContext(ctx, "SELECT digest,result FROM receipts WHERE id=?", id).Scan(&digest, &result); err != nil {
@@ -260,11 +260,11 @@ func (s *Store) GetBackupRestore(ctx context.Context, id domain.ID) (BackupResto
 	// External receipts retain the original actor across database replacement;
 	// authorization in the current database cannot transfer that ownership.
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor != v.Input.Actor {
+	if !ok || domain.OwnershipBlocks(domain.OwnershipActor, id, actor != v.Input.Actor) {
 		return BackupRestore{}, domain.Fail(domain.PermissionDenied, "This restore receipt belongs to another actor.", "Use the owner or paired client that submitted the original restore request.")
 	}
 	owner, err := s.ScopeIdentity(ctx)
-	if err != nil || owner != v.Input.ServerID {
+	if err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, id, owner != v.Input.ServerID) {
 		return v, backupUnavailable()
 	}
 	return v, nil

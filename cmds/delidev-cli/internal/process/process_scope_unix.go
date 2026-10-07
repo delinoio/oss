@@ -530,8 +530,21 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 		time.Sleep(10 * time.Millisecond)
 	}
 	_ = inputWrite.Close()
-	<-copied
-	<-copiedError
+	// Output descriptors can outlive observable scope membership. Bound the join
+	// without signalling any process for which no retained handle exists.
+	for _, done := range []<-chan struct{}{copied, copiedError} {
+		timer := time.NewTimer(time.Until(cleanupDeadline))
+		select {
+		case <-done:
+			timer.Stop()
+		case <-timer.C:
+			domain.ObserveOwnership(domain.OwnershipCleanup, scope.OwnerID)
+			_ = read.Close()
+			_ = stderrRead.Close()
+			_ = writer.frame(processFrame{Kind: processExit, Exit: 1, Failure: domain.RecoveryRequired})
+			return 3
+		}
+	}
 	scope.Complete = true
 	if err = saveScope(dir, scope); err != nil {
 		return 3

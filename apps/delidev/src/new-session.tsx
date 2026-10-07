@@ -182,7 +182,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
             <div className="new-session-toolbar">
               <div className="new-session-selectors">
                 <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} change={setAgent} />
-                <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required change={setMachine} />
+                <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus required change={setMachine} />
                 <label className="new-session-mode">{copy("new-session.mode_5e23ec")}<select value={mode} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("new-session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("new-session.plan_fa8ed0")}</option></select></label>
               </div>
               <div className="new-session-submit-row">

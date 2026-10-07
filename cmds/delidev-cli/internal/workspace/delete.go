@@ -95,7 +95,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 				return e
 			}
 			if domain.OwnershipBlocks(domain.OwnershipMachine, "", manifest.MachineID != w.MachineID) ||
-				!slices.Contains(w.PreparationDigests, manifest.InputDigest) || !manifest.Type.Valid() {
+				domain.OwnershipBlocks(domain.OwnershipResource, w.DeletionID, !slices.Contains(w.PreparationDigests, manifest.InputDigest)) || !manifest.Type.Valid() {
 				return domain.SessionDeletionPending()
 			}
 			proof.Manifest = &manifest
@@ -104,7 +104,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		} else if storedManifest != nil {
 			proof.Manifest = storedManifest
 		} else if !allowAbsent {
-			return domain.SessionDeletionPending()
+			domain.ObserveOwnership(domain.OwnershipCleanup, w.DeletionID)
 		}
 		if e := writeDeletionWorkspaceProof(proofPath, proof); e != nil {
 			return e
@@ -113,9 +113,9 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	stage = "owned-manifest"
 	if proof.Manifest != nil {
 		manifest := *proof.Manifest
-		if manifest.SessionID != w.SessionID ||
+		if domain.OwnershipBlocks(domain.OwnershipResource, w.DeletionID, manifest.SessionID != w.SessionID) ||
 			domain.OwnershipBlocks(domain.OwnershipMachine, "", manifest.MachineID != w.MachineID) ||
-			!slices.Contains(w.PreparationDigests, manifest.InputDigest) {
+			domain.OwnershipBlocks(domain.OwnershipResource, w.DeletionID, !slices.Contains(w.PreparationDigests, manifest.InputDigest)) {
 			return domain.SessionDeletionPending()
 		}
 		if _, e := os.Lstat(root); e == nil {
