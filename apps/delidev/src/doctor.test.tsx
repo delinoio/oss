@@ -61,7 +61,7 @@ it("owns the single Settings heading, three independent observations and every r
   expect(screen.queryByText(/healthy|reclaimable bytes|total storage|%/i)).toBeNull();
 });
 
-it("keeps failed storage, handshake, superseded account and partial notices outside closed disclosures", async () => {
+it("keeps storage and handshake failures in their owning records and moves account observations out of Doctor", async () => {
   const data = report(), storage = data.storage as Document, machines = data.machines as Document[], credentials = data.credentials as Document[];
   storage.result = { state: "failed", code: "permission_denied", guidance: "Inspect storage permissions." };
   const installation = (machines[0].installations as Document[])[0];
@@ -70,14 +70,15 @@ it("keeps failed storage, handshake, superseded account and partial notices outs
   data.more_credentials = true;
   const value = fixture(data), view = render(value.view(<Doctor active />));
   await screen.findByText("Inspect storage permissions.");
-  for (const text of ["Handshake failed", "Connection changed during inspection"]) expect(screen.getByText(text, { exact: false }).closest("details")).toBeNull();
-  for (const text of ["permission_denied", "Inspect the retained handshake.", "Refresh for the current connection."]) for (const node of screen.getAllByText(text, { exact: false })) {
+  for (const text of ["Handshake failed"]) expect(screen.getByText(text, { exact: false }).closest("details")).toBeNull();
+  for (const text of ["permission_denied", "Inspect the retained handshake."]) for (const node of screen.getAllByText(text, { exact: false })) {
     const details = node.closest("details");
     if (details) { expect(details.querySelector("summary")?.textContent).toBe("Technical details"); expect(details.open).toBe(false); }
   }
-  expect(screen.getByText(/Only the first 50 accounts/).closest("details")).toBeNull();
+  expect(screen.queryByText(/Only the first 50 accounts/)).toBeNull();
   expect(screen.getByText("Handshake failed").closest("article")).toBe(screen.getByText("First Worker").closest("article"));
-  expect(screen.getByText("Refresh for the current connection.").closest("article")?.textContent).toContain("Account:");
+  expect(screen.queryByText("Refresh for the current connection.")).toBeNull();
+  expect(screen.getByText("View account storage results in the account lists.")).toBeTruthy();
   allClosed(view.container);
 });
 
@@ -103,8 +104,6 @@ it("resets disclosures on category departure and preserves their identities thro
   toggle(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details"));
   toggle(disclosure(screen.getByRole("region", { name: "Server information" }), "Server identity"));
   toggle(disclosure(screen.getByRole("region", { name: "Storage diagnostics" }), "Retained resources"));
-  const account = screen.getByText(`Account: ${credentials[0].account_id}`).closest("article")!;
-  toggle(disclosure(account, "Connection identity"));
   expect(value.doctor).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
   await act(async () => { await value.client.invalidateQueries(); });
@@ -112,16 +111,13 @@ it("resets disclosures on category departure and preserves their identities thro
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" })); await screen.findByText("First Worker");
   allClosed(view.container);
   toggle(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details"));
-  toggle(disclosure(screen.getByText(`Account: ${credentials[0].account_id}`).closest("article")!, "Connection identity"));
   value.state.report = { ...data, machines: [...machines].reverse(), credentials: [...credentials].reverse() };
   await refresh();
   expect(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details").open).toBe(true);
   expect(disclosure(screen.getByText("Second Worker").closest("article")!, "Installation details").open).toBe(false);
-  expect(disclosure(screen.getByText(`Account: ${credentials[0].account_id}`).closest("article")!, "Connection identity").open).toBe(true);
   value.state.report = { ...data, machines: [{ ...machines[0], machine_id: newRequestId() }], credentials: [{ ...credentials[0], connection_id: newRequestId() }] };
   await refresh();
   expect(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details").open).toBe(false);
-  expect(screen.getByText("Connection identity").parentElement?.hasAttribute("open")).toBe(false);
   expect(value.save).not.toHaveBeenCalled();
   view.rerender(value.view(<Settings visible={false} />));
   allClosed(view.container);
@@ -164,7 +160,6 @@ it("never shares disclosure state across missing or changed server/record identi
   for (const details of view.container.querySelectorAll<HTMLDetailsElement>("details")) toggle(details);
   value.state.report = { ...value.state.report, machines: [{ ...machine, name: "Replacement" }], credentials: [{ ...credential, connection_id: newRequestId() }] }; await refresh();
   expect(disclosure(screen.getByText("Replacement").closest("article")!, "Installation details").open).toBe(false);
-  expect(disclosure(screen.getByRole("region", { name: "Protected credential diagnostics" }), "Connection identity").open).toBe(false);
   const next = fixture(); view.rerender(next.view(<Doctor key="another-connection" active />)); await screen.findByText("First Worker"); allClosed(view.container);
 });
 
@@ -202,11 +197,12 @@ for (const encoding of ["future", "json", "utf8", "oversized"]) it(`rejects ${en
 for (const inventory of [undefined, [], Array.from({ length: 51 }, (_, i) => ({ machine_id: newRequestId(), name: `Worker ${i}`, installations: [] }))]) for (const more of [undefined, false, true]) it(`keeps missing/empty/bounded inventories distinct with completeness ${String(more)}`, async () => {
   const data = report(); data.machines = inventory; data.credentials = inventory?.map((machine) => ({ account_id: machine.machine_id, connection_id: newRequestId(), result: { state: "unavailable" } })); data.more_machines = more; data.more_credentials = more;
   const value = fixture(data); render(value.view(<Doctor active />)); await screen.findByText("Read succeeded");
-  const workers = screen.getByRole("region", { name: "Worker diagnostics" }), accounts = screen.getByRole("region", { name: "Protected credential diagnostics" });
-  if (inventory === undefined) { expect(within(workers).getByText("Worker observations are unavailable.")).toBeTruthy(); expect(within(accounts).getByText("Protected storage observations are unavailable.")).toBeTruthy(); }
-  else if (!inventory.length) { expect(within(workers).getByText("No Workers are registered.")).toBeTruthy(); expect(within(accounts).getByText(/No accounts are configured/)).toBeTruthy(); }
-  else { expect(workers.querySelectorAll("article")).toHaveLength(50); expect(accounts.querySelectorAll("article")).toHaveLength(50); expect(within(workers).queryByText("Worker 50")).toBeNull(); }
-  for (const region of [workers, accounts]) { expect(within(region).queryByText("Inventory completeness is unknown.") !== null).toBe(more === undefined); expect(within(region).queryByText(/Only the first 50/) !== null).toBe(more === true); }
+  const workers = screen.getByRole("region", { name: "Worker diagnostics" });
+  expect(screen.queryByRole("region", { name: "Protected credential diagnostics" })).toBeNull();
+  if (inventory === undefined) { expect(within(workers).getByText("Worker observations are unavailable.")).toBeTruthy(); }
+  else if (!inventory.length) { expect(within(workers).getByText("No Workers are registered.")).toBeTruthy(); }
+  else { expect(workers.querySelectorAll("article")).toHaveLength(50); expect(within(workers).queryByText("Worker 50")).toBeNull(); }
+  for (const region of [workers]) { expect(within(region).queryByText("Inventory completeness is unknown.") !== null).toBe(more === undefined); expect(within(region).queryByText(/Only the first 50/) !== null).toBe(more === true); }
 });
 
 it("preserves legacy fields and field-level unknown classifications without inventing health or executing HTML", async () => {
@@ -223,4 +219,17 @@ it("preserves legacy fields and field-level unknown classifications without inve
   expect(screen.getByText("Unknown installation state", { exact: false })).toBeTruthy(); expect(screen.getByText("Unknown protocol state")).toBeTruthy();
   expect(view.container.querySelector("img, a, [style]")).toBeNull(); expect(view.container.querySelector(".diagnostics-observation")?.textContent).toContain("Read succeeded");
   for (const text of screen.getAllByText(markup)) if (!text.textContent?.startsWith("Reported capabilities")) { const details = text.closest("details"); if (details) { expect(details.querySelector("summary")?.textContent).toBe("Technical details"); expect(details.open).toBe(false); } }
+});
+
+it("routes account-storage navigation without refreshing diagnostics or mutating accounts", async () => {
+  const value = fixture(), subscriptions = vi.fn(), api = vi.fn();
+  const view = render(value.view(<Doctor active openSubscriptions={subscriptions} openApiKeys={api} />));
+  await screen.findByText("Read succeeded");
+  const region = screen.getByRole("region", { name: "Account storage" });
+  fireEvent.click(within(region).getByRole("button", { name: "AI Subscription" }));
+  fireEvent.click(within(region).getByRole("button", { name: "AI API Keys" }));
+  expect(subscriptions).toHaveBeenCalledTimes(1); expect(api).toHaveBeenCalledTimes(1);
+  expect(value.doctor).toHaveBeenCalledTimes(1); expect(value.save).not.toHaveBeenCalled();
+  view.rerender(value.view(<Doctor active />));
+  expect(within(screen.getByRole("region", { name: "Account storage" })).queryByRole("button")).toBeNull();
 });
