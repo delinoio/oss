@@ -19,5 +19,6 @@
   "native-usage.extra.085171a719a1": "Cache read input",
   "native-usage.extra.06c03c4d8fe8": "Cache write input",
   "native-usage.extra.152c2e5abcdf": "Output excluding reasoning",
-  "native-usage.extra.f85860ca7347": "Reasoning output"
+  "native-usage.extra.f85860ca7347": "Reasoning output",
+  "native-usage.recheckHelp": "Use Refresh native usage here to reread the original retained record. Missing or inconsistent evidence cannot be repaired by rerunning inference or replacing the execution."
 }

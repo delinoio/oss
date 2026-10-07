@@ -82,5 +82,12 @@
   "backups.deletionJobPages_68fad7": "Deletion job pages",
   "backups.firstDeletionPage_b8a839": "First deletion page",
   "backups.nextDeletionPage_f9e500": "Next deletion page",
-  "backups.sentence.e6f7491a0231": "{{v0}} · {{v1}} UTC"
+  "backups.sentence.e6f7491a0231": "{{v0}} · {{v1}} UTC",
+  "backups.creationHelp": "Backup admission was not confirmed. An unknown outcome permits only Retry the same backup creation here. Do not submit a replacement while that original request is unsettled.",
+  "backups.inventoryHelp": "Backup records could not be read. Retry the original page below or use Refresh backups here. Listing alone does not verify image integrity or authorize deletion.",
+  "backups.historyHelp": "This backup history could not be read. Retry the original history page below. Accepted jobs keep their original independent status readers; refreshing history does not replay them.",
+  "backups.inspectionHelp": "The selected backup could not be verified. Use Recheck selected backup here. A failed or changed inspection clears deletion confirmation; do not delete from a previous observation.",
+  "backups.deletionHelp": "Backup deletion was not confirmed. For an unknown outcome, retry only the same deletion here with its original inspected image and digest. Never treat a missing list row as confirmed cleanup.",
+  "backups.failedCreationHelp": "This creation attempt failed. Check storage space and write permissions on the original server, then explicitly create a new backup when ready. History refresh does not restart the failed attempt.",
+  "backups.pendingCleanupHelp": "Original backup cleanup still needs attention. Check storage access on the original server and continue observing the same job here; do not submit a replacement deletion."
 }

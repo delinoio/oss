@@ -19,5 +19,6 @@
   "native-usage.extra.085171a719a1": "캐시 읽기 입력",
   "native-usage.extra.06c03c4d8fe8": "캐시 쓰기 입력",
   "native-usage.extra.152c2e5abcdf": "추론을 제외한 출력",
-  "native-usage.extra.f85860ca7347": "추론 출력"
+  "native-usage.extra.f85860ca7347": "추론 출력",
+  "native-usage.recheckHelp": "여기서 네이티브 사용량 새로고침을 사용해 원래 보존된 기록을 다시 읽으세요. 추론을 재실행하거나 실행을 교체해 누락되거나 일치하지 않는 증거를 복구할 수 없습니다."
 }

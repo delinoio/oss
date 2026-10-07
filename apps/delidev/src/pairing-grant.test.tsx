@@ -124,6 +124,7 @@ it("hides a revealed grant when its current observation fails or changes identit
   value.read.mockImplementationOnce(() => { throw new ConnectError("offline", Code.Unavailable); });
   fireEvent.click(screen.getByRole("button", { name: "Refresh pairing status" }));
   await screen.findByText("Grant issued; current use status is unavailable.");
+  expect(screen.getByRole("alert").textContent).toContain("read failure does not establish expiry or use");
   expect(screen.queryByLabelText("Private pairing document")).toBeNull();
   value.state.current = create(ResourceSchema, { ...value.resource, id: newRequestId() });
   fireEvent.click(screen.getByRole("button", { name: "Refresh pairing status" }));

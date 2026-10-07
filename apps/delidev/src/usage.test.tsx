@@ -198,6 +198,7 @@ it("does not invent zero for empty telemetry and marks retained data stale after
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await screen.findByText(/These are the last successfully retrieved values/);
   expect(f.read).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("alert").textContent).toContain("failed read does not establish zero usage or cost");
 });
 
 it("renders daily zero, unavailable and empty evidence with keyboard detail and complete model tables", async () => {

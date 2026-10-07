@@ -1,5 +1,5 @@
 {
-  "grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890": "Verified Grok input accounting is unavailable from this server version. Update the server to view it.",
+  "grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890": "Verified Grok input accounting evidence is unsupported or incomplete.",
   "grok-accounting.verifiedGrokClosedInputs_f343dd": "Verified Grok closed inputs",
   "grok-accounting.closedInputsKnownTotalTokens_a55f2e": "{{v0}} closed inputs · {{v1}} known total tokens",
   "grok-accounting.noVerifiedGrokClosedInputsAre_244c3c": "No verified Grok closed inputs are recorded for these filters. This does not establish zero usage.",

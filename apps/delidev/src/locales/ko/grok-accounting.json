@@ -1,5 +1,5 @@
 {
-  "grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890": "이 서버 버전에서는 검증된 Grok 입력 집계를 제공하지 않습니다. 보려면 서버를 업데이트하세요.",
+  "grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890": "검증된 Grok 입력 회계 증거가 지원되지 않거나 불완전합니다.",
   "grok-accounting.verifiedGrokClosedInputs_f343dd": "검증된 Grok 종료 입력",
   "grok-accounting.closedInputsKnownTotalTokens_a55f2e": "완결된 입력 {{v0}}개 · 확인된 총 토큰 {{v1}}개",
   "grok-accounting.noVerifiedGrokClosedInputsAre_244c3c": "이 필터에 검증된 Grok 완결 입력이 기록되지 않았습니다. 사용량이 0임을 입증하지 않습니다.",

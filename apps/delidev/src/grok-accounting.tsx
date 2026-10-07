@@ -16,7 +16,7 @@ export function GrokAccounting({ data, open, disclosures }: { data: GetUsageSumm
   const allTotals = [data.totals, ...data.groups.map(group => group.totals), ...data.analytics?.days.map(day => day.totals) ?? [], ...data.analytics?.models.map(model => model.totals) ?? []];
   const validKinds = new Set([AccountingUnitKind.CODEX_RESPONSE, AccountingUnitKind.GROK_CLOSED_INPUT, AccountingUnitKind.CLAUDE_MAIN_LOOP_INPUT, AccountingUnitKind.OPENCODE_STEP]);
   const validSources = allTotals.every(totals => !totals || totals.accounting.every(unit => validKinds.has(unit.kind)) && new Set(totals.accounting.map(unit => unit.kind)).size === totals.accounting.length);
-  if (!data.totals || data.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 || !validSources) return <p role="status">{copy("grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890")}</p>;
+  if (!data.totals || data.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 || !validSources) return <><p role="status">{copy("grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890")}</p><p>{copy("usage.accountingRecheckHelp")}</p></>;
   const units = grok(data.totals);
   const timeFormatter = new Intl.DateTimeFormat(displayLocale(), { timeZone: data.analytics?.timeZone || "UTC", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "shortOffset" });
   const groups = data.groups.filter((group) => grok(group.totals));

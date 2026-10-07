@@ -29,5 +29,8 @@
   "pairing-grant.discardingClearsThisWindowSPrivate_9c7ba6": "Discarding clears this window's private copy; an already-issued grant remains valid until used or expired. Closing this server window also discards the copy.",
   "pairing-grant.extra.f8ed54ba4886": "Enter a device name of at most 256 UTF-8 bytes without NUL characters.",
   "pairing-grant.extra.13e686c6b6c8": "Verify the selected server before creating a pairing document.",
-  "pairing-grant.extra.25c7a1082af4": "Secure pairing material could not be prepared. Use the trusted desktop app and try again."
+  "pairing-grant.extra.25c7a1082af4": "Secure pairing material could not be prepared. Use the trusted desktop app and try again.",
+  "pairing-grant.issuanceHelp": "Pairing issuance was not confirmed. An unknown outcome permits only Retry original pairing issuance here; do not create a replacement document or share an unverified grant.",
+  "pairing-grant.statusHelp": "This grant’s use status could not be read. Use Refresh pairing status here. Keep its private document hidden until the original grant is verified; a read failure does not establish expiry or use.",
+  "pairing-grant.mismatchHelp": "The returned grant does not match this issuance. Refresh the original status here without issuing another document. Do not reveal or share its private code."
 }

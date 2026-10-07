@@ -12,7 +12,7 @@
   "network-settings.desiredGeneration_f15f38": "원하는 세대",
   "network-settings.effectiveControlGeneration_e8082d": "유효 제어 세대",
   "network-settings.nativeApiGeneration_02dc37": "네이티브 API 세대",
-  "network-settings.workerRoutingStatusIsUnreadableUpdate_1920c7": "워커 라우팅 상태를 읽을 수 없습니다. 클라이언트/서버를 업데이트하고 원래 경로를 확인하세요.",
+  "network-settings.workerRoutingStatusIsUnreadableUpdate_1920c7": "Worker 라우팅 상태를 읽을 수 없습니다. 현재 경로 상태가 검증되지 않았습니다.",
   "network-settings.readingWorkerRouteStatus_71a350": "워커 라우팅 상태를 읽는 중…",
   "network-settings.thisWorkerMustReconcileItsEncrypted_476d45": "이 워커는 새 작업을 시작하기 전에 암호화된 설정 상태를 확인해야 합니다. 이미 실행 중인 작업은 원래 세대를 유지합니다.",
   "network-settings.nativeStatusConcernsSupportedCodexApi_0d7631": "네이티브 상태는 지원되는 Codex API 실행과 제목 트래픽에 관한 것입니다. 제어 준비가 네이티브 라우팅이나 제공업체 성공을 증명하지는 않습니다.",
@@ -78,5 +78,17 @@
   "network-settings.profiles": "네트워크 프로필",
   "network-settings.noProfiles": "저장된 네트워크 프로필 없음",
   "network-settings.createProfileHelp": "프록시를 통해 연결하려면 프로필을 만드세요.",
-  "network-settings.workerTransfer": "Worker 구성 전송"
+  "network-settings.workerTransfer": "Worker 구성 전송",
+  "network-settings.capabilityReadHelp": "네트워크 지원을 확인할 수 없습니다. 라우팅 새로고침으로 이 서버의 기능을 다시 읽으세요. 경로는 선택되지 않았습니다.",
+  "network-settings.routeReadHelp": "현재 경로를 읽을 수 없습니다. 리비전을 선택하기 전에 여기서 라우팅을 새로고침하세요. 실패 시 Direct로 대체하지 않습니다.",
+  "network-settings.profileReadHelp": "네트워크 프로필을 읽을 수 없습니다. 라우팅 새로고침이나 아래의 원래 페이지 재시도를 사용하세요. 이전 행만으로 쓰기를 승인하지 않습니다.",
+  "network-settings.choiceReadHelp": "선택한 프로필 리비전을 확인할 수 없습니다. 프로필을 다시 선택하세요. 이 읽기는 라우팅을 변경하지 않습니다.",
+  "network-settings.selectionHelp": "경로 선택이 확인되지 않았습니다. 결과가 불명확하면 아래에서 원래 선택만 재시도하세요. 그 외에는 라우팅을 다시 읽은 후 명시적으로 선택하세요.",
+  "network-settings.profileSaveHelp": "프로필 저장이 확인되지 않았습니다. 원래 초안을 유지하세요. 결과가 불명확하면 원래 저장을 재시도하고, 그 외에는 필드를 수정한 후 명시적으로 저장하세요. 선택된 경로는 원래 리비전을 유지합니다.",
+  "network-settings.profileDeleteHelp": "프로필 삭제가 확인되지 않았습니다. 참조 중인 프로필은 삭제할 수 없습니다. 결과가 불명확하면 여기서 원래 삭제만 재시도하며 새 확인 시도를 하지 마세요.",
+  "network-settings.workerStatusHelp": "이 Worker의 경로 상태를 검증할 수 없습니다. 여기서 라우팅 새로고침으로 동일한 Worker를 다시 읽으세요. 원래 상태가 검증될 때까지 현재 암호화된 설정을 유지하세요.",
+  "network-settings.recipientRouteHelp": "대상 Worker의 경로를 읽을 수 없습니다. 내보내기 전에 여기서 경로를 다시 확인하세요. 대체 수신자나 경로는 생성되지 않았습니다.",
+  "network-settings.recheckRecipientRoute": "수신자 경로 다시 확인",
+  "network-settings.exportHelp": "암호화 내보내기가 확인되지 않았습니다. 대상 수신자와 원래 경로를 유지하세요. 결과가 불명확하면 원래 내보내기를 재시도하고, 그 외에는 수신자 경로를 다시 확인한 후 명시적으로 내보내세요.",
+  "network-settings.workerStaleHelp": "원래 컴퓨터에서 이 Worker의 원래 암호화된 설정을 반영하고 기존 CLI 또는 서비스를 사용하여 명시적으로 다시 시작하세요. 이후 여기서 라우팅 새로고침으로 동일한 Worker를 검증하세요. 이 페이지는 Worker를 다시 시작하지 않습니다."
 }

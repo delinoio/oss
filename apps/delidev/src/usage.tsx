@@ -122,7 +122,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
     {detail ? <SettingsLifetime key={detail}>{() => <MutationIntents><UsageModelDetail id={detail} active={active} close={() => setDetail("")} /></MutationIntents>}</SettingsLifetime> : null}
     <header className="usage-header"><div><h1>{copy("usage.tokenUsage_00f594")}</h1><p>{copy("usage.delidevActivityOnlyArchivedSessionsIncluded_09c1fa")}</p></div><div className="usage-header-actions"><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("usage.refresh_0e9161")}</button></div></header>
     <div className="usage-applied" role="group" aria-label={copy("usage.appliedConditions_bc3af3")}><strong>{copy("usage.appliedConditions_bc3af3")}</strong><span>{data ? copy("usage.exclusive_fd9e0a", { v0: formatAppliedTime(data.fromUnixMs, appliedZone), v1: formatAppliedTime(data.untilUnixMs, appliedZone) }) : pendingRange(selection)}</span><span><LocalizedText id="usage.timezone_9229e0" components={{ s0: <>{appliedZone}</> }} /></span><span>{copy("usage.responseTimesShowWhenTheServer_c28198")}</span>{conditions.length ? <span>{conditions.join(" · ")}</span> : <span>{copy("usage.allSessionsAccountsApisAndModels_d7b7c7")}</span>}{draftChanged ? <span className="usage-draft-state">{copy(invalid ? "usage.invalidFiltersRetained" : "usage.waitingForDateInput")}</span> : null}</div>
-    {draftChanged ? <p className="usage-draft-state" role="status">{copy(invalid ? "usage.invalidFiltersRetained" : "usage.waitingForDateInput")}</p> : null}<Problem error={result.error} />
+    {draftChanged ? <p className="usage-draft-state" role="status">{copy(invalid ? "usage.invalidFiltersRetained" : "usage.waitingForDateInput")}</p> : null}<Problem error={result.error} summary={copy("usage.readHelp")} />
     {result.isFetching ? <p className="usage-loading" role="status">{data ? copy("usage.refreshingThisAppliedRange_349e6c") : copy("usage.loadingTokenUsage_ded2ab")}</p> : null}
     {data && result.error ? <p className="notice">{copy("usage.theRefreshFailedTheseAreThe_a67de1")}</p> : null}
     {!data && result.isPending ? <div className="usage-skeletons" aria-hidden="true"><div /><div /><div /><div /></div> : null}
@@ -177,7 +177,7 @@ function UsageModelDetail({ id, active, close }: { id: string; active: boolean; 
   const value = document(model);
   return <section className="usage-detail" aria-label={copy("usage.modelDetails")}>
     <h2>{copy("usage.modelDetailsTitle", { v0: model ? resourceName(model) : id })}</h2>
-    <Problem error={current.error} />
+    <Problem error={current.error} summary={copy("usage.modelReadHelp")} />
     {current.isLoading ? <p role="status">{copy("usage.loadingModelDetails")}</p> : null}
     {current.error && model ? <p role="status">{copy("usage.staleModelDetails")}</p> : null}
     {model ? <><p>{copy("usage.modelAndNativeId", { v0: id, v1: text(value.native_id) || copy("usage.extra.ca1844969742") })}</p><p>{value.source_kind === "subscription" ? copy("usage.subscriptionServiceDetail", { v0: text(value.subscription_service) }) : copy("usage.apiProviderDetail", { v0: text(value.provider_id) })}</p>
