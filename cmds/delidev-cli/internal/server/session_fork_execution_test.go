@@ -25,7 +25,7 @@ func claimedForkExecutionFixture(t *testing.T) *continuationFixture {
 	f.enqueue(t, "First independent child input", domain.ExecuteMode)
 	f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
 	f.claim(t)
-	if f.input.Version != 3 || f.input.Fork == nil || f.input.Continuation != nil || f.input.ExecutionID == f.input.Fork.RuntimeID {
+	if f.input.Version != 4 || f.input.Fork == nil || f.input.Continuation != nil || f.input.ExecutionID == f.input.Fork.RuntimeID {
 		t.Fatal("child lost independent execution and inherited native history")
 	}
 	f.thread = domain.ID(f.input.Fork.NativeThreadID)

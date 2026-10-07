@@ -4,11 +4,14 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -29,6 +32,10 @@ func TestDirectStartupFailurePreservesFirstErrorAndIndependentCleanup(t *testing
 			client := &startupReportFixture{}
 			job := domain.NewID()
 			config := Config{Root: t.TempDir(), execution: &PublicationConfig{Assignment: &pb.Resource{Id: string(job), Revision: 3}, Client: client, Instance: domain.NewID()}}
+			// The recovery lock inherits the private process-root ACL on Windows.
+			if err := security.PrivateDir(filepath.Join(config.Root, "processes")); err != nil {
+				t.Fatal(err)
+			}
 			if err := prepareStartupProcessIndex(config.Root, job); err != nil {
 				t.Fatal(err)
 			}
@@ -75,5 +82,48 @@ func TestDirectStartupMissingExecutableReportsNoSendWithoutInspection(t *testing
 	_, err = executeSession(context.Background(), config, f.jobID, f.job)
 	if domain.SafeError(err).Code != domain.NotFound || client.observation == nil || client.observation.State != pb.ExecutionStartupState_EXECUTION_STARTUP_STATE_FAILED || client.observation.InputDelivery != pb.ExecutionStartupInputDelivery_EXECUTION_STARTUP_INPUT_DELIVERY_NOT_SENT || client.observation.Cleanup != pb.ExecutionStartupCleanup_EXECUTION_STARTUP_CLEANUP_CONFIRMED || client.observation.NativeVersion != "" {
 		t.Fatalf("missing executable failure was not proven: %v %#v", err, client.observation)
+	}
+}
+
+func TestForkStartupRetainsOriginalExecutableAfterCreationJournalDeletion(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	executable := filepath.Join(root, "original-codex")
+	if err := os.WriteFile(executable, []byte("private executable fixture"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	installation, err := harness.ResolveExecution(context.Background(), domain.ExecutionStartupSelection{Harness: domain.Codex, ExplicitPath: executable})
+	if err != nil {
+		t.Fatal(err)
+	}
+	creation, runtime, job := domain.NewID(), domain.NewID(), domain.NewID()
+	if err := security.PrivateDir(filepath.Join(root, "runtimes")); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(root, "runtimes", string(runtime))); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeStartupExecutable(root, creation, installation); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeForkStartupExecutable(root, runtime, installation); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "jobs", string(creation))); err != nil {
+		t.Fatal(err)
+	}
+	input := domain.ExecutionJobInput{Version: 4, Startup: &domain.ExecutionStartupSelection{Harness: domain.Codex, ExecutableSHA256: installation.ExecutableSHA256}, Fork: &domain.ForkExecution{JobID: creation, RuntimeID: runtime}}
+	config := Config{Root: root, startup: &executionStartupAttempt{}}
+	resolved, err := resolveExecutionStartup(context.Background(), config, job, input)
+	if err != nil || resolved.ResolvedPath != installation.ResolvedPath || resolved.ExecutableSHA256 != installation.ExecutableSHA256 {
+		t.Fatal("Fork lost its child-owned executable identity", err)
+	}
+	if err := os.Remove(filepath.Join(root, "runtimes", string(runtime), "startup-executable.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveExecutionStartup(context.Background(), config, domain.NewID(), input); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("missing original identity authorized fallback", err)
 	}
 }
