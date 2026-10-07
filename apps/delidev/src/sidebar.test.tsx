@@ -46,6 +46,7 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 60000, refetchOnWindowFocus: false } } });
   const openSession = vi.fn();
   const openSettings = vi.fn();
+  const newProject = vi.fn();
   let currentProps = props;
   let selectSurface!: (surface: Surface) => void;
   const newSession = vi.fn(() => { if (stateful) selectSurface(Surface.NewSession); });
@@ -54,12 +55,12 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   function Harness() {
     const [surface, setSurface] = useState(Surface.Sessions);
     selectSurface = setSurface;
-    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} newGeneralChat={newGeneralChat} openSettings={openSettings} {...currentProps} />;
+    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} newGeneralChat={newGeneralChat} newProject={newProject} openSettings={openSettings} {...currentProps} />;
   }
   const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><Harness /></QueryClientProvider></TransportProvider>;
   const view = render(tree());
   const setProps = (next: Partial<ComponentProps<typeof Sidebar>>) => { currentProps = { ...currentProps, ...next }; view.rerender(tree()); };
-  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, newGeneralChat, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
+  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, newGeneralChat, newProject, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
 }
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
@@ -90,6 +91,47 @@ it("keeps equal-name projects separate, includes empty projects, and only reads 
   expect(value.sessionRequests.filter((request) => request.projectId === second.id)).toHaveLength(1);
   expect(value.sessionRequests.filter((request) => request.projectId === empty.id)).toHaveLength(1);
   expect(value.openSession).not.toHaveBeenCalled();
+});
+
+it("opens project creation shortcuts without toggling groups or reading collapsed sessions", async () => {
+  const first = resource(EntityKind.PROJECT, "Same name");
+  const second = resource(EntityKind.PROJECT, "Same name");
+  const empty = resource(EntityKind.PROJECT, "Empty project");
+  const value = mountSidebar({ projects: () => ({ resources: [first, second, empty] }), sessions: () => ({ sessions: [] }) });
+  for (const project of [first, second, empty]) {
+    const name = JSON.parse(new TextDecoder().decode(project.documentJson)).name as string;
+    const toggle = await screen.findByRole("button", { name: `${name}. Project ID: ${project.id}` });
+    const shortcut = screen.getByRole("button", { name: `New session in ${name}. Project ID: ${project.id}` });
+    expect(shortcut.parentElement).toBe(toggle.parentElement);
+    expect(toggle.contains(shortcut)).toBe(false);
+    expect(shortcut.getAttribute("title")).toBe(`New session in ${name}`);
+    fireEvent.click(shortcut);
+    expect(value.newSession).toHaveBeenLastCalledWith(project.id);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(value.sessionRequests.some(request => request.projectId === project.id)).toBe(false);
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(shortcut);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  }
+  value.setProps({ projectSelectionBlocked: true });
+  const disabled = screen.getByRole("button", { name: `New session in Same name. Project ID: ${first.id}` });
+  expect(disabled).toHaveProperty("disabled", true);
+  const before = value.newSession.mock.calls.length;
+  fireEvent.click(disabled);
+  expect(value.newSession).toHaveBeenCalledTimes(before);
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("button", { name: `Same name 프로젝트의 새 세션. 프로젝트 ID: ${first.id}` })).toBe(disabled);
+  expect(disabled.getAttribute("title")).toBe("Same name 프로젝트의 새 세션");
+});
+
+it("keeps creation shortcuts out of unknown-project and General Chat groups", async () => {
+  const unknown = resource(EntityKind.SESSION, "Unknown parent", newRequestId());
+  const general = resource(EntityKind.SESSION, "Projectless");
+  mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [unknown, general] }) });
+  await screen.findByRole("button", { name: /Unknown parent/ });
+  await screen.findByRole("button", { name: /Projectless/ });
+  expect(screen.queryByRole("button", { name: /^New session in / })).toBeNull();
 });
 
 it("includes the safe title reason in sidebar text and its accessible description", async () => {
@@ -491,7 +533,7 @@ it("retries an expanded project's exact session page without refetching other sc
   expect(value.sessionRequests.filter((request) => !request.projectId)).toHaveLength(1);
 });
 
-it("routes the icon rail to the matching surface and opens New project through Settings", async () => {
+it("routes the icon rail to the matching surface and opens New project independently of Settings", async () => {
   const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
   await screen.findByRole("button", { name: "Sessions" });
   const newProject = screen.getByRole("button", { name: "New project" });
@@ -500,7 +542,8 @@ it("routes the icon rail to the matching surface and opens New project through S
   fireEvent.focus(newProject);
   expect(window.document.querySelector(".sidebar-action-tooltip")?.textContent).toBe("New project");
   fireEvent.click(newProject);
-  expect(value.openSettings).toHaveBeenCalledWith("new-project");
+  expect(value.newProject).toHaveBeenCalledOnce();
+  expect(value.openSettings).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   expect(value.navigate).toHaveBeenCalledWith(Surface.PullRequests);
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
@@ -598,7 +641,8 @@ it("keeps the archive popup open for changes and restores its opener on Escape",
   const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
   await screen.findByText("No projects loaded.");
   fireEvent.click(screen.getByRole("button", { name: "Create a project" }));
-  expect(value.openSettings).toHaveBeenCalledWith("new-project");
+  expect(value.newProject).toHaveBeenCalledOnce();
+  expect(value.openSettings).not.toHaveBeenCalled();
   const opener = screen.getByRole("button", { name: "Project and conversation options" });
   fireEvent.click(opener);
   const popup = screen.getByRole("dialog", { name: "Project and conversation options" });

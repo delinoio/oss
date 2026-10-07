@@ -17,6 +17,9 @@ const technicalElements = new Set(["pre", "code", "kbd"]);
 // Classic and Fine grained are the approved GitHub token-kind button labels in
 // both languages; guidance and operation states remain translated.
 const technicalLiterals = new Set(["https://example.com/", "col", "row", "github.com", "Checks API", "Active rulesets API", "Commit statuses API", "DeliDev", "GitHub", "Classic", "Fine grained", "Codex", "Claude", "Grok", "OpenCode", "ChatGPT", "English", "한국어", "USD", "SHA-256", "Glob", "Grep", "Worktree", "Write-ahead log", "cacheRead", "cacheWrite", "ci_failure", "head", "created_at", "started_at", "updated_at", "public-repositories", "private-repositories", "selected-repositories", "API", "UTC", "ms"]);
+// The language picker uses the same English/native self-names in both UIs.
+technicalLiterals.add("English - English");
+technicalLiterals.add("Korean - 한국어");
 
 test("both catalogs contain every nonempty key and identical named slots", () => {
   for (const directory of ["src/locales", "locales/native"]) {
