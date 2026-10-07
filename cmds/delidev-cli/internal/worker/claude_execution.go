@@ -149,6 +149,15 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if nativeProfile != nil {
 		nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: nativeProfile.home}
 	}
+	if nativeProfile != nil {
+		if err := security.PrivateDir(filepath.Join(manager.Root, "processes", string(owner))); err != nil {
+			return nil, err
+		}
+		nativeProfile.managedLease.journal.ExecutionStarted = true
+		if err := writeJSON(nativeProfile.managedLease.journalPath, nativeProfile.managedLease.journal); err != nil {
+			return nil, publicationUncertain()
+		}
+	}
 	var api *claude.APISession
 	intent := claude.ContinueSuccessfulRun
 	if input.Continuation != nil {

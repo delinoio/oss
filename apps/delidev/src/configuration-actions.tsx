@@ -19,7 +19,7 @@ export function ConfigurationDeletion({ active = true, ...props }: DeletionProps
   useLocale();
   const closeTask = useCloseSettingsTask(props.close);
   const key = props.initial.id;
-  return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT)
+  return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT) || serviceAccount(props.initial, undefined, SubscriptionServiceId.Claude)
     ? <ChatGPTAccountDeletion key={key} {...props} active={active} />
     : <ConfigurationDeletionRequest key={key} {...props} active={active} close={closeTask} />;
 }

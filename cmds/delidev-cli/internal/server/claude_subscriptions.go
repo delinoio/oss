@@ -417,10 +417,8 @@ func (s *Service) publishClaudeSubscriptionProgress(ctx context.Context, req *co
 	defer unlock()
 	canceled := false
 	var operation domain.ID
-	_, err = s.Store.Mutate(ctx, domain.NewID(), "claude.subscription.progress", struct {
-		Account, Lease domain.ID
-		State          pb.SubscriptionLoginState
-	}{domain.ID(msg.AccountId), domain.ID(msg.LeaseId), msg.State}, func(tx *store.Tx) (any, error) {
+	changed := false
+	observe := func(tx *store.Tx, write bool) (any, error) {
 		r, a, err := s.claudeSubscriptionLease(ctx, tx, domain.ID(msg.AccountId), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.InstanceId))
 		if err != nil {
 			return nil, err
@@ -447,11 +445,15 @@ func (s *Service) publishClaudeSubscriptionProgress(ctx context.Context, req *co
 			}
 		}
 		next := subscriptionStateFromWire(msg.State)
-		if o.State == next && o.LoginMethod == method && (diagnostic == nil || o.Diagnostic != nil) {
+		if o.State == next && (method == 0 || o.LoginMethod == method) && (diagnostic == nil || o.Diagnostic != nil) {
 			return accountReceipt{ID: r.ID}, nil
 		}
 		if o.State != domain.SubscriptionPreparing && o.State != domain.SubscriptionWaiting {
 			return nil, subscriptionDenied()
+		}
+		changed = true
+		if !write {
+			return accountReceipt{ID: r.ID}, nil
 		}
 		o.State = next
 		if method != 0 {
@@ -462,7 +464,15 @@ func (s *Service) publishClaudeSubscriptionProgress(ctx context.Context, req *co
 		}
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return accountReceipt{ID: r.ID}, err
-	})
+	}
+	// Idle progress polling validates its original lease without creating durable receipts.
+	err = s.Store.Read(ctx, func(tx *store.Tx) error { _, err := observe(tx, false); return err })
+	if err == nil && changed {
+		_, err = s.Store.Mutate(ctx, domain.NewID(), "claude.subscription.progress", struct {
+			Account, Lease domain.ID
+			State          pb.SubscriptionLoginState
+		}{domain.ID(msg.AccountId), domain.ID(msg.LeaseId), msg.State}, func(tx *store.Tx) (any, error) { return observe(tx, true) })
+	}
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -561,7 +571,7 @@ func (s *Service) TakeSubscriptionLoginCode(ctx context.Context, req *connect.Re
 	operation := domain.ID(msg.OperationId)
 	var submission domain.ID
 	var ready bool
-	_, err = s.Store.Mutate(ctx, domain.NewID(), "claude.subscription.take-code", struct{ Account, Lease, Operation domain.ID }{domain.ID(msg.AccountId), domain.ID(msg.LeaseId), operation}, func(tx *store.Tx) (any, error) {
+	observe := func(tx *store.Tx, consume bool) (any, error) {
 		r, a, err := s.claudeSubscriptionLease(ctx, tx, domain.ID(msg.AccountId), domain.ID(msg.LeaseId), domain.ID(msg.MachineId), domain.ID(msg.InstanceId))
 		if err != nil {
 			return nil, err
@@ -581,11 +591,19 @@ func (s *Service) TakeSubscriptionLoginCode(ctx context.Context, req *connect.Re
 			return nil, subscriptionDenied()
 		}
 		submission = o.CodeSubmissionID
-		o.CodeConsumed = true
 		ready = true
+		if !consume {
+			return accountReceipt{ID: r.ID}, nil
+		}
+		o.CodeConsumed = true
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return accountReceipt{ID: r.ID}, err
-	})
+	}
+	err = s.Store.Read(ctx, func(tx *store.Tx) error { _, err := observe(tx, false); return err })
+	if err == nil && ready {
+		// Record consumption before releasing code bytes; an uncertain response never permits replay.
+		_, err = s.Store.Mutate(ctx, domain.NewID(), "claude.subscription.take-code", struct{ Account, Lease, Operation domain.ID }{domain.ID(msg.AccountId), domain.ID(msg.LeaseId), operation}, func(tx *store.Tx) (any, error) { return observe(tx, true) })
+	}
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -679,7 +697,7 @@ func (s *Service) finishClaudeSubscription(ctx context.Context, req *connect.Req
 				return nil, err
 			}
 			if l.Action == domain.SubscriptionLogin || l.Action == domain.SubscriptionRefresh {
-				if canceled {
+				if canceled || st.NativeOperation == nil || !st.NativeOperation.ExpiresAt.After(time.Now().UTC()) || subscriptionActorValid(tx, st.NativeOperation.Actor) != nil {
 					return nil, subscriptionDenied()
 				}
 				st.Generation = domain.NewID()
@@ -727,6 +745,8 @@ func (s *Service) finishClaudeSubscription(ctx context.Context, req *connect.Req
 					o.State = domain.SubscriptionCanceled
 				} else if input.Success {
 					o.State = domain.SubscriptionSucceeded
+				} else if !o.ExpiresAt.After(time.Now().UTC()) {
+					o.State = domain.SubscriptionExpired
 				} else if o.State == domain.SubscriptionPreparing || o.State == domain.SubscriptionWaiting || o.State == domain.SubscriptionRecovery {
 					o.State = domain.SubscriptionFailed
 				}

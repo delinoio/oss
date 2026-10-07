@@ -52,6 +52,7 @@ type managedSubscriptionJournal struct {
 	Version                                                 uint32    `json:"version"`
 	NativeProfileID                                         domain.ID `json:"native_profile_id,omitempty"`
 	NativeIdentity                                          string    `json:"native_identity,omitempty"`
+	ExecutionStarted                                        bool      `json:"execution_started,omitempty"`
 	NativeStarted                                           bool      `json:"native_started,omitempty"`
 	CodeSubmissionID                                        domain.ID `json:"code_submission_id,omitempty"`
 	Lease, Account, Operation, Instance, Finish, Generation domain.ID

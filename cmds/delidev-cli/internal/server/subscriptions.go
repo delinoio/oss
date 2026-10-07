@@ -87,6 +87,13 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 		if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
 			o.State = domain.SubscriptionCanceled
 		}
+		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
+			o.State = domain.SubscriptionCanceled
+			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
+				state.NativeProfileID = ""
+				state.OwnerMachineID = ""
+			}
+		}
 		state.Pending = nil
 		if _, err := tx.Put(domain.AccountKind, record.ID, record.Revision, "", "", account); err != nil {
 			return err
@@ -329,6 +336,10 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 			if err := subscriptionWorkerLane(tx, domain.ID(req.Msg.MachineId)); err != nil {
 				return err
 			}
+			_, machine, err := activeMachine(tx, domain.ID(req.Msg.MachineId))
+			if err != nil {
+				return err
+			}
 			accounts, err := all(tx, domain.AccountKind)
 			if err != nil {
 				return err
@@ -337,6 +348,9 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 				a, err := store.Decode[domain.Account](r)
 				if err != nil {
 					return err
+				}
+				if a.SubscriptionService == domain.SubscriptionClaude && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) || a.SubscriptionService == domain.SubscriptionChatGPT && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+					continue
 				}
 				state := a.Subscription
 				if state != nil && a.SubscriptionService == domain.SubscriptionClaude && state.RecoveryRequired && state.Lease != nil && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {

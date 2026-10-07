@@ -304,6 +304,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 					err = nil
 				}
 			}
+			config.nativeClaudeInstallation = nil
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1) {
 				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
 				claudeCapabilityExpected, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)

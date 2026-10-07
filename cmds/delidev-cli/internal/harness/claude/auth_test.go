@@ -2,10 +2,17 @@
 package claude
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -57,11 +64,7 @@ func TestNativeClaudeLoginURLAndSingleLineCode(t *testing.T) {
 			t.Fatal("accepted invalid original stdin input")
 		}
 	}
-	output.data = nil
-	output.progress = AuthLoginProgress{}
-	if output.progress.URL != "" || len(output.data) != 0 {
-		t.Fatal("sensitive presentation survived cleanup")
-	}
+
 }
 func TestNativeClaudeStatusRejectsAPIAuthentication(t *testing.T) {
 	email, org, plan := "fixture@example.invalid", "fixture-org", "pro"
@@ -98,5 +101,173 @@ func TestNativeClaudeSubscriptionInitializeIsSeparate(t *testing.T) {
 	raw, _ = json.Marshal(result)
 	if validateInitializeMode(raw, "dontAsk", "ANTHROPIC_API_KEY", true) == nil {
 		t.Fatal("mixed API/subscription authentication accepted")
+	}
+}
+
+func init() {
+	if len(os.Args) < 2 || !strings.HasPrefix(filepath.Base(os.Getenv("HOME")), "fixture-auth-native-") {
+		return
+	}
+	home := os.Getenv("CLAUDE_CONFIG_DIR")
+	if home != filepath.Join(os.Getenv("HOME"), "claude") || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != home {
+		os.Exit(80)
+	}
+	for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "HTTPS_PROXY", "NODE_OPTIONS"} {
+		if os.Getenv(key) != "" {
+			os.Exit(81)
+		}
+	}
+	marker := filepath.Join(home, "fixture-account-state.json")
+	if os.Args[1] == "--version" {
+		fmt.Println(SupportedVersion + " (Claude Code)")
+		os.Exit(0)
+	}
+	if len(os.Args) < 3 || os.Args[1] != "auth" {
+		os.Exit(82)
+	}
+	switch os.Args[2] {
+	case "login":
+		if len(os.Args) != 4 || os.Args[3] != "--claudeai" {
+			os.Exit(83)
+		}
+		fmt.Println(authFixtureURL())
+		fmt.Print("Paste code here if prompted > ")
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() || scanner.Text() != "fixture-approval#original-state" {
+			os.Exit(84)
+		}
+		if os.WriteFile(marker, []byte(`{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"fixture@example.invalid","orgId":"fixture-org","subscriptionType":"pro"}`), 0600) != nil {
+			os.Exit(85)
+		}
+		fmt.Println("Fixture login complete")
+		os.Exit(0)
+	case "status":
+		data, err := os.ReadFile(marker)
+		if err != nil {
+			fmt.Println(`{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}`)
+			os.Exit(1)
+		}
+		_, _ = os.Stdout.Write(data)
+		os.Exit(0)
+	case "logout":
+		_ = os.Remove(marker)
+		fmt.Println("Fixture logout complete")
+		os.Exit(0)
+	}
+	os.Exit(86)
+}
+
+func TestNativeClaudeAuthProcessIsolationExitAndLogout(t *testing.T) {
+	first, _ := fixtureConfig(t, "auth-native-first")
+	second, _ := fixtureConfig(t, "auth-native-second")
+	config := AuthConfig{Process: first.Process, Version: first.Version, Home: first.Home}
+	config.Process.Env = append(config.Process.Env, "ANTHROPIC_API_KEY=foreign-fixture", "CLAUDE_CODE_OAUTH_TOKEN=foreign-fixture", "HTTPS_PROXY=http://foreign.invalid")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := VerifyAuthVersion(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	before, err := ReadAuthStatus(ctx, config)
+	if err != nil || before.LoggedIn {
+		t.Fatal("empty profile was not isolated", err)
+	}
+	login, err := StartSubscriptionLogin(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer login.Close()
+	deadline := time.After(3 * time.Second)
+	for {
+		p, err := login.Progress()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.URL != "" {
+			if p.URL != authFixtureURL() || p.Method != domain.SubscriptionBrowserCode {
+				t.Fatal("original progress changed")
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("native URL missing")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	code := []byte("fixture-approval#original-state")
+	if err := login.Submit(code); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(code, make([]byte, len(code))) {
+		t.Fatal("submitted bytes retained")
+	}
+	duplicate := []byte("fixture-approval#original-state")
+	if login.Submit(duplicate) == nil {
+		t.Fatal("original stdin consumed twice")
+	}
+	select {
+	case <-login.Done():
+	case <-ctx.Done():
+		t.Fatal("original login did not exit")
+	}
+	if err := login.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if err := login.Close(); err != nil {
+		t.Fatal(err)
+	}
+	status, err := ReadAuthStatus(ctx, config)
+	if err != nil || !status.Subscription() {
+		t.Fatal("native status did not confirm original process", err)
+	}
+	other, err := ReadAuthStatus(ctx, AuthConfig{Process: second.Process, Version: second.Version, Home: second.Home})
+	if err != nil || other.LoggedIn {
+		t.Fatal("other account profile borrowed authentication", err)
+	}
+	if err := LogoutSubscription(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	after, err := ReadAuthStatus(ctx, config)
+	if err != nil || after.LoggedIn {
+		t.Fatal("native logout not observed", err)
+	}
+	p, err := login.Progress()
+	if err != nil || p.URL != "" {
+		t.Fatal("joined process retained URL")
+	}
+}
+
+func TestNativeClaudeExecutionDoesNotInjectRelayAuthentication(t *testing.T) {
+	config, _ := apiFixtureConfig(t, "valid")
+	profile, _ := fixtureConfig(t, "auth-native-profile")
+	config.Subscription = &NativeSubscriptionProfile{ID: domain.NewID(), Home: profile.Home}
+	prepared, err := prepareAPIStream(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{}
+	for _, entry := range prepared.Env {
+		key, value, _ := strings.Cut(entry, "=")
+		if _, duplicate := values[key]; duplicate {
+			t.Fatal("duplicate environment authority")
+		}
+		values[key] = value
+	}
+	for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"} {
+		if _, present := values[key]; present {
+			t.Fatal("API relay or imported authentication mixed with native subscription", key)
+		}
+	}
+	if values["CLAUDE_CONFIG_DIR"] != profile.Home || values["CLAUDE_SECURESTORAGE_CONFIG_DIR"] != profile.Home || values["HOME"] != filepath.Dir(config.Home) {
+		t.Fatal("profile/history and execution runtime ownership mixed")
+	}
+	original := checkpointConfiguration(config, config.API.ServerOrigin)
+	config.Subscription = &NativeSubscriptionProfile{ID: domain.NewID(), Home: profile.Home}
+	if checkpointConfiguration(config, config.API.ServerOrigin) == original {
+		t.Fatal("checkpoint admitted a replacement native profile")
+	}
+	raw, _ := json.Marshal(config)
+	if bytes.Contains(raw, []byte(profile.Home)) || bytes.Contains(raw, []byte(config.API.Token)) {
+		t.Fatal("checkpoint configuration serialized profile or authority")
 	}
 }

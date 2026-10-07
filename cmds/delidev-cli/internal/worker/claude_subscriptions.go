@@ -28,11 +28,12 @@ type claudeProfileOwner struct {
 	Server, Machine, Account, Profile domain.ID
 }
 type nativeClaudeProfile struct {
-	root, home string
-	original   os.FileInfo
-	lock       *security.Lock
-	owner      claudeProfileOwner
-	config     claude.AuthConfig
+	root, home   string
+	original     os.FileInfo
+	lock         *security.Lock
+	owner        claudeProfileOwner
+	config       claude.AuthConfig
+	managedLease *managedSubscriptionLease
 }
 
 func claudeProfileRoot(root string, credential Credential, account, profile domain.ID) (string, error) {
@@ -471,6 +472,7 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 		_ = finish(false)
 		return nil, nil, err
 	}
+	profile.managedLease = lease
 	return profile, finish, nil
 }
 
@@ -493,7 +495,7 @@ func runClaudeRecovery(ctx context.Context, config Config, client delidevv1conne
 			return err
 		}
 	}
-	if original.Action == domain.SubscriptionExecute {
+	if original.Action == domain.SubscriptionExecute && journal.ExecutionStarted {
 		if err := process.ReconcileOwnerContext(ctx, filepath.Join(config.Root, "processes"), original.OperationID); err != nil {
 			return err
 		}

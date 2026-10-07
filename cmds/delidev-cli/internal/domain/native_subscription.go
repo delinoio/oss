@@ -78,6 +78,9 @@ func (s SubscriptionState) validateNativeClaude(account Account) error {
 	if s.ServerOperation != nil || s.Observation != nil || s.ResetCredits != nil || s.QuotaState != "" || s.QuotaObservedAt != nil || s.SpendControlReached != nil || s.SpendControlObservedAt != nil {
 		return invalid()
 	}
+	if (s.NativeProfileID == "") != (s.OwnerMachineID == "") {
+		return invalid()
+	}
 	if s.NativeProfileID != "" && (s.NativeProfileID.Validate() != nil || s.OwnerMachineID.Validate() != nil) || s.Generation != "" && (s.NativeProfileID == "" || !NativeIdentityCommitmentValid(s.IdentityCommitment)) {
 		return invalid()
 	}
