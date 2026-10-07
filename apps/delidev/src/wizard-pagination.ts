@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useMemo } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { AccountTypeFilter, ApiProtocol, EntityKind, ProviderQuery, ResourceQuery, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { ErrorDetailSchema, FailureCode, AccountTypeFilter, ApiProtocol, EntityKind, ProviderQuery, ResourceQuery, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
 import { SourceKind, modelSource, sameSource, sourceKey, wireService, type Source } from "./worker-source";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 
 function validate(rows: Resource[], kind: EntityKind, source?: Source) {
-  if (rows.length > 50 || new Set(rows.map(row => row.id)).size !== rows.length || rows.some(row => !row.id || row.revision < 1n || row.kind !== kind || (kind === EntityKind.ACCOUNT ? !sameSource(row, source) : !supportsResourceSchema(row) || sourceKey(modelSource(row)) !== sourceKey(source)))) throw new ConnectError("The selected source inventory is unavailable.", Code.DataLoss);
+  if (rows.length > 50 || new Set(rows.map(row => row.id)).size !== rows.length || rows.some(row => !row.id || row.revision < 1n || row.kind !== kind || (kind === EntityKind.ACCOUNT ? !sameSource(row, source) : !supportsResourceSchema(row) || sourceKey(modelSource(row)) !== sourceKey(source)))) throw new ConnectError("The selected source inventory is unavailable.", Code.DataLoss, undefined, [{ desc: ErrorDetailSchema, value: { code: FailureCode.Internal } }]);
 }
 export function useWizardAccounts(source: Source | undefined, protocol: ApiProtocol, active: boolean) {
   const request = useCallback((token: string) => ({ filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: token }, providerId: source?.kind === SourceKind.Api ? source.id : "", accountType: source?.kind === SourceKind.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION, subscriptionService: wireService(source), apiProtocol: protocol }), [source, protocol]);
