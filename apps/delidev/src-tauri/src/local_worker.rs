@@ -73,10 +73,7 @@ impl Connector {
             self.root.join("desktop-client").into_os_string(),
         ])?)
         .map_err(|_| NativeFailure::InvalidEvidence)?;
-        if client.kind != DeviceType::Client
-            || !client.machine_id.is_empty()
-            || client.endpoint != format!("http://{}", self.listen)
-        {
+        if client.kind != DeviceType::Client || !client.machine_id.is_empty() {
             return Err(NativeFailure::InvalidEvidence);
         }
         if matches!(action, LocalWorkerAction::Register) {
@@ -86,7 +83,7 @@ impl Connector {
         // no renderer-selected machine, path, endpoint or credential is
         // accepted.
         let proof = self.local_worker_proof_inner()?;
-        if proof.endpoint != client.endpoint || proof.server_id != client.server_id {
+        if proof.server_id != client.server_id {
             return Err(NativeFailure::InvalidEvidence);
         }
         match action {
@@ -106,7 +103,7 @@ impl Connector {
         worker_status(
             self.run(&["worker".into(), "status".into()])?,
             &proof.server_id,
-            &proof.endpoint,
+            &proof.paired_endpoint,
             &proof.machine_id,
         )
     }
@@ -231,9 +228,12 @@ impl Connector {
         self.check_saved_profile(expected)?;
         Ok(LocalWorkerProof {
             endpoint: verified.endpoint.clone(),
+            paired_endpoint: verified.endpoint.clone(),
             server_id: verified.server_id.clone(),
             machine_id: metadata.machine_id,
             token: verified.token.clone(),
+            runtime_generation: None,
+            runtime_key: None,
         })
     }
 

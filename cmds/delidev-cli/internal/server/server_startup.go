@@ -138,6 +138,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		return err
 	}
 	listener := config.Listener
+	if listener != nil && (config.Desktop == nil || listener.Addr().String() != config.Listen) {
+		return domain.Fail(domain.Conflict, "The retained desktop listener does not match its runtime.", "Preserve the original listener ownership.")
+	}
 	if listener == nil {
 		listener, err = net.Listen("tcp", config.Listen)
 	}

@@ -501,11 +501,16 @@ impl BrowserHost {
         {
             return Err(NativeFailure::Stopped);
         }
+        let local_endpoint = self.connector.current_runtime_endpoint()?;
         let endpoint = scope
             .as_ref()
             .map(|s| s.endpoint.as_str())
-            .unwrap_or("http://127.0.0.1:46310");
+            .unwrap_or(&local_endpoint);
         let mut policy = Policy::new(endpoint, url)?;
+        policy.protect_local_runtime(&local_endpoint)?;
+        if !policy.navigation(url) {
+            return Err(NativeFailure::InvalidInput);
+        }
         let existing = {
             let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
             if state.reservations.get(window).map(String::as_str) != Some(view_id) {
@@ -2179,7 +2184,8 @@ mod tests {
         let sidecar = temp.path().join("sidecar");
         fs::write(&sidecar, "#!/bin/sh\nexit 1\n").unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
-        let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
+        let connector =
+            Arc::new(native_fixture_connector(sidecar, temp.path().to_path_buf()).unwrap());
         let host = Arc::new(BrowserHost::new(temp.path().join("cef"), connector, mode).unwrap());
         let record = ProfileRecord {
             id: uuid::Uuid::now_v7().to_string(),
@@ -3622,7 +3628,8 @@ esac
         let sidecar = temp.path().join("sidecar");
         fs::write(&sidecar, "#!/bin/sh\nexit 1\n").unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
-        let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
+        let connector =
+            Arc::new(native_fixture_connector(sidecar, temp.path().to_path_buf()).unwrap());
         let host = BrowserHost::new(
             temp.path().join("cef"),
             connector,
@@ -3792,7 +3799,8 @@ esac
         let sidecar = temp.path().join("sidecar");
         fs::write(&sidecar, "#!/bin/sh\nexit 1\n").unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
-        let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
+        let connector =
+            Arc::new(native_fixture_connector(sidecar, temp.path().to_path_buf()).unwrap());
         let host = BrowserHost::new(
             temp.path().join("cef"),
             connector,
@@ -3891,7 +3899,8 @@ esac
         )
         .unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
-        let connector = Arc::new(Connector::new(sidecar, temp.path().to_path_buf()).unwrap());
+        let connector =
+            Arc::new(native_fixture_connector(sidecar, temp.path().to_path_buf()).unwrap());
         let host = BrowserHost::new(
             temp.path().join("cef"),
             connector,
@@ -3925,4 +3934,20 @@ esac
         assert!(!cache.exists());
         assert_eq!(fs::read_dir(host.root.join("removals")).unwrap().count(), 0);
     }
+}
+
+#[cfg(all(test, unix))]
+fn native_fixture_connector(executable: PathBuf, root: PathBuf) -> Result<Connector> {
+    use std::os::unix::fs::PermissionsExt;
+    let operation = executable.with_extension("operation");
+    fs::rename(&executable, &operation).unwrap();
+    let adapter = include_str!("resident_fixture.py").replace(
+        "OPERATION_PATH",
+        &serde_json::to_string(&operation.to_string_lossy()).unwrap(),
+    );
+    fs::write(&executable, adapter).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let connector = Connector::new(executable, root)?;
+    connector.runtime_endpoint()?;
+    Ok(connector)
 }

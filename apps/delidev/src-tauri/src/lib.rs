@@ -1,3 +1,4 @@
+#![cfg_attr(windows, feature(windows_process_extensions_raw_attribute))]
 use std::{
     ffi::OsString,
     fs::{self, File},
@@ -5,11 +6,10 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -128,11 +128,16 @@ pub struct Connection {
     pub server_id: String,
     pub device_id: String,
     pub token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_generation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_key: Option<String>,
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
         self.token.zeroize();
+        self.runtime_key.zeroize();
     }
 }
 
@@ -141,12 +146,19 @@ pub struct LocalWorkerProof {
     pub endpoint: String,
     pub server_id: String,
     pub machine_id: String,
+    #[serde(skip)]
+    pub(crate) paired_endpoint: String,
     pub token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_generation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_key: Option<String>,
 }
 
 impl Drop for LocalWorkerProof {
     fn drop(&mut self) {
         self.token.zeroize();
+        self.runtime_key.zeroize();
     }
 }
 
@@ -180,12 +192,6 @@ struct Credential {
 }
 
 #[derive(Deserialize)]
-struct CliEnvelope {
-    version: u32,
-    result: Option<serde_json::Value>,
-    error: Option<CliFailure>,
-}
-#[derive(Deserialize)]
 struct CliFailure {
     code: String,
 }
@@ -198,7 +204,7 @@ pub struct Connector {
     command_timeout: Duration,
     listen: String,
     exiting: AtomicBool,
-    hosted: Mutex<Vec<desktop_host::DesktopChild>>,
+    session: Arc<desktop_host::Session>,
 }
 
 impl Connector {
@@ -239,7 +245,6 @@ impl Connector {
         if current.metadata != *original
             || original.kind != DeviceType::Client
             || !original.machine_id.is_empty()
-            || original.endpoint != "http://127.0.0.1:46310"
         {
             return Err(NativeFailure::InvalidEvidence);
         }
@@ -296,9 +301,9 @@ impl Connector {
             gate: Mutex::new(()),
             oauth_identity: Mutex::new(None),
             command_timeout: COMMAND_TIMEOUT,
-            listen: "127.0.0.1:46310".into(),
+            listen: "127.0.0.1:0".into(),
             exiting: AtomicBool::new(false),
-            hosted: Mutex::new(Vec::new()),
+            session: Arc::new(desktop_host::Session::new()),
         })
     }
 
@@ -348,7 +353,6 @@ impl Connector {
         if client.kind != DeviceType::Client
             || !client.machine_id.is_empty()
             || metadata.kind != DeviceType::Worker
-            || metadata.endpoint != client.endpoint
             || metadata.server_id != client.server_id
         {
             return Err(NativeFailure::InvalidEvidence);
@@ -365,10 +369,13 @@ impl Connector {
         )?);
         let verified = verified_connection(&bytes, &metadata, DeviceType::Worker)?;
         Ok(LocalWorkerProof {
-            endpoint: verified.endpoint.clone(),
+            endpoint: self.runtime_endpoint()?,
+            paired_endpoint: verified.endpoint.clone(),
             server_id: verified.server_id.clone(),
             machine_id: metadata.machine_id,
             token: verified.token.clone(),
+            runtime_generation: Some(self.runtime()?.generation.clone()),
+            runtime_key: Some(self.runtime()?.key.clone()),
         })
     }
 
@@ -478,7 +485,11 @@ impl Connector {
             File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
             16 << 10,
         )?);
-        let connection = connection_from_bytes(&bytes, &metadata)?;
+        let mut connection = connection_from_bytes(&bytes, &metadata)?;
+        let runtime = self.runtime()?;
+        connection.endpoint = runtime.endpoint.clone();
+        connection.runtime_generation = Some(runtime.generation.clone());
+        connection.runtime_key = Some(runtime.key.clone());
         *self
             .oauth_identity
             .lock()
@@ -526,7 +537,10 @@ impl Connector {
         );
         // Only the closed OS opener needs desktop-session display context.
         // No renderer-controlled environment or provider credentials are used.
-        if arguments.first().is_some_and(|v| v == "presentation") {
+        if arguments.first().is_some_and(|v| v == "presentation")
+            || (arguments.first().is_some_and(|v| v == "server")
+                && arguments.get(1).is_some_and(|v| v == "desktop-host"))
+        {
             for name in [
                 "DISPLAY",
                 "XAUTHORITY",
@@ -564,71 +578,7 @@ impl Connector {
         input: Option<Zeroizing<Vec<u8>>>,
         timeout: Duration,
     ) -> Result<serde_json::Value> {
-        if self.exiting.load(Ordering::Acquire) {
-            return Err(NativeFailure::Stopped);
-        }
-        let mut command = self.sidecar_command(arguments, input.is_some())?;
-        let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
-        let stdout = child.stdout.take().ok_or(NativeFailure::SidecarFailed)?;
-        let stderr = child.stderr.take().ok_or(NativeFailure::SidecarFailed)?;
-        let out = thread::spawn(move || read_bounded(stdout, OUTPUT_LIMIT));
-        let err = thread::spawn(move || read_bounded(stderr, OUTPUT_LIMIT));
-        let writer = input.map(|bytes| {
-            let mut stdin = child.stdin.take().expect("piped input for closed command");
-            thread::spawn(move || {
-                stdin
-                    .write_all(&bytes)
-                    .map_err(|_| NativeFailure::SidecarFailed)
-            })
-        });
-        let started = Instant::now();
-        let result = loop {
-            if self.exiting.load(Ordering::Acquire) {
-                break Err(NativeFailure::Stopped);
-            }
-            match child.try_wait() {
-                Ok(Some(status)) => break Ok(status),
-                Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(25)),
-                Ok(None) => break Err(NativeFailure::TimedOut),
-                Err(_) => break Err(NativeFailure::SidecarFailed),
-            }
-        };
-        if result.is_err() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        // These closed CLI operations cannot leave descendants holding these
-        // pipes: detached servers redirect both streams to their private log.
-        let output = out.join().map_err(|_| NativeFailure::SidecarFailed)?;
-        let diagnostic = err.join().map_err(|_| NativeFailure::SidecarFailed)?;
-        let written = writer
-            .map(|writer| writer.join().map_err(|_| NativeFailure::SidecarFailed))
-            .transpose()?;
-        let status = result?;
-        if let Some(written) = written {
-            written?;
-        }
-        diagnostic?; // Drain and bound diagnostics, but never reflect their contents.
-        let envelope: CliEnvelope =
-            serde_json::from_slice(&output?).map_err(|_| NativeFailure::InvalidEvidence)?;
-        if envelope.version != 1 {
-            return Err(NativeFailure::Incompatible);
-        }
-        if let Some(error) = envelope.error {
-            return Err(match error.code.as_str() {
-                "unsupported" => NativeFailure::Incompatible,
-                "invalid_argument" | "missing_input" => NativeFailure::InvalidInput,
-                "unauthenticated" => NativeFailure::CredentialUnavailable,
-                "permission_denied" => NativeFailure::PermissionDenied,
-                "conflict" => NativeFailure::Busy,
-                "recovery_required" => NativeFailure::InvalidEvidence,
-                _ => NativeFailure::SidecarFailed,
-            });
-        }
-        if !status.success() {
-            return Err(NativeFailure::SidecarFailed);
-        }
-        envelope.result.ok_or(NativeFailure::InvalidEvidence)
+        self.resident_request(arguments, input, timeout)
     }
 
     fn ensure(&self) -> Result<LocalServerState> {
@@ -654,9 +604,8 @@ impl Connector {
         .ok_or(NativeFailure::InvalidEvidence)?;
         if status.get("version").and_then(|v| v.as_str()) != Some("0.1.0")
             || status.get("protocol_version").and_then(|v| v.as_u64()) != Some(1)
-            || (self.listen != "127.0.0.1:0"
-                && status.get("listener").and_then(|v| v.as_str())
-                    != Some(format!("http://{}", self.listen).as_str()))
+            || status.get("listener").and_then(|v| v.as_str())
+                != Some(self.runtime_endpoint()?.as_str())
         {
             return Err(NativeFailure::Incompatible);
         }
@@ -745,6 +694,8 @@ fn validated_connection(
         server_id: expected.server_id.clone(),
         device_id: expected.device_id.clone(),
         token: token.to_string(),
+        runtime_generation: None,
+        runtime_key: None,
     })
 }
 

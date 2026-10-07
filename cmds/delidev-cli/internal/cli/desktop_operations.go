@@ -26,7 +26,7 @@ var desktopCommands = map[desktopOperation]string{
 	"device.pair-local":     "device pair-local", "device.inspect": "device inspect", "device.inspect-local": "device inspect-local", "device.recover-local": "device recover-local",
 	"worker.pair-local": "worker pair-local", "worker.inspect": "worker inspect", "worker.start": "worker start", "worker.stop": "worker stop", "worker.status": "worker status",
 	"worker.network.prepare": "worker network prepare", "worker.network.import": "worker network import", "worker.network.status": "worker network status",
-	"connection.list": "connection list", "connection.removed": "connection removed", "connection.inspect": "connection inspect", "connection.pair": "connection pair", "connection.retry": "connection retry", "connection.rename": "connection rename", "connection.remove": "connection remove", "connection.connect": "connection connect",
+	"connection.list": "connection list", "connection.removed": "connection removed", "connection.inspect": "connection inspect", "connection.pair": "connection pair", "connection.retry": "connection retry", "connection.rename": "connection rename", "connection.remove": "connection remove", "connection.verify": "connection verify",
 	"connection.worker-inspect": "connection worker-inspect", "connection.worker-register": "connection worker-register", "connection.worker-start": "connection worker-start", "connection.worker-stop": "connection worker-stop", "connection.worker-status": "connection worker-status",
 	"connection.worker-network-prepare": "connection worker-network-prepare", "connection.worker-network-import": "connection worker-network-import", "connection.worker-network-status": "connection worker-network-status",
 	"browser-storage.prepare": "browser-storage prepare", "browser-profile.status": "browser-profile status", "browser-profile.list": "browser-profile list", "browser-profile.confirm-removal": "browser-profile confirm-removal",
@@ -35,15 +35,15 @@ var desktopCommands = map[desktopOperation]string{
 }
 
 func (h *desktopHostState) execute(ctx context.Context, r desktopRequest) (any, error) {
+	if r.CancelID != "" || r.TimeoutMS > 660000 {
+		return nil, usage()
+	}
 	switch r.Operation {
 	case desktopLaunch, desktopRetry, desktopEnsure:
 		if len(r.Arguments) != 0 || len(r.Input) != 0 || r.Scope != "" || r.RequestID != "" {
 			return nil, usage()
 		}
 		return h.start(ctx, r.Operation)
-	}
-	if r.CancelID != "" || r.TimeoutMS > 660000 {
-		return nil, usage()
 	}
 	command, ok := desktopCommands[r.Operation]
 	if !ok {
@@ -103,7 +103,7 @@ func (h *desktopHostState) execute(ctx context.Context, r desktopRequest) (any, 
 		}
 	}
 	var output boundedDesktopBuffer
-	Run(desktopruntime.WithTarget(ctx, &target), args, IO{In: bytes.NewReader(r.Input), Out: &output, Err: io.Discard})
+	Run(desktopruntime.WithTarget(ctx, &target), args, IO{In: bytes.NewReader(r.Input), Out: &output, Err: h.diagnostic})
 	var result envelope
 	if output.exceeded || domain.Decode(output.Bytes(), &result) != nil || result.Version != 1 {
 		return nil, domain.Fail(domain.ResourceExhausted, "The desktop command reply is unavailable.", "Inspect the original operation before retrying.")

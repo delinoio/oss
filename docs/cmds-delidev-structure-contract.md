@@ -291,4 +291,4 @@ Sidechat reference preparation privately owns sidechat-preparations/ under the w
 
 ## Desktop transport owner
 
-`internal/desktopruntime` owns the private same-server execution locator, challenge proof and fixed Local Worker relocation marker. CLI owns resident control framing/admission; server owns the directly bound listener and authenticated business shutdown; Rust owns the single original child and platform lifetime. Device/pairing/recovery files, Saved addresses, public Connect schemas and SQLite migration ownership remain unchanged.
+`internal/desktopruntime` owns the private same-server execution locator, challenge proof, private bearer transport protection and fixed Local Worker relocation marker. This transport layer restores the original bearer before existing server authentication and changes no public Connect schema or stable credential format. CLI owns resident control framing/admission; server owns the directly bound listener and authenticated business shutdown; Rust owns the single original child and platform lifetime. Device/pairing/recovery files, Saved addresses, public Connect schemas and SQLite migration ownership remain unchanged.

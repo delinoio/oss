@@ -226,6 +226,31 @@ func TestDesktopFrameBoundsAndBufferedRequests(t *testing.T) {
 	}
 }
 
+func TestDesktopFenceKeepsFinalReadsAndRejectsNewMutations(t *testing.T) {
+	f := startResidentFixture(t, filepath.Join(t.TempDir(), "private"), "127.0.0.1:0")
+	f.launch(t)
+	if r := f.request(t, "device.pair-local"); r.Error != nil {
+		t.Fatal(r.Error.Code)
+	}
+	if err := json.NewEncoder(f.input).Encode(desktopRequest{Version: 2, ID: domain.NewID(), Operation: desktopFence}); err != nil {
+		t.Fatal(err)
+	}
+	read := domain.NewID()
+	if err := json.NewEncoder(f.input).Encode(desktopRequest{Version: 2, ID: read, Operation: "browser-profile.list", Scope: "local", Arguments: []string{"--page-size", "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.next(t); r.ID != read || r.Error != nil {
+		t.Fatalf("final browser read: %s", r.Error.Code)
+	}
+	if r := f.request(t, desktopLaunch); r.Error == nil {
+		t.Fatal("Quit fence admitted Start")
+	}
+	if r := f.request(t, "device.pair-local"); r.Error == nil {
+		t.Fatal("Quit fence admitted registration")
+	}
+	f.quit(t)
+}
+
 // Verify actual graceful product Stop keeps the same CLI available. It never
 // converts Stop into another detached server or reopens the retained intent.
 func TestDesktopStopKeepsHostAndEnsureCannotReopen(t *testing.T) {

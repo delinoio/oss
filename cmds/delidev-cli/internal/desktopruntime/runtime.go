@@ -43,7 +43,7 @@ func (t Target) Validate() error {
 	}
 	port, portErr := strconv.ParseUint(u.Port(), 10, 16)
 	key, keyErr := base64.RawURLEncoding.DecodeString(t.Key)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || portErr != nil || port == 0 || u.Host != "127.0.0.1:"+strconv.FormatUint(port, 10) || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || t.Version != 2 || t.Generation.Validate() != nil || t.ServerID.Validate() != nil || keyErr != nil || len(key) != 32 {
+	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || portErr != nil || port == 0 || u.Host != "127.0.0.1:"+strconv.FormatUint(port, 10) || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || t.Version != 2 || t.Generation.Validate() != nil || t.ServerID.Validate() != nil || keyErr != nil || len(key) != 32 || base64.RawURLEncoding.EncodeToString(key) != t.Key {
 		return unavailable()
 	}
 	return nil
@@ -140,7 +140,12 @@ func proof(t Target, challenge string) string {
 func Handler(t Target, next http.Handler, origins []string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != ProofPath {
-			next.ServeHTTP(w, r)
+			verified, err := unwrapBearer(t, r)
+			if err != nil {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, verified)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -205,17 +210,36 @@ func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	u.Host = strings.TrimPrefix(target.Endpoint, "http://")
 	copy.URL = &u
 	copy.Host = u.Host
+	if err := wrapBearer(target, copy); err != nil {
+		return nil, err
+	}
 	return t.Base.RoundTrip(copy)
 }
 
 // Once an explicitly paired Local Worker follows an app runtime, retirement
 // must never fall back to its obsolete immutable pairing address.
 func Follow(root string, serverID domain.ID) error {
-	raw, _ := json.Marshal(struct {
+	if serverID.Validate() != nil {
+		return unavailable()
+	}
+	path := filepath.Join(root, "desktop-runtime-follow.json")
+	type marker struct {
 		Version  int       `json:"version"`
 		ServerID domain.ID `json:"server_id"`
-	}{2, serverID})
-	return security.WriteAtomic(filepath.Join(root, "desktop-runtime-follow.json"), raw)
+	}
+	previous, err := security.ReadPrivate(path, 4096)
+	if err == nil {
+		var original marker
+		if domain.Decode(previous, &original) != nil || original.Version != 2 || original.ServerID != serverID {
+			return unavailable()
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	raw, _ := json.Marshal(marker{2, serverID})
+	return security.WriteAtomic(path, raw)
 }
 
 type LocalTransport struct {

@@ -36,6 +36,7 @@ const (
 	desktopEnsure   desktopOperation = "runtime.ensure"
 	desktopCancel   desktopOperation = "runtime.cancel"
 	desktopShutdown desktopOperation = "runtime.shutdown"
+	desktopFence    desktopOperation = "runtime.fence"
 )
 
 type desktopRequest struct {
@@ -56,16 +57,17 @@ type desktopReply struct {
 	Error   *domain.Error `json:"error,omitempty"`
 }
 type desktopHostState struct {
-	mu       sync.Mutex
-	target   desktopruntime.Target
-	config   server.Config
-	options  options
-	listener net.Listener
-	done     chan struct{}
-	stop     context.CancelFunc
-	startup  domain.ID
-	closed   bool
-	log      *slog.Logger
+	mu         sync.Mutex
+	target     desktopruntime.Target
+	config     server.Config
+	options    options
+	listener   net.Listener
+	done       chan struct{}
+	stop       context.CancelFunc
+	startup    domain.ID
+	closed     bool
+	log        *slog.Logger
+	diagnostic io.Writer
 }
 
 func runDesktopHostCommand(ctx context.Context, o options, args []string, streams IO) int {
@@ -132,7 +134,7 @@ func runDesktopHostCommand(ctx context.Context, o options, args []string, stream
 		return emitDesktopFailure(streams, domain.SafeError(err))
 	}
 	defer log.Close()
-	h := &desktopHostState{target: desktopruntime.Target{Version: 2, Endpoint: "http://" + config.Listen, Generation: domain.NewID(), Key: key, Root: o.dataDir}, config: config, options: o, listener: listener, log: slog.New(slog.NewJSONHandler(log, nil))}
+	h := &desktopHostState{target: desktopruntime.Target{Version: 2, Endpoint: "http://" + config.Listen, Generation: domain.NewID(), Key: key, Root: o.dataDir}, config: config, options: o, listener: listener, log: slog.New(slog.NewJSONHandler(log, nil)), diagnostic: streams.Err}
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stopParent, err := watchDesktopParent(*parent, cancel)
@@ -144,6 +146,15 @@ func runDesktopHostCommand(ctx context.Context, o options, args []string, stream
 	var writes sync.Mutex
 	send := func(id domain.ID, result any, err error) {
 		frame := desktopReply{Version: 2, ID: id, Result: result}
+		if id != "" {
+			phase := "completed"
+			code := ""
+			if err != nil {
+				phase = "failed"
+				code = string(domain.SafeError(err).Code)
+			}
+			h.log.Info("desktop_request", "request_id", id, "phase", phase, "code", code)
+		}
 		if err != nil {
 			frame.Result = nil
 			frame.Error = domain.SafeError(err)
@@ -187,15 +198,35 @@ func runDesktopHostCommand(ctx context.Context, o options, args []string, stream
 	pending := map[domain.ID]context.CancelFunc{}
 	mutations := make(chan struct{}, 1)
 	reads := make(chan struct{}, 4)
+	fenced := false
 loop:
 	for {
 		select {
 		case <-lifetime.Done():
 			break loop
 		case r := <-requests:
-			if (r.Operation == desktopShutdown || r.Operation == desktopCancel) && (len(r.Arguments) > 0 || len(r.Input) > 0 || r.Scope != "" || r.RequestID != "" || (r.Operation == desktopShutdown && r.CancelID != "") || (r.Operation == desktopCancel && r.CancelID.Validate() != nil)) {
+			if _, known := desktopCommands[r.Operation]; !known && r.Operation != desktopLaunch && r.Operation != desktopRetry && r.Operation != desktopEnsure && r.Operation != desktopShutdown && r.Operation != desktopCancel && r.Operation != desktopFence {
+				// Reject untrusted operation text before structured diagnostics.
+				clear(r.Input)
+				send(r.ID, nil, usage())
+				continue
+			}
+			if (r.Operation == desktopShutdown || r.Operation == desktopCancel || r.Operation == desktopFence) && (len(r.Arguments) > 0 || len(r.Input) > 0 || r.Scope != "" || r.RequestID != "" || ((r.Operation == desktopShutdown || r.Operation == desktopFence) && r.CancelID != "") || (r.Operation == desktopCancel && r.CancelID.Validate() != nil)) {
 				cancel()
 				break loop
+			}
+			if r.Operation == desktopFence {
+				fenced = true
+				pendingMu.Lock()
+				for _, stop := range pending {
+					stop()
+				}
+				pendingMu.Unlock()
+				continue
+			}
+			if fenced && r.Operation != desktopShutdown && r.Operation != desktopCancel && !desktopReadOnly(r.Operation) {
+				send(r.ID, nil, context.Canceled)
+				continue
 			}
 			if r.Operation == desktopShutdown {
 				cancel()
@@ -210,6 +241,7 @@ loop:
 				}
 				continue
 			}
+			h.log.Info("desktop_request", "request_id", r.ID, "operation", r.Operation, "phase", "admission")
 			pendingMu.Lock()
 			if len(pending) >= 32 || pending[r.ID] != nil {
 				pendingMu.Unlock()
@@ -266,6 +298,8 @@ func readDesktopFrame(reader *bufio.Reader) ([]byte, error) {
 	}
 }
 func (h *desktopHostState) start(ctx context.Context, op desktopOperation) (any, error) {
+	ctx, cancel := context.WithTimeout(ctx, joinedStartupTimeout)
+	defer cancel()
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
@@ -277,16 +311,25 @@ func (h *desktopHostState) start(ctx context.Context, op desktopOperation) (any,
 			h.done = nil
 			h.stop = nil
 		default:
-			target, generation := h.target, h.startup
+			done, stop := h.done, h.stop
 			h.mu.Unlock()
 			intent, err := server.ReadLifecycle(h.options.dataDir)
 			if err != nil {
 				return nil, err
 			}
 			if intent.State == server.DesiredStopped {
-				return map[string]any{"state": "stopped"}, nil
+				if op != desktopLaunch {
+					return map[string]any{"state": "stopped"}, nil
+				}
+				stop()
+				select {
+				case <-done:
+					return h.start(ctx, op)
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			}
-			return desktopStarted(target, generation), nil
+			return h.execute(ctx, desktopRequest{Operation: "server.desktop-status"})
 		}
 	}
 	config := h.config

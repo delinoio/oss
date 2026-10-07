@@ -16,8 +16,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-// Setup failures also own their admitted sidecars. Unwinding crashes preserve
-// the agreed independent lifetime; normal return performs joined shutdown.
+// Normal setup/return failures join the owned session. Process crashes also
+// retire it through the independent parent/pipe and platform containment path.
 struct DesktopLifetime {
     connector: Arc<Connector>,
     supervision: Arc<Supervision>,
@@ -284,7 +284,7 @@ async fn connect_local(
             .map_err(|_| NativeFailure::SidecarFailed)?;
         supervision.refresh();
         let connection = result?;
-        if connection.endpoint != "http://127.0.0.1:46310" {
+        if !valid_local_runtime(&connection.endpoint) {
             return Err(NativeFailure::Incompatible);
         }
         supervision.adopt(&connection);
@@ -337,7 +337,7 @@ async fn recover_local_registration(
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)??;
-        if connection.endpoint != "http://127.0.0.1:46310" {
+        if !valid_local_runtime(&connection.endpoint) {
             return Err(NativeFailure::Incompatible);
         }
         supervision.adopt(&connection);
@@ -389,7 +389,7 @@ async fn local_worker_proof(
         let proof = tauri::async_runtime::spawn_blocking(move || connector.local_worker_proof())
             .await
             .map_err(|_| NativeFailure::SidecarFailed)??;
-        if proof.endpoint != "http://127.0.0.1:46310" {
+        if !valid_local_runtime(&proof.endpoint) {
             return Err(NativeFailure::Incompatible);
         }
         Ok(proof)
@@ -1250,6 +1250,22 @@ fn saved_csp(policy: &str, origin: &str) -> Result<String, NativeFailure> {
     );
     Ok(Csp::from(directives).to_string())
 }
+fn local_csp(policy: Csp, endpoint: &str, development: bool) -> Result<Csp, NativeFailure> {
+    if !valid_local_runtime(endpoint) {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    let mut directives: HashMap<String, CspDirectiveSources> = policy.into();
+    let mut sources = vec![
+        "ipc:".to_owned(),
+        "http://ipc.localhost".to_owned(),
+        endpoint.to_owned(),
+    ];
+    if development {
+        sources.push("ws://127.0.0.1:46311".to_owned());
+    }
+    directives.insert("connect-src".into(), CspDirectiveSources::List(sources));
+    Ok(Csp::from(directives))
+}
 // The pinned CEF runtime applies macOS accessibility notifications only to
 // browsers that already exist. Enable each trusted document explicitly so a
 // saved-server window created afterward also exposes its semantic content.
@@ -1577,6 +1593,15 @@ async fn browser_state(
     result
 }
 
+fn valid_local_runtime(endpoint: &str) -> bool {
+    url::Url::parse(endpoint).is_ok_and(|u| {
+        u.scheme() == "http"
+            && u.host_str() == Some("127.0.0.1")
+            && u.port().is_some_and(|p| p > 0)
+            && u.origin().ascii_serialization() == endpoint
+    })
+}
+
 fn run() -> Result<(), NativeFailure> {
     let mut args = std::env::args_os().skip(1);
     let root = match args.next() {
@@ -1591,6 +1616,37 @@ fn run() -> Result<(), NativeFailure> {
     }
     let executable = std::env::current_exe().map_err(|_| NativeFailure::SidecarMissing)?;
     let connector = Arc::new(Connector::new(bundled_sidecar(&executable)?, root)?);
+    let endpoint = connector.runtime_endpoint().map_err(|code| {
+        use delidev_desktop::{
+            language::{LanguagePreference, resolve},
+            localization::{Message, text_in},
+        };
+        let locale = resolve(
+            LanguagePreference::System,
+            sys_locale::get_locale().into_iter(),
+        );
+        let message = match code {
+            NativeFailure::Busy | NativeFailure::ServiceManaged => Message::StartupConflict,
+            NativeFailure::Incompatible => Message::StartupIncompatible,
+            _ => Message::StartupUnavailable,
+        };
+        rfd::MessageDialog::new()
+            .set_title("DeliDev")
+            .set_description(text_in(message, locale))
+            .set_level(rfd::MessageLevel::Error)
+            .show();
+        code
+    })?;
+    let mut context = tauri::generate_context!();
+    let security = &mut context.config_mut().app.security;
+    for (policy, development) in [(&mut security.csp, false), (&mut security.dev_csp, true)] {
+        if let Some(source) = policy.take() {
+            // Use exclusively the retained child's private hello, before any
+            // Local window can acquire networking authority. Replace the
+            // complete directive, including directive-map configurations.
+            *policy = Some(local_csp(source, &endpoint, development)?);
+        }
+    }
     let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
     let quit_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _lifetime = DesktopLifetime {
@@ -1791,7 +1847,7 @@ fn run() -> Result<(), NativeFailure> {
             }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .map_err(|_| NativeFailure::SidecarFailed)?;
     let exiting_supervision = Arc::clone(&supervision);
     let exiting = Arc::clone(&tray);
@@ -1899,6 +1955,31 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_csp_has_only_the_selected_runtime_origin() {
+        for endpoint in ["http://127.0.0.1:51234", "http://127.0.0.1:62345"] {
+            let original = Csp::Policy(
+                "default-src 'none'; script-src 'self'; connect-src * http://127.0.0.1:46310"
+                    .into(),
+            );
+            let map: HashMap<String, CspDirectiveSources> = original.into();
+            let policy = local_csp(Csp::from(map), endpoint, false).unwrap();
+            let directives: HashMap<String, CspDirectiveSources> = policy.into();
+            let sources: Vec<String> = directives["connect-src"].clone().into();
+            assert_eq!(sources, vec!["ipc:", "http://ipc.localhost", endpoint]);
+            let scripts: Vec<String> = directives["script-src"].clone().into();
+            assert_eq!(scripts, vec!["'self'"]);
+        }
+        assert!(
+            local_csp(
+                Csp::Policy("default-src 'none'".into()),
+                "http://localhost:51234",
+                false
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn generated_oauth_acl_preserves_trusted_webview_boundaries() {
