@@ -10,6 +10,25 @@ Go; native subprocess ownership follows the [process contract](cmds-delidev-proc
 Users install and update harnesses themselves. A Worker selects an explicit executable or its own PATH. Installation/version detection, native protocol verification and selected-account execution readiness are distinct facts; none substitutes for another.
 
 ## Interfaces and Contracts
+
+### Grok Build 1.0.46 profile amendment
+
+The active Grok pin is `1.0.46`. Earlier `1.0.41` descriptions retain their
+original baseline and evidence shape. They do not authorize an active older
+binary. Preserve historical interaction/accounting metadata and immutable
+version-1 assignments without changing their native version or granting Resume.
+Current discovery, dispatch and native sends require the active pin. The API
+profile retains its existing General Chat, first-input and Chat Completions
+support boundary; the separate subscription contract owns repository execution
+and continuation.
+
+Native session setup adds `agent_build` after `spawn_session_actor` and before
+`git_discovery`. Preserve its original session binding and the independent MCP
+barrier. The Grok read-only protocol probe has a 30-second bound. Isolated API
+preparation has a 60-second bound for its three owned inspection processes and
+ACP initialization. Session creation retains its separate 15-second bound.
+These product deadlines do not change package watchdogs or recovery attempts.
+
 Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original child-observation profile in the [subagent contract](cmds-delidev-subagents-contract.md). Canonical Codex collaboration/activity plus read-only descendant/history reads and original Claude task/tool/content/history ownership remain distinct sources. Unowned or unsupported child families stay gated; requested models cannot supply observed models. Child-control operations and unproved history continuation remain excluded.
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.

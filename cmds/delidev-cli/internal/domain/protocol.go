@@ -14,11 +14,18 @@ const (
 	CodexMinimumVersion = "0.151.0"
 	// CodexProtocolVersion retains the historical fixture baseline. Runtime
 	// admission uses CodexVersionAllowed and records the installed version.
-	CodexProtocolVersion    = CodexMinimumVersion
-	ClaudeProtocolVersion   = "2.1.236"
-	GrokProtocolVersion     = "1.0.41"
-	OpenCodeProtocolVersion = "1.18.32"
+	CodexProtocolVersion      = CodexMinimumVersion
+	ClaudeProtocolVersion     = "2.1.236"
+	GrokProtocolVersion       = "1.0.46"
+	GrokLegacyProtocolVersion = "1.0.41"
+	OpenCodeProtocolVersion   = "1.18.32"
 )
+
+// Historical documents retain their original native version. This read profile
+// cannot authorize discovery, active execution or a continuation checkpoint.
+func GrokRetainedVersion(version string) bool {
+	return version == GrokProtocolVersion || version == GrokLegacyProtocolVersion
+}
 
 // CodexVersionAllowed permits an actual native attempt, not inferred protocol
 // readiness. Every accepted installation still requires its native handshake.

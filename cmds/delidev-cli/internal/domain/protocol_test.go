@@ -2,6 +2,21 @@ package domain
 
 import "testing"
 
+func TestHistoricalGrokVersionCannotAuthorizeCurrentDiscovery(t *testing.T) {
+	input, output := protocolOutput()
+	for index := range output.Installations {
+		if output.Installations[index].Harness == GrokBuild {
+			output.Installations[index].Version = GrokLegacyProtocolVersion
+		}
+	}
+	if !GrokRetainedVersion(GrokLegacyProtocolVersion) || output.ValidateDiscovery(input) == nil {
+		t.Fatal("historical read profile granted current discovery")
+	}
+	if GrokRetainedVersion("1.0.42") || GrokRetainedVersion("future") {
+		t.Fatal("retained versions became an open range")
+	}
+}
+
 func protocolOutput() (HarnessDiscoveryInput, HarnessDiscoveryOutput) {
 	input := HarnessDiscoveryInput{Revision: 1, VerifyProtocol: true, Selections: ExecutableSelections{Executables: []ExecutableSelection{}}}
 	output := HarnessDiscoveryOutput{Installations: input.Selections.Installations()}

@@ -119,7 +119,7 @@ func apiFixtureProcess() {
 				time.Sleep(10 * time.Second)
 				os.Exit(0)
 			}
-			for i, phase := range []string{"auth", "resolve_workspace", "folder_trust", "plugin_registry", "mcp_merge", "persistence_init", "spawn_session_actor", "git_discovery", "finalize_response", "tool_overrides", "response_ready"} {
+			for i, phase := range []string{"auth", "resolve_workspace", "folder_trust", "plugin_registry", "mcp_merge", "persistence_init", "spawn_session_actor", "agent_build", "git_discovery", "finalize_response", "tool_overrides", "response_ready"} {
 				var native any
 				if i >= 5 {
 					native = value["sessionId"]

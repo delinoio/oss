@@ -90,7 +90,7 @@ func (r GrokAccountingRecord) Validate() error {
 			return invalidGrokContent()
 		}
 	}
-	if r.Kind != GrokClosedInput || (r.ProjectID != "" && r.ProjectID.Validate() != nil) || r.Version != GrokProtocolVersion || r.Terminal.User == nil || r.Terminal.Validate(string(r.Completion.NativeThreadID)) != nil || r.Completion.ValidateForHarness(GrokBuild) != nil || r.Completion.Version != 1 || r.Completion.ExecutionID != r.ExecutionID || r.Completion.InputID != r.InputID || r.Completion.Outcome != ExecutionSucceeded {
+	if r.Kind != GrokClosedInput || (r.ProjectID != "" && r.ProjectID.Validate() != nil) || !GrokRetainedVersion(r.Version) || r.Terminal.User == nil || r.Terminal.Validate(string(r.Completion.NativeThreadID)) != nil || r.Completion.ValidateForHarness(GrokBuild) != nil || r.Completion.Version != 1 || r.Completion.ExecutionID != r.ExecutionID || r.Completion.InputID != r.InputID || r.Completion.Outcome != ExecutionSucceeded {
 		return invalidGrokContent()
 	}
 	return nil

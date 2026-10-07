@@ -202,7 +202,7 @@ func (a *apiConnection) Create(ctx context.Context, request, product domain.ID, 
 }
 
 func (a *apiConnection) observeSetup(ctx context.Context, session domain.ID) error {
-	phases := []string{"auth", "resolve_workspace", "folder_trust", "plugin_registry", "mcp_merge", "persistence_init", "spawn_session_actor", "git_discovery", "finalize_response", "tool_overrides", "response_ready"}
+	phases := []string{"auth", "resolve_workspace", "folder_trust", "plugin_registry", "mcp_merge", "persistence_init", "spawn_session_actor", "agent_build", "git_discovery", "finalize_response", "tool_overrides", "response_ready"}
 	phase, inventories := 0, 0
 	initialized := false
 	for phase < len(phases) || !initialized {

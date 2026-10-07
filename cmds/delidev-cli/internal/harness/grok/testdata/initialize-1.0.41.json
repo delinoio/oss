@@ -58,7 +58,7 @@
     "x.ai/mcp/sdk": true,
     "x.ai/pluginDirs": true,
     "currentWorkingDirectory": "/private/fixture",
-    "agentVersion": "1.0.46",
+    "agentVersion": "1.0.41",
     "agentId": "79c78c1a-ab95-53ac-840a-1d6c6b25a952",
     "agentInstanceId": "c4bc803b-c8eb-4dbf-be16-f199a1cf141e",
     "hostname": "private-host-sentinel",

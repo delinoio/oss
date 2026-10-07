@@ -158,7 +158,7 @@ func (p apiProfile) checkInitialized() error {
 	if bytes.Equal(raw, p.configuration) {
 		return nil
 	}
-	// Grok 1.0.41 marks its default marketplace-install purge during ACP
+	// Grok 1.0.46 marks its default marketplace-install purge during ACP
 	// initialization even in an empty private home. Accept only this exact
 	// native marker plus the complete original semantic configuration. This
 	// exception can disappear when a validated version stops writing it.
@@ -213,7 +213,10 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if err != nil {
 		return nil, err
 	}
-	ready, cancelReady := context.WithTimeout(ctx, 15*time.Second)
+	// 1.0.46 initializes three independently owned inspection processes and an
+	// ACP process. Bound that joined preparation separately from session/input
+	// deadlines; a cold native child must not inherit the old single-start budget.
+	ready, cancelReady := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelReady()
 	prepared := config.Probe.Process
 	prepared.Env = env

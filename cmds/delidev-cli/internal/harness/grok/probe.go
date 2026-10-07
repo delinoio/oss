@@ -86,7 +86,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		return err
 	}
 	config.Process.Env = env
-	bounded, cancel := context.WithTimeout(ctx, 10*time.Second)
+	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	phase = inspectPhase
 	if err := inspect(bounded, config.Process); err != nil {

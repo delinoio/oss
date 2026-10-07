@@ -196,7 +196,11 @@ func discover(ctx context.Context, config DiscoveryConfig, input domain.HarnessD
 				if err != nil {
 					return domain.HarnessDiscoveryOutput{}, err
 				}
-				bounded, cancel := context.WithTimeout(ctx, probeTimeout)
+				protocolTimeout := probeTimeout
+				if i.Harness == domain.GrokBuild {
+					protocolTimeout = 30 * time.Second
+				}
+				bounded, cancel := context.WithTimeout(ctx, protocolTimeout)
 				config := process.Config{Directory: processRoot, OwnerID: owner, Executable: i.ResolvedPath, Env: env, Cwd: home, Logger: logger.With("harness", i.Harness)}
 				switch i.Harness {
 				case domain.Codex:

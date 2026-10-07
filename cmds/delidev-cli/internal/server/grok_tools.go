@@ -25,7 +25,7 @@ func retainedGrokJournal(tx *store.Tx, input domain.ExecutionJobInput, thread, t
 	replies := map[domain.ID]domain.ExecutionInteraction{}
 	for _, record := range records {
 		value, err := store.Decode[domain.ExecutionInteraction](record)
-		if err != nil || value.Grok == nil || value.NativeThreadID != thread || value.NativeTurnID != turn || value.Grok.Validate(value.Type, value.NativeRequestID, value.NativeItemID) != nil || byArrival[value.Grok.Event.ArrivalID].ID != "" {
+		if err != nil || value.Grok == nil || value.Grok.Version != input.Installation.Version || value.NativeThreadID != thread || value.NativeTurnID != turn || value.Grok.Validate(value.Type, value.NativeRequestID, value.NativeItemID) != nil || byArrival[value.Grok.Event.ArrivalID].ID != "" {
 			return nil, nil, nil, executionEventConflict()
 		}
 		byArrival[value.Grok.Event.ArrivalID] = record
@@ -108,7 +108,7 @@ func publishGrokTool(tx *store.Tx, input domain.ExecutionJobInput, sr store.Reco
 
 func validateGrokInteraction(tx *store.Tx, input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
 	u := event.Interaction
-	if u == nil || u.Grok == nil || u.Grok.Validate(u.Type, u.NativeRequestID, u.NativeItemID) != nil {
+	if u == nil || u.Grok == nil || u.Grok.Version != input.Installation.Version || u.Grok.Validate(u.Type, u.NativeRequestID, u.NativeItemID) != nil {
 		return executionEventConflict()
 	}
 	r, err := tx.Get(domain.MessageKind, u.Grok.ObservationID)

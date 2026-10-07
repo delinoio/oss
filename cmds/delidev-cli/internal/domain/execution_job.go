@@ -102,7 +102,13 @@ func (i ExecutionJobInput) Validate() error {
 	if !slices.ContainsFunc(i.Configuration.Accounts, func(account WeightedAccount) bool { return account.ID == i.AccountID }) || i.Installation.State != InstallationDetected || !i.Installation.ProtocolVerified {
 		return Fail(Unsupported, "The execution lacks matching account or native installation evidence.", "Revalidate the accepted configuration on its owning Worker.")
 	}
-	if err := i.Installation.validateProtocol(true); err != nil {
+	// Preserve immutable 1.0.41 assignments. Discovery and the server/Worker
+	// execution gates still require the current version; legacy v1 cannot resume.
+	installation := i.Installation
+	if installation.Harness == GrokBuild && installation.Version == GrokLegacyProtocolVersion && i.Version == 1 && i.Continuation == nil {
+		installation.Version = GrokProtocolVersion
+	}
+	if err := installation.validateProtocol(true); err != nil {
 		return err
 	}
 	digest, err := i.Configuration.Digest()

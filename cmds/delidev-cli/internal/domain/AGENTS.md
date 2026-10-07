@@ -1,5 +1,7 @@
 # DeliDev domain ownership
 
+- Grok 1.0.46 is the active native pin. Preserve 1.0.41 interaction/accounting documents and immutable version-1 jobs as historical reads without changing their bytes. Current discovery/dispatch and Worker sends require the active pin; no retained old result gains continuation authority. Follow the harness and Grok subscription contracts.
+
 - Grok subscription OAuth adds optional closed server-operation phases and AccountLogin reference IDs under `docs/cmds-delidev-grok-subscription-contract.md`. Keep diagnostic families service-specific and reconstruct their text locally. No URL, code, verifier, nonce, token or identity belongs in operation metadata. The existing native_started field is the disjoint server credential lease; Grok OAuth does not imply a native process.
 
 - Repository clone inputs accept only credential-free HTTPS, ssh:// and SCP-style SSH, with bounded portable folder names and no encoded path separators. Keep helper transports, local paths, controls and URL passwords/tokens outside that contract. When GitHub repository metadata accompanies a remote URL, it must match the parsed GitHub owner/name. GitHub source identities normalize only the GitHub owner/repository namespace case; generic hosts retain security-significant path and transport distinctions. GitHub picker entries use validated numeric/node/owner/name identity and constructed GitHub.com URLs; metadata observations never provide Git credentials or execution authority.
