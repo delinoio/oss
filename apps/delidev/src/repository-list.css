@@ -20,7 +20,6 @@
 .settings-content.settings-repositories .repository-metadata dd { margin: 0; overflow-wrap: anywhere; }
 .settings-content.settings-repositories .repository-metadata ul { padding: 0; margin: 0; list-style: none; }
 .settings-content.settings-repositories .repository-metadata li + li { margin-top: 8px; }
-.settings-content.settings-repositories .repository-metadata-help { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 18px; }
 .settings-content.settings-repositories .repository-github-name { font-weight: 500; }
 .settings-content.settings-repositories .repository-github-tools { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-content.settings-repositories .repository-github-tools > div { display: contents; }

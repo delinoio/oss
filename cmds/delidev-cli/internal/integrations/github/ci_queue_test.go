@@ -12,7 +12,7 @@ import (
 
 func ciQueueNodeFixture(node map[string]any) map[string]any {
 	sha := strings.Repeat("f", 40)
-	entry := map[string]any{"id": "ENTRY_E", "position": 1, "state": "UNMERGEABLE", "pullRequest": map[string]any{"id": "ITEM_stable", "number": 17}, "baseCommit": map[string]any{"oid": accessSHA}, "headCommit": map[string]any{"oid": sha}}
+	entry := map[string]any{"id": "ENTRY_E", "position": 1, "state": "UNMERGEABLE", "pullRequest": map[string]any{"id": "ITEM_stable", "number": 17}, "baseCommit": map[string]any{"oid": repositorySHA}, "headCommit": map[string]any{"oid": sha}}
 	rollup := node["statusCheckRollup"].(map[string]any)
 	rollup["commit"] = map[string]any{"oid": sha}
 	run := rollup["contexts"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
@@ -57,7 +57,7 @@ func TestQueueCICompletesIndependentEntryAndCheckPages(t *testing.T) {
 		target := connection["nodes"].([]any)[0].(map[string]any)
 		target["position"] = 2
 		if read%2 == 1 {
-			connection["nodes"] = []any{map[string]any{"id": "ENTRY_FIRST", "position": 1, "state": "QUEUED", "baseCommit": map[string]any{"oid": accessSHA}, "headCommit": nil, "pullRequest": map[string]any{"id": "PR_FIRST", "number": 16}}}
+			connection["nodes"] = []any{map[string]any{"id": "ENTRY_FIRST", "position": 1, "state": "QUEUED", "baseCommit": map[string]any{"oid": repositorySHA}, "headCommit": nil, "pullRequest": map[string]any{"id": "PR_FIRST", "number": 16}}}
 		} else {
 			run := checks["nodes"].([]any)[0].(map[string]any)
 			run["id"], run["name"], run["isRequired"] = "OPTIONAL_G", "optional", false

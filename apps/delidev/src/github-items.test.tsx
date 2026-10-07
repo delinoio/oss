@@ -24,15 +24,17 @@ function fixture(headRepository?: unknown) {
     const observation = q.operation === "reviewers" ? { reviewers: reviewerObservation() } : q.operation === "feedback" ? { feedback: feedbackObservation() } : q.operation === "ci" ? { ci: ciObservation() } : q.operation === "rules" ? { rules: { base_ref: "main", base_sha: "a".repeat(40), head_sha: "b".repeat(40), digest: "c".repeat(64), rules: [{ type: "required_status_checks", ruleset_id: "9007199254740993", source_kind: "repository", native_source_kind: "Repository", source: "fixture-owner/repo", digest: "d".repeat(64), required_checks: { strict: false, checks: [{ context: "CI Result", integration_id: "15368" }] } }] } } : q.operation === "diff" ? { diff: { patch, digest: createHash("sha256").update(patch).digest("hex"), base_sha: "a".repeat(40), head_sha: "b".repeat(40) } } : q.operation === "checks" ? { checks: { head_sha: "b".repeat(40), filter: "latest", total_count: "1", runs: [{ id: "53", node_id: "CHECK_53", name: "Fixture Check", head_sha: "b".repeat(40), status: "completed", native_status: "completed", conclusion: "success", native_conclusion: "success", application: { id: "15368", node_id: "APP_15368", slug: "github-actions" } }] } } : q.operation === "statuses" ? { statuses: { head_sha: "b".repeat(40), state: "pending", native_state: "pending", total_count: "0", contexts: [] } } : {};
     return { schemaVersion: 1, documentJson: encode({ ...observation, repository_id: repository.id, repository_revision: repository.revision.toString(), profile_id: profile, generation_id: generation, observed_at: "2026-09-28T00:00:00Z", identity: { id: "17", node_id: "U_17", login: "fixture-user" }, repository: { provider: "github.com", id: "37", node_id: "R_37", owner: "fixture-owner", name: "repo", private: true }, query: q, items: [item], ...(search ? { total_count: "1001", incomplete: true } : {}), ...(!detail && q.page === 1 ? { next_page: 2 } : {}) }) };
   });
-  const transport = createRouterTransport((router) => router.service(IntegrationService, { queryRepositoryIntegration: query }));
+  const inspect = vi.fn(() => { throw new Error("Retired access inspection must not run"); });
+  const transport = createRouterTransport((router) => router.service(IntegrationService, { queryRepositoryIntegration: query, inspectRepositoryIntegration: inspect }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><RepositoryGitHubItems selected={repository} active={active} /></QueryClientProvider></TransportProvider>;
-  return { repository, query, client, view };
+  return { repository, query, inspect, client, view };
 }
 it("opens explicit repository results and reads detail without inventing mergeability", async () => {
   const f = fixture(); const view = render(f.view());
   expect(f.query).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
   await screen.findByRole("button", { name: "Read #17" });
+  expect(f.inspect).not.toHaveBeenCalled();
   expect(f.query.mock.calls[0][0].repositoryId).toBe(f.repository.id);
   fireEvent.click(screen.getByRole("button", { name: "Read #17" }));
   await screen.findByText(/Mergeability: Unknown/);

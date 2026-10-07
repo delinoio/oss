@@ -88,7 +88,6 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   network worker-status --machine-id ID
   integration list|get|snapshot [--id ID]
   integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
-  integration inspect-repository --repository-id ID
   github pr|issue list --repository-id ID [--state open|closed|all] [--page N --page-size N]
   github pr|issue search --repository-id ID --text TERMS [--state open|closed|all] [--page N]
   github pr|issue get|open --repository-id ID --number N

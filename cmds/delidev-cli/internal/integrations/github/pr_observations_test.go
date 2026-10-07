@@ -30,7 +30,7 @@ func statusFixture() map[string]any {
 }
 func observationFixture(t *testing.T, q domain.RepositoryQuery, body any, changed bool) (*Client, *[]string) {
 	t.Helper()
-	client, _ := accessFixture(t, nil)
+	client, _ := repositoryFixture(t, nil)
 	base := client.http.Transport
 	paths := []string{}
 	details := 0
@@ -52,7 +52,7 @@ func observationFixture(t *testing.T, q domain.RepositoryQuery, body any, change
 			}
 			value, _ = json.Marshal(item)
 		} else if q.Operation == domain.RepositoryDiff {
-			if r.URL.Path != "/repos/fixture-owner/repo/compare/"+accessSHA+"..."+strings.Repeat("b", 40) || r.Header.Get("Accept") != "application/vnd.github.diff" {
+			if r.URL.Path != "/repos/fixture-owner/repo/compare/"+repositorySHA+"..."+strings.Repeat("b", 40) || r.Header.Get("Accept") != "application/vnd.github.diff" {
 				t.Error("diff did not pin immutable operands")
 			}
 			value = []byte(body.(string))
@@ -114,7 +114,7 @@ func TestPRObservationRejectsHeadChangeForeignResultsAndOversizedDiff(t *testing
 	}
 	q := observationQuery(domain.RepositoryChecks)
 	body := checkFixture()
-	body["check_runs"].([]any)[0].(map[string]any)["head_sha"] = accessSHA
+	body["check_runs"].([]any)[0].(map[string]any)["head_sha"] = repositorySHA
 	client, _ := observationFixture(t, q, body, false)
 	if _, err := client.QueryRepository(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", q); err == nil {
 		t.Fatal("foreign check head accepted")

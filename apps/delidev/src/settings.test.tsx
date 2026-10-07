@@ -926,7 +926,7 @@ it("keeps repository source metadata inert and preserves schema-bound actions", 
   const view = render(value.view(<RepositoryRow row={row} active edit={edit} remove={remove} />));
   expect(screen.getByText("Git remote repository")).toBeTruthy();
   expect(screen.getByText("GitHub configured")).toBeTruthy();
-  expect(screen.getByText("Saved settings only. Inspect access to check permissions.")).toBeTruthy();
+  expect(screen.queryByText("Saved settings only. Inspect access to check permissions.")).toBeNull();
   expect(screen.getByText("/saved/checkout")).toBeTruthy();
   expect(screen.getByText(row.id)).toBeTruthy();
   expect(view.container.textContent).not.toContain("private-value");
@@ -936,13 +936,17 @@ it("keeps repository source metadata inert and preserves schema-bound actions", 
   fireEvent.click(screen.getByRole("button", { name: "Delete Remote repository" }));
   expect(edit).toHaveBeenCalledTimes(1); expect(remove).toHaveBeenCalledTimes(1);
   expect((screen.getByRole("button", { name: "Delete Remote repository" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((screen.getByRole("button", { name: "Inspect GitHub access" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Inspect GitHub access" })).toBeNull();
   expect(value.list).not.toHaveBeenCalled(); expect(value.inspect).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled();
   view.rerender(value.view(<RepositoryRow row={create(ResourceSchema, { ...row, schemaVersion: 99 })} active edit={edit} remove={remove} />));
   expect(screen.getByText("Unsupported format")).toBeTruthy();
   expect(screen.getAllByRole("button").every(button => (button as HTMLButtonElement).disabled)).toBe(true);
   expect(screen.queryByText("/saved/checkout")).toBeNull();
   expect(screen.getByText(row.id)).toBeTruthy();
+  view.rerender(value.view(<RepositoryRow row={resource(EntityKind.REPOSITORY, { name: "Unconfigured repository" })} active edit={edit} remove={remove} />));
+  expect(screen.getByText("GitHub not configured")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Inspect GitHub access" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Browse GitHub items" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it("keeps repository continuation empties and failed refreshes distinct from a final empty first page", async () => {

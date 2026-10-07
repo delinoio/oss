@@ -90,7 +90,6 @@ type Service struct {
 	integrationSecrets            integrationSecrets
 	ownedPAT                      *credentials.PATStore
 	github                        githubIdentity
-	githubAccess                  githubRepositoryAccess
 	githubQueries                 githubRepositoryQueries
 	githubRepositories            githubRepositoryInventory
 	terminalOutputMu              sync.Mutex
