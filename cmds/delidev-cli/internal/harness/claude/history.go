@@ -168,8 +168,9 @@ func validHistoryDigest(value string) bool {
 // bounded native JSONL snapshot and proves their order on the selected parent
 // chain. It never rewrites native bytes or resolves a path. Additional native
 // messages are explicit incomplete observation, not accepted product inputs.
-// The caller must independently prove private file/process ownership, durable
-// publication, every child/auxiliary file and current account/configuration.
+// Callers validate path scope, file type, durable publication, child/auxiliary
+// content and current account/configuration. Ownership metadata does not gate
+// admission; native cleanup confirmation remains a separate observation.
 func VerifyMainTranscript(ctx context.Context, raw []byte, session domain.ID, workspace string, proofs []HistoryMessageProof) (TranscriptObservation, error) {
 	return verifyTranscript(ctx, raw, session, workspace, proofs, nil, nil, nil)
 }

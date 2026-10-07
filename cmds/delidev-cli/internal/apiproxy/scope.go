@@ -130,8 +130,8 @@ func (s Scope) allows(operation Operation) bool {
 // machine revocation or server shutdown. Release joins the request's ownership
 // in the authority. Key retrieves only this immutable connection's upstream key;
 // it is called after request validation, and its returned bytes are cleared.
-// Reference callbacks must enforce session/account/connection/model ownership;
-// absent callbacks refuse native state references instead of trusting an ID.
+// Reference callbacks validate resource existence and protocol shape. Owner
+// metadata is observational; absent callbacks cannot resolve native references.
 type Credential struct {
 	Key          []byte
 	QuotaProject string
