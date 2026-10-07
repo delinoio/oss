@@ -51,6 +51,24 @@ pub(crate) struct Attempt {
     last: Option<CredentialAccessResult>,
 }
 
+fn retire_replaced_attempt(
+    retained: &mut Option<Attempt>,
+    server: &str,
+    generation: &str,
+) -> Result<()> {
+    if let Some(attempt) = retained.as_ref() {
+        if attempt.server != server {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        if attempt.generation != generation {
+            // The caller has already matched this generation to the live
+            // resident runtime, which proves the prior child was replaced.
+            *retained = None;
+        }
+    }
+    Ok(())
+}
+
 fn validate_result(value: CredentialAccessResult, id: &str) -> Result<CredentialAccessResult> {
     canonical_id(&value.attempt_id)?;
     if value.attempt_id != id
@@ -95,6 +113,7 @@ impl Connector {
             .credential_access
             .lock()
             .map_err(|_| NativeFailure::Busy)?;
+        retire_replaced_attempt(&mut retained, server, generation)?;
         let attempt = retained.get_or_insert_with(|| Attempt {
             id: uuid::Uuid::now_v7().to_string(),
             previous: String::new(),
@@ -174,6 +193,43 @@ impl Connector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_confirmed_runtime_generation_retires_the_attempt() {
+        let server = uuid::Uuid::now_v7().to_string();
+        let original_generation = uuid::Uuid::now_v7().to_string();
+        let replacement_generation = uuid::Uuid::now_v7().to_string();
+        let mut retained = Some(Attempt {
+            id: uuid::Uuid::now_v7().to_string(),
+            previous: String::new(),
+            server: server.clone(),
+            generation: original_generation.clone(),
+            last: None,
+        });
+
+        assert!(retire_replaced_attempt(&mut retained, &server, &original_generation).is_ok());
+        assert!(retained.is_some());
+        assert!(retire_replaced_attempt(&mut retained, &server, &replacement_generation).is_ok());
+        assert!(retained.is_none());
+    }
+
+    #[test]
+    fn a_replacement_server_cannot_retire_an_attempt() {
+        let original_server = uuid::Uuid::now_v7().to_string();
+        let replacement_server = uuid::Uuid::now_v7().to_string();
+        let generation = uuid::Uuid::now_v7().to_string();
+        let mut retained = Some(Attempt {
+            id: uuid::Uuid::now_v7().to_string(),
+            previous: String::new(),
+            server: original_server,
+            generation: uuid::Uuid::now_v7().to_string(),
+            last: None,
+        });
+
+        assert!(retire_replaced_attempt(&mut retained, &replacement_server, &generation).is_err());
+        assert!(retained.is_some());
+    }
+
     #[test]
     fn result_requires_original_attempt_and_closed_failure() {
         let id = uuid::Uuid::now_v7().to_string();
