@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic read-only presentation; no native login or account mutation authority.
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -8,6 +9,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AccountService, CodexDiagnosticPhase, CodexDiagnosticSchema, EntityKind, ErrorDetailSchema, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService } from "@delinoio/delidev-api-client";
 import { Sidebar } from "./sidebar";
 import { Surface } from "./views";
+import { Modal } from "./ui";
+import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
+import { LocalServerControls, LocalServerState } from "./local-server";
 import { AccountConnection } from "./account-connection";
 import { SubscriptionOnboarding, SubscriptionOnboardingStage } from "./subscription-onboarding";
 import { MutationIntents } from "./mutation";
@@ -30,5 +34,9 @@ const transport = createRouterTransport(router => {
 });
 const initial = create(ResourceSchema, {id,kind:EntityKind.ACCOUNT,schemaVersion:1,revision:1n,documentJson:encode({alias:"Synthetic original account",type:"api",provider_id:providerId,health:"disconnected"})});
 const diagnostic = create(CodexDiagnosticSchema,{phase:CodexDiagnosticPhase.CLEANUP,code:"recovery_required",detectedVersion:"0.151.0",message:"private-native-sentinel",guidance:"private-path-sentinel"});
+function OriginalAccountTask() {
+ const [open, setOpen] = useState(false);
+ return <LocalConnectionPresentationProvider inline={false}><button onClick={()=>setOpen(true)}>Open original account task</button>{open ? <Modal title="Original account task" close={()=>setOpen(false)}><AccountConnection initial={initial} active close={()=>setOpen(false)} /></Modal> : null}<LocalServerControls status={{state:LocalServerState.Ready,attempts:0,retry_ms:0}} busy={false} restart={()=>{counters.unsupportedMutation++;}} /></LocalConnectionPresentationProvider>;
+}
 const client = new QueryClient({defaultOptions:{queries:{retry:false}}});
-createRoot(document.getElementById("root")!).render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><div className="app"><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={()=>{}} openSession={()=>{}} newSession={()=>{}} newGeneralChat={()=>{}} newProject={()=>{}} openSettings={()=>{}} /><main className="page settings-screen"><SubscriptionOnboarding serviceName="ChatGPT" stage={SubscriptionOnboardingStage.Recovery} active name="Synthetic original account" suggested={false} busy={false} diagnostic={diagnostic} canReopen={false} canCancel={false} changeName={()=>{}} saveName={()=>{}} reopen={()=>{}} cancel={()=>{}} leave={()=>{}} inspect={()=>{counters.inspect++;}} /><AccountConnection initial={initial} active close={()=>{}} /></main></div></MutationIntents></TransportProvider></QueryClientProvider>);
+createRoot(document.getElementById("root")!).render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><div className="app"><Sidebar surface={Surface.Sessions} selectedSessionId="" navigate={()=>{}} openSession={()=>{}} newSession={()=>{}} newGeneralChat={()=>{}} newProject={()=>{}} openSettings={()=>{}} /><main className="page settings-screen"><SubscriptionOnboarding serviceName="ChatGPT" stage={SubscriptionOnboardingStage.Recovery} active name="Synthetic original account" suggested={false} busy={false} diagnostic={diagnostic} canReopen={false} canCancel={false} changeName={()=>{}} saveName={()=>{}} reopen={()=>{}} cancel={()=>{}} leave={()=>{}} inspect={()=>{counters.inspect++;}} />{args.get("mode") === "modal" ? <OriginalAccountTask /> : <AccountConnection initial={initial} active close={()=>{}} />}</main></div></MutationIntents></TransportProvider></QueryClientProvider>);

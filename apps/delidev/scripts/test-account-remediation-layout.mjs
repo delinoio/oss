@@ -58,6 +58,21 @@ try {
     if(screenshots){await mkdir(resolve(screenshots),{recursive:true});await page.screenshot({path:join(resolve(screenshots),`${language}-${theme}-${width}.png`)});}
     await popup.press("Escape");assert.equal(await trigger.evaluate(node=>node===document.activeElement),true);
     checks++;console.log(JSON.stringify({operation:"account-remediation-layout",language,theme,width,height,result:"passed"}));
+    await page.goto(`${origin}/?language=${language}&theme=${theme}&mode=modal`);
+    await page.getByRole("button",{name:"Open original account task"}).click();
+    const task=page.getByRole("dialog",{name:"Original account task",exact:true}); await task.waitFor();
+    await task.getByRole("button",{name:language==="ko"?"연결 컨트롤":"Connection controls"}).click();
+    await task.getByText(language==="ko"?"로컬 서버":"Local server",{exact:true}).click();
+    await task.getByRole("button",{name:language==="ko"?"로컬 서버 중지":"Stop local server",exact:true}).click();
+    const confirmation=task.getByRole("button",{name:language==="ko"?"서버 중지 확인":"Confirm server stop",exact:true}); await confirmation.focus();
+    assert.equal(await confirmation.evaluate(node=>node===document.activeElement),true);
+    assert.equal(await page.evaluate(()=>window.__accountRemediationFixture.unsupportedMutation),0);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+    await task.getByRole("button",{name:language==="ko"?"Original account task 닫기":"Close Original account task",exact:true}).click();
+    assert.equal(await page.getByRole("button",{name:language==="ko"?"서버 중지 확인":"Confirm server stop",exact:true}).count(),0);
+    assert.equal(await page.evaluate(()=>window.__accountRemediationFixture.unsupportedMutation),0);
+    checks++;console.log(JSON.stringify({operation:"original-account-task-remediation",language,theme,width,height,result:"passed"}));
+
   }
   assert.deepEqual(failures,[]);console.log(JSON.stringify({operation:"account-remediation-layout",source,checks,result:"passed",nativeAcceptance:false}));
 } finally {await browser?.close();await new Promise(done=>server?server.close(done):done());await rm(directory,{recursive:true,force:true});}
