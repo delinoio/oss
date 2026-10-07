@@ -1,5 +1,28 @@
 # DeliDev source ownership and compatibility
 
+## API account protocol reservations
+
+Issue #964 reserves ProviderInventory capability `ACCOUNT_API_PROTOCOL_V1 = 7`,
+`ProviderInventoryEntry.api_formats = 10` and the account-list-only
+`ListResourcesRequest.api_protocol = 5`. `ApiProtocol` reserves UNSPECIFIED 0,
+OPENAI_RESPONSES 1, OPENAI_CHAT 2 and ANTHROPIC_MESSAGES 3.
+`ApiAuthentication` reserves UNSPECIFIED 0, BEARER 1, API_KEY 2 and KEYLESS 3.
+`ProviderApiFormat` reserves protocol/endpoint/authentication fields 1–3.
+The complete declaration closure must reach main before dependent implementation.
+Reservations add no active schemas, bindings, capability advertisement, credential
+use, inference authority or database migration.
+
+The planned feature selects one explicit protocol when adding an API key. Custom
+providers declare bounded per-protocol endpoint/authentication profiles. Existing
+accounts retain their original defaults; connected accounts cannot change protocol.
+Disconnect and confirmed protected cleanup precede a changed selection and a new
+connection. Preserve immutable original execution/account ownership, keyless
+cleanup proofs and native uncertainty. API-specific resource schema 3 and portable
+configuration version 4 protect explicit selections from older-client writes while
+retaining legacy reads. Follow the catalog, account and proxy contracts.
+
+
+
 ## Direct execution startup allocation and activation
 
 PR #1645 established the complete [startup allocation](cmds-delidev-execution-startup-contract.md)
@@ -385,3 +408,9 @@ native login, execution, browser dispatch or cleanup authority and add no
 migration. The complete feature owns selected-Runner native authentication,
 metadata-only server ownership, single-use original login input and joined
 native lifecycle/execution cleanup under the subscription and desktop contracts.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Main first reserves System 42, Worker 22 and the complete endpoint/model-identity/pricing closure in the allocation ledger. Compose full DB baseline 32 / protocol 2 reset with inline Worker schema 4 and current portable bundle 4. The prior atomic Model/Agent save and portable bundle 2 proposal are superseded only on complete activation. The 2026-10-07 owner amendment waives earlier DB retention and permits explicit DB/sidecar reset without conversion, retaining original native and protected-credential cleanup authority.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

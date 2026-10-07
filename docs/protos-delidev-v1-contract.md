@@ -1,5 +1,28 @@
 # DeliDev v1 Connect contract
 
+## API account protocol reservations
+
+Issue #964 reserves ProviderInventory capability `ACCOUNT_API_PROTOCOL_V1 = 7`,
+`ProviderInventoryEntry.api_formats = 10` and the account-list-only
+`ListResourcesRequest.api_protocol = 5`. `ApiProtocol` reserves UNSPECIFIED 0,
+OPENAI_RESPONSES 1, OPENAI_CHAT 2 and ANTHROPIC_MESSAGES 3.
+`ApiAuthentication` reserves UNSPECIFIED 0, BEARER 1, API_KEY 2 and KEYLESS 3.
+`ProviderApiFormat` reserves protocol/endpoint/authentication fields 1–3.
+The complete declaration closure must reach main before dependent implementation.
+Reservations add no active schemas, bindings, capability advertisement, credential
+use, inference authority or database migration.
+
+The planned feature selects one explicit protocol when adding an API key. Custom
+providers declare bounded per-protocol endpoint/authentication profiles. Existing
+accounts retain their original defaults; connected accounts cannot change protocol.
+Disconnect and confirmed protected cleanup precede a changed selection and a new
+connection. Preserve immutable original execution/account ownership, keyless
+cleanup proofs and native uncertainty. API-specific resource schema 3 and portable
+configuration version 4 protect explicit selections from older-client writes while
+retaining legacy reads. Follow the catalog, account and proxy contracts.
+
+
+
 ## Direct execution startup allocation and activation
 
 PR #1645 established the complete [startup allocation](cmds-delidev-execution-startup-contract.md)
@@ -846,3 +869,9 @@ reserves protocol 2 and `AttachWorkerRequest.protocol_version = 10` on main.
 The field is absent from active schemas until complete implementation. The
 reset removes historical forwarding imports/reflection and obsolete API
 surfaces; retained field and enum numbers preserve their original meanings.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Reserve System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields on main. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

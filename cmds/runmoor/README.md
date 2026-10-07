@@ -470,7 +470,10 @@ with the installed service configuration in its user session. A failed or
 interrupted reload may have changed the service executable before accepting the
 configuration. Inspect status and the OS user service, correct the reported
 problem and retry with the same installed CLI/configuration. Preserve state and
-managed data; never roll back to an incompatible binary. See the
+managed data; never roll back to an incompatible binary. If another tool or a
+manual edit conflicts with publication of the updated service definition, Runmoor
+preserves that edit and reports a conflict before replacing the running service.
+Resolve the conflicting definitions before retrying. See the
 [service reload guide](https://oss.delino.io/runmoor/operations#reload-an-installed-service-after-upgrading-the-cli).
 
 If Stop completed after an interrupted service reload, wait for the reload
