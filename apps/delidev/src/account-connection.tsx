@@ -33,7 +33,8 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const observed = result.data?.account;
   const observedDocument = document(observed);
-  const validStatus = Boolean(observed && observed.id === initial.id && observed.kind === EntityKind.ACCOUNT && supportsResourceSchema(observed) && observed.revision >= initial.revision && observedDocument.type === document(initial).type && observedDocument.provider_id === document(initial).provider_id);
+  const minimumRevision = acknowledged && acknowledged.revision > initial.revision ? acknowledged.revision : initial.revision;
+  const validStatus = Boolean(observed && observed.id === initial.id && observed.kind === EntityKind.ACCOUNT && supportsResourceSchema(observed) && observed.revision >= minimumRevision && observedDocument.type === document(initial).type && observedDocument.provider_id === document(initial).provider_id);
   const statusUnavailable = Boolean(result.error || result.isSuccess && !validStatus);
   const current = [initial, validStatus ? observed : undefined, acknowledged].filter((row): row is Resource => Boolean(row)).reduce((a, b) => a.revision >= b.revision ? a : b);
   const data = document(current);

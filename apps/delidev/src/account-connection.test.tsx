@@ -130,3 +130,23 @@ it("keeps original cleanup available while a failed status read blocks fresh act
  const retry=await screen.findByRole("button",{name:cleanupLabel});await screen.findByText(/Saved account details are retained/);expect((retry as HTMLButtonElement).disabled).toBe(false);
  fireEvent.click(retry);await waitFor(()=>expect(f.disconnect).toHaveBeenCalledOnce());expect(f.disconnect.mock.calls[0][0].mutation).toMatchObject({id:f.id,requestId:original,expectedRevision:9007199254740993n});
 });
+
+it("treats a successful status older than the original account as unavailable for fresh actions", async () => {
+ const f=fixture(9007199254740993n);f.status.mockResolvedValue({account:create(ResourceSchema,{...f.initial,revision:f.initial.revision-1n})});const view=f.mount();
+ await screen.findByText(/Saved account details are retained/);
+ expect((screen.getByRole("button",{name:"Validate connection"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole("button",{name:"Disconnect"}) as HTMLButtonElement).disabled).toBe(true);expect(f.disconnect).not.toHaveBeenCalled();
+ f.status.mockResolvedValue({account:f.initial});fireEvent.click(screen.getByRole("button",{name:"Recheck account and provider"}));
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Validate connection"}) as HTMLButtonElement).disabled).toBe(false));view.unmount();
+});
+
+it("rejects an older successful status after acknowledgment while retaining the exact original cleanup retry", async () => {
+ const f=fixture(9007199254740993n);const view=f.mount();await waitFor(()=>expect(f.status).toHaveBeenCalled());
+ f.status.mockResolvedValue({account:f.initial});
+ fireEvent.click(screen.getByRole("button",{name:"Disconnect"}));fireEvent.click(screen.getByRole("button",{name:"Confirm disconnection"}));
+ await screen.findByText(/Saved account details are retained/);const original=f.disconnect.mock.calls[0][0].mutation!;
+ expect(f.current.revision).toBeGreaterThan(f.initial.revision);const retry=screen.getByRole("button",{name:cleanupLabel}) as HTMLButtonElement;
+ expect(retry.disabled).toBe(false);fireEvent.click(retry);await waitFor(()=>expect(f.disconnect).toHaveBeenCalledTimes(2));
+ expect(f.disconnect.mock.calls[1][0].mutation).toEqual(original);expect(original.expectedRevision).toBe(9007199254740993n);
+ expect(screen.queryByLabelText("API key")).toBeNull();view.unmount();
+});

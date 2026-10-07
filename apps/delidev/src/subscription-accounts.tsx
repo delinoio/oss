@@ -35,9 +35,11 @@ export function ManagedSubscriptionAccount({ initial, active, close }: { initial
   const read = useQuery(ResourceQuery.getResource, { kind: EntityKind.ACCOUNT, id: initial.id }, { enabled: active, refetchInterval: active ? 2000 : false });
   const flow = useSubscriptionLogin(active, () => { void read.refetch(); });
   const observed = read.data?.resource;
-  const current = serviceAccount(observed, initial.id, service) && observed.revision >= (accepted?.revision ?? initial.revision) ? observed : accepted ?? initial;
+  const minimumRevision = accepted && accepted.revision > initial.revision ? accepted.revision : initial.revision;
+  const verifiedObservation = serviceAccount(observed, initial.id, service, minimumRevision);
+  const current = verifiedObservation ? observed : accepted && accepted.revision >= initial.revision ? accepted : initial;
   const data = document(current), state = object(data.subscription), pending = object(state.pending);
-  const validRead = !read.error && (!read.isSuccess || serviceAccount(observed, initial.id, service));
+  const validRead = !read.error && (!read.isSuccess || verifiedObservation);
   const operation = useRetainedMutation("subscription:lifecycle:" + initial.id, SubscriptionQuery.requestSubscription, (result) => { setAccepted(result.account); void read.refetch(); },
     (result, request) => result.operationId === request.mutation?.requestId && serviceAccount(result.account, initial.id, service, request.mutation?.expectedRevision ?? 1n));
   const blocked = quotaBusy || operation.busy || operation.uncertain;
