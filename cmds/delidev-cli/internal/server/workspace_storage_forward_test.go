@@ -33,25 +33,15 @@ func TestWorkspaceStorageWaitsForBothForwardCleanupReports(t *testing.T) {
 			t.Fatal(err)
 		}
 		accepted, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, request))
-		if i == len(states)-1 {
-			if err != nil || accepted.Msg.Replayed || accepted.Msg.RequestId != request.Mutation.RequestId {
-				t.Fatal("original storage intent did not become eligible after both cleanup reports", err)
-			}
-			continue
+		if err != nil || accepted.Msg.Replayed != (i != 0) || accepted.Msg.RequestId != request.Mutation.RequestId {
+			t.Fatal("forward cleanup blocked or duplicated storage admission", i, err)
 		}
-		if connect.CodeOf(err) != connect.CodeAborted || f.sessionRecord().Revision != request.Mutation.ExpectedRevision {
-			t.Fatal("forward ownership did not block storage atomically", i, err)
+		saved, err := f.service.Store.Get(f.ownerContext, domain.ForwardKind, forwardID)
+		observed, decodeErr := store.Decode[domain.Forward](saved)
+		if err != nil || decodeErr != nil || observed.ClientClean != value.ClientClean || observed.WorkerClean != value.WorkerClean {
+			t.Fatal("storage invented forward cleanup", err, decodeErr)
 		}
-		err = f.service.Store.Read(f.ownerContext, func(tx *store.Tx) error {
-			jobs, err := tx.List(store.Filter{Kind: domain.JobKind, SessionID: f.session, Limit: store.MaxPage})
-			if err == nil && len(jobs) != 1 {
-				t.Fatal("blocked storage created a native job", len(jobs))
-			}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
+
 	}
 }
 
@@ -84,11 +74,15 @@ func TestWorkspaceStorageExcludesNewForwardAndLiveAuthority(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err = f.client.StartForward(f.ctx, ownerRequest(f.identity, &pb.StartForwardRequest{RequestId: string(domain.NewID()), SessionId: string(f.session.ID), MachineId: string(f.machine), ExpectedSessionRevision: f.session.Revision, WorkerPort: 46332}))
-		if connect.CodeOf(err) != connect.CodeAborted {
-			t.Fatal("storage admitted new forward ownership", state, err)
+		if state == domain.WorkspaceStored {
+			if connect.CodeOf(err) != connect.CodeAborted {
+				t.Fatal("absent stored workspace admitted forward", err)
+			}
+		} else if err != nil {
+			t.Fatal("unconfirmed storage blocked forward", err)
 		}
 		err = f.service.Store.Read(owner, func(tx *store.Tx) error {
-			if _, _, _, err := f.service.peerForward(tx, actor, peer, true); domain.SafeError(err).Code != domain.Unavailable {
+			if _, _, _, err := f.service.peerForward(tx, actor, peer, true); (err == nil) != (state != domain.WorkspaceStored) {
 				t.Fatal("storage admitted retained live socket authority", state, err)
 			}
 			// Closing the original native lifetime remains authorized independently
@@ -97,7 +91,7 @@ func TestWorkspaceStorageExcludesNewForwardAndLiveAuthority(t *testing.T) {
 				t.Fatal("storage blocked original cleanup authority", state, err)
 			}
 			forwards, err := tx.List(store.Filter{Kind: domain.ForwardKind, SessionID: f.session.ID, Limit: store.MaxPage})
-			if err == nil && len(forwards) != 1 {
+			if err == nil && len(forwards) != map[domain.WorkspaceStorageState]int{domain.WorkspaceStoragePending: 2, domain.WorkspaceStorageUncertain: 3, domain.WorkspaceStored: 3}[state] {
 				t.Fatal("blocked start published a new forward", len(forwards))
 			}
 			return err

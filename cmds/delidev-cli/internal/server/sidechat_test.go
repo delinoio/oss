@@ -106,11 +106,11 @@ func TestSidechatFindingsExactSelectionReplayAndParentRevision(t *testing.T) {
 		return r
 	}
 	selected := put(domain.ID(child.Id), domain.AssistantMessage, domain.MessageComplete, "Entire selected reply")
-	foreign := put(domain.ID(f.change.Session.Id), domain.AssistantMessage, domain.MessageComplete, "Parent reply")
+	_ = put(domain.ID(f.change.Session.Id), domain.AssistantMessage, domain.MessageComplete, "Parent reply")
 	streaming := put(domain.ID(child.Id), domain.AssistantMessage, domain.MessageStreaming, "Unfinished reply")
 	parent := f.refresh(t)
 	request := &pb.SendSidechatFindingsRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: child.Id, ExpectedRevision: child.Revision}, ParentId: string(parent.ID), ExpectedParentRevision: parent.Revision, Messages: []*pb.SidechatFindingSelection{{MessageId: string(selected.ID), ExpectedRevision: selected.Revision}}}
-	for _, row := range []store.Record{foreign, streaming} {
+	for _, row := range []store.Record{streaming} {
 		bad := proto.Clone(request).(*pb.SendSidechatFindingsRequest)
 		bad.Mutation = &pb.Mutation{RequestId: string(domain.NewID()), Id: child.Id, ExpectedRevision: child.Revision}
 		bad.Messages = []*pb.SidechatFindingSelection{{MessageId: string(row.ID), ExpectedRevision: row.Revision}}

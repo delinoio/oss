@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"io"
 	"os"
 	"path/filepath"
@@ -68,7 +69,7 @@ func copyCheckpointDatabaseFile(ctx context.Context, source, target *os.Root, en
 
 func copyCheckpointFileTo(ctx context.Context, source, target *os.Root, entry checkpointFile, name string) error {
 	before, err := source.Lstat(entry.Path)
-	if err != nil || !before.Mode().IsRegular() || before.Size() != entry.Size || uint32(before.Mode().Perm()) != entry.Mode {
+	if err != nil || !before.Mode().IsRegular() || before.Size() != entry.Size || domain.OwnershipBlocks(domain.OwnershipResource, domain.NewID(), uint32(before.Mode().Perm()) != entry.Mode) {
 		return sessionUncertain()
 	}
 	input, err := source.OpenFile(entry.Path, checkpointReadFlags(), 0)
@@ -77,7 +78,7 @@ func copyCheckpointFileTo(ctx context.Context, source, target *os.Root, entry ch
 	}
 	defer input.Close()
 	opened, err := input.Stat()
-	if err != nil || !sameCheckpointFile(before, opened) || !ownedCheckpointOpenFile(input) || before.Size() != entry.Size || uint32(before.Mode().Perm()) != entry.Mode {
+	if err != nil || !sameCheckpointFile(before, opened) || !ownedCheckpointOpenFile(input) || before.Size() != entry.Size || domain.OwnershipBlocks(domain.OwnershipResource, domain.NewID(), uint32(before.Mode().Perm()) != entry.Mode) {
 		return sessionUncertain()
 	}
 	output, err := target.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)

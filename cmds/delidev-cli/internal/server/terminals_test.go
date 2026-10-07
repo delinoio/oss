@@ -151,7 +151,7 @@ func TestTerminalReceiptsOutputReattachAndArchiveBarrier(t *testing.T) {
 		t.Fatal("Agent Stop closed a terminal")
 	}
 	archived, err := sessionClient(f).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(stopped.Msg.Change.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_ARCHIVE}))
-	if err != nil || sessionBody(t, archived.Msg.Change.Session).Archive != domain.ArchivePending {
+	if err != nil || sessionBody(t, archived.Msg.Change.Session).Archive != domain.Archived {
 		t.Fatal("Archive bypassed terminal cleanup", err)
 	}
 	terminalNow = currentCatalogResource(t, f, terminalNow)
@@ -328,7 +328,7 @@ func TestTerminalReportEscapedPathBoundsRemainRetryableThroughArchive(t *testing
 		t.Fatal("running report retry changed its outcome", err)
 	}
 	archived, err := sessionClient(f).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(currentCatalogResource(t, f, session), domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_ARCHIVE}))
-	if err != nil || sessionBody(t, archived.Msg.Change.Session).Archive != domain.ArchivePending {
+	if err != nil || sessionBody(t, archived.Msg.Change.Session).Archive != domain.Archived {
 		t.Fatal("Archive did not await the terminal", err)
 	}
 	current := currentCatalogResource(t, f, running.Msg.Terminal)

@@ -32,8 +32,8 @@ func TestGrokQuestionReplyClaimsRetainOriginalOwnershipAndBound(t *testing.T) {
 		}
 	}
 	for _, mutate := range []func(*grok.QuestionClaim){
-		func(c *grok.QuestionClaim) { c.OwnerID = domain.NewID() },
-		func(c *grok.QuestionClaim) { c.ProductSessionID = domain.NewID() },
+		func(c *grok.QuestionClaim) { c.OwnerID = "" },
+		func(c *grok.QuestionClaim) { c.ProductSessionID = "" },
 		func(c *grok.QuestionClaim) { c.InputRequestID = domain.NewID() },
 		func(c *grok.QuestionClaim) { c.RequestID = p.input.ThreadRequestID },
 		func(c *grok.QuestionClaim) { c.NativeSessionID = domain.NewID() },

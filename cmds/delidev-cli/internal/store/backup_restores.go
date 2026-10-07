@@ -313,7 +313,7 @@ func (s *Store) restoreBackupWithBarrier(ctx context.Context, request domain.ID,
 		return result, false, restoreConflict()
 	}
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor != in.Actor {
+	if !ok || domain.OwnershipBlocks(domain.OwnershipActor, request, actor != in.Actor) {
 		return result, false, restoreConflict()
 	}
 	if err := lockBackupContext(ctx, &s.backupGate); err != nil {

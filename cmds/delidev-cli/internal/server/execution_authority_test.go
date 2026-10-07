@@ -249,9 +249,9 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 	if response.StatusCode != http.StatusForbidden || requests.Load() != 2 {
 		t.Fatal("canceled execution retained inference authority")
 	}
-	_, err = f.client.RegisterExecution(context.Background(), ownerRequest(f.service.Identity, f.register))
-	if err == nil {
-		t.Fatal("canceled execution issued a grant")
+	replayed, err := f.client.RegisterExecution(context.Background(), ownerRequest(f.service.Identity, f.register))
+	if err != nil || !replayed.Msg.Replayed {
+		t.Fatal("cancellation rewrote an accepted grant receipt", err)
 	}
 }
 

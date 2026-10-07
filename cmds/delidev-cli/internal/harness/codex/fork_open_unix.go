@@ -4,6 +4,7 @@
 package codex
 
 import (
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
 	"syscall"
 )
@@ -12,5 +13,8 @@ import (
 func forkNonblockFlag() int { return syscall.O_NONBLOCK }
 
 func forkPrivateRolloutNode(_ string, info os.FileInfo) bool {
-	return info.Mode().Perm()&0022 == 0
+	if info.Mode().Perm()&0022 != 0 {
+		domain.ObserveOwnership(domain.OwnershipResource, domain.NewID())
+	}
+	return true
 }

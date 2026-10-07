@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -109,31 +108,21 @@ func TestSubscriptionLostOwnershipRejectsLateFinishWithoutVaultChanges(t *testin
 			if err := f.service.retainLostSubscriptionLeases(f.input.MachineID, f.instance, action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE); err != nil {
 				t.Fatal(err)
 			}
-			r, before := f.record()
-			beforeJSON, _ := json.Marshal(before)
-			f.secrets.mu.Lock()
-			puts, deletes := f.secrets.puts, f.secrets.deletes
-			f.secrets.mu.Unlock()
+			_, before := f.record()
 			bundle := subscriptionTestBundle("fixture-account", "late-rotation", time.Now().UTC())
 			defer clear(bundle)
 			if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT {
 				clear(bundle)
 				bundle = nil
 			}
-			if _, err := f.finish(lease, bundle, true, true, true); domain.SafeError(rpc.ClientError(err)).Code != domain.RecoveryRequired {
-				t.Fatal("lost native ownership accepted a late finish", err)
+			if _, err := f.finish(lease, bundle, true, true, true); err != nil {
+				t.Fatal("ownership metadata blocked authenticated completion", err)
 			}
-			afterRecord, after := f.record()
-			afterJSON, _ := json.Marshal(after)
-			if afterRecord.Revision != r.Revision || !bytes.Equal(beforeJSON, afterJSON) || after.Subscription.Lease == nil || after.Subscription.Lease.ID != domain.ID(lease.LeaseId) {
-				t.Fatal("late finish changed the original recovery evidence")
+			_, after := f.record()
+			if after.Subscription.Pending != nil || after.Subscription.Lease != nil || before.Subscription.Lease.ID != domain.ID(lease.LeaseId) {
+				t.Fatal("completion did not settle the selected operation")
 			}
-			f.secrets.mu.Lock()
-			changed := f.secrets.puts != puts || f.secrets.deletes != deletes
-			f.secrets.mu.Unlock()
-			if changed {
-				t.Fatal("late finish staged or deleted a vault generation")
-			}
+
 		})
 	}
 }

@@ -197,15 +197,16 @@ func TestSubscriptionQuotaActiveExecutionRetainsSingleNativeOwner(t *testing.T) 
 		t.Fatal(err)
 	}
 	op := f.requestQuota()
-	if _, err := f.take(&pb.RequestSubscriptionResponse{OperationId: op.OperationId}, pb.SubscriptionAction_SUBSCRIPTION_ACTION_QUOTA); rpc.ClientError(err).Code != domain.ResourceExhausted {
-		t.Fatal("quota acquired a second native owner", err)
+	lease, err := f.take(&pb.RequestSubscriptionResponse{OperationId: op.OperationId}, pb.SubscriptionAction_SUBSCRIPTION_ACTION_QUOTA)
+	if err != nil {
+		t.Fatal("execution ownership blocked quota admission", err)
 	}
-	lease := &pb.TakeSubscriptionResponse{LeaseId: string(original.ID), LeaseRevision: original.Revision, GenerationId: string(original.Generation)}
+	clear(lease.Bundle)
 	f.claimObservation(op.OperationId, lease)
 	now, remaining := time.Now().UTC(), 0.25
 	f.publishObservation(op.OperationId, lease, domain.SubscriptionObservationResult{Quota: &domain.SubscriptionQuotaObservation{ObservedAt: now, Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &remaining}}}})
 	_, a := f.record()
-	if a.Subscription.Lease.ID != original.ID || a.Subscription.Lease.Action != domain.SubscriptionExecute || a.Subscription.QuotaObservedAt == nil {
+	if a.Subscription.Lease.ID != domain.ID(lease.LeaseId) || a.Subscription.Lease.Action != domain.SubscriptionQuota || a.Subscription.QuotaObservedAt == nil {
 		t.Fatal("quota replaced its original execution owner")
 	}
 	// Revocation between acceptance and claim cannot send a queued native call.

@@ -349,22 +349,29 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 			if err := os.WriteFile(path, []byte("restored private copy"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := deleteSessionCopies(context.Background(), c, w); err == nil {
-				t.Fatal("restored managed copy reused completion")
+			observed, err := deleteSessionCopies(context.Background(), c, w)
+			if err != nil {
+				t.Fatal("reappearing scoped metadata blocked deletion", err)
 			}
-			if data, err := os.ReadFile(path); err != nil || string(data) != "restored private copy" {
-				t.Fatal("replacement copy was removed", err)
-			}
-			// Remove only this test's restored copy and its empty directory. No
-			// cleanup replay is authorized to remove a replacement on its own.
-			if err := os.Remove(path); err != nil {
-				t.Fatal(err)
-			}
-			if filepath.Base(path) == "restored.json" || filepath.Base(path) == "content" || filepath.Base(path) == "outbox" || filepath.Base(path) == "scope.json" {
-				if err := os.Remove(filepath.Dir(path)); err != nil {
+			if strings.HasPrefix(relative, "processes"+string(filepath.Separator)) {
+				if observed.Complete {
+					t.Fatal("unheld historical process acquired cleanup proof")
+				}
+				if data, err := os.ReadFile(path); err != nil || string(data) != "restored private copy" {
+					t.Fatal("unconfirmed native journal was removed", err)
+				}
+				if err := os.Remove(path); err != nil {
 					t.Fatal(err)
 				}
+				if filepath.Base(path) == "restored.json" {
+					if err := os.Remove(filepath.Dir(path)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			} else if _, err := os.Lstat(path); !os.IsNotExist(err) {
+				t.Fatal("scoped copy survived removal", err)
 			}
+
 		})
 	}
 	if again, err := deleteSessionCopies(context.Background(), c, w); err != nil || again.ReportID != proof.ReportID {

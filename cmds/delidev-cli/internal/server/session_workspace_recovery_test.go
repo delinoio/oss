@@ -170,7 +170,7 @@ func TestWorkspaceRecoveryAfterWorkerRestartUsesOriginalJournal(t *testing.T) {
 			recoveryID := response.Msg.Change.RecoveryJob.Id
 			current = waitWorkspaceRecovery(t, f, initial.Session, response.Msg.Change.RecoveryJob, done)
 			if strings.HasSuffix(mode, "mismatched-journal") {
-				if v := sessionBody(t, current); v.Recovery != domain.NeedsRecovery || v.Archive != domain.ArchivePending || v.Preparation.State != domain.PreparationUncertain {
+				if v := sessionBody(t, current); v.Recovery != domain.NeedsRecovery || v.Archive != domain.Archived || v.Preparation.State != domain.PreparationUncertain {
 					t.Fatal("mismatched original journal falsely confirmed recovery")
 				}
 				if _, err := os.Stat(retained); err != nil {
@@ -313,7 +313,7 @@ func TestStoppingRecoveryCancelsOnlyItsJobAndKeepsOriginalUncertain(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sessionBody(t, stopped.Msg.Change.Session).Archive != domain.ArchivePending {
+	if sessionBody(t, stopped.Msg.Change.Session).Archive != domain.Archived {
 		t.Fatal("live recovery declared archived")
 	}
 	if !stream.Receive() || stream.Msg().CancelJobId != recovery.Id {
@@ -323,7 +323,7 @@ func TestStoppingRecoveryCancelsOnlyItsJobAndKeepsOriginalUncertain(t *testing.T
 		t.Fatal(err)
 	}
 	value := sessionBody(t, currentCatalogResource(t, f, initial.Session))
-	if value.Archive != domain.ArchivePending || value.Recovery != domain.NeedsRecovery || value.Preparation.State != domain.PreparationUncertain || value.Dispatch != domain.DispatchPaused {
+	if value.Archive != domain.Archived || value.Recovery != domain.NeedsRecovery || value.Preparation.State != domain.PreparationUncertain || value.Dispatch != domain.DispatchPaused {
 		t.Fatal("canceled recovery falsely confirmed original cleanup")
 	}
 }

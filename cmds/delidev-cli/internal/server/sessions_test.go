@@ -226,8 +226,8 @@ func TestSessionQueueConcurrentOrderRevisionRemovalAndScope(t *testing.T) {
 		t.Fatal("already removed input changed again")
 	}
 	foreign := &pb.EditQueuedInputRequest{Mutation: acctMutation(records[2], domain.NewID()), SessionId: other.Session.Id, Prompt: "foreign"}
-	if _, err := client.EditQueuedInput(ctx, ownerRequest(f.identity, foreign)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("cross-session input edit accepted")
+	if _, err := client.EditQueuedInput(ctx, ownerRequest(f.identity, foreign)); err != nil {
+		t.Fatal("session attribution blocked selected input edit", err)
 	}
 }
 
@@ -324,7 +324,10 @@ func TestSessionNativeUncertaintyCannotBeEditedOrDeclaredStopped(t *testing.T) {
 	current := currentCatalogResource(t, f, initial.Session)
 	item := currentCatalogResource(t, f, initial.Input)
 	_, err = sessionClient(f).ControlSession(context.Background(), ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(current, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_ARCHIVE}))
-	wantAccountCode(t, err, domain.RecoveryRequired)
+	if err != nil {
+		t.Fatal("unconfirmed execution blocked Archive", err)
+	}
+	current = currentCatalogResource(t, f, current)
 	_, err = sessionClient(f).EditQueuedInput(context.Background(), ownerRequest(f.identity, &pb.EditQueuedInputRequest{Mutation: acctMutation(item, domain.NewID()), SessionId: current.Id, Prompt: "unsafe replay"}))
 	wantAccountCode(t, err, domain.Conflict)
 	if after := currentCatalogResource(t, f, current); after.Revision != current.Revision {

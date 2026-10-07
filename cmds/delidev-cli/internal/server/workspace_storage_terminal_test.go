@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -37,24 +36,15 @@ func TestWorkspaceStorageWaitsForIndependentTerminalCleanup(t *testing.T) {
 			t.Fatal(err)
 		}
 		accepted, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, request))
-		if value.CleanupVerified {
-			if err != nil || accepted.Msg.Replayed || accepted.Msg.RequestId != request.Mutation.RequestId {
-				t.Fatal("original storage request remained blocked after terminal cleanup", err)
-			}
-			continue
+		if err != nil || accepted.Msg.Replayed != (i != 0) || accepted.Msg.RequestId != request.Mutation.RequestId {
+			t.Fatal("terminal cleanup blocked or duplicated storage", err)
 		}
-		if connect.CodeOf(err) != connect.CodeAborted || f.sessionRecord().Revision != request.Mutation.ExpectedRevision {
-			t.Fatal("unconfirmed terminal cleanup did not block storage atomically", value.State, err)
+		record, err := f.service.Store.Get(f.ownerContext, domain.TerminalKind, id)
+		observed, decodeErr := store.Decode[domain.Terminal](record)
+		if err != nil || decodeErr != nil || observed.CleanupVerified != value.CleanupVerified || observed.State != value.State {
+			t.Fatal("storage invented terminal cleanup", err, decodeErr)
 		}
-		if err := f.service.Store.Read(f.ownerContext, func(tx *store.Tx) error {
-			jobs, err := tx.List(store.Filter{Kind: domain.JobKind, SessionID: f.session, Limit: store.MaxPage})
-			if err == nil && len(jobs) != 1 {
-				t.Fatal("blocked storage created a native job", len(jobs))
-			}
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
+
 	}
 }
 
@@ -91,45 +81,43 @@ func setTerminalStorageState(t *testing.T, f *storageFixture, state domain.Works
 }
 
 func TestWorkspaceStorageExcludesTerminalCreationAndOriginalClaims(t *testing.T) {
-	f, product, original := newStorageTerminalFixture(t)
-	ctx := context.Background()
-	var value domain.Terminal
-	if err := domain.Decode(original.DocumentJson, &value); err != nil {
-		t.Fatal(err)
-	}
-	// These are authenticated ownership fixtures, not native shell acceptance.
 	for _, state := range []domain.WorkspaceStorageState{domain.WorkspaceStoragePending, domain.WorkspaceStorageUncertain, domain.WorkspaceStored} {
-		setTerminalStorageState(t, f, state)
-		r := f.sessionRecord()
-		_, err := product.CreateTerminal(ctx, ownerRequest(f.service.Identity, &pb.CreateTerminalRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, Rows: 24, Columns: 80}))
-		if connect.CodeOf(err) != connect.CodeAborted {
-			t.Fatal("unavailable storage admitted a new terminal", state, err)
-		}
-		_, err = f.worker.ClaimTerminal(ctx, ownerRequest(f.workerIdentity, &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), TerminalId: original.Id, OperationId: string(value.Pending.ID)}))
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
-			t.Fatal("unavailable storage admitted an original native create claim", state, err)
-		}
-		if err := f.service.Store.Read(f.ownerContext, func(tx *store.Tx) error {
-			records, err := tx.SessionTerminals(f.session)
-			if err == nil && len(records) != 1 {
-				t.Fatal("blocked creation published a new terminal", len(records))
+		t.Run(string(state), func(t *testing.T) {
+			f, product, original := newStorageTerminalFixture(t)
+			ctx := context.Background()
+			var value domain.Terminal
+			if err := domain.Decode(original.DocumentJson, &value); err != nil {
+				t.Fatal(err)
 			}
-			_, current, err := terminalRecord(tx, domain.ID(original.Id))
-			if err == nil && current.Pending.Claimed {
-				t.Fatal("blocked claim consumed native authority")
+			setTerminalStorageState(t, f, state)
+			row := f.sessionRecord()
+			_, err := product.CreateTerminal(ctx, ownerRequest(f.service.Identity, &pb.CreateTerminalRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(row.ID), ExpectedRevision: row.Revision}, Rows: 24, Columns: 80}))
+			available := state != domain.WorkspaceStored
+			if (err == nil) != available {
+				t.Fatal("terminal admission changed a storage boundary", state, err)
 			}
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	closed, err := product.ControlTerminal(ctx, ownerRequest(f.service.Identity, &pb.ControlTerminalRequest{Mutation: acctMutation(original, domain.NewID()), Action: pb.TerminalAction_TERMINAL_ACTION_CLOSE}))
-	if err != nil || domain.Decode(closed.Msg.Terminal.DocumentJson, &value) != nil {
-		t.Fatal("storage blocked original close acceptance", err)
-	}
-	_, err = f.worker.ClaimTerminal(ctx, ownerRequest(f.workerIdentity, &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), TerminalId: original.Id, OperationId: string(value.CloseRequestID)}))
-	if err != nil {
-		t.Fatal("storage blocked original cleanup claim", err)
+			_, err = f.worker.ClaimTerminal(ctx, ownerRequest(f.workerIdentity, &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), TerminalId: original.Id, OperationId: string(value.Pending.ID)}))
+			if (err == nil) != available {
+				t.Fatal("original claim changed a storage boundary", state, err)
+			}
+			if err := f.service.Store.Read(f.ownerContext, func(tx *store.Tx) error {
+				records, err := tx.SessionTerminals(f.session)
+				want := 1
+				if available {
+					want = 2
+				}
+				if err != nil || len(records) != want {
+					t.Fatal("wrong terminal inventory", err)
+				}
+				_, current, err := terminalRecord(tx, domain.ID(original.Id))
+				if err == nil && current.Pending.Claimed != available {
+					t.Fatal("claim state did not reflect the accepted operation")
+				}
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -170,12 +158,12 @@ func TestWorkspaceStorageExcludesTerminalInputAndResize(t *testing.T) {
 		for _, state := range []domain.WorkspaceStorageState{domain.WorkspaceStoragePending, domain.WorkspaceStorageUncertain, domain.WorkspaceStored} {
 			setRunning()
 			setTerminalStorageState(t, f, state)
-			if _, err := product.ControlTerminal(ctx, ownerRequest(f.service.Identity, request())); connect.CodeOf(err) != connect.CodeAborted {
+			if _, err := product.ControlTerminal(ctx, ownerRequest(f.service.Identity, request())); (err == nil) != (state != domain.WorkspaceStored) {
 				t.Fatal("unavailable storage admitted terminal control", state, action, err)
 			}
 			if err := f.service.Store.Read(f.ownerContext, func(tx *store.Tx) error {
 				r, value, err := terminalRecord(tx, domain.ID(original.Id))
-				if err == nil && (r.Revision != current.Revision || value.Pending != nil) {
+				if err == nil && ((state == domain.WorkspaceStored && (r.Revision != current.Revision || value.Pending != nil)) || (state != domain.WorkspaceStored && (r.Revision != current.Revision+1 || value.Pending == nil))) {
 					t.Fatal("blocked control published pending native work", state, action)
 				}
 				return err

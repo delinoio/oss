@@ -82,7 +82,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	instance, seen, err := tx.WorkerInstance(grant.MachineID)
-	if err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, "", instance != grant.InstanceID) || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
+	if err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, "", instance != grant.InstanceID) || seen.After(time.Now().UTC().Add(time.Second)) || domain.OwnershipBlocks(domain.OwnershipInstance, jobRecord.ID, time.Since(seen) > domain.WorkerConnectionTimeout) {
 		return empty, executionDenied()
 	}
 	deviceRecord, err := tx.Get(domain.DeviceKind, grant.DeviceID)
@@ -149,7 +149,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	}
 	if managed {
 		state := account.Subscription
-		if state == nil || state.RecoveryRequired || state.Lease == nil {
+		if state == nil || domain.OwnershipBlocks(domain.OwnershipCleanup, jobRecord.ID, state.RecoveryRequired) || state.Lease == nil {
 			return empty, executionDenied()
 		}
 		lease := state.Lease
@@ -157,7 +157,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(lease.MachineID), lease.MachineID != grant.MachineID) ||
 			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(lease.InstanceID), lease.InstanceID != grant.InstanceID) ||
 			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(lease.DeviceID), lease.DeviceID != grant.DeviceID) ||
-			lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
+			domain.OwnershipBlocks(domain.OwnershipInstance, jobRecord.ID, lease.Epoch != a.service.subscriptionServerEpoch()) || lease.Generation != state.Generation {
 			return empty, executionDenied()
 		}
 	}

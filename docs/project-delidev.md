@@ -16,16 +16,16 @@ Account/Worker/history, credentials, revisions and independent cleanup remain
 cross-domain invariants; existing supported feature/platform limits remain and
 no SQLite migration is added.
 
-Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
+Main desktop local Workers now have automatic authenticated registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
 
 Failed-login subscription cleanup uses System capability 41 after main-first reservation PR #1614. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
 
 ## Goal
-Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative, with the explicit owner startup/presentation amendment in #1137; implementation and real-environment evidence are distinct.
+Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable authenticated single-user state. Issue #964 remains normative, with the explicit owner startup/presentation amendment in #1137; implementation and real-environment evidence are distinct.
 
 Issue #1137 makes a fresh main desktop launch sufficient to start/reuse a compatible ordinary local runtime and verify the authenticated product connection. Native-service scope admission remains Go-owned; same-process Stop, renderer lifecycle, saved-window authority and independent server/Worker/session ownership stay separate. Normal Quit stops only original app-owned server children, with a 35-second graceful deadline followed by original-child force and observed exit; crash/forced desktop termination preserves running sidecars. Borrowed runtimes and independent Workers remain running. Routine startup/sidebar/tray use product wording; lifecycle, registration and saved-connection controls live in persistent Connection & diagnostics. The [desktop contract](apps-delidev-desktop-contract.md) defines the implementation; record actual platform acceptance and unresolved limits in issue #1137, its pull requests and CI logs/artifacts.
 
-Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows ConPTY processes, authenticated create/control/output operations and equivalent CLI commands. The desktop provides a bounded text terminal view. Agent Stop preserves terminals; Archive and storage deletion join their independent exact cleanup gate. The [terminal contract](cmds-delidev-terminals-contract.md) and [validation records in PR #1226](https://github.com/delinoio/oss/pull/1226) distinguish fixture/cross-build validation from native platform, remote Worker and release acceptance; this increment does not complete the remaining issue #964 scope.
+Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows ConPTY processes, authenticated create/control/output operations and equivalent CLI commands. The desktop provides a bounded text terminal view. Agent Stop preserves terminals; Archive and storage deletion proceed while terminal cleanup is unconfirmed; retained native handles still control termination, and unknown cleanup remains recorded. The [terminal contract](cmds-delidev-terminals-contract.md) and [validation records in PR #1226](https://github.com/delinoio/oss/pull/1226) distinguish fixture/cross-build validation from native platform, remote Worker and release acceptance; this increment does not complete the remaining issue #964 scope.
 
 Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Schema allocations reach main before activation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
 
@@ -100,10 +100,10 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [Exact native response usage](cmds-delidev-usage-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
 
-Permanent session deletion uses owner/client Connect and equivalent confirmed CLI
-commands, durable intent outside SQLite, original Worker cleanup acknowledgements
-and managed-backup erasure. Forwarding peers independently confirm cleanup;
-offline or uncertain ownership remains pending. Original Local checkouts, other
+Permanent session deletion uses authenticated Connect and equivalent CLI
+commands, durable intent outside SQLite and managed-backup erasure. Deletion
+continues while Worker and forwarding cleanup remains unconfirmed; independent
+acknowledgements update the retained observations without inventing confirmation. Original Local checkouts, other
 sessions and shared account profiles are preserved. The [storage contract](cmds-delidev-storage-contract.md)
 owns the lifecycle, snapshot-copy deletion integration and remaining database-restore/Sidechat limits.
 

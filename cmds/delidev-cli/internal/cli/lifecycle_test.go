@@ -37,8 +37,9 @@ func TestServerLifecycleNeverTargetsPairedRemoteScope(t *testing.T) {
 			t.Fatal("paired scope lifecycle", action, code)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "server-lifecycle.json")); !os.IsNotExist(err) {
-		t.Fatal("paired scope gained server intent")
+	after, err := os.ReadFile(filepath.Join(root, "device.json"))
+	if err != nil || string(after) != string(raw) {
+		t.Fatal("local startup rewrote the remote credential", err)
 	}
 }
 

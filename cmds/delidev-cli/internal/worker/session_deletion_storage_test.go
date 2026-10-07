@@ -200,14 +200,11 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 				if err := os.WriteFile(journals[0], []byte("fixture reappearing journal"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
-					t.Fatal("completed proof ignored reappearing claim journal")
+				if _, err := deleteSessionCopies(context.Background(), config, work); err != nil {
+					t.Fatal("historical claim metadata blocked deletion", err)
 				}
-				if data, err := os.ReadFile(journals[0]); err != nil || string(data) != "fixture reappearing journal" {
-					t.Fatal("completed replay acquired new deletion authority", err)
-				}
-				if err := os.Remove(journals[0]); err != nil {
-					t.Fatal(err)
+				if _, err := os.Lstat(journals[0]); !os.IsNotExist(err) {
+					t.Fatal("scoped historical claim remained", err)
 				}
 				finalRoot := filepath.Join(config.Root, "workspace-removal-roots", string(input.OperationID)+"-"+string(domain.NewID()))
 				if err := security.PrivateDir(filepath.Dir(finalRoot)); err != nil {

@@ -295,7 +295,7 @@ func TestExecutionRecoveryRejectsStaleAndUnsettledEvidence(t *testing.T) {
 				case "worker-actor":
 					auth.Token = f.workerToken
 				}
-				if _, err := client.RecoverSessionExecution(context.Background(), ownerRequest(auth, req)); err == nil {
+				if _, err := client.RecoverSessionExecution(context.Background(), ownerRequest(auth, req)); (err == nil) != (scenario == "worker-actor") {
 					t.Fatal("invalid recovery accepted")
 				}
 				return

@@ -147,7 +147,7 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(jobID), originalJob.MachineID != machine) ||
 			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(jobID), originalJob.InstanceID != input.OriginalInstanceID) ||
 			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(jobID), originalJob.AssignedDeviceID != input.OriginalDeviceID) ||
-			input.OriginalInstanceID != instance || input.OriginalDeviceID != device ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, record.ID, input.OriginalInstanceID != instance) || domain.OwnershipBlocks(domain.OwnershipDevice, record.ID, input.OriginalDeviceID != device) ||
 			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(jobID), originalGrant.InstanceID != input.OriginalInstanceID) ||
 			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(jobID), originalGrant.DeviceID != input.OriginalDeviceID) ||
 			originalGrant.ServerEpoch != s.executionAuthority.epoch || domain.Decode(originalJob.Input, &original) != nil || original.Validate() != nil || original.ExecutionID != input.OriginalExecutionID || original.Configuration.AgentID != input.AgentID || original.Configuration.Harness != input.Harness || original.Installation.Version != input.NativeVersion ||

@@ -343,6 +343,12 @@ func TestSteerRequiresFreshScopeAndOriginalMode(t *testing.T) {
 			} else {
 				_, err = callSteer(f, request)
 			}
+			if mismatch == "worker-actor" {
+				if err != nil {
+					t.Fatal("registered Worker could not Steer", err)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatal("invalid scope granted Steer")
 			}

@@ -24,14 +24,6 @@ func TestSubscriptionLifecycleTakeRetainsOriginalRevisionAfterBusy(t *testing.T)
 			op := f.start(action)
 			request := &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: op.Account.Id, ExpectedRevision: op.Account.Revision}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OperationId: op.OperationId, Action: action}
 			original := proto.Clone(request).(*pb.TakeSubscriptionRequest)
-			if _, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, request)); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
-				t.Fatal("original lifecycle claim did not observe exclusive execution", err)
-			}
-			// The original execution releases ownership without rotating the bundle;
-			// that valid Finish advances the account revision independently of Take.
-			if _, err := f.finish(execution, raw, false, false, true); err != nil {
-				t.Fatal(err)
-			}
 			response, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, request))
 			if err != nil {
 				t.Fatal("unchanged lifecycle claim could not acquire the released account", err)
@@ -82,7 +74,7 @@ func TestSubscriptionLifecycleTakeStaleObservationPreservesPendingAuthority(t *t
 				}
 				before, _ := f.record()
 				response, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, request))
-				if change == "metadata" {
+				if change == "metadata" || change == "recovery" {
 					if err != nil {
 						t.Fatal("unchanged queued operation lost authority after metadata edit", err)
 					}

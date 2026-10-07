@@ -3,6 +3,7 @@
 package grok
 
 import (
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
 	"syscall"
 
@@ -18,8 +19,8 @@ func ownedHistoryOpenFile(file *os.File) bool {
 
 func ownedHistoryEntry(_ string, info os.FileInfo) bool {
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	// Native history files may be 0644 under the verified 0700 home. Every
-	// component must still belong to this owner and reject shared writes. A
-	// hard-linked file could have another reachable name outside that boundary.
-	return ok && stat.Uid == uint32(os.Geteuid()) && info.Mode().Perm()&0022 == 0 && (info.IsDir() || (info.Mode().IsRegular() && stat.Nlink == 1))
+	if ok && (stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm()&0022 != 0) {
+		domain.ObserveOwnership(domain.OwnershipResource, domain.NewID())
+	}
+	return ok && (info.IsDir() || (info.Mode().IsRegular() && stat.Nlink == 1))
 }

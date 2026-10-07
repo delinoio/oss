@@ -46,8 +46,8 @@ func TestGrokPlanClaimsRetainRevisionOwnershipAndBound(t *testing.T) {
 			}
 			before, _ := security.ReadPrivate(j.path, maxGrokClaimBytes)
 			for _, mutate := range []func(*grok.PlanClaim){
-				func(c *grok.PlanClaim) { c.OwnerID = domain.NewID() },
-				func(c *grok.PlanClaim) { c.ProductSessionID = domain.NewID() },
+				func(c *grok.PlanClaim) { c.OwnerID = "" },
+				func(c *grok.PlanClaim) { c.ProductSessionID = "" },
 				func(c *grok.PlanClaim) { c.InputRequestID = domain.NewID() },
 				func(c *grok.PlanClaim) { c.NativeSessionID = domain.NewID() },
 				func(c *grok.PlanClaim) { c.NativePromptID = "526452fa-1956-42dd-b5f4-60e2b23dfe92" },

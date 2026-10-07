@@ -103,8 +103,8 @@ func TestTerminalReplacementReadsOnlyCommittedOriginalReportReceipt(t *testing.T
 			}
 			changed = proto.Clone(report).(*pb.ReportTerminalRequest)
 			changed.MachineId = string(domain.NewID())
-			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, changed)); connect.CodeOf(err) != connect.CodePermissionDenied {
-				t.Fatal("another machine read original receipt", err)
+			if _, err := worker.ReportTerminal(ctx, ownerRequest(identity, changed)); connect.CodeOf(err) != connect.CodeNotFound {
+				t.Fatal("missing selected machine was not rejected", err)
 			}
 			if !purged {
 				current := currentCatalogResource(t, f, original)

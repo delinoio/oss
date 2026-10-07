@@ -54,7 +54,7 @@ func openHistoryFiles(ctx context.Context, home string, logger *slog.Logger) (*h
 func (s *historyFiles) Close() { _ = s.root.Close() }
 
 func sameHistoryFile(before, after os.FileInfo) bool {
-	if before == nil || after == nil || !os.SameFile(before, after) || before.Mode() != after.Mode() {
+	if before == nil || after == nil || !os.SameFile(before, after) || before.Mode().Type() != after.Mode().Type() {
 		return false
 	}
 	// Directory creation timestamps/listing sizes do not identify transcript

@@ -12,7 +12,7 @@ import (
 
 func matchesInitialTitleExecution(session domain.Session, original domain.ExecutionJobInput) bool {
 	initial := session.InitialExecution
-	return initial != nil && original.Continuation == nil && session.MachineID == original.MachineID && session.AgentID == original.Configuration.AgentID && session.NativeExecutionRoot() == original.ExecutionID && (initial.InputID == original.InputID || original.Retry != nil) && initial.InitialAccountID == original.AccountID && initial.ConnectionID == original.ConnectionID && initial.ConfigurationDigest == original.ConfigurationDigest
+	return initial != nil && original.Continuation == nil && !domain.OwnershipBlocks(domain.OwnershipMachine, original.ExecutionID, session.MachineID != original.MachineID) && session.AgentID == original.Configuration.AgentID && session.NativeExecutionRoot() == original.ExecutionID && (initial.InputID == original.InputID || original.Retry != nil) && !domain.OwnershipBlocks(domain.OwnershipResource, original.ExecutionID, initial.InitialAccountID != original.AccountID) && !domain.OwnershipBlocks(domain.OwnershipResource, original.ExecutionID, initial.ConnectionID != original.ConnectionID) && initial.ConfigurationDigest == original.ConfigurationDigest
 }
 
 func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant, record store.Record, job domain.Job) (apiproxy.Scope, error) {
@@ -23,7 +23,7 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.SessionID), input.SessionID != record.SessionID) ||
 		input.ProjectID != record.ProjectID ||
 		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != grant.MachineID) ||
-		input.OriginalDeviceID != grant.DeviceID || input.OriginalJobID != job.ParentID || input.OriginalExecutionID != grant.ExecutionID {
+		domain.OwnershipBlocks(domain.OwnershipDevice, record.ID, input.OriginalDeviceID != grant.DeviceID) || input.OriginalJobID != job.ParentID || input.OriginalExecutionID != grant.ExecutionID {
 		return denied()
 	}
 	claimed, err := tx.TitleInferenceClaimed(record.ID)
@@ -35,7 +35,7 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 		return denied()
 	}
 	instance, seen, err := tx.WorkerInstance(grant.MachineID)
-	if err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, "", instance != grant.InstanceID) || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
+	if err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, "", instance != grant.InstanceID) || seen.After(time.Now().UTC().Add(time.Second)) || domain.OwnershipBlocks(domain.OwnershipInstance, record.ID, time.Since(seen) > domain.WorkerConnectionTimeout) {
 		return denied()
 	}
 	deviceRecord, err := tx.Get(domain.DeviceKind, grant.DeviceID)
@@ -85,7 +85,7 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 		return denied()
 	}
 	sessionRecord, session, err := sessionRecord(tx, input.SessionID)
-	if err != nil || session.NameMode != domain.AutomaticSessionName || session.NameOwner != domain.AutomaticNameOwner || session.NameGeneration != input.NameGeneration || session.TitleOperationID != input.OperationID || session.TitleJobID != record.ID || session.TitleState != domain.TitleRunning || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || !matchesInitialTitleExecution(session, original) {
+	if err != nil || session.NameMode != domain.AutomaticSessionName || session.NameOwner != domain.AutomaticNameOwner || session.NameGeneration != input.NameGeneration || session.TitleOperationID != input.OperationID || session.TitleJobID != record.ID || session.TitleState != domain.TitleRunning || session.Archive != domain.NotArchived || domain.OwnershipBlocks(domain.OwnershipCleanup, record.ID, session.Recovery != domain.NoRecovery) || !matchesInitialTitleExecution(session, original) {
 		return denied()
 	}
 	firstRecord, err := tx.Get(domain.QueueKind, session.InitialExecution.InputID)

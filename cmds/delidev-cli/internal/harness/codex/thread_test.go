@@ -258,8 +258,8 @@ func TestThreadBindingUsesExactSettingsAndAdditiveInstructions(t *testing.T) {
 	if err == nil || domain.SafeError(err).Code != domain.Conflict {
 		t.Fatalf("duplicate root: %v", err)
 	}
-	if len(capturedThreads(t, capture)) != 2 {
-		t.Fatal("invalid operation reached native protocol")
+	if len(capturedThreads(t, capture)) != 3 {
+		t.Fatal("selected reads or duplicate-start admission changed")
 	}
 }
 func TestThreadResumePreservesIdentityAndReportsActiveState(t *testing.T) {

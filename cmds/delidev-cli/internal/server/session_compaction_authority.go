@@ -21,7 +21,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	instance, seen, err := tx.WorkerInstance(g.MachineID)
-	if err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, "", instance != g.InstanceID) || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
+	if err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, "", instance != g.InstanceID) || domain.OwnershipBlocks(domain.OwnershipInstance, r.ID, time.Since(seen) > domain.WorkerConnectionTimeout) || seen.After(time.Now().UTC().Add(time.Second)) {
 		return denied()
 	}
 	dr, err := tx.Get(domain.DeviceKind, g.DeviceID)
@@ -44,7 +44,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	sr, s, err := sessionRecord(tx, r.SessionID)
-	if err != nil || !s.WorkspaceAvailable() || s.CompactionJobID != r.ID || s.Archive != domain.NotArchived || s.Recovery != domain.NoRecovery || !s.OwnsExecution(i.Assignment) || s.ActiveExecutionID != "" {
+	if err != nil || !s.WorkspaceAvailable() || s.CompactionJobID != r.ID || s.Archive != domain.NotArchived || domain.OwnershipBlocks(domain.OwnershipCleanup, r.ID, s.Recovery != domain.NoRecovery) || !s.OwnsExecution(i.Assignment) || domain.OwnershipBlocks(domain.OwnershipCleanup, r.ID, s.ActiveExecutionID != "") {
 		return denied()
 	}
 	if err := checkedExecutionSource(tx, sr, s, machine, i.Assignment); err != nil {
@@ -56,7 +56,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	v := i.Assignment
 	if v.Configuration.Subscription {
 		_, account, err := accountFromTx(tx, v.AccountID, 0)
-		if err != nil || v.Configuration.Harness != domain.Codex || v.Configuration.SubscriptionService != domain.SubscriptionChatGPT || account.SubscriptionService != v.Configuration.SubscriptionService || account.ProviderID != "" || account.Type != domain.SubscriptionAccount || account.Subscription == nil || account.Subscription.RecoveryRequired || account.Subscription.Lease == nil {
+		if err != nil || v.Configuration.Harness != domain.Codex || v.Configuration.SubscriptionService != domain.SubscriptionChatGPT || account.SubscriptionService != v.Configuration.SubscriptionService || account.ProviderID != "" || account.Type != domain.SubscriptionAccount || account.Subscription == nil || domain.OwnershipBlocks(domain.OwnershipCleanup, r.ID, account.Subscription.RecoveryRequired) || account.Subscription.Lease == nil {
 			return denied()
 		}
 		state, lease := account.Subscription, account.Subscription.Lease
@@ -64,7 +64,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(lease.MachineID), lease.MachineID != g.MachineID) ||
 			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(lease.InstanceID), lease.InstanceID != g.InstanceID) ||
 			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(lease.DeviceID), lease.DeviceID != g.DeviceID) ||
-			lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
+			domain.OwnershipBlocks(domain.OwnershipInstance, r.ID, lease.Epoch != a.service.subscriptionServerEpoch()) || lease.Generation != state.Generation {
 			return denied()
 		}
 		return apiproxy.Scope{ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, SubscriptionService: v.Configuration.SubscriptionService, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Harness: v.Configuration.Harness}, nil

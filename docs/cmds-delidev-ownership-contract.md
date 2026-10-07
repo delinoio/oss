@@ -33,8 +33,8 @@ intent, existing deadlines and retry-attempt limits. A prior native attempt may
 still be running when a later attempt is admitted. Explicit Resume without queued
 input creates a new input and execution attempt from the retained input; it leaves
 the prior input, assignment and execution history intact. Request receipts and
-revision checks prevent duplicate admission of that explicit action. Never publish unconfirmed
-cleanup or an unknown native outcome as positively confirmed success.
+revision checks prevent duplicate admission of that explicit action. Never publish
+unconfirmed cleanup or an unknown native outcome as positively confirmed success.
 
 Terminate only through retained original native process, job or control handles.
 A retained PID, process-birth sample, service label or journal cannot reconstruct
@@ -42,7 +42,11 @@ termination authority. Without a retained handle, observe the old execution and
 continue admission without signaling it.
 
 Keep existing RPCs, wire numbers, stored fields and portable imports. Ownership
-fields remain metadata and compatibility inputs. Add no migration or format
+fields remain metadata and compatibility inputs. Receipt replay may differ only
+in typed principal attribution; retain the exact original digest and result, and
+continue to reject changed payloads, selected references and revisions. Read
+retained device descriptors for legacy attribution comparison without using them
+as an authentication source. Add no migration or format
 conversion. Remove proof-only production, transfer, waits and UI gates when their
 only purpose was ownership enforcement.
 

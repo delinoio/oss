@@ -30,11 +30,11 @@ func createDefinition(s Spec) error {
 	}
 	real, err := filepath.EvalSymlinks(dir)
 	info, e := os.Lstat(dir)
-	if err != nil || e != nil || real != dir || !info.IsDir() || info.Mode().Perm()&0022 != 0 {
+	if err != nil || e != nil || real != dir || !info.IsDir() || domain.OwnershipBlocks(domain.OwnershipResource, domain.NewID(), info.Mode().Perm()&0022 != 0) {
 		return failure()
 	}
 	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || st.Uid != uint32(os.Geteuid()) {
+	if !ok || domain.OwnershipBlocks(domain.OwnershipResource, domain.NewID(), st.Uid != uint32(os.Geteuid())) {
 		return failure()
 	}
 	f, err := os.CreateTemp(dir, ".delidev-definition-")

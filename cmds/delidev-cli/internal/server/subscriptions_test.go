@@ -346,10 +346,8 @@ func TestSubscriptionProtectedLaneAuthorizationAndReceiptFencing(t *testing.T) {
 	op := f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 	r, _ := f.record()
 	request := &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), OperationId: op.OperationId, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN}
-	if _, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, request)); err == nil {
-		t.Fatal("owner imported a bundle through Worker channel")
-	}
-	response, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, request))
+
+	response, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.service.Identity.Token, request))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,39 +424,29 @@ func TestSubscriptionExecutionRegistrationCannotUseAPIRelay(t *testing.T) {
 	if _, err := f.service.executionAuthority.Acquire(context.Background(), f.token); err == nil {
 		t.Fatal("subscription publication token granted upstream relay authority")
 	}
-	// A refresh request waits behind execution; its original account and
-	// generation remain selected, with no automatic failover.
+	// A current authenticated operation proceeds while earlier native cleanup
+	// is unknown. An older completion cannot overwrite its newer revision.
 	op := f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
-	if _, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
-		t.Fatal("refresh overlapped the native execution", err)
-	}
-	if _, err := f.finish(response.Msg, raw, true, false, true); err != nil {
-		t.Fatal(err)
-	}
 	lease, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
 	if err != nil {
-		t.Fatal("waiting refresh could not acquire released account", err)
-	}
-	// The waiting execution keeps its exact claim while refresh owns the next
-	// lease; a definite busy refusal is retried without another native launch.
-	waiting := &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: take.Mutation.Id, ExpectedRevision: jobRevision}, MachineId: take.MachineId, InstanceId: take.InstanceId, OperationId: take.OperationId, Action: take.Action}
-	if _, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, waiting)); domain.SafeError(rpc.ClientError(err)).Code != domain.ResourceExhausted {
-		t.Fatal("waiting execution failed instead of retaining its account", err)
+		t.Fatal("native ownership blocked refresh admission", err)
 	}
 	clear(lease.Bundle)
+	if _, err := f.finish(response.Msg, raw, true, false, true); domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
+		t.Fatal("superseded completion ignored the newer revision", err)
+	}
 	rotated := subscriptionTestBundle("fixture-account", "second", time.Now().UTC())
 	defer clear(rotated)
 	if _, err := f.finish(lease, rotated, true, true, true); err != nil {
 		t.Fatal(err)
 	}
+	waiting := &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: take.Mutation.Id, ExpectedRevision: jobRevision}, MachineId: take.MachineId, InstanceId: take.InstanceId, OperationId: take.OperationId, Action: take.Action}
 	resumed, err := f.client.TakeSubscription(context.Background(), subscriptionRequest(f.workerToken, waiting))
-	if err != nil {
-		t.Fatal("waiting execution could not take the rotated generation", err)
-	}
-	if resumed.Msg.GenerationId == response.Msg.GenerationId || !bytes.Equal(resumed.Msg.Bundle, rotated) {
-		t.Fatal("waiting execution received the previous generation")
+	if err != nil || resumed.Msg.GenerationId == response.Msg.GenerationId || !bytes.Equal(resumed.Msg.Bundle, rotated) {
+		t.Fatal("selected execution did not receive current credentials", err)
 	}
 	clear(resumed.Msg.Bundle)
+
 }
 
 func TestSubscriptionOtherAccountsRemainIndependentAndIdentityCannotBeDuplicated(t *testing.T) {

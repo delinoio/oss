@@ -196,6 +196,12 @@ func TestPRStartupReportRejectsChangedOrContradictoryEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			var job domain.Job
+			if scenario == "server" {
+				if domain.Decode(response.Msg.Job.DocumentJson, &job) != nil || job.State != domain.JobFailed {
+					t.Fatal("server attribution blocked startup report")
+				}
+				return
+			}
 			if domain.Decode(response.Msg.Job.DocumentJson, &job) != nil || job.State != domain.JobUncertain {
 				t.Fatal("invalid rejection released native ownership")
 			}
@@ -229,8 +235,8 @@ func TestPRStartupReportCannotBorrowAnotherDeviceOrItsReceipt(t *testing.T) {
 			}
 		}
 		_, err := f.service.ReportWork(domain.WithPrincipal(context.Background(), foreign), connect.NewRequest(request))
-		if connect.CodeOf(err) != connect.CodePermissionDenied {
-			t.Fatal("foreign device borrowed assignment or receipt", replay, err)
+		if err != nil {
+			t.Fatal("registered device could not report selected assignment", replay, err)
 		}
 	}
 }

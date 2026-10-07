@@ -143,7 +143,7 @@ func publishSubagents(tx *store.Tx, input domain.ExecutionJobInput, session stor
 	if err != nil {
 		return err
 	}
-	if !owned {
+	if domain.OwnershipBlocks(domain.OwnershipResource, session.ID, !owned) {
 		return executionEventConflict()
 	}
 	for _, child := range event.Subagents {

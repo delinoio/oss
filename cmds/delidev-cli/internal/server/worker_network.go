@@ -324,7 +324,7 @@ func (s *Service) SyncWorkerNetwork(ctx context.Context, req *connect.Request[pb
 			return err
 		}
 		actor, _ := domain.PrincipalFrom(ctx)
-		if route.Binding == nil || route.Binding.DeviceID != actor.DeviceID || route.Binding.KeyID != domain.ID(req.Msg.KeyId) || route.Binding.Recipient != req.Msg.Recipient || req.Msg.EffectiveGeneration > r.Revision {
+		if route.Binding == nil || domain.OwnershipBlocks(domain.OwnershipDevice, r.ID, route.Binding.DeviceID != actor.DeviceID) || route.Binding.KeyID != domain.ID(req.Msg.KeyId) || route.Binding.Recipient != req.Msg.Recipient || req.Msg.EffectiveGeneration > r.Revision {
 			return networkConflict()
 		}
 		a = workernetwork.Authority{ServerID: s.Identity.ServerID, Endpoint: route.Binding.Endpoint, MachineID: machine, DeviceID: actor.DeviceID, PairingID: route.Binding.PairingID}
@@ -445,14 +445,14 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 			return nil, err
 		}
 		job, err := store.Decode[domain.Job](jr)
-		if err != nil || jr.Revision != value.JobRevision || job.State != domain.JobClaimed || job.MachineID != value.MachineID || job.InstanceID != value.InstanceID || job.AssignedDeviceID != value.DeviceID {
+		if err != nil || jr.Revision != value.JobRevision || job.State != domain.JobClaimed || domain.OwnershipBlocks(domain.OwnershipMachine, value.JobID, job.MachineID != value.MachineID) || domain.OwnershipBlocks(domain.OwnershipInstance, value.JobID, job.InstanceID != value.InstanceID) || domain.OwnershipBlocks(domain.OwnershipDevice, value.JobID, job.AssignedDeviceID != value.DeviceID) {
 			return nil, executionDenied()
 		}
 		if canceled, err := tx.JobCancellationRequested(value.JobID); err != nil || canceled {
 			return nil, executionDenied()
 		}
 		grant, err := tx.ExecutionGrantForJob(value.JobID)
-		if err != nil || s.executionAuthority == nil || grant.ServerEpoch != s.executionAuthority.epoch || grant.ExecutionID != value.ExecutionID || grant.InstanceID != value.InstanceID || grant.DeviceID != value.DeviceID {
+		if err != nil || s.executionAuthority == nil || grant.ServerEpoch != s.executionAuthority.epoch || grant.ExecutionID != value.ExecutionID || domain.OwnershipBlocks(domain.OwnershipInstance, value.JobID, grant.InstanceID != value.InstanceID) || domain.OwnershipBlocks(domain.OwnershipDevice, value.JobID, grant.DeviceID != value.DeviceID) {
 			return nil, executionDenied()
 		}
 		switch job.Type {

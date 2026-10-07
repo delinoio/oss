@@ -211,7 +211,7 @@ func (s *Store) DeleteBackup(ctx context.Context, request domain.ID, in BackupDe
 		return Record{}, false, err
 	}
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor != in.Actor {
+	if !ok || domain.OwnershipBlocks(domain.OwnershipActor, request, actor != in.Actor) {
 		return Record{}, false, deletionConflict()
 	}
 	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
@@ -222,7 +222,7 @@ func (s *Store) DeleteBackup(ctx context.Context, request domain.ID, in BackupDe
 	if err != nil {
 		return Record{}, false, err
 	}
-	if owner != in.ServerID {
+	if domain.OwnershipBlocks(domain.OwnershipInstance, request, owner != in.ServerID) {
 		return Record{}, false, deletionConflict()
 	}
 	v := backupDeletionIntent{Version: 1, RequestID: request, JobID: domain.NewID(), AcceptedAt: time.Now().UTC().Truncate(time.Millisecond), Input: in}

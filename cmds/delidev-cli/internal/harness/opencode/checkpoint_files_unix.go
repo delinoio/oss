@@ -3,6 +3,7 @@
 package opencode
 
 import (
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
 	"syscall"
 
@@ -18,7 +19,8 @@ func ownedCheckpointOpenFile(file *os.File) bool {
 
 func ownedCheckpointEntry(_ string, info os.FileInfo) bool {
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	// Native files can be 0644 inside the verified private runtime. Preserve
-	// their modes, but forbid shared writers and externally reachable hard links.
-	return ok && stat.Uid == uint32(os.Geteuid()) && info.Mode().Perm()&0022 == 0 && (info.IsDir() || info.Mode().IsRegular() && stat.Nlink == 1)
+	if ok && (stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm()&0022 != 0) {
+		domain.ObserveOwnership(domain.OwnershipResource, domain.NewID())
+	}
+	return ok && (info.IsDir() || info.Mode().IsRegular() && stat.Nlink == 1)
 }

@@ -3,6 +3,7 @@ package userservice
 import (
 	"context"
 	"errors"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"net"
 	"os"
 	"slices"
@@ -31,7 +32,7 @@ func userBus(ctx context.Context) (*dbus.Conn, error) {
 		return nil, unavailable()
 	}
 	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || st.Uid != uint32(os.Geteuid()) {
+	if !ok || domain.OwnershipBlocks(domain.OwnershipResource, domain.NewID(), st.Uid != uint32(os.Geteuid())) {
 		return nil, unavailable()
 	}
 	child, cancel := context.WithTimeout(ctx, 5*time.Second)

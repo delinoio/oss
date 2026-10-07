@@ -382,7 +382,10 @@ func (s *Service) subscriptionLease(ctx context.Context, tx *store.Tx, id, lease
 		domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 	}
 	if l.ID != lease {
-		return r, a, subscriptionDenied()
+		domain.ObserveOwnership(domain.OwnershipResource, id)
+		// A later accepted operation advances the lease revision. Keep the
+		// revision/receipt conflict without blocking admission of that operation.
+		return r, a, domain.Fail(domain.Conflict, "The account lease revision changed.", "Use the current accepted operation and revision.")
 	}
 	if err := currentInstance(tx, machine, instance); err != nil {
 		return r, a, err
@@ -755,7 +758,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			identityJSON, _ := json.Marshal(struct{ Account, User string }{identity.Account, identity.User})
 			identityCommitment = s.accountCommitment(s.Identity.ServerID, identityJSON)
 			clear(identityJSON)
-			if state.IdentityCommitment != "" && identityCommitment != state.IdentityCommitment {
+			if domain.OwnershipBlocks(domain.OwnershipResource, input.Account, state.IdentityCommitment != "" && identityCommitment != state.IdentityCommitment) {
 				return nil, rpc.Error(subscriptionDenied(), c)
 			}
 			if lease.Action == domain.SubscriptionLogin {
@@ -930,7 +933,7 @@ func uniqueSubscriptionIdentity(tx *store.Tx, owner domain.ID, identity string) 
 		if err != nil {
 			return err
 		}
-		if other.ID != owner && a.Subscription != nil && a.Subscription.IdentityCommitment == identity {
+		if domain.OwnershipBlocks(domain.OwnershipResource, owner, other.ID != owner && a.Subscription != nil && a.Subscription.IdentityCommitment == identity) {
 			return domain.Fail(domain.Conflict, "This provider account already has a managed owner.", "Use that account's exclusive connection instead of duplicating its credentials.")
 		}
 	}

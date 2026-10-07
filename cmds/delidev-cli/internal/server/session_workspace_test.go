@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -60,7 +61,7 @@ func TestWorkspaceArchiveCancellationPreservesAssignmentAndNextJob(t *testing.T)
 		t.Fatal(err)
 	}
 	v := sessionBody(t, response.Msg.Change.Session)
-	if v.Archive != domain.ArchivePending || v.Dispatch != domain.DispatchPaused || v.Preparation.State != domain.PreparationStopping {
+	if v.Archive != domain.Archived || v.Dispatch != domain.DispatchPaused || v.Preparation.State != domain.PreparationStopping {
 		t.Fatalf("unconfirmed native cleanup claimed complete: %+v", v)
 	}
 	if !stream.Receive() || stream.Msg().CancelJobId != claimed.Id || stream.Msg().Job != nil {
@@ -150,13 +151,20 @@ func TestWorkspaceMalformedSuccessRequiresRecoveryAndCannotArchive(t *testing.T)
 	if v := sessionBody(t, current); v.Preparation.State != domain.PreparationUncertain || v.Recovery != domain.NeedsRecovery {
 		t.Fatal("session lost uncertainty")
 	}
-	_, err = sessionClient(f).PrepareSessionWorkspace(ctx, ownerRequest(f.identity, &pb.PrepareSessionWorkspaceRequest{Mutation: acctMutation(current, domain.NewID())}))
-	wantAccountCode(t, err, domain.RecoveryRequired)
+	next, err := sessionClient(f).PrepareSessionWorkspace(ctx, ownerRequest(f.identity, &pb.PrepareSessionWorkspaceRequest{Mutation: acctMutation(current, domain.NewID())}))
+	if err != nil || next.Msg.Change.WorkspaceJob.Id == claimed.Id {
+		t.Fatal("uncertain preparation blocked a new attempt", err)
+	}
+	current = next.Msg.Change.Session
+	retained := currentCatalogResource(t, f, claimed)
+	if value, err := store.Decode[domain.Job](store.Record{Data: retained.DocumentJson}); err != nil || value.State != domain.JobUncertain {
+		t.Fatal("retry rewrote the malformed original result", err)
+	}
 	archived, err := sessionClient(f).ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(current, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_ARCHIVE}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v := sessionBody(t, archived.Msg.Change.Session); v.Archive != domain.ArchivePending || v.Recovery != domain.NeedsRecovery || v.Dispatch != domain.DispatchPaused {
+	if v := sessionBody(t, archived.Msg.Change.Session); v.Archive != domain.Archived || v.Dispatch != domain.DispatchPaused {
 		t.Fatal("uncertain native work hidden as archived")
 	}
 }

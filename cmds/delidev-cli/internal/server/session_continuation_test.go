@@ -477,7 +477,7 @@ func TestContinuationArchiveTargetsCurrentJobAndRestoreKeepsPause(t *testing.T) 
 	f.publish(t, domain.ExecutionInputAccepted, 2, "")
 	archive := f.control(t, pb.SessionAction_SESSION_ACTION_ARCHIVE)
 	state, _ := store.Decode[domain.Session](f.refresh(t))
-	if state.Archive != domain.ArchivePending || state.Dispatch != domain.DispatchPaused || state.NextExecutionIntent != "" || state.ActiveExecutionID != f.input.ExecutionID {
+	if state.Archive != domain.Archived || state.Dispatch != domain.DispatchPaused || state.NextExecutionIntent != "" || state.ActiveExecutionID != f.input.ExecutionID {
 		t.Fatal("Archive lost current native ownership")
 	}
 	if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
@@ -588,6 +588,16 @@ func TestContinuationRejectsChangedReadinessAndUnprovenPredecessor(t *testing.T)
 				t.Fatal(err)
 			}
 			before := f.refresh(t)
+			if scenario == "unfinished-cleanup" || scenario == "recovery" || scenario == "legacy-completion" {
+				if err := f.service.dispatchExecution(context.Background(), before); err != nil {
+					t.Fatal("unconfirmed ownership blocked successor", err)
+				}
+				state, _ := store.Decode[domain.Session](f.refresh(t))
+				if state.CurrentExecution == nil || state.InitialExecution.ID != f.input.ExecutionID {
+					t.Fatal("successor rewrote original execution")
+				}
+				return
+			}
 			if err := f.service.dispatchExecution(context.Background(), before); err == nil {
 				t.Fatal("unsafe continuation was claimed")
 			}

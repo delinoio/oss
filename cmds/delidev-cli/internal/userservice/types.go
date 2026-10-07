@@ -210,7 +210,7 @@ func (m *Manager) validate(s Spec) error {
 }
 func binaryIdentity(path string) (string, string, error) {
 	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || (runtime.GOOS != "windows" && info.Mode().Perm()&0022 != 0) {
+	if err != nil || !info.Mode().IsRegular() || domain.OwnershipBlocks(domain.OwnershipResource, domain.NewID(), runtime.GOOS != "windows" && info.Mode().Perm()&0022 != 0) {
 		return "", "", failure()
 	}
 	f, err := os.Open(path)

@@ -299,8 +299,8 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 		t.Fatal("assignment differs from exact claimed input/configuration")
 	}
 	f.mutateAgent(t, func(a *domain.Agent) { a.Effort = "low" })
-	if err = f.service.dispatchExecution(ctx, accepted); domain.SafeError(err).Code != domain.Conflict {
-		t.Fatal("claimed work re-dispatched", err)
+	if err = f.service.dispatchExecution(ctx, accepted); domain.SafeError(err).Code != domain.MissingInput {
+		t.Fatal("no duplicate work without queued input", err)
 	}
 	var after domain.Job
 	if domain.Decode(currentCatalogResource(t, f.accountFixture, replay.Msg.Change.ExecutionJob).DocumentJson, &after) != nil || !bytes.Equal(job.Input, after.Input) {
@@ -570,7 +570,7 @@ func TestInitialDispatchCandidatePagesExcludeOtherLifecycleStates(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if variant == "eligible" {
+		if variant == "eligible" || variant == "recovery" || variant == "completed" || variant == "active" {
 			eligible = append(eligible, id)
 		}
 	}
@@ -579,7 +579,7 @@ func TestInitialDispatchCandidatePagesExcludeOtherLifecycleStates(t *testing.T) 
 		t.Fatal("wrong first bounded candidate page")
 	}
 	second, more, err := f.service.Store.InitialExecutionCandidates(ctx, first[0].ID, 1)
-	if err != nil || more || len(second) != 1 || second[0].ID != eligible[1] {
+	if err != nil || !more || len(second) != 1 || second[0].ID != eligible[1] {
 		t.Fatal("unsafe lifecycle candidate or wrong continuation")
 	}
 }

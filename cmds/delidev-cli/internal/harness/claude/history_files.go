@@ -198,7 +198,7 @@ func (scope *historyFiles) logChangedEntry(ctx context.Context, before, after os
 }
 
 func sameHistoryFile(before, after os.FileInfo) bool {
-	if before == nil || after == nil || !os.SameFile(before, after) || before.Mode() != after.Mode() {
+	if before == nil || after == nil || !os.SameFile(before, after) || before.Mode().Type() != after.Mode().Type() {
 		return false
 	}
 	// A native process may create unrelated entries during initialization. Pin
