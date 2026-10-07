@@ -43,6 +43,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
       return request.pageToken ? { sessions: [] } : { sessions: [session, other], nextPageToken: "global-next" };
     }, listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls, createSession: creates });
     router.service(ResourceService, {
+      getResource: (request) => ({ resource: projects.find((project) => project.id === request.id) }),
       getSnapshot: (request) => ({ resources: [request.filter?.sessionId === other.id ? other : session], cursor: "snapshot" }),
       listResources: async (request) => {
         if (request.filter?.kind === EntityKind.AGENT && selectorFailure) throw new ConnectError("Selector request failed", selectorFailure);
@@ -84,6 +85,131 @@ it("creates an automatically named session from the first message and explicit W
   const document = JSON.parse(new TextDecoder().decode(request.documentJson));
   expect(document).toMatchObject({ name_mode: "automatic", prompt: "Fix the startup crash", agent_id: value.agent.id, machine_id: value.machine.id, workspace: "general-chat", mode: "execute", source: "MANUAL" });
   expect(document).not.toHaveProperty("name");
+});
+
+it("starts General Chat with explicit execution selections and no project or Local authority", async () => {
+  const value = fixture([], [], [], false, true);
+  const proof = vi.fn();
+  render(<App transport={value.transport} readLocalWorker={proof} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));
+  const page = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
+  const firstMessage = page.getByRole("textbox", { name: "First message" });
+  expect(document.activeElement).toBe(firstMessage);
+  expect(page.queryByLabelText("Project")).toBeNull();
+  expect(page.getByText("Ask questions or share ideas without a project.")).toBeTruthy();
+  expect((page.getByLabelText("Agent Worker") as HTMLSelectElement).value).toBe("");
+  expect((page.getByLabelText("Runs on") as HTMLSelectElement).value).toBe("");
+  expect((page.getByRole("button", { name: "Start general chat" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole("button", { name: "New general chat" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("button", { name: "New session" }).getAttribute("aria-current")).toBeNull();
+  const ids = [...document.querySelectorAll(".new-session-page [id]")].map((element) => element.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  fireEvent.click(page.getByRole("button", { name: "Options" }));
+  expect(page.getByText("Optional estimated-cost budget")).toBeTruthy();
+  expect(page.queryByText("Use separate Worktrees")).toBeNull();
+  expect(page.queryByText("Use this computer's Local checkouts")).toBeNull();
+  expect(page.queryByText(/private projectless directory/)).toBeNull();
+  await page.findByRole("option", { name: "Agent One" });
+  fireEvent.change(page.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(page.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.change(page.getByLabelText("Mode"), { target: { value: "plan" } });
+  fireEvent.change(firstMessage, { target: { value: "Help me think through an idea" } });
+  fireEvent.keyDown(firstMessage, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(firstMessage, { key: "Enter", isComposing: true, keyCode: 229 });
+  expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.keyDown(firstMessage, { key: "Enter" });
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const request = (value.creates.mock.calls as unknown as [{ documentJson: Uint8Array; localWorkerToken: string }][])[0][0];
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name_mode: "automatic", prompt: "Help me think through an idea", agent_id: value.agent.id, machine_id: value.machine.id, workspace: "general-chat", mode: "plan", source: "MANUAL" });
+  expect(request.localWorkerToken).toBe("");
+  expect(proof).not.toHaveBeenCalled();
+  expect(await screen.findByRole("heading", { name: "Retained session" })).toBeTruthy();
+}, fullShellTimeoutMs);
+
+it("retains separate Local and General Chat drafts through Settings, language and same-identity reconnect", async () => {
+  const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Draft project" }) });
+  const value = fixture([], [], [project], false, true);
+  const authority = { endpoint: "http://127.0.0.1:46399", serverId: newRequestId() };
+  const device = newRequestId();
+  const proof = vi.fn(async () => ({ machineId: value.machine.id, token: "A".repeat(43) }));
+  const props = { pairingAuthority: authority, currentDeviceId: device, readLocalWorker: proof };
+  const view = render(<App transport={value.transport} {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  const original = within(screen.getByRole("region", { name: "What would you like to work on?" }));
+  await original.findByRole("option", { name: "Draft project" });
+  fireEvent.change(original.getByLabelText("Project"), { target: { value: project.id } });
+  fireEvent.change(original.getByLabelText("First message"), { target: { value: "Keep this Local task" } });
+  fireEvent.click(original.getByRole("button", { name: "Options" }));
+  fireEvent.click(original.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  await waitFor(() => expect((original.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "New general chat" }));
+  const general = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
+  const message = general.getByRole("textbox", { name: "First message" });
+  fireEvent.change(message, { target: { value: "Keep my conversation idea" } });
+  await general.findByRole("option", { name: "Agent One" });
+  fireEvent.change(general.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(general.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.change(general.getByLabelText("Mode"), { target: { value: "plan" } });
+  fireEvent.click(general.getByRole("button", { name: "Options" }));
+  fireEvent.click(general.getByText("Optional estimated-cost budget"));
+  fireEvent.click(general.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(general.getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(general.getByLabelText("Estimated-cost threshold"), { target: { value: "2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  view.rerender(<App transport={{ ...value.transport }} {...props} connectionEpoch={1} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(screen.getByRole("button", { name: "New general chat" }));
+  expect(general.getByRole("textbox", { name: "First message" })).toBe(message);
+  expect((message as HTMLTextAreaElement).value).toBe("Keep my conversation idea");
+  expect((general.getByLabelText("Agent Worker") as HTMLSelectElement).value).toBe(value.agent.id);
+  expect((general.getByLabelText("Mode") as HTMLSelectElement).value).toBe("plan");
+  expect((general.getByLabelText("Estimated-cost threshold") as HTMLInputElement).value).toBe("2");
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  expect(screen.getByRole("heading", { name: "어떤 이야기를 나누고 싶으신가요?" })).toBeTruthy();
+  expect((general.getByRole("textbox", { name: "첫 메시지" }) as HTMLTextAreaElement).value).toBe("Keep my conversation idea");
+  await act(async () => { await i18n.changeLanguage("en"); });
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect((original.getByLabelText("Project") as HTMLSelectElement).value).toBe(project.id);
+  expect((original.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("Keep this Local task");
+  expect((original.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true);
+  expect(value.creates).not.toHaveBeenCalled();
+  view.rerender(<App transport={value.transport} {...props} currentDeviceId={newRequestId()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));
+  const fresh = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
+  expect((fresh.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("");
+  expect((fresh.getByLabelText("Agent Worker") as HTMLSelectElement).value).toBe("");
+  expect(fresh.getByRole("button", { name: "Options" }).getAttribute("aria-expanded")).toBe("false");
+}, fullShellTimeoutMs);
+
+it("isolates pending General Chat from an uncertain project request and never steals its activation", async () => {
+  const value = fixture([], [], [], false, true);
+  let finish!: (result: { change: { session: Resource } }) => void;
+  value.creates.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));
+  const general = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
+  await general.findByRole("option", { name: "Agent One" });
+  for (const [name, selection] of [["Agent Worker", value.agent.id], ["Runs on", value.machine.id], ["First message", "Original general conversation"]]) fireEvent.change(general.getByLabelText(name), { target: { value: selection } });
+  fireEvent.click(general.getByRole("button", { name: "Start general chat" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  expect((general.getByLabelText("First message").closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  const original = within(screen.getByRole("region", { name: "What would you like to work on?" }));
+  for (const [name, selection] of [["Agent Worker", value.agent.id], ["Runs on", value.machine.id], ["First message", "Independent task request"]]) fireEvent.change(original.getByLabelText(name), { target: { value: selection } });
+  fireEvent.click(original.getByRole("button", { name: "Create session" }));
+  await original.findByRole("button", { name: "Retry the same session creation" });
+  await act(async () => finish({ change: { session: value.session } }));
+  expect(screen.getByRole("heading", { name: "What would you like to work on?" })).toBeTruthy();
+  expect((original.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("Independent task request");
+  fireEvent.click(original.getByRole("button", { name: "Retry the same session creation" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(3));
+  const requests = value.creates.mock.calls as unknown as [unknown][];
+  expect(requests[1][0]).toEqual(requests[2][0]);
+  expect(requests[0][0]).not.toEqual(requests[1][0]);
+  fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));
+  expect((general.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("");
+  expect((general.getByLabelText("Agent Worker") as HTMLSelectElement).value).toBe(value.agent.id);
+  expect(general.getByRole("button", { name: "Open conversation" })).toBeTruthy();
 });
 
 it("keeps first-message drafts when title support is absent and preserves valid UTF-8 at the limit", async () => {
