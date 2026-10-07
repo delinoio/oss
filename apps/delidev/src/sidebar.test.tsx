@@ -4,14 +4,16 @@ import { Code, ConnectError, createRouterTransport, type Transport } from "@conn
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { EntityKind, ErrorDetailSchema, FailureCode, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { Surface } from "./views";
 import { Sidebar } from "./sidebar";
 import type { ComponentProps } from "react";
 import { ServerPresentationKind } from "./server-presentation";
-import { i18n } from "./localization";
+import { i18n, SupportedLanguage } from "./localization";
+
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 function resource(kind: EntityKind, name: string, projectId = "", values: Record<string, unknown> = {}): Resource {
   const id = newRequestId();
@@ -47,16 +49,17 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   let currentProps = props;
   let selectSurface!: (surface: Surface) => void;
   const newSession = vi.fn(() => { if (stateful) selectSurface(Surface.NewSession); });
+  const newGeneralChat = vi.fn(() => { if (stateful) selectSurface(Surface.NewGeneralChat); });
   const navigate = vi.fn((surface: Surface) => { if (stateful) selectSurface(surface); });
   function Harness() {
     const [surface, setSurface] = useState(Surface.Sessions);
     selectSurface = setSurface;
-    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} openSettings={openSettings} {...currentProps} />;
+    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} newGeneralChat={newGeneralChat} openSettings={openSettings} {...currentProps} />;
   }
   const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><Harness /></QueryClientProvider></TransportProvider>;
   const view = render(tree());
   const setProps = (next: Partial<ComponentProps<typeof Sidebar>>) => { currentProps = { ...currentProps, ...next }; view.rerender(tree()); };
-  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
+  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, newGeneralChat, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
 }
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
@@ -211,8 +214,235 @@ it("shows unknown execution and archive states without inventing successful or a
   expect(row.querySelector("button")).toBeNull();
   expect(row.getAttribute("aria-describedby")).toBeTruthy();
   fireEvent.focus(row);
-  expect((await screen.findByRole("tooltip")).textContent).toContain("Execution state: waiting-for-oracle. Archive state: suspended. Workspace: Unknown workspace (mystery-workspace).");
+  const card = await screen.findByRole("tooltip");
+  expect(within(card).getByText("Unknown state")).toBeTruthy();
+  expect(within(card).getByText("Unknown workspace (mystery-workspace)")).toBeTruthy();
+  expect(within(card).getByText("waiting-for-oracle")).toBeTruthy();
+  expect(within(card).getByText("suspended")).toBeTruthy();
+  expect(card.querySelector(".sidebar-session-card-title-state")).toBeNull();
+  expect(window.document.getElementById(row.getAttribute("aria-describedby")!)?.textContent).toContain("Execution state: waiting-for-oracle. Archive state: suspended.");
   expect(value.openSession).not.toHaveBeenCalled();
+});
+
+function advanceHover(ms: number) { act(() => { vi.advanceTimersByTime(ms); }); }
+
+it("delays pointer entry, bridges the card gap and keeps card scrolling independent", async () => {
+  const session = resource(EntityKind.SESSION, "Hover session", "", { workspace: "worktree", outcome: "not-started", archive: "active" });
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /Worktree Hover session/ });
+  const reads = value.sessionRequests.length;
+  vi.useFakeTimers();
+  fireEvent.pointerEnter(row);
+  advanceHover(299);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  advanceHover(1);
+  const card = screen.getByRole("tooltip");
+  expect(within(card).getByText("Not started")).toBeTruthy();
+  expect(within(card).getByText("Active")).toBeTruthy();
+  fireEvent.pointerLeave(row);
+  advanceHover(149);
+  fireEvent.pointerEnter(card);
+  advanceHover(1000);
+  fireEvent.scroll(card);
+  expect(screen.getByRole("tooltip")).toBe(card);
+  fireEvent.pointerLeave(card);
+  advanceHover(149);
+  expect(screen.getByRole("tooltip")).toBe(card);
+  advanceHover(1);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(value.sessionRequests).toHaveLength(reads);
+  expect(value.openSession).not.toHaveBeenCalled();
+});
+
+it("opens immediately on focus, retains focus across pointer departure and preserves activation", async () => {
+  const session = resource(EntityKind.SESSION, "Focused session", "", { workspace: "local", outcome: "failed", archive: "archived" });
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /Local computer Focused session/ });
+  vi.useFakeTimers();
+  act(() => row.focus());
+  const card = screen.getByRole("tooltip");
+  expect(document.activeElement).toBe(row);
+  fireEvent.pointerEnter(row);
+  fireEvent.pointerLeave(row);
+  advanceHover(300);
+  expect(screen.getByRole("tooltip")).toBe(card);
+  fireEvent.click(row);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(value.openSession).toHaveBeenCalledExactlyOnceWith(session.id);
+  expect(document.activeElement).toBe(row);
+});
+
+it("cancels pending hover on Escape and waits for a new entry after dismissal", async () => {
+  const session = resource(EntityKind.SESSION, "Escape session", "", { workspace: "general-chat", outcome: "running", archive: "active" });
+  mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /General Chat Escape session/ });
+  vi.useFakeTimers();
+  fireEvent.pointerEnter(row);
+  advanceHover(100);
+  fireEvent.keyDown(document, { key: "Escape" });
+  advanceHover(500);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.pointerMove(row);
+  advanceHover(500);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.pointerLeave(row);
+  fireEvent.pointerEnter(row);
+  advanceHover(300);
+  expect(screen.getByRole("tooltip")).toBeTruthy();
+  fireEvent.keyDown(row, { key: "Escape" });
+  advanceHover(500);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  act(() => row.focus());
+  expect(screen.getByRole("tooltip")).toBeTruthy();
+  fireEvent.keyDown(row, { key: "Escape" });
+  expect(document.activeElement).toBe(row);
+  advanceHover(500);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+it("has one card and clears active or pending presentation on scrolling and surface changes", async () => {
+  const first = resource(EntityKind.SESSION, "First hover", "", { workspace: "worktree", outcome: "succeeded", archive: "active" });
+  const second = resource(EntityKind.SESSION, "Second hover", "", { workspace: "general-chat", outcome: "stopped", archive: "archiving" });
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [first, second] }) });
+  const one = await screen.findByRole("button", { name: /Worktree First hover/ });
+  const two = screen.getByRole("button", { name: /General Chat Second hover/ });
+  vi.useFakeTimers();
+  act(() => one.focus());
+  act(() => two.focus());
+  expect(screen.getAllByRole("tooltip")).toHaveLength(1);
+  expect(within(screen.getByRole("tooltip")).getByText("Second hover")).toBeTruthy();
+  fireEvent.scroll(screen.getByLabelText("Project and session navigation"));
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.pointerEnter(one);
+  value.setSurface(Surface.NewSession);
+  advanceHover(300);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.pointerLeave(one);
+  fireEvent.pointerEnter(one);
+  advanceHover(300);
+  expect(screen.getByRole("tooltip")).toBeTruthy();
+  value.setSurface(Surface.Usage);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+it("clears pending presentation when navigation is inactive or its source disappears", async () => {
+  const session = resource(EntityKind.SESSION, "Disposed hover", "", { workspace: "local", outcome: "running", archive: "active" });
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /Local computer Disposed hover/ });
+  vi.useFakeTimers();
+  fireEvent.pointerEnter(row);
+  value.setProps({ homeActive: false });
+  advanceHover(300);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  value.setProps({ homeActive: true });
+  advanceHover(300);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.pointerLeave(row);
+  fireEvent.pointerEnter(row);
+  fireEvent.click(screen.getByRole("button", { name: "General Chat" }));
+  advanceHover(300);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(row.isConnected).toBe(false);
+});
+
+it("places measured cards below or above when the right side cannot fit and clears on resize", async () => {
+  const session = resource(EntityKind.SESSION, "Edge hover", "", { workspace: "local", outcome: "running", archive: "active" });
+  mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /Local computer Edge hover/ });
+  vi.stubGlobal("innerWidth", 960);
+  vi.stubGlobal("innerHeight", 640);
+  const rect = (left: number, top: number, width: number, height: number) => ({ x: left, y: top, left, top, width, height, right: left + width, bottom: top + height, toJSON: () => ({}) });
+  let sourceTop = 100;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return this === row ? rect(700, sourceTop, 100, 34) : this.classList.contains("sidebar-session-tooltip") ? rect(0, 0, 320, 220) : rect(0, 0, 0, 0);
+  });
+  fireEvent.focus(row);
+  let card = screen.getByRole("tooltip");
+  expect(card.style.left).toBe("632px");
+  expect(card.style.top).toBe("142px");
+  fireEvent(window, new Event("resize"));
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  sourceTop = 500;
+  fireEvent.blur(row);
+  fireEvent.focus(row);
+  card = screen.getByRole("tooltip");
+  expect(card.style.left).toBe("632px");
+  expect(card.style.top).toBe("272px");
+});
+
+it.each([
+  ["not-started", "active", "Not started", "Active"],
+  ["running", "archiving", "Running", "Archiving"],
+  ["succeeded", "archived", "Succeeded", "Archived"],
+  ["failed", "active", "Failed", "Active"],
+  ["stopped", "archived", "Stopped", "Archived"],
+])("keeps execution %s and archive %s as separate labeled observations", async (outcome, archive, executionText, archiveText) => {
+  const session = resource(EntityKind.SESSION, "State hover", "", { workspace: "worktree", outcome, archive });
+  mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  fireEvent.focus(await screen.findByRole("button", { name: /Worktree State hover/ }));
+  const card = screen.getByRole("tooltip");
+  expect(within(card).getByText("Execution").nextElementSibling?.textContent).toBe(executionText);
+  expect(within(card).getByText("Archive").nextElementSibling?.textContent).toBe(archiveText);
+  expect(card.querySelector("button, a, input, [tabindex]")).toBeNull();
+});
+
+it.each([
+  ["waiting", "", "Title waits for the first completed turn", ""],
+  ["queued", "", "Title queued", ""],
+  ["running", "", "Generating title", ""],
+  ["succeeded", "", "Title generated", ""],
+  ["skipped", "budget-reached", "Title skipped", "The session budget did not allow another request."],
+  ["failed", "inference-failed", "Title generation failed", "The title request failed; the conversation remains available."],
+  ["unsupported", "unsupported-agent-profile", "Title generation unsupported", "The original Agent profile does not support title generation."],
+  ["unsupported", "worker-capability-absent", "Title generation unsupported", "The original Worker did not prove the required title capability."],
+  ["skipped", "canceled", "Title skipped", "Title generation was canceled with the session operation."],
+  ["failed", "authority-lost", "Title generation failed", "The original account or session permission is no longer available."],
+  ["failed", "invalid-output", "Title generation failed", "The title result did not pass validation."],
+  ["uncertain", "cleanup-uncertain", "Title outcome uncertain", "Worker cleanup is uncertain; inspect the retained operation."],
+  ["skipped", "manual-rename", "Title skipped", "A manual rename now owns this title."],
+  ["future-title", "", "Unknown title state (future-title)", ""],
+  ["", "", "Title state unavailable", ""],
+])("retains automatic title state %s and its safe reason", async (state, reason, label, detail) => {
+  const session = resource(EntityKind.SESSION, "Title hover", "", { workspace: "worktree", outcome: "succeeded", archive: "active", name_mode: "automatic", title_state: state, title_reason: reason });
+  mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /Worktree Title hover/ });
+  fireEvent.focus(row);
+  const card = screen.getByRole("tooltip");
+  expect(card.querySelector(".sidebar-session-card-title-state")?.textContent).toContain(label);
+  if (detail) expect(card.querySelector(".sidebar-session-card-title-state")?.textContent).toContain(detail);
+  expect(document.getElementById(row.getAttribute("aria-describedby")!)?.textContent).toContain(label);
+});
+
+it("omits automatic title information and its divider after a manual rename", async () => {
+  const session = resource(EntityKind.SESSION, "My chosen title", "", { workspace: "worktree", outcome: "succeeded", archive: "active", name_mode: "manual", title_state: "skipped", title_reason: "manual-rename" });
+  mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /Worktree My chosen title/ });
+  fireEvent.focus(row);
+  const card = screen.getByRole("tooltip");
+  expect(card.querySelector(".sidebar-session-card-title-state")).toBeNull();
+  expect(card.textContent).not.toContain("Title skipped");
+  expect(row.querySelector(".sidebar-session-title-state")).toBeNull();
+  expect(document.getElementById(row.getAttribute("aria-describedby")!)?.textContent).not.toContain("Title skipped");
+});
+
+it("updates an open card in Korean without losing focus or adding reads and preserves the full name", async () => {
+  const name = "A complete long session name ".repeat(8);
+  const session = resource(EntityKind.SESSION, name, "", { workspace: "local", outcome: "failed", archive: "archived", name_mode: "automatic", title_state: "failed", title_reason: "future-reason" });
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /Local computer A complete long session name/ });
+  act(() => row.focus());
+  const card = screen.getByRole("tooltip");
+  expect(card.querySelector(".sidebar-session-card-title")?.textContent).toBe(name);
+  expect(card.textContent).toContain("future-reason");
+  const reads = value.sessionRequests.length;
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+  expect(screen.getByRole("tooltip")).toBe(card);
+  expect(within(card).getByText("실행")).toBeTruthy();
+  expect(within(card).getByText("실패")).toBeTruthy();
+  expect(within(card).getByText("보관됨")).toBeTruthy();
+  expect(card.querySelector(".sidebar-session-card-title")?.textContent).toBe(name);
+  expect(document.activeElement).toBe(row);
+  expect(value.sessionRequests).toHaveLength(reads);
 });
 
 it("distinguishes permission and connection failures from successful empty pages", async () => {
@@ -371,6 +601,11 @@ it("discards delayed named continuations on collapse and preserves accepted rows
   expect(screen.queryByRole("button", { name: /Late/ })).toBeNull();
   value.setProps({ surface: Surface.NewSession });
   expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
+  value.setProps({ surface: Surface.NewGeneralChat });
+  expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "New general chat" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
   value.setProps({ surface: Surface.Activity });
   expect(screen.queryByRole("button", { name: /Accepted/ })).toBeNull();
   value.setProps({ surface: Surface.Sessions });

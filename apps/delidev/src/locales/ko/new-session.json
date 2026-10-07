@@ -35,5 +35,12 @@
   "new-session.sessionCreatedAs_362cd1": "세션 “<s0/>”을 생성했습니다. ",
   "new-session.openSession_b205bb": "세션 열기",
   "new-session.extra.08fb485eeaf6": "예산을 검토하세요.",
-  "new-session.extra.cffdba22adf2": "새 세션"
+  "new-session.extra.cffdba22adf2": "새 세션",
+  "new-session.whatWouldYouLikeToTalkAbout": "어떤 이야기를 나누고 싶으신가요?",
+  "new-session.generalChatDescription": "프로젝트 없이 질문하거나 아이디어를 나눠 보세요.",
+  "new-session.generalChatPlaceholder": "질문하거나, 아이디어를 공유하거나, 편하게 이야기해 보세요…",
+  "new-session.startGeneralChat": "일반 대화 시작",
+  "new-session.conversationsAreNamedAutomatically": "대화 이름은 자동으로 지정됩니다.",
+  "new-session.conversationCreatedAs": "대화 “<s0/>”을 생성했습니다. ",
+  "new-session.openConversation": "대화 열기"
 }

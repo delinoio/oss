@@ -9,7 +9,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { SessionQuery, SystemQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { SessionView } from "./session";
 import { Activity, Search, Settings, Surface } from "./views";
-import { NewSession } from "./new-session";
+import { NewSession, NewSessionKind } from "./new-session";
 import { Inbox } from "./inbox";
 import { Usage } from "./usage";
 import { Schedules } from "./schedules";
@@ -46,6 +46,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const [inboxActivation, setInboxActivation] = useState(0);
   const [newSessionEntry, setNewSessionEntry] = useState<{ activation: number; projectId?: string }>({ activation: 0 });
   const [newSessionProjectBlocked, setNewSessionProjectBlocked] = useState(false);
+  const [newGeneralChatActivation, setNewGeneralChatActivation] = useState(0);
   const [usageEntry, setUsageEntry] = useState<UsageEntry>();
   const [settingsEntry, setSettingsEntry] = useState<SettingsEntryDestination>();
   const [draftState, setDraftState] = useState<{ drafts: ReadonlyMap<string, string>; error?: string }>({ drafts: new Map() });
@@ -80,7 +81,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     setSurface(Surface.Settings);
   };
   const consumeSettingsEntry = useCallback(() => setSettingsEntry(undefined), []);
-  const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession ? copy("App.extra.2998edd080d1") : surface === Surface.Settings ? copy("App.extra.a1de4eceaa3b") : surface === Surface.PullRequests ? copy("App.extra.23533b15bc29") : surface === Surface.Usage ? copy("App.extra.34d76f3f7da4") : surface === Surface.Schedules ? copy("App.extra.a6a986427e87") : surface === Surface.Activity ? copy("App.extra.3fa855f8f6de") : surface === Surface.Inbox ? copy("App.extra.a1de2be5c09b") : copy("App.extra.1f73d5f3eac5");
+  const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession || surface === Surface.NewGeneralChat ? copy("App.extra.2998edd080d1") : surface === Surface.Settings ? copy("App.extra.a1de4eceaa3b") : surface === Surface.PullRequests ? copy("App.extra.23533b15bc29") : surface === Surface.Usage ? copy("App.extra.34d76f3f7da4") : surface === Surface.Schedules ? copy("App.extra.a6a986427e87") : surface === Surface.Activity ? copy("App.extra.3fa855f8f6de") : surface === Surface.Inbox ? copy("App.extra.a1de2be5c09b") : copy("App.extra.1f73d5f3eac5");
   const startNewSession = (projectId?: string) => {
     if (projectId && newSessionProjectBlocked) return;
     leaveSettings(Surface.NewSession);
@@ -88,6 +89,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     setNewSessionEntry((current) => ({ activation: current.activation + 1, projectId }));
     setSurface(Surface.NewSession);
   };
+  const startNewGeneralChat = () => { leaveSettings(Surface.NewGeneralChat); setDrawerOpen(false); setNewGeneralChatActivation((value) => value + 1); setSurface(Surface.NewGeneralChat); };
   const navigate = (destination: Surface) => {
     leaveSettings(destination);
     setDrawerOpen(false);
@@ -109,9 +111,10 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     const target = compact ? contextOpener.current : main.current;
     if (target && !target.closest("[hidden], [inert]")) target.focus({ preventScroll: true });
   }, [surface, drawerOpen, settingsEntry]);
-  return <SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+  return <SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} newGeneralChat={startNewGeneralChat} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} /> : <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Prerequisites active={surface === Surface.Sessions} openSettings={openSettings} /><Problem error={status.error} /></section>}</div>
     <NewSession active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionEntry.activation} entryProjectId={newSessionEntry.projectId} projectSelectionBlockedChanged={setNewSessionProjectBlocked} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
+    {newGeneralChatActivation > 0 ? <NewSession kind={NewSessionKind.GeneralChat} active={surface === Surface.NewGeneralChat} ownsActivation={surface === Surface.NewGeneralChat} activation={newGeneralChatActivation} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} /> : null}
     <Search active={surface === Surface.Search} open={open} />
     <Activity active={surface === Surface.Activity} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} /></div>
