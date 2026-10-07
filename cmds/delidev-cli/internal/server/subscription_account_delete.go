@@ -75,6 +75,9 @@ func (s *Service) deleteFailedSubscription(ctx context.Context, request, id doma
 			Revision         uint64
 			Actor            domain.Principal
 		}{request, id, revision, actor}, func(tx *store.Tx) (any, error) {
+			if err := tx.RequireUnusedSubscriptionDeletionRequest(request); err != nil {
+				return nil, err
+			}
 			pending, err := tx.FailedSubscriptionCleanupJobs("", 1, true)
 			if err != nil {
 				return nil, err

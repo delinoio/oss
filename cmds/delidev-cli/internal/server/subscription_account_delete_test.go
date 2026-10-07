@@ -109,6 +109,16 @@ func TestDeleteFailedSubscriptionBindsOriginalActorAndConfirmation(t *testing.T)
 	if _, err := f.service.DeleteConfiguration(other, connect.NewRequest(request)); err == nil {
 		t.Fatal("different actor adopted original deletion")
 	}
+	_, err = f.service.Store.Mutate(failedLoginContext(), domain.ID(request.Mutation.RequestId), "fixture.different.command", nil, func(tx *store.Tx) (any, error) {
+		t.Fatal("reserved public deletion ID reached another command")
+		return struct{}{}, nil
+	})
+	if domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("original request ID was not reserved", err)
+	}
+	if _, _, err := f.service.Store.Replay(failedLoginContext(), domain.ID(request.Mutation.RequestId), "fixture.different.command", nil); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("different command ignored pending reservation", err)
+	}
 	current := f.failedLoginDeletion()
 	current.Mutation.RequestId = request.Mutation.RequestId
 	if err := f.deleteFailedLogin(current); err == nil {
