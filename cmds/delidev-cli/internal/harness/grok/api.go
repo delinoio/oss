@@ -46,6 +46,7 @@ type apiProfile struct {
 	configuration []byte
 	instructions  instructionProfile
 	path          string
+	logGuard      string
 }
 
 type apiConnection struct {
@@ -133,10 +134,13 @@ func buildAPIProfile(config apiConfig) (apiProfile, error) {
 	if err != nil || len(configuration) > 16<<10 {
 		return apiProfile{}, apiConfigurationError()
 	}
-	return apiProfile{model: config.Model, mode: config.Mode, contextTokens: config.ContextTokens, configuration: configuration, instructions: instructionProfile{path: filepath.Join(config.Probe.Home, "Agents.md"), contents: config.Instructions}, path: filepath.Join(config.Probe.Home, "config.toml")}, nil
+	return apiProfile{model: config.Model, mode: config.Mode, contextTokens: config.ContextTokens, configuration: configuration, instructions: instructionProfile{path: filepath.Join(config.Probe.Home, "Agents.md"), contents: config.Instructions}, path: filepath.Join(config.Probe.Home, "config.toml"), logGuard: filepath.Join(config.Probe.Home, "logs")}, nil
 }
 
 func (p apiProfile) check() error {
+	if p.logGuard != "" && checkNativeLogGuard(p.logGuard) != nil {
+		return incompatible()
+	}
 	if err := p.instructions.check(); err != nil {
 		return err
 	}
@@ -148,6 +152,9 @@ func (p apiProfile) check() error {
 }
 
 func (p apiProfile) checkInitialized() error {
+	if p.logGuard != "" && checkNativeLogGuard(p.logGuard) != nil {
+		return incompatible()
+	}
 	if err := p.instructions.check(); err != nil {
 		return err
 	}
@@ -211,6 +218,9 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	}
 	env, err := probeEnvironment(config.Probe)
 	if err != nil {
+		return nil, err
+	}
+	if err := createNativeLogGuard(config.Probe.Home); err != nil {
 		return nil, err
 	}
 	// 1.0.46 initializes three independently owned inspection processes and an

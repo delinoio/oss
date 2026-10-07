@@ -29,6 +29,15 @@ preparation has a 60-second bound for its three owned inspection processes and
 ACP initialization. Session creation retains its separate 15-second bound.
 These product deadlines do not change package watchdogs or recovery attempts.
 
+Before the first native inspection or authentication, a private execution home
+reserves `logs` as an exclusive empty owner-only regular file. The pinned native
+file logger otherwise writes authentication/provider diagnostics without a
+validated disable switch. Recheck this guard with the original configuration
+before native operations; changed files, directories and links fail closed.
+Native stderr remains discarded. This isolated-home workaround grants no new
+subscription, repository or continuation authority and can be removed only after
+a pinned native profile proves equivalent log isolation.
+
 Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original child-observation profile in the [subagent contract](cmds-delidev-subagents-contract.md). Canonical Codex collaboration/activity plus read-only descendant/history reads and original Claude task/tool/content/history ownership remain distinct sources. Unowned or unsupported child families stay gated; requested models cannot supply observed models. Child-control operations and unproved history continuation remain excluded.
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.

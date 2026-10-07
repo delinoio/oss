@@ -38,4 +38,6 @@ Native session compaction for issues #1093, #1202 and #1203 follows the planned 
 
 - Codex attempts use the common SemVer minimum `0.151.0` without an upper bound across all native flows. Preserve actual detected versions and exact original executable/version ownership; higher-version eligibility never proves protocol or account support. Keep other harness pins unchanged. Follow the harness contract.
 
+- Grok 1.0.46 private execution profiles reserve an empty owner-only regular `logs` file before native inspection or authentication. Never adopt an existing log path, and recheck the guard with the immutable configuration before native work. Keep native stderr discarded and preserve the separately gated subscription/repository/continuation profile. Follow the harness and Grok subscription contracts.
+
 - Repository saves/imports require credential-free remote_url and allow empty checkouts. Gate remote managed preparation at acceptance/assignment with Worker 19, pin source kind and URL, and preserve explicit Local authentication, immutable historical preparation and no automatic conversion. Follow the workspace/transfer/protocol contracts.

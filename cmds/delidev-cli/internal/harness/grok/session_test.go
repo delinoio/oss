@@ -103,6 +103,9 @@ func TestConcurrentCreationCanBindOnlyOneNativeSession(t *testing.T) {
 
 func TestInitializedConfigurationPermitsOnlyOriginalNativePurgeMarker(t *testing.T) {
 	config, _ := fixtureAPIConfig(t, "valid")
+	if err := createNativeLogGuard(config.Probe.Home); err != nil {
+		t.Fatal(err)
+	}
 	profile, err := buildAPIProfile(config)
 	if err != nil {
 		t.Fatal(err)
