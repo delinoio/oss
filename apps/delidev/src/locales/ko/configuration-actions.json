@@ -1,13 +1,5 @@
 {
-  "configuration-actions.apiKeyEntryDeleted_3200d9": "API 키 항목 삭제됨",
   "configuration-actions.savedOnTheSelectedServer_93dbee": "선택한 서버에 저장됩니다.",
-  "configuration-actions.accountConfigurationDeleted_2a5579": "계정 설정 삭제됨",
-  "configuration-actions.browserCleanupIsTrackedSeparatelyOffline_5550d1": "브라우저 정리는 별도로 추적합니다. 오프라인 기기는 네이티브 브라우저 종료, 전체 프로필 제거와 소유 서버의 접수 확인이 끝날 때까지 대기 상태입니다.",
-  "configuration-actions.profileCleanupObligationsPendingConfirmedRemoved_063eba": "프로필 정리 의무 <s0/>개 대기 중 · <s1/>개 제거 확인됨",
-  "configuration-actions.cleanupStatusIsUnavailableUntilThe_de4aa8": "소유 서버를 읽을 수 있을 때까지 정리 상태를 확인할 수 없습니다.",
-  "configuration-actions.refreshCleanupStatus_fb7773": "정리 상태 새로고침",
-  "configuration-actions.returnToAiApiKeys_4b92a5": "AI API 키로 돌아가기",
-  "configuration-actions.returnToAccounts_4b7a6d": "계정으로 돌아가기",
   "configuration-actions.deleteEntry_e570cd": "항목을 삭제할까요?",
   "configuration-actions.delete_cac286": "<s0/>을 삭제할까요?",
   "configuration-actions.thisDeletesItsSavedConfigurationRetained_8aa78e": "저장된 설정을 삭제합니다. 저장된 세션과 기록은 유지됩니다. 서버는 먼저 재설정이 필요한 참조가 있으면 거부합니다.",

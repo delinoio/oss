@@ -69,6 +69,15 @@
         1148
       ],
       "composition": "Activate only after real migrations 26 through 30. Preserve original OpenRouter attempts and protected references. Store bounded private authentication profiles, token-generation references, once-only refresh claims and cleanup metadata; never persist access/refresh tokens, verifiers, device codes, browser URLs or user codes. Restore must preserve current exchange/refresh authority and unresolved cleanup."
+    },
+    {
+      "version": 32,
+      "pr": 1609,
+      "feature": "Pre-release current-only database baseline",
+      "dependsOn": [
+        964
+      ],
+      "composition": "Initialize the complete current functional schema directly; no upgrade from schemas 1 through 31. Reject earlier databases and backups without changing original files or sidecars. This baseline reservation supersedes executable historical migration retention only on complete reset activation."
     }
   ],
   "policy": "Reservations are not executable. Implement in order, or revise the reservation sequence on main before starting replacements; never fill a gap with a no-op migration. An unmerged version-25 database is an unknown layout and requires preservation and explicit recovery."

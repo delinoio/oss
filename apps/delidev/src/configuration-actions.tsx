@@ -2,7 +2,7 @@
 import { LocalizedText, copy, useLocale, formatTimestamp } from "./localization";
 import { statusLabel } from "./product-status";
 import { SettingsTaskActions } from "./settings-task";
-import { useRetainSettingsTask, useCloseSettingsTask } from "./settings-task-context";
+import { useCloseSettingsTask } from "./settings-task-context";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, EntityKind, SubscriptionServiceId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -10,7 +10,7 @@ import { document, items, object, resourceName, text, type Document } from "./do
 import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
-import { AccountDeletionResult, ChatGPTAccountDeletion } from "./account-deletion";
+import { ChatGPTAccountDeletion, useAccountDeletionCompletion } from "./account-deletion";
 import { serviceAccount } from "./subscription-resource";
 import "./api-account.css";
 
@@ -29,8 +29,8 @@ function ConfigurationDeletionRequest({ initial, active, deleted, close }: Delet
   const isApiEntry = initial.kind === EntityKind.ACCOUNT && document(initial).type === "api";
   const [accepted, setAccepted] = useState(false);
   const mutation = useRetainedMutation(`configuration-delete:${initial.kind}:${initial.id}`, ConfigurationQuery.deleteConfiguration, () => { if (initial.kind === EntityKind.ACCOUNT) setAccepted(true); else deleted(); });
-  useRetainSettingsTask(accepted);
-  if (accepted) return <AccountDeletionResult initial={initial} active={active} deleted={deleted} />;
+  useAccountDeletionCompletion(accepted, active, deleted);
+  if (accepted) return null;
   const blocked = !active || mutation.busy || mutation.uncertain;
   return <section className={initial.kind === EntityKind.PROJECT ? "project-deletion" : isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h2>{copy("configuration-actions.deleteEntry_e570cd")}</h2><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("configuration-actions.savedOnTheSelectedServer_93dbee")}</p></header> : <h3><LocalizedText id="configuration-actions.delete_cac286" components={{ s0: <>{resourceName(initial)}</> }} /></h3>}<p>{copy("configuration-actions.thisDeletesItsSavedConfigurationRetained_8aa78e")}</p>{initial.kind === EntityKind.PROJECT || initial.kind === EntityKind.AGENT ? <p>{copy("configuration-actions.schedulesUsingThisConfigurationWillBe_e67d03")}</p> : null}{initial.kind === EntityKind.ACCOUNT ? <p>{document(initial).type === "api" ? copy("configuration-actions.disconnectTheEntryAndFinishCredential_ad3caf") : copy("configuration-actions.disconnectTheAccountAndFinishCredential_9de80a")}</p> : null}{initial.kind === EntityKind.ACCOUNT ? <p>{copy("configuration-actions.browserProfileCleanupRemainsPendingOn_a24d79")}</p> : null}<Problem error={mutation.error} /><SettingsTaskActions className=""><button disabled={blocked} onClick={() => void mutation.send({ kind: initial.kind, mutation: { id: initial.id, expectedRevision: initial.revision, requestId: newRequestId() } })}>{copy("configuration-actions.confirmConfigurationDeletion_5413bb")}</button>{mutation.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("configuration-actions.retryTheSameDeletion_b32bf6")}</button> : null}<button data-settings-task-cancel disabled={blocked} onClick={closeTask}>{copy("configuration-actions.keepConfiguration_1210fc")}</button></SettingsTaskActions></section>;
 }

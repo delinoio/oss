@@ -207,8 +207,12 @@ Development behavior cannot establish production Keychain or shutdown acceptance
 Account configuration deletion atomically marks every registered device profile
 removal-pending with the original deletion request and increments its revision,
 including offline/revoked clients. Configuration removal and browser cleanup are
-separate outcomes. The account confirmation UI reports outstanding cleanup and
-can read current counts after account removal.
+separate outcomes. Account deletion confirmation explains pending browser
+cleanup; confirmed configuration removal closes its desktop dialog without
+reading cleanup counts or waiting for native cleanup. The authenticated
+owner/client cleanup-count API remains available after account removal, and
+offline obligations still require original native shutdown, complete profile
+removal and the owning server acknowledgment.
 
 Managed database restore discards historical Device records and copies complete
 current Device documents from the synchronized safety image outside the replaced

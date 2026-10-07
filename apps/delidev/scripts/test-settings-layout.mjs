@@ -103,14 +103,18 @@ try {
       assert.deepEqual(await cards.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-label"))), ["Codex", "Claude Code", "OpenCode", "Grok Build"]);
       const layout = await group.evaluate(node => {
         const style = getComputedStyle(node), form = node.closest("form");
-        return { columns: style.gridTemplateColumns.split(" ").length, width: form.getBoundingClientRect().width, gap: style.gap, cards: [...node.children].map(card => ({ height: card.getBoundingClientRect().height, padding: getComputedStyle(card).padding, radius: getComputedStyle(card).borderRadius, mark: getComputedStyle(card.querySelector(".worker-harness-mark")).width, ink: getComputedStyle(card.querySelector(".worker-harness-mark")).backgroundColor, hasMask: getComputedStyle(card.querySelector(".worker-harness-mark")).maskImage !== "none", overflow: card.scrollWidth > card.clientWidth, inline: Boolean(card.getAttribute("style")) })) };
+        return { columns: style.gridTemplateColumns.split(" ").length, width: form.getBoundingClientRect().width, gap: style.gap, cards: [...node.children].map(card => {
+          const mark = card.querySelector(".worker-harness-mark"), image = getComputedStyle(mark);
+          return { height: card.getBoundingClientRect().height, padding: getComputedStyle(card).padding, radius: getComputedStyle(card).borderRadius, mark: image.width, image: image.backgroundImage, size: image.backgroundSize, ink: image.backgroundColor, mask: image.maskImage, decorative: mark.getAttribute("aria-hidden") === "true", overflow: card.scrollWidth > card.clientWidth, inline: Boolean(card.getAttribute("style")) };
+        }) };
       });
       assert.equal(layout.columns, layout.width >= 640 ? 2 : 1, JSON.stringify(layout));
       assert.equal(layout.gap, "16px");
       for (const card of layout.cards) {
         assert(card.height >= 176 && !card.overflow && !card.inline, JSON.stringify(card));
         assert.equal(card.padding, "24px"); assert.equal(card.radius, "8px"); assert.equal(card.mark, "48px");
-        assert(card.hasMask); assert.notEqual(card.ink, "rgba(0, 0, 0, 0)");
+        assert.notEqual(card.image, "none"); assert.equal(card.size, "contain");
+        assert.equal(card.mask, "none"); assert.equal(card.ink, "rgba(0, 0, 0, 0)"); assert(card.decorative);
       }
       const codex = form.getByRole("radio", { name: "Codex", exact: true }), claude = form.getByRole("radio", { name: "Claude Code", exact: true });
       await codex.focus(); await codex.press("ArrowLeft");

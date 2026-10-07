@@ -288,3 +288,48 @@ source-bound validation and unresolved native/account/platform acceptance in PRs
 and CI. Reservation completion cannot close a feature issue.
 
 Sidechat reference preparation privately owns sidechat-preparations/ under the workspace Manager. Original Fork job/parent/child and native metadata identities bind each bounded claim before manifest publication. Permanent deletion composes that ownership only after original process cleanup; the server receives IDs and digests, never filesystem authority.
+## Pre-release compatibility reset
+
+The owner-approved pre-release cleanup establishes database baseline 32 and
+DeliDev protocol 2 before implementation. Reserve
+`AttachWorkerRequest.protocol_version = 10` on main before declaring the field.
+Reservations do not activate a database layout, RPC, Worker admission or reset.
+
+The complete reset replaces migrations 1–31 with one current initialization
+schema. Earlier databases and backups are unsupported and must be rejected
+without automatic conversion, deletion or replacement. Preserve their files and
+sidecars. Current backup recovery, deletion obligations, authorization, receipts
+and native cleanup remain required. Existing allocation numbers and original
+owners remain historical reservations and must never acquire another meaning.
+
+Protocol 2 removes DeliDev historical imports, aggregate reflection facades,
+synchronous CreateBackup, retired subscription configuration and older-client,
+older-server and older-Worker fallback paths. Current configuration bundle 2 is
+the only portable format. Agent Worker writes require at least one same-source
+account and use atomic model/Agent saving. Saved Providers explicitly retain
+enabled state; saved Repositories retain their credential-free remote URL.
+Current API response accounting and independently typed native units remain
+separate under NATIVE_UNITS_V1.
+
+Keep current external harness/provider adapters, capability and authorization
+checks, and current writer-produced execution/OAuth profiles. A lower version
+number or a legacy name alone does not identify compatibility code.
+
+This approved reset supersedes historical compatibility-preservation and
+executable migration-retention requirements only when its complete feature is
+implemented. Retain main-first allocation ownership and tool-generated outputs.
+DeliDev pre-release breaking changes do not suppress other projects' Buf
+breaking checks, numeric allocation validation, lint or freshness. Record source
+revision, commands, results and unresolved limits in PRs and CI artifacts.
+
+## Native Claude subscription reservations
+
+Issue #964 reserves System capability 38, Worker capability 20 and the complete
+Claude login-code/progress/native-identity closure in the protocol allocation
+ledger. Establish these reservations on main before dependent feature branches
+activate the declarations. Existing Codex bundles, independent capabilities and
+real migrations through 31 retain their meanings. Reservations alone grant no
+native login, execution, browser dispatch or cleanup authority and add no
+migration. The complete feature owns selected-Runner native authentication,
+metadata-only server ownership, single-use original login input and joined
+native lifecycle/execution cleanup under the subscription and desktop contracts.

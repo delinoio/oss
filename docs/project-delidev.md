@@ -81,6 +81,9 @@ owns the lifecycle, snapshot-copy deletion integration and remaining database-re
 
 ## Cross-Domain Invariants
 - Token-first GitHub profile creation uses existing System capability 34 and two always-visible Classic/Fine grained creation shortcuts. Go permits an undeclared owner only for draft form preparation; confirmation, saved-profile forms and repository access retain explicit owner rules. Native opening stays closed, click-driven and guarded by the original Settings visit, with no new allocation or migration. See the [integration contract](cmds-delidev-integrations-contract.md#official-forms-and-local-browser-opening) and [desktop contract](apps-delidev-desktop-contract.md#github-profile-settings).
+
+- Confirmed desktop subscription/API-account configuration deletion closes its task dialog and refreshes the current category once, without a completion screen or cleanup-count read. Pending/uncertain requests retain their exact identities until confirmation or category disposal. Independent native browser cleanup and offline acknowledgments remain authoritative under the desktop, subscription Settings and browser contracts.
+
 - macOS desktop builds with `debug_assertions` use an explicit development CEF Mock cookie key without signing credentials. System/development CEF paths share metadata, an exclusive native-host lease and durable cleanup of both copies; Go account/PAT/OAuth credentials remain OS-protected. Every other build retains System cookie storage. Follow the [desktop](apps-delidev-desktop-contract.md) and [browser](cmds-delidev-browser-contract.md) contracts; development observations grant no production Keychain or shutdown acceptance.
 
 - Desktop Settings has four ordered groups: AI, Coding, Device management and System. Repositories, Git Profiles and Git remain independent Coding menus; Runner Devices and Paired devices belong to Device management. Git presents global fetch/remediation policy while Server preferences retains routing/network settings. Both policy editors use the existing complete SETTINGS singleton and Connect configuration authority; grouping grants no new capability or migration. Existing category IDs and lifetimes remain stable, with `git-workflow` as the additional presentation category.
@@ -195,3 +198,17 @@ Workspace storage exposes original-job snapshot, usage preview, cleanup, inspect
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
 AI Subscription browser login and naming compose across Go server ownership, generated Connect capability 30 and trusted native window callbacks. Account identity is independent of Runner Devices; execution/quota still retain their original Worker selection and credential leases. ChatGPT login precedes optional naming, while Claude Code/Grok remain unsupported. Follow the subscription, desktop and protocol contracts and distinguish fixtures/builds from actual account/packaged-platform acceptance. Shared reservations reached main in PR #1332; this optional JSON amendment adds no migration.
+The owner-approved [pre-release compatibility reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
+reserves database baseline 32, protocol 2 and Worker attach field 10 before its
+complete implementation. Reservations leave current runtime behavior unchanged.
+
+## Native Claude subscription prerequisite
+
+The owner-approved native Claude subscription extension spans the existing
+subscription, desktop, harness, protocol and storage owners. Reserve System 38,
+Worker 20 and the complete login-code/progress/native-identity declarations on
+main before implementation. Authentication remains in an original installed
+Claude Code account profile on the selected Runner Device; server metadata does
+not grant credentials, cross-device execution or cleanup authority. The
+reservation prerequisite activates no support and adds no migration. Follow
+[the subscription contract](cmds-delidev-subscription-contract.md#planned-native-claude-subscriptions).
