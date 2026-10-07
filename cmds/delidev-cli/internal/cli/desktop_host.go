@@ -31,12 +31,13 @@ const desktopShutdownTimeout = 35 * time.Second
 type desktopOperation string
 
 const (
-	desktopLaunch   desktopOperation = "runtime.launch"
-	desktopRetry    desktopOperation = "runtime.retry"
-	desktopEnsure   desktopOperation = "runtime.ensure"
-	desktopCancel   desktopOperation = "runtime.cancel"
-	desktopShutdown desktopOperation = "runtime.shutdown"
-	desktopFence    desktopOperation = "runtime.fence"
+	desktopLaunch      desktopOperation = "runtime.launch"
+	desktopRetry       desktopOperation = "runtime.retry"
+	desktopEnsure      desktopOperation = "runtime.ensure"
+	desktopCancel      desktopOperation = "runtime.cancel"
+	desktopShutdown    desktopOperation = "runtime.shutdown"
+	desktopFence       desktopOperation = "runtime.fence"
+	desktopCredentials desktopOperation = "runtime.credentials"
 )
 
 type desktopRequest struct {
@@ -110,7 +111,7 @@ func runDesktopHostCommand(ctx context.Context, o options, args []string, stream
 		listener.Close()
 		return emitDesktopFailure(streams, err)
 	}
-	config := server.Config{DataDir: o.dataDir, Listen: listener.Addr().String(), AllowedOrigins: strings.Split(*origins, ",")}
+	config := server.Config{DataDir: o.dataDir, Listen: listener.Addr().String(), AllowedOrigins: strings.Split(*origins, ","), DesktopCredentials: &server.DesktopCredentialAccess{}}
 	if *origins == "" {
 		config.AllowedOrigins = nil
 	}
@@ -211,7 +212,7 @@ loop:
 			cancel()
 			break loop
 		case r := <-requests:
-			if _, known := desktopCommands[r.Operation]; !known && r.Operation != desktopLaunch && r.Operation != desktopRetry && r.Operation != desktopEnsure && r.Operation != desktopShutdown && r.Operation != desktopCancel && r.Operation != desktopFence {
+			if _, known := desktopCommands[r.Operation]; !known && r.Operation != desktopLaunch && r.Operation != desktopRetry && r.Operation != desktopEnsure && r.Operation != desktopShutdown && r.Operation != desktopCancel && r.Operation != desktopFence && r.Operation != desktopCredentials {
 				// Reject untrusted operation text before structured diagnostics.
 				clear(r.Input)
 				send(r.ID, nil, usage())

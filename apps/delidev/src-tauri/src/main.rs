@@ -58,6 +58,30 @@ use notification_host::{
     present_notification, request_notification_permission,
 };
 use oauth_host::account_oauth_native;
+
+#[tauri::command]
+async fn desktop_credential_access(
+    window: WebviewWindow<CefRuntime>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    action: delidev_desktop::CredentialAccessAction,
+    server: String,
+    generation: String,
+    expected_attempt_id: Option<String>,
+) -> Result<delidev_desktop::CredentialAccessResult, NativeFailure> {
+    let original = capture_authority(&window)?;
+    trusted_local(&window)?;
+    let connector = Arc::clone(connector.inner());
+    let dispatch_window = window.clone();
+    let dispatch_authority = original.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        recheck_authority(&dispatch_window, &dispatch_authority)?;
+        connector.credential_access(action, &server, &generation, expected_attempt_id.as_deref())
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)?;
+    recheck_authority(&window, &original)?;
+    result
+}
 use tauri::{
     AppHandle, Emitter, Manager, WebviewWindow, WindowEvent,
     utils::config::{Csp, CspDirectiveSources},
@@ -1706,6 +1730,7 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::clone(&supervision))
         .invoke_handler(tauri::generate_handler![
             account_oauth_native,
+            desktop_credential_access,
             choose_repository_folder,
             read_appearance,
             update_appearance,
@@ -2070,6 +2095,70 @@ mod tests {
                     "external-fixture",
                     "external-fixture",
                     &Origin::Local
+                )
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn generated_credential_access_acl_is_local_only() {
+        use tauri::{
+            ipc::{Origin, RuntimeAuthority},
+            utils::{
+                acl::{capability::Capability, manifest::Manifest, resolved::Resolved},
+                platform::Target,
+            },
+        };
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/acl-manifests.json"
+        )))
+        .unwrap();
+        let capabilities: BTreeMap<String, Capability> =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/capabilities.json")))
+                .unwrap();
+        let resolved = Resolved::resolve(&manifests, capabilities, Target::current()).unwrap();
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        for label in ["main", "local-fixture"] {
+            assert!(
+                authority
+                    .resolve_access("desktop_credential_access", label, label, &Origin::Local)
+                    .is_some()
+            );
+            assert!(
+                authority
+                    .resolve_access(
+                        "desktop_credential_access",
+                        label,
+                        "external-child",
+                        &Origin::Local
+                    )
+                    .is_none()
+            );
+        }
+        assert!(
+            authority
+                .resolve_access(
+                    "desktop_credential_access",
+                    "server-fixture",
+                    "server-fixture",
+                    &Origin::Local
+                )
+                .is_none()
+        );
+        assert!(
+            authority
+                .resolve_access(
+                    "desktop_credential_access",
+                    "main",
+                    "main",
+                    &Origin::Remote {
+                        url: "https://example.invalid/".parse().unwrap()
+                    }
                 )
                 .is_none()
         );

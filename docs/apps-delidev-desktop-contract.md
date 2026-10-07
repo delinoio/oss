@@ -1,5 +1,46 @@
 # DeliDev desktop client
 
+## Startup Keychain access
+
+Each fresh macOS app launch shows the Keychain access notice and starts checking
+automatically after authenticated local connection. The native connector owns
+the attempt across renderer remounts, polling, window reopening and sibling
+local windows and binds it to the paired client. Only trusted local product
+webviews receive the dedicated `credential-access` permission.
+`desktop_credential_access` accepts closed Observe/Retry/Skip actions and the
+original server/runtime generation; no renderer account, key, path, endpoint or
+remote selector is accepted. After successful explicit local-registration
+recovery on the same server, native code rebinds the retained attempt to the
+replacement client only when Go confirms the old client is revoked. The attempt
+and its current result survive without an automatic Keychain retry. Native
+window authority is rechecked before dispatch and before delivering a result.
+The Go resident host uses its original in-process server and reads through the
+existing vault scope without initializing a missing scope, lock or pin. Follow
+the [credential contract](cmds-delidev-credentials-contract.md#desktop-startup-access-confirmation).
+
+The checking screen uses a centered 480px maximum card with 28px padding, existing
+theme tokens and English/Korean catalogs. It has a title, access explanation,
+OS-permission guidance, an announced progress indicator, Continue without
+checking and Connection & diagnostics. Small windows retain 16px side padding
+and vertical scrolling; reduced-motion preference suppresses spinner animation.
+Successful access or no eligible key enters the product automatically and moves
+focus to its heading. Failure remains on the same card with an announced safe
+problem, explicit Retry and Continue. Retry names the exact failed attempt shown
+in that window; a stale failure cannot retry a newer native attempt. Unknown
+transport results only re-observe the same attempt; only a confirmed terminal
+failure can start a fresh retry.
+Skipping or a borrowed server displays a dismissible notice stating that startup
+checking was skipped and saved account status is unchanged. Saved remote windows
+and non-macOS launches retain their existing entry flow.
+
+Access confirmation never changes saved account health or connection state and
+does not validate providers or refresh OAuth. No account queries mount beneath
+the startup gate until completion or explicit continuation. Continue stops later
+credential reads but cannot promise to dismiss an in-progress OS-owned prompt.
+Existing local Start/Stop, Worker supervision, diagnostics, saved authority and
+35-second joined shutdown ownership remain independent. Deterministic fixtures
+and builds do not establish installed-app interactive Keychain acceptance.
+
 ## Key-preserving API format editing
 
 With ProviderInventory capability 9, Edit AI account enables supported formats for

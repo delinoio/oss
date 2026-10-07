@@ -15,7 +15,8 @@
     "device-language",
     "browser-presentation",
     "repository-folder",
-    "worker-network"
+    "worker-network",
+    "credential-access"
   ],
   "webviews": [
     "main",

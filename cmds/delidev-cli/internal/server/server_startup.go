@@ -167,6 +167,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	}
 	defer service.closeAccountSecrets()
 	defer service.closeIntegrationSecrets()
+	if config.Desktop != nil && config.DesktopCredentials != nil {
+		config.DesktopCredentials.attach(child, service)
+		defer config.DesktopCredentials.close()
+	}
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
 	if config.Desktop != nil {
 		target := *config.Desktop
@@ -313,6 +317,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	stopDeletions()
 	<-deletionsDone
 	service.executionAuthority.close()
+	if config.Desktop != nil && config.DesktopCredentials != nil {
+		config.DesktopCredentials.close()
+	}
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)
 	}

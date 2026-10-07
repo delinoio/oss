@@ -95,8 +95,10 @@ pub use connections::{
 mod desktop_recovery;
 pub use desktop_recovery::{DesktopRegistration, DesktopRegistrationState};
 
+mod credential_access;
 mod local_worker;
 mod worker_network;
+pub use credential_access::{CredentialAccessAction, CredentialAccessResult};
 pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};
 pub use worker_network::WorkerNetworkAction;
 
@@ -133,6 +135,8 @@ pub struct Connection {
     pub server_id: String,
     pub device_id: String,
     pub token: String,
+    pub keychain_access_required: bool,
+    pub keychain_access_skipped: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_generation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -224,6 +228,7 @@ pub struct Connector {
     worker_exited: Mutex<Option<String>>,
     worker_pause_generation: Mutex<Option<String>>,
     worker_client_id: Mutex<Option<String>>,
+    credential_access: Mutex<Option<credential_access::Attempt>>,
 }
 
 impl Connector {
@@ -329,6 +334,7 @@ impl Connector {
             worker_exited: Mutex::new(None),
             worker_pause_generation: Mutex::new(None),
             worker_client_id: Mutex::new(None),
+            credential_access: Mutex::new(None),
             hosted: Mutex::new(Vec::new()),
         })
     }
@@ -864,6 +870,8 @@ fn validated_connection(
         return Err(NativeFailure::InvalidEvidence);
     }
     Ok(Connection {
+        keychain_access_required: cfg!(target_os = "macos") && !saved,
+        keychain_access_skipped: cfg!(target_os = "macos") && saved,
         endpoint: expected.endpoint.clone(),
         server_id: expected.server_id.clone(),
         device_id: expected.device_id.clone(),

@@ -27,7 +27,9 @@ const DefaultListen = "127.0.0.1:46310"
 type Config struct {
 	// Desktop hosts supply their already-bound listener and keep discovery
 	// separate from ordinary CLI/service endpoints.
-	Desktop            *desktopruntime.Target
+	Desktop *desktopruntime.Target
+	// In-process access only; never mounted as an HTTP or Connect endpoint.
+	DesktopCredentials *DesktopCredentialAccess
 	Listener           net.Listener
 	releaseVerifier    func([]byte, string, time.Time) (updates.Verified, error)
 	releaseFactory     func() (releaseClient, error)
