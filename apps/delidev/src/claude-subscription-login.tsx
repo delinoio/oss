@@ -1,6 +1,6 @@
 import { useRunnerRemediation } from "./runner-remediation";
 import { claudeRunnerObservation, validRunnerObservation, type RunnerObservation } from "./runner-observation";
-import { Failure, Problem, InlineRemediation, failureSummary } from "./ui";
+import { Failure, Problem, InlineRemediation } from "./ui";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -843,7 +843,7 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
         >
           <ScrollPicker label={copy("claude-subscription.runner")} value={v.machine} selectedLabel={v.machine ? runnerName : undefined} placeholder={copy("claude-subscription.selectRunner")} disabled={busy || p.fixedRunner} active={p.active && visible && v.step === Step.Runner} query={p.runnerQuery} options={p.runners} change={p.select} />
           <p>{copy("claude-subscription.runnerHelp")}</p>
-          {p.runnerQuery.error ? <Failure failure={p.runnerQuery.error.failure} summary={<>{copy(p.runnerQuery.loaded ? "claude-subscription.inventoryStale" : "claude-subscription.inventoryFailed")}<p>{failureSummary(p.runnerQuery.error.failure.code)}</p></>} /> : null}
+          {p.runnerQuery.error ? <Failure failure={p.runnerQuery.error.failure} summary={copy(p.runnerQuery.loaded ? "claude-subscription.inventoryStale" : "claude-subscription.inventoryFailed")} /> : null}
           <Problem error={p.runnerReadError} summary={copy("claude-subscription.selectedReadFailed")} />
           {p.loading ? <p role="status">{copy("claude-subscription.inventoryLoading")}</p> : null}
           {!p.readFailed && !p.loading && p.runnerQuery.loaded && !p.runners.some(row => !row.disabled) ? <InlineRemediation summary={copy(p.runnerQuery.nextPageToken ? "claude-subscription.inventoryPageEmpty" : p.runners.length ? "claude-subscription.inventoryNoEligible" : "claude-subscription.inventoryEmpty")} /> : null}
