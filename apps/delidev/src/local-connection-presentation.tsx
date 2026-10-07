@@ -43,10 +43,10 @@ export function LocalConnectionPresentation({ children, diagnosticsOnly = false 
 
 // The slot belongs to the invoking task, including an existing modal's top layer.
 // Opening it neither probes credentials nor repairs the connection.
-export function LocalConnectionHelp() {
+export function LocalConnectionHelp({ active = true }: { active?: boolean }) {
   useLocale();
   const { requestInline, release } = useContext(Presentation);
   const slot = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => { const original = slot.current; return () => { if (original) release?.(original); }; }, [release]);
-  return requestInline ? <><button type="button" onClick={() => { if (slot.current) requestInline(slot.current); }}>{copy("desktop.connectionControls_6f99ea")}</button><div ref={slot} /></> : null;
+  useLayoutEffect(() => { const original = slot.current; return () => { if (original) release?.(original); }; }, [release, active]);
+  return active && requestInline ? <><button type="button" onClick={() => { if (slot.current) requestInline(slot.current); }}>{copy("desktop.connectionControls_6f99ea")}</button><div ref={slot} /></> : null;
 }

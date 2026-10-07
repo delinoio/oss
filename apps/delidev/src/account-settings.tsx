@@ -744,7 +744,7 @@ function ApiAccountSettings({
     {accountTypeFilteringLoading ? <p role="status">{copy("account-settings.loadingProviderCapabilities_012324")}</p> : null}
     <Problem error={inventoryProblem} /><Failure failure={providerInventoryFailure} />
     {hasInventoryProblem ? <button type="button" disabled={accountTypeFilteringFetching || providerSearchLoading} onClick={retryAccountCapabilities}>{copy("account-settings.retryProviderInventory_afa130")}</button> : null}
-    {hasInventoryProblem ? <LocalConnectionHelp /> : null}
+    {hasInventoryProblem ? <LocalConnectionHelp active={active} /> : null}
     {readDenied ? <p role="status">{copy("account-connection.inline.permission")}</p> : null}
     {!accountTypeFilteringReady && !accountTypeFilteringLoading && !hasInventoryProblem ? <p role="status">{copy("account-settings.entryListsRequireAServerThat_d168c9")}</p> : null}
     {accountTypeFilteringReady ? <>

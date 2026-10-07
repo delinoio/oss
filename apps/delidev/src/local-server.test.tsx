@@ -71,3 +71,20 @@ it("presents the same guarded controller inside the invoking modal and releases 
   expect(screen.queryByRole("button", { name: "Confirm server stop" })).toBeNull();
   expect(stop).not.toHaveBeenCalled(); expect(restart).not.toHaveBeenCalled();
 });
+
+it("releases a mounted inactive task slot and retains the original confirmation in diagnostics", () => {
+  const stop = vi.fn(async () => ({})), restart = vi.fn(), request = vi.fn();
+  const transport = createRouterTransport(router => router.service(SystemService, { stopServer: stop }));
+  const client = new QueryClient();
+  const target = document.createElement("div"); document.body.append(target);
+  const view = (active: boolean) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><LocalConnectionPresentationProvider target={target} inline={false} onRequest={request}><section hidden={!active} aria-label="Original retained task"><LocalConnectionHelp active={active} /></section><LocalServerControls status={{ state: LocalServerState.Ready, attempts: 0, retry_ms: 0 }} restart={restart} busy={false} /></LocalConnectionPresentationProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  const mounted = render(view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Connection controls" }));
+  fireEvent.click(screen.getByText("Local server"));
+  fireEvent.click(screen.getByRole("button", { name: "Stop local server" }));
+  mounted.rerender(view(false));
+  expect(request).toHaveBeenLastCalledWith(undefined);
+  expect(within(target).getByRole("button", { name: "Confirm server stop" })).toBeTruthy();
+  expect(stop).not.toHaveBeenCalled(); expect(restart).not.toHaveBeenCalled();
+  mounted.unmount(); target.remove();
+});

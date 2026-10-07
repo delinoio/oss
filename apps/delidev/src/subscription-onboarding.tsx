@@ -94,7 +94,7 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
         {diagnostic?.correlation ? <div><dt>{copy("subscription-onboarding.reference_44dc4a")}</dt><dd>{diagnostic.correlation}</dd></div> : null}
       </dl>
     } actions={props.inspect ? <button type="button" disabled={!active || busy} onClick={props.inspect}>{copy("subscription-onboarding.inline.inspect")}</button> : undefined} /> : null}
-    {failed || props.problem ? <LocalConnectionHelp /> : null}
+    {failed || props.problem ? <LocalConnectionHelp active={active} /> : null}
     {naming ? <form id={`${taskFormId}-1`} onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
       <label htmlFor="subscription-onboarding-name">{copy("subscription-onboarding.accountName_a704d8")}</label>
       <input id="subscription-onboarding-name" ref={nameInput} autoComplete="off" required value={props.name} disabled={!active || busy} onChange={(event) => props.changeName(event.target.value)} aria-describedby="subscription-onboarding-name-help" />
