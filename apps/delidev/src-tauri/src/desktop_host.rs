@@ -22,6 +22,9 @@ pub(crate) struct DesktopChild {
     input: Option<ChildStdin>,
     output: thread::JoinHandle<Result<Vec<u8>>>,
     diagnostic: thread::JoinHandle<Result<Vec<u8>>>,
+    worker: bool,
+    generation: Option<String>,
+    admission_confirmed: bool,
 }
 
 impl DesktopChild {
@@ -44,21 +47,59 @@ impl Connector {
         };
         let mut args = self.server_arguments("desktop-host");
         args.extend(["--mode".into(), mode.into()]);
-        {
-            let mut hosted = self.hosted.lock().unwrap_or_else(|e| e.into_inner());
-            let mut i = 0;
-            while i < hosted.len() {
-                if matches!(hosted[i].child.try_wait(), Ok(Some(_))) {
-                    hosted.remove(i).join();
-                } else {
-                    i += 1;
+        self.run_host_child(&self.executable, &args, false)
+    }
+
+    pub(crate) fn reap_worker_children(&self) {
+        let mut hosted = self.hosted.lock().unwrap_or_else(|e| e.into_inner());
+        let mut i = 0;
+        while i < hosted.len() {
+            if matches!(hosted[i].child.try_wait(), Ok(Some(_))) {
+                let exited = hosted.remove(i);
+                if exited.worker && exited.generation.is_some() {
+                    *self.worker_exited.lock().unwrap_or_else(|e| e.into_inner()) =
+                        exited.generation.clone();
                 }
+                exited.join();
+            } else {
+                i += 1;
             }
+        }
+    }
+
+    pub(crate) fn owns_worker_generation(&self, generation: &str) -> bool {
+        self.hosted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|child| child.worker && child.generation.as_deref() == Some(generation))
+    }
+
+    pub(crate) fn worker_admission_unconfirmed(&self) -> bool {
+        self.hosted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|child| child.worker && !child.admission_confirmed)
+    }
+
+    pub(crate) fn run_host_child(
+        &self,
+        executable: &std::path::Path,
+        args: &[std::ffi::OsString],
+        worker: bool,
+    ) -> Result<serde_json::Value> {
+        if self.exiting.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        self.reap_worker_children();
+        {
+            let hosted = self.hosted.lock().unwrap_or_else(|e| e.into_inner());
             if hosted.len() >= MAX_HOST_CHILDREN {
                 return Err(NativeFailure::Busy);
             }
         }
-        let mut command = self.sidecar_command(&args, true)?;
+        let mut command = self.sidecar_command_at(executable, args, true)?;
         // Isolate development terminal/process-group signals too. No
         // kill-on-parent-exit job or EOF shutdown is installed.
         #[cfg(unix)]
@@ -72,6 +113,7 @@ impl Connector {
             command.creation_flags(0x0000_0208); // NEW_PROCESS_GROUP | DETACHED_PROCESS
         }
         let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
+        let original_child = child.id();
         let input = child.stdin.take();
         let stdout = child.stdout.take().ok_or(NativeFailure::SidecarFailed)?;
         let stderr = child.stderr.take().ok_or(NativeFailure::SidecarFailed)?;
@@ -101,6 +143,9 @@ impl Connector {
                 input,
                 output,
                 diagnostic,
+                worker,
+                generation: None,
+                admission_confirmed: false,
             });
         }
         let started = Instant::now();
@@ -109,7 +154,31 @@ impl Connector {
                 return Err(NativeFailure::Stopped);
             }
             match receive.recv_timeout(Duration::from_millis(25)) {
-                Ok(result) => return result,
+                Ok(result) => {
+                    if let Ok(value) = &result {
+                        let generation =
+                            if value.get("started").and_then(|v| v.as_bool()) == Some(true) {
+                                Some(
+                                    value
+                                        .get("generation")
+                                        .and_then(|v| v.as_str())
+                                        .ok_or(NativeFailure::InvalidEvidence)?
+                                        .to_owned(),
+                                )
+                            } else {
+                                None
+                            };
+                        let mut hosted = self.hosted.lock().unwrap_or_else(|e| e.into_inner());
+                        if let Some(child) = hosted
+                            .iter_mut()
+                            .find(|child| child.child.id() == original_child)
+                        {
+                            child.generation = generation;
+                            child.admission_confirmed = true;
+                        }
+                    }
+                    return result;
+                }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     return Err(NativeFailure::SidecarFailed);
                 }
@@ -278,6 +347,46 @@ mod tests {
              '{{\"version\":1,\"result\":{{\"started\":true,\"generation\":\"{}\"}}}}'\n",
             uuid::Uuid::now_v7()
         )
+    }
+
+    #[test]
+    fn worker_exit_records_only_the_retained_original_generation() {
+        let generation = uuid::Uuid::now_v7().to_string();
+        let admission =
+            serde_json::json!({"version":1,"result":{"started":true,"generation":generation}});
+        let (_root, connector) = fixture(&format!(
+            "#!/bin/sh\nprintf '%s\\n' '{admission}'\nread action\n"
+        ));
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
+        assert!(connector.owns_worker_generation(&generation));
+        {
+            let mut children = connector.hosted.lock().unwrap();
+            children[0].child.kill().unwrap();
+            children[0].child.wait().unwrap();
+        }
+        connector.reap_worker_children();
+        assert_eq!(*connector.worker_exited.lock().unwrap(), Some(generation));
+        assert!(connector.hosted.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unconfirmed_worker_admission_blocks_another_native_child() {
+        let (_root, connector) = fixture("#!/bin/sh\nprintf '%s\\n' '{}'\nread action\n");
+        assert!(
+            connector
+                .run_host_child(&connector.executable, &[], true)
+                .is_err()
+        );
+        assert!(connector.worker_admission_unconfirmed());
+        connector.manage_worker();
+        assert_eq!(
+            connector.worker_management.lock().unwrap().state,
+            crate::LocalWorkerManagementState::Blocked
+        );
+        assert_eq!(connector.hosted.lock().unwrap().len(), 1);
+        connector.shutdown_owned().unwrap();
     }
 
     #[test]
