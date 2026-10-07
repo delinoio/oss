@@ -6841,6 +6841,309 @@
       "declaration": "AttachWorkerRequest",
       "member": "protocol_version",
       "number": 10
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1",
+      "number": 38
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CleanupFailedSubscriptionsRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CleanupFailedSubscriptionsResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CleanupFailedSubscriptionsResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "CleanupFailedSubscriptionsResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetFailedSubscriptionCleanupRequest",
+      "member": "job_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetFailedSubscriptionCleanupRequest",
+      "member": "page_token",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetFailedSubscriptionCleanupResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetFailedSubscriptionCleanupResponse",
+      "member": "results",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetFailedSubscriptionCleanupResponse",
+      "member": "next_page_token",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupJob",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupJob",
+      "member": "revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupJob",
+      "member": "state",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupJob",
+      "member": "total",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupJob",
+      "member": "processed",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupJob",
+      "member": "deleted",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupJob",
+      "member": "retained",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupJob",
+      "member": "problem_code",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupResult",
+      "member": "account_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupResult",
+      "member": "alias",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupResult",
+      "member": "outcome",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupResult",
+      "member": "reason",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FailedSubscriptionCleanupResult",
+      "member": "problem_code",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupState",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupState",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_STATE_PENDING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupState",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_STATE_COMPLETED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupState",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_STATE_FAILED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupOutcome",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupOutcome",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupOutcome",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_DELETED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupOutcome",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_RETAINED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupReason",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_REASON_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupReason",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_REASON_CHANGED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupReason",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_REASON_REFERENCED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupReason",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupReason",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_REASON_INVALID_OWNERSHIP",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupReason",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_REASON_AUTHORIZATION",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "FailedSubscriptionCleanupReason",
+      "member": "FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE",
+      "number": 6,
+      "newDeclaration": true
     }
   ]
 }
