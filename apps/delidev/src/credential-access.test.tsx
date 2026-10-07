@@ -91,3 +91,12 @@ it("keeps a new execution generation behind confirmation instead of reusing old 
   expect(screen.queryByText("Product")).toBeNull();
   expect(screen.getByRole("status")).toBeTruthy();
 });
+it("clearly presents skipped access for a saved remote connection without invoking native controls", () => {
+  const f = fixture();
+  f.connection.keychain_access_required = false;
+  f.connection.keychain_access_skipped = true;
+  render(<CredentialAccessGate {...f.props} />);
+  expect(screen.getByText("Product")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toContain("checking was skipped");
+  expect(native.invoke).not.toHaveBeenCalled();
+});

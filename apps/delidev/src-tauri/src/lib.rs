@@ -136,6 +136,7 @@ pub struct Connection {
     pub device_id: String,
     pub token: String,
     pub keychain_access_required: bool,
+    pub keychain_access_skipped: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_generation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -870,6 +871,7 @@ fn validated_connection(
     }
     Ok(Connection {
         keychain_access_required: cfg!(target_os = "macos") && !saved,
+        keychain_access_skipped: cfg!(target_os = "macos") && saved,
         endpoint: expected.endpoint.clone(),
         server_id: expected.server_id.clone(),
         device_id: expected.device_id.clone(),

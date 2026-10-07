@@ -72,7 +72,7 @@ export function CredentialAccessGate({ connection, diagnostics, children }: {
     const heading = content.current?.querySelector<HTMLElement>("#main h1, #main h2") ?? content.current?.querySelector<HTMLElement>("#main");
     if (heading) { heading.setAttribute("tabindex", "-1"); heading.focus(); }
   }, [required, finished]);
-  if (finished) return <div ref={content}>{result?.state === CredentialAccessState.Skipped && !dismissedNotice ? <div className="credential-access-notice" role="status"><span>{copy("desktop.keychainSkipped")}</span><button onClick={() => setDismissedNotice(true)}>{copy("desktop.keychainDismiss")}</button></div> : null}{children}</div>;
+  if (finished) return <div ref={content}>{(connection.keychain_access_skipped || result?.state === CredentialAccessState.Skipped) && !dismissedNotice ? <div className="credential-access-notice" role="status"><span>{copy("desktop.keychainSkipped")}</span><button onClick={() => setDismissedNotice(true)}>{copy("desktop.keychainDismiss")}</button></div> : null}{children}</div>;
   const failed = error || result?.state === CredentialAccessState.Failed;
   return <main className="credential-access-page"><section className="credential-access-card" aria-labelledby="credential-access-title">
     <p className="credential-access-brand">DeliDev</p>

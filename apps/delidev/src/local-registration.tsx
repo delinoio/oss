@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { Modal } from "./ui";
 
-export interface NativeConnection { endpoint: string; token: string; server_id: string; device_id: string; runtime_generation?: string; runtime_key?: string; keychain_access_required?: boolean }
+export interface NativeConnection { endpoint: string; token: string; server_id: string; device_id: string; runtime_generation?: string; runtime_key?: string; keychain_access_required?: boolean; keychain_access_skipped?: boolean }
 export enum RegistrationState { Authorized = "authorized", Revoked = "revoked", Recovering = "recovering" }
 export interface DesktopRegistration { state: RegistrationState; server_id: string; device_id: string; revision: string; request_id?: string }
 interface RecoveryRequest { serverId: string; deviceId: string; revision: string; requestId: string }
