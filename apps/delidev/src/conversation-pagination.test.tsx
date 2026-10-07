@@ -1,10 +1,10 @@
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, SessionService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { useConversationPages } from "./conversation-pagination";
 
@@ -54,4 +54,29 @@ it("rejects a foreign additional page atomically and retries only the exact fail
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
   expect(read.mock.calls.slice(1).map(([request]) => request.filter?.pageToken)).toEqual(["original-next", "original-next"]);
+});
+
+
+it.each([EntityKind.MESSAGE, EntityKind.QUEUE, EntityKind.INTERACTION, EntityKind.REVIEW])("settles initial failure loading and preserves explicit original retry for kind %s", async kind => {
+  const sessionId = newRequestId();
+  const read = vi.fn(async (_request: object) => ({ resources: [], inputs: [], nextPageToken: "" }))
+    .mockRejectedValueOnce(new ConnectError("Fixture unavailable", Code.Unavailable));
+  const transport = createRouterTransport(router => {
+    router.service(ResourceService, { listResources: read });
+    router.service(SessionService, { listQueue: read });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const query = useConversationPages(kind, sessionId);
+    return <><output>{query.isPending ? "pending" : query.error ? "failed" : "loaded"}</output><button onClick={query.retry}>Retry</button></>;
+  }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><View /></QueryClientProvider></TransportProvider>);
+  expect(screen.getByText("pending")).toBeTruthy();
+  await screen.findByText("failed");
+  expect(read).toHaveBeenCalledTimes(1);
+  const original = read.mock.calls[0][0];
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("loaded");
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(read.mock.calls[1][0]).toEqual(original);
 });

@@ -102,3 +102,21 @@ it("retains directory metadata on a digest-bound cursor failure and requires exp
   await screen.findByRole("button", { name: "Load more Directory pages" });
   expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).page_token).toBe("");
 });
+
+
+it.each(["continuation", "refresh"])("rejects a whole directory page with duplicate entry names during %s", async stage => {
+ const f = fixture(); render(<f.View />);
+ await screen.findByRole("button", { name: "note.txt 42 bytes" });
+ const prior = f.read.mock.calls.length;
+ f.read.mockResolvedValueOnce({ documentJson: encode({ size: "0", binary: false, truncated: false, entries: [{ name: "duplicate.txt", kind: "file", size: "1" }, { name: "duplicate.txt", kind: "directory", size: "0" }, { name: "poison.txt", kind: "file", size: "2" }] }) });
+ fireEvent.click(screen.getByRole("button", { name: stage === "continuation" ? "Load more Directory pages" : "Refresh files" }));
+ await screen.findByText("Refresh failed. The last observation is shown below.");
+ expect(screen.getByRole("button", { name: "note.txt 42 bytes" })).toBeTruthy();
+ expect(screen.queryByText("duplicate.txt")).toBeNull(); expect(screen.queryByText("poison.txt")).toBeNull();
+ expect(f.read).toHaveBeenCalledTimes(prior + 1);
+ const query = JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson));
+ expect(query).toMatchObject({ operation: "directory", repository_id: f.primary, path: ".", page_token: stage === "continuation" ? "page-two" : "" });
+ fireEvent.scroll(screen.getByRole("button", { name: "note.txt 42 bytes" }).closest(".conversation-page-scroll")!);
+ expect(f.read).toHaveBeenCalledTimes(prior + 1);
+ expect(f.read.mock.calls.every(([request]) => JSON.parse(new TextDecoder().decode(request.queryJson)).operation !== "file")).toBe(true);
+});
