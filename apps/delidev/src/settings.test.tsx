@@ -982,3 +982,16 @@ it("keeps the routing dialog and its read when the Settings language changes", a
   expect(screen.getByText("후보 계정")).toBeTruthy();
   expect(value.preview).toHaveBeenCalledTimes(1);
 });
+
+it("pauses the containing Settings inventory while its original Network settings modal is open", async () => {
+  const preferences = resource(EntityKind.SETTINGS, { default_routing: "priority", automatic_fetch: true, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } });
+  const value = fixture([preferences]); render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
+  const form = await screen.findByRole("form", { name: "Server preferences form" });
+  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  await screen.findByRole("dialog", { name: "Server network" });
+  const reads = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).length;
+  await act(async () => { await value.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS)).toHaveLength(reads);
+  expect(form.isConnected).toBe(true); expect(value.save).not.toHaveBeenCalled();
+});

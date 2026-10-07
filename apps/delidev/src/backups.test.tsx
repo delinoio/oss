@@ -14,7 +14,7 @@ function fixture() {
   const id = newRequestId();
   const backup = { id, revision: 1n, sizeBytes: 9007199254740993n, modifiedAt: "2026-09-29T00:00:00Z" };
   const list = vi.fn(async (_input: { pageToken: string }): Promise<{ backups: typeof backup[]; nextPageToken?: string }> => ({ backups: [backup] }));
-  const inspect = vi.fn(async () => ({ backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() }));
+  const inspect = vi.fn(async (_input: { id: string }) => ({ backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() }));
   const creation = { id: newRequestId(), backupId: id, revision: 1n, state: BackupCreationState.PENDING, problemCode: "" };
   const create = vi.fn(async (_input: unknown) => ({ job: creation, requestId: newRequestId(), replayed: false }));
   const creations = vi.fn(async (_input: { pageToken: string }): Promise<{ jobs: typeof creation[]; nextPageToken?: string }> => ({ jobs: [creation] }));
@@ -460,4 +460,16 @@ it("keeps backup metadata across four pages and restores an evicted payload with
   expect(f.inspect).not.toHaveBeenCalled();
   expect(f.create).not.toHaveBeenCalled();
   expect(f.remove).not.toHaveBeenCalled();
+});
+
+it("pauses all backup inventory readers during original inspection without replacing the opener", async () => {
+  const f = fixture(); render(f.view());
+  const opener = await screen.findByRole("button", { name: `Inspect backup ${f.id}` });
+  fireEvent.click(opener); await screen.findByText("Database integrity and original server identity verified.");
+  const reads = [f.list.mock.calls.length, f.creations.mock.calls.length, f.deletions.mock.calls.length];
+  await act(async () => { await f.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect([f.list.mock.calls.length, f.creations.mock.calls.length, f.deletions.mock.calls.length]).toEqual(reads);
+  expect(opener.isConnected).toBe(true); expect(f.inspect).toHaveBeenCalledTimes(2);
+  expect(f.inspect.mock.calls.every(([request]) => request.id === f.id)).toBe(true);
+  expect(f.create).not.toHaveBeenCalled(); expect(f.remove).not.toHaveBeenCalled();
 });

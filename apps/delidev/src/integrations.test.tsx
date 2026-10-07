@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ErrorDetailSchema, IntegrationService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Integrations } from "./integrations";
@@ -256,4 +256,15 @@ it("labels pending token denial independently of historical identity verificatio
   fireEvent.click(screen.getByRole("button", { name: "Manage Work" }));
   expect(screen.getByRole("button", { name: "Validate profile" }).hasAttribute("disabled")).toBe(true);
   expect(screen.getByRole("button", { name: "Retry original token replacement" }).hasAttribute("disabled")).toBe(true);
+});
+
+it.each(["Rename Work", "Manage Work"])("pauses the original profile inventory beneath %s without replacing its row", async action => {
+  const f = fixture(); render(f.view());
+  const opener = await screen.findByRole("button", { name: action });
+  const row = opener.closest("article")!;
+  fireEvent.click(opener); await screen.findByRole("dialog");
+  const reads = f.list.mock.calls.length;
+  await act(async () => { await f.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(f.list).toHaveBeenCalledTimes(reads); expect(row.isConnected).toBe(true);
+  expect(f.save).not.toHaveBeenCalled(); expect(f.replace).not.toHaveBeenCalled();
 });

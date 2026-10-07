@@ -717,3 +717,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Settings inventory suspension beneath its original edit/delete overlay retains only its bounded three resident payload pages and mounted row/disclosure owners while stopping readers and continuation. Settings visit/category departure disposes the owner. Never unmount the opener or erase disclosures solely because the parent becomes inert.
 
 Local API account Add/Manage and subscription sign-in/Manage dialogs also pause their background inventory readers while retaining the same bounded row owners. Original login/native/status operations remain independently active; closing a local dialog does not replay them.
+
+Integration Create/Rename/Manage and network profile Edit/Delete dialogs pause their background inventory and picker reads while retaining bounded row owners. Opening Network settings also pauses the containing Settings inventory. Retained API usage and repository item readers pause with the inert background; original native, accepted-operation and status controllers keep their own authority.
+
+Backup inspection pauses all three background inventory/history readers and refresh markers, retaining bounded resident pages. Independent accepted creation/deletion status polling and the original inspection/recovery controller remain active.

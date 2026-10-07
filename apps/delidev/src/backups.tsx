@@ -81,20 +81,21 @@ export function Backups({ active }: { active: boolean }) {
     }
   }, [selected]);
   const [created, setCreated] = useState("");
+  const inventoryActive = active && !selected;
   const request = useCallback((pageToken: string) => ({ pageSize: 20, pageToken }), []);
   const projectInventory = useCallback((response: ListBackupsResponse) => ({ rows: boundedBackupPage(response.backups, response.nextPageToken).map(item => ({ id: item.id, revision: 0n })), payload: response.backups, nextPageToken: response.nextPageToken }), []);
   const projectCreations = useCallback((response: ListBackupCreationsResponse) => ({ rows: boundedBackupPage(response.jobs, response.nextPageToken).map(job => ({ id: job.id, revision: job.revision })), payload: response.jobs, nextPageToken: response.nextPageToken }), []);
   const projectDeletions = useCallback((response: ListBackupDeletionsResponse) => ({ rows: boundedBackupPage(response.jobs, response.nextPageToken).map(job => ({ id: job.id, revision: job.revision })), payload: response.jobs, nextPageToken: response.nextPageToken }), []);
-  const inventory = usePaginationChain("backups-inventory", active, useConnectPaginationReader(SystemQuery.listBackups, request, projectInventory));
-  const creations = usePaginationChain("backups-creations", active, useConnectPaginationReader(SystemQuery.listBackupCreations, request, projectCreations));
-  const deletions = usePaginationChain("backups-deletions", active, useConnectPaginationReader(SystemQuery.listBackupDeletions, request, projectDeletions));
-  usePaginationRefresh(SystemQuery.listBackups, request(""), active, inventory.refresh);
-  usePaginationRefresh(SystemQuery.listBackupCreations, request(""), active, creations.refresh, 2000);
-  usePaginationRefresh(SystemQuery.listBackupDeletions, request(""), active, deletions.refresh, 2000);
+  const inventory = usePaginationChain("backups-inventory", inventoryActive, useConnectPaginationReader(SystemQuery.listBackups, request, projectInventory), true, true);
+  const creations = usePaginationChain("backups-creations", inventoryActive, useConnectPaginationReader(SystemQuery.listBackupCreations, request, projectCreations), true, true);
+  const deletions = usePaginationChain("backups-deletions", inventoryActive, useConnectPaginationReader(SystemQuery.listBackupDeletions, request, projectDeletions), true, true);
+  usePaginationRefresh(SystemQuery.listBackups, request(""), inventoryActive, inventory.refresh);
+  usePaginationRefresh(SystemQuery.listBackupCreations, request(""), inventoryActive, creations.refresh, 2000);
+  usePaginationRefresh(SystemQuery.listBackupDeletions, request(""), inventoryActive, deletions.refresh, 2000);
   const refresh = inventory.refreshExplicit;
   const create = useRetainedMutation("backup-create", SystemQuery.requestBackup, (result) => { setCreated(result.job?.id ?? ""); if (result.job) { const job = result.job; setTrackedCreations(current => current.some(item => item.id === job.id) ? current : [...current, job]); } creations.refresh(); });
   const completed = creations.rows.filter(job => creations.payloadPages.some(page => page.payload.some(item => item.id === job.id && item.state === BackupCreationState.SUCCEEDED))).map(job => job.id).join(",") ?? "";
-  useEffect(() => { if (active && completed) inventory.refresh(); }, [active, completed, inventory.refresh]);
+  useEffect(() => { if (inventoryActive && completed) inventory.refresh(); }, [inventoryActive, completed, inventory.refresh]);
   return <section ref={content} className="backups-settings" aria-label={copy("backups.managedDatabaseBackups_322e74")}>
     <SettingsHeading title={copy("backups.backups_3334fe")} description={copy("backups.manageDatabaseBackupsAndFollowBackup_8b4b4f")} actions={<>
         <button disabled={!active || Boolean(inventory.loading)} onClick={refresh}>{copy("backups.refreshBackups_47e8b1")}</button>
@@ -113,7 +114,7 @@ export function Backups({ active }: { active: boolean }) {
         {inventory.loaded && Boolean(inventory.loading) ? <p role="status">{copy("backups.updatingManagedBackups_4d6219")}</p> : null}
         {inventory.loaded && inventory.rows.length === 0 ? <p>{copy("backups.noManagedBackups_c08d9c")}</p> : null}
       </div>
-      <ScrollPayloadWindow query={inventory} root={root} active={active} identity={item => item.id}>{items => <BackupTable label={`${panelId}-inventory`}>{tableId => <>
+      <ScrollPayloadWindow query={inventory} root={root} active={inventoryActive} identity={item => item.id}>{items => <BackupTable label={`${panelId}-inventory`}>{tableId => <>
         <thead><tr role="row"><th role="columnheader" id={`${tableId}-modified`} scope={"col"}>{copy("backups.modifiedUtcBackupId_bacb2a")}</th><th role="columnheader" id={`${tableId}-size`} scope={"col"}>{copy("backups.size_1af851")}</th><th role="columnheader" id={`${tableId}-integrity`} scope={"col"}>{copy("backups.integrity_ad5ea6")}</th><th role="columnheader" id={`${tableId}-action`} scope={"col"}><span className="backups-sr-only">{copy("backups.action_64cff1")}</span></th></tr></thead>
         <tbody>{items.map(item => <tr role="row" key={item.id} className={selected === item.id ? "backups-selected" : undefined}>
           <td role="cell" headers={`${tableId}-modified`}><time dateTime={item.modifiedAt}>{modificationLabel(item.modifiedAt)}</time><span className="backups-sr-only"><LocalizedText id="backups.originalModificationTimestamp_06e09f" components={{ s0: <>{item.modifiedAt}</> }} /></span><code className="backups-id">{item.id}</code></td>
@@ -127,7 +128,7 @@ export function Backups({ active }: { active: boolean }) {
         </tr>)}</tbody>
       </>}</BackupTable>}</ScrollPayloadWindow>
       <footer className="backups-inventory-footer"><p>{copy("backups.integrityNotEstablishedByThisListing_299564")}</p>
-        <ScrollContinuation query={inventory} root={root} active={active} label={copy("backups.databaseBackups_e6ded7")} />
+        <ScrollContinuation query={inventory} root={root} active={inventoryActive} label={copy("backups.databaseBackups_e6ded7")} />
       </footer>
     </section>
     {selected ? <SettingsTaskScope key={selected}><BackupInspection selected={selected} active={active} inspected={setInspected} canDelete={trackedDeletions.length < maxTrackedJobs}

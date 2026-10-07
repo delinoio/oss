@@ -2236,3 +2236,7 @@ Use existing semantic theme tokens, system fonts, 16px shell corners, 20px title
 An inert Settings Resource, API account, subscription or API provider inventory beneath its original edit/delete task suspends pagination readers and continuation while retaining at most its three resident payload pages and mounted row/disclosure owners. Dismissal restores the same opener and controllers. Settings visit or category departure disposes that owner; this retention grants no refresh, mutation or recovery replay.
 
 Local API account Add/Manage and subscription sign-in/Manage dialogs also pause their background inventory readers while retaining the same bounded row owners. Original login/native/status operations remain independently active; closing a local dialog does not replay them.
+
+Integration Create/Rename/Manage and network profile Edit/Delete dialogs pause their background inventory and picker reads while retaining bounded row owners. Opening Network settings also pauses the containing Settings inventory. Retained API usage and repository item readers pause with the inert background; original native, accepted-operation and status controllers keep their own authority.
+
+Backup inspection pauses all three background inventory/history readers and refresh markers, retaining bounded resident pages. Independent accepted creation/deletion status polling and the original inspection/recovery controller remain active.

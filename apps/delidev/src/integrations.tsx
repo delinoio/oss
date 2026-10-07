@@ -180,7 +180,7 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
   const createButton = useRef<HTMLButtonElement>(null);
   const returning = useRef(false);
   const client = useQueryClient();
-  const result = useResourceScrollQuery(EntityKind.INTEGRATION, active);
+  const result = useResourceScrollQuery(EntityKind.INTEGRATION, active && !editing && !selected, "", false, undefined, undefined, undefined, true);
   const done = () => { returning.current = true; setEditing(undefined); setSelected(undefined); void client.invalidateQueries({ refetchType: "active" }); };
   useEffect(() => {
     onWorkflowReadyChange?.(Boolean(editing || selected));

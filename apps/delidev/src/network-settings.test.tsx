@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, NetworkService, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type SelectNetworkProfileRequest } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
@@ -164,4 +164,16 @@ it("retains three network profile payload pages and restores an older accepted r
   expect(document.querySelectorAll("[data-payload-page] article")).toHaveLength(3);
   expect(list.mock.calls.at(-1)?.[0].filter?.pageToken).toBe("");
   expect(select).not.toHaveBeenCalled();
+});
+
+it.each(["Edit profile", "Delete profile"])("pauses both network inventories beneath %s while retaining the original row", async action => {
+  const f = fixture(); fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  const opener = await screen.findByRole("button", { name: action });
+  const row = opener.closest("article")!;
+  fireEvent.click(opener);
+  await screen.findByRole("dialog", { name: action === "Edit profile" ? "Edit network profile" : action });
+  const reads = f.reads.mock.calls.length;
+  await act(async () => { await f.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(f.reads).toHaveBeenCalledTimes(reads); expect(row.isConnected).toBe(true);
+  expect(f.select).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
 });
