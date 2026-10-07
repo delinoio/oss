@@ -9,5 +9,7 @@
   "subscription-login.extra.34521ed193ad": "The browser could not be opened. You can try Open browser again.",
   "subscription-login.extra.13e06932e780": "The original cancellation could not be confirmed. Sign-in status will continue to be checked.",
   "subscription-login.extra.21ebd4c8705a": "The account name could not be saved. Your edit is kept; check the current account and save again.",
-  "subscription-login.extra.557b693dbfb7": "The original request could not be confirmed."
+  "subscription-login.extra.557b693dbfb7": "The original request could not be confirmed.",
+  "subscription-login.nativeGrokUnavailable": "Update the desktop app to sign in to Grok.",
+  "subscription-login.copyCodeFailed": "The code could not be copied. Select and copy the displayed code."
 }

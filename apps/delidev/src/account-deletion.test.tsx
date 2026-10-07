@@ -19,9 +19,9 @@ import { Settings } from "./settings";
 
 const alias = "ChatGPT fixture";
 const confirmLabel = "Disconnect and delete account";
-function fixture(connected = true) {
+function fixture(connected = true, grok = false) {
   const generation = newRequestId(), connection = newRequestId();
-  const preferences = { alias, type: "subscription", subscription_service: "chatgpt", enabled: true, exclude_automatic: false, recovery_notifications: false };
+  const preferences = { alias, type: "subscription", subscription_service: grok ? "grok" : "chatgpt", enabled: true, exclude_automatic: false, recovery_notifications: false };
   let current = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 9007199254740993n,
     documentJson: encode({ ...preferences, health: connected ? "ready" : "disconnected", quota: [], ...(connected ? { connection: { id: connection }, subscription: { generation } } : {}) }) });
   const initial = current;
@@ -29,7 +29,7 @@ function fixture(connected = true) {
   const patch = (change: Record<string, unknown>) => { current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), ...change }) }); return current; };
   const accept = (request: RequestSubscriptionRequest) => patch({ health: "revoked", subscription: { ...object(document(current).subscription), pending: { id: request.mutation!.requestId, action: "logout", phase: "queued" }, server_operation: { id: request.mutation!.requestId, action: "logout", state: "preparing", native_started: false } } });
   const read = vi.fn(async () => ({ resource: current }));
-  const status = vi.fn(async () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1] }));
+  const status = vi.fn(async () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, grok ? SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1 : SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1] }));
   const logout = vi.fn(async (request: RequestSubscriptionRequest) => ({ operationId: request.mutation!.requestId, account: accept(request) }));
   const progress = vi.fn(async (_request: GetSubscriptionProgressRequest) => create(GetSubscriptionProgressResponseSchema, { state: SubscriptionLoginState.PREPARING }));
   const remove = vi.fn(async (request: DeleteConfigurationRequest) => { removed = true; return { id: request.mutation!.id, requestId: request.mutation!.requestId }; });
@@ -67,6 +67,26 @@ async function start(value: ReturnType<typeof fixture>) {
 async function tick() {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2100)); });
 }
+
+it("deletes Grok only after its independently negotiated original logout and fresh cleanup proof", async () => {
+  const value = fixture(true, true); await start(value);
+  expect(value.logout).toHaveBeenCalledTimes(1); expect(value.remove).not.toHaveBeenCalled();
+  expect(value.logout.mock.calls[0][0].action).toBe(SubscriptionAction.LOGOUT);
+  expect(value.client.getQueryCache().getAll()).toHaveLength(0);
+  value.complete(); await tick();
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  expect(value.remove.mock.calls[0][0].mutation!.expectedRevision).toBe(value.current.revision);
+  expect(value.cleanup).not.toHaveBeenCalled();
+});
+
+it("does not borrow ChatGPT capability to log out a connected Grok account", async () => {
+  const value = fixture(true, true);
+  value.status.mockResolvedValue({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1] });
+  render(<value.Harness />); fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await screen.findByText("Grok logout is not supported by this server.");
+  expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+});
 async function openSettingsDeletion(value: ReturnType<typeof fixture>) {
   render(<value.Harness settings />);
   await screen.findByRole("article", { name: alias });

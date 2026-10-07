@@ -56,5 +56,18 @@
   "subscription-onboarding.sentence.360691dcfaa7": "Codex {{v0}}이(가) {{v1}}을(를) 완료하지 못했습니다. 네이티브 작업이 시간 초과되었습니다.",
   "subscription-onboarding.sentence.01720d6af7dc": "Codex에는 {{v0}} 이상의 유효한 SemVer가 필요합니다.",
   "subscription-onboarding.sentence.758270754713": "Codex {{v0}}이(가) {{v1}}을(를) 완료하지 못했습니다. {{v2}}",
-  "subscription-onboarding.notDetected": "감지되지 않음"
+  "subscription-onboarding.notDetected": "감지되지 않음",
+  "subscription-onboarding.finishSignIn": "{{v0}} 로그인 완료하기",
+  "subscription-onboarding.noGrokDetails": "서버가 Grok 로그인 세부 정보를 보고하지 않았습니다.",
+  "subscription-onboarding.grokVersion": "Grok Build 버전:",
+  "subscription-onboarding.supportedVersion": "지원 버전:",
+  "subscription-onboarding.enterDeviceCode": "Grok 로그인 페이지에 이 코드를 입력하세요.",
+  "subscription-onboarding.deviceCode": "기기 코드",
+  "subscription-onboarding.copyCode": "코드 복사",
+  "subscription-onboarding.openSignInPage": "로그인 페이지 열기",
+  "subscription-onboarding.codeCopied": "코드를 복사했습니다",
+  "subscription-onboarding.grokDeparture": "이 화면을 떠나도 계정은 유지됩니다. 만료될 때까지 로그인을 계속할 수 있습니다.",
+  "subscription-onboarding.authenticationRefresh": "인증 갱신",
+  "subscription-onboarding.logout": "로그아웃",
+  "subscription-onboarding.grokFailure": "Grok Build에서 {{phase}} 단계를 완료하지 못했습니다({{code}})."
 }

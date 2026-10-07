@@ -7,14 +7,14 @@ import { useTransport } from "@connectrpc/connect-query";
 import {
   ConfigurationService, DeleteConfigurationRequestSchema, EntityKind, FailureCode,
   RequestSubscriptionRequestSchema, ResourceSchema, ResourceService, SubscriptionAction, SubscriptionLoginState,
-  SubscriptionService, SubscriptionServiceId, SystemCapability, SystemService, clientFailure, isEntityId, newRequestId,
+  SubscriptionService, SubscriptionServiceId, SystemCapability, SystemService, clientFailure, isEntityId, newRequestId, subscriptionService,
   type ClientFailure, type DeleteConfigurationRequest, type RequestSubscriptionRequest, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
 import { useSettingsOpening } from "./settings-lifetime";
 import { SettingsTaskContext, SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
 import { serviceAccount } from "./subscription-resource";
-import { safeDiagnostic } from "./subscription-onboarding";
+import { safeDiagnostic, safeGrokDiagnostic } from "./subscription-onboarding";
 import { Failure } from "./ui";
 import "./account-deletion.css";
 
@@ -36,7 +36,8 @@ interface View { stage: Stage; failure?: ClientFailure }
 const preferences = ["alias", "type", "subscription_service", "enabled", "exclude_automatic", "recovery_notifications"] as const;
 const uncertain = (error: unknown) => [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(clientFailure(error).code);
 function unchanged(resource: Resource | undefined, attempt: Attempt): resource is Resource {
-  if (!serviceAccount(resource, attempt.confirmed.id, SubscriptionServiceId.ChatGPT, attempt.minimumRevision)) return false;
+  const service = subscriptionService(document(attempt.confirmed).subscription_service);
+  if (service !== SubscriptionServiceId.ChatGPT && service !== SubscriptionServiceId.Grok || !serviceAccount(resource, attempt.confirmed.id, service, attempt.minimumRevision)) return false;
   const current = document(resource), confirmed = document(attempt.confirmed);
   return preferences.every((key) => current[key] === confirmed[key]);
 }
@@ -61,9 +62,10 @@ export function useAccountDeletionCompletion(accepted: boolean, active: boolean,
 
 // This category owns only the confirmed client sequence. Go retains every
 // credential, execution, revision, reference and native-cleanup authority.
-export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { initial: Resource; active: boolean; deleted: () => void; close: () => void }) {
+export function ManagedSubscriptionAccountDeletion({ initial, active, deleted, close }: { initial: Resource; active: boolean; deleted: () => void; close: () => void }) {
   useLocale();
   const transport = useTransport(), opening = useSettingsOpening();
+  const service = subscriptionService(document(initial).subscription_service);
   const clients = useMemo(() => ({
     resource: createClient(ResourceService, transport), system: createClient(SystemService, transport),
     subscription: createClient(SubscriptionService, transport), configuration: createClient(ConfigurationService, transport),
@@ -148,7 +150,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
         setView({ stage: Stage.Logout }); return;
       }
       if (progress.state !== SubscriptionLoginState.SUCCEEDED || progress.canceled) {
-        const diagnostic = safeDiagnostic(progress.diagnostic);
+        const diagnostic = service === SubscriptionServiceId.Grok ? safeGrokDiagnostic(progress.grokDiagnostic) : safeDiagnostic(progress.diagnostic);
         const reasons: Partial<Record<SubscriptionLoginState, string>> = {
           [SubscriptionLoginState.FAILED]: copy("account-deletion.extra.76d4a13459c6"),
           [SubscriptionLoginState.CANCELED]: copy("account-deletion.extra.491112623c4d"),
@@ -156,7 +158,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
           [SubscriptionLoginState.UNSUPPORTED]: copy("account-deletion.extra.28727cc37ddb"),
           [SubscriptionLoginState.RECOVERY_REQUIRED]: copy("account-deletion.extra.8c8625da5c7c"),
         };
-        const reason = reasons[progress.state] ?? copy("account-deletion.extra.8d3007d5bd3d");
+        const reason = service === SubscriptionServiceId.Grok ? copy("account-deletion.grokLogoutFailed") : reasons[progress.state] ?? copy("account-deletion.extra.8d3007d5bd3d");
         pause(p, diagnostic?.message ?? reason, copy("account-deletion.sentence.1ab129957de8", { v0: diagnostic?.correlation ? ` Reference: ${diagnostic.correlation}` : "" })); return;
       }
       const result = await clients.resource.getResource({ kind: EntityKind.ACCOUNT, id: p.confirmed.id });
@@ -197,8 +199,8 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       }
       const status = await clients.system.getStatus({});
       if (!live(p)) return;
-      if (!status.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1)) {
-        pause(p, copy("account-deletion.extra.28727cc37ddb"), copy("account-deletion.extra.432a2d9f1fe9")); return;
+      if (!status.capabilities.includes(service === SubscriptionServiceId.Grok ? SystemCapability.GROK_SUBSCRIPTION_LOGIN_V1 : SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1)) {
+        pause(p, copy(service === SubscriptionServiceId.Grok ? "account-deletion.grokLogoutUnsupported" : "account-deletion.extra.28727cc37ddb"), copy("account-deletion.extra.432a2d9f1fe9")); return;
       }
       if (state.pending) {
         if (pendingOperation.action !== "logout" || pendingOperation.machine_id || !isEntityId(text(pendingOperation.id)) || operation.id !== pendingOperation.id || operation.action !== "logout" || pendingOperation.canceled) {
@@ -224,7 +226,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     try {
       const result = await clients.resource.getResource({ kind: EntityKind.ACCOUNT, id: initial.id });
       if (!live(p)) return;
-      if (!serviceAccount(result.resource, initial.id, SubscriptionServiceId.ChatGPT)) { changed(p); return; }
+      if (!serviceAccount(result.resource, initial.id, service)) { changed(p); return; }
       setConfirmed(result.resource); p.disposed = true;
       setView({ stage: Stage.Confirmation });
     } catch (error) { pause(p, "", "", undefined, error); }
@@ -254,3 +256,6 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     </>}
   </section>;
 }
+
+// Preserve the existing component import while sharing service-specific guards.
+export const ChatGPTAccountDeletion = ManagedSubscriptionAccountDeletion;

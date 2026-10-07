@@ -10,7 +10,7 @@ import { document, items, object, resourceName, text, type Document } from "./do
 import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
-import { ChatGPTAccountDeletion, useAccountDeletionCompletion } from "./account-deletion";
+import { ManagedSubscriptionAccountDeletion, useAccountDeletionCompletion } from "./account-deletion";
 import { serviceAccount } from "./subscription-resource";
 import "./api-account.css";
 
@@ -19,8 +19,8 @@ export function ConfigurationDeletion({ active = true, ...props }: DeletionProps
   useLocale();
   const closeTask = useCloseSettingsTask(props.close);
   const key = props.initial.id;
-  return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT)
-    ? <ChatGPTAccountDeletion key={key} {...props} active={active} />
+  return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT) || serviceAccount(props.initial, undefined, SubscriptionServiceId.Grok)
+    ? <ManagedSubscriptionAccountDeletion key={key} {...props} active={active} />
     : <ConfigurationDeletionRequest key={key} {...props} active={active} close={closeTask} />;
 }
 function ConfigurationDeletionRequest({ initial, active, deleted, close }: DeletionProps & { active: boolean }) {

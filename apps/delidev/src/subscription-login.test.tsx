@@ -7,17 +7,19 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, ResourceService, SubscriptionService, EntityKind, ErrorDetailSchema, FailureCode, RequestSubscriptionRequestSchema, ResourceSchema, SaveConfigurationRequestSchema, SubscriptionLoginState as State, SubscriptionServiceId, newRequestId } from "@delinoio/delidev-api-client";
-import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
-import { useSubscriptionLogin } from "./subscription-login";
+import { OAuthNativeAction, OAuthNativeProvider, type OAuthNativeResult } from "./account-oauth";
+import { SubscriptionLoginMethod, subscriptionBrowserURL, useSubscriptionLogin } from "./subscription-login";
 import { SettingsLifetime } from "./settings-lifetime";
 import { document, encode } from "./documents";
 import { subscriptionAliasDocument } from "./subscription-resource";
 const url = "https://auth.openai.com/oauth/authorize?state=fixture-original-state-123456&redirect_uri=http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback&response_type=code&code_challenge_method=S256";
+const grokURL = `https://auth.x.ai/oauth2/authorize?${new URLSearchParams({ client_id: "b1a00492-073a-47ea-816f-4c329264a828", response_type: "code", redirect_uri: "http://127.0.0.1:55451/callback", scope: "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write workspaces:read workspaces:write", code_challenge_method: "S256", code_challenge: "c".repeat(43), state: "s".repeat(43), nonce: "n".repeat(43), referrer: "grok-build" })}`;
 function typedFailure(code: Code, failure: FailureCode) {
   return new ConnectError("Fixture request failure", code, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: failure }) }]);
 }
-function fixture(loginURL = url) {
-  let current = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: "ChatGPT", type: "subscription", subscription_service: "chatgpt" }) });
+function fixture(loginURL = url, options: { service?: SubscriptionServiceId; deviceCode?: boolean; oldNative?: boolean } = {}) {
+  const service = options.service ?? SubscriptionServiceId.ChatGPT;
+  let current = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: service === SubscriptionServiceId.Grok ? "Grok" : "ChatGPT", type: "subscription", subscription_service: service }) });
   let state = State.WAITING, suggested = "fixture@example.invalid", operation = "";
   const generation = newRequestId(), nativeGeneration = newRequestId();
   const save = vi.fn(async (request) => {
@@ -29,11 +31,11 @@ function fixture(loginURL = url) {
     current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), subscription: { server_operation: { id: operation }, pending: { id: operation } } }) });
     return { account: current, operationId: operation };
   });
-  const progress = vi.fn((_request) => ({ state, url: state === State.WAITING ? loginURL : "", suggestedName: suggested, generation }));
+  const progress = vi.fn((_request) => ({ state, url: state === State.WAITING ? loginURL : "", userCode: state === State.WAITING && options.deviceCode ? "SAMPLE-123" : "", suggestedName: suggested, generation }));
   const cancel = vi.fn(() => { state = State.CANCELED; return { account: current }; });
   const forward = vi.fn(() => ({ accepted: true }));
   const read = vi.fn(() => ({ resource: current }));
-  const native = vi.fn(async (_scope: string, _action: OAuthNativeAction, _generation: string, _attempt: string, _url: string) => ({ generation: nativeGeneration } as { generation: string; code?: number[] }));
+  const native = vi.fn(async (_scope: string, _action: OAuthNativeAction, _generation: string, _attempt: string, _url: string): Promise<OAuthNativeResult> => ({ generation: nativeGeneration, subscription_services: options.oldNative ? undefined : [SubscriptionServiceId.ChatGPT, SubscriptionServiceId.Grok] }));
   const transport = createRouterTransport(router => {
     router.service(ConfigurationService, { saveConfiguration: save });
     router.service(ResourceService, { getResource: read });
@@ -43,7 +45,7 @@ function fixture(loginURL = url) {
   const changed = vi.fn();
   function Body() {
     const flow = useSubscriptionLogin(true, changed);
-    return <>{flow.body ?? <button onClick={() => flow.begin(SubscriptionServiceId.ChatGPT)}>Add account</button>}</>;
+    return <>{flow.body ?? <button onClick={() => flow.begin(service, undefined, options.deviceCode ? SubscriptionLoginMethod.DeviceCode : SubscriptionLoginMethod.Browser)}>Add account</button>}</>;
   }
   const view = () => <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><SettingsLifetime>{() => <Body />}</SettingsLifetime></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>;
   return { authorization: (value: string) => { loginURL = value; }, view, save, login, progress, cancel, forward, read, native, client, generation, current: () => current, success: () => { state = State.SUCCEEDED; current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), connection: { id: newRequestId() }, subscription: { generation, server_operation: { id: operation }, lease: { revision: "preserved" } } }) }); }, suggestion: (name: string) => { suggested = name; } };
@@ -53,6 +55,53 @@ async function start(f: ReturnType<typeof fixture>) {
   await screen.findByRole("button", { name: "Open browser again" }, { timeout: 3000 });
   return rendered;
 }
+it("admits Grok browser login only after the trusted native profile read and starts once", async () => {
+  const f = fixture(grokURL, { service: SubscriptionServiceId.Grok }); const rendered = await start(f);
+  expect(f.save).toHaveBeenCalledTimes(1); expect(f.login).toHaveBeenCalledTimes(1);
+  expect(f.login.mock.calls[0][0].deviceCode).toBe(false);
+  expect(f.native.mock.calls[0][1]).toBe(OAuthNativeAction.SubscriptionProfiles);
+  const bound = f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.SubscriptionOpen);
+  expect(bound).toHaveLength(1); expect(bound[0][4]).toBe(grokURL);
+  expect(f.client.getQueryCache().getAll()).toHaveLength(0);
+  rendered.unmount(); expect(f.cancel).not.toHaveBeenCalled();
+});
+it("keeps Grok device code outside caches and opens the original page only on an explicit action", async () => {
+  const f = fixture("https://accounts.x.ai/oauth2/device", { service: SubscriptionServiceId.Grok, deviceCode: true });
+  const writeText = vi.fn(async (_value: string) => undefined);
+  vi.stubGlobal("navigator", Object.create(navigator, { clipboard: { value: { writeText } } }));
+  try {
+    const rendered = render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+    await screen.findByLabelText("Device code", {}, { timeout: 3000 });
+    expect(f.login.mock.calls[0][0].deviceCode).toBe(true);
+    expect(f.native.mock.calls.every(call => call[1] === OAuthNativeAction.SubscriptionProfiles)).toBe(true);
+    expect(screen.queryByRole("button", { name: "Open browser again" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+    await screen.findByText("Code copied"); expect(writeText).toHaveBeenCalledWith("SAMPLE-123");
+    fireEvent.click(screen.getByRole("button", { name: "Open sign-in page" }));
+    await waitFor(() => expect(f.native.mock.calls.filter(call => call[1] === OAuthNativeAction.SubscriptionDeviceOpen)).toHaveLength(1));
+    expect(f.native.mock.calls.find(call => call[1] === OAuthNativeAction.SubscriptionDeviceOpen)![4]).toBe("https://accounts.x.ai/oauth2/device");
+    fireEvent.click(screen.getByRole("button", { name: "Open sign-in page" }));
+    await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Reopen)).toBe(true));
+    expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Take)).toBe(false);
+    expect(f.client.getQueryCache().getAll()).toHaveLength(0);
+    f.success(); await screen.findByLabelText("Account name", {}, { timeout: 3000 });
+    expect(screen.queryByText("SAMPLE-123")).toBeNull(); expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull();
+    expect(f.login).toHaveBeenCalledTimes(1); rendered.unmount(); expect(f.cancel).not.toHaveBeenCalled();
+  } finally { vi.unstubAllGlobals(); }
+});
+it("creates no Grok account or login when the native host lacks the profile", async () => {
+  const f = fixture(grokURL, { service: SubscriptionServiceId.Grok, oldNative: true });
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  await screen.findByText("Update the desktop app to sign in to Grok.");
+  expect(f.save).not.toHaveBeenCalled(); expect(f.login).not.toHaveBeenCalled(); expect(f.progress).not.toHaveBeenCalled();
+});
+it("rejects changed Grok registration, callback spellings and additional URL fields", () => {
+  expect(subscriptionBrowserURL(grokURL, SubscriptionServiceId.Grok)).toBe(true);
+  for (const invalid of [grokURL.replace("127.0.0.1", "127.1"), grokURL.replace("127.0.0.1", "localhost"), grokURL.replace("55451", "055451"), grokURL.replace("55451", "0"), grokURL.replace("auth.x.ai", "foreign.invalid"), grokURL.replace("b1a00492-073a-47ea-816f-4c329264a828", "foreign"), `${grokURL}&state=duplicate`, `${grokURL}&external=value`, grokURL.replace("grok-build", "foreign")]) {
+    expect(subscriptionBrowserURL(invalid, SubscriptionServiceId.Grok)).toBe(false);
+  }
+  expect(subscriptionBrowserURL(grokURL, SubscriptionServiceId.ChatGPT)).toBe(false);
+});
 it.each(["localhost", "127.0.0.1"])("starts once and preserves the original %s browser binding", async (host) => {
   const originalURL = url.replace("localhost", host);
   const f = fixture(originalURL); const rendered = render(f.view()); const add = screen.getByRole("button", { name: "Add account" });

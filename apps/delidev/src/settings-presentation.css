@@ -34,6 +34,7 @@
 .settings-content[aria-label] .subscription-provider-card .subscription-mark { grid-row: 1 / span 2; }
 .settings-content[aria-label] .subscription-provider-card h3, .settings-content[aria-label] .subscription-provider-card p { margin: 0; }
 .settings-content[aria-label] .subscription-provider-card button { grid-column: 3; grid-row: 1 / span 2; width: auto; }
+.settings-content[aria-label] .subscription-provider-card .subscription-device-action { grid-column: 3; grid-row: 3; justify-self: start; color: var(--accent); border: 0; background: transparent; }
 .settings-content[aria-label] .settings-content-column .subscription-settings section + section { margin-top: 24px; }
 .settings-content[aria-label] .settings-content-column .integration-panel-header { padding: 0 0 16px; }
 .settings-content[aria-label] .settings-content-column .integration-panel-body { padding: 0; }
@@ -89,6 +90,7 @@
 @container settings-body (width < 640px) {
   .settings-content[aria-label] .subscription-provider-card { grid-template-columns: 40px minmax(0, 1fr); }
   .settings-content[aria-label] .subscription-provider-card button { grid-column: 2; grid-row: auto; justify-self: start; }
+  .settings-content[aria-label] .subscription-provider-card .subscription-device-action { grid-column: 2; grid-row: auto; }
 }
 
 /* Language is a device preference and follows the existing Appearance body. */

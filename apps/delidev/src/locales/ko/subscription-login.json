@@ -9,5 +9,7 @@
   "subscription-login.extra.34521ed193ad": "브라우저를 열지 못했습니다. 브라우저 열기를 다시 시도할 수 있습니다.",
   "subscription-login.extra.13e06932e780": "원래 취소를 확인하지 못했습니다. 로그인 상태를 계속 확인합니다.",
   "subscription-login.extra.21ebd4c8705a": "계정 이름을 저장하지 못했습니다. 편집은 유지됩니다; 현재 계정을 확인하고 다시 저장하세요.",
-  "subscription-login.extra.557b693dbfb7": "기존 요청을 확인하지 못했습니다."
+  "subscription-login.extra.557b693dbfb7": "기존 요청을 확인하지 못했습니다.",
+  "subscription-login.nativeGrokUnavailable": "Grok에 로그인하려면 데스크톱 앱을 업데이트하세요.",
+  "subscription-login.copyCodeFailed": "코드를 복사하지 못했습니다. 표시된 코드를 선택하여 복사하세요."
 }

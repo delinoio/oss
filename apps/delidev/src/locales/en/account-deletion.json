@@ -33,5 +33,7 @@
   "account-deletion.extra.432a2d9f1fe9": "Update the selected server or complete its supported logout flow before deleting the account.",
   "account-deletion.extra.2ce284085b03": "Another account operation is still pending.",
   "account-deletion.extra.37108ca03e31": "Complete the original operation and confirm deletion again.",
-  "account-deletion.sentence.1ab129957de8": "The account has been kept. Check Connection & diagnostics before another deletion.{{v0}}"
+  "account-deletion.sentence.1ab129957de8": "The account has been kept. Check Connection & diagnostics before another deletion.{{v0}}",
+  "account-deletion.grokLogoutUnsupported": "Grok logout is not supported by this server.",
+  "account-deletion.grokLogoutFailed": "Grok logout could not be completed. The account has been kept."
 }

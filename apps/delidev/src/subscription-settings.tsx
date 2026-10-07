@@ -60,6 +60,7 @@ export interface SubscriptionSettingsViewProps {
   refreshAllOperation?: SubscriptionOperation;
   lifecycleUnavailable?: string;
   selectService?: (brand: SubscriptionBrand) => void;
+  selectDeviceCode?: (brand: SubscriptionBrand) => void;
   serviceLoginAvailable?: (brand: SubscriptionBrand) => boolean;
   activeFilter?: string;
   clearFilter: () => void;
@@ -182,7 +183,7 @@ const readLabels: Partial<Record<SubscriptionReadState, string>> = {
 };
 
 /** Presentation only; the owning controller negotiates every native action. */
-export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
+export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, selectDeviceCode, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
   useLocale();
   const noticeId = useId();
   const [, expireObservation] = useReducer((revision: number) => revision + 1, 0);
@@ -209,7 +210,7 @@ export function SubscriptionSettingsView({ accounts, state, problem, retryRead, 
       {pagination}
     </section>
     <section aria-label={copy("subscription-settings.connectASubscription_46b98e")}><header className="subscription-section-heading"><h2>{copy("subscription-settings.connectASubscription_46b98e")}</h2></header><p id={noticeId} className="subscription-unavailable">{lifecycleUnavailable}</p>
-      <div className="subscription-provider-cards">{subscriptionCatalog.map((provider) => <article className="subscription-provider-card" key={provider.brand}><ProviderMark brand={provider.brand} /><h3>{provider.name}</h3><p>{provider.purpose}</p><button type="button" disabled={!selectService || !serviceLoginAvailable(provider.brand)} aria-label={copy("subscription-settings.message_78735b", { v0: provider.name, v1: selectService && serviceLoginAvailable(provider.brand) ? copy("subscription-settings.addAccount_ee7ee5") : copy("subscription-settings.comingSoon_4f7d64") })} onClick={() => selectService?.(provider.brand)}>{selectService && serviceLoginAvailable(provider.brand) ? copy("subscription-settings.addAccount_ee7ee5") : copy("subscription-settings.comingSoon_4f7d64")}</button></article>)}</div>
+      <div className="subscription-provider-cards">{subscriptionCatalog.map((provider) => <article className="subscription-provider-card" key={provider.brand}><ProviderMark brand={provider.brand} /><h3>{provider.name}</h3><p>{provider.purpose}</p><button type="button" disabled={!selectService || !serviceLoginAvailable(provider.brand)} aria-label={copy("subscription-settings.message_78735b", { v0: provider.name, v1: selectService && serviceLoginAvailable(provider.brand) ? copy("subscription-settings.addAccount_ee7ee5") : copy("subscription-settings.comingSoon_4f7d64") })} onClick={() => selectService?.(provider.brand)}>{selectService && serviceLoginAvailable(provider.brand) ? copy("subscription-settings.addAccount_ee7ee5") : copy("subscription-settings.comingSoon_4f7d64")}</button>{provider.brand === SubscriptionBrand.Grok && selectDeviceCode ? <button type="button" className="subscription-device-action" disabled={!selectService || !serviceLoginAvailable(provider.brand)} onClick={() => selectDeviceCode(provider.brand)}>{copy("subscription-settings.useDeviceCode")}</button> : null}</article>)}</div>
     </section>
     <details className="subscription-advanced"><summary>{copy("subscription-settings.advancedSettings_7b0bd2")}</summary><div>{advanced}</div></details>
   </section>;

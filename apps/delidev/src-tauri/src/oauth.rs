@@ -26,8 +26,10 @@ pub enum OAuthAction {
     BeginGoogleGemini,
     BeginBaseten,
     Profiles,
+    SubscriptionProfiles,
     BindOpen,
     SubscriptionOpen,
+    SubscriptionDeviceOpen,
     SubscriptionReopen,
     Reopen,
     Take,
@@ -40,6 +42,8 @@ pub struct OAuthResult {
     pub state: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<OAuthProfile>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub subscription_services: Vec<SubscriptionService>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub denied: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -55,6 +59,13 @@ pub enum OAuthProfile {
     HuggingFace,
     GoogleGemini,
     Baseten,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SubscriptionService {
+    Chatgpt,
+    Grok,
 }
 
 fn registered_client(profile: OAuthProfile) -> Option<String> {
@@ -299,7 +310,9 @@ impl OAuthHost {
         }
         if matches!(
             action,
-            OAuthAction::SubscriptionOpen | OAuthAction::SubscriptionReopen
+            OAuthAction::SubscriptionOpen
+                | OAuthAction::SubscriptionDeviceOpen
+                | OAuthAction::SubscriptionReopen
         ) {
             canonical_id(attempt_id)?;
             if self
@@ -316,6 +329,11 @@ impl OAuthHost {
                     || original.authorization.as_str() != authorization
                     || !generation.is_empty() && original.generation != generation
                     || original.shared.expected_state.is_none()
+                        && !(original.callback.is_empty()
+                            && original.shared.api_profile.is_none()
+                            && original.authorization.as_str() == GROK_DEVICE_URI)
+                    || action == OAuthAction::SubscriptionDeviceOpen
+                        && original.authorization.as_str() != GROK_DEVICE_URI
                 {
                     return Err(NativeFailure::InvalidEvidence);
                 }
@@ -334,6 +352,7 @@ impl OAuthHost {
                         code: None,
                         state: None,
                         profiles: Vec::new(),
+                        subscription_services: Vec::new(),
                         denied: false,
                     });
                 }
@@ -343,6 +362,7 @@ impl OAuthHost {
                     code: None,
                     state: None,
                     profiles: Vec::new(),
+                    subscription_services: Vec::new(),
                     denied: false,
                 });
             }
@@ -352,13 +372,20 @@ impl OAuthHost {
             {
                 return Err(NativeFailure::Busy);
             }
-            let original = begin_subscription(scope, attempt_id, authorization, local)?;
+            let original = if action == OAuthAction::SubscriptionDeviceOpen
+                || action == OAuthAction::SubscriptionReopen && authorization == GROK_DEVICE_URI
+            {
+                begin_subscription_device(scope, attempt_id, authorization)?
+            } else {
+                begin_subscription(scope, attempt_id, authorization, local)?
+            };
             let result = OAuthResult {
                 generation: original.generation.clone(),
                 callback_url: String::new(),
                 code: None,
                 state: None,
                 profiles: Vec::new(),
+                subscription_services: Vec::new(),
                 denied: false,
             };
             let shared = Arc::clone(&original.shared);
@@ -366,6 +393,15 @@ impl OAuthHost {
             attempts.insert(original.scope.window.clone(), original);
             drop(attempts);
             opener(&url, &shared.stop)?;
+            return Ok(result);
+        }
+        if action == OAuthAction::SubscriptionProfiles {
+            if !generation.is_empty() || !attempt_id.is_empty() || !authorization.is_empty() {
+                return Err(NativeFailure::InvalidInput);
+            }
+            let mut result = OAuthResult::default();
+            result.subscription_services =
+                vec![SubscriptionService::Chatgpt, SubscriptionService::Grok];
             return Ok(result);
         }
         if action == OAuthAction::Profiles {
@@ -379,6 +415,7 @@ impl OAuthHost {
                 .into_iter()
                 .filter(|p| registered_client(*p).is_some())
                 .collect(),
+                subscription_services: Vec::new(),
                 generation: String::new(),
                 callback_url: String::new(),
                 code: None,
@@ -421,6 +458,7 @@ impl OAuthHost {
                         code: None,
                         state: None,
                         profiles: Vec::new(),
+                        subscription_services: Vec::new(),
                         denied: false,
                     });
                 }
@@ -436,6 +474,7 @@ impl OAuthHost {
                 code: None,
                 state: None,
                 profiles: Vec::new(),
+                subscription_services: Vec::new(),
                 denied: false,
             };
             attempts.insert(attempt.scope.window.clone(), attempt);
@@ -464,6 +503,7 @@ impl OAuthHost {
                 code: None,
                 state: None,
                 profiles: Vec::new(),
+                subscription_services: Vec::new(),
                 denied: false,
             });
         }
@@ -491,6 +531,7 @@ impl OAuthHost {
                         code: None,
                         state: None,
                         profiles: Vec::new(),
+                        subscription_services: Vec::new(),
                         denied: false,
                     });
                 }
@@ -550,6 +591,7 @@ impl OAuthHost {
                         code: None,
                         state: None,
                         profiles: Vec::new(),
+                        subscription_services: Vec::new(),
                         denied: false,
                     };
                     if let Some(value) = code {
@@ -589,6 +631,7 @@ impl OAuthHost {
                     }),
                     state: None,
                     profiles: Vec::new(),
+                    subscription_services: Vec::new(),
                     denied: false,
                 });
             }
@@ -607,6 +650,7 @@ impl OAuthHost {
             code: None,
             state: None,
             profiles: Vec::new(),
+            subscription_services: Vec::new(),
             denied: false,
         })
     }
@@ -820,12 +864,22 @@ fn parse_request_profile(
         for part in query.split('&') {
             let (key, value) = part.split_once('=')?;
             if !(matches!(key, "code" | "state" | "scope")
-                || api.is_some() && key == "error"
+                || (api.is_some() || path == "/callback") && key == "error"
+                || path == "/callback" && key == "iss"
                 || api == Some(OAuthProfile::GoogleGemini) && matches!(key, "authuser" | "prompt"))
                 || fields.insert(key, decode_code(value)?).is_some()
             {
                 return None;
             }
+        }
+        // Only the separately pinned Grok IPv4 callback uses this path. An
+        // issuer hint cannot redirect the receiver or establish authentication.
+        if path == "/callback"
+            && fields
+                .get("iss")
+                .is_some_and(|v| v.as_slice() != b"https://auth.x.ai")
+        {
+            return None;
         }
         if api == Some(OAuthProfile::GoogleGemini)
             && (fields
@@ -839,7 +893,7 @@ fn parse_request_profile(
         }
         let supplied = fields.get("state")?;
         if (!fields.contains_key("code")
-            && !(api.is_some()
+            && !((api.is_some() || path == "/callback")
                 && fields
                     .get("error")
                     .is_some_and(|v| v.as_slice() == b"access_denied")))
@@ -1540,6 +1594,7 @@ mod tests {
 enum SubscriptionCallback {
     Localhost,
     Ipv4,
+    GrokIpv4(u16),
 }
 
 impl SubscriptionCallback {
@@ -1547,21 +1602,47 @@ impl SubscriptionCallback {
         match uri {
             "http://localhost:1457/auth/callback" => Ok(Self::Localhost),
             "http://127.0.0.1:1457/auth/callback" => Ok(Self::Ipv4),
-            _ => Err(NativeFailure::InvalidInput),
+            _ => {
+                let parsed = url::Url::parse(uri).map_err(|_| NativeFailure::InvalidInput)?;
+                let port = parsed
+                    .port()
+                    .filter(|p| *p != 0)
+                    .ok_or(NativeFailure::InvalidInput)?;
+                if uri != format!("http://127.0.0.1:{port}/callback") {
+                    return Err(NativeFailure::InvalidInput);
+                }
+                Ok(Self::GrokIpv4(port))
+            }
         }
     }
 
-    fn uri(self) -> &'static str {
+    fn uri(self) -> String {
         match self {
-            Self::Localhost => "http://localhost:1457/auth/callback",
-            Self::Ipv4 => "http://127.0.0.1:1457/auth/callback",
+            Self::Localhost => "http://localhost:1457/auth/callback".into(),
+            Self::Ipv4 => "http://127.0.0.1:1457/auth/callback".into(),
+            Self::GrokIpv4(port) => format!("http://127.0.0.1:{port}/callback"),
         }
     }
 
-    fn authority(self) -> &'static str {
+    fn authority(self) -> String {
         match self {
-            Self::Localhost => "localhost:1457",
-            Self::Ipv4 => "127.0.0.1:1457",
+            Self::Localhost => "localhost:1457".into(),
+            Self::Ipv4 => "127.0.0.1:1457".into(),
+            Self::GrokIpv4(port) => format!("127.0.0.1:{port}"),
+        }
+    }
+
+    fn port(self) -> u16 {
+        match self {
+            Self::GrokIpv4(port) => port,
+            _ => 1457,
+        }
+    }
+
+    fn path(self) -> &'static str {
+        match self {
+            Self::GrokIpv4(_) => "/callback",
+            _ => "/auth/callback",
         }
     }
 }
@@ -1573,12 +1654,13 @@ fn subscription_authorization(
         return Err(NativeFailure::InvalidInput);
     }
     let url = url::Url::parse(raw).map_err(|_| NativeFailure::InvalidInput)?;
+    let grok = url.host_str() == Some("auth.x.ai") && url.path() == "/oauth2/authorize";
+    let codex = url.host_str() == Some("auth.openai.com") && url.path() == "/oauth/authorize";
     if url.scheme() != "https"
-        || url.host_str() != Some("auth.openai.com")
+        || !(grok || codex)
         || url.port().is_some()
         || !url.username().is_empty()
         || url.password().is_some()
-        || url.path() != "/oauth/authorize"
         || url.fragment().is_some()
         || url.as_str() != raw
     {
@@ -1608,6 +1690,33 @@ fn subscription_authorization(
     {
         return Err(NativeFailure::InvalidInput);
     }
+    if grok {
+        if !matches!(callback, SubscriptionCallback::GrokIpv4(_))
+            || fields.len() != 8
+            || fields.get("client_id").map(String::as_str)
+                != Some("b1a00492-073a-47ea-816f-4c329264a828")
+            || fields.get("scope").map(String::as_str)
+                != Some(
+                    "openid profile email offline_access grok-cli:access api:access \
+                     conversations:read conversations:write workspaces:read workspaces:write",
+                )
+            || fields.get("referrer").map(String::as_str) != Some("grok-build")
+            || !fields.get("nonce").is_some_and(|v| {
+                v.len() == 43
+                    && v.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            })
+            || !fields.get("code_challenge").is_some_and(|v| {
+                v.len() == 43
+                    && v.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            })
+        {
+            return Err(NativeFailure::InvalidInput);
+        }
+    } else if matches!(callback, SubscriptionCallback::GrokIpv4(_)) {
+        return Err(NativeFailure::InvalidInput);
+    }
     Ok((Zeroizing::new(state), callback))
 }
 
@@ -1631,30 +1740,34 @@ fn begin_subscription(
     let handle = if local {
         None
     } else {
-        // The registered fallback callback belongs to the original remote
-        // Codex login. A conflict is explicit; never remap or use device codes.
-        let v4 = TcpListener::bind((Ipv4Addr::LOCALHOST, 1457))
-            .map_err(|_| NativeFailure::SidecarFailed)?;
-        let v6 = TcpListener::bind((Ipv6Addr::LOCALHOST, 1457))
+        // Bind the original server-selected address. A conflict is explicit;
+        // neither authentication method nor port can change on this operation.
+        let v4 = TcpListener::bind((Ipv4Addr::LOCALHOST, callback.port()))
             .map_err(|_| NativeFailure::SidecarFailed)?;
         v4.set_nonblocking(true)
             .map_err(|_| NativeFailure::SidecarFailed)?;
-        v6.set_nonblocking(true)
-            .map_err(|_| NativeFailure::SidecarFailed)?;
+        let mut listeners = vec![v4];
+        if !matches!(callback, SubscriptionCallback::GrokIpv4(_)) {
+            let v6 = TcpListener::bind((Ipv6Addr::LOCALHOST, callback.port()))
+                .map_err(|_| NativeFailure::SidecarFailed)?;
+            v6.set_nonblocking(true)
+                .map_err(|_| NativeFailure::SidecarFailed)?;
+            listeners.push(v6);
+        }
         let control = Arc::clone(&shared);
         Some(
             thread::Builder::new()
                 .name("delidev-subscription-callback".into())
                 .spawn(move || {
                     while !control.stop.load(Ordering::Acquire) && Instant::now() < until {
-                        for listener in [&v4, &v6] {
+                        for listener in &listeners {
                             if let Ok((mut stream, peer)) = listener.accept()
                                 && peer.ip().is_loopback()
                             {
                                 handle_request(
                                     &mut stream,
-                                    callback.authority(),
-                                    "/auth/callback",
+                                    &callback.authority(),
+                                    callback.path(),
                                     &control,
                                 );
                             }
@@ -1675,6 +1788,39 @@ fn begin_subscription(
         until,
         shared,
         thread: handle,
+    })
+}
+
+const GROK_DEVICE_URI: &str = "https://accounts.x.ai/oauth2/device";
+
+fn begin_subscription_device(
+    scope: OAuthScope,
+    attempt_id: &str,
+    authorization: &str,
+) -> Result<Attempt, NativeFailure> {
+    if authorization != GROK_DEVICE_URI {
+        return Err(NativeFailure::InvalidInput);
+    }
+    // A device-code page has no local callback authority. Go owns all device
+    // polling and credentials; native retains only this original public page.
+    Ok(Attempt {
+        profile: OAuthProfile::Openrouter,
+        scope,
+        generation: uuid::Uuid::now_v7().to_string(),
+        callback: String::new(),
+        attempt: attempt_id.into(),
+        authorization: Zeroizing::new(authorization.into()),
+        until: Instant::now() + Duration::from_secs(900),
+        shared: Arc::new(Shared {
+            expected_state: None,
+            api_state: Mutex::new(None),
+            api_profile: None,
+            bound: AtomicBool::new(true),
+            consumed: AtomicBool::new(false),
+            stop: AtomicBool::new(false),
+            code: Mutex::new(None),
+        }),
+        thread: None,
     })
 }
 
@@ -1775,6 +1921,7 @@ mod subscription_tests {
                 match callback {
                     SubscriptionCallback::Localhost => "127.0.0.1",
                     SubscriptionCallback::Ipv4 => "localhost",
+                    SubscriptionCallback::GrokIpv4(_) => unreachable!(),
                 },
             );
             assert!(
@@ -1851,6 +1998,221 @@ mod subscription_tests {
                 .is_err()
             );
         }
+    }
+
+    fn grok_authorization(port: u16) -> String {
+        let mut url = url::Url::parse("https://auth.x.ai/oauth2/authorize").unwrap();
+        url.query_pairs_mut()
+            .append_pair("client_id", "b1a00492-073a-47ea-816f-4c329264a828")
+            .append_pair("response_type", "code")
+            .append_pair("redirect_uri", &format!("http://127.0.0.1:{port}/callback"))
+            .append_pair(
+                "scope",
+                "openid profile email offline_access grok-cli:access api:access \
+                 conversations:read conversations:write workspaces:read workspaces:write",
+            )
+            .append_pair("code_challenge_method", "S256")
+            .append_pair("code_challenge", &"c".repeat(43))
+            .append_pair("state", &"s".repeat(43))
+            .append_pair("nonce", &"n".repeat(43))
+            .append_pair("referrer", "grok-build");
+        url.into()
+    }
+
+    #[test]
+    fn grok_browser_requires_fixed_registration_and_original_ipv4_callback() {
+        let auth = grok_authorization(55451);
+        let (_, callback) = subscription_authorization(&auth).unwrap();
+        assert_eq!(callback.uri(), "http://127.0.0.1:55451/callback");
+        for invalid in [
+            auth.replace("auth.x.ai", "auth.openai.com"),
+            auth.replace("b1a00492-073a-47ea-816f-4c329264a828", "foreign"),
+            auth.replace("127.0.0.1", "localhost"),
+            auth.replace("127.0.0.1", "127.1"),
+            auth.replace("55451", "055451"),
+            auth.replace("55451", "0"),
+            auth.replace("grok-build", "foreign"),
+            auth.replace(&"n".repeat(43), "missing"),
+            format!("{auth}&state=foreign"),
+            format!("{auth}&external=untrusted"),
+        ] {
+            assert!(subscription_authorization(&invalid).is_err());
+        }
+        let query = format!(
+            "code=fixture&state={}&iss=https%3A%2F%2Fauth.x.ai",
+            "s".repeat(43)
+        );
+        let request = |query: &str| {
+            format!("GET /callback?{query} HTTP/1.1\r\nHost: 127.0.0.1:55451\r\n\r\n")
+        };
+        assert!(
+            parse_request_mode(
+                request(&query).as_bytes(),
+                "127.0.0.1:55451",
+                "/callback",
+                Some(&"s".repeat(43))
+            )
+            .is_some()
+        );
+        for invalid in [
+            query.replace("auth.x.ai", "foreign.invalid"),
+            query.replace(&"s".repeat(43), "foreign"),
+            format!("{query}&code=duplicate"),
+            format!("{query}&error=access_denied"),
+        ] {
+            assert!(
+                parse_request_mode(
+                    request(&invalid).as_bytes(),
+                    "127.0.0.1:55451",
+                    "/callback",
+                    Some(&"s".repeat(43))
+                )
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn grok_remote_callback_keeps_original_port_and_joins_before_release() {
+        let reserved = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = reserved.local_addr().unwrap().port();
+        let auth = grok_authorization(port);
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        // A conflict cannot select another port or authentication method.
+        assert!(begin_subscription(scope.clone(), &operation, &auth, false).is_err());
+        drop(reserved);
+        let result = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::SubscriptionOpen,
+                "",
+                &operation,
+                &auth,
+                false,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        let query = format!("code=fixture&state={}", "s".repeat(43));
+        let mut connection = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        connection
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        connection
+            .write_all(
+                format!("GET /callback?{query} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n")
+                    .as_bytes(),
+            )
+            .unwrap();
+        let mut response = String::new();
+        connection.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 303"));
+        let received = host
+            .control(
+                scope.clone(),
+                OAuthAction::Take,
+                &result.generation,
+                &operation,
+                "",
+            )
+            .unwrap();
+        assert_eq!(received.code.as_ref().unwrap(), query.as_bytes());
+        assert!(
+            host.control(
+                scope.clone(),
+                OAuthAction::Take,
+                &result.generation,
+                &operation,
+                ""
+            )
+            .unwrap()
+            .code
+            .is_none()
+        );
+        host.control(scope, OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        assert!(TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_ok());
+    }
+
+    #[test]
+    fn grok_device_page_has_no_callback_and_only_deliberate_reopen() {
+        let host = OAuthHost::default();
+        let scope = scope();
+        let operation = uuid::Uuid::now_v7().to_string();
+        let opened = std::sync::atomic::AtomicU64::new(0);
+        let open = |url: &str, _: &AtomicBool| {
+            assert_eq!(url, GROK_DEVICE_URI);
+            opened.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        let first = host
+            .control_with_browser(
+                scope.clone(),
+                OAuthAction::SubscriptionDeviceOpen,
+                "",
+                &operation,
+                GROK_DEVICE_URI,
+                false,
+                open,
+            )
+            .unwrap();
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::SubscriptionDeviceOpen,
+            "",
+            &operation,
+            GROK_DEVICE_URI,
+            false,
+            open,
+        )
+        .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
+        host.control_with_browser(
+            scope.clone(),
+            OAuthAction::SubscriptionReopen,
+            &first.generation,
+            &operation,
+            GROK_DEVICE_URI,
+            false,
+            open,
+        )
+        .unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 2);
+        let attempts = host.attempts.lock().unwrap();
+        let original = attempts.get("main").unwrap();
+        assert!(
+            original.thread.is_none()
+                && original.callback.is_empty()
+                && original.shared.expected_state.is_none()
+        );
+        drop(attempts);
+        assert!(
+            host.control_with_browser(
+                scope.clone(),
+                OAuthAction::SubscriptionReopen,
+                "",
+                &operation,
+                "https://accounts.x.ai/oauth2/device?user_code=fixture",
+                false,
+                open
+            )
+            .is_err()
+        );
+        host.control(scope.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        assert!(
+            host.control_with_browser(
+                scope,
+                OAuthAction::SubscriptionDeviceOpen,
+                "",
+                &operation,
+                GROK_DEVICE_URI,
+                false,
+                open
+            )
+            .is_err()
+        );
     }
     #[test]
     fn subscription_query_requires_original_state_closed_keys_and_framing() {
@@ -1938,9 +2300,10 @@ mod subscription_tests {
             let other_authority = match callback {
                 SubscriptionCallback::Localhost => "127.0.0.1:1457",
                 SubscriptionCallback::Ipv4 => "localhost:1457",
+                SubscriptionCallback::GrokIpv4(_) => unreachable!(),
             };
             assert!(receive(v4, other_authority).starts_with("HTTP/1.1 400"));
-            assert!(receive(v6, callback.authority()).starts_with("HTTP/1.1 303"));
+            assert!(receive(v6, &callback.authority()).starts_with("HTTP/1.1 303"));
             let result = host
                 .control(
                     scope.clone(),
@@ -1966,7 +2329,7 @@ mod subscription_tests {
                 .code
                 .is_none()
             );
-            assert!(receive(v4, callback.authority()).starts_with("HTTP/1.1 400"));
+            assert!(receive(v4, &callback.authority()).starts_with("HTTP/1.1 400"));
             host.control(scope, OAuthAction::Dispose, "", "", "")
                 .unwrap();
             let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 1457)).unwrap();

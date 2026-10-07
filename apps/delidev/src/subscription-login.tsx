@@ -2,24 +2,37 @@ import { useLocale, ownedMessage, resolveMessage, type OwnedMessage, copy } from
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
-import { ConfigurationService, ResourceService, SubscriptionService, EntityKind, SubscriptionAction, SubscriptionLoginState, SubscriptionServiceId, FailureCode, clientFailure, isEntityId, newRequestId, subscriptionServiceNames, type Resource, type CodexDiagnostic } from "@delinoio/delidev-api-client";
+import { ConfigurationService, ResourceService, SubscriptionService, EntityKind, SubscriptionAction, SubscriptionLoginState, SubscriptionServiceId, FailureCode, clientFailure, isEntityId, newRequestId, subscriptionServiceNames, type Resource, type CodexDiagnostic, type GrokDiagnostic } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document, encode, object, text } from "./documents";
 import { serviceAccount, subscriptionAliasDocument } from "./subscription-resource";
 import { SubscriptionOnboarding, SubscriptionOnboardingStage as Stage, subscriptionNameValid } from "./subscription-onboarding";
 
-interface View { service: SubscriptionServiceId; stage: Stage; name: string; suggested: boolean; busy: boolean; problem?: string | OwnedMessage; diagnostic?: CodexDiagnostic; browserReady: boolean }
+export enum SubscriptionLoginMethod { Browser = "browser", DeviceCode = "device-code" }
+interface View { service: SubscriptionServiceId; stage: Stage; name: string; suggested: boolean; busy: boolean; problem?: string | OwnedMessage; diagnostic?: CodexDiagnostic; grokDiagnostic?: GrokDiagnostic; browserReady: boolean; method: SubscriptionLoginMethod; userCode?: string; copied?: boolean }
 interface Pending {
   service: SubscriptionServiceId; opening: string; generation: string; account?: Resource; operation: string; url: string;
   bound: boolean; callbackDispatched: boolean; disposed: boolean; polling: boolean; busy: boolean; named: boolean; terminal: boolean;
   retry?: () => Promise<void>;
+  method: SubscriptionLoginMethod; userCode: string; nativeVerified: boolean;
 }
-function browserURL(value: string) {
+const grokDeviceURI = "https://accounts.x.ai/oauth2/device";
+const grokScopes = "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write workspaces:read workspaces:write";
+export function subscriptionBrowserURL(value: string, service: SubscriptionServiceId) {
   try {
     const url = new URL(value), q = url.searchParams;
     if (Array.from(q.keys()).some(key => q.getAll(key).length !== 1)) return false;
     const callback = q.get("redirect_uri");
+    if (service === SubscriptionServiceId.Grok) {
+      if (!callback) return false;
+      const redirect = new URL(callback), port = Number(redirect.port);
+      return value.length <= 8192 && url.href === value && url.origin === "https://auth.x.ai" && url.pathname === "/oauth2/authorize" && !url.username && !url.password && !url.hash &&
+        Number.isInteger(port) && port > 0 && port <= 65535 && callback === `http://127.0.0.1:${port}/callback` &&
+        Array.from(q.keys()).length === 9 && q.get("client_id") === "b1a00492-073a-47ea-816f-4c329264a828" && q.get("response_type") === "code" && q.get("code_challenge_method") === "S256" && q.get("scope") === grokScopes && q.get("referrer") === "grok-build" &&
+        ["state", "nonce", "code_challenge"].every(key => /^[a-zA-Z0-9_-]{43}$/.test(q.get(key) ?? ""));
+    }
+    if (service !== SubscriptionServiceId.ChatGPT) return false;
     return value.length <= 8192 && url.protocol === "https:" && url.host === "auth.openai.com" && !url.username && !url.password && !url.hash && url.pathname === "/oauth/authorize" && (callback === "http://localhost:1457/auth/callback" || callback === "http://127.0.0.1:1457/auth/callback") && /^[a-zA-Z0-9_-]{16,512}$/.test(q.get("state") ?? "");
   } catch { return false; }
 }
@@ -39,7 +52,7 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
   const live = (p: Pending) => pending.current === p && !p.disposed && !opening?.disposed;
   const update = (p: Pending, change: Partial<View>) => { if (live(p)) setView((current) => current && { ...current, ...change }); };
   const dispose = (p: Pending) => {
-    p.disposed = true; p.retry = undefined; p.url = "";
+    p.disposed = true; p.retry = undefined; p.url = ""; p.userCode = "";
     if (native) void native(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(() => undefined);
   };
   const leave = () => { const p = pending.current; if (p) dispose(p); pending.current = undefined; setView(undefined); changed(); };
@@ -67,16 +80,27 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
       }
     } finally { p.busy = false; update(p, { busy: false }); }
   };
-  const begin = (service: SubscriptionServiceId, initial?: Resource) => {
+  const begin = (service: SubscriptionServiceId, initial?: Resource, method = SubscriptionLoginMethod.Browser) => {
     if (!active || pending.current || opening?.disposed) return;
-    const p: Pending = { service, opening: newRequestId(), generation: "", account: initial, operation: "", url: "", bound: false, callbackDispatched: false, disposed: false, polling: false, busy: false, named: false, terminal: false };
+    const supported = service === SubscriptionServiceId.ChatGPT && method === SubscriptionLoginMethod.Browser || service === SubscriptionServiceId.Grok;
+    const p: Pending = { service, method, userCode: "", nativeVerified: false, opening: newRequestId(), generation: "", account: initial, operation: "", url: "", bound: false, callbackDispatched: false, disposed: false, polling: false, busy: false, named: false, terminal: false };
     pending.current = p;
-    setView({ service, stage: service === SubscriptionServiceId.ChatGPT ? Stage.Preparing : Stage.Unsupported, name: subscriptionServiceNames[service], suggested: false, busy: false, browserReady: false });
-    if (service !== SubscriptionServiceId.ChatGPT) return;
+    setView({ service, method, stage: supported ? Stage.Preparing : Stage.Unsupported, name: subscriptionServiceNames[service], suggested: false, busy: false, browserReady: false });
+    if (!supported) return;
     if (!native) { update(p, { stage: Stage.Unsupported, problem: ownedMessage("subscription-login.extra.22765583eb23") }); return; }
     const create = { mutation: { requestId: newRequestId() }, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson: encode({ alias: subscriptionServiceNames[service], subscription_service: service, type: "subscription", enabled: true, exclude_automatic: false, recovery_notifications: false, health: "disconnected", quota: [], confirmed_exhausted: false }) };
     let login: Parameters<typeof clients.subscription.requestSubscription>[0] | undefined;
     const start = async () => {
+      if (service === SubscriptionServiceId.Grok && !p.nativeVerified) {
+        // Inspect the trusted host before admitting a server login. Older
+        // desktop hosts keep ChatGPT support without acquiring Grok callbacks.
+        const supported = (await native(p.opening, OAuthNativeAction.SubscriptionProfiles, "", "", "")).subscription_services;
+        if (!live(p)) return;
+        if (!supported?.includes(SubscriptionServiceId.Grok) || supported.length > 2 || new Set(supported).size !== supported.length || supported.some(value => value !== SubscriptionServiceId.ChatGPT && value !== SubscriptionServiceId.Grok)) {
+          update(p, { stage: Stage.Unsupported, problem: ownedMessage("subscription-login.nativeGrokUnavailable") }); return;
+        }
+        p.nativeVerified = true;
+      }
       if (!p.account) {
         const result = await clients.configuration.saveConfiguration(create);
         if (!live(p)) return;
@@ -84,7 +108,7 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
         p.account = result.resource; changed();
       }
       if (!live(p)) return;
-      login ??= { mutation: { id: p.account.id, expectedRevision: p.account.revision, requestId: newRequestId() }, action: SubscriptionAction.LOGIN, deviceCode: false };
+      login ??= { mutation: { id: p.account.id, expectedRevision: p.account.revision, requestId: newRequestId() }, action: SubscriptionAction.LOGIN, deviceCode: method === SubscriptionLoginMethod.DeviceCode };
       const result = await clients.subscription.requestSubscription(login);
       if (!live(p)) return;
       if (result.operationId !== login.mutation?.requestId || !serviceAccount(result.account, p.account.id, service, p.account.revision)) throw new Error("Invalid login ownership");
@@ -99,7 +123,7 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     if (!active || !view) return;
     const poll = async () => {
       const p = pending.current;
-      if (!p || !live(p) || !p.operation || p.polling || p.named || p.terminal) return;
+      if (!p || !live(p) || !p.operation || p.polling || p.busy || p.named || p.terminal) return;
       p.polling = true;
       try {
         const progress = await clients.subscription.getSubscriptionProgress({ accountId: p.account!.id, operationId: p.operation });
@@ -112,18 +136,29 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
           if (!live(p)) return;
           if (text(object(state.server_operation).id) !== p.operation || state.generation !== progress.generation || !isEntityId(text(object(data.connection).id)) || state.recovery_required === true) throw new Error("Login success could not be verified");
           p.named = true;
+          p.url = ""; p.userCode = ""; p.retry = undefined;
           void native!(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(() => undefined);
           const suggested = subscriptionNameValid(progress.suggestedName) ? progress.suggestedName : subscriptionServiceNames[p.service];
-          update(p, { stage, name: suggested, suggested: Boolean(progress.suggestedName) }); changed(); return;
+          update(p, { stage, name: suggested, suggested: Boolean(progress.suggestedName), userCode: undefined, copied: false, browserReady: false }); changed(); return;
         }
         const terminal = ![Stage.Preparing, Stage.Waiting].includes(stage);
-        update(p, { stage, diagnostic: progress.diagnostic, ...(terminal ? { problem: undefined } : {}) });
+        if (p.service === SubscriptionServiceId.Grok && progress.diagnostic || p.service !== SubscriptionServiceId.Grok && progress.grokDiagnostic) throw new Error("Foreign login diagnostic");
+        update(p, { stage, diagnostic: progress.diagnostic, grokDiagnostic: progress.grokDiagnostic, ...(terminal ? { problem: undefined, userCode: undefined, copied: false, browserReady: false } : {}) });
         if (terminal) {
-          p.terminal = true; p.url = "";
+          p.terminal = true; p.url = ""; p.userCode = ""; p.retry = undefined;
           void native!(p.opening, OAuthNativeAction.Dispose, "", "", "").catch(() => undefined);
         }
-        if (stage !== Stage.Waiting || progress.canceled) return;
-        if (progress.userCode || !browserURL(progress.url) || p.url && p.url !== progress.url) throw new Error("Invalid original browser login");
+        if (progress.canceled) {
+          p.url = ""; p.userCode = "";
+          update(p, { browserReady: false, userCode: undefined, copied: false, problem: ownedMessage("subscription-accounts.cancellationRequestedWaitingForOriginalCleanup_4f54b9") }); return;
+        }
+        if (stage !== Stage.Waiting) return;
+        if (p.method === SubscriptionLoginMethod.DeviceCode) {
+          if (p.service !== SubscriptionServiceId.Grok || progress.url !== grokDeviceURI || !/^[A-Z0-9-]{4,64}$/.test(progress.userCode) || p.url && p.url !== progress.url || p.userCode && p.userCode !== progress.userCode) throw new Error("Invalid original device login");
+          p.url = progress.url; p.userCode = progress.userCode;
+          update(p, { userCode: p.userCode, browserReady: true }); return;
+        }
+        if (progress.userCode || !subscriptionBrowserURL(progress.url, p.service) || p.url && p.url !== progress.url) throw new Error("Invalid original browser login");
         p.url = progress.url;
         if (!p.bound) {
           // Set before dispatch: an uncertain native reply must not reopen or
@@ -169,7 +204,9 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     const p = pending.current; if (!p || !live(p) || !p.url || !native) return;
     void run(p, async () => {
       if (!p.generation) {
-        const original = await native(p.opening, OAuthNativeAction.SubscriptionReopen, "", p.operation, p.url);
+        const action = p.method === SubscriptionLoginMethod.DeviceCode && !p.bound ? OAuthNativeAction.SubscriptionDeviceOpen : OAuthNativeAction.SubscriptionReopen;
+        p.bound = true;
+        const original = await native(p.opening, action, "", p.operation, p.url);
         if (!live(p)) return;
         if (!isEntityId(original.generation)) throw new Error("Invalid native binding");
         p.generation = original.generation; return;
@@ -177,6 +214,12 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
       const result = await native(p.opening, OAuthNativeAction.Reopen, p.generation, p.operation, "");
       if (result.generation !== p.generation) throw new Error("Invalid native browser binding");
     }, ownedMessage("subscription-login.extra.34521ed193ad"));
+  };
+  const copyCode = () => {
+    const p = pending.current;
+    if (!p || !live(p) || p.method !== SubscriptionLoginMethod.DeviceCode || !p.userCode) return;
+    if (!navigator.clipboard) { update(p, { problem: ownedMessage("subscription-login.copyCodeFailed") }); return; }
+    void navigator.clipboard.writeText(p.userCode).then(() => update(p, { copied: true })).catch(() => update(p, { problem: ownedMessage("subscription-login.copyCodeFailed") }));
   };
   const cancel = () => {
     const p = pending.current; if (!p || !live(p) || !p.operation) return;
@@ -207,6 +250,6 @@ export function useSubscriptionLogin(active: boolean, changed: () => void) {
     }, ownedMessage("subscription-login.extra.21ebd4c8705a"));
   };
   const p = pending.current;
-  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={resolveMessage(view.problem)} diagnostic={view.diagnostic} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? ownedMessage("subscription-login.extra.557b693dbfb7")); }}>{copy("subscription-login.retryOriginalRequest_008780")}</button> : null}</> : null;
+  const body = view ? <><SubscriptionOnboarding serviceName={subscriptionServiceNames[view.service]} stage={view.stage} active={active} name={view.name} suggested={view.suggested} busy={view.busy} problem={resolveMessage(view.problem)} diagnostic={view.diagnostic} grokDiagnostic={view.grokDiagnostic} deviceCode={view.userCode} copied={view.copied} copyCode={copyCode} canReopen={view.stage === Stage.Waiting && view.browserReady} canCancel={Boolean(p?.operation) && [Stage.Preparing, Stage.Waiting].includes(view.stage)} changeName={(name) => setView((v) => v && { ...v, name })} saveName={save} reopen={reopen} cancel={cancel} leave={leave} />{p?.retry ? <button type="button" disabled={view.busy} onClick={() => { const original = p.retry; if (original) void run(p, original, view.problem ?? ownedMessage("subscription-login.extra.557b693dbfb7")); }}>{copy("subscription-login.retryOriginalRequest_008780")}</button> : null}</> : null;
   return { begin, body, workflow: Boolean(view), retained: Boolean(p?.busy || p?.retry || p?.operation || p?.account), available: Boolean(native), leave };
 }

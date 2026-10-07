@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
-import { CodexDiagnosticSchema, CodexDiagnosticPhase } from "@delinoio/delidev-api-client";
+import { CodexDiagnosticSchema, CodexDiagnosticPhase, GrokDiagnosticSchema, GrokDiagnosticPhase, newRequestId } from "@delinoio/delidev-api-client";
 import { StrictMode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
@@ -90,4 +90,14 @@ it("shows Not reported for older servers and retains other services' unsupported
  view.rerender(<SubscriptionOnboarding {...props({serviceName:"Claude",stage:Stage.Unsupported})} />);
  expect(screen.getByRole("status").textContent).toBe("Claude sign-in is not supported yet");
  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it.each([Stage.Expired, Stage.Failed, Stage.Recovery])("keeps Grok %s distinct and reconstructs diagnostic text without native content", (stage) => {
+ const diagnostic = create(GrokDiagnosticSchema, { supportedVersion:"1.0.46",phase:GrokDiagnosticPhase.LOGIN,code:"recovery_required",correlationId:newRequestId(),message:"fixture-secret-url",guidance:"fixture-native-content" });
+ render(<SubscriptionOnboarding {...props({serviceName:"Grok",stage,canReopen:false,canCancel:false,grokDiagnostic:diagnostic})} />);
+ expect(screen.getByRole("status").textContent).toBe(stage===Stage.Expired ? "Login expired" : stage===Stage.Recovery ? "The original login result requires recovery" : "Login could not be completed");
+ expect(screen.getByRole("alert").textContent).toContain("Grok Build version:Not reported");
+ expect(screen.getByRole("alert").textContent).toContain("Supported version:1.0.46");
+ expect(screen.queryByText(/fixture-secret-url|fixture-native-content/)).toBeNull();
+ expect(screen.getAllByRole("button")).toHaveLength(1);
 });

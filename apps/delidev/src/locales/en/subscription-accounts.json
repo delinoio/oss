@@ -25,5 +25,6 @@
   "subscription-accounts.nextPage_c08ac7": "Next page",
   "subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6": "Service identity is independent of API providers. Edit preferences from the account menu. Recovery notifications start disabled. Retired legacy configurations retain historical attribution and require explicit Agent Worker and schedule reconfiguration.",
   "subscription-accounts.retryOriginalQuotaRefresh_8a9eca": "Retry original quota refresh",
-  "subscription-accounts.extra.22fc4e1096f2": "Service-native account"
+  "subscription-accounts.extra.22fc4e1096f2": "Service-native account",
+  "subscription-accounts.loginAvailability": "ChatGPT and Grok sign-in are independent of Runner Devices when supported by the connected server. Claude Code sign-in is coming soon. Quota refresh requires an existing native observation owner."
 }

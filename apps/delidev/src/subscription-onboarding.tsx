@@ -3,7 +3,7 @@ import { LocalizedText, copy, useLocale } from "./localization";
 import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { SettingsTaskActions } from "./settings-task";
 import { useEffect, useRef, useId } from "react";
-import { CodexDiagnosticPhase, FailureCode, isEntityId, type CodexDiagnostic } from "@delinoio/delidev-api-client";
+import { CodexDiagnosticPhase, GrokDiagnosticPhase, FailureCode, isEntityId, type CodexDiagnostic, type GrokDiagnostic } from "@delinoio/delidev-api-client";
 import "./subscription-onboarding.css";
 
 export enum SubscriptionOnboardingStage {
@@ -26,6 +26,10 @@ export interface SubscriptionOnboardingProps {
   busy: boolean;
   problem?: string;
   diagnostic?: CodexDiagnostic;
+  grokDiagnostic?: GrokDiagnostic;
+  deviceCode?: string;
+  copied?: boolean;
+  copyCode?: () => void;
   canReopen: boolean;
   canCancel: boolean;
   changeName: (name: string) => void;
@@ -54,11 +58,13 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
       nameInput.current.focus({ preventScroll: true });
     }
   }, [active, naming, busy, visible]);
-  const failed = serviceName === "ChatGPT" && [SubscriptionOnboardingStage.Unsupported, SubscriptionOnboardingStage.Failed, SubscriptionOnboardingStage.Recovery, SubscriptionOnboardingStage.Expired].includes(stage);
-  const diagnostic = safeDiagnostic(props.diagnostic);
-  const status = failed ? copy("subscription-onboarding.extra.626536114f6c") : {
+  const failureStage = [SubscriptionOnboardingStage.Unsupported, SubscriptionOnboardingStage.Failed, SubscriptionOnboardingStage.Recovery, SubscriptionOnboardingStage.Expired].includes(stage);
+  const failed = (serviceName === "ChatGPT" || serviceName === "Grok") && failureStage;
+  const diagnostic = serviceName === "Grok" ? safeGrokDiagnostic(props.grokDiagnostic) : safeDiagnostic(props.diagnostic);
+  const device = serviceName === "Grok" && stage === SubscriptionOnboardingStage.Waiting && Boolean(props.deviceCode);
+  const status = serviceName === "ChatGPT" && failed ? copy("subscription-onboarding.extra.626536114f6c") : {
     [SubscriptionOnboardingStage.Preparing]: copy("subscription-onboarding.sentence.e97939f9b38c", { v0: serviceName }),
-    [SubscriptionOnboardingStage.Waiting]: copy("subscription-onboarding.sentence.4d402e1de9b8", { v0: serviceName }),
+    [SubscriptionOnboardingStage.Waiting]: serviceName === "Grok" ? copy("subscription-onboarding.finishSignIn", { v0: serviceName }) : copy("subscription-onboarding.sentence.4d402e1de9b8", { v0: serviceName }),
     [SubscriptionOnboardingStage.Naming]: copy("subscription-onboarding.sentence.4a55958fcadf", { v0: serviceName }),
     [SubscriptionOnboardingStage.Canceled]: copy("subscription-onboarding.extra.a71ecad7817b"),
     [SubscriptionOnboardingStage.Expired]: copy("subscription-onboarding.extra.48972b39ea6e"),
@@ -79,10 +85,10 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
       {naming ? <span aria-hidden="true">✓</span> : null}{status}
     </p>
     {failed ? <div role="alert" className="subscription-onboarding-diagnostic">
-      <p>{diagnostic?.message ?? props.problem ?? copy("subscription-onboarding.theServerDidNotReportNative_923694")}</p>
+      <p>{diagnostic?.message ?? props.problem ?? copy(serviceName === "Grok" ? "subscription-onboarding.noGrokDetails" : "subscription-onboarding.theServerDidNotReportNative_923694")}</p>
       <dl>
-        <div><dt>{copy("subscription-onboarding.codexVersion_072e4d")}</dt><dd>{diagnostic ? diagnostic.version || copy("subscription-onboarding.extra.9f4a106271aa") : copy("subscription-onboarding.notReported_adadfa")}</dd></div>
-        <div><dt>{copy("subscription-onboarding.minimumVersion_3cab5a")}</dt><dd>{diagnostic?.minimum ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
+        <div><dt>{copy(serviceName === "Grok" ? "subscription-onboarding.grokVersion" : "subscription-onboarding.codexVersion_072e4d")}</dt><dd>{diagnostic ? diagnostic.version || copy(serviceName === "Grok" ? "subscription-onboarding.notReported_adadfa" : "subscription-onboarding.extra.9f4a106271aa") : copy("subscription-onboarding.notReported_adadfa")}</dd></div>
+        <div><dt>{copy(serviceName === "Grok" ? "subscription-onboarding.supportedVersion" : "subscription-onboarding.minimumVersion_3cab5a")}</dt><dd>{diagnostic?.minimum ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         <div><dt>{copy("subscription-onboarding.failedStep_0ed199")}</dt><dd>{diagnostic?.phase ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         <div><dt>{copy("subscription-onboarding.errorCode_2c35f6")}</dt><dd>{diagnostic?.code ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         {diagnostic?.correlation ? <div><dt>{copy("subscription-onboarding.reference_44dc4a")}</dt><dd>{diagnostic.correlation}</dd></div> : null}
@@ -96,14 +102,16 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
       <p id="subscription-onboarding-name-help">{props.suggested ? copy("subscription-onboarding.suggestedFromYourSignedInAccount_5ddc0f") : copy("subscription-onboarding.chooseANameForYourSigned_6ec79b")}</p>
       <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>{copy("subscription-onboarding.saveAccountName_7c6744")}</button><button type="button" disabled={!active} onClick={leave}>{copy("subscription-onboarding.later_73b6e4")}</button></SettingsTaskActions>
     </form> : <>
-      {stage === SubscriptionOnboardingStage.Waiting && !props.problem ? <p>{copy("subscription-onboarding.yourBrowserHasOpenedForSign_7b9723")}</p> : null}
+      {device ? <div className="subscription-onboarding-device"><p>{copy("subscription-onboarding.enterDeviceCode")}</p><output className="subscription-onboarding-code" aria-label={copy("subscription-onboarding.deviceCode")}>{props.deviceCode}</output></div> : stage === SubscriptionOnboardingStage.Waiting && !props.problem ? <p>{copy("subscription-onboarding.yourBrowserHasOpenedForSign_7b9723")}</p> : null}
       <SettingsTaskActions className="">
-        {props.canReopen ? <button type="button" className="primary" disabled={!active || busy} onClick={props.reopen}>{copy("subscription-onboarding.openBrowserAgain_63833e")}</button> : null}
+        {device ? <button type="button" disabled={!active || busy || !props.copyCode} onClick={props.copyCode}>{copy("subscription-onboarding.copyCode")}</button> : null}
+        {props.canReopen ? <button type="button" className="primary" disabled={!active || busy} onClick={props.reopen}>{copy(device ? "subscription-onboarding.openSignInPage" : "subscription-onboarding.openBrowserAgain_63833e")}</button> : null}
         {props.canCancel ? <button type="button" disabled={!active || busy} onClick={props.cancel}>{copy("subscription-onboarding.cancelLogin_8304c3")}</button> : null}
       </SettingsTaskActions>
     </>}
+    {device && props.copied ? <p role="status">{copy("subscription-onboarding.codeCopied")}</p> : null}
     {props.problem && !failed ? <p role="alert">{props.problem}</p> : null}
-    {(stage !== SubscriptionOnboardingStage.Unsupported || failed) ? <p className="subscription-onboarding-footer">{naming ? copy("subscription-onboarding.yourSignedInAccountIsKept_1d2f83") : copy("subscription-onboarding.leavingThisScreenKeepsTheAccount_e209d9")}</p> : null}
+    {(stage !== SubscriptionOnboardingStage.Unsupported || failed) ? <p className="subscription-onboarding-footer">{naming ? copy("subscription-onboarding.yourSignedInAccountIsKept_1d2f83") : copy(serviceName === "Grok" ? "subscription-onboarding.grokDeparture" : "subscription-onboarding.leavingThisScreenKeepsTheAccount_e209d9")}</p> : null}
   </section>;
 }
 
@@ -123,4 +131,19 @@ export function safeDiagnostic(d?: CodexDiagnostic) {
  const timeout = d.code === FailureCode.Unavailable && d.message === `Codex ${d.detectedVersion || "not detected"} did not complete ${wirePhaseNames[d.phase]!.toLowerCase()}. The native operation timed out.`;
  const reason = timeout ? copy("subscription-onboarding.extra.7d66dfcbcdfe") : d.phase === CodexDiagnosticPhase.VERSION ? copy("subscription-onboarding.sentence.01720d6af7dc", { v0: d.minimumVersion }) : reasons[d.code as FailureCode] ?? copy("subscription-onboarding.extra.a421fd3a84fd");
  return { version:d.detectedVersion, minimum:d.minimumVersion, phase:phaseNames[d.phase], code:d.code, correlation:isEntityId(d.correlationId) ? d.correlationId : "", message:copy("subscription-onboarding.sentence.758270754713", { v0: d.detectedVersion || copy("subscription-onboarding.notDetected"), v1: phaseNames[d.phase]!.toLowerCase(), v2: reason }) };
+}
+
+export function safeGrokDiagnostic(d?: GrokDiagnostic) {
+  const phases: Partial<Record<GrokDiagnosticPhase, CodexDiagnosticPhase>> = {
+    [GrokDiagnosticPhase.DISCOVERY]: CodexDiagnosticPhase.DISCOVERY, [GrokDiagnosticPhase.VERSION]: CodexDiagnosticPhase.VERSION,
+    [GrokDiagnosticPhase.PROFILE]: CodexDiagnosticPhase.PROFILE, [GrokDiagnosticPhase.RUNTIME]: CodexDiagnosticPhase.RUNTIME,
+    [GrokDiagnosticPhase.LOGIN]: CodexDiagnosticPhase.LOGIN, [GrokDiagnosticPhase.MODELS]: CodexDiagnosticPhase.MODELS,
+    [GrokDiagnosticPhase.EXECUTION]: CodexDiagnosticPhase.EXECUTION, [GrokDiagnosticPhase.HISTORY]: CodexDiagnosticPhase.HISTORY,
+    [GrokDiagnosticPhase.CLEANUP]: CodexDiagnosticPhase.CLEANUP,
+  };
+  const codes = [FailureCode.InvalidArgument, FailureCode.NotFound, FailureCode.Conflict, FailureCode.Unauthenticated, FailureCode.PermissionDenied, FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Unsupported, FailureCode.RecoveryRequired, FailureCode.Canceled, FailureCode.CursorExpired, FailureCode.Internal];
+  if (!d || d.supportedVersion !== "1.0.46" || d.detectedVersion && !versionText(d.detectedVersion) || !isEntityId(d.correlationId) || !codes.includes(d.code as FailureCode)) return;
+  const phase = d.phase === GrokDiagnosticPhase.REFRESH ? copy("subscription-onboarding.authenticationRefresh") : d.phase === GrokDiagnosticPhase.LOGOUT ? copy("subscription-onboarding.logout") : phaseNames[phases[d.phase]!];
+  if (!phase) return;
+  return { version: d.detectedVersion, minimum: d.supportedVersion, phase, code: d.code, correlation: d.correlationId, message: copy("subscription-onboarding.grokFailure", { phase, code: d.code }) };
 }

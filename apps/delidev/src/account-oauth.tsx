@@ -5,14 +5,14 @@ import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask, useRet
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
-import { AccountService, AccountOAuthFlow as WireOAuthFlow, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
+import { AccountService, AccountOAuthFlow as WireOAuthFlow, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type SubscriptionServiceId, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
 import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
 
-export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", BeginGoogleGemini = "begin-google-gemini", BeginBaseten = "begin-baseten", Profiles = "profiles", SubscriptionOpen = "subscription-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
+export enum OAuthNativeAction { Begin = "begin", BeginHuggingFace = "begin-hugging-face", BeginGoogleGemini = "begin-google-gemini", BeginBaseten = "begin-baseten", Profiles = "profiles", SubscriptionProfiles = "subscription-profiles", SubscriptionOpen = "subscription-open", SubscriptionDeviceOpen = "subscription-device-open", SubscriptionReopen = "subscription-reopen", BindOpen = "bind-open", Reopen = "reopen", Take = "take", Dispose = "dispose" }
 export enum AccountOAuthProfile { OpenRouter = "openrouter", HuggingFace = "hugging-face", GoogleGemini = "google-gemini", Baseten = "baseten" }
-export interface OAuthNativeResult { generation: string; callback_url?: string; code?: number[]; state?: number[]; profiles?: AccountOAuthProfile[]; denied?: boolean }
+export interface OAuthNativeResult { generation: string; callback_url?: string; code?: number[]; state?: number[]; profiles?: AccountOAuthProfile[]; subscription_services?: SubscriptionServiceId[]; denied?: boolean }
 export type OAuthNativeControl = (opening: string, action: OAuthNativeAction, generation: string, attempt: string, authorization: string) => Promise<OAuthNativeResult>;
 const NativeContext = createContext<OAuthNativeControl | undefined>(undefined);
 export const useOAuthNativeControl = () => useContext(NativeContext);
