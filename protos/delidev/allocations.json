@@ -7677,6 +7677,417 @@
       "member": "FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE",
       "number": 6,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1",
+      "number": 43
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_EXECUTION_STARTUP_V1",
+      "number": 23
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportExecutionStartupRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportExecutionStartupRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportExecutionStartupRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportExecutionStartupRequest",
+      "member": "observation",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportExecutionStartupResponse",
+      "member": "observation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ReportExecutionStartupResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "phase",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "harness",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "native_version",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "executable_sha256",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "protocol",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "problem_code",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "correlation_id",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "input_delivery",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "cleanup",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupState",
+      "member": "EXECUTION_STARTUP_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupState",
+      "member": "EXECUTION_STARTUP_STATE_READY",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupState",
+      "member": "EXECUTION_STARTUP_STATE_FAILED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupState",
+      "member": "EXECUTION_STARTUP_STATE_UNCERTAIN",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupPhase",
+      "member": "EXECUTION_STARTUP_PHASE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupPhase",
+      "member": "EXECUTION_STARTUP_PHASE_RESOLVE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupPhase",
+      "member": "EXECUTION_STARTUP_PHASE_LAUNCH",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupPhase",
+      "member": "EXECUTION_STARTUP_PHASE_INITIALIZE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupPhase",
+      "member": "EXECUTION_STARTUP_PHASE_SETTINGS",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupPhase",
+      "member": "EXECUTION_STARTUP_PHASE_INPUT",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupPhase",
+      "member": "EXECUTION_STARTUP_PHASE_EXECUTION",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupPhase",
+      "member": "EXECUTION_STARTUP_PHASE_CLEANUP",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupInputDelivery",
+      "member": "EXECUTION_STARTUP_INPUT_DELIVERY_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupInputDelivery",
+      "member": "EXECUTION_STARTUP_INPUT_DELIVERY_NOT_SENT",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupInputDelivery",
+      "member": "EXECUTION_STARTUP_INPUT_DELIVERY_CLAIMED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupInputDelivery",
+      "member": "EXECUTION_STARTUP_INPUT_DELIVERY_ACKNOWLEDGED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupInputDelivery",
+      "member": "EXECUTION_STARTUP_INPUT_DELIVERY_UNCERTAIN",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupCleanup",
+      "member": "EXECUTION_STARTUP_CLEANUP_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupCleanup",
+      "member": "EXECUTION_STARTUP_CLEANUP_CONFIRMED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ExecutionStartupCleanup",
+      "member": "EXECUTION_STARTUP_CLEANUP_UNCERTAIN",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ProviderInventoryCapability",
+      "member": "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1",
+      "number": 7
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ProviderInventoryEntry",
+      "member": "api_formats",
+      "number": 10
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ListResourcesRequest",
+      "member": "api_protocol",
+      "number": 5
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ApiProtocol",
+      "member": "API_PROTOCOL_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ApiProtocol",
+      "member": "API_PROTOCOL_OPENAI_RESPONSES",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ApiProtocol",
+      "member": "API_PROTOCOL_OPENAI_CHAT",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ApiProtocol",
+      "member": "API_PROTOCOL_ANTHROPIC_MESSAGES",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ApiAuthentication",
+      "member": "API_AUTHENTICATION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ApiAuthentication",
+      "member": "API_AUTHENTICATION_BEARER",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ApiAuthentication",
+      "member": "API_AUTHENTICATION_API_KEY",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ApiAuthentication",
+      "member": "API_AUTHENTICATION_KEYLESS",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ProviderApiFormat",
+      "member": "protocol",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ProviderApiFormat",
+      "member": "endpoint",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "ProviderApiFormat",
+      "member": "authentication",
+      "number": 3,
+      "newDeclaration": true
     }
   ]
 }
