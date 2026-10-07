@@ -174,7 +174,16 @@ func TestContinuationFIFOFreezesSelectionAndRetainsPredecessor(t *testing.T) {
 	}
 	second = edited.Msg.Change.Input
 	third := f.enqueue(t, "third input", domain.PlanMode)
-	f.mutateAgent(t, func(a *domain.Agent) { a.Effort = "high"; a.Options.MaxConcurrency = 8; a.Accounts = nil })
+	var originalAccount domain.Account
+	if err := domain.Decode(f.account.DocumentJson, &originalAccount); err != nil {
+		t.Fatal(err)
+	}
+	replacement := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Changed configured account", ProviderID: originalAccount.ProviderID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})
+	f.mutateAgent(t, func(a *domain.Agent) {
+		a.Effort = "high"
+		a.Options.MaxConcurrency = 8
+		a.Accounts = []domain.WeightedAccount{{ID: domain.ID(replacement.Id), Weight: 1}}
+	})
 	before := f.refresh(t)
 	var wg sync.WaitGroup
 	results := make(chan error, 8)
@@ -327,7 +336,7 @@ func TestContinuationPreservesSameTurnInputsAndEarlierQueuedInput(t *testing.T) 
 			}
 			before := f.refresh(t)
 			err = f.service.dispatchExecution(context.Background(), before)
-			if change != "valid" && change != "legacy" {
+			if change != "valid" {
 				after, _ := store.Decode[domain.Session](f.refresh(t))
 				prior, _ := store.Decode[domain.Session](before)
 				if err == nil || after.CurrentExecution != nil || after.ActiveExecutionID != "" || after.Execution.ExecutionID != f.input.ExecutionID || after.PendingInputs != prior.PendingInputs || after.PendingInputBytes != prior.PendingInputBytes {
