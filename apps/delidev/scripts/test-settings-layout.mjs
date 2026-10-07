@@ -50,6 +50,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
+const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";
 const projectsOnly = process.env.DELIDEV_LAYOUT_PROJECTS_ONLY === "1";
 const languageOnly = process.env.DELIDEV_LAYOUT_LANGUAGE_ONLY === "1";
 let language = "en";
@@ -94,7 +95,7 @@ try {
   };
   const checkWizard = async () => {
     const form = page.locator(".worker-wizard");
-    assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), "Wizard form cap");
+    assert(await form.evaluate(node => node.dataset.wizardStep === "2" || node.getBoundingClientRect().width <= 720.5), "Non-Accounts wizard form cap");
     assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Wizard content overflow");
     const group = form.getByRole("radiogroup", { name: l("Harness"), exact: true });
     if (await group.isVisible()) {
@@ -133,13 +134,13 @@ try {
       await claude.focus(); await claude.press("Space");
       const accountsHeading = form.getByRole("heading", { name: l("Accounts"), exact: true });
       assert(await accountsHeading.evaluate(node => node === document.activeElement), "Space confirmation focuses Accounts");
-      await form.getByRole("button", { name: l("Back"), exact: true }).click();
+      await page.locator(".settings-task-footer").getByRole("button", { name: l("Back"), exact: true }).click();
       await codex.focus(); await codex.press("Enter");
       assert(await accountsHeading.evaluate(node => node === document.activeElement), "Enter confirmation focuses Accounts without skipping a step");
-      await form.getByRole("button", { name: l("Back"), exact: true }).click();
+      await page.locator(".settings-task-footer").getByRole("button", { name: l("Back"), exact: true }).click();
       await codex.click();
       assert(await accountsHeading.evaluate(node => node === document.activeElement), "Current-card click confirmation focuses Accounts");
-      await form.getByRole("button", { name: l("Back"), exact: true }).click();
+      await page.locator(".settings-task-footer").getByRole("button", { name: l("Back"), exact: true }).click();
       assert.equal(await cards.evaluateAll(nodes => nodes.filter(node => node.tabIndex === 0).length), 1);
       await codex.hover();
       const selection = await codex.evaluate(node => {
@@ -156,27 +157,45 @@ try {
       }
       harnessChecks++;
     }
-    const next = form.getByRole("button", { name: new RegExp(`^(${l("Next")}|${l("Save Agent Worker")})$`) });
-    const action = await next.count() ? next : form.getByRole("button", { name: l("Cancel"), exact: true });
+    const next = page.locator(".settings-task-footer").getByRole("button", { name: new RegExp(`^(${l("Next")}|${l("Save Agent Worker")})$`) });
+    const action = await next.count() ? next : page.locator(".settings-task-close");
     await action.scrollIntoViewIfNeeded();
     const footer = await action.boundingBox();
     assert(footer && footer.y >= 0 && footer.y + footer.height <= page.viewportSize().height + 0.5, "Wizard footer remains visible in document flow");
   };
   const checkHiddenAccountChoices = async () => {
     await select("Agent Workers");
-    await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
+    await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
     await page.getByRole("radio", { name: "Codex", exact: true }).click();
-    await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
+    await page.getByRole("combobox", { name: l("Account source"), exact: true }).click();
+    await page.getByRole("option", { name: "Fixture provider", exact: true }).click();
     const form = page.locator(".worker-wizard");
-    await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    await form.getByText(l("No accounts to select on this page."), { exact: true }).waitFor();
     assert.equal(await form.locator(".worker-account-row").count(), 0, "Hidden accounts have no DOM/focusable rows");
     assert.equal(await form.getByRole("checkbox").count(), 0, "Hidden accounts have no accessible checkbox");
-    assert(await form.getByText("0 accounts selected", { exact: true }).isVisible());
-    assert(await form.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.", { exact: true }).isVisible());
-    await form.getByRole("button", { name: "Refresh accounts", exact: true }).click();
-    await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
+    assert(await form.getByText(l("{{v0}} accounts selected").replace("{{v0}}", "0"), { exact: true }).first().isVisible());
+    assert(await form.getByText(l("Connect an account in AI Subscription or AI API Keys, then refresh."), { exact: true }).isVisible());
+    await form.getByRole("button", { name: l("Refresh accounts"), exact: true }).click();
+    await form.getByText(l("No accounts to select on this page."), { exact: true }).waitFor();
+    const workspace = form.locator(".worker-accounts-workspace");
+    const geometry = await workspace.evaluate(node => {
+      const form = node.closest("form"), columns = getComputedStyle(node).gridTemplateColumns.split(" ");
+      return { width: form.getBoundingClientRect().width, columns, overflow: node.scrollWidth > node.clientWidth };
+    });
+    assert.equal(geometry.overflow, false, "Accounts workspace has no horizontal overflow");
+    if (geometry.width >= 720) assert.equal(geometry.columns[0], "260px", "Wide Accounts source column");
+    else assert.equal(geometry.columns.length, 1, "Narrow Accounts stacks source list and detail");
+    const footerNext = page.locator(".settings-task-footer").getByRole("button", { name: l("Next"), exact: true });
+    assert(await footerNext.evaluate(node => node.form === document.querySelector(".worker-wizard")), "Footer Next owns the original form");
+    const actionBox = await footerNext.boundingBox();
+    assert(actionBox.y >= 0 && actionBox.y + actionBox.height <= page.viewportSize().height + 0.5, "Accounts navigation stays visible");
+    if (screenshotDirectory) {
+      await mkdir(screenshotDirectory, { recursive: true });
+      const viewport = page.viewportSize(), theme = await page.locator("html").getAttribute("data-theme");
+      await page.screenshot({ path: join(screenshotDirectory, `accounts-${theme}-${viewport.width}x${viewport.height}.png`) });
+    }
     await checkWizard();
-    await form.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.locator(".settings-task-close").click();
     hiddenChoicesChecked++;
   };
   const checkGit = async () => {
@@ -211,7 +230,15 @@ try {
     }
     gitChecks++; keyboardChecks += 4;
   };
-  if (projectsOnly) {
+  if (accountsOnly) {
+    for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480], [720,450], [480,320]]) {
+      await page.setViewportSize({ width, height });
+      await page.goto(`${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=${language}`);
+      await page.getByRole("button", { name: l("Settings"), exact: true }).click();
+      await checkHiddenAccountChoices();
+    }
+    console.log(JSON.stringify({ operation: "accounts_layout", result: "passed", accountsChecks: hiddenChoicesChecked, languages: 2, themes: 2, viewports: 4, effectiveZoomViewports: 2, nativeAcceptance: "not-performed" }));
+  } else if (projectsOnly) {
     let projectStepChecks = 0;
     for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const zoom of [1, 2]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
       await page.setViewportSize({ width: width / zoom, height: height / zoom });
@@ -387,7 +414,8 @@ try {
       await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
       await checkWizard();
       await page.getByRole("radio", { name: "Codex", exact: true }).click();
-      await page.getByRole("combobox", { name: l("Account source"), exact: true }).selectOption({ label: "Fixture provider" });
+      await page.getByRole("combobox", { name: l("Account source"), exact: true }).click();
+      await page.getByRole("option", { name: "Fixture provider", exact: true }).click();
       await page.getByRole("checkbox", { name: /^Personal API/ }).check();
       await page.getByRole("checkbox", { name: /^Team API/ }).check();
       await checkWizard();
@@ -406,7 +434,7 @@ try {
       await page.getByRole("button", { name: l("Back"), exact: true }).click();
       assert(await page.getByRole("checkbox", { name: /^Personal API/ }).isChecked());
       assert(await page.getByRole("checkbox", { name: /^Team API/ }).isChecked());
-      await page.getByRole("button", { name: l("Cancel"), exact: true }).click();
+      await page.locator(".settings-task-close").click();
       formsChecked += 4;
       if (language === "en") {
         await page.goto(`${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=en`);
@@ -488,7 +516,7 @@ try {
     await page.goto(`${origin}/?theme=dark&language=${language}`); await page.getByRole("button", { name: l("Settings"), exact: true }).click();
     for (const category of categories) { await select(category); if (category === "Git") await checkGit(); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
     await select("Agent Workers"); await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
-    await checkWizard(); await page.getByRole("button", { name: l("Cancel"), exact: true }).click();
+    await checkWizard(); await page.locator(".settings-task-close").click();
     }
     if (language === "en") for (const [width,height] of viewports) {
       await page.setViewportSize({ width: width / 2, height: height / 2 });
@@ -561,7 +589,7 @@ try {
     await page.screenshot({ path: screenshotPath });
   }
   }
-  if (!projectsOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
+  if (!projectsOnly && !accountsOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

@@ -175,7 +175,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
   expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Edit Agent Worker" }));
   fireEvent.click(screen.getByRole("button", { name: `Delete ${name}` }));
   expect(screen.getByText("Schedules using this configuration will be disabled for future runs. Already accepted sessions are retained.")).toBeTruthy();
   expect(value.remove).not.toHaveBeenCalled();

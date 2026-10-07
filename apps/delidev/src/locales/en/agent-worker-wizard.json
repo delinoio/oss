@@ -148,5 +148,9 @@
   "agent-worker-wizard.quotaFailed": "Quota observation failed",
   "agent-worker-wizard.quotaUnknown": "Quota unknown",
   "agent-worker-wizard.subscriptionStatus": "{{v0}}{{v1}} · {{v2}}",
-  "agent-worker-wizard.healthSuffix": " · Health: {{v0}}"
+  "agent-worker-wizard.healthSuffix": " · Health: {{v0}}",
+  "agent-worker-wizard.changeSource": "Change source",
+  "agent-worker-wizard.usedInOrder": "Used in this order",
+  "agent-worker-wizard.apiProvider": "API provider",
+  "agent-worker-wizard.retrySourceDetails": "Retry source details"
 }
