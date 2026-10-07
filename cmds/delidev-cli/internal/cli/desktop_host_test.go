@@ -171,8 +171,18 @@ func TestDesktopResidentCommandsRandomPortAndEOF(t *testing.T) {
 		t.Fatal("retired endpoint remains published")
 	}
 	intent, err := server.ReadLifecycle(root)
+	if err != nil || intent.State != server.DesiredRunning {
+		t.Fatal("EOF changed durable restart intent")
+	}
+}
+func TestDesktopExplicitShutdownSuppressesRestart(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	f := startResidentFixture(t, root, "127.0.0.1:0")
+	f.launch(t)
+	f.quit(t)
+	intent, err := server.ReadLifecycle(root)
 	if err != nil || intent.State != server.DesiredStopped {
-		t.Fatal("EOF lost restart suppression")
+		t.Fatal("explicit shutdown did not suppress restart")
 	}
 }
 func TestDesktopRestartPreservesOriginalPairing(t *testing.T) {

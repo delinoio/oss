@@ -199,10 +199,16 @@ func runDesktopHostCommand(ctx context.Context, o options, args []string, stream
 	mutations := make(chan struct{}, 1)
 	reads := make(chan struct{}, 4)
 	fenced := false
+	explicitShutdown := false
 loop:
 	for {
 		select {
 		case <-lifetime.Done():
+			break loop
+		case <-brokenPipe:
+			// A closed parent output pipe is an abnormal desktop loss. Join the
+			// owned server, but do not turn transport loss into durable Stop.
+			cancel()
 			break loop
 		case r := <-requests:
 			if _, known := desktopCommands[r.Operation]; !known && r.Operation != desktopLaunch && r.Operation != desktopRetry && r.Operation != desktopEnsure && r.Operation != desktopShutdown && r.Operation != desktopCancel && r.Operation != desktopFence {
@@ -229,6 +235,7 @@ loop:
 				continue
 			}
 			if r.Operation == desktopShutdown {
+				explicitShutdown = true
 				cancel()
 				break loop
 			}
@@ -280,7 +287,7 @@ loop:
 		h.log.Warn("desktop_host_shutdown", "phase", "host-force-requested", "native_cleanup", "unconfirmed")
 		os.Exit(1)
 	})
-	h.shutdown()
+	h.shutdown(explicitShutdown)
 	tasks.Wait()
 	force.Stop()
 	h.log.Info("desktop_host_shutdown", "phase", "host-joined")
@@ -406,7 +413,7 @@ func (h *desktopHostState) start(ctx context.Context, op desktopOperation) (any,
 func desktopStarted(t desktopruntime.Target, generation domain.ID) any {
 	return map[string]any{"started": true, "generation": generation, "server": map[string]any{"status": map[string]any{"version": "0.1.0", "protocol_version": 1, "listener": t.Endpoint, "server_id": t.ServerID}}}
 }
-func (h *desktopHostState) shutdown() {
+func (h *desktopHostState) shutdown(suppressRestart bool) {
 	h.mu.Lock()
 	h.closed = true
 	stop, done, listener, generation := h.stop, h.done, h.listener, h.startup
@@ -416,18 +423,20 @@ func (h *desktopHostState) shutdown() {
 		listener.Close()
 	}
 	if stop != nil {
-		if generation != "" {
-			if err := server.SuppressDesktopRestart(h.options.dataDir, generation); err != nil {
-				h.log.Warn("desktop_host_shutdown", "phase", "suppression-unconfirmed", "code", domain.SafeError(err).Code)
-			}
-		}
 		stop()
 		<-done
-		h.mu.Lock()
-		finalGeneration := h.startup
-		h.mu.Unlock()
-		if finalGeneration != "" && finalGeneration != generation {
-			_ = server.SuppressDesktopRestart(h.options.dataDir, finalGeneration)
+		if suppressRestart {
+			h.mu.Lock()
+			finalGeneration := h.startup
+			h.mu.Unlock()
+			for _, candidate := range []domain.ID{generation, finalGeneration} {
+				if candidate == "" {
+					continue
+				}
+				if err := server.SuppressDesktopRestart(h.options.dataDir, candidate); err != nil {
+					h.log.Warn("desktop_host_shutdown", "phase", "suppression-unconfirmed", "code", domain.SafeError(err).Code)
+				}
+			}
 		}
 	}
 }
