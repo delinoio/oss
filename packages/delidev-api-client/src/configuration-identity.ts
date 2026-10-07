@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { EntityKind, SubscriptionServiceIdentity, type Resource } from "./gen/delidev/v1/delidev_pb.js";
+import { EntityKind, SubscriptionServiceIdentity, type Resource } from "./gen/delidev/v1/common_pb.js";
 
 export enum SubscriptionServiceId { ChatGPT = "chatgpt", Claude = "claude", Grok = "grok" }
 export enum NativeModelSourceKind { Subscription = "subscription" }

@@ -456,8 +456,8 @@ test("workspace, shared, runtime, and external contract inputs select their owne
 test("DeliDev protocol validation selects DeliDev and shared inputs independently of DevHud", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of [
-      "protos/delidev/v1/delidev.proto", "packages/delidev-api-client/src/gen/delidev/v1/delidev_pb.ts",
-      "protos/gen/go/delidev/v1/common.pb.go", "scripts/delidev/proto-compat.mjs",
+      "protos/delidev/v1/system.proto", "packages/delidev-api-client/src/gen/delidev/v1/system_pb.ts",
+      "protos/gen/go/delidev/v1/common.pb.go", "scripts/delidev/verify-independent-changes.mjs",
       "buf.yaml", "buf.gen.yaml", "go.mod", "go.sum", ".npmrc", ".nvmrc",
       "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json",
       "scripts/check-proto-breaking.sh",
@@ -475,7 +475,7 @@ test("DeliDev protocol validation selects DeliDev and shared inputs independentl
 });
 
 test("DeliDev protocol failures, missing results and unauthorized skips fail the aggregate", () => {
-  const paths = ["protos/delidev/v1/delidev.proto"];
+  const paths = ["protos/delidev/v1/system.proto"];
   for (const event of [Event.PullRequest, Event.Push, Event.Manual]) {
     assert.equal(validateResults(results(event, paths)), true);
     for (const result of ["failure", "cancelled", "skipped", undefined]) {

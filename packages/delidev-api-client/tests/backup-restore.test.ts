@@ -1,15 +1,15 @@
 import { create, createRegistry, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
 import { BackupRestoreState, RestoreBackupRequestSchema, SystemCapability, SystemQuery, SystemService } from "../src/index.js";
-import { file_delidev_v1_delidev } from "../src/gen/delidev/v1/delidev_pb.js";
+import { file_delidev_v1_system } from "../src/gen/delidev/v1/system_pb.js";
 import { RestoreBackupRequestSchema as CurrentRestoreRequest } from "../src/gen/delidev/v1/system_pb.js";
 
-it("retains restore queries and canonical schema identity through legacy imports", () => {
+it("retains restore queries and canonical schema identity through service exports", () => {
   expect(SystemCapability.MANAGED_BACKUP_RESTORE_V1).toBe(7);
   expect(RestoreBackupRequestSchema).toBe(CurrentRestoreRequest);
   expect(SystemQuery.restoreBackup).toBe(SystemService.method.restoreBackup);
   expect(SystemQuery.getBackupRestore).toBe(SystemService.method.getBackupRestore);
-  expect(createRegistry(file_delidev_v1_delidev).getMessage("delidev.v1.RestoreBackupRequest")).toBe(CurrentRestoreRequest);
+  expect(createRegistry(file_delidev_v1_system).getMessage("delidev.v1.RestoreBackupRequest")).toBe(CurrentRestoreRequest);
   expect(BackupRestoreState.PUBLISHED).not.toBe(BackupRestoreState.RESTORED);
 });
 

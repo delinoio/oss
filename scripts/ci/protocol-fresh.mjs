@@ -9,7 +9,6 @@ function run(command, args) {
 // Freshness must regenerate on every invocation, even when generation is cached.
 // Invoke the pinned JS bin through Node because Windows exposes it as a .cmd shim.
 run("node", ["node_modules/@bufbuild/buf/bin/buf", "generate"]);
-run("node", ["scripts/delidev/proto-compat.mjs"]);
 const paths = ["protos/gen", "packages/devhud-api-client/src/gen", "packages/async-commit-hook-api-client/src/gen", "packages/delidev-api-client/src/gen"];
 run("git", ["diff", "--exit-code", "--", ...paths]);
 const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard", "--", ...paths], { cwd, encoding: "utf8" });

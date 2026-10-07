@@ -21,7 +21,7 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "format": "turbo run format",
-    "proto:generate": "buf generate && node scripts/delidev/proto-compat.mjs",
+    "proto:generate": "buf generate",
     "proto:generate:cached": "turbo run //#proto:generate",
     "proto:lint": "turbo run ci:proto:lint ci:proto:format --filter=@delinoio/ci",
     "proto:breaking": "turbo run ci:proto:breaking --filter=@delinoio/ci",

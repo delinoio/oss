@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { SubscriptionServiceIdentity, EntityKind, ResourceSchema } from "./gen/delidev/v1/delidev_pb.js";
+import { SubscriptionServiceIdentity, EntityKind, ResourceSchema } from "./gen/delidev/v1/common_pb.js";
 import { subscriptionServiceFromWire, SubscriptionServiceId, configurationSchemaVersion, supportsResourceSchema } from "./configuration-identity.js";
 
 function resource(kind: EntityKind, body: unknown, schemaVersion = 2) {

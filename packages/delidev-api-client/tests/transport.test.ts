@@ -2,7 +2,8 @@ import { create, toBinary } from "@bufbuild/protobuf";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { describe, expect, it, vi } from "vitest";
 import { clientFailure, FailureCode } from "../src/errors.js";
-import { ErrorDetailSchema, GetStatusResponseSchema, SystemService } from "../src/gen/delidev/v1/delidev_pb.js";
+import { ErrorDetailSchema } from "../src/gen/delidev/v1/worker_pb.js";
+import { GetStatusResponseSchema, SystemService } from "../src/gen/delidev/v1/system_pb.js";
 import { createDeliDevTransport } from "../src/transport.js";
 import { isEntityId, newRequestId, serverOrigin } from "../src/validation.js";
 

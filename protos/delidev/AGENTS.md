@@ -29,7 +29,7 @@
 
 - Issue #1235 reserves `SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` under its owning issue identity. Establish this allocation and storage migration 28 on main before dependent implementation. The reservation does not change schemas, generated clients or advertised support; preserve the independent capability boundary from API provider inventory.
 
-- Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.
+- Buf generates service-specific bindings directly. Use canonical service imports and compose package-root exports from them. No historical forwarding file, generated facade, relocation map or aggregate reflection shim is supported. Retain allocation history, lint and freshness; DeliDev pre-release breaking comparisons are excluded under the structure contract.
 
 - Issues #1093, #1202 and #1203 share the native-compaction reservations and planned boundary in `docs/cmds-delidev-compaction-contract.md`. Establish the reservation change on main before activating it. Keep one `CompactSession` owner/client operation, separate action/job identity and profile-specific native proof; reserved capabilities cannot advertise an unimplemented endpoint or native profile.
 
@@ -39,7 +39,7 @@
 
 - Issue #1206 reserves `SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16` and `WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7` without activating either. Follow `docs/cmds-delidev-native-models-contract.md`; establish reservations on main before dependent implementation, preserve native observations separately from explicit manual registration, and keep subscription discovery typed unsupported until #1095's exclusive managed-account boundary is available.
 
-- PR activity activates only #1118's existing main reservations in `activity.proto`: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3. Keep typed metadata/actor/mode/state separate from private source content and independently verified handling. Regenerate service-owned bindings and compatibility facades together.
+- PR activity activates only #1118's existing main reservations in `activity.proto`: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3. Keep typed metadata/actor/mode/state separate from private source content and independently verified handling. Regenerate service-owned bindings together.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
@@ -151,14 +151,13 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - DeliDev session forwards follow `docs/cmds-delidev-forwarding-contract.md`: preserve explicit loopback port selection, original client/Worker/device/instance ownership, negotiated capabilities and bounded ordered opaque traffic. Native claims precede sockets and receipt replay grants no new lifetime. Keep Stop independent from Archive, gate every Archive completion on both original cleanup outcomes, and retain positive private cleanup receipts through offline reporting without redialing or recreating listeners. Worker credentials receive only their original forwarding peer endpoints.
 
-- Generated legacy Go and TypeScript descriptor exports must retain aggregate reflection contents from every compiled public import of `delidev.proto`. The declaration relocation manifest preserves historical ownership/order and breaking-check compatibility, not the current service inventory. Pin the complete 358-declaration historical prefix in both languages against the fixed protocol testdata snapshot from `54187b780d48e94a49763e87fc140f449869d9f4`; do not derive expected order from the editable manifest. Additive declarations follow the prefix. Do not register duplicate runtime symbols or commit a serialized aggregate that creates a new per-feature merge hotspot.
 
 - Permanent deletion adds owner/client SessionService acceptance/status and independent owning-Worker cleanup RPCs. Shared job/state messages belong to common.proto; exclusive request/response types belong to their service file. Preserve `PERMANENT_SESSION_DELETION_V1 = 9` from allocations.json alongside merged capabilities, exact uint64 revisions, pending acknowledgements and unknown reclaimed bytes. Follow `docs/cmds-delidev-storage-contract.md` and regenerate bindings.
 - WorkspaceStorageService is owner/client-only and observes accepted original jobs separately. Worker results use existing immutable job claims. WORKSPACE_STORAGE_V1 uses the main-reserved SystemCapability value 11; retain values 1, 2 and 3 and regenerate service-specific Go/TypeScript bindings.
 
-- Session terminals use the main-established wire allocations: EntityKind 31, SystemCapability 14 and WorkerCapability 4. Keep TerminalService declarations in `terminal.proto`, Worker-only methods on WorkerService, actor/revision/request ownership and additive generation/legacy compatibility under `docs/cmds-delidev-terminals-contract.md`.
+- Session terminals use the main-established wire allocations: EntityKind 31, SystemCapability 14 and WorkerCapability 4. Keep TerminalService declarations in `terminal.proto`, Worker-only methods on WorkerService, actor/revision/request ownership and additive generation under `docs/cmds-delidev-terminals-contract.md`.
 
-- PullRequestFixService is an additive independently owned `pr_fix.proto` service with typed profile capability and original selection JSON. Existing wire numbers remain unchanged. Preserve generated service/facade/reflection compatibility and authenticated owner/client scope; Worker Git execution is not API publishing.
+- PullRequestFixService is an additive independently owned `pr_fix.proto` service with typed profile capability and original selection JSON. Existing wire numbers remain unchanged. Preserve service-specific generated bindings and authenticated owner/client scope; Worker Git execution is not API publishing.
 
 - Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
 - DeliDev SubscriptionService separates owner/client Request/Cancel/Progress from current machine/device/instance-bound Watch/Take/PublishProgress/Finish. Keep secret bundles bounded to 64 KiB and restricted to the protected Take/Finish messages, the closed subscription action/capability enums and generation/lease revision fences; never move bundles into jobs, resources, receipts or ordinary outputs. Follow `docs/cmds-delidev-subscription-contract.md`.
@@ -168,7 +167,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - NetworkService owns `v1/network.proto` and generated bindings under `docs/cmds-delidev-network-contract.md`. Activate only the pre-reserved EntityKind 28/29 and SystemCapability 6 values. Owner/client operations keep credentials write-only, revisions exact and server/Worker desired generations separate; Worker metadata exports carry no secrets or native application proof.
 
-- Codex Fork uses owner/client-only `SessionService.ForkSession` and `GetSessionFork`, typed `ForkWorkspace`, and allocation-ledger capability `CODEX_SESSION_FORK_V1 = 13`. Local proof is write-only; exact job/child observation cannot replay native creation. Preserve split service ownership and generated compatibility exports under `docs/cmds-delidev-forks-contract.md`.
+- Codex Fork uses owner/client-only `SessionService.ForkSession` and `GetSessionFork`, typed `ForkWorkspace`, and allocation-ledger capability `CODEX_SESSION_FORK_V1 = 13`. Local proof is write-only; exact job/child observation cannot replay native creation. Preserve split service ownership and service-specific generated exports under `docs/cmds-delidev-forks-contract.md`.
 
 - Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
 
@@ -183,7 +182,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - The reserved native accounting capability is 4, usage request/response accounting_profile fields are 11/12 and UsageTotals.accounting is 8. Use the service-specific usage/system schemas and generated compatibility views; preserve distinct CodexResponse/GrokClosedInput kinds and legacy omission. Unknown profiles fail; native source proofs remain private and Grok costs unavailable.
 
-- NativeModelService owns additive `native_models.proto` under `docs/cmds-delidev-native-models-contract.md`, activating only main-established System 16 and Worker 7. Owner/client operations preserve exact revisions/receipts and immutable bounded pages; private executable assignments stay Worker-only. Regenerate Go/TypeScript, compatibility facades and reflection together.
+- NativeModelService owns additive `native_models.proto` under `docs/cmds-delidev-native-models-contract.md`, activating only main-established System 16 and Worker 7. Owner/client operations preserve exact revisions/receipts and immutable bounded pages; private executable assignments stay Worker-only. Regenerate Go/TypeScript bindings together.
 
 - Remaining DeliDev features use the complete main-first reservation closure in `allocations.json`. Declaration ownership and later field/member ownership are independent; preserve every original issue/PR and existing main number. The expanded allocation check covers new message fields and closed enum values without activating schemas or capabilities. Follow the structure contract and merge independent complete implementations in dependency order.
 
@@ -191,7 +190,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Subscription observation declarations retain the quota/reset-credit allocations for issues #1096/#1104. Owner/client request/reconcile and Worker-only claim/publication lanes remain independent. Generate both bindings from the reconciled schema; reservations alone cannot advertise capability.
 
-- Worker network/control declarations use the established System 20/21 and Worker 9/10 reservations, original recipient/attachment fields and closed native-route states. Owner encrypted export/status remains distinct from original-instance Worker synchronization/reporting. Regenerate both languages and compatibility facades; reservations do not advertise product support or native acceptance.
+- Worker network/control declarations use the established System 20/21 and Worker 9/10 reservations, original recipient/attachment fields and closed native-route states. Owner encrypted export/status remains distinct from original-instance Worker synchronization/reporting. Regenerate both languages; reservations do not advertise product support or native acceptance.
 
 - System 20/21 activate authenticated encrypted bootstrap/control status and the owned Codex API/title route implementation. Worker 9/10 remain independently negotiated; unsupported peers receive explicit update guidance and no Direct fallback. Public support never substitutes for platform/account acceptance.
 

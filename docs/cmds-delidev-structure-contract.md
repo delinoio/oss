@@ -25,7 +25,7 @@ fields 1–5. The request reserves subscription service field 1; the response
 reserves subscription service/models/catalog version/updated at/source fields 1–5.
 These allocations reached main in PR #1370 before dependent activation. The
 complete feature activates capability 35 and the owner/client read-only RPC in
-provider.proto; generated bindings use the normal compatibility pipeline.
+provider.proto; generated bindings use the normal Buf pipeline.
 Reservations alone grant no feature support. The active advisory read grants no
 authentication, account entitlement, native discovery or execution capability.
 The response echoes the exact closed service, includes at most 200 models and
@@ -70,12 +70,11 @@ atomic model/Agent save. The implementation reuses the existing acknowledgement
 and storage schemas without a database migration. Reservations alone still grant
 no runtime support, native execution or account authority.
 
-Keep package `delidev.v1`, Go import paths, RPC procedure names, existing field and
-enum numbers, JSON meanings and TypeScript exports stable. Service-specific schema
-files own their exclusive request/response types. Shared types and their dependency
-closure have one common owner. Generated compatibility exports preserve historical
-TypeScript import paths; generated code is never resolved by choosing a merge side.
-Regenerate from the reconciled source schema.
+Keep package `delidev.v1`, canonical Go import paths and allocation history.
+Service-specific schemas own their exclusive request/response types. Shared types
+and their dependency closure have one common owner. Pre-release obsolete APIs and
+historical import paths may be removed under the approved reset. Generated code
+is never resolved by choosing a merge side; regenerate from reconciled schemas.
 
 The numeric allocation ledger binds each new enum member or existing-message field
 to its original PR, or its owning issue when no implementation PR exists yet, and
@@ -220,34 +219,18 @@ It uses the generic durable entity/job/receipt boundary and allocates no migrati
 in this prerequisite. No native profile or RPC is activated; see the
 [compaction contract](cmds-delidev-compaction-contract.md).
 
-## Legacy reflection compatibility
+## Service-owned generated bindings
 
-The legacy TypeScript `file_delidev_v1_delidev` export aggregates canonical split-file
-messages, enums and services in the original order. Both direct enumeration and
-registry construction from its descriptor proto retain the complete schema. The Go
-`File_delidev_v1_delidev_proto` export likewise retains an aggregate reflection view
-without registering duplicate global symbols. Physical descriptor ownership follows
-the explicit split-file layout; canonical runtime type registration remains unique.
-These views are generated from service descriptors at runtime so an independent
-service addition does not rewrite a shared serialized descriptor blob.
+Buf generates Go and TypeScript bindings directly from service-specific schemas.
+Internal consumers import their owning generated file. The client package common
+entry point exports those files and service-specific Connect Query namespaces.
+The historical forwarding file, relocation map, facade generator and aggregate
+reflection shim are removed. Canonical descriptors remain registered once by
+Buf-generated bindings.
 
-The compatibility generator derives owned files from the compiled public imports
-of `delidev.proto`, including newly added services. The relocation manifest remains
-a historical order and breaking-check map; it is not the current service inventory.
-Both aggregate views therefore include `NetworkService` and `SubscriptionService`
-without adding their declarations to the relocation map.
-The historical prefix contains 358 declarations: 303 messages, 36 enums and
-19 services, including PullRequestFix, Terminal and Browser. Preserve their
-per-kind positions from the intact map at
-`54187b780d48e94a49763e87fc140f449869d9f4`. Go and TypeScript regression tests
-share the fixed `protos/delidev/v1/contracttest/testdata/legacy-declaration-order.json`
-snapshot; expected order must not come from the editable relocation map.
-The fixed snapshot also pins the relocation names, kinds, files and complete
-map order, including moves across declaration kinds.
-WorkspaceStorage and other additive declarations follow this prefix and remain
-discoverable through public imports, direct enumeration and reconstructed registries.
-Issue #1084 activates its already reserved wire allocations without changing
-that historical map. Generated service/query facades retain both services.
+DeliDev pre-release breaking comparisons are excluded. All other projects retain
+FILE comparisons. DeliDev formatting, lint, allocation validation and generated
+freshness remain required; generation and Turbo have no compatibility pass.
 
 ## Remaining-feature prerequisite reservations
 

@@ -82,11 +82,10 @@ test("lint, format and freshness dispatch the installed Buf entry through the cu
   const syncCalls = fresh.stdout.trim().split(/\r?\n/u).map((line) => JSON.parse(line));
   assert.deepEqual(syncCalls.map(({ command, args }) => ({ command, args })), [
     { command: process.execPath, args: ["node_modules/@bufbuild/buf/bin/buf", "generate"] },
-    { command: process.execPath, args: ["scripts/delidev/proto-compat.mjs"] },
     { command: "git", args: ["diff", "--exit-code", "--", ...generatedPaths] },
     { command: "git", args: ["ls-files", "--others", "--exclude-standard", "--", ...generatedPaths] },
   ]);
-  for (const call of syncCalls.slice(0, 3)) {
+  for (const call of syncCalls.slice(0, 2)) {
     assert.equal(resolve(call.options.cwd), f.cwd);
     assert.equal(call.options.shell, false);
   }
@@ -103,7 +102,7 @@ test("protocol wrappers retain child failures and spawn errors", (t) => {
     }
     const fresh = f.run(["--import", pathToFileURL(join(f.cwd, "capture-spawn.mjs")).href, "protocol-fresh.mjs"]);
     assert.equal(fresh.status, outcome.status ?? 1, fresh.stdout + fresh.stderr);
-    assert.equal(fresh.stdout.trim().split(/\r?\n/u).length, 1, "Failed generation must stop before compatibility and freshness checks");
+    assert.equal(fresh.stdout.trim().split(/\r?\n/u).length, 1, "Failed generation must stop before freshness checks");
     if (outcome.error) assert.match(fresh.stderr, /fixture spawn failure/u);
   }
 });
@@ -162,7 +161,7 @@ test("installed Buf lint and format return their actual results with no standalo
   assert.equal(f.leaf("format").status, format.status);
 });
 
-test("installed Buf generation retains compatibility, failure status and tracked/untracked freshness", (t) => {
+test("installed Buf generation retains failure status and tracked/untracked freshness", (t) => {
   const f = installedFixture(t);
   const git = (...args) => execFileSync("git", args, { cwd: f.cwd, env: f.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git("init", "-b", "main");
@@ -184,15 +183,10 @@ test("installed Buf generation retains compatibility, failure status and tracked
     });
   `);
   f.write("buf.gen.yaml", JSON.stringify({ version: "v2", plugins: [{ local: [process.execPath, join(f.cwd, "plugin.cjs")], out: "protos/gen" }] }));
-  f.write("scripts/delidev/proto-compat.mjs", `
-    import { readFileSync, writeFileSync } from "node:fs";
-    // Read generated output to prove compatibility runs after generation.
-    writeFileSync("protos/gen/compat.txt", readFileSync("protos/gen/fixture.txt"));
-  `);
   let result = f.leaf("fresh");
   assert.notEqual(result.status, 0, "New generated files must be rejected");
   assert.match(result.stderr, /Generated protocol files are untracked/u);
-  assert.equal(readFileSync(join(f.cwd, "protos/gen/compat.txt"), "utf8"), "fixture output\n");
+  assert.equal(readFileSync(join(f.cwd, "protos/gen/fixture.txt"), "utf8"), "fixture output\n");
   git("add", "--all");
   git("commit", "-m", "clean protocol fixture");
   result = f.leaf("fresh");

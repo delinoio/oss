@@ -7,10 +7,10 @@ Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAcco
 Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the issue #1103 metadata read. Preserve native-input versus proxy-HTTP enum provenance, optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
 
 
-Buf generates service-specific modules. The normal protocol generation command
-also runs `scripts/delidev/proto-compat.mjs` to reproduce historical module and
-Connect Query import paths. Package-root exports and existing `./gen/*` consumers
-remain compatible; facades contain re-exports, never handwritten descriptors.
+Buf generates service-specific modules. Package-root exports compose these
+modules and their Connect Query namespaces. Internal consumers import canonical
+service files; historical generated import facades and aggregate reflection are
+removed under the pre-release reset. Generate with `pnpm proto:generate`.
 
 ## Scope
 `packages/delidev-api-client` owns private `@delinoio/delidev-api-client`, generated messages and service-specific Connect Query namespaces, explicit transport, typed errors, UUID-v7 request identities and bounded resource synchronization. This is the client integration boundary for desktop implementation; it does not itself constitute a desktop app or complete issue #964.

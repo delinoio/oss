@@ -100,8 +100,9 @@ Issue #1103 adds owner/paired-client `SessionService.ListRequestDiagnostics` and
 
 
 Source schemas are service-specific under `protos/delidev/v1`; shared types have
-one common owner. The historical `delidev.proto` forwards imports. Existing wire
-names and numbers remain unchanged. `protos/delidev/allocations.json` records main
+one common owner. Historical forwarding imports and aggregate reflection are
+removed under the pre-release reset. Allocation identities and numbers remain
+owned and cannot be reused. `protos/delidev/allocations.json` records main
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 

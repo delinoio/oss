@@ -5,8 +5,6 @@
       "inputs": [
         "buf.gen.yaml",
         "buf.yaml",
-        "scripts/delidev/proto-compat.mjs",
-        "scripts/delidev/proto-layout.json",
         "protos/devhud/v1/**",
         "package.json",
         "pnpm-lock.yaml",

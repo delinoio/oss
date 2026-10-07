@@ -10,9 +10,9 @@ const temporary = mkdtempSync(join(tmpdir(), 'delidev-independent-'));
 const run = (command, args) => execFileSync(command, args, { cwd: temporary, encoding: 'utf8', env: { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' } });
 const git = (...args) => run('git', args);
 const put = (path, value) => { mkdirSync(dirname(join(temporary, path)), { recursive: true }); writeFileSync(join(temporary, path), value); };
-const generate = () => { run(process.execPath, [join(root, 'node_modules/@bufbuild/buf/bin/buf'), 'generate']); run(process.execPath, ['scripts/delidev/proto-compat.mjs']); };
+const generate = () => { run(process.execPath, [join(root, 'node_modules/@bufbuild/buf/bin/buf'), 'generate']); };
 try {
-  for (const path of ['protos', 'buf.yaml', 'buf.gen.yaml', 'go.mod', 'go.sum', 'package.json', 'pnpm-workspace.yaml', 'scripts/delidev/proto-compat.mjs', 'scripts/delidev/proto-layout.json']) {
+  for (const path of ['protos', 'buf.yaml', 'buf.gen.yaml', 'go.mod', 'go.sum', 'package.json', 'pnpm-workspace.yaml']) {
     mkdirSync(dirname(join(temporary, path)), { recursive: true }); cpSync(join(root, path), join(temporary, path), { recursive: true });
   }
   symlinkSync(join(root, 'node_modules'), join(temporary, 'node_modules'), 'dir');

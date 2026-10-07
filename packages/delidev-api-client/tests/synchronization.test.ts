@@ -1,10 +1,9 @@
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createClient, createRouterTransport } from "@connectrpc/connect";
 import { expect, it, vi } from "vitest";
-import {
-  EntityKind, ErrorDetailSchema, EventAction, ResourceSchema, ResourceService, WatchEventsResponseSchema,
-  type Resource, type GetResourceRequest,
-} from "../src/gen/delidev/v1/delidev_pb.js";
+import { EntityKind, ResourceSchema, type Resource } from "../src/gen/delidev/v1/common_pb.js";
+import { ErrorDetailSchema } from "../src/gen/delidev/v1/worker_pb.js";
+import { EventAction, ResourceService, WatchEventsResponseSchema, type GetResourceRequest } from "../src/gen/delidev/v1/resource_pb.js";
 import { ConnectionState, SyncKind, synchronizeResources, type SyncUpdate } from "../src/synchronization.js";
 import { newRequestId } from "../src/validation.js";
 
