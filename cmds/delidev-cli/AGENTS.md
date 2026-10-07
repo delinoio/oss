@@ -40,4 +40,6 @@ Native session compaction for issues #1093, #1202 and #1203 follows the planned 
 
 - Codex attempts use the common SemVer minimum `0.151.0` without an upper bound across all native flows. Preserve actual detected versions and exact original executable/version ownership; higher-version eligibility never proves protocol or account support. Keep other harness pins unchanged. Follow the harness contract.
 
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
 - Repository saves/imports require credential-free remote_url and allow empty checkouts. Gate remote managed preparation at acceptance/assignment with Worker 19, pin source kind and URL, and preserve explicit Local authentication, immutable historical preparation and no automatic conversion. Follow the workspace/transfer/protocol contracts.
