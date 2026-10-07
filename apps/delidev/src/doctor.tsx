@@ -89,7 +89,7 @@ function Report({ report }: { report: Document }) {
   </>;
 }
 export enum DoctorTitle { Diagnostics = "Diagnostics", ConnectionDiagnostics = "Connection & diagnostics" }
-export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics, connectionControls, openSubscriptions, openApiKeys }: { active: boolean; visible?: boolean; title?: DoctorTitle; connectionControls?: ReactNode; openSubscriptions?: () => void; openApiKeys?: () => void }) {
+export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics, connectionControls }: { active: boolean; visible?: boolean; title?: DoctorTitle; connectionControls?: ReactNode }) {
   useLocale();
   const result = useQuery(SystemQuery.getDoctor, {}, { enabled: active });
   const [opening, setOpening] = useState(0);
@@ -117,7 +117,6 @@ export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics
     {connectionControls ? <section aria-label={copy("doctor.connection_639a40")}><h2>{copy("doctor.connection_639a40")}</h2>{connectionControls}</section> : null}
     <Problem error={result.error} />{result.isFetching && active ? <p role="status">{copy("doctor.readingServerDiagnostics_f724cd")}</p> : null}{result.error && report ? <p role="alert">{copy("doctor.refreshFailedTheReportBelowIs_f8d24e")}</p> : null}
     {report ? <Report key={JSON.stringify([opening, text(report.server_id) || unknownServer.current.key])} report={report} /> : result.data ? <p role="alert">{unsupported ? copy("doctor.thisDiagnosticReportVersionIsUnsupported_46df0e") : copy("doctor.theDiagnosticReportIsUnavailableOr_c9eb5b")}</p> : null}
-    <section className="diagnostics-panel" aria-label={copy("account-storage.heading")}><h2>{copy("account-storage.heading")}</h2><p>{copy("account-storage.destination")}</p>{openSubscriptions || openApiKeys ? <div className="actions">{openSubscriptions ? <button type="button" onClick={openSubscriptions}>{copy("account-storage.subscriptions")}</button> : null}{openApiKeys ? <button type="button" onClick={openApiKeys}>{copy("account-storage.apiKeys")}</button> : null}</div> : null}</section>
     <p className="diagnostics-guidance"><LocalizedText id="doctor.useAiAccountsForValidationAnd_7713b8" components={{ s0: <>{ownerCaveat()}</> }} /></p>
   </section>;
 }

@@ -37,11 +37,12 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
   const save = vi.fn(args.save ?? (async (request: unknown) => ({ resource: resources[0], requestId: requestId(request) })));
   const connect = vi.fn(args.connect ?? (async (request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT), requestId: requestId(request) })));
   const other = vi.fn(async () => ({}));
+  const doctor = vi.fn(async () => ({ reportJson: encode({ schema_version: 2, version: "fixture", credentials: [] }) }));
   const status = vi.fn(() => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] as SystemCapability[] }));
   const usage = vi.fn((_request: GetUsageSummaryRequest) => create(GetUsageSummaryResponseSchema, { fromUnixMs: 1780000000000n, untilUnixMs: 1782592000000n }));
   const transport = createRouterTransport((router) => {
     router.service(UsageService, { getUsageSummary: usage });
-    router.service(SystemService, { getStatus: status });
+    router.service(SystemService, { getStatus: status, getDoctor: doctor });
     router.service(ResourceService, { listResources: list, getResource: async (request) => ({ resource: resources.find((row) => row.id === request.id) ?? (request.kind === EntityKind.PROVIDER && request.id === providerId ? args.currentProvider ?? provider : undefined) }) });
     router.service(ConfigurationService, { saveConfiguration: save });
     router.service(AccountService, { connectAccount: connect, getAccountStatus: async (request) => ({ account: resources.find((row) => row.id === request.id) }), disconnectAccount: other, validateAccount: other });
@@ -80,7 +81,7 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     deleteAccount={callbacks.deleteAccount}
     {...overrides}
   />;
-  return { usage, status, providerId, provider, providerOption, resources, list, save, connect, other, client, callbacks, view, settings };
+  return { usage, doctor, status, providerId, provider, providerOption, resources, list, save, connect, other, client, callbacks, view, settings };
 }
 
 it("uses server-side account type and provider filters and keeps the split view disabled without its capability", async () => {
@@ -655,4 +656,28 @@ it("offers explicit verification guidance without promising maintenance on a com
   expect(value.save).not.toHaveBeenCalled();
   expect(value.connect).not.toHaveBeenCalled();
   expect(value.other).not.toHaveBeenCalled();
+});
+
+it("opens, refreshes and revisits API entries without inspecting account storage", async () => {
+  const row = resource(EntityKind.ACCOUNT, { alias: "Storage-independent API", type: "api", enabled: true, health: "disconnected" });
+  const value = fixture({ resources: [row] });
+  const view = render(value.view(value.settings(AccountSettingsSection.Api)));
+  await screen.findByRole("heading", { name: "Storage-independent API" });
+  const absent = () => {
+    expect(screen.queryByRole("heading", { name: "Account storage" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh account storage" })).toBeNull();
+    expect(view.container.querySelector(".account-storage-notice")).toBeNull();
+    expect(value.doctor).not.toHaveBeenCalled();
+  };
+  absent();
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  absent();
+  view.rerender(value.view(value.settings(AccountSettingsSection.Api, { active: false })));
+  view.rerender(value.view(value.settings(AccountSettingsSection.Api)));
+  await screen.findByRole("heading", { name: "Storage-independent API" });
+  absent();
+  expect(screen.getByRole("button", { name: "Details" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "View usage" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Manage connection" })).toBeTruthy();
+  expect(screen.getByText(/Credentials are stored securely/)).toBeTruthy();
 });

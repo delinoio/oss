@@ -22,6 +22,7 @@ function fixture({ capable = true, lost = false, total = 3 }: { capable?: boolea
   let pendingAdmission: (() => void) | undefined;
   let delayed = false;
   const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: "Existing subscription", type: "subscription", subscription_service: "chatgpt", enabled: true, health: "disconnected", quota: [] }) });
+  const doctor = vi.fn(async () => ({ reportJson: encode({ schema_version: 2, version: "fixture", credentials: [] }) }));
   const list = vi.fn(() => ({ resources: [row] }));
   const start = vi.fn(async request => {
     if (delayed) await new Promise<void>(resolve => { pendingAdmission = resolve; });
@@ -33,7 +34,7 @@ function fixture({ capable = true, lost = false, total = 3 }: { capable?: boolea
     return { job, results: job.state === State.PENDING || job.total === 0 ? [] : [{ accountId: row.id, alias: "Retained subscription", outcome: Outcome.RETAINED, reason: Reason.REFERENCED }], nextPageToken: request.pageToken ? "" : "fixture-next-page" };
   });
   const transport = createRouterTransport(router => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, ...(capable ? [SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1] : [])] }) });
+    router.service(SystemService, { getDoctor: doctor, getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, ...(capable ? [SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1] : [])] }) });
     router.service(ResourceService, { listResources: list });
     router.service(SubscriptionService, { cleanupFailedSubscriptions: start, getFailedSubscriptionCleanup: status });
   });
@@ -46,7 +47,7 @@ function fixture({ capable = true, lost = false, total = 3 }: { capable?: boolea
       {visible ? <SettingsLifetime>{() => <MutationIntents><SubscriptionAccounts active editAccount={edit} deleteAccount={remove} /></MutationIntents>}</SettingsLifetime> : null}
     </QueryClientProvider></TransportProvider>;
   }
-  return { Harness, start, status, list, client, edit, remove, failStatus: (value: boolean) => { unavailable = value; }, delay: () => { delayed = true; }, release: () => pendingAdmission?.(), complete: (total = 3) => { job = create(FailedSubscriptionCleanupJobSchema, { ...job, revision: 2n, state: State.COMPLETED, total, processed: total, deleted: total === 0 ? 0 : total - 1, retained: total === 0 ? 0 : 1 }); } };
+  return { Harness, doctor, start, status, list, client, edit, remove, failStatus: (value: boolean) => { unavailable = value; }, delay: () => { delayed = true; }, release: () => pendingAdmission?.(), complete: (total = 3) => { job = create(FailedSubscriptionCleanupJobSchema, { ...job, revision: 2n, state: State.COMPLETED, total, processed: total, deleted: total === 0 ? 0 : total - 1, retained: total === 0 ? 0 : 1 }); } };
 }
 
 it("starts once without confirmation, blocks account changes and presents partial results", async () => {
@@ -128,4 +129,26 @@ it("reports an empty accepted batch and refreshes inventory without a result dis
  expect(screen.queryByText(/Retained accounts/)).toBeNull();
  await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(1));
  expect(f.start).toHaveBeenCalledTimes(1);
+});
+
+it("keeps subscription cleanup and account controls without storage readers across revisits", async () => {
+  const f = fixture();
+  const view = render(<f.Harness />);
+  await screen.findByRole("heading", { name: "Existing subscription" });
+  const absent = () => {
+    expect(screen.queryByRole("heading", { name: "Account storage" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh account storage" })).toBeNull();
+    expect(view.container.querySelector(".account-storage-notice")).toBeNull();
+    expect(f.doctor).not.toHaveBeenCalled();
+  };
+  absent();
+  expect(screen.getByRole("button", { name: "Auto cleanup" })).toBeTruthy();
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  absent();
+  fireEvent.click(screen.getByRole("button", { name: "Leave category fixture" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open category fixture" }));
+  await screen.findByRole("heading", { name: "Existing subscription" });
+  absent();
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Existing subscription" }));
+  expect(screen.getByRole("button", { name: "Delete account" })).toBeTruthy();
 });

@@ -43,6 +43,6 @@ it("revokes a real paired client through settings and reads bounded server diagn
   expect(screen.getByText("Logical database size").nextElementSibling?.textContent).toMatch(/^[0-9,]+ bytes$/);
   expect(screen.getByRole("region", { name: "Worker diagnostics" })).toBeTruthy();
   expect(screen.queryByRole("region", { name: "Protected credential diagnostics" })).toBeNull();
-  expect(screen.getByRole("region", { name: "Account storage" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Account storage" })).toBeNull();
   expect(screen.queryByText(/legacy report/)).toBeNull();
 }, 15000);
