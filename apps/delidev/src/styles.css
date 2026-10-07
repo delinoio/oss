@@ -540,7 +540,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
   .sidebar { display: contents; }
   .sidebar-rail { grid-column: 1; grid-row: 1; z-index: 2; }
   .sidebar-pane-dialog { display: none; position: fixed; z-index: 30; inset: 0 auto 0 52px; width: min(288px, calc(100vw - 52px)); height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; border: 0; overflow: hidden; background: transparent; }
-  .sidebar-pane-dialog:modal { display: block; box-shadow: 0 0 0 100vmax var(--backdrop); }
+  .sidebar-pane-dialog:modal { display: block; box-shadow: 0 16px 48px var(--shadow-soft); }
   .sidebar-pane-dialog:modal::backdrop { background: transparent; }
   .sidebar-pane { width: 100%; height: 100%; padding: 12px 12px 9px; background: var(--surface-muted); }
   .sidebar-pull-requests .sidebar-pane { padding-inline: 16px; }

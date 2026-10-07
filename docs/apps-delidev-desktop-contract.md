@@ -1,5 +1,26 @@
 # DeliDev desktop client
 
+## Modal background visibility
+
+All app-owned dialogs and compact modal navigation drawers use a transparent
+backdrop in light, dark and system themes. Opening a modal preserves the underlying
+screen's content, ordinary brightness, layout, filters, pagination and scroll.
+Do not hide category inventories, local Worker controls or pairing presentation,
+or change category headings or column geometry solely because a dialog is open.
+Keep dialog surfaces opaque with their existing borders and local shadows; do not
+apply a viewport-sized shadow, dimming or blur to the background.
+
+Preserve native `showModal()` input blocking, Settings background inertness,
+initial focus, contained Tab navigation, existing Escape/backdrop-click behavior,
+and available-opener focus restoration. A nested modal retains its parent's
+presentation and blocks parent input. Existing same-window task steps still show
+only their active step. Inactive application surfaces and closed disclosures keep
+their existing visibility rules. Loading, empty, denied, progress and error states
+retain their original data and lifecycle ownership. This presentation rule adds
+no RPC, protocol allocation, storage migration or native execution authority and
+does not change OS-owned dialogs. Protected external native browser children keep
+their existing modal visibility and security boundaries.
+
 ## API key format selection
 
 The manual Add AI API key task requires Entry name, API format and API key in that
