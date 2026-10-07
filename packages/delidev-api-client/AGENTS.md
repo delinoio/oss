@@ -86,4 +86,6 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
 
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
 - Remote repository clients negotiate generated System 37 before saves/imports and preserve Worker 19 independent managed-clone gates. Retain original request bytes and source-kind/URL identity, optional checkout semantics and legacy immutable records under the protocol/workspace contracts.

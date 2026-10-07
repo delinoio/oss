@@ -72,5 +72,26 @@
 
 .worker-wizard input[type="checkbox"] { width: 16px; min-height: 16px; height: 16px; }
 
+.worker-source-group { border-top: 1px solid var(--border); padding: 16px 0; }
+.worker-source-group > fieldset > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.worker-source-group h4 { margin: 0; overflow-wrap: anywhere; }
+.worker-source-group .worker-routing { margin-top: 12px; padding-bottom: 0; }
+.worker-source-group .worker-account-row { padding: 8px 0; }
+.worker-source-group .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.worker-source-wizard .worker-footer { position: static; }
+@media (max-width: 640px) {
+  .worker-source-group > fieldset > header { align-items: flex-start; flex-direction: column; }
+  .worker-source-wizard .worker-footer > div { flex-wrap: wrap; }
+}
+
+/* Source groups use compact flat disclosures within the existing task shell. */
+.worker-source-wizard > h3 { margin: 16px 0 8px; }
+.worker-source-wizard p { margin: 8px 0; }
+.worker-source-group { padding: 8px 0; }
+.worker-source-group .worker-account-row { padding: 4px 0; }
+.worker-source-group .worker-account-row > span { gap: 2px; }
+.worker-source-group .worker-routing { border: 0; border-top: 1px solid var(--border); border-radius: 0; margin-top: 8px; padding: 8px 0 0; }
+.worker-source-wizard .worker-footer { margin-top: 16px; padding-top: 16px; }
+
 .worker-model-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .worker-model-origin { font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; }

@@ -61,17 +61,21 @@ the account's selected Runner Device. This prerequisite adds no active schemas,
 generated bindings, advertisement, login, execution or browser authority and no
 database migration. Follow the subscription and structure contracts.
 
-## Agent Worker source-route reservations
+## Agent Worker account source routes
 
-Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
-`SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
-`AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
-is exclusive with the legacy singular model. Establish both ledger reservations
-on main before activation. Capability 35 keeps its known-subscription-model
-ownership. No active schema, generated output, advertisement or migration is
-introduced by this prerequisite.
-
-
+PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5` on main before implementation. The
+active repeated field reuses `AgentWorkerModelSelection`, aligned with ordered
+Agent schema-3 routes and exclusive with the legacy singular model. The existing
+mutation/revision/receipt response remains unchanged. Capability 36 advertises
+this complete configuration extension; capability 35 retains its separate known
+subscription catalog reservation. Schema 1/2 APIs and accountless CLI writes
+remain compatible; current clients retain schema 3 even with one remaining source.
+Resource reads expose schema 3 only for ordered-source Agents. Older clients must
+treat that family as unsupported and cannot overwrite it through legacy saves.
+No Worker protocol shape or database migration changes. The selected-source native
+configuration remains unchanged; complete source decisions are additive server-owned
+initial-execution JSON under the [catalog contract](cmds-delidev-catalog-contract.md).
 
 
 ## Known subscription model allocation and activation

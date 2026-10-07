@@ -32,19 +32,26 @@ the complete closure on main before active schemas, generated bindings or runtim
 support. Codex field 7 and existing System 30/35/36/37 and Worker 19 ownership
 remain unchanged. Reservations activate nothing and add no migration.
 
-## Agent Worker source-route reservations
+## Agent Worker source-route ownership
 
-Issue #964 reserves System capability `AGENT_WORKER_SOURCE_ROUTES_V1 = 36`
-and `SaveAgentWorkerRequest.route_models = 5`, reusing the existing typed model
-selection. Capability 35 remains owned by known subscription models. Establish
-this closure on main before dependent implementation. Reservations do not change
-active schemas, generated bindings, resource documents, SQLite migrations or
-runtime support. The planned feature uses ordered same-source account groups
-with source-specific models under one Harness, confirmed-quota-only fallback at
-first execution, and automatic preference for observed recovered quota. Existing
+PR #1371 established System capability `AGENT_WORKER_SOURCE_ROUTES_V1 = 36`
+and `SaveAgentWorkerRequest.route_models = 5` on main before implementation.
+Capability 35 remains owned by known subscription models. The catalog contract
+owns ordered source/model/account references, atomic multi-model saving and the
+confirmed-exhaustion first-execution boundary under one Harness. Later new
+sessions prefer an earlier source after observed quota recovery. Existing
 sessions retain their selected account/model and immutable attribution.
+Domain and store own the shared
+pure source selector and per-source routing state. Server owns immutable complete
+decisions and selected-source dispatch; desktop owns group editing and source-scoped
+catalog/account pages. Portable configuration version 3 maps the complete graph.
+Generated bindings are regenerated from reconciled schemas. No SQLite migration
+or historical snapshot rewrite is introduced; capability advertisement cannot
+grant native/account acceptance.
 
-
+The reservation alone changed no active schemas, generated bindings, resource
+documents, SQLite migrations or runtime support. The implementation reuses the
+existing typed model selection; reserved numbers alone grant no feature support.
 
 ## Known subscription model allocation and activation
 

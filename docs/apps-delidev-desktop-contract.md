@@ -575,11 +575,12 @@ historical attribution. Source-scoped server catalog queries supply autocomplete
 
 Creation and editing use the same four steps: Harness, Accounts, Model, Configure.
 Fill existing values on edit. Stage navigation never saves. Choose a supported
-harness, then one subscription service or API provider and at least one account.
-Multiple accounts must share that source. Keep their explicit order and relative
+harness, then ordered subscription service/API provider groups, each with at least
+one same-source account. Keep their explicit order and relative
 weights (1–1,000), all six routing policies and the inherited server default.
-Fixed routing permits exactly one account. Source or harness changes clear
-incompatible account/model choices and require explicit selection; ordinary Back
+Fixed routing permits exactly one account per group. A source change clears only
+that group's model/accounts; a harness change clears incompatible groups. Both
+require explicit selection; ordinary Back
 and disclosure changes retain values. Legacy accountless Workers remain readable
 through existing APIs, but need an account before wizard resaving. Retired models
 remain inert; affected Workers require explicit current account and model
@@ -597,10 +598,21 @@ connection, validation or inference. Saving declares configured harness/model
 compatibility; execution still rechecks current authority and native support.
 
 Configure retains name, permission, reasoning, instructions and native options,
-including mounted collapsed values, and shows the selected source/model/accounts.
-Submit only SaveAgentWorker under negotiated System capability 33; older servers
-show update guidance. Go validates source membership and atomically reuses/creates
-the internal model plus Worker under the original revision and UUID-v7 receipt.
+including mounted collapsed values, and reviews every ordered source/model/account group.
+The single-source wizard retains capability 33 compatibility. Capability 36 enables
+ordered source groups with Add/Remove and keyboard-operable Move up/down controls.
+Accounts retains server-filtered per-source pagination, routing policies and weights;
+Model displays the same group order with a source-scoped autocomplete/exact ID for
+each. Both wizard generations retain English/Korean presentation and the independent
+capability-35 known-model catalog. Known candidates remain advisory, while saved
+models retain exact revisions and take precedence over duplicate known IDs after
+all saved pages are read. New account choices require a connected Ready or
+Unverified account; retained selections stay visible independently of that filter. New groups default to Priority. Configure saves all typed model choices and
+the Worker once under the original revision and UUID-v7 receipt. Schema-3 editors
+require capability 36; unsupported servers show update guidance. Stage navigation
+never starts login, validation, discovery or inference. New sessions advance only
+after complete confirmed quota exhaustion; observed recovery restores preference
+for future sessions. Existing executed sessions keep their original selection.
 Keep exact uncertain request bytes, current-revision conflicts, visit disposal,
 late-response fencing and same-identity reconnect/Strict Mode behavior.
 
