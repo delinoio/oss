@@ -88,5 +88,19 @@
   "usage.range": "{{from}} – {{until}} (종료 시각 제외)",
   "usage.pendingStart": "서버 현재 시각의 30일 전",
   "usage.waitingForDateInput": "날짜 입력이 끝나기를 기다리고 있습니다. 결과는 아직 적용된 조건을 사용합니다.",
-  "usage.invalidFiltersRetained": "날짜 범위가 올바르지 않습니다. 결과는 마지막으로 유효했던 조건을 사용합니다."
+  "usage.invalidFiltersRetained": "날짜 범위가 올바르지 않습니다. 결과는 마지막으로 유효했던 조건을 사용합니다.",
+  "usage.responsesTab": "응답",
+  "usage.nativeAccountingTab": "원본별 계측",
+  "usage.analysisTabs": "사용량 분석",
+  "usage.recordedResponses": "기록된 응답",
+  "usage.exactResponseRecords": "정확한 응답 기록",
+  "usage.timeRange": "기간",
+  "usage.scope": "범위",
+  "usage.source": "원본",
+  "usage.dailyAndModelTrends": "일별 및 모델별 추이",
+  "usage.accountingDefinitions": "계측 정의 및 관측 범위",
+  "usage.sourceRecords": "{{count}}건 기록",
+  "usage.emptySourceWarning": "기록이 없다고 해서 사용량이나 비용이 0인 것은 아닙니다",
+  "usage.sourceDefinitions": "원본 정의",
+  "usage.historicalSourcePricing": "과거 가격 근거"
 }

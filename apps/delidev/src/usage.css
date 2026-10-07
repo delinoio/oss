@@ -1,0 +1,45 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.page.usage-page { max-width: 1280px; min-width: 0; margin-inline: auto; padding: 24px; }
+.usage-page [hidden] { display: none; }
+.usage-page button, .usage-sidebar button { min-height: 40px; border-radius: 8px; }
+.usage-page .usage-applied { border-radius: 8px; margin-block: 16px; }
+.usage-page .usage-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-block: 16px; }
+.usage-tabs [aria-selected=true] { color: var(--selected-text); background: var(--selected-background); border-color: var(--selected-border); }
+.usage-page .usage-summary { margin-block: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.usage-page .usage-summary h2, .usage-page .usage-summary p, .usage-page .usage-metric dt, .usage-page .usage-metric small { color: var(--muted); }
+.usage-page .usage-metrics-primary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.usage-page .usage-metric { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.usage-page .usage-metric dd { color: var(--text); font-size: 1.5rem; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.usage-page .usage-summary > p:first-of-type { margin-bottom: 12px; color: var(--muted); }
+.usage-page .usage-summary-breakdown { margin-top: 16px; }
+.usage-page .usage-detail { margin-block: 16px; min-width: 0; }
+.usage-page .usage-table { max-width: 100%; min-width: 0; overscroll-behavior: contain; }
+.usage-page .usage-table th, .usage-page .usage-table td { padding: 12px; font-variant-numeric: tabular-nums; }
+.usage-page .usage-table th { font-size: .85rem; }
+.usage-page .usage-table td { font-size: .875rem; }
+.usage-page .usage-trends, .usage-page .usage-definitions, .usage-page .usage-accounting-source { margin-block: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.usage-page summary { min-height: 40px; padding-block: 8px; cursor: pointer; overflow-wrap: anywhere; }
+.usage-page .usage-accounting-source > details { margin: 0; padding: 0; border: 0; border-radius: 8px; }
+.usage-page .usage-accounting-source > details > summary { display: list-item; }
+.usage-source-heading { font-weight: 650; }
+.usage-accounting-source > details > summary span { margin-inline-end: 16px; }
+.usage-source-empty-warning { margin: 8px 0 0; color: var(--muted); font-size: .875rem; }
+.usage-source-details { min-width: 0; }
+.usage-source-definitions, .usage-source-pricing { margin-block: 16px; }
+.usage-page .usage-accounting-source .usage-metrics-secondary { color: var(--text); font-variant-numeric: tabular-nums; }
+.usage-page .usage-accounting-source h2 { font-size: 1rem; }
+.sidebar-list:has(.usage-sidebar:not([hidden])) { overflow: hidden; }
+.sidebar-surface-outlet:has(.usage-sidebar:not([hidden])) { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.usage-sidebar:not([hidden]) { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-bottom: 0; }
+.usage-sidebar > h2, .usage-sidebar > p { flex-shrink: 0; }
+.usage-sidebar .usage-sidebar-form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-inline: 4px; scrollbar-gutter: stable; }
+.usage-sidebar fieldset { padding-block: 12px; border-top: 1px solid var(--border); min-width: 0; }
+.usage-sidebar legend { color: var(--muted); font-weight: 650; font-size: .8rem; }
+.usage-sidebar .actions { flex-shrink: 0; padding-block: 12px; border-top: 1px solid var(--border); background: var(--surface); }
+.usage-sidebar .actions button { width: 100%; }
+@media (max-width: 759px) {
+  .page.usage-page { padding: 16px; }
+  .usage-page .usage-metrics-primary, .usage-page .usage-metrics-secondary { grid-template-columns: 1fr; }
+  .usage-accounting-source > details > summary span { display: block; margin: 4px 0; }
+}
