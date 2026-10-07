@@ -1,6 +1,7 @@
 import { productError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource, WorkerCapability, supportsResourceSchema } from "@delinoio/delidev-api-client";
 import { creationPreferenceProblemMessage, useCreationPreferences, type CreationPreferenceBridge, type CreationPreferenceScope } from "./session-creation-preferences";
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
@@ -13,6 +14,12 @@ import { Problem } from "./ui";
 import { Surface } from "./surface";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
+
+// A failed connection cannot prove that an existing choice became ineligible.
+// Explicit denial/missing responses can; successful reads validate the resource.
+function eligibilityReadSettled(fetching: boolean, error: unknown) {
+  return !fetching && (!error || [Code.PermissionDenied, Code.Unauthenticated, Code.NotFound].includes(ConnectError.from(error).code));
+}
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -127,12 +134,12 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     if (!active || restorationBlocked.current || !preferences.pair) return;
     // Automatic ownership is independent per field. Draft edits stop restoration,
     // but only a manual choice releases that field from eligibility revalidation.
-    if (restoration.current.agent && !rememberedAgent.isFetching && !selectedProject.isFetching && !agentEligible) setAgent(value => value === preferences.pair?.agent_id ? "" : value);
-    if (restoration.current.machine && workspace !== Workspace.Local && !rememberedMachine.isFetching && !selectedProject.isFetching && !machineEligible) setMachine(value => value === preferences.pair?.machine_id ? "" : value);
+    if (restoration.current.agent && eligibilityReadSettled(rememberedAgent.isFetching, rememberedAgent.error) && (!project || eligibilityReadSettled(selectedProject.isFetching, selectedProject.error)) && !agentEligible) setAgent(value => value === preferences.pair?.agent_id ? "" : value);
+    if (restoration.current.machine && workspace !== Workspace.Local && eligibilityReadSettled(rememberedMachine.isFetching, rememberedMachine.error) && (!project || eligibilityReadSettled(selectedProject.isFetching, selectedProject.error)) && !machineEligible) setMachine(value => value === preferences.pair?.machine_id ? "" : value);
     if (touched.current || !projectEligible) return;
     if (!restoration.current.agent && agentEligible) { restoration.current.agent = true; setAgent(agentChoice!.id); }
     if (!restoration.current.machine && workspace !== Workspace.Local && machineEligible) { restoration.current.machine = true; setMachine(machineChoice!.id); }
-  }, [active, preferences.pair, agentChoice, machineChoice, agentEligible, machineEligible, projectEligible, rememberedAgent.isFetching, rememberedMachine.isFetching, selectedProject.isFetching, workspace, blocked]);
+  }, [active, preferences.pair, agentChoice, machineChoice, agentEligible, machineEligible, projectEligible, rememberedAgent.isFetching, rememberedAgent.error, rememberedMachine.isFetching, rememberedMachine.error, selectedProject.isFetching, selectedProject.error, project, workspace, blocked]);
   const editAgent = (id: string) => { touched.current = true; restoration.current.agent = false; setAgent(id); };
   const editMachine = (id: string) => { touched.current = true; restoration.current.machine = false; setMachine(id); };
 
