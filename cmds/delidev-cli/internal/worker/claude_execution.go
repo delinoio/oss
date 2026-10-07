@@ -57,6 +57,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if err != nil {
 		return nil, err
 	}
+	config.startup.claimedWorkspace()
 	defer func() {
 		if err := lease.Close(); err != nil {
 			output, returned = nil, config.startup.cleanupFailure(returned, err)

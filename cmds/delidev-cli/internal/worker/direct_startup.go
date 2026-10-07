@@ -18,14 +18,15 @@ import (
 )
 
 type executionStartupAttempt struct {
-	config           Config
-	job              domain.ID
-	input            domain.ExecutionJobInput
-	observation      domain.ExecutionStartupObservation
-	executable       string
-	readyReported    bool
-	firstFailure     error
-	cleanupUncertain bool
+	config            Config
+	job               domain.ID
+	input             domain.ExecutionJobInput
+	observation       domain.ExecutionStartupObservation
+	executable        string
+	readyReported     bool
+	firstFailure      error
+	cleanupUncertain  bool
+	processIndexOwned bool
 }
 
 func newExecutionStartupAttempt(config Config, job domain.ID, input domain.ExecutionJobInput) *executionStartupAttempt {
@@ -67,6 +68,11 @@ func resolveExecutionStartup(ctx context.Context, config Config, job domain.ID, 
 	}
 	installation, err := harness.ResolveExecution(ctx, selection)
 	if err != nil {
+		// Only this resolver failure is known to precede workspace/native admission.
+		// Original-history and journal-publication uncertainty cannot mint proof.
+		if domain.SafeError(err).Code != domain.RecoveryRequired {
+			config.startup.preparePrelaunchCleanup(err, security.CreatePrivateDirExclusive, security.SyncParent)
+		}
 		return installation, err
 	}
 	if err := writeStartupExecutable(config.Root, job, installation); err != nil {
@@ -166,7 +172,7 @@ func (a *executionStartupAttempt) finish(original error) error {
 			o.NativeVersion = d.DetectedVersion
 		}
 	}
-	if process.ReconcileOwner(filepath.Join(a.config.Root, "processes"), a.job) == nil && domain.SafeError(original).Code != domain.RecoveryRequired && !a.cleanupUncertain {
+	if a.processIndexOwned && !a.cleanupUncertain && domain.SafeError(original).Code != domain.RecoveryRequired && process.ReconcileOwner(filepath.Join(a.config.Root, "processes"), a.job) == nil {
 		o.Cleanup = domain.StartupCleanupConfirmed
 	}
 	if o.InputDelivery == domain.StartupNotSent && o.Cleanup == domain.StartupCleanupConfirmed {
@@ -235,8 +241,37 @@ func writeStartupExecutable(root string, job domain.ID, installation domain.Inst
 	return writeJSON(filepath.Join(directory, "startup-executable.json"), installation)
 }
 
-func prepareStartupProcessIndex(root string, job domain.ID) error {
-	return security.PrivateDir(filepath.Join(root, "processes", string(job)))
+// preparePrelaunchCleanup retains an empty index only for a definite resolver
+// failure. Successful startup leaves index creation to the workspace claim.
+func (a *executionStartupAttempt) preparePrelaunchCleanup(original error, create func(string) error, syncParent func(string) error) {
+	if a == nil {
+		return
+	}
+	root := filepath.Join(a.config.Root, "processes")
+	owner := filepath.Join(root, string(a.job))
+	err := security.PrivateDir(root)
+	if err == nil {
+		err = create(owner)
+	}
+	if err == nil {
+		err = syncParent(owner)
+	}
+	if err != nil {
+		// Even an empty retained directory is not proof after failed creation or
+		// synchronization. Do not reconcile it or remove another owner's scope.
+		a.firstFailure, a.cleanupUncertain = original, true
+		if a.config.Logger != nil {
+			a.config.Logger.Warn("execution_startup_prelaunch_cleanup_uncertain", "job_id", a.job, "code", domain.SafeError(err).Code)
+		}
+		return
+	}
+	a.processIndexOwned = true
+}
+
+func (a *executionStartupAttempt) claimedWorkspace() {
+	if a != nil {
+		a.processIndexOwned = true
+	}
 }
 
 // Keep the original resolved executable with the published child runtime. This

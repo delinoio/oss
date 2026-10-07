@@ -46,17 +46,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Version == 4 {
 		config.startup = newExecutionStartupAttempt(config, owner, input)
 		defer func() { returned = config.startup.finish(returned) }()
-		// An empty original process index is positive pre-launch cleanup proof.
-		// Without it, a missing executable could be confused with lost ownership.
-		if err := prepareStartupProcessIndex(config.Root, owner); err != nil {
-			return nil, publicationUncertain()
-		}
 		var err error
 		input.Installation, err = resolveExecutionStartup(ctx, config, owner, input)
 		if err != nil {
 			return nil, err
 		}
 		config.startup.observation.ExecutableSHA256 = input.Installation.ExecutableSHA256
+		config.startup.setPhase(domain.StartupLaunch)
 	}
 	logger := config.Logger
 	if logger == nil {
@@ -116,6 +112,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err != nil {
 		return nil, err
 	}
+	config.startup.claimedWorkspace()
 	defer func() {
 		if err := lease.Close(); err != nil {
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
