@@ -16,7 +16,7 @@
   "ui.failure.confirmation_required": "Inspect the current item and provide the required confirmation.",
   "ui.failure.missing_input": "Provide the required input before submitting.",
   "ui.failure.unsupported": "This action is unsupported by the selected server or native adapter.",
-  "ui.failure.recovery_required": "Inspect the original operation and its recovery controls before acting again.",
+  "ui.failure.recovery_required": "Ownership and unconfirmed cleanup are logged while the next action proceeds. Actual operation errors are shown below.",
   "ui.failure.budget_reached": "The budget limit was reached. Inspect the session's budget and original operation.",
   "ui.failure.resource_exhausted": "A capacity limit was reached. Inspect capacity before submitting another request.",
   "ui.failure.cursor_expired": "This page cursor expired. Refresh the list to read its current first page.",

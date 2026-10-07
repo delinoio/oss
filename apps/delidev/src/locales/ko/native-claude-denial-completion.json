@@ -9,5 +9,5 @@
   "native-claude-denial-completion.confirmed_fe00b6": "확정됨",
   "native-claude-denial-completion.workerWorkspaceCleanupReport_e52033": "워커 작업공간 정리 보고서",
   "native-claude-denial-completion.notConfirmed_bc1c29": "확정되지 않음",
-  "native-claude-denial-completion.historyReconciliationIsStillRequiredBefore_5f5801": "추가 입력 전에 기록 조정이 필요합니다. 이 정리는 재개 권한을 부여하지 않습니다."
+  "native-claude-denial-completion.historyReconciliationIsStillRequiredBefore_5f5801": "정리 결과는 관찰 기록으로 남기며 다음 동작을 막지 않습니다."
 }

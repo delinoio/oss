@@ -178,7 +178,7 @@ func (t *Tx) ActivePRFixAttempts(after domain.ID, limit int) ([]Record, bool, er
 	if limit < 1 || limit > 50 {
 		return nil, false, prRemediationConflict()
 	}
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT a.id FROM pr_remediation_attempts a JOIN entities e ON e.id=a.id WHERE a.id>? AND a.state IN ('running','uncertain') AND json_extract(e.body,'$.git_target') IS NOT NULL ORDER BY a.id LIMIT ?", after, limit+1)
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT a.id FROM pr_remediation_attempts a JOIN entities e ON e.id=a.id WHERE a.id>? AND json_extract(e.body,'$.state') IN ('running','uncertain') AND json_extract(e.body,'$.git_target') IS NOT NULL ORDER BY a.id LIMIT ?", after, limit+1)
 	if err != nil {
 		return nil, false, storageError(err)
 	}

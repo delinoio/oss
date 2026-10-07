@@ -568,7 +568,7 @@ func TestPRRemediationCompletionCannotReleaseChangedOriginalAuthority(t *testing
 				}
 			})
 			v, _ := Decode[domain.PRRemediationAttempt](a)
-			if v.State != domain.PRRemediationUncertain || f.chain(t).ActiveAttemptID != manual.ID {
+			if v.State != domain.PRRemediationUncertain || f.chain(t).ActiveAttemptID != a.ID {
 				t.Fatal("foreign completion released PR")
 			}
 		})

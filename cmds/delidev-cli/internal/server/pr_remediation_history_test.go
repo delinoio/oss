@@ -93,8 +93,8 @@ func TestPRRemediationHistoryAndResumeKeepOriginalAttemptsWithoutDispatch(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.client.ResumePullRequestRemediation(context.Background(), ownerRequest(f.service.Identity, &pb.ResumePullRequestRemediationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(setID), ExpectedRevision: current.Revision}})); connect.CodeOf(err) != connect.CodeAborted {
-		t.Fatal("active attempt was overridden", err)
+	if _, err := f.client.ResumePullRequestRemediation(context.Background(), ownerRequest(f.service.Identity, &pb.ResumePullRequestRemediationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(setID), ExpectedRevision: current.Revision}})); err != nil {
+		t.Fatal("active metadata blocked explicit allowance resumption", err)
 	}
 	// Current metadata replay may show a later active attempt. It cannot run
 	// the old allowance mutation again or cancel the newly reserved owner.

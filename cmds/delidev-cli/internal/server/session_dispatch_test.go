@@ -483,6 +483,16 @@ func TestInitialDispatchRequiresCurrentEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if failure == "worker-stale" || failure == "connection-changed" {
+				if err = f.service.dispatchExecution(ctx, f.refresh(t)); err != nil {
+					t.Fatal("ownership observation blocked first dispatch", err)
+				}
+				state, _ := store.Decode[domain.Session](f.refresh(t))
+				if state.InitialExecution == nil || state.ActiveExecutionID == "" {
+					t.Fatal("first dispatch did not retain its selected execution")
+				}
+				return
+			}
 			if err = f.service.dispatchExecution(ctx, f.refresh(t)); err == nil {
 				t.Fatal("invalidated readiness dispatched")
 			}

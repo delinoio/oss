@@ -18,5 +18,6 @@
   "native-interaction.theOriginalRequestRemainsPendingUntil_89aa8f": "The original request remains pending until its native response is confirmed.",
   "native-interaction.thisRetainedRequestIsClosed_655dbe": "This retained request is closed.",
   "native-interaction.thisRequestIsPendingOpenIts_6a1db0": "This request is pending. Open its original interaction to respond.",
-  "native-interaction.sentence.49c0fedf3648": "Question {{v0}}"
+  "native-interaction.sentence.49c0fedf3648": "Question {{v0}}",
+  "native-interaction.stopCleanupUnconfirmed": "This unanswered request was canceled after Stop. Process cleanup remains unconfirmed; no answer or rejection was sent."
 }

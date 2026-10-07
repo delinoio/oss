@@ -588,7 +588,7 @@ func TestContinuationRejectsChangedReadinessAndUnprovenPredecessor(t *testing.T)
 				t.Fatal(err)
 			}
 			before := f.refresh(t)
-			if scenario == "unfinished-cleanup" || scenario == "recovery" || scenario == "legacy-completion" {
+			if scenario == "unfinished-cleanup" || scenario == "recovery" || scenario == "legacy-completion" || scenario == "changed-connection" || scenario == "offline-worker" {
 				if err := f.service.dispatchExecution(context.Background(), before); err != nil {
 					t.Fatal("unconfirmed ownership blocked successor", err)
 				}

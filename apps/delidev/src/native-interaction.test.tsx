@@ -109,7 +109,7 @@ it.each(["open", "proposal", "cleanup", "idle", "terminal", "pending", "tool", "
   switch (changed) {
     case "open": data.closure = "open"; break;
     case "proposal": proof.proposal_event_id = "evt_01960dcbe1ffABCDEFGHIJKLMN"; break;
-    case "cleanup": proof.stop.cleanup_verified = false; break;
+    case "cleanup": Object.assign(proof.stop, { cleanup_verified: "true" }); break;
     case "idle": proof.stop.idle_observed = false; break;
     case "terminal": proof.stop.terminal_observed = false; break;
     case "pending": proof.stop.pending_cleared = false; break;
@@ -137,3 +137,10 @@ it.each(["original", "duplicate", "fraction", "missing", "both"])("validates nat
   if (changed === "original") expect(screen.getByText(/canceled after Stop and verified process cleanup/)).toBeTruthy();
   else expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
 });
+
+ it("displays Stop with unknown cleanup without presenting a confirmation", () => {
+  const data = stopFixture(); data.opencode_stop.stop.cleanup_verified = false;
+  render(<NativeInteraction data={data} />);
+  expect(screen.getByText(/Process cleanup remains unconfirmed/)).toBeTruthy();
+  expect(screen.queryByText(/verified process cleanup/)).toBeNull();
+ });

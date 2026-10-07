@@ -36,7 +36,7 @@ test.each(["input", "missing-absence", "success", "cleanup", "workspace", "mixed
   if (change === "input") v.native_input_id = p.input_id;
   if (change === "missing-absence") delete v.native_input_id;
   if (change === "success") p.outcome = "succeeded";
-  if (change === "cleanup") v.cleanup_verified = false;
+  if (change === "cleanup") v.cleanup_verified = "true";
   if (change === "workspace") p.cleanup_verified = "true";
   if (change === "mixed") p.claude_terminal = {};
   if (change === "reused") retry.native_event_id = v.result_native_id;
@@ -61,3 +61,10 @@ test.each(["aborted-assistant", "closed-stream-before-retry"])("keeps interrupte
   view.rerender(<NativeClaudeMessage content={content} state="complete" />);
   expect(screen.getByLabelText("Claude message unavailable")).toBeTruthy();
 });
+
+ test("retains stopped output when native cleanup is unconfirmed", () => {
+  const p = fixture(true); object(p.claude_stop).cleanup_verified = false;
+  render(<NativeClaudeStop progress={p} />);
+  expect(screen.getAllByText("Not confirmed")).toHaveLength(2);
+  expect(screen.queryByText("Confirmed")).toBeNull();
+ });

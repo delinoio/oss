@@ -219,8 +219,17 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 		if err != nil {
 			return err
 		}
-		if set.Remediation != nil && domain.OwnershipBlocks(domain.OwnershipResource, row.ID, set.Remediation.ActiveAttemptID != "") {
-			return nil
+		if set.Remediation != nil && set.Remediation.ActiveAttemptID != "" {
+			_, selected, err := tx.GetPRRemediationAttempt(set.Remediation.ActiveAttemptID)
+			if err != nil {
+				return err
+			}
+			// Repeated automatic polling must not duplicate an already queued
+			// or running input. Uncertain outcomes permit the bounded next attempt.
+			if selected.State == domain.PRRemediationReserved || selected.State == domain.PRRemediationBound || selected.State == domain.PRRemediationRunning {
+				return nil
+			}
+			domain.ObserveOwnership(domain.OwnershipResource, row.ID)
 		}
 		if set.Remediation != nil && !set.Remediation.CanStartAutomatic(policy) {
 			return nil

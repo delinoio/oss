@@ -18,5 +18,6 @@
   "native-interaction.theOriginalRequestRemainsPendingUntil_89aa8f": "네이티브 응답이 확인될 때까지 기존 요청은 대기 상태로 남습니다.",
   "native-interaction.thisRetainedRequestIsClosed_655dbe": "유지된 요청이 닫혔습니다.",
   "native-interaction.thisRequestIsPendingOpenIts_6a1db0": "이 요청은 대기 중입니다. 원래 상호작용을 열어 응답하세요.",
-  "native-interaction.sentence.49c0fedf3648": "질문 {{v0}}"
+  "native-interaction.sentence.49c0fedf3648": "질문 {{v0}}",
+  "native-interaction.stopCleanupUnconfirmed": "중지 후 미응답 요청이 취소되었습니다. 프로세스 정리는 미확인 상태이며 응답이나 거부는 전송하지 않았습니다."
 }

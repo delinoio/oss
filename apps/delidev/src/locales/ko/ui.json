@@ -16,7 +16,7 @@
   "ui.failure.confirmation_required": "현재 항목을 확인하고 필요한 확인을 제공하세요.",
   "ui.failure.missing_input": "제출하기 전에 필수 입력을 제공하세요.",
   "ui.failure.unsupported": "선택한 서버 또는 네이티브 어댑터가 이 동작을 지원하지 않습니다.",
-  "ui.failure.recovery_required": "다시 동작하기 전에 원래 작업 및 복구 컨트롤을 확인하세요.",
+  "ui.failure.recovery_required": "소유권·미확인 정리는 로그에 남기고 다음 동작을 진행합니다. 실제 작업 오류는 아래 안내를 확인하세요.",
   "ui.failure.budget_reached": "예산 한도에 도달했습니다. 세션의 예산과 원래 작업을 확인하세요.",
   "ui.failure.resource_exhausted": "용량 한도에 도달했습니다. 다른 요청을 제출하기 전에 용량을 확인하세요.",
   "ui.failure.cursor_expired": "이 페이지 커서가 만료되었습니다. 현재 첫 페이지를 읽으려면 목록을 새로 고치세요.",

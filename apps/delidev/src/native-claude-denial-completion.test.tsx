@@ -17,7 +17,7 @@ test("keeps original denied-run cleanup separate from absent input result and la
   p.cleanup_verified = true;
   view.rerender(<NativeClaudeDenialCompletion progress={p} />);
   expect(screen.getAllByText("Confirmed")).toHaveLength(2);
-  expect(screen.getByText(/does not grant Resume/)).toBeTruthy();
+  expect(screen.getByText(/does not block the next action/)).toBeTruthy();
   expect(screen.queryByRole("button")).toBeNull();
 });
 
@@ -30,7 +30,7 @@ test.each(["input", "result", "arrival", "reused", "turn", "native-input", "miss
   if (change === "turn") v.command_native_id = p.native_turn_id;
   if (change === "native-input") v.native_input_id = p.input_id;
   if (change === "missing-null") delete v.native_input_id;
-  if (change === "cleanup") v.cleanup_verified = false;
+  if (change === "cleanup") v.cleanup_verified = "true";
   if (change === "report") p.cleanup_verified = "true";
   if (change === "outcome") p.outcome = "succeeded";
   if (change === "mixed") p.claude_terminal = {};
@@ -39,3 +39,10 @@ test.each(["input", "result", "arrival", "reused", "turn", "native-input", "miss
   render(<NativeClaudeDenialCompletion progress={p} />);
   expect(screen.getByText(/denial cleanup is unavailable/)).toBeTruthy();
 });
+
+ test("renders unknown native cleanup without upgrading its confirmation", () => {
+  const p = fixture(); object(p.claude_denial).cleanup_verified = false;
+  render(<NativeClaudeDenialCompletion progress={p} />);
+  expect(screen.getAllByText("Not confirmed")).toHaveLength(2);
+  expect(screen.queryByText("Confirmed")).toBeNull();
+ });

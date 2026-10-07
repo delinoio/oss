@@ -9,5 +9,5 @@
   "native-claude-denial-completion.confirmed_fe00b6": "Confirmed",
   "native-claude-denial-completion.workerWorkspaceCleanupReport_e52033": "Worker workspace cleanup report",
   "native-claude-denial-completion.notConfirmed_bc1c29": "Not confirmed",
-  "native-claude-denial-completion.historyReconciliationIsStillRequiredBefore_5f5801": "History reconciliation is still required before further input. This cleanup does not grant Resume."
+  "native-claude-denial-completion.historyReconciliationIsStillRequiredBefore_5f5801": "Cleanup is recorded as an observation and does not block the next action."
 }

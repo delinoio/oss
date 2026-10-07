@@ -196,7 +196,7 @@ func TestPRStartupReportRejectsChangedOrContradictoryEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			var job domain.Job
-			if scenario == "server" {
+			if scenario == "server" || scenario == "device" || scenario == "account" {
 				if domain.Decode(response.Msg.Job.DocumentJson, &job) != nil || job.State != domain.JobFailed {
 					t.Fatal("server attribution blocked startup report")
 				}

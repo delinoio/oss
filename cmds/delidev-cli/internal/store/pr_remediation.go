@@ -50,7 +50,7 @@ func (t *Tx) GetPRRemediationAttempt(id domain.ID) (Record, domain.PRRemediation
 	if err != nil {
 		return r, v, storageError(err)
 	}
-	if set != v.SetID || chain != v.ChainID || sequence != v.Sequence || state != v.State || input.String != string(v.InputID) || input.Valid != (v.InputID != "") {
+	if set != v.SetID || chain != v.ChainID || sequence != v.Sequence || input.String != string(v.InputID) || input.Valid != (v.InputID != "") {
 		return r, v, prRemediationConflict()
 	}
 	_, parent, err := t.GetPRProblemSet(set)
@@ -58,7 +58,13 @@ func (t *Tx) GetPRRemediationAttempt(id domain.ID) (Record, domain.PRRemediation
 		return r, v, err
 	}
 	c := parent.Remediation
-	if c == nil || c.ID != chain || c.Sequence < sequence || domain.OwnershipBlocks(domain.OwnershipResource, id, state.Active() != (c.ActiveAttemptID == id)) {
+	// The legacy partial unique index holds only the selected active slot.
+	// Earlier active entity documents keep their immutable operation state.
+	retiredSlot := state == domain.PRRemediationCanceled && v.State.Active() && c != nil && c.ActiveAttemptID != id
+	if state != v.State && !retiredSlot {
+		return r, v, prRemediationConflict()
+	}
+	if c == nil || c.ID != chain || c.Sequence < sequence || domain.OwnershipBlocks(domain.OwnershipResource, id, v.State.Active() != (c.ActiveAttemptID == id)) {
 		return r, v, prRemediationConflict()
 	}
 	return r, v, nil
@@ -88,10 +94,20 @@ func (t *Tx) putPRRemediationAttempt(id domain.ID, expected uint64, v domain.PRR
 	if v.InputID != "" {
 		input = v.InputID
 	}
+	indexState := v.State
+	if expected != 0 && v.State.Active() {
+		_, set, readErr := t.GetPRProblemSet(v.SetID)
+		if readErr != nil {
+			return r, readErr
+		}
+		if set.Remediation != nil && set.Remediation.ActiveAttemptID != id {
+			indexState = domain.PRRemediationCanceled
+		}
+	}
 	if expected == 0 {
-		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pr_remediation_attempts(id,set_id,chain_id,sequence,state,input_id) VALUES(?,?,?,?,?,?)", id, v.SetID, v.ChainID, v.Sequence, v.State, input)
+		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pr_remediation_attempts(id,set_id,chain_id,sequence,state,input_id) VALUES(?,?,?,?,?,?)", id, v.SetID, v.ChainID, v.Sequence, indexState, input)
 	} else {
-		_, err = t.tx.ExecContext(t.ctx, "UPDATE pr_remediation_attempts SET state=?,input_id=? WHERE id=?", v.State, input, id)
+		_, err = t.tx.ExecContext(t.ctx, "UPDATE pr_remediation_attempts SET state=?,input_id=? WHERE id=?", indexState, input, id)
 	}
 	if err == nil && prior != v.State {
 		_, set, readErr := t.GetPRProblemSet(v.SetID)
@@ -124,6 +140,11 @@ func (t *Tx) ReservePRRemediation(setID domain.ID, expected uint64, mode domain.
 	c := set.Remediation
 	if c.ActiveAttemptID != "" {
 		domain.ObserveOwnership(domain.OwnershipResource, c.ActiveAttemptID)
+		// Release only the legacy index slot. Do not cancel, rewrite or mark
+		// cleanup complete in the original entity, job or execution history.
+		if _, err := t.tx.ExecContext(t.ctx, "UPDATE pr_remediation_attempts SET state=? WHERE set_id=? AND state IN ('reserved','bound','running','uncertain')", domain.PRRemediationCanceled, setID); err != nil {
+			return Record{}, storageError(err)
+		}
 	}
 	if c.Sequence >= domain.MaxPRRemediationAttempts {
 		return Record{}, domain.Fail(domain.ResourceExhausted, "The PR remediation history is full.", "Preserve all original attempts; no history or budget was reset.")

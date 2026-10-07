@@ -36,7 +36,7 @@ func (c *OpenCodeEventPublisher) Complete(ctx context.Context) (domain.Execution
 	var history opencode.HistoryObservation
 	var err error
 	if c.stopRequest != "" {
-		if c.stopped == nil || c.stopObservation == nil || c.stopObservation.Validate() != nil || c.stopped.Stop.RequestID != c.stopRequest || !c.stopped.Stop.CleanupVerified {
+		if c.stopped == nil || c.stopObservation == nil || c.stopObservation.Validate() != nil || c.stopped.Stop.RequestID != c.stopRequest || domain.OwnershipBlocks(domain.OwnershipCleanup, b.reference.ExecutionID, !c.stopped.Stop.CleanupVerified) {
 			return fail(publicationUncertain())
 		}
 		history = c.stopped.History
@@ -60,7 +60,11 @@ func (c *OpenCodeEventPublisher) Complete(ctx context.Context) (domain.Execution
 	if !valid {
 		return fail(publicationUncertain())
 	}
-	value := domain.ExecutionCompletion{Version: 1, ExecutionID: b.reference.ExecutionID, InputID: b.reference.InputID, NativeThreadID: domain.NativeIdentity(b.thread), NativeTurnID: domain.NativeIdentity(b.turn), LastSequence: c.terminalSequence, Outcome: c.terminalOutcome, CleanupVerified: true}
+	cleanupVerified := true
+	if c.stopRequest != "" {
+		cleanupVerified = c.stopped.Stop.CleanupVerified
+	}
+	value := domain.ExecutionCompletion{Version: 1, ExecutionID: b.reference.ExecutionID, InputID: b.reference.InputID, NativeThreadID: domain.NativeIdentity(b.thread), NativeTurnID: domain.NativeIdentity(b.turn), LastSequence: c.terminalSequence, Outcome: c.terminalOutcome, CleanupVerified: cleanupVerified}
 	if value.ValidateForHarness(domain.OpenCode) != nil {
 		return fail(publicationUncertain())
 	}

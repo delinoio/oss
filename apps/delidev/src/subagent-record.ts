@@ -75,7 +75,7 @@ const openCodeNative = (prefix: string): Guard => v => typeof v === "string" && 
 const openCodeTool: Guard = v => shape(v, { id: uuid, message_id: openCodeNative("msg"), part_id: openCodeNative("prt"), call_id: label }, ["id", "message_id", "part_id", "call_id"]);
 const cleanup: Guard = v => shape(v, {
   request_id: uuid, input_request_id: uuid, input_part_id: openCodeNative("prt"), assistant_id: openCodeNative("msg"), history_digest: d => typeof d === "string" && /^[0-9a-f]{64}$/.test(d), http_accepted: b => typeof b === "boolean",
-  interrupted_observed: b => b === true, terminal_observed: b => b === true, idle_observed: b => b === true, pending_cleared: b => b === true, cleanup_verified: b => b === true,
+  interrupted_observed: b => b === true, terminal_observed: b => b === true, idle_observed: b => b === true, pending_cleared: b => b === true, cleanup_verified: b => typeof b === "boolean",
   retry_canceled_observed: b => b === false, retry_observations: r => Array.isArray(r) && r.length <= 1024 && r.every(item => shape(item, { native_event_id: openCodeNative("evt"), attempt: n => Number.isSafeInteger(n) && Number(n) >= 0, next: n => Number.isSafeInteger(n) && Number(n) >= 0 }, ["native_event_id", "attempt", "next"])) && new Set(r.map(item => object(item).native_event_id)).size === r.length,
 }, ["request_id", "input_request_id", "input_part_id", "assistant_id", "history_digest", "http_accepted", "interrupted_observed", "terminal_observed", "idle_observed", "pending_cleared", "cleanup_verified"]) && object(v).request_id !== object(v).input_request_id;
 
