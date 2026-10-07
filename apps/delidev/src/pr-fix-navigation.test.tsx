@@ -57,6 +57,7 @@ function fixture() {
   const start = async () => {
     fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
     fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repositoryId}` }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
     fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
     fireEvent.click(await screen.findByRole("button", { name: "Show retained PR problems" }));
@@ -101,8 +102,9 @@ it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps
   f.back();
   if (state !== "removed repository") {
     if (state === "removed PR row") fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
-    if (state === "failed GitHub reload") await within(screen.getByRole("region", { name: "GitHub query results" })).findByRole("alert");
+    if (state === "failed GitHub reload") await waitFor(() => expect(screen.getAllByRole("alert").some(alert => !screen.getByRole("region", { name: "Pending PR actions" }).contains(alert) && alert.textContent?.includes("server_unavailable"))).toBe(true));
     else await screen.findByText("No pull requests on this returned page.");
   }
   const queries = f.query.mock.calls.length;
