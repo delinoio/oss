@@ -2289,6 +2289,8 @@ API-entry asynchronous save presentation retains its feature heading, entry name
 
 A successful Fork status without its verified original-source child retains exact-query reinspection so completion can recover without another Fork request.
 
+Desktop update candidates retain the exact recovery ID and decimal revision as functional read-only journal-inspection operands. Their display permits later local recovery without live server negotiation and grants no installation or restart authority.
+
 
 
 ### Frontend validation concurrency
