@@ -23,6 +23,8 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
+	NativeProfileID        ID                                `json:"native_profile_id,omitempty"`
+	NativeOperation        *NativeSubscriptionOperation      `json:"native_operation,omitempty"`
 	OwnerMachineID         ID                                `json:"owner_machine_id,omitempty"`
 	Observation            *SubscriptionObservationOperation `json:"observation,omitempty"`
 	QuotaState             ObservationState                  `json:"quota_state,omitempty"`
@@ -65,6 +67,9 @@ func (s SubscriptionState) Validate(account Account) error {
 	}
 	if account.Type != SubscriptionAccount {
 		return invalid()
+	}
+	if err := s.validateNativeClaude(account); err != nil {
+		return err
 	}
 	// Database restore disconnects accounts without restoring their external
 	// vault. Quarantined references remain valid evidence, never grant authority.

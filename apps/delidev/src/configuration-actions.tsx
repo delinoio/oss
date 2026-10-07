@@ -18,7 +18,7 @@ export function ConfigurationDeletion({ active = true, ...props }: DeletionProps
   const closeTask = useCloseSettingsTask(props.close);
   const key = props.initial.id;
   if (props.initial.kind === EntityKind.ACCOUNT && document(props.initial).type === "api") return <ApiAccountDeletion key={key} {...props} active={active} close={closeTask} />;
-  return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT)
+  return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT) || serviceAccount(props.initial, undefined, SubscriptionServiceId.Claude)
     ? <ChatGPTAccountDeletion key={key} {...props} active={active} />
     : <ConfigurationDeletionRequest key={key} {...props} active={active} close={closeTask} />;
 }

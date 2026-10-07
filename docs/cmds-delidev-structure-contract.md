@@ -378,8 +378,18 @@ DeliDev pre-release breaking changes do not suppress other projects' Buf
 breaking checks, numeric allocation validation, lint or freshness. Record source
 revision, commands, results and unresolved limits in PRs and CI artifacts.
 
-## Native Claude subscription reservations
+## Native Claude subscription allocation closure
 
+PR #1612 established System capability 38, Worker capability 20 and the complete
+Claude login-code/progress/native-identity closure on main at
+`8a698d04d51f9db3a041b909edf85a7811f09ff3` before the dependent feature branch.
+Existing Codex bundles, independent capabilities and real migrations through 31
+retain their meanings. Main-first reservation history remains in the allocation
+ledger; a reservation alone grants no native or browser authority. The feature
+uses optional ownership JSON with no migration and leaves the inactive reset
+reservation for baseline 32/protocol 2 unchanged. Native account/platform
+acceptance must be recorded independently from fixture/build validation under
+the subscription and desktop contracts.
 Issue #964 reserves System capability 38, Worker capability 20 and the complete
 Claude login-code/progress/native-identity closure in the protocol allocation
 ledger. Establish these reservations on main before dependent feature branches

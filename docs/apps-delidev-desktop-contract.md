@@ -959,7 +959,7 @@ After preparing the native assets and sidecar, run these permission tests with
 from the repository root; the default library feature set excludes native ACL
 generation.
 
-Account settings separate **AI Subscription** and **AI API Keys** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory’s Add AI API key action opens the entry form directly with that exact enabled saved provider entry, consuming each deliberate event key once. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Category navigation stays locked during account creation, settings and connection workflows; application navigation remains available, with exact uncertain requests retained for deliberate retry. Independent server capability 30 enables ChatGPT browser login followed by editable account naming under the subscription Settings contract; Claude Code and Grok remain unsupported. The collapsed Advanced settings disclosure owns search, provider filters, disconnected metadata creation and the subscription-provider section, which permits only native-subscription protocol, subscription authentication and an empty endpoint. Issue #1143 defines the compact subscription list and planned provider cards in [the subscription Settings contract](apps-delidev-subscription-settings-contract.md); native lifecycle controls require their independent capability.
+Account settings separate **AI Subscription** and **AI API Keys** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory’s Add AI API key action opens the entry form directly with that exact enabled saved provider entry, consuming each deliberate event key once. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Category navigation stays locked during account creation, settings and connection workflows; application navigation remains available, with exact uncertain requests retained for deliberate retry. Independent server capability 30 enables ChatGPT browser login followed by editable account naming under the subscription Settings contract; Claude follows its independently negotiated selected-Runner flow; Grok remains unsupported. The collapsed Advanced settings disclosure owns search, provider filters, disconnected metadata creation and the subscription-provider section, which permits only native-subscription protocol, subscription authentication and an empty endpoint. Issue #1143 defines the compact subscription list and planned provider cards in [the subscription Settings contract](apps-delidev-subscription-settings-contract.md); native lifecycle controls require their independent capability.
 
 Issue #1145 replaces the creation picker’s search, radios, selected markers, numbered steps and Continue with native provider action buttons. Choose an API provider / Select a provider to connect your entry. precedes one server-ordered page of enabled saved API entries. The picker requests `query: ""`, `enabledOnly: true`, `pageSize: 50` and its own cursor, independent of AI API Keys’ unsearched account-provider inventory and API Providers’ search. Both account and picker inventories must retain all four capability gates; no generic resource page or credential inference can supply eligibility. Direct-entry details remain disabled while either inventory lacks the gates, and become unavailable again if those capabilities are lost. The clicked UUID and complete summary/Resource are retained as one bounded hint even when the account-filter page does not contain that provider. The clicked snapshot remains authoritative across unrelated inventory refreshes; the existing fresh provider checks validate or reject its contract before writes.
 
@@ -2064,6 +2064,33 @@ Profile/page/filter choices survive child dismissal and reopening within the sam
 
 AI Subscription offers the explicit capability-41 Auto cleanup action under the [subscription Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup). Its inline status/result and original request/status retries belong to the current category lifetime. Account mutations freeze while pending; category and application navigation remain available. Departure disposes local waits and continuations without canceling the accepted server batch. Preserve shared theme controls, responsive wrapping, accessible live status and existing focus; no task dialog or native ownership is added.
 
+## Claude subscription task and native browser ownership
+
+System 38 and original Worker 20 independently enable the approved Claude
+subscription flow in the existing 960px Settings task dialog. Preserve the
+Runner Device → Sign in → Account name order, explicit once-only Start,
+conditional masked approval input, success-bound default Claude naming and
+Later retention. Management exposes the owner Runner, Sign in again and
+logout. X/Escape hide retained work; only explicit Cancel sign-in cancels it.
+The existing task host owns focus, scrolling, responsive stacking and hidden
+operation restoration. See the [subscription Settings contract](apps-delidev-subscription-settings-contract.md#claude-account-onboarding-and-management).
+
+Native `claude-subscription-open` / `claude-subscription-reopen` actions bind the
+trusted main window epoch, authenticated server, Settings opening, original
+operation, exact validated original URL and one browser generation. The closed
+Claude CLI URL profile pins HTTPS Claude authorization, its original client,
+PKCE, scope and native redirect. This binding creates no loopback listener or
+callback receiver and cannot enter provider/Codex OAuth Take/BindOpen paths.
+Initial replay does not open another browser; explicit reopening uses the same
+binding. Disposal/window/server changes erase presentation authority. URL and
+code remain transient and absent from cache, persisted state and logs.
+
+Go on the selected original local/remote Runner owns lifecycle and execution;
+Tauri owns only trusted browser presentation. No renderer authority can import
+personal authentication, exchange a code, move a profile or infer cleanup.
+Validate desktop/narrow viewports, both themes and 200% zoom separately from
+real macOS/Windows/Linux account and packaged application acceptance. An
+unverified platform cannot be reported as complete.
 ## Inline Worker models and endpoint-only completion reservation
 
 The approved existing wizard uses endpoint-only API completion, exact direct input and official subscription suggestions without Saved choices. Keep keyboard, focus, localization, themes and responsive behavior. Clear editor-local responses on source/account/generation/lifetime changes and errors. Native observations retain no register/use action. Usage selects pricing by source and native ID.

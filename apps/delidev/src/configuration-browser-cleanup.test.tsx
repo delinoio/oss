@@ -16,7 +16,7 @@ import { SettingsDialogSize, SettingsTaskBackground, SettingsTaskDialog, Setting
 function fixture(type: "subscription" | "api") {
   const initial = create(ResourceSchema, {
     id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 3n, schemaVersion: type === "api" ? 1 : 2,
-    documentJson: encode({ alias: "Original fixture", type, ...(type === "subscription" ? { subscription_service: "claude" } : { provider_id: newRequestId(), health: "connected", connection: { id: newRequestId() } }) }),
+    documentJson: encode({ alias: "Original fixture", type, ...(type === "subscription" ? { subscription_service: "grok" } : { provider_id: newRequestId(), health: "connected", connection: { id: newRequestId() } }) }),
   });
   let current = initial;
   const acknowledgment = (request: DeleteConfigurationRequest) => ({ id: initial.id, requestId: request.mutation!.requestId });
