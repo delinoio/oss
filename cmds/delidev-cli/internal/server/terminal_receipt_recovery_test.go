@@ -129,3 +129,59 @@ func TestTerminalReplacementReadsOnlyCommittedOriginalReportReceipt(t *testing.T
 		})
 	}
 }
+
+func TestTerminalReportRejectsHistoricalUnboundReceipt(t *testing.T) {
+	f, session, identity, worker, instance, _ := terminalFixture(t)
+	ctx := context.Background()
+	product := delidevv1connect.NewTerminalServiceClient(http.DefaultClient, f.endpoint.URL)
+	created, err := product.CreateTerminal(ctx, ownerRequest(f.identity, &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value domain.Terminal
+	if domain.Decode(created.Msg.Terminal.DocumentJson, &value) != nil {
+		t.Fatal("invalid fixture terminal")
+	}
+	claim := &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: string(value.MachineID), InstanceId: instance, TerminalId: created.Msg.Terminal.Id, OperationId: string(value.Pending.ID)}
+	if _, err = worker.ClaimTerminal(ctx, ownerRequest(identity, claim)); err != nil {
+		t.Fatal(err)
+	}
+	before := currentCatalogResource(t, f, created.Msg.Terminal)
+	if domain.Decode(before.DocumentJson, &value) != nil {
+		t.Fatal("invalid claimed terminal")
+	}
+	raw, _ := json.Marshal(terminal.Result{State: domain.TerminalExited, CleanupVerified: true, Rows: 24, Columns: 80, Problem: domain.TerminalUnavailable()})
+	f.shutdown()
+	db, err := store.Open(ctx, f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice, DeviceID: value.DeviceID, MachineID: value.MachineID})
+	var reports []*pb.ReportTerminalRequest
+	for _, historical := range []terminalReceipt{{TerminalID: domain.ID(before.Id)}, {Kind: store.TerminalReportReceiptKind, TerminalID: domain.ID(before.Id), MachineID: value.MachineID}, {Kind: store.TerminalReportReceiptKind, TerminalID: domain.ID(before.Id), DeviceID: value.DeviceID}} {
+		report := &pb.ReportTerminalRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, TerminalId: claim.TerminalId, OperationId: claim.OperationId, ResultJson: raw}
+		_, err = db.Mutate(actor, domain.ID(report.RequestId), "terminal.report", report, func(tx *store.Tx) (any, error) { return historical, nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		reports = append(reports, report)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.start()
+	worker = delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.endpoint.URL)
+	if _, err = worker.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, Version: "0.1.0", Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}})); err != nil {
+		t.Fatal(err)
+	}
+	before = currentCatalogResource(t, f, before)
+	for _, report := range reports {
+		if _, err = worker.ReportTerminal(ctx, ownerRequest(identity, report)); err == nil {
+			t.Fatal("unbound receipt acknowledged")
+		}
+		after := currentCatalogResource(t, f, before)
+		if after.Revision != before.Revision || !bytes.Equal(after.DocumentJson, before.DocumentJson) {
+			t.Fatal("rejection changed terminal")
+		}
+	}
+}

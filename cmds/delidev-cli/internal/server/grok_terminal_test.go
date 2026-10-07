@@ -15,7 +15,7 @@ func grokServerTerminalFixture(t *testing.T, withUser ...bool) (*publicationFixt
 	f := newGrokPublicationFixture(t, domain.ExecuteMode)
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 	accepted := f.event(domain.ExecutionInputAccepted, 2)
-	if len(withUser) != 0 && withUser[0] {
+	if len(withUser) == 0 || withUser[0] {
 		accepted.GrokUserMessageID = domain.NewID()
 	}
 	f.publish(t, accepted)

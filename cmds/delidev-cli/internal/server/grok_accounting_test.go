@@ -119,7 +119,7 @@ func TestGrokAccountingExcludesUnverifiedLegacyAndInterruptedInputs(t *testing.T
 			if scenario == "missing-closure" {
 				e.GrokTerminal.HistoryDigest = ""
 			}
-			if scenario == "changed-history" || scenario == "missing-closure" {
+			if scenario == "changed-history" || scenario == "missing-closure" || scenario == "legacy-history" {
 				if _, err := f.call(f.requestEvent(t, e)); err == nil {
 					t.Fatal("invalid closure accepted")
 				}

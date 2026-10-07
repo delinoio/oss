@@ -37,7 +37,6 @@ type storageRemovalClaim struct {
 	Version      uint32                  `json:"version"`
 	Reference    StorageRemovalReference `json:"reference"`
 	IntentDigest string                  `json:"intent_digest"`
-	Pending      []storageRemovalRename  `json:"pending,omitempty"`
 }
 
 // A recursive source directory can retain one mapping per open directory while
@@ -47,7 +46,7 @@ const maxStorageRemovalClaim = maxSnapshotManifest
 
 // Journal records repeat two encoded paths for each transition. The immutable
 // manifest bounds the original path inventory; the larger journal ceiling holds
-// its active prepared/renamed projection plus the bounded header baseline.
+// its active prepared/renamed projection.
 // Settled history is compacted atomically before admitting another record.
 const maxStorageRemovalJournal = 8 * maxSnapshotManifest
 
@@ -84,17 +83,8 @@ func removalReference(r StorageRequest) StorageRemovalReference {
 func removalClaimMatches(raw []byte, ref StorageRemovalReference, intent []byte) bool {
 	var claim storageRemovalClaim
 	sum := sha256.Sum256(intent)
-	if domain.Decode(raw, &claim) != nil || claim.Version != 2 || claim.RootIdentity == "" || claim.Reference != ref || claim.IntentDigest != hex.EncodeToString(sum[:]) || len(claim.Pending) > maxSnapshotRemovalEntries {
+	if domain.Decode(raw, &claim) != nil || claim.Version != 2 || claim.RootIdentity == "" || claim.Reference != ref || claim.IntentDigest != hex.EncodeToString(sum[:]) {
 		return false
-	}
-	seenOriginal := map[string]bool{}
-	seenPrivate := map[string]bool{}
-	for _, rename := range claim.Pending {
-		if !validRemovalRelativePath(rename.Original) || !validRemovalRelativePath(rename.Private) || rename.Original == rename.Private || rename.ModePrepared && !rename.Renamed || seenOriginal[rename.Original] || seenPrivate[rename.Private] {
-			return false
-		}
-		seenOriginal[rename.Original] = true
-		seenPrivate[rename.Private] = true
 	}
 	return true
 }
@@ -151,7 +141,7 @@ func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageReque
 	if err != nil {
 		return ResultUncertain()
 	}
-	claim, pending, removed, err := m.readRemovalClaimState(r, intent)
+	_, pending, removed, err := m.readRemovalClaimState(r, intent)
 	if err != nil {
 		return err
 	}
@@ -168,13 +158,6 @@ func (m *Manager) compactRemovalClaimJournal(ctx context.Context, r StorageReque
 		raw = append(raw, part...)
 		raw = append(raw, '\n')
 		return nil
-	}
-	// Retain compatibility with a bounded nonempty original header baseline:
-	// clear it in the replay before reconstructing the current active claims.
-	for _, prior := range claim.Pending {
-		if err := appendRecord(storageRemovalRenameRecord{Original: prior.Original, Private: prior.Private, State: storageRemovalRenameCleared}); err != nil {
-			return err
-		}
 	}
 	settled := make([]storageRemovalRename, 0, len(removed))
 	for _, rename := range removed {
@@ -237,13 +220,10 @@ func (m *Manager) readRemovalClaimState(r StorageRequest, intent []byte) (storag
 		inventory[entry.Path] = true
 	}
 	removed := map[string]storageRemovalRename{}
-	active := make(map[string]storageRemovalRename, len(claim.Pending))
-	for _, rename := range claim.Pending {
-		active[rename.Original] = rename
-	}
+	active := map[string]storageRemovalRename{}
 	raw, err := security.ReadPrivate(m.removalClaimJournalPath(r.OperationID), maxStorageRemovalJournal)
 	if errors.Is(err, os.ErrNotExist) {
-		return claim, append([]storageRemovalRename(nil), claim.Pending...), removed, nil
+		return claim, nil, removed, nil
 	}
 	if err != nil {
 		return storageRemovalClaim{}, nil, nil, ResultUncertain()

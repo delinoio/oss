@@ -5,7 +5,7 @@
 Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
 `SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
 `AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
-is exclusive with the legacy singular model. Establish both ledger reservations
+is exclusive with the current singular model. Establish both ledger reservations
 on main before activation. Capability 35 keeps its known-subscription-model
 ownership. No active schema, generated output, advertisement or migration is
 introduced by this prerequisite.
@@ -267,7 +267,7 @@ Issue #1142 appends `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` wit
 
 Repository saves return an accepted coordinator job in `SaveConfigurationResponse.job`. The server dispatches fresh read-only inspection to every configured checkout, validates preferred/base/starting remote names on each Worker, and commits the canonical repository plus successful coordinator outcome atomically only after all results arrive. Validation or revision failure preserves the previous configuration and a typed failed job; retries reuse the accepted operation. The successful job stores only the target ID/revision as its result, not a second configuration body. `--wait` waits within a bounded CLI deadline; accepted job identity remains available in failure output. Omitted `auto_fetch` defaults to true.
 
-Version 1 uses canonical UUID-v7 entity/request identities, expected revisions, bounded pagination, typed errors and correlation metadata. Product operations share CLI/server validation. Mutations commit durable request receipts with their state/events. Streaming is Connect server streaming; snapshots carry the event cursor they represent. Expired/invalid cursors require resnapshot, and slow consumers reconnect instead of accumulating unbounded memory. Worker authorization is limited to that machine's assigned operations/events.
+Protocol 2 uses canonical UUID-v7 entity/request identities, expected revisions, bounded pagination, typed errors and correlation metadata; the protobuf package remains `delidev.v1`. Product operations share CLI/server validation. Mutations commit durable request receipts with their state/events. Streaming is Connect server streaming; snapshots carry the event cursor they represent. Expired/invalid cursors require resnapshot, and slow consumers reconnect instead of accumulating unbounded memory. Worker authorization is limited to that machine's assigned operations/events.
 
 Page/event cursors are HMAC-bound to server identity and filter/session scope and expire after 24 hours. Pages are capped at 200 records. Snapshot overflow returns an explicit narrower-scope error instead of pretending a partial page is complete. Events carry metadata and indexed message/entity revisions; they never repeat transcript bodies. Stream sends have a 15-second write deadline and fetch at most 200 durable events at once. Authentication and correlation metadata also apply to streaming errors.
 

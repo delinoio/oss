@@ -102,7 +102,7 @@ it("keeps measured zero tokens and zero estimates distinct from an empty interva
   f.data.estimates = create(GetUsageSummaryResponseSchema, { estimates: { currencies: [{ currency: "USD", knownAmount: "0", completeResponses: 1 }] } }).estimates;
   render(f.view()); await screen.findAllByText("USD 0");
   expect(screen.getByText("0", { selector: "strong" })).toBeTruthy();
-  expect(screen.getByText("1 observed responses")).toBeTruthy();
+  expect(screen.getByText("1 observed response")).toBeTruthy();
   expect(screen.queryByText("$0", { selector: "strong" })).toBeNull();
   expect(screen.queryByText("No usage in this period")).toBeNull();
 });

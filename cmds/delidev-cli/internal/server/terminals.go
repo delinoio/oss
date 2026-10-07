@@ -517,7 +517,7 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 		// Never pass this path to Mutate: absent receipts cannot gain authority
 		// to report, claim, recreate or control the original native terminal.
 		var ref terminalReceipt
-		if domain.Decode(prior.Data, &ref) != nil || string(ref.TerminalID) != req.Msg.TerminalId || (ref.Kind != "" && ref.Kind != store.TerminalReportReceiptKind) {
+		if domain.Decode(prior.Data, &ref) != nil || string(ref.TerminalID) != req.Msg.TerminalId || ref.Kind != store.TerminalReportReceiptKind || ref.MachineID != machine || ref.DeviceID != actor.DeviceID {
 			return fail(domain.TerminalUnavailable())
 		}
 		var projected *pb.Resource
@@ -525,16 +525,9 @@ func (s *Service) ReportTerminal(ctx context.Context, req *connect.Request[pb.Re
 			if err := terminalMachine(tx, machine, currentInstance); err != nil {
 				return err
 			}
-			if ref.MachineID != "" || ref.DeviceID != "" {
-				if ref.MachineID != machine || ref.DeviceID != actor.DeviceID {
-					return domain.TerminalUnavailable()
-				}
-				if currentInstance != instance {
-					return nil
-				}
+			if currentInstance != instance {
+				return nil
 			}
-			// Older receipts lack ownership metadata. They require the original
-			// record to remain available; missing records are never ownership proof.
 			r, value, err := terminalRecord(tx, ref.TerminalID)
 			if err != nil {
 				if ref.Kind == store.TerminalReportReceiptKind && ref.MachineID == machine && ref.DeviceID == actor.DeviceID && domain.SafeError(err).Code == domain.NotFound {

@@ -1193,7 +1193,6 @@ func TestRemovalJournalCompactsDeepPrivatePathsWithinOriginalInventoryBound(t *t
 	}
 	digest := sha256.Sum256(intentRaw)
 	claim.IntentDigest = hex.EncodeToString(digest[:])
-	claim.Pending = nil
 	header, _ = json.Marshal(claim)
 	if err := security.WriteAtomicOwned(m.removalIntentPath(input.OperationID), intentRaw); err != nil {
 		t.Fatal(err)
@@ -1245,5 +1244,46 @@ func TestRemovalJournalCompactsDeepPrivatePathsWithinOriginalInventoryBound(t *t
 	after, _ := os.ReadFile(journal)
 	if !bytes.Equal(before, after) {
 		t.Fatal("invalid proof was rewritten")
+	}
+}
+
+func TestStorageRecoveryRejectsHistoricalClaimHeaderWithoutChangingProofs(t *testing.T) {
+	m, input, manifest, _ := interruptedRemovalFixture(t)
+	path := m.removalClaimPath(input.OperationID)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header map[string]json.RawMessage
+	if json.Unmarshal(raw, &header) != nil {
+		t.Fatal("invalid fixture claim")
+	}
+	header["pending"] = json.RawMessage(`[]`)
+	raw, err = json.Marshal(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = security.WriteAtomicOwned(path, raw); err != nil {
+		t.Fatal(err)
+	}
+	journal, err := os.ReadFile(m.removalClaimJournalPath(input.OperationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = &Manager{Root: m.Root, Logger: m.Logger}
+	if _, err = m.Storage(context.Background(), recoveryRequest(input)); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("historical header adopted", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(after, raw) {
+		t.Fatal("rejection changed immutable claim", err)
+	}
+	after, err = os.ReadFile(m.removalClaimJournalPath(input.OperationID))
+	if err != nil || !bytes.Equal(after, journal) {
+		t.Fatal("rejection changed removal journal", err)
+	}
+	after, err = os.ReadFile(filepath.Join(manifest.PrimaryPath, "keep"))
+	if err != nil || string(after) != "original" {
+		t.Fatal("rejection changed live source", err)
 	}
 }

@@ -20,7 +20,7 @@ func reconcileFailedServerLoginRuntime(ctx context.Context, root string, o domai
 	home := filepath.Join(runtimeRoot, "auth", string(o.ID))
 	if !o.NativeStarted {
 		// The durable claim barrier proves that a queued login never launched;
-		// settled legacy metadata also clears this flag only after joined cleanup.
+		// settled operation metadata clears this flag only after joined cleanup.
 		// Unexpected retained files contradict either proof and must be preserved.
 		if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 			return subscriptionDenied()

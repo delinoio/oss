@@ -59,7 +59,6 @@
   "api-entry-row.extra.37709967fc3f": "Provider unavailable · ",
   "api-entry-row.extra.b764cdc0eab7": "Unknown",
   "api-entry-row.observedResponses_one": "{{v0}} observed response",
-  "api-entry-row.observedResponses_compatibility": "{{v0}} observed responses",
   "api-entry-row.observedUnits_one": "{{v0}} observed unit",
   "api-entry-row.observedResponses_other": "{{v0}} observed responses",
   "api-entry-row.observedUnits_other": "{{v0}} observed units"

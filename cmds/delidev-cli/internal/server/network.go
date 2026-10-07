@@ -471,7 +471,7 @@ func (s *Service) ExportWorkerNetworkMetadata(ctx context.Context, req *connect.
 	if machine.Validate() != nil {
 		return nil, rpc.Error(machine.Validate(), correlation)
 	}
-	// Legacy signed metadata remains limited to registered machines. Pending
+	// Current signed metadata remains limited to registered machines. Pending
 	// bootstrap instead requires its independently bound encrypted transfer.
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {

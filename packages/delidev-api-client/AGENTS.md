@@ -63,7 +63,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Native context and manual compaction use the generated SessionService declarations and closed SessionContextCapability values in `docs/cmds-delidev-claude-compaction-contract.md`. Preserve raw bounded observation JSON, exact uint64 mutation revisions and UUID-v7 retry identity; never infer utilization or action success from an outer envelope.
 
-- Generated UsageQuery consumers verify the NATIVE_UNITS_V1 echo before interpreting native accounting, preserve decimal totals and distinct unit kinds, and keep legacy response fields separate. Grok pricing and budget contribution remain unavailable.
+- Generated UsageQuery consumers verify the NATIVE_UNITS_V1 echo before interpreting native accounting, preserve decimal totals and distinct unit kinds, and keep current API response aggregation separate from native accounting units. Grok pricing and budget contribution remain unavailable.
 
 - Generated BrowserQuery bindings expose only the metadata/cleanup contract in `docs/cmds-delidev-browser-contract.md`. Keep browser URLs, tabs and native paths out of product RPCs and React Query server state; local native presentation is independently authorized and generation-bound.
 
@@ -85,4 +85,4 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
 
-- Remote repository clients negotiate generated System 37 before saves/imports and preserve Worker 19 independent managed-clone gates. Retain original request bytes and source-kind/URL identity, optional checkout semantics and legacy immutable records under the protocol/workspace contracts.
+- Remote repository clients negotiate generated System 37 before saves/imports and preserve Worker 19 independent managed-clone gates. Retain original request bytes and source-kind/URL identity, optional checkout semantics and current immutable records under the protocol/workspace contracts.

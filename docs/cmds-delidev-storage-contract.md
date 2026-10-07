@@ -784,8 +784,7 @@ that allowlist from the accepted receipt. All resource content and other receipt
 fields remain redacted. This lets a same-device replacement confirm an exact
 already-committed report after response loss and retire independently joined
 local ownership evidence. It grants no new report, native operation or resource
-resurrection. Legacy unbound receipts require the original resource to remain
-available. See the [terminal contract](cmds-delidev-terminals-contract.md).
+resurrection. Report acknowledgement requires the current receipt kind and original machine/device binding; unbound historical receipts are rejected even if their resource remains available. See the [terminal contract](cmds-delidev-terminals-contract.md).
 
 ### Automatic PR source ownership
 
@@ -914,7 +913,7 @@ The shared server workspace read scope admits new file, directory, diff, private
 
 The connection-owned desktop controller polls an active retained storage anchor for external deletion. Authenticated session NotFound releases the stale local operation lock and allows finishing/switching the view, while in-flight or uncertain mutation receipts remain retained. Independent deletion status continues to distinguish pending cleanup, completed cleanup and unavailable status; absence alone cannot prove cleanup. Transient or authorization errors do not release an original operation.
 
-Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
+Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Cleared rollback records grant no missing-entry authority. The immutable current claim has no pending-entry header; reject historical headers without rewriting claims or journals.
 
 Storage results retain at least the surviving snapshot size in retained bytes and bind successful cleanup to its original canonical preview digest, including recovered cleanup. CLI snapshot inventory emits revision as a decimal JSON string.
 

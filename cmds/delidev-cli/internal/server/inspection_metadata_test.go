@@ -94,9 +94,17 @@ func TestRepositoryMetadataNegotiationAndReportValidation(t *testing.T) {
 	if err := report(raw); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatal("unnegotiated result accepted", err)
 	}
+	if _, err := attach([]pb.WorkerCapability{metadata}); err != nil {
+		t.Fatal(err)
+	}
 	good.GitHubRepositories = nil
 	raw, _ = json.Marshal(good)
+	if err := report(raw); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatal("omitted metadata accepted", err)
+	}
+	good.GitHubRepositories = map[string]workspace.GitHubRepository{}
+	raw, _ = json.Marshal(good)
 	if err := report(raw); err != nil {
-		t.Fatal("legacy output rejected", err)
+		t.Fatal("current empty metadata rejected", err)
 	}
 }

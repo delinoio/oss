@@ -1,3 +1,4 @@
+- The active pre-release reset follows `docs/cmds-delidev-structure-contract.md#pre-release-compatibility-reset`: require protocol 2 and current ownership proofs. Do not adopt or convert historical claims. Keep external native adapters, currently emitted formats/profiles and independently uncertain cleanup ownership. This rule supersedes earlier DeliDev compatibility-retention guidance.
 # DeliDev Worker workspace ownership
 
 Follow the root and parent instructions and docs/cmds-delidev-workspace-contract.md.
@@ -67,7 +68,7 @@ All snapshot namespace publication, storage inspection/restore/delete/recovery, 
 
 - Published storage recovery uses the original snapshot publication claim and captured managed-directory identities with pinned source bytes/digest. Later mutable copy eligibility or external Git availability cannot revoke that completed copy; a live Cleanup source settles as preserved/failed. Replacement directories remain uncertain. Legacy snapshots retain their previous identity checks. Windows external Git stores on a different volume count toward the shared observation budget.
 
-Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
+Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Cleared rollback records grant no missing-entry authority. Reject historical pending-entry claim headers without rewriting original proofs.
 
 Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.
 

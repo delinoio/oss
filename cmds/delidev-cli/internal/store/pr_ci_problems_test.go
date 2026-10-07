@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 
@@ -56,15 +58,7 @@ func TestPRCIRetainsOriginalProofAndDismissalAcrossCurrentEvaluationChanges(t *t
 	if original.CI == nil {
 		t.Fatal("missing original proof link")
 	}
-	// Exercise the old plain-node index while preserving original proof bytes.
-	_, err := s.Mutate(notificationOwner(), domain.NewID(), "fixture.legacy-ci-index", nil, func(tx *Tx) (any, error) {
-		_, err := tx.tx.ExecContext(tx.ctx, "UPDATE pr_problem_records SET native_node=? WHERE id=?", original.NativeNode(), records[0].ID)
-		return nil, err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.Mutate(notificationOwner(), domain.NewID(), "fixture.dismiss-ci", nil, func(tx *Tx) (any, error) {
+	_, err := s.Mutate(notificationOwner(), domain.NewID(), "fixture.dismiss-ci", nil, func(tx *Tx) (any, error) {
 		return tx.DismissPRProblem(records[0].ID, records[0].Revision, original.ContentVersion)
 	})
 	if err != nil {
@@ -164,7 +158,7 @@ func TestQueueCIFailureRetainsOriginalEntryAndLosesCurrentAuthorityOnRemoval(t *
 }
 
 func TestQueueCIFailureSeparatesReplacementIdentityWithReusedNativeResult(t *testing.T) {
-	for _, mode := range []string{"entry", "queue", "legacy-entry", "legacy-queue"} {
+	for _, mode := range []string{"entry", "queue"} {
 		t.Run(mode, func(t *testing.T) {
 			s, root := openTest(t)
 			defer func() { s.Close() }()
@@ -178,15 +172,6 @@ func TestQueueCIFailureSeparatesReplacementIdentityWithReusedNativeResult(t *tes
 			original, err := Decode[domain.PRProblem](originalRow)
 			if err != nil {
 				t.Fatal(err)
-			}
-			if strings.HasPrefix(mode, "legacy-") {
-				_, err = s.Mutate(notificationOwner(), domain.NewID(), "fixture.legacy-queue-index", nil, func(tx *Tx) (any, error) {
-					_, err := tx.tx.ExecContext(tx.ctx, "UPDATE pr_problem_records SET native_node=? WHERE id=?", original.NativeNode(), originalRow.ID)
-					return nil, err
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
 			}
 			_, err = s.Mutate(notificationOwner(), domain.NewID(), "fixture.dismiss-queue", nil, func(tx *Tx) (any, error) {
 				return tx.DismissPRProblem(originalRow.ID, originalRow.Revision, original.ContentVersion)
@@ -308,5 +293,42 @@ func TestPRConflictHistoryIsIndependentOfFeedbackAndCIEvaluation(t *testing.T) {
 		if v.Kind == domain.PRFeedbackProblem && !v.Current {
 			t.Fatal("conflict read invalidated independent feedback")
 		}
+	}
+}
+
+func TestPRCIRejectsHistoricalPlainNodeIndex(t *testing.T) {
+	for _, queue := range []bool{false, true} {
+		t.Run(fmt.Sprint(queue), func(t *testing.T) {
+			s, _ := openTest(t)
+			defer s.Close()
+			observed := ciStoreObservationFixture()
+			if queue {
+				observed = queueCIStoreObservationFixture()
+			}
+			set := collectCIStoreFixture(t, s, 0, observed, false)
+			original := readProblemFixture(t, s, set.ID)[0]
+			value, _ := Decode[domain.PRProblem](original)
+			_, err := s.Mutate(notificationOwner(), domain.NewID(), "fixture.historical-ci-index", nil, func(tx *Tx) (any, error) {
+				_, err := tx.tx.ExecContext(tx.ctx, "UPDATE pr_problem_records SET native_node=? WHERE id=?", value.NativeNode(), original.ID)
+				return nil, err
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = s.Read(notificationOwner(), func(tx *Tx) error { _, _, err := tx.GetPRProblem(original.ID); return err })
+			if domain.SafeError(err).Code != domain.Conflict {
+				t.Fatal("historical index accepted", err)
+			}
+			_, err = s.Mutate(notificationOwner(), domain.NewID(), "fixture.dismiss-historical-ci", nil, func(tx *Tx) (any, error) {
+				return tx.DismissPRProblem(original.ID, original.Revision, value.ContentVersion)
+			})
+			if domain.SafeError(err).Code != domain.Conflict {
+				t.Fatal("historical index authorized a change", err)
+			}
+			after, err := s.Get(notificationOwner(), domain.ProblemKind, original.ID)
+			if err != nil || after.Revision != original.Revision || !bytes.Equal(after.Data, original.Data) {
+				t.Fatal("rejection changed original proof", err)
+			}
+		})
 	}
 }

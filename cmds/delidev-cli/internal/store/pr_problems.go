@@ -25,7 +25,7 @@ func prProblemMissing() error {
 
 func prCIProblemIndexNode(value domain.PRCIProblemEvidence) string {
 	// These separators are private to SQLite. Validated native identities cannot
-	// contain NULs, so scoped keys cannot collide with legacy plain-node keys.
+	// contain NULs, so source and queue identities remain unambiguous.
 	return string(value.Source) + "\x00" + value.Context.NodeID + "\x00" + value.QueueNodeID + "\x00" + value.QueueEntryNodeID
 }
 
@@ -107,7 +107,7 @@ func (t *Tx) GetPRProblem(id domain.ID) (Record, domain.PRProblem, error) {
 	if err = t.tx.QueryRowContext(t.ctx, "SELECT set_id,kind,native_node,content_version,current,ci_observation_id FROM pr_problem_records WHERE id=?", id).Scan(&set, &kind, &node, &version, &current, &proofID); err != nil {
 		return r, v, storageError(err)
 	}
-	if set != v.SetID || kind != v.Kind || (node != prProblemIndexNode(v) && node != v.NativeNode()) || version != v.ContentVersion || current != v.Current {
+	if set != v.SetID || kind != v.Kind || node != prProblemIndexNode(v) || version != v.ContentVersion || current != v.Current {
 		return r, v, prProblemConflict()
 	}
 	if v.Kind == domain.PRCIProblem {

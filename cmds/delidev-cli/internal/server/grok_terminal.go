@@ -30,15 +30,12 @@ func publishGrokTerminal(tx *store.Tx, input domain.ExecutionJobInput, sr store.
 	if !complete {
 		return executionEventConflict()
 	}
-	// Legacy accepted receipts omit the reservation and user comparison together.
-	// A new reservation may only become a message through this original closure.
-	if (p.GrokUserMessageID != "") != (v.User != nil) {
+	// Publish only the current original reservation and verified user history.
+	if p.GrokUserMessageID.Validate() != nil || v.User == nil {
 		return executionEventConflict()
 	}
-	if v.User != nil {
-		if err := publishGrokUser(tx, input, sr, p, event); err != nil {
-			return err
-		}
+	if err := publishGrokUser(tx, input, sr, p, event); err != nil {
+		return err
 	}
 	copy := *v
 	p.GrokTerminal = &copy

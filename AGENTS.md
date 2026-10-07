@@ -143,7 +143,7 @@ enum ProjectId {
 
 ### DeliDev subscription identity
 
-- Issue #1235 uses independent service-native subscription Accounts and Models with capability 17 and real migration 28 after 26/27. Preserve the main-first reservation rule and merge complete independent feature PRs in dependency order. Follow the subscription, protocol and storage contracts: never infer services, expose retired configuration as live authority, loosen configured-empty deny-all or retire unsettled protected/native ownership. Preserve immutable historical attribution and require explicit affected Agent/Schedule reconfiguration.
+- Issue #1235 uses independent service-native subscription Accounts and Models with capability 17. Schema 32 initializes their current layout directly; historical migration 28 retains its original ownership after allocations 26/27. Preserve the main-first reservation rule and merge complete independent feature PRs in dependency order. Follow the subscription, protocol and storage contracts: never infer services, expose retired configuration as live authority, loosen configured-empty deny-all or retire unsettled protected/native ownership. Preserve immutable historical attribution and require explicit affected Agent/Schedule reconfiguration.
 
 ### DeliDev desktop launch amendment
 

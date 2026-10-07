@@ -124,7 +124,7 @@ func (p oauthProfile) callback(raw string) error {
 }
 
 // Provider identity alone cannot substitute another adapter during durable
-// replay or local recovery. Legacy version 1 belongs exclusively to OpenRouter.
+// replay or local recovery. The current version-1 profile belongs to OpenRouter.
 func (s *Service) oauthAttemptProvider(tx *store.Tx, a domain.AccountOAuthAttempt) error {
 	if err := s.oauthProvider(tx, a.ProviderID, a.ProviderRevision); err != nil {
 		return err

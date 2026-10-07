@@ -69,21 +69,7 @@ func (t *Tx) findPRProblemVersion(set domain.ID, kind domain.PRProblemKind, node
 }
 
 func (t *Tx) findPRCIProblemVersion(set domain.ID, evidence domain.PRCIProblemEvidence) (Record, domain.PRProblem, bool, error) {
-	node, version := prCIProblemIndexNode(evidence), evidence.Context.Version()
-	row, value, found, err := t.findPRProblemVersion(set, domain.PRCIProblem, node, version)
-	if err != nil || found {
-		return row, value, found, err
-	}
-	// Preserve old records and decisions without rewriting their original proof.
-	// A plain-node index can be reused only for the same original source/queue.
-	row, value, found, err = t.findPRProblemVersion(set, domain.PRCIProblem, evidence.Context.NodeID, version)
-	if err != nil || !found {
-		return row, value, found, err
-	}
-	if prCIProblemIndexNode(*value.CI) != node {
-		return Record{}, domain.PRProblem{}, false, nil
-	}
-	return row, value, true, nil
+	return t.findPRProblemVersion(set, domain.PRCIProblem, prCIProblemIndexNode(evidence), evidence.Context.Version())
 }
 
 func (t *Tx) reconcilePRProblemMembership(previous []domain.ID, seen map[domain.ID]bool) error {
