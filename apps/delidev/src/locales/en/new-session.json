@@ -35,5 +35,12 @@
   "new-session.sessionCreatedAs_362cd1": "Session created as “<s0/>”. ",
   "new-session.openSession_b205bb": "Open session",
   "new-session.extra.08fb485eeaf6": "Review the budget.",
-  "new-session.extra.cffdba22adf2": "New session"
+  "new-session.extra.cffdba22adf2": "New session",
+  "new-session.whatWouldYouLikeToTalkAbout": "What would you like to talk about?",
+  "new-session.generalChatDescription": "Ask questions or share ideas without a project.",
+  "new-session.generalChatPlaceholder": "Ask a question, share an idea, or just chat…",
+  "new-session.startGeneralChat": "Start general chat",
+  "new-session.conversationsAreNamedAutomatically": "Conversation names are assigned automatically.",
+  "new-session.conversationCreatedAs": "Conversation created as “<s0/>”. ",
+  "new-session.openConversation": "Open conversation"
 }

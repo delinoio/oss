@@ -453,6 +453,13 @@ also rejected; use the installed absolute configuration path directly.
 
 Manager-only restart reconciles local state with verified Docker/Tart/host execution and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 
+With the **unreleased Docker cleanup fix**, a container that replaces a
+stopped runner or daemon remains untouched, even if its Runmoor labels
+were copied. Cleanup reports `OWNERSHIP_AMBIGUOUS` and remains incomplete.
+The original execution remains confirmed stopped and its capacity stays
+released. Preserve the replacement and Runmoor state while investigating;
+copied labels do not prove ownership.
+
 A recorded job completion continues through cleanup even if GitHub has already removed its ephemeral runner registration. Capacity becomes available once the owned execution is confirmed stopped, while any remaining cleanup is retried. An upgrade does not automatically recover existing quarantines. For a previously affected completed job, confirm completion in GitHub and verify the exact ownership and stopped state of its local resources before recovering the affected pool with `runmoor stop --pool NAME --force`.
 
 Back up only after `drain` and `stop`. Preserve the complete state and managed-data directories; protect referenced credential files separately. Install the new binary manually and start again. Roll back using a compatible binary and its matching drained state/data backup. Version 0.2.0 upgrades existing state automatically; back up before upgrading and use the matching backup to return to 0.1.3. Unsupported database versions fail without destructive migration; never reuse an older backup while resources created after that backup are still active.
