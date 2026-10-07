@@ -38,25 +38,15 @@ JSON; no assignment rewrite, credential grant or SQLite migration is added.
 
 ## Failed subscription cleanup reservations
 
-Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the
-`CleanupFailedSubscriptions` and `GetFailedSubscriptionCleanup` request/response
-messages, `FailedSubscriptionCleanupJob` and `FailedSubscriptionCleanupResult`,
-and the closed cleanup state/outcome/reason enums in `allocations.json`.
-Establish this complete reservation on main before dependent implementation.
-The request reserves the original request ID; status reserves original job ID
-and pagination token. Responses reserve the job, original receipt identity,
-replay flag and bounded result pagination. Job metadata reserves ID/revision,
-state, total/processed/deleted/retained counts and safe problem code. Results
-reserve account ID/alias, outcome, reason and safe problem code.
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by PR #1614 before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
 
-The planned button deliberately starts one server-wide cleanup without another
-confirmation. Only failed, canceled, expired, unsupported or interrupted initial
-ChatGPT server logins without independent authentication or Worker ownership are
-candidates. Original native and protected-credential cleanup, fresh revisions,
-complete retained-reference checks and deletion receipts remain authoritative.
-Ordinary disconnected accounts and active logins remain outside the batch.
-Reservations introduce no active schemas, generated bindings, capability
-advertisement, native cleanup, configuration deletion or database migration.
+One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. Connected accounts, ordinary disconnected accounts, active logins, restored generations and independent Worker/native/observation ownership are excluded.
+
+The joined server controller applies the original 30-second account attempt and account gate. It rechecks the original requester, exact account revision and login ownership. It shares the existing native/credential cleanup and configuration deletion checks, including protected vault references and complete Agent/Project/retained Session references. Its native and credential checkpoints advance the child's expected revision in the same transaction. Changed settings or ownership remain retained. Failed attempts are terminal retained outcomes with closed reasons, never automatic retries. A later deliberate button click can create a fresh batch.
+
+Confirmed deletion, tombstone/browser obligations, the existing configuration receipt, child result and aggregate counts commit together. Restart reads only original jobs and confirmed cleanup checkpoints, never login or callbacks. An interrupted attempt without a native checkpoint remains retained; confirmed native cleanup may resume protected cleanup. Shutdown cancels and joins the controller before store/vault closure. Revocation permits server-owned retained-result bookkeeping only, never substituted account deletion authority. Restore blocks queued/pending cleanup jobs and quarantines historical nonterminal jobs and receipts, so restored work cannot regain deletion authority.
+
+`GetFailedSubscriptionCleanup(job_id, page_token)` returns current revision/state, total/processed/deleted/retained counts and at most 50 original account results. Signed cursors bind the actor and batch. Result metadata contains only the original alias, account ID, closed outcome/reason and safe problem code. Logs contain job/operation IDs, counts, phases and safe codes. Existing generic jobs/receipts need no migration or Rust/native change.
 
 ## Grok Build subscription reservations
 

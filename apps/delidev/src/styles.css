@@ -987,3 +987,10 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .integration-onboarding .integration-access-note { padding-inline: 0; }
 
 .integration-external-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; margin-right: 8px; vertical-align: -2px; }
+
+.subscription-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.subscription-cleanup-help { margin: 0 0 16px; color: var(--muted); }
+.subscription-cleanup-status, .subscription-cleanup-results { margin: 0 0 16px; overflow-wrap: anywhere; }
+.subscription-cleanup-results summary { cursor: pointer; }
+
+.subscription-header-actions button[aria-disabled="true"] { opacity: .5; cursor: default; }

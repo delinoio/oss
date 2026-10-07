@@ -58,6 +58,12 @@ export interface SubscriptionSettingsViewProps {
   /** This one callback owns all pages/filters; presentation never enumerates them. */
   refreshAll?: () => void;
   refreshAllOperation?: SubscriptionOperation;
+  cleanup?: () => void;
+  cleanupBusy?: boolean;
+  cleanupBlocked?: boolean;
+  cleanupUnavailable?: string;
+  cleanupStatus?: ReactNode;
+  actionsBlocked?: boolean;
   lifecycleUnavailable?: string;
   selectService?: (brand: SubscriptionBrand) => void;
   serviceLoginAvailable?: (brand: SubscriptionBrand) => boolean;
@@ -127,7 +133,7 @@ function OperationNotice({ label, operation, retryBlocked = false }: { label: st
   </div>;
 }
 
-function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionAccountRow; now: number; unavailable: string }) {
+function SubscriptionRow({ account, now, unavailable, actionsBlocked = false }: { account: SubscriptionAccountRow; now: number; unavailable: string; actionsBlocked?: boolean }) {
   useLocale();
   const [menu, setMenu] = useState(false);
   const [details, setDetails] = useState(false);
@@ -135,7 +141,7 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
   const menuId = useId(), detailsId = useId();
   const menuButton = useRef<HTMLButtonElement>(null);
   const disconnectButton = useRef<HTMLButtonElement>(null);
-  const blocked = operationBlocked(account.refreshOperation) || operationBlocked(account.disconnectOperation);
+  const blocked = actionsBlocked || operationBlocked(account.refreshOperation) || operationBlocked(account.disconnectOperation);
   const retryBlocked = account.refreshOperation?.state === SubscriptionOperationState.Busy || account.disconnectOperation?.state === SubscriptionOperationState.Busy;
   const canRefresh = Boolean(account.refresh) && account.connection === SubscriptionConnectionState.Connected && !blocked;
   const canDisconnect = Boolean(account.disconnect) && account.connection === SubscriptionConnectionState.Connected && !blocked;
@@ -153,8 +159,8 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
           <button ref={menuButton} type="button" aria-label={copy("subscription-settings.moreActionsFor_5057a7", { v0: account.alias })} aria-expanded={menu} aria-controls={menuId} onClick={() => setMenu(!menu)} onKeyDown={(event) => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><span aria-hidden="true">⋯</span></button>
           {menu ? <div id={menuId} className="subscription-more-panel" role="group" aria-label={copy("subscription-settings.actionsFor_b59837", { v0: account.alias })} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}>
             <button type="button" aria-controls={detailsId} onClick={() => { setDetails(true); closeMenu(); }}>{copy("subscription-settings.accountDetails_17be95")}</button>
-            <button type="button" disabled={!account.metadataAvailable} onClick={() => { closeMenu(); account.edit(); }}>{copy("subscription-settings.editPreferences_00b4cc")}</button>
-            <button type="button" disabled={!account.metadataAvailable} onClick={() => { closeMenu(); account.delete(); }}>{copy("subscription-settings.deleteAccount_a2e20a")}</button>
+            <button type="button" disabled={!account.metadataAvailable || actionsBlocked} onClick={() => { closeMenu(); account.edit(); }}>{copy("subscription-settings.editPreferences_00b4cc")}</button>
+            <button type="button" disabled={!account.metadataAvailable || actionsBlocked} onClick={() => { closeMenu(); account.delete(); }}>{copy("subscription-settings.deleteAccount_a2e20a")}</button>
           </div> : null}
         </div>
       </div>
@@ -168,7 +174,7 @@ function SubscriptionRow({ account, now, unavailable }: { account: SubscriptionA
     </div> : null}
     {details ? <div id={detailsId} className="subscription-details"><h4>{copy("subscription-settings.accountDetails_17be95")}</h4><dl><div><dt>{copy("subscription-settings.health_558984")}</dt><dd>{account.health || copy("subscription-settings.extra.b764cdc0eab7")}</dd></div><div><dt>{copy("subscription-settings.account_7e1b0d")}</dt><dd>{account.enabled ? copy("subscription-settings.enabled_92c1cd") : copy("subscription-settings.disabled_75081b")}</dd></div><div><dt>{copy("subscription-settings.serviceStatus_cce5ed")}</dt><dd>{account.providerState}</dd></div><div><dt>{copy("subscription-settings.exhaustion_c52628")}</dt><dd>{account.confirmedExhausted ? copy("subscription-settings.confirmedExhausted_763851") : copy("subscription-settings.notConfirmedExhausted_a80dbe")}</dd></div></dl>
       {account.windows.length > 2 ? <div className="subscription-quota-grid">{account.windows.slice(2).map((window, index) => <QuotaWindow key={`${window.id}:${index + 2}`} window={window} now={now} />)}</div> : null}
-      <div className="actions"><button type="button" disabled={!account.metadataAvailable} onClick={account.details}>{copy("subscription-settings.manageMetadata_ddc14e")}</button><button type="button" onClick={() => { setDetails(false); menuButton.current?.focus(); }}>{copy("subscription-settings.closeAccountDetails_c62a46")}</button></div>
+      <div className="actions"><button type="button" disabled={!account.metadataAvailable || actionsBlocked} onClick={account.details}>{copy("subscription-settings.manageMetadata_ddc14e")}</button><button type="button" onClick={() => { setDetails(false); menuButton.current?.focus(); }}>{copy("subscription-settings.closeAccountDetails_c62a46")}</button></div>
     </div> : null}
   </article>;
 }
@@ -182,9 +188,9 @@ const readLabels: Partial<Record<SubscriptionReadState, string>> = {
 };
 
 /** Presentation only; the owning controller negotiates every native action. */
-export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
+export function SubscriptionSettingsView({ accounts, state, problem, retryRead, refreshAll, refreshAllOperation, cleanup, cleanupBusy, cleanupBlocked, cleanupUnavailable, cleanupStatus, actionsBlocked = false, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
   useLocale();
-  const noticeId = useId();
+  const noticeId = useId(), cleanupId = useId();
   const [, expireObservation] = useReducer((revision: number) => revision + 1, 0);
   const presentationNow = now ?? Date.now();
   useEffect(() => {
@@ -202,9 +208,11 @@ export function SubscriptionSettingsView({ accounts, state, problem, retryRead, 
   }, [accounts, active, now, presentationNow]);
   return <section className="subscription-settings" aria-label={copy("subscription-settings.aiSubscriptionAccountSettings_9f67d8")}>
     {activeFilter ? <div className="subscription-active-filter" role="status"><span><LocalizedText id="subscription-settings.providerFilter_f3f61a" components={{ s0: <>{activeFilter}</> }} /></span><button type="button" onClick={clearFilter}>{copy("subscription-settings.clearProviderFilter_e0b8c0")}</button></div> : null}
-    <section aria-label={copy("subscription-settings.yourSubscriptions_b636e8")}><header className="subscription-section-heading"><h2>{copy("subscription-settings.yourSubscriptions_b636e8")}</h2><button type="button" disabled={!refreshAll || operationBlocked(refreshAllOperation)} title={!refreshAll ? lifecycleUnavailable : undefined} aria-describedby={!refreshAll ? noticeId : undefined} onClick={refreshAll}>{copy("subscription-settings.refreshAll_3c128b")}</button></header>
+    <section aria-label={copy("subscription-settings.yourSubscriptions_b636e8")}><header className="subscription-section-heading"><h2>{copy("subscription-settings.yourSubscriptions_b636e8")}</h2><div className="subscription-header-actions"><button type="button" disabled={!cleanup} aria-disabled={cleanupBusy || cleanupBlocked || undefined} aria-describedby={cleanupId} onClick={() => { if (!cleanupBusy && !cleanupBlocked) cleanup?.(); }}>{copy(cleanupBusy ? "subscription-settings.cleanupBusy" : "subscription-settings.cleanupButton")}</button><button type="button" disabled={actionsBlocked || !refreshAll || operationBlocked(refreshAllOperation)} title={!refreshAll ? lifecycleUnavailable : undefined} aria-describedby={!refreshAll ? noticeId : undefined} onClick={refreshAll}>{copy("subscription-settings.refreshAll_3c128b")}</button></div></header>
+      <p id={cleanupId} className="subscription-cleanup-help">{copy("subscription-settings.cleanupHelp")}{cleanupUnavailable ? <> {cleanupUnavailable}</> : null}</p>
+      {cleanupStatus}
       {state !== SubscriptionReadState.Ready ? <div role={state === SubscriptionReadState.Loading ? undefined : state === SubscriptionReadState.Failed || state === SubscriptionReadState.PermissionDenied || state === SubscriptionReadState.AuthenticationExpired ? "alert" : "status"}>{state === SubscriptionReadState.Loading ? <SettingsLoading label={copy("subscription-settings.loadingSubscriptions_d98d84")} /> : <p>{readLabels[state]}</p>}{accounts.length && state !== SubscriptionReadState.Loading ? <p>{copy("subscription-settings.showingTheLastSuccessfullyLoadedSubscriptions_3cc29c")}</p> : null}{problem}{retryRead && state !== SubscriptionReadState.Loading && state !== SubscriptionReadState.Unsupported ? <button type="button" onClick={retryRead}>{copy("subscription-settings.retrySubscriptionRead_3772f6")}</button> : null}</div> : null}
-      {accounts.length ? <div className="subscription-list">{accounts.map((account) => <SubscriptionRow key={account.id} account={account} now={presentationNow} unavailable={lifecycleUnavailable} />)}</div> : state === SubscriptionReadState.Ready ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}
+      {accounts.length ? <div className="subscription-list">{accounts.map((account) => <SubscriptionRow key={account.id} account={account} now={presentationNow} unavailable={lifecycleUnavailable} actionsBlocked={actionsBlocked} />)}</div> : state === SubscriptionReadState.Ready ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}
       <OperationNotice label={copy("subscription-settings.refreshAll_3c128b")} operation={refreshAllOperation} />
       {pagination}
     </section>
