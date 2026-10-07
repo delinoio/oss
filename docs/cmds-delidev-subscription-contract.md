@@ -23,7 +23,10 @@ machine. Claude quota/credit inspection and redemption remain excluded.
 Server-owned optional Account JSON retains an opaque native profile UUID,
 original owner machine, keyed identity commitment, authentication generation
 and original operation/lease metadata. The Worker computes the commitment from
-bounded native identity under its private server-scoped key. Raw identity stays
+bounded native identity under its private server-scoped key. The original login
+also pins that commitment in its private profile owner record; fresh native
+status must match before reauthentication completion or execution input. A
+missing pin or changed account retains the ownership fence. Raw identity stays
 local. Authentication success requires the original login process to exit,
 joined owned descendants and `auth status` proving first-party `claude.ai`
 subscription authentication with no API-key source. Reauthentication reuses the

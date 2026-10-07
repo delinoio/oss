@@ -1785,7 +1785,10 @@ owned persistent `CLAUDE_CONFIG_DIR`. It does not inject ANTHROPIC_API_KEY,
 ANTHROPIC_AUTH_TOKEN, imported OAuth tokens, host-managed authentication or the
 API relay base URL. The Go publication token remains publication authority only
 and never becomes CLI authentication. Native identity text is used only for a
-bounded Worker-local keyed commitment and is discarded.
+bounded Worker-local keyed commitment and is discarded. The original login
+pins that commitment in the private profile owner record. Reauthentication and
+execution compare fresh native status against the pin before sending input;
+a missing pin or changed account cannot gain execution authority.
 
 History reads select the owned persistent profile; checkpoints retain bounded
 native history and a digest-bound opaque profile reference without auth files,

@@ -26,6 +26,7 @@ import (
 type claudeProfileOwner struct {
 	Version                           uint32 `json:"version"`
 	Server, Machine, Account, Profile domain.ID
+	IdentityCommitment                string `json:"identity_commitment,omitempty"`
 }
 type nativeClaudeProfile struct {
 	root, home   string
@@ -34,6 +35,7 @@ type nativeClaudeProfile struct {
 	owner        claudeProfileOwner
 	config       claude.AuthConfig
 	managedLease *managedSubscriptionLease
+	newProfile   bool
 }
 
 func claudeProfileRoot(root string, credential Credential, account, profile domain.ID) (string, error) {
@@ -71,7 +73,8 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 			_ = lock.Close()
 		}
 	}()
-	expected := claudeProfileOwner{1, credential.ServerID, credential.MachineID, account, profile}
+	expected := claudeProfileOwner{Version: 1, Server: credential.ServerID, Machine: credential.MachineID, Account: account, Profile: profile}
+	observed := expected
 	path := filepath.Join(root, "owner.json")
 	if create {
 		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
@@ -88,8 +91,12 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 		}
 	} else {
 		raw, err := security.ReadPrivate(path, 4096)
-		var observed claudeProfileOwner
-		if err != nil || domain.Decode(raw, &observed) != nil || observed != expected {
+		if err != nil || domain.Decode(raw, &observed) != nil {
+			return nil, subscription.Invalid()
+		}
+		owner := observed
+		owner.IdentityCommitment = ""
+		if owner != expected || observed.IdentityCommitment != "" && !domain.NativeIdentityCommitmentValid(observed.IdentityCommitment) {
 			return nil, subscription.Invalid()
 		}
 	}
@@ -110,7 +117,7 @@ func openClaudeProfile(config Config, credential Credential, account, profile do
 	}
 	auth := claude.AuthConfig{Version: installation.Version, Home: filepath.Join(root, "claude"), Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: root, Env: env, Logger: config.Logger}}
 	ok = true
-	return &nativeClaudeProfile{root: root, home: auth.Home, original: info, lock: lock, owner: expected, config: auth}, nil
+	return &nativeClaudeProfile{root: root, home: auth.Home, original: info, lock: lock, owner: observed, config: auth, newProfile: create}, nil
 }
 func (p *nativeClaudeProfile) close() error { return p.lock.Close() }
 func (p *nativeClaudeProfile) logout(ctx context.Context) error {
@@ -164,7 +171,22 @@ func (p *nativeClaudeProfile) identity(ctx context.Context, config Config) (*pb.
 	}
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write(raw)
-	return &pb.NativeSubscriptionIdentity{ProfileId: string(p.owner.Profile), IdentityCommitment: hex.EncodeToString(mac.Sum(nil))}, nil
+	commitment := hex.EncodeToString(mac.Sum(nil))
+	if p.owner.IdentityCommitment == "" {
+		if !p.newProfile {
+			return nil, subscription.Invalid()
+		}
+		// The original login pins only a keyed identity in the private owner
+		// record. Reauthentication and execution compare it before native input;
+		// an externally changed login cannot become this account's authority.
+		p.owner.IdentityCommitment = commitment
+		if err := writeJSON(filepath.Join(p.root, "owner.json"), p.owner); err != nil {
+			return nil, subscription.Invalid()
+		}
+	} else if !hmac.Equal([]byte(p.owner.IdentityCommitment), []byte(commitment)) {
+		return nil, domain.Fail(domain.Unauthenticated, "The owned Claude profile contains a different account.", "Log out this original profile before connecting another Claude account.")
+	}
+	return &pb.NativeSubscriptionIdentity{ProfileId: string(p.owner.Profile), IdentityCommitment: commitment}, nil
 }
 func (l *managedSubscriptionLease) finishClaude(identity *pb.NativeSubscriptionIdentity, cleanup, success bool) error {
 	l.journal.State = managedClosed
