@@ -273,7 +273,7 @@ func (s *Service) checkDesktopCredential(ctx context.Context, actor domain.Princ
 		if oauth {
 			// A readiness read must never refresh or clean old generations.
 			profile, err := s.oauthProfile(p)
-			if err != nil || metadata.ProviderID != a.ProviderID || metadata.Preset != profile.preset || metadata.ClientDigest != profile.digest() || metadata.RefreshState != domain.OAuthRefreshIdle {
+			if err != nil || metadata.ProviderID != a.ProviderID || metadata.Preset != profile.preset || metadata.ClientDigest != profile.digest() {
 				return oauthCredentialProblem()
 			}
 			ref.ID = metadata.TokenID

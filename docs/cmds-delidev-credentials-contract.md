@@ -88,10 +88,12 @@ account inventory selects only current connected credential-bearing API
 accounts without pending removal, resolves each immutable selected provider
 profile and reads its exact current protected reference. Disconnected,
 subscription and keyless accounts do not open the vault. OAuth reads use the
-current private token reference directly, without refresh, exchange or cleanup
-of another generation. Every returned secret buffer is cleared, including on
-failure. No provider request, account-health write, revision or receipt change
-is permitted. Access success proves decryptability only, not provider readiness.
+current private token reference directly, including when its refresh checkpoint
+is claimed, recovery-required or denied. This check does not resume or mutate
+that checkpoint, refresh, exchange or clean up another generation. Every
+returned secret buffer is cleared, including on failure. No provider request,
+account-health write, revision or receipt change is permitted. Access success
+proves decryptability only, not provider readiness.
 
 Repeated observation reuses the original attempt, including unknown replies.
 Terminal failures require an explicit observed-failure Retry and a new attempt

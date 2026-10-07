@@ -242,33 +242,49 @@ func TestDesktopCredentialsSkipStopsFurtherReadsAndCloseJoinsPrompt(t *testing.T
 }
 
 func TestDesktopCredentialsOAuthReadsOriginalTokenWithoutRefresh(t *testing.T) {
-	f := newHuggingFaceFixture(t)
-	a := f.connectedHF(t, time.Now().Add(-time.Minute))
-	body := accountBody(t, a)
-	var metadata domain.AccountOAuthCredential
-	f.s.Store.Read(f.ctx, func(tx *store.Tx) error {
-		var err error
-		metadata, _, err = tx.AccountOAuthCredential(domain.ID(a.Id), body.Connection.ID)
-		return err
-	})
-	spy := &desktopReadSecrets{accountSecrets: f.vault}
-	f.s.accountSecrets = spy
-	c, client, attempt := desktopAccess(t, f)
-	c.Handle(f.ctx, DesktopCredentialBegin, attempt, "", client)
-	if got := waitDesktopAccess(t, c); got.State != DesktopCredentialSucceeded {
-		t.Fatalf("result: %+v", got)
-	}
-	if len(spy.reads) != 1 || spy.reads[0].ID != metadata.TokenID {
-		t.Fatal("did not read the original OAuth token")
-	}
-	var after domain.AccountOAuthCredential
-	f.s.Store.Read(f.ctx, func(tx *store.Tx) error {
-		var err error
-		after, _, err = tx.AccountOAuthCredential(domain.ID(a.Id), body.Connection.ID)
-		return err
-	})
-	if after.Revision != metadata.Revision || after.TokenID != metadata.TokenID || after.RefreshState != metadata.RefreshState {
-		t.Fatal("startup refreshed OAuth")
+	for _, state := range []domain.OAuthRefreshState{domain.OAuthRefreshClaimed, domain.OAuthRefreshRecovery, domain.OAuthRefreshDenied} {
+		t.Run(string(state), func(t *testing.T) {
+			f := newHuggingFaceFixture(t)
+			a := f.connectedHF(t, time.Now().Add(-time.Minute))
+			body := accountBody(t, a)
+			var metadata domain.AccountOAuthCredential
+			if err := f.s.Store.Read(f.ctx, func(tx *store.Tx) error {
+				var err error
+				metadata, _, err = tx.AccountOAuthCredential(domain.ID(a.Id), body.Connection.ID)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			metadata.RefreshState = state
+			metadata.RefreshID = domain.NewID()
+			metadata.Revision++
+			if _, err := f.s.Store.Mutate(f.ctx, domain.NewID(), "fixture-refresh-state", domain.ID(a.Id), func(tx *store.Tx) (any, error) {
+				return nil, tx.PutAccountOAuthCredential(metadata, metadata.Revision-1)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			spy := &desktopReadSecrets{accountSecrets: f.vault}
+			f.s.accountSecrets = spy
+			c, client, attempt := desktopAccess(t, f)
+			c.Handle(f.ctx, DesktopCredentialBegin, attempt, "", client)
+			if got := waitDesktopAccess(t, c); got.State != DesktopCredentialSucceeded {
+				t.Fatalf("result: %+v", got)
+			}
+			if len(spy.reads) != 1 || spy.reads[0].ID != metadata.TokenID {
+				t.Fatal("did not read the original OAuth token")
+			}
+			var after domain.AccountOAuthCredential
+			if err := f.s.Store.Read(f.ctx, func(tx *store.Tx) error {
+				var err error
+				after, _, err = tx.AccountOAuthCredential(domain.ID(a.Id), body.Connection.ID)
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if after.Revision != metadata.Revision || after.TokenID != metadata.TokenID || after.RefreshState != state || after.RefreshID != metadata.RefreshID {
+				t.Fatal("startup changed OAuth metadata or refreshed credentials")
+			}
+		})
 	}
 }
 
