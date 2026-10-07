@@ -241,8 +241,9 @@ export function SessionView({ id, draft, setDraft, active = true }: { id: string
       const recovery = information.current?.querySelector<HTMLDetailsElement>(".session-tools");
       if (recovery) recovery.open = true;
     }
-    (infoReveal.target === InfoTarget.Recovery ? target?.querySelector<HTMLButtonElement>(".notice button") : target)?.focus({ preventScroll: true });
-    target?.scrollIntoView?.({ block: "nearest" });
+    const focusTarget = infoReveal.target === InfoTarget.Recovery ? target?.querySelector<HTMLButtonElement>(".notice button") : target;
+    focusTarget?.focus({ preventScroll: true });
+    focusTarget?.scrollIntoView?.({ block: "nearest" });
   }, [infoReveal]);
  const [budgetBlocked,setBudgetBlocked]=useState(false);
  const [runnerRemediationPending, setRunnerRemediationPending] = useState(false);
