@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { DeviceService, DeviceType, EntityKind, ResourceSchema, ResourceService, newRequestId, type CreatePairingRequest } from "@delinoio/delidev-api-client";
 import { PairingGrant } from "./pairing-grant";
@@ -28,6 +28,21 @@ function issue() {
   fireEvent.change(screen.getByLabelText("Device name"), { target: { value: "Other computer" } });
   fireEvent.click(screen.getByRole("button", { name: "Issue single-use document" }));
 }
+it("discards pending code preparation without issuing into a replacement task", async () => {
+  const value = fixture();
+  let release!: (digest: ArrayBuffer) => void;
+  vi.stubGlobal("crypto", { getRandomValues: webcrypto.getRandomValues.bind(webcrypto), subtle: { digest: () => new Promise<ArrayBuffer>(resolve => { release = resolve; }) } });
+  render(value.view()); issue();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel pairing" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Create pairing document" }));
+  const name = screen.getByLabelText("Device name") as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "Fresh device" } });
+  await act(async () => release(new ArrayBuffer(32)));
+  expect(name.value).toBe("Fresh device");
+  expect(value.issue).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Retry original pairing issuance" })).toBeNull();
+});
 it("issues only a code digest, privately reveals the exact pinned grant and hides it after navigation", async () => {
   const value = fixture();
   const view = render(value.view()); issue();
@@ -54,7 +69,7 @@ it("retains identical issuance after a lost response and settings visibility cha
   value.issue.mockRejectedValueOnce(new ConnectError("lost", Code.Unavailable));
   const view = render(value.view()); issue();
   await screen.findByRole("button", { name: "Retry original pairing issuance" });
-  expect((screen.getByRole("button", { name: "Discard private pairing document" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Discard private pairing document" }) as HTMLButtonElement).disabled).toBe(false);
   view.rerender(value.view(false)); view.rerender(value.view());
   fireEvent.click(screen.getByRole("button", { name: "Retry original pairing issuance" }));
   await screen.findByRole("button", { name: "Reveal private document" });

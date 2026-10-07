@@ -369,8 +369,9 @@ try {
           continue;
         }
         if (category === "Repositories") {
-          // Registration first inspects a folder before exposing saved fields.
+          // Local checkout inspection is optional in remote-first registration.
           // Exercise its manual entry without inventing native folder authority.
+          await page.getByRole("button", { name: l("Connect a Local folder (optional)"), exact: true }).click();
           await page.getByRole("button", { name: l("Enter a path…"), exact: true }).click();
           await page.getByRole("textbox", { name: l("Absolute checkout path"), exact: true }).waitFor();
           assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Repository registration overflow");

@@ -21,8 +21,8 @@ function guarded<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-// One active category owns this scope. A category change disposes it while
-// the Settings navigation and independent connection controllers stay mounted.
+// A category or one of its task dialogs owns this scope. Task dismissal disposes
+// only that task; category departure also fences every nested task transport.
 export class SettingsOpening {
   readonly id = newRequestId();
   readonly controller = new AbortController();

@@ -1,7 +1,8 @@
 import { ownedMessage } from "./localization";
 import { copy, useLocale } from "./localization";
+import { SettingsTaskContext } from "./settings-task-context";
 import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize } from "./settings-task";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { InboxQuery, newRequestId, type NotificationPreferences } from "@delinoio/delidev-api-client";
@@ -25,9 +26,7 @@ function covered(node: HTMLElement) {
 
 export function NotificationSettings({ active, showCategoryIntro = true, onWorkflowReadyChange }: { active: boolean; showCategoryIntro?: boolean; onWorkflowReadyChange?: (active: boolean) => void }) {
   useLocale();
-  const client = useQueryClient();
   const opening = useSettingsOpening();
-  const notifications = useNotifications();
   const drawerOpen = useSidebarDrawerOpen();
   const ids = useId();
   const form = useRef<HTMLFormElement>(null);
@@ -47,10 +46,7 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
     focusIntent.current = focusAvailable.current && ownsFocus && form.current && !covered(form.current) ? FocusTarget.Edit : undefined;
     setDraft(undefined);
   };
-  const mutation = useRetainedMutation("notification-preferences", InboxQuery.setNotificationPreferences, (_result, request) => { finishEdit(); notifications.notify({ kind: ToastKind.Success, message: ownedMessage("notification-settings.savedToast"), id: request.requestId }); void client.invalidateQueries({ refetchType: "active" }); });
-  const stale = Boolean(draft && current.data?.preferences && current.data.preferences.revision !== draft.revision);
-  const blocked = mutation.busy || mutation.uncertain;
-  const value = draft ?? current.data?.preferences;
+  const value = current.data?.preferences;
   useEffect(() => {
     const discardOnFocus = (event: FocusEvent) => {
       if (event.target !== document.body && event.target !== document.documentElement) {
@@ -79,13 +75,46 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
     if (!node || node.disabled) return;
     focusIntent.current = undefined;
     node.focus({ preventScroll: true });
-  }, [active, opening, drawerOpen, draft, blocked, current.error, current.isFetching]);
+  }, [active, opening, drawerOpen, draft, current.error, current.isFetching]);
   useEffect(() => {
-    onWorkflowReadyChange?.(Boolean(draft || mutation.busy || mutation.uncertain));
+    onWorkflowReadyChange?.(Boolean(draft));
     return () => onWorkflowReadyChange?.(false);
-  }, [draft, mutation.busy, mutation.uncertain, onWorkflowReadyChange]);
-  const preferences = <form id={`${ids}-form`} ref={form} className="notification-preferences" onSubmit={(event) => { event.preventDefault(); if (!draft || blocked || stale || current.error || current.isFetching) return; void mutation.send({ requestId: newRequestId(), preferences: draft }); }}>
-      <div className="notification-section-heading"><h2 id={`${ids}-preferences`}>{copy("notification-settings.notifyThisClientAbout_db8955")}</h2>{value && !draft ? <button ref={edit} type="button" disabled={blocked || Boolean(current.error) || current.isFetching} onClick={() => { focusIntent.current = FocusTarget.FirstCheckbox; setDraft({ ...value }); }}>{copy("notification-settings.editNotificationPreferences_b2aceb")}</button> : null}</div>
+  }, [draft, onWorkflowReadyChange]);
+  const preferences = <form id={`${ids}-form`} ref={form} className="notification-preferences">
+      <div className="notification-section-heading"><h2 id={`${ids}-preferences`}>{copy("notification-settings.notifyThisClientAbout_db8955")}</h2>{value ? <button ref={edit} type="button" disabled={Boolean(current.error) || current.isFetching} onClick={() => { focusIntent.current = FocusTarget.FirstCheckbox; setDraft({ ...value }); }}>{copy("notification-settings.editNotificationPreferences_b2aceb")}</button> : null}</div>
+      <Problem error={current.error} />
+      {current.error && current.data?.preferences ? <p role="status">{copy("notification-settings.notificationPreferencesCouldNotBeRefreshed_4e5bdf")}</p> : null}
+      {!value ? <>{current.isPending && !current.error ? <p role="status">{copy("notification-settings.loadingNotificationPreferences_960e8d")}</p> : null}<p>{copy("notification-settings.notificationPreferencesAreUnavailableUntilThis_5ff119")}</p></> : <fieldset aria-labelledby={`${ids}-preferences`}>
+        <div className="notification-row"><div><label>{copy("notification-settings.questionsAndApprovalRequests_e6c1b4")}</label><p id={`${ids}-interaction-help`}>{copy("notification-settings.whenASessionNeedsYourAnswer_b52af9")}</p></div><span className="notification-value">{value.interactions ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div>
+        <div className="notification-row"><div><label>{copy("notification-settings.executionCompletionFailureAndInterruption_275b47")}</label><p id={`${ids}-terminal-help`}>{copy("notification-settings.whenAnExecutionSucceedsFailsOr_fae45f")}</p></div><span className="notification-value">{value.terminals ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div>
+      </fieldset>}
+    </form>;
+  return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>{copy("notification-settings.notifications_788011")}</h1><p>{copy("notification-settings.chooseWhichUpdatesThisClientReceives_16bc3a")}</p><p className="notification-scope">{copy("notification-settings.forThisClientOnTheSelected_c0d140")}</p></div> : null}
+    <NativeNotificationSettings active={active} />
+    {draft ? <><section aria-label={copy("notification-settings.notifications_788011")}><h2>{copy("notification-settings.notifyThisClientAbout_db8955")}</h2><div className="notification-row"><div><p>{copy("notification-settings.questionsAndApprovalRequests_e6c1b4")}</p><p>{copy("notification-settings.whenASessionNeedsYourAnswer_b52af9")}</p></div><span className="notification-value">{current.data?.preferences?.interactions ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div><div className="notification-row"><div><p>{copy("notification-settings.executionCompletionFailureAndInterruption_275b47")}</p><p>{copy("notification-settings.whenAnExecutionSucceedsFailsOr_fae45f")}</p></div><span className="notification-value">{current.data?.preferences?.terminals ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div></section><SettingsTaskDialog title={copy("notification-settings.editNotificationPreferences_b2aceb")} size={SettingsDialogSize.Form} close={finishEdit}><NotificationPreferencesEditor initial={draft} active={active} ids={ids} form={form} firstCheckbox={firstCheckbox} finishEdit={finishEdit} /></SettingsTaskDialog></> : preferences}
+    <aside className="notification-inbox-guidance"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16l2 12v4H2v-4L4 4Zm-2 12h6l2 3h4l2-3h6" /></svg><div><p>{copy("notification-settings.inboxRequestsStayAvailableEvenWhen_09c08f")}</p><p>{copy("notification-settings.openingANotificationNeverMarksAn_4f219c")}</p></div></aside>
+    <details className="notification-delivery"><summary>{copy("notification-settings.aboutNotificationDelivery_e8b4e9")}</summary><p>{copy("notification-settings.aSubmittedNotificationDoesNotProve_0edca6")}</p><p>{copy("notification-settings.readingAnInboxItemNeverAnswers_3d1331")}</p></details>
+  </section>;
+}
+
+function NotificationPreferencesEditor({ initial, active, ids, form, firstCheckbox, finishEdit }: {
+  initial: NotificationPreferences; active: boolean; ids: string;
+  form: RefObject<HTMLFormElement | null>; firstCheckbox: RefObject<HTMLInputElement | null>; finishEdit: () => void;
+}) {
+  useLocale();
+  const client = useQueryClient(), notifications = useNotifications();
+  const current = useQuery(InboxQuery.getNotificationPreferences, {}, { enabled: active, refetchInterval: active ? 5000 : false });
+  const [draft, setDraft] = useState(initial);
+  const task = useContext(SettingsTaskContext), focused = useRef(false);
+  useLayoutEffect(() => {
+    if (!focused.current && task?.actions && firstCheckbox.current) { focused.current = true; firstCheckbox.current.focus(); }
+  }, [task?.actions, firstCheckbox]);
+  const mutation = useRetainedMutation("notification-preferences", InboxQuery.setNotificationPreferences, (_result, request) => { finishEdit(); notifications.notify({ kind: ToastKind.Success, message: ownedMessage("notification-settings.savedToast"), id: request.requestId }); void client.invalidateQueries({ refetchType: "active" }); });
+  const stale = Boolean(draft && current.data?.preferences && current.data.preferences.revision !== draft.revision);
+  const blocked = mutation.busy || mutation.uncertain;
+  const value = draft ?? current.data?.preferences;
+  return <form id={`${ids}-form`} ref={form} className="notification-preferences" onSubmit={(event) => { event.preventDefault(); if (!draft || blocked || stale || current.error || current.isFetching) return; void mutation.send({ requestId: newRequestId(), preferences: draft }); }}>
+      <div className="notification-section-heading"><h2 id={`${ids}-preferences`}>{copy("notification-settings.notifyThisClientAbout_db8955")}</h2></div>
       <Problem error={current.error} /><Problem error={mutation.error} />
       {current.error && current.data?.preferences ? <p role="status">{copy("notification-settings.notificationPreferencesCouldNotBeRefreshed_4e5bdf")}</p> : null}
       {!value ? <>{current.isPending && !current.error ? <p role="status">{copy("notification-settings.loadingNotificationPreferences_960e8d")}</p> : null}<p>{copy("notification-settings.notificationPreferencesAreUnavailableUntilThis_5ff119")}</p></> : <fieldset disabled={blocked} aria-labelledby={`${ids}-preferences`}>
@@ -98,10 +127,4 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
         {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("notification-settings.retryTheSameNotificationPreferences_944448")}</button> : null}
       </SettingsTaskActions>
     </form>;
-  return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>{copy("notification-settings.notifications_788011")}</h1><p>{copy("notification-settings.chooseWhichUpdatesThisClientReceives_16bc3a")}</p><p className="notification-scope">{copy("notification-settings.forThisClientOnTheSelected_c0d140")}</p></div> : null}
-    <NativeNotificationSettings active={active} />
-    {draft ? <><section aria-label={copy("notification-settings.notifications_788011")}><h2>{copy("notification-settings.notifyThisClientAbout_db8955")}</h2><div className="notification-row"><div><p>{copy("notification-settings.questionsAndApprovalRequests_e6c1b4")}</p><p>{copy("notification-settings.whenASessionNeedsYourAnswer_b52af9")}</p></div><span className="notification-value">{current.data?.preferences?.interactions ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div><div className="notification-row"><div><p>{copy("notification-settings.executionCompletionFailureAndInterruption_275b47")}</p><p>{copy("notification-settings.whenAnExecutionSucceedsFailsOr_fae45f")}</p></div><span className="notification-value">{current.data?.preferences?.terminals ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div></section><SettingsTaskDialog title={copy("notification-settings.editNotificationPreferences_b2aceb")} size={SettingsDialogSize.Form} retained={blocked} close={finishEdit}>{preferences}</SettingsTaskDialog></> : preferences}
-    <aside className="notification-inbox-guidance"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16l2 12v4H2v-4L4 4Zm-2 12h6l2 3h4l2-3h6" /></svg><div><p>{copy("notification-settings.inboxRequestsStayAvailableEvenWhen_09c08f")}</p><p>{copy("notification-settings.openingANotificationNeverMarksAn_4f219c")}</p></div></aside>
-    <details className="notification-delivery"><summary>{copy("notification-settings.aboutNotificationDelivery_e8b4e9")}</summary><p>{copy("notification-settings.aSubmittedNotificationDoesNotProve_0edca6")}</p><p>{copy("notification-settings.readingAnInboxItemNeverAnswers_3d1331")}</p></details>
-  </section>;
 }

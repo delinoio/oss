@@ -69,7 +69,7 @@ it.each(["subscription", "api"] as const)("closes %s deletion once without waiti
   expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
 });
 
-it.each(["X", "Escape"] as const)("finishes hidden API deletion after %s without reopening or taking focus", async method => {
+it.each(["X", "Escape"] as const)("ignores a closed API deletion after %s without completion or taking focus", async method => {
   const f = fixture("api"); let release!: () => void;
   f.remove.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve; }); return {}; });
   fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
@@ -77,7 +77,7 @@ it.each(["X", "Escape"] as const)("finishes hidden API deletion after %s without
   dismiss(method);
   const destination = screen.getByRole("button", { name: "Return to category" }); destination.focus();
   await act(async () => release());
-  await waitFor(() => expect(f.deleted).toHaveBeenCalledTimes(1));
+  expect(f.deleted).not.toHaveBeenCalled();
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   expect(document.activeElement).toBe(destination);
@@ -85,15 +85,13 @@ it.each(["X", "Escape"] as const)("finishes hidden API deletion after %s without
   expect(f.remove).toHaveBeenCalledTimes(1);
 });
 
-it("retains uncertainty across dismissal and closes only after the original deletion retry succeeds", async () => {
+it("keeps the exact uncertain deletion retry within its open task", async () => {
   const f = fixture("api");
   f.remove.mockRejectedValueOnce(new ConnectError("Lost deletion acknowledgment", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
   await screen.findByRole("button", { name: "Retry the same deletion" });
   const original = f.remove.mock.calls[0][0];
   expect(f.deleted).not.toHaveBeenCalled();
-  dismiss("Escape");
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
   expect(f.remove).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Retry the same deletion" }));
   await waitFor(() => expect(f.deleted).toHaveBeenCalledTimes(1));

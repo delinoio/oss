@@ -1,7 +1,7 @@
 import { ownedMessage, resolveMessage, type OwnedMessage, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskActions } from "./settings-task";
-import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask } from "./settings-task-context";
+import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -259,7 +259,6 @@ export function AccountOAuth({ flow, back, manual, edit, manage, done }: { flow:
   const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
   const [project, setProject] = useState("");
-  useRetainSettingsTask(Boolean(view));
   useEffect(() => { if (visible) heading.current?.focus(); }, [view?.provider.providerId, visible]);
   if (!view) return null;
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;

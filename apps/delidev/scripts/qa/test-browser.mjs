@@ -88,6 +88,52 @@ try {
   }
   checks.push("same-profile-parallel-project-and-instructions-create-edit-delete-reload");
 
+  stage = "settings-task-disposal";
+  const taskPage = pages[0], environment = run.environments[0];
+  await category(taskPage, "Instructions");
+  for (const dismissal of ["X", "Escape", "Cancel"]) {
+    let admitted = false, settled = false, requests = 0, release;
+    const responseGate = new Promise(resolve => { release = resolve; });
+    // The real Go server accepts this write. Delay only its browser response so
+    // dismissal is checked independently from authoritative server completion.
+    const routePattern = "**/delidev.v1.ConfigurationService/SaveConfiguration";
+    const routeHandler = async route => {
+      requests++;
+      const response = await route.fetch();
+      admitted = true;
+      await responseGate;
+      try { await route.fulfill({ response }); } catch { /* The closed task aborted its client wait. */ }
+      settled = true;
+    };
+    await taskPage.route(routePattern, routeHandler);
+    try {
+      await taskPage.getByRole("button", { name: "New Instructions", exact: true }).click();
+      await taskPage.getByLabel("Name", { exact: true }).fill(`Closed ${dismissal} task`);
+      await taskPage.getByLabel("Instructions", { exact: true }).fill("Synthetic task lifecycle fixture.");
+      await taskPage.getByRole("button", { name: "Save Instructions", exact: true }).click();
+      await until(() => admitted);
+      if (dismissal === "Escape") await taskPage.keyboard.press("Escape");
+      else await taskPage.getByRole("button", { name: dismissal === "X" ? "Close New Instructions" : "Cancel edit", exact: true }).click();
+      assert.equal(await taskPage.getByRole("dialog").count(), 0);
+      assert.equal(await taskPage.locator(".settings-task-background[disabled], .settings-task-background[inert]").count(), 0);
+      assert.equal(await taskPage.getByRole("button", { name: "View original operation", exact: true }).count(), 0);
+      const opener = taskPage.getByRole("button", { name: "New Instructions", exact: true });
+      await until(() => opener.evaluate(node => node === document.activeElement));
+      await opener.click();
+      const name = taskPage.getByLabel("Name", { exact: true });
+      assert.equal(await name.inputValue(), "");
+      await name.fill("Fresh task draft"); await name.focus();
+      release(); await until(() => settled);
+      assert.equal(await name.inputValue(), "Fresh task draft");
+      assert(await name.evaluate(node => node === document.activeElement));
+      assert.equal(await taskPage.getByRole("dialog").count(), 1);
+      assert.equal(requests, 1);
+      assert((await list(environment, run.api.EntityKind.TEMPLATE)).some(resource => document(resource).name === `Closed ${dismissal} task`));
+      await taskPage.keyboard.press("Escape");
+    } finally { release(); await taskPage.unroute(routePattern, routeHandler); }
+  }
+  checks.push("settings-X-Escape-local-cancel-disposal-admitted-save-fresh-task-and-late-focus-fence");
+
   stage = "appearance-isolation";
   await Promise.all(pages.map(page => category(page, "Appearance")));
   await pages[0].getByRole("radio", { name: "Dark", exact: true }).check();

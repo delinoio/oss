@@ -74,7 +74,7 @@ it("rejects foreign recipient scope, secret fields, malformed status and oversiz
   expect(encryptedInput("A".repeat(131073))).toBeUndefined();
 });
 
-it("clears editable proxy secrets on close and retains only the exact dispatched credential request", async () => {
+it("discards proxy secrets and uncertain retry authority on close without replaying the request", async () => {
   const f = fixture();
   f.save.mockRejectedValueOnce(new ConnectError("Lost profile acknowledgment", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
@@ -92,15 +92,25 @@ it("clears editable proxy secrets on close and retains only the exact dispatched
   fireEvent.click(screen.getByRole("button", { name: "Close New network profile" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(f.save).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  expect(f.client.getMutationCache().getAll()).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New network profile" }));
+  expect((screen.getByLabelText("Profile name") as HTMLInputElement).value).toBe("");
+  expect(screen.queryByRole("button", { name: "Retry original profile save" })).toBeNull();
+  fireEvent.change(screen.getByLabelText("Connection mode"), { target: { value: "http" } });
   expect((screen.getByLabelText("Proxy username") as HTMLInputElement).value).toBe("");
   expect((screen.getByLabelText("Proxy password") as HTMLInputElement).value).toBe("");
-  fireEvent.click(screen.getByRole("button", { name: "Retry original profile save" }));
+  fireEvent.change(screen.getByLabelText("Profile name"), { target: { value: "Fresh proxy" } });
+  fireEvent.change(screen.getByLabelText("Proxy host"), { target: { value: "proxy.example" } });
+  fireEvent.change(screen.getByLabelText("Proxy port"), { target: { value: "3128" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2));
-  expect(f.save.mock.calls[1][0]).toEqual(original);
+  expect(f.save.mock.calls[1][0]).not.toEqual(original);
+  expect(f.save.mock.calls[1][0].credentialJson).toHaveLength(0);
 });
 
-it("keeps an unconfirmed native import's original ciphertext and digest through dialog dismissal", async () => {
+it.each(["uncertain", "completed"] as const)("discards a %s native import on dismissal and permits exact retry only while open", async state => {
   const digest = "a".repeat(64), ciphertext = btoa("synthetic encrypted fixture");
   const native = vi.fn(async (_machine: string, action: WorkerNetworkAction, _bytes: Uint8Array, expectedDigest: string) => {
     if (action !== WorkerNetworkAction.Import) throw new Error("No replacement prepare is expected");
@@ -114,13 +124,17 @@ it("keeps an unconfirmed native import's original ciphertext and digest through 
   fireEvent.click(screen.getByRole("checkbox", { name: /^I verified this digest independently/ }));
   fireEvent.click(screen.getByRole("button", { name: "Import confirmed encrypted configuration" }));
   await screen.findByRole("button", { name: "Retry original encrypted import" });
+  expect((screen.getByRole("button", { name: "Prepare protected recipient" }) as HTMLButtonElement).disabled).toBe(true);
+  if (state === "completed") {
+    fireEvent.click(screen.getByRole("button", { name: "Retry original encrypted import" }));
+    await screen.findByText(/Encrypted generation 2 imported/);
+    expect(native.mock.calls[1]).toEqual(native.mock.calls[0]);
+  }
   fireEvent.click(screen.getByRole("button", { name: "Close Runner Device network" }));
   expect(screen.queryByRole("dialog")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
-  expect((screen.getByLabelText("Encrypted bundle to import (Base64)") as HTMLTextAreaElement).value).toBe("");
-  expect((screen.getByRole("button", { name: "Prepare protected recipient" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Retry original encrypted import" }));
-  await screen.findByText(/Encrypted generation 2 imported/);
-  expect(native).toHaveBeenCalledTimes(2);
-  expect(native.mock.calls[1]).toEqual(native.mock.calls[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  expect((await screen.findByLabelText("Encrypted bundle to import (Base64)") as HTMLTextAreaElement).value).toBe("");
+  expect((screen.getByLabelText("Separately authenticated digest") as HTMLInputElement).value).toBe("");
+  expect(screen.queryByRole("button", { name: "Retry original encrypted import" })).toBeNull();
+  expect(native).toHaveBeenCalledTimes(state === "completed" ? 2 : 1);
 });
