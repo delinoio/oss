@@ -140,7 +140,7 @@ func (s *Service) PrepareGitHubTokenForm(ctx context.Context, req *connect.Reque
 	case pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES:
 		access = domain.GitHubPrivateRepositories
 	}
-	address, err := domain.GitHubTokenFormURL(kind, req.Msg.ResourceOwner, access)
+	address, err := domain.GitHubDraftTokenFormURL(kind, req.Msg.ResourceOwner, access)
 	if err != nil {
 		return fail(err)
 	}

@@ -44,6 +44,8 @@ Agent Workers alone follows `docs/apps-delidev-desktop-contract.md`: use the sha
 
 Git Profiles presentation follows `docs/apps-delidev-desktop-contract.md` and `docs/cmds-delidev-integrations-contract.md`. Keep one create action, truthful read states, separate token-storage/identity observations, complete official-form guidance and the shared Settings lifecycle. The source owner retains exact mutation, credential and pagination safeguards.
 
+- Token-first GitHub creation uses static Classic/Fine grained buttons without owner/type/access inputs or a disclosure. Keep owner/type confirmation and saved-profile Manage unchanged. Draft forms may omit an undeclared owner only through the existing authenticated Connect preparation and closed Go opener; preserve complete guidance, shared busy/lifetime guards and translated status.
+
 Diagnostics presentation is owned by `src/doctor.tsx`, `src/doctor.css` and the scoped frontend instructions, following `docs/apps-delidev-diagnostics-contract.md`.
 
 Unsupported-schema Agent display names/aliases are projected only within the existing 256-byte UTF-8 Agent name limit; larger values keep the Unnamed fallback and disabled actions while preserving the full resource ID.

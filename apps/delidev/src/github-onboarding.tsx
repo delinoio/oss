@@ -139,7 +139,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
         {busy ? <p role="status">Verifying GitHub token…</p> : null}{message ? <p role="alert">{message}</p> : null}<Problem error={error} />
         <div className="actions"><button className="primary" disabled={busy || !tokenValid(token)}>Verify token</button><button type="button" onClick={cancel}>Cancel</button></div>
       </form>
-      <GitHubDraftTokenForm kind={kind} owner={owner} changeKind={setKind} changeOwner={setOwner} active={active} disabled={busy} />
+      <GitHubDraftTokenForm changeKind={setKind} active={active} disabled={busy} />
       <p className="integration-storage-note">Your token is saved only when you confirm the profile.</p>
     </> : <form onSubmit={event => { event.preventDefault(); void save(); }}>
       <p className="integration-verified">Authenticated as <strong>{identity?.login}</strong></p>
