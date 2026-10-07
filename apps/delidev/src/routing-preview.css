@@ -1,0 +1,53 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.routing-preview { display: grid; gap: 20px; min-width: 0; }
+.routing-preview :is(h3, h4, p, dl, dd) { margin: 0; }
+.routing-preview :is(ul, ol) { list-style: none; padding: 0; margin: 0; }
+.routing-read-only { justify-self: start; padding: 4px 10px; border-radius: 8px; background: var(--selected-background); color: var(--selected-text); font-size: 12px; line-height: 18px; }
+.routing-result { display: flex; align-items: flex-start; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); }
+.routing-result > div { flex: 1; min-width: 0; display: grid; gap: 8px; }
+.routing-result[data-warning=true] { background: var(--warning-background); border-color: var(--warning-border); }
+.routing-result h3 { font-size: 18px; line-height: 26px; }
+.routing-result p { color: var(--muted); }
+.routing-result-icon { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 50%; font-weight: 600; }
+.routing-result[data-warning=true] .routing-result-icon { color: var(--warning-text); border-color: var(--warning-border); }
+.routing-project { display: grid; gap: 6px; }
+.routing-project-controls { display: flex; align-items: flex-end; gap: 8px; }
+.routing-project-controls > .resource-choice { flex: 1; min-width: 0; }
+.routing-project-controls label { margin: 0; }
+.routing-project-controls > button { flex: none; }
+.routing-preview .routing-project > p, .routing-preview .routing-note, .routing-preview .routing-account-identity p, .routing-preview .routing-source > p, .routing-preview .routing-selected-label { color: var(--muted); font-size: 12px; line-height: 18px; }
+.routing-policy dt, .routing-candidate-evidence dt { color: var(--muted); font-size: 12px; line-height: 18px; margin-bottom: 4px; }
+.routing-preview .routing-policy dd, .routing-preview .routing-candidate-evidence dd { margin: 0; }
+.routing-account-section, .routing-sources, .routing-sources > ol { display: grid; gap: 12px; }
+.routing-candidates { display: grid; gap: 12px; }
+.routing-candidate { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.routing-candidate[data-selected=true] { border-color: var(--selected-border); }
+.routing-candidate-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.routing-account-identity { min-width: 0; display: grid; gap: 4px; }
+.routing-account-identity strong { font-size: 16px; line-height: 24px; font-weight: 600; overflow-wrap: anywhere; }
+.routing-eligibility { flex: none; max-width: 50%; padding: 3px 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-secondary); background: var(--surface-subtle); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.routing-eligibility[data-warning=true] { color: var(--warning-text); background: var(--warning-background); border-color: var(--warning-border); }
+.routing-candidate-evidence { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; }
+.routing-candidate-evidence > div { min-width: 0; }
+.routing-preview .routing-account-id { margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-subtle); }
+.routing-account-id summary { padding: 9px 12px; cursor: pointer; }
+.routing-account-id code { display: block; padding: 0 12px 12px; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.routing-source { display: grid; gap: 12px; padding-block: 12px; border-top: 1px solid var(--border); }
+.routing-fallback, .routing-empty { padding: 12px; border-radius: 8px; background: var(--surface-muted); color: var(--muted); }
+@container settings-body (width < 640px) {
+  .routing-project-controls, .routing-candidate-heading { flex-direction: column; align-items: stretch; }
+  .routing-eligibility { align-self: flex-start; max-width: 100%; }
+  .routing-candidate-evidence { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Very short effective-zoom viewports cannot fit an unbounded fixed subtitle.
+   Keep the complete Worker name in the scrolling body when its header is clamped;
+   only this preview uses the compact spacing, leaving other Settings tasks intact. */
+.routing-agent-name { display: none; }
+@media (max-height: 480px) {
+  .settings-task-dialog:has(.routing-preview) .settings-task-header { padding: 12px 16px; }
+  .settings-task-dialog:has(.routing-preview) .settings-task-header p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .settings-task-dialog:has(.routing-preview) .settings-task-body { padding: 8px 16px; }
+  .settings-task-dialog:has(.routing-preview) .settings-task-footer { padding: 8px 16px; }
+  .routing-preview .routing-agent-name { display: block; color: var(--muted); font-size: 12px; line-height: 18px; }
+}
