@@ -813,7 +813,7 @@ operation inspection/cancellation/recovery and paginated snapshot inspection,
 restoration and permanent deletion. Session details open the workflow; closing the
 modal or navigating retains original request/job/session identity. original Local checkouts do not expose
 managed storage actions. Independent storage/deletion capabilities produce explicit
-older-server update guidance before product actions.
+unsupported-feature guidance before product actions.
 
 Storage acceptance is displayed separately from Worker success and independently
 verified native cleanup. Exact decimal byte counts retain integer precision;

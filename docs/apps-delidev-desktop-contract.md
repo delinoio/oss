@@ -598,17 +598,17 @@ compatibility; execution still rechecks current authority and native support.
 
 Configure retains name, permission, reasoning, instructions and native options,
 including mounted collapsed values, and reviews every ordered source/model/account group.
-The single-source wizard retains capability 33 compatibility. Capability 36 enables
-ordered source groups with Add/Remove and keyboard-operable Move up/down controls.
+One current wizard requires capabilities 33 and 36 and supports ordered source groups with Add/Remove and keyboard-operable Move up/down controls.
 Accounts retains server-filtered per-source pagination, routing policies and weights;
 Model displays the same group order with a source-scoped autocomplete/exact ID for
-each. Both wizard generations retain English/Korean presentation and the independent
+each. The wizard retains English/Korean presentation and the independent
 capability-35 known-model catalog. Known candidates remain advisory, while saved
 models retain exact revisions and take precedence over duplicate known IDs after
 all saved pages are read. New account choices require a connected Ready or
 Unverified account; retained selections stay visible independently of that filter. New groups default to Priority. Configure saves all typed model choices and
-the Worker once under the original revision and UUID-v7 receipt. Schema-3 editors
-require capability 36; unsupported servers show update guidance. Stage navigation
+the Worker once under the original revision and UUID-v7 receipt. Current single-source schema-1 and ordered-source schema-3 documents use this same
+editor. Servers missing either required capability show an unsupported state and
+cannot save. Stage navigation
 never starts login, validation, discovery or inference. New sessions advance only
 after complete confirmed quota exhaustion; observed recovery restores preference
 for future sessions. Existing executed sessions keep their original selection.
@@ -1816,7 +1816,7 @@ Encrypted Worker export starts from its bounded original public recipient and se
 
 ### Codex child configuration
 
-Native harness options capability-gate Codex child configuration with System capability 22 and original Runner Device capability 11. Preserve omitted model/effort/concurrency defaults and disabled saved values on older servers. Explicit settings use the exact registered native model under the parent's selected account and are frozen before execution; native compatibility is checked before input. Display the saved canonical child identity/revision separately from native observations and requested settings. The existing configuration RPC, CLI and generated client remain the product write boundary; reading or editing these fields never launches or controls a child.
+Native harness options capability-gate Codex child configuration with System capability 22 and original Runner Device capability 11. Preserve omitted model/effort/concurrency defaults and saved values. Servers missing the required capabilities show an unsupported state before an explicit setting can be saved. Explicit settings use the exact registered native model under the parent's selected account and are frozen before execution; native compatibility is checked before input. Display the saved canonical child identity/revision separately from native observations and requested settings. The existing configuration RPC, CLI and generated client remain the product write boundary; reading or editing these fields never launches or controls a child.
 
 OpenCode 1.18.32 foreground children use the shared read-only Subagents disclosure under independent capability 23. Validate its complete original task/child graph and closed exact response counters before rendering a bounded page; native task content remains inert. No child controls are added. Follow the subagent contract.
 

@@ -164,7 +164,7 @@ try {
     await select("Agent Workers");
     await page.getByRole("button", { name: "New Agent Worker", exact: true }).click();
     await page.getByRole("radio", { name: "Codex", exact: true }).click();
-    await page.getByRole("combobox", { name: "Account source", exact: true }).selectOption({ label: "Fixture provider" });
+    await page.getByRole("combobox", { name: "Account source 1", exact: true }).selectOption({ label: "Fixture provider" });
     const form = page.locator(".worker-wizard");
     await form.getByText("No accounts to select on this page.", { exact: true }).waitFor();
     assert.equal(await form.locator(".worker-account-row").count(), 0, "Hidden accounts have no DOM/focusable rows");
@@ -288,12 +288,12 @@ try {
       await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
       await checkWizard();
       await page.getByRole("radio", { name: "Codex", exact: true }).click();
-      await page.getByRole("combobox", { name: l("Account source"), exact: true }).selectOption({ label: "Fixture provider" });
+      await page.getByRole("combobox", { name: language === "ko" ? "계정 소스 1" : "Account source 1", exact: true }).selectOption({ label: "Fixture provider" });
       await page.getByRole("checkbox", { name: /^Personal API/ }).check();
       await page.getByRole("checkbox", { name: /^Team API/ }).check();
       await checkWizard();
       await page.getByRole("button", { name: l("Next"), exact: true }).click();
-      const input = page.getByRole("combobox", { name: l("Model"), exact: true });
+      const input = page.getByRole("combobox", { name: language === "ko" ? /^.* 모델$/ : /^Model for / });
       await input.fill("example-model");
       await page.getByRole("option", { name: /^Fixture model/ }).waitFor();
       await input.press("ArrowDown"); await input.press("Enter");

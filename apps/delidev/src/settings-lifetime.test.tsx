@@ -31,7 +31,7 @@ function fixture() {
     return { resource };
   });
   const base = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.AGENT_WORKER_WIZARD_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] }) });
     router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, displayName: "Fixture Provider", enabled: true }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: [model], providers: [provider] }) });
     router.service(ResourceService, { getResource: request => ({ resource: resources.find(row => row.id === request.id) }), listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
     router.service(ConfigurationService, { saveConfiguration: save, saveAgentWorker: request => ({ ...save({ kind: EntityKind.AGENT, documentJson: request.documentJson }), requestId: request.mutation!.requestId }) });
@@ -221,7 +221,7 @@ it.each([undefined, Code.Unavailable, Code.Canceled])("disposes an Agent opening
   await screen.findByRole("option", { name: "Fixture Provider" });
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
   fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ })); next();
-  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "fixture-native" } }); next();
+  fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), { target: { value: "fixture-native" } }); next();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Committed Agent" } });
   value.delay("SaveAgentWorker", code);
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));

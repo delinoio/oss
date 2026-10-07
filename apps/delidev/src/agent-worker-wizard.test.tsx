@@ -13,7 +13,7 @@ import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { i18n } from "./localization";
 
-function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1]) {
+function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1, SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1]) {
   const row = (kind: EntityKind, data: Record<string, unknown>, schemaVersion = 1) => create(ResourceSchema, { kind, schemaVersion, id: newRequestId(), revision: 1n, documentJson: encode(data) });
   const provider = row(EntityKind.PROVIDER, { name: "OpenAI API", enabled: true, discovery: true, protocol: "openai-responses" });
   const otherProvider = row(EntityKind.PROVIDER, { name: "Other API", enabled: true, discovery: true, protocol: "openai-responses" });
@@ -50,22 +50,29 @@ async function start(value: ReturnType<typeof fixture>, edit = false, transport 
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
 }
 const confirmHarness = (name = "Codex") => fireEvent.click(screen.getByRole("radio", { name }));
-const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
+const accountSource = () => {
+  if (!screen.queryByRole("combobox", { name: "Account source 1" })) fireEvent.click(screen.getByRole("button", { name: "Choose accounts" }));
+  return screen.getByRole("combobox", { name: "Account source 1" });
+};
+const next = async () => {
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+};
 async function subscriptionModels(value: ReturnType<typeof fixture>) {
-  await start(value); confirmHarness(); next();
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: "subscription:chatgpt" } });
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
-  return screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement;
+  await start(value); confirmHarness();
+  fireEvent.change(accountSource(), { target: { value: "subscription:chatgpt" } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await next();
+  return screen.getByRole("combobox", { name: /^Model for / }) as HTMLInputElement;
 }
 async function accounts(value: ReturnType<typeof fixture>, multi = false) {
   confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.change(accountSource(), { target: { value: `api:${value.provider.id}` } });
   fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
   if (multi) { fireEvent.click(screen.getByRole("button", { name: "Next account page" })); fireEvent.click(await screen.findByRole("checkbox", { name: /Team API/ })); }
   await waitFor(() => expect(screen.getByText(`${multi ? 2 : 1} accounts selected`)).toBeTruthy());
-  next();
-  await screen.findByRole("combobox", { name: "Model" });
+  await next();
+  await screen.findByRole("combobox", { name: /^Model for / });
 }
 
 it.each(["Codex", "Claude Code", "OpenCode", "Grok Build"])("confirms %s and immediately focuses Accounts without saving or searching models", async name => {
@@ -127,30 +134,30 @@ it("starts edits with the saved non-default harness selected", async () => {
 
 it("preserves edit selections on harness reselection and clears them only on a change", async () => {
   const value = fixture(); await start(value, true); confirmHarness();
-  await waitFor(() => expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`));
-  await screen.findByRole("checkbox", { name: /Personal API/ }); next();
-  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
+  await waitFor(() => expect((accountSource() as HTMLSelectElement).value).toBe(`api:${value.provider.id}`));
+  await screen.findByRole("checkbox", { name: /Personal API/ }); await next();
+  expect((screen.getByRole("combobox", { name: /^Model for / }) as HTMLInputElement).value).toBe("example-0");
   fireEvent.click(screen.getByRole("button", { name: "Back" })); fireEvent.click(screen.getByRole("button", { name: "Back" }));
   confirmHarness();
-  expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`);
-  expect(screen.getByText("1 accounts selected")).toBeTruthy(); next();
-  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
+  expect((accountSource() as HTMLSelectElement).value).toBe(`api:${value.provider.id}`);
+  expect(screen.getByText("1 accounts selected")).toBeTruthy(); await next();
+  expect((screen.getByRole("combobox", { name: /^Model for / }) as HTMLInputElement).value).toBe("example-0");
   fireEvent.click(screen.getByRole("button", { name: "Back" })); fireEvent.click(screen.getByRole("button", { name: "Back" }));
   confirmHarness("Claude Code");
-  expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe("");
+  expect((accountSource() as HTMLSelectElement).value).toBe("");
   expect(screen.getByText("0 accounts selected")).toBeTruthy();
   expect(screen.queryByRole("option", { name: "ChatGPT subscription" })).toBeNull();
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
-  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ })); next();
-  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("");
+  fireEvent.change(accountSource(), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ })); await next();
+  expect((screen.getByRole("combobox", { name: /^Model for / }) as HTMLInputElement).value).toBe("");
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
 
-it("disables harness choices when the server lacks wizard support", async () => {
-  const value = fixture([]); render(value.view());
+it.each([{ capabilities: [] }, { capabilities: [SystemCapability.AGENT_WORKER_WIZARD_V1] }])("disables harness choices when the server lacks current source-route support: %j", async ({ capabilities }) => {
+  const value = fixture(capabilities); render(value.view());
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
-  await screen.findByText("Update the server to configure Agent Workers with this wizard.");
+  await screen.findByText("Update the server to configure Agent Worker account sources.");
   const cards = screen.getAllByRole("radio");
   expect(cards.every(card => (card as HTMLButtonElement).disabled)).toBe(true);
   fireEvent.keyDown(cards[0], { key: "ArrowDown" });
@@ -224,14 +231,14 @@ it("removes Models and saves an ordered multi-account Worker only at the last st
   await accounts(value, true);
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
   expect(value.list.mock.calls.some(([request]) => request.providerId === value.provider.id)).toBe(true);
-  fireEvent.focus(screen.getByRole("combobox", { name: "Model" }));
+  fireEvent.focus(screen.getByRole("combobox", { name: /^Model for / }));
   await screen.findByRole("option", { name: /Example A/ });
   fireEvent.click(screen.getByRole("option", { name: /Example A/ }));
-  next();
+  await next();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Multi-account Worker" } });
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("example-0");
-  next();
+  expect((screen.getByRole("combobox", { name: /^Model for / }) as HTMLInputElement).value).toBe("example-0");
+  await next();
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Multi-account Worker");
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
@@ -243,7 +250,7 @@ it("removes Models and saves an ordered multi-account Worker only at the last st
 
 it("supports keyboard autocomplete and direct IDs without endpoint requests", async () => {
   const value = fixture(); await start(value); await accounts(value);
-  const input = screen.getByRole("combobox", { name: "Model" }); fireEvent.focus(input);
+  const input = screen.getByRole("combobox", { name: /^Model for / }); fireEvent.focus(input);
   await screen.findByRole("option", { name: /Example A/ });
   fireEvent.keyDown(input, { key: "ArrowDown" });
   expect(input.getAttribute("aria-activedescendant")).toBeTruthy();
@@ -254,7 +261,7 @@ it("supports keyboard autocomplete and direct IDs without endpoint requests", as
   fireEvent.keyDown(input, { key: "Escape" });
   expect(screen.queryByRole("listbox")).toBeNull();
   expect(screen.getByRole("heading", { name: "Model", level: 3 })).toBeTruthy();
-  next();
+  await next();
   expect(screen.getByRole("heading", { name: "Configure", level: 3 })).toBe(globalThis.document.activeElement);
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Direct model" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
@@ -264,40 +271,40 @@ it("supports keyboard autocomplete and direct IDs without endpoint requests", as
 });
 
 it("requires accounts, restricts Fixed routing and resets incompatible source selections", async () => {
-  const value = fixture(); await start(value); confirmHarness(); next();
+  const value = fixture(); await start(value); confirmHarness(); await next();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
   await screen.findByRole("option", { name: "OpenAI API" });
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } }); next();
+  fireEvent.change(accountSource(), { target: { value: `api:${value.provider.id}` } }); await next();
   expect(screen.getByRole("alert").textContent).toContain("Select at least one");
   fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
   fireEvent.click(screen.getByRole("button", { name: "Next account page" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: /Team API/ }));
-  fireEvent.click(screen.getByText("Routing options"));
+  fireEvent.click(screen.getByText(/^Routing options/));
   expect((screen.getByRole("option", { name: "fixed" }) as HTMLOptionElement).disabled).toBe(true);
   fireEvent.change(screen.getByLabelText("Weight for account 2"), { target: { value: "5" } });
   fireEvent.click(screen.getByRole("button", { name: "Move account 2 up" }));
   expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe("5");
-  next(); fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "retained-input" } });
+  await next(); fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), { target: { value: "retained-input" } });
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.otherProvider.id}` } });
+  fireEvent.change(accountSource(), { target: { value: `api:${value.otherProvider.id}` } });
   expect(screen.getByText("0 accounts selected")).toBeTruthy();
-  next(); expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  await next(); expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
 });
 
 it("autocompletes known subscription models with an empty saved list and saves through native ID", async () => {
-  const value = fixture(); value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" }); await start(value); confirmHarness(); next();
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: "subscription:chatgpt" } });
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
+  const value = fixture(); value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" }); await start(value); confirmHarness();
+  fireEvent.change(accountSource(), { target: { value: "subscription:chatgpt" } });
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await next();
   await screen.findByText(/Known models · Catalog updated Oct 6, 2026/);
-  const input = screen.getByRole("combobox", { name: "Model" });
+  const input = screen.getByRole("combobox", { name: /^Model for / });
   fireEvent.focus(input); fireEvent.change(input, { target: { value: "gpt" } });
   await screen.findByRole("option", { name: /GPT Known Current.*Known/ });
   fireEvent.keyDown(input, { key: "ArrowDown" }); fireEvent.keyDown(input, { key: "Enter" });
   expect((input as HTMLInputElement).value).toBe("gpt-known-current");
-  expect(screen.queryByRole("button", { name: "Next model page" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Next model page" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText("Availability depends on your plan and installed harness.")).toBeTruthy();
-  next(); fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Known model Worker" } });
+  await next(); fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Known model Worker" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(value.save.mock.calls[0][0].model).toMatchObject({ selection: { case: "nativeId", value: "gpt-known-current" }, expectedModelRevision: 0n });
@@ -325,7 +332,7 @@ it.each(["api", "subscription"] as const)("shows connected ready/unverified %s c
   value.list.mockImplementation(request => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? choices : value.records.filter(row => row.kind === request.filter?.kind), nextPageToken: "" }));
   await start(value); confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: type === "api" ? `api:${value.provider.id}` : "subscription:chatgpt" } });
+  fireEvent.change(accountSource(), { target: { value: type === "api" ? `api:${value.provider.id}` : "subscription:chatgpt" } });
   const section = screen.getByRole("region", { name: "Choose accounts" });
   await within(section).findByRole("checkbox", { name: /Ready choice.*Disabled/ });
   expect(within(section).getByRole("checkbox", { name: /Unverified choice/ })).toBeTruthy();
@@ -343,7 +350,7 @@ it("keeps pagination and explicit refresh when a complete page has only hidden c
   }));
   await start(value); confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.change(accountSource(), { target: { value: `api:${value.provider.id}` } });
   await screen.findByText("No accounts to select on this page.");
   expect(screen.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeTruthy();
   expect(screen.queryByRole("checkbox", { name: /Backup API/ })).toBeNull();
@@ -373,7 +380,7 @@ it.each(["choices", "hidden-only", "failed", "invalid"] as const)("hides hidden-
   await start(value, false, transport);
   confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.change(accountSource(), { target: { value: `api:${value.provider.id}` } });
   await screen.findByText("No accounts to select on this page.");
   refreshing = true;
   fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
@@ -414,20 +421,21 @@ it("retains cached choices and selected account order and weights while refresh 
   await start(value, true, transport);
   confirmHarness();
   await screen.findByRole("checkbox", { name: /Personal API/ });
-  fireEvent.click(screen.getByText("Routing options"));
+  accountSource();
+  fireEvent.click(screen.getByText(/^Routing options/));
   refreshing = true;
   fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
   expect((screen.getByRole("checkbox", { name: /Personal API/ }) as HTMLInputElement).checked).toBe(true);
   expect(screen.getByText("2 accounts selected")).toBeTruthy();
-  const selected = within(screen.getByRole("region", { name: "Choose accounts" })).getByRole("list");
+  const selected = within(screen.getByRole("region", { name: "Account source 1" })).getByRole("list");
   expect(within(selected).getAllByRole("listitem").map(row => row.querySelector("strong")!.textContent)).toEqual(["Personal API", "Team API"]);
   expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe("3");
   expect((screen.getByLabelText("Weight for account 2") as HTMLInputElement).value).toBe("5");
   expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
   await act(async () => release());
   await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
-  next(); await screen.findByRole("combobox", { name: "Model" }); next();
+  await next(); await screen.findByRole("combobox", { name: /^Model for / }); await next();
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson)).accounts).toEqual(expected);
@@ -445,7 +453,7 @@ it.each(["initial", "refresh"])("keeps an %s account read failure distinct from 
   if (state === "initial") failRead();
   await start(value); confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.change(accountSource(), { target: { value: `api:${value.provider.id}` } });
   if (state === "refresh") {
     await screen.findByText("No accounts to select on this page.");
     failRead(); fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
@@ -464,13 +472,13 @@ it.each(["edit", "refresh"])("preserves hidden selected account order, weights a
     value.agent.documentJson = encode({ ...document(value.agent), accounts: expected });
     value.accounts[0].documentJson = encode({ ...document(value.accounts[0]), health: "failed" });
     value.save.mockImplementation(async request => ({ requestId: request.mutation!.requestId, resource: create(ResourceSchema, { ...value.agent, revision: 2n, documentJson: request.documentJson }) }));
-    await start(value, true); confirmHarness();
+    await start(value, true); confirmHarness(); accountSource();
     await screen.findByText("No accounts to select on this page.");
   } else {
     await start(value); await accounts(value, true);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
   }
-  fireEvent.click(screen.getByText("Routing options"));
+  fireEvent.click(screen.getByText(/^Routing options/));
   if (state === "refresh") {
     fireEvent.change(screen.getByLabelText("Weight for account 1"), { target: { value: "3" } });
     fireEvent.change(screen.getByLabelText("Weight for account 2"), { target: { value: "5" } });
@@ -485,9 +493,10 @@ it.each(["edit", "refresh"])("preserves hidden selected account order, weights a
   await screen.findByText("2 accounts selected");
   expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe(String(expected[0].weight));
   expect((screen.getByLabelText("Weight for account 2") as HTMLInputElement).value).toBe(String(expected[1].weight));
-  expect(screen.queryByRole("checkbox", { name: /Personal API|Team API|Backup API/ })).toBeNull();
-  next();
-  fireEvent.change(await screen.findByRole("combobox", { name: "Model" }), { target: { value: "exact-model" } }); next();
+  expect(within(screen.getByRole("region", { name: "Choose accounts" })).queryByRole("checkbox", { name: /Personal API|Team API|Backup API/ })).toBeNull();
+  expect(screen.getAllByRole("checkbox", { name: /Select Personal API|Select Team API|Select Backup API/ }).every(control => (control as HTMLInputElement).checked)).toBe(true);
+  await next();
+  fireEvent.change(await screen.findByRole("combobox", { name: /^Model for / }), { target: { value: "exact-model" } }); await next();
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retained selection Worker" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
@@ -495,18 +504,18 @@ it.each(["edit", "refresh"])("preserves hidden selected account order, weights a
   expect(value.discover).not.toHaveBeenCalled();
 });
 
-it("removes a hidden selection only through its explicit Routing options action", async () => {
+it("removes a hidden selection only through its explicit selected-account action", async () => {
   const value = fixture();
   value.accounts[0].documentJson = encode({ ...document(value.accounts[0]), health: "failed" });
-  await start(value, true); confirmHarness();
+  await start(value, true); confirmHarness(); accountSource();
   await screen.findByText("No accounts to select on this page.");
   await screen.findByText("1 accounts selected");
-  fireEvent.click(screen.getByText("Routing options"));
-  expect(screen.getByRole("button", { name: "Remove account 1" })).toBeTruthy();
-  expect(within(screen.getByRole("region", { name: "Choose accounts" })).getByText("Personal API")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Remove account 1" }));
+  fireEvent.click(screen.getByText(/^Routing options/));
+  expect(screen.getByRole("checkbox", { name: "Select Personal API", checked: true })).toBeTruthy();
+  expect(within(screen.getByRole("region", { name: "Account source 1" })).getAllByText("Personal API").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select Personal API", checked: true }));
   expect(screen.getByText("0 accounts selected")).toBeTruthy();
-  next();
+  await next();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
 });
@@ -535,7 +544,7 @@ it("prefers a saved subscription model over its known duplicate and retains its 
   const input = await subscriptionModels(value); fireEvent.focus(input);
   await screen.findByRole("option", { name: /Saved GPT.*Saved/ });
   expect(screen.getAllByRole("option")).toHaveLength(1);
-  fireEvent.keyDown(input, { key: "ArrowDown" }); fireEvent.keyDown(input, { key: "Enter" }); next();
+  fireEvent.keyDown(input, { key: "ArrowDown" }); fireEvent.keyDown(input, { key: "Enter" }); await next();
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Saved subscription model" } });
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
@@ -566,7 +575,7 @@ it("does not offer a known duplicate before all saved pages are visited", async 
   fireEvent.click(screen.getByRole("button", { name: "Next model page" }));
   await screen.findByRole("option", { name: /Saved GPT.*Saved/ });
   expect(screen.queryByRole("option", { name: /GPT Known Current.*Known/ })).toBeNull();
-  fireEvent.click(screen.getByRole("option", { name: /Saved GPT.*Saved/ })); next();
+  fireEvent.click(screen.getByRole("option", { name: /Saved GPT.*Saved/ })); await next();
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Later saved model Worker" } });
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
@@ -588,17 +597,17 @@ it("retains known candidates and typed input after reload failure, with name sea
   fireEvent.focus(input); expect(screen.getByRole("option", { name: /GPT Known Current/ })).toBeTruthy();
   fireEvent.change(input, { target: { value: "unlisted-native-id" } });
   await waitFor(() => expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull());
-  fireEvent.click(screen.getByRole("option", { name: /Use exact ID/ })); next();
+  fireEvent.click(screen.getByRole("option", { name: /Use exact ID/ })); await next();
   expect(screen.getByRole("heading", { name: "Configure", level: 3 })).toBeTruthy();
 });
 
 it("gates known reads on capability 35 and rejects mismatched service data", async () => {
-  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1]);
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
   value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
   const input = await subscriptionModels(value);
   await screen.findByText(/Update the server to search known models/);
   expect(value.known).not.toHaveBeenCalled();
-  fireEvent.change(input, { target: { value: "exact" } }); next();
+  fireEvent.change(input, { target: { value: "exact" } }); await next();
   expect(screen.getByRole("heading", { name: "Configure", level: 3 })).toBeTruthy();
 });
 
@@ -608,8 +617,8 @@ it("does not retain known candidates after changing harness and service", async 
   await screen.findByRole("option", { name: /GPT Known Current/ });
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   fireEvent.click(screen.getByRole("button", { name: "Change harness" }));
-  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" })); next();
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: "subscription:claude" } });
+  fireEvent.click(screen.getByRole("radio", { name: "Claude Code" }));
+  fireEvent.change(accountSource(), { target: { value: "subscription:claude" } });
   expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull();
   expect(screen.getByText("0 accounts selected")).toBeTruthy();
 });
@@ -620,10 +629,10 @@ it.each(["failed", "empty"])("accepts direct IDs with a %s catalog and retains e
   else value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
   await start(value); await accounts(value);
   await screen.findByText(state === "failed" ? /Catalog lookup failed/ : /No saved models match/);
-  const input = screen.getByRole("combobox", { name: "Model" });
+  const input = screen.getByRole("combobox", { name: /^Model for / });
   fireEvent.keyDown(input, { key: "ArrowDown" });
   expect(input.hasAttribute("aria-activedescendant")).toBe(false);
-  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "exact" } }); next();
+  fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), { target: { value: "exact" } }); await next();
   expect(screen.getByRole("heading", { name: "Configure", level: 3 })).toBeTruthy();
 });
 
@@ -634,8 +643,8 @@ it("prefills edits, preserves hidden options and exact uncertain requests across
   const view = render(value.view());
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(await screen.findByRole("button", { name: "Edit Existing Worker" }));
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
-  confirmHarness(); await waitFor(() => expect((screen.getByLabelText("Account source") as HTMLSelectElement).value).toBe(`api:${value.provider.id}`));
-  await screen.findByText("1 accounts selected"); next(); next();
+  confirmHarness(); await waitFor(() => expect((accountSource() as HTMLSelectElement).value).toBe(`api:${value.provider.id}`));
+  await screen.findByText("1 accounts selected"); await next(); await next();
   const name = screen.getByRole("textbox", { name: "Name" });
   expect((name as HTMLInputElement).value).toBe("Existing Worker");
   fireEvent.change(name, { target: { value: "Edited Worker" } });
@@ -650,16 +659,16 @@ it("prefills edits, preserves hidden options and exact uncertain requests across
   expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson))).toMatchObject({ effort: "high", options: { service_tier: "priority" }, accounts: [{ id: value.accounts[0].id, weight: 3 }] });
 });
 
-it("preserves accountless legacy Workers but requires adding an account to save them", async () => {
+it("rejects accountless current Worker drafts before saving", async () => {
   const value = fixture(); value.records[value.records.indexOf(value.agent)] = create(ResourceSchema, { ...value.agent, documentJson: encode({ ...document(value.agent), accounts: [] }) });
-  await start(value, true); confirmHarness(); next();
+  await start(value, true); confirmHarness(); await next();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
 });
 
 it("blocks stale Worker saves and ignores late successful results after Settings departure", async () => {
   const value = fixture(); let resolve!: (response: Awaited<ReturnType<typeof value.save>>) => void;
   value.save.mockImplementation(() => new Promise(done => { resolve = done; }));
-  await start(value); await accounts(value); fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "direct" } }); next();
+  await start(value); await accounts(value); fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), { target: { value: "direct" } }); await next();
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Late Worker" } }); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
@@ -671,7 +680,7 @@ it("blocks stale Worker saves and ignores late successful results after Settings
 
 it("retains a stale edit and returns empty-name validation to its input", async () => {
   const value = fixture(); await start(value, true); confirmHarness();
-  await screen.findByRole("checkbox", { name: /Personal API/ }); next(); next();
+  await screen.findByRole("checkbox", { name: /Personal API/ }); await next(); await next();
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Name"));
@@ -690,7 +699,7 @@ it("retains a stale edit and returns empty-name validation to its input", async 
 
 it("retains a selected model across model pages and runs discovery only on an explicit action", async () => {
   const value = fixture(); await start(value); await accounts(value);
-  const input = screen.getByRole("combobox", { name: "Model" }); fireEvent.focus(input);
+  const input = screen.getByRole("combobox", { name: /^Model for / }); fireEvent.focus(input);
   fireEvent.click(await screen.findByRole("option", { name: /Example A/ }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Next model page" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Next model page" }));
@@ -704,8 +713,8 @@ it("retains a selected model across model pages and runs discovery only on an ex
 
 it("returns a changed canonical model to its input before saving", async () => {
   const value = fixture(); await start(value); await accounts(value);
-  fireEvent.focus(screen.getByRole("combobox", { name: "Model" }));
-  fireEvent.click(await screen.findByRole("option", { name: /Example A/ })); next();
+  fireEvent.focus(screen.getByRole("combobox", { name: /^Model for / }));
+  fireEvent.click(await screen.findByRole("option", { name: /Example A/ })); await next();
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Model revision draft" } });
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
   value.get.mockImplementation(request => ({ resource: request.id === value.models[0].id ? create(ResourceSchema, { ...value.models[0], revision: 2n }) : value.records.find(row => row.id === request.id) }));
@@ -713,7 +722,7 @@ it("returns a changed canonical model to its input before saving", async () => {
   await screen.findByText("The selected model changed. Return to Model and explicitly reselect it.");
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   expect(screen.getByRole("heading", { name: "Model", level: 3 })).toBeTruthy();
-  expect(globalThis.document.activeElement).toBe(screen.getByRole("combobox", { name: "Model" }));
+  expect(globalThis.document.activeElement).toBe(screen.getByRole("combobox", { name: /^Model for / }));
   expect(screen.getByText(/The selected model is unavailable or changed/)).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
 }, 15000);
@@ -724,19 +733,19 @@ it("rejects a mismatched source page as a whole instead of filtering a loaded pa
   value.list.mockImplementation(request => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? [value.accounts[0], value.subscription] : value.records.filter(row => row.kind === request.filter?.kind), nextPageToken: "" }));
   await start(value); confirmHarness();
   await screen.findByRole("option", { name: "OpenAI API" });
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  fireEvent.change(accountSource(), { target: { value: `api:${value.provider.id}` } });
   await screen.findByText(/This account page includes unsupported or mismatched source data/);
   expect(screen.queryByRole("checkbox", { name: /Personal API/ })).toBeNull();
   expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
-  next();
+  await next();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
 });
 
 it("refreshes and focuses a model changed between the last read and server save", async () => {
   const value = fixture(); await start(value); await accounts(value);
-  fireEvent.focus(screen.getByRole("combobox", { name: "Model" }));
-  fireEvent.click(await screen.findByRole("option", { name: /Example A/ })); next();
+  fireEvent.focus(screen.getByRole("combobox", { name: /^Model for / }));
+  fireEvent.click(await screen.findByRole("option", { name: /Example A/ })); await next();
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Concurrent model revision" } });
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(false));
   value.save.mockImplementationOnce(async () => {
@@ -745,7 +754,7 @@ it("refreshes and focuses a model changed between the last read and server save"
   });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await screen.findByRole("heading", { name: "Model", level: 3 });
-  expect(globalThis.document.activeElement).toBe(screen.getByRole("combobox", { name: "Model" }));
+  expect(globalThis.document.activeElement).toBe(screen.getByRole("combobox", { name: /^Model for / }));
   expect(value.save).toHaveBeenCalledTimes(1);
   expect(value.discover).not.toHaveBeenCalled();
 }, 15000);
@@ -755,7 +764,7 @@ it("keeps one autocomplete selection and valid active identity across empty page
   const value = fixture();
   value.search.mockImplementation(async request => ({ models: request.pageToken ? [] : value.models, providers: [value.provider], nextPageToken: request.pageToken ? "" : "model-page-2" }));
   await start(value); await accounts(value);
-  const input = screen.getByRole("combobox", { name: "Model" }); fireEvent.focus(input);
+  const input = screen.getByRole("combobox", { name: /^Model for / }); fireEvent.focus(input);
   fireEvent.click(await screen.findByRole("option", { name: /Example B/ })); fireEvent.focus(input);
   await waitFor(() => expect(value.search.mock.calls.some(([request]) => request.query === "example-1")).toBe(true));
   await screen.findByRole("option", { name: /Example A/ });
@@ -778,16 +787,16 @@ it("saves subscription then API source models atomically and preserves drafts ac
   fireEvent.change(screen.getByRole("combobox", { name: "Account source 2" }), { target: { value: `api:${value.provider.id}` } });
   fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select Personal API" })).toBeTruthy());
-  next();
+  await next();
   const subscriptionModel = screen.getByRole("combobox", { name: "Model for ChatGPT subscription" });
   const apiModel = screen.getByRole("combobox", { name: "Model for OpenAI API" });
   fireEvent.change(subscriptionModel, { target: { value: "subscription-exact" } }); fireEvent.keyDown(subscriptionModel, { key: "Escape" });
   fireEvent.focus(apiModel); await screen.findByRole("option", { name: /Example A/ }); fireEvent.keyDown(apiModel, { key: "ArrowDown" }); fireEvent.keyDown(apiModel, { key: "Enter" });
   await waitFor(() => { expect((apiModel as HTMLInputElement).value).toBe("example-0"); expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false); });
-  next(); await screen.findByRole("heading", { name: "Configure", level: 3 });
+  await next(); await screen.findByRole("heading", { name: "Configure", level: 3 });
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Subscription priority" } });
   fireEvent.click(screen.getByRole("button", { name: "Back" })); expect((subscriptionModel as HTMLInputElement).value).toBe("subscription-exact");
-  next(); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await next(); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = value.save.mock.calls[0][0];
   expect(request.schemaVersion).toBe(3); expect(request.model).toBeUndefined();
@@ -808,7 +817,7 @@ it("reorders sources with buttons and resets only a changed source", async () =>
   fireEvent.change(screen.getByRole("combobox", { name: "Account source 1" }), { target: { value: `api:${value.otherProvider.id}` } });
   expect(screen.queryByRole("checkbox", { name: "Select Personal API" })).toBeNull(); expect(screen.getByRole("checkbox", { name: "Select ChatGPT account" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Remove source 1" })); expect((screen.getByRole("combobox", { name: "Account source 1" }) as HTMLSelectElement).value).toBe("subscription:chatgpt");
-  next(); expect(screen.getByRole("combobox", { name: "Model for ChatGPT subscription" })).toBeTruthy();
+  await next(); expect(screen.getByRole("combobox", { name: "Model for ChatGPT subscription" })).toBeTruthy();
 }, 15000);
 
 it("keeps Harness confirmation and account visibility on source-route servers", async () => {
@@ -836,11 +845,11 @@ it("saves known candidates as exact native IDs on source-route servers", async (
   value.search.mockResolvedValue({ models: [], providers: [], nextPageToken: "" });
   await start(value); confirmHarness();
   fireEvent.change(screen.getByRole("combobox", { name: "Account source 1" }), { target: { value: "subscription:chatgpt" } });
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await next();
   const input = screen.getByRole("combobox", { name: "Model for ChatGPT subscription" });
   fireEvent.focus(input); fireEvent.click(await screen.findByRole("option", { name: /GPT Known Current/ }));
   expect(value.known).toHaveBeenCalledTimes(1); expect(value.save).not.toHaveBeenCalled();
-  next(); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Known route" } });
+  await next(); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Known route" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(value.save.mock.calls[0][0].model).toMatchObject({ selection: { case: "nativeId", value: "gpt-known-current" }, expectedModelRevision: 0n });
@@ -854,14 +863,14 @@ it("keeps later-page saved revisions ahead of known duplicates for each source",
   value.search.mockImplementation(async request => ({ models: request.pageToken ? [saved] : [], providers: [], nextPageToken: request.pageToken ? "" : "later" }));
   await start(value); confirmHarness();
   fireEvent.change(screen.getByRole("combobox", { name: "Account source 1" }), { target: { value: "subscription:chatgpt" } });
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await next();
   const input = screen.getByRole("combobox", { name: "Model for ChatGPT subscription" }); fireEvent.focus(input);
   await waitFor(() => expect(value.known).toHaveBeenCalledTimes(1));
   expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Next model page" })); fireEvent.focus(input);
   fireEvent.click(await screen.findByRole("option", { name: /Saved GPT/ }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
-  expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull(); next();
+  expect(screen.queryByRole("option", { name: /GPT Known Current/ })).toBeNull(); await next();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Saved route" } });
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
@@ -872,7 +881,7 @@ it("changes source-route language without replacing drafts, focus or read identi
   const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
   await start(value); confirmHarness();
   fireEvent.change(screen.getByRole("combobox", { name: "Account source 1" }), { target: { value: "subscription:chatgpt" } });
-  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); next();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await next();
   const input = screen.getByRole("combobox", { name: "Model for ChatGPT subscription" });
   fireEvent.change(input, { target: { value: "retained-exact-model" } }); input.focus();
   await waitFor(() => expect(value.search.mock.calls.at(-1)?.[0].query).toBe("retained-exact-model"));

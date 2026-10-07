@@ -7,7 +7,7 @@ const harnesses = Object.values(Harness);
 const names: Record<Harness, string> = { [Harness.Codex]: "Codex", [Harness.Claude]: "Claude Code", [Harness.OpenCode]: "OpenCode", [Harness.Grok]: "Grok Build" };
 const origins: Record<Harness, string> = { [Harness.Codex]: "OpenAI", [Harness.Claude]: "Anthropic", [Harness.OpenCode]: "Open source", [Harness.Grok]: "xAI" };
 
-// Both capability generations use the same keyboard and presentation contract.
+// The current source-group wizard owns this keyboard and presentation contract.
 export function WorkerHarnessPicker({ value, disabled, change, confirm }: { value: unknown; disabled: boolean; change: (harness: Harness) => void; confirm: (harness: Harness) => void }) {
   useLocale();
   const id = useId();
