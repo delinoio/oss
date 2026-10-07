@@ -112,6 +112,14 @@ database migration. Existing profile/revision-bound token forms remain unchanged
 
 After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
 
+Fine-grained `PrepareGitHubTokenForm` with selected-repositories access permits
+an empty `resource_owner`, echoes it unchanged and omits `target_name` from the
+canonical URL. Explicit valid owners remain supported. This draft-only allowance
+does not change saved-profile owner requirements or revision-bound form reads.
+The desktop's Classic shortcut uses public-repositories access without scopes;
+existing explicit private-repositories requests retain their separate behavior.
+No protocol field, enum, capability or migration is added.
+
 ## Agent Worker wizard
 
 PR #1351 established the issue #964 allocations on main before implementation.
