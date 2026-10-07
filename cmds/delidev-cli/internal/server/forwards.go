@@ -148,7 +148,7 @@ func (s *Service) StartForward(ctx context.Context, req *connect.Request[pb.Star
 		if !session.WorkspaceAvailable() {
 			return nil, domain.Fail(domain.Conflict, "Workspace storage retains this session.", "Settle the original storage operation and restore the workspace before starting a forward.")
 		}
-		if session.MachineID != domain.ID(m.MachineId) || session.Archive != domain.NotArchived {
+		if domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(m.SessionId), session.MachineID != domain.ID(m.MachineId)) || session.Archive != domain.NotArchived {
 			return nil, forwardDenied()
 		}
 		_, machine, err := activeMachine(tx, session.MachineID)

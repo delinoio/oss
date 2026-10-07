@@ -9,7 +9,7 @@ import (
 )
 
 func prRemediationConflict() error {
-	return domain.Fail(domain.Conflict, "The PR remediation chain or execution ownership changed.", "Inspect the original attempt; do not create a second active fix or reset its attempt budget.")
+	return domain.Fail(domain.Conflict, "The PR remediation revision, input or recorded execution changed.", "Refresh the current revision and preserve the recorded inputs and lifetime attempt budget.")
 }
 
 func (t *Tx) prRemediationActor() (domain.PRProblemDismissal, error) {
@@ -58,7 +58,7 @@ func (t *Tx) GetPRRemediationAttempt(id domain.ID) (Record, domain.PRRemediation
 		return r, v, err
 	}
 	c := parent.Remediation
-	if c == nil || c.ID != chain || c.Sequence < sequence || (state.Active() != (c.ActiveAttemptID == id)) {
+	if c == nil || c.ID != chain || c.Sequence < sequence || domain.OwnershipBlocks(domain.OwnershipResource, id, state.Active() != (c.ActiveAttemptID == id)) {
 		return r, v, prRemediationConflict()
 	}
 	return r, v, nil
@@ -123,7 +123,7 @@ func (t *Tx) ReservePRRemediation(setID domain.ID, expected uint64, mode domain.
 	}
 	c := set.Remediation
 	if c.ActiveAttemptID != "" {
-		return Record{}, prRemediationConflict()
+		domain.ObserveOwnership(domain.OwnershipResource, c.ActiveAttemptID)
 	}
 	if c.Sequence >= domain.MaxPRRemediationAttempts {
 		return Record{}, domain.Fail(domain.ResourceExhausted, "The PR remediation history is full.", "Preserve all original attempts; no history or budget was reset.")
@@ -203,7 +203,7 @@ func (t *Tx) prRemediationInput(v domain.PRRemediationAttempt, delivery domain.I
 	if err != nil {
 		return sr, s, err
 	}
-	if v.InputDigest == "" || domain.PRRemediationInputDigest(i) != v.InputDigest || sr.SessionID != sr.ID || s.ProjectID != sr.ProjectID || ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || i.Delivery != delivery || i.Mode != domain.ExecuteMode || s.Archive != domain.NotArchived || s.Recovery != domain.NoRecovery || s.Dispatch == domain.DispatchPaused || s.Workspace == domain.GeneralChat {
+	if v.InputDigest == "" || domain.PRRemediationInputDigest(i) != v.InputDigest || sr.SessionID != sr.ID || s.ProjectID != sr.ProjectID || ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || i.Delivery != delivery || i.Mode != domain.ExecuteMode || s.Archive != domain.NotArchived || domain.OwnershipBlocks(domain.OwnershipCleanup, v.ExecutionID, s.Recovery != domain.NoRecovery) || s.Dispatch == domain.DispatchPaused || s.Workspace == domain.GeneralChat {
 		return sr, s, prRemediationConflict()
 	}
 	if delivery == domain.InputClaimed && (i.ExecutionID != v.ExecutionID || s.ActiveExecutionID != v.ExecutionID || s.Dispatch != domain.DispatchClaimed) {
@@ -397,7 +397,7 @@ func (t *Tx) FinishPRRemediation(id domain.ID, expected uint64) (Record, error) 
 		}
 	}
 	p := s.Execution
-	verified := p != nil && p.ExecutionID == v.ExecutionID && p.InputID == v.InputID && p.CleanupVerified && s.ActiveExecutionID == "" && s.Recovery == domain.NoRecovery
+	verified := p != nil && p.ExecutionID == v.ExecutionID && p.InputID == v.InputID && !domain.OwnershipBlocks(domain.OwnershipCleanup, r.ID, !p.CleanupVerified) && !domain.OwnershipBlocks(domain.OwnershipCleanup, r.ID, s.ActiveExecutionID != "" || s.Recovery != domain.NoRecovery)
 	if verified {
 		jr, err := t.Get(domain.JobKind, p.JobID)
 		if err != nil {
@@ -410,7 +410,7 @@ func (t *Tx) FinishPRRemediation(id domain.ID, expected uint64) (Record, error) 
 		var input domain.ExecutionJobInput
 		var done domain.ExecutionCompletion
 		stateMatches := j.State == domain.JobSucceeded && p.Outcome == domain.ExecutionSucceeded || j.State == domain.JobFailed && p.Outcome == domain.ExecutionFailed || j.State == domain.JobCanceled && p.Outcome == domain.ExecutionStopped
-		verified = stateMatches && j.FinishedAt != nil && !j.FinishedAt.Before(*v.StartedAt) && jr.SessionID == v.SessionID && j.MachineID == s.MachineID && j.Type == domain.ExecuteSessionJob && domain.Decode(j.Input, &input) == nil && input.Validate() == nil && s.OwnsExecution(input) && domain.Decode(j.Output, &done) == nil && done.ValidateForHarness(input.Configuration.Harness) == nil && input.SessionID == v.SessionID && input.InputID == v.InputID && input.ExecutionID == v.ExecutionID && done.ExecutionID == v.ExecutionID && done.InputID == v.InputID && done.Outcome == p.Outcome && done.LastSequence == p.LastSequence && string(done.NativeThreadID) == p.NativeThreadID && string(done.NativeTurnID) == p.NativeTurnID
+		verified = stateMatches && j.FinishedAt != nil && !j.FinishedAt.Before(*v.StartedAt) && jr.SessionID == v.SessionID && !domain.OwnershipBlocks(domain.OwnershipMachine, r.ID, j.MachineID != s.MachineID) && j.Type == domain.ExecuteSessionJob && domain.Decode(j.Input, &input) == nil && input.Validate() == nil && s.OwnsExecution(input) && domain.Decode(j.Output, &done) == nil && done.ValidateForHarness(input.Configuration.Harness) == nil && input.SessionID == v.SessionID && input.InputID == v.InputID && input.ExecutionID == v.ExecutionID && done.ExecutionID == v.ExecutionID && done.InputID == v.InputID && done.Outcome == p.Outcome && done.LastSequence == p.LastSequence && string(done.NativeThreadID) == p.NativeThreadID && string(done.NativeTurnID) == p.NativeTurnID
 		if verified {
 			ir, err := t.Get(domain.QueueKind, v.InputID)
 			if err != nil {
@@ -491,7 +491,9 @@ func (t *Tx) releasePRRemediation(r Record, v domain.PRRemediationAttempt) (Reco
 		return r, err
 	}
 	if set.Remediation.ActiveAttemptID != r.ID {
-		return r, prRemediationConflict()
+		domain.ObserveOwnership(domain.OwnershipResource, r.ID)
+		// A historical attempt may settle without clearing a newer selection.
+		return t.putPRRemediationAttempt(r.ID, r.Revision, v)
 	}
 	set.Remediation.ActiveAttemptID = ""
 	if _, err = t.publishPRProblemSet(setRow, set); err != nil {
@@ -509,7 +511,7 @@ func (t *Tx) ResumePRRemediation(setID domain.ID, expected uint64) (Record, erro
 	if err != nil {
 		return r, err
 	}
-	if r.Revision != expected || v.Remediation == nil || v.Remediation.ActiveAttemptID != "" {
+	if r.Revision != expected || v.Remediation == nil || domain.OwnershipBlocks(domain.OwnershipResource, setID, v.Remediation.ActiveAttemptID != "") {
 		return r, prRemediationConflict()
 	}
 	c := v.Remediation

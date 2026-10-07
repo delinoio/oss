@@ -264,7 +264,7 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 					return nil, workspace.ResultUncertain()
 				}
 				var output workspace.StorageResult
-				if domain.Decode(preview.Output, &output) != nil || output.Action != workspace.StoragePreview || !output.CleanupVerified {
+				if domain.Decode(preview.Output, &output) != nil || output.Action != workspace.StoragePreview || domain.OwnershipBlocks(domain.OwnershipCleanup, output.OperationID, !output.CleanupVerified) {
 					return nil, workspace.ResultUncertain()
 				}
 				input.PreviewDigest = output.PreviewDigest
@@ -475,7 +475,7 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 	if domain.Decode(raw, &output) != nil || output.Version != 1 || output.OperationID != input.OperationID || output.Action != input.Action ||
 		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(output.SessionID), output.SessionID != input.Preparation.SessionID) ||
 		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(output.MachineID), output.MachineID != input.Preparation.MachineID) ||
-		!output.CleanupVerified || output.SourceBytes > workspace.MaxSnapshotBytes || output.RemovedSourceBytes > output.SourceBytes {
+		domain.OwnershipBlocks(domain.OwnershipCleanup, output.OperationID, !output.CleanupVerified) || output.SourceBytes > workspace.MaxSnapshotBytes || output.RemovedSourceBytes > output.SourceBytes {
 		return workspace.ResultUncertain()
 	}
 	if input.Action == workspace.StorageRecover {
@@ -767,7 +767,7 @@ func validateReconciledStorageReport(tx *store.Tx, record store.Record, job doma
 	}
 	var original, input workspace.StorageRequest
 	var output workspace.StorageResult
-	if workspace.DecodeStorageRequest(job.Input, &original) != nil || workspace.DecodeStorageRequest(recovery.Input, &input) != nil || domain.Decode(recovery.Output, &output) != nil || input.Action != workspace.StorageRecover || input.Recovery == nil || input.OperationID != recovered.ID || output.OperationID != recovered.ID || output.RecoveredJobID != input.Recovery.Original.OperationID || !output.CleanupVerified {
+	if workspace.DecodeStorageRequest(job.Input, &original) != nil || workspace.DecodeStorageRequest(recovery.Input, &input) != nil || domain.Decode(recovery.Output, &output) != nil || input.Action != workspace.StorageRecover || input.Recovery == nil || input.OperationID != recovered.ID || output.OperationID != recovered.ID || output.RecoveredJobID != input.Recovery.Original.OperationID || domain.OwnershipBlocks(domain.OwnershipCleanup, output.OperationID, !output.CleanupVerified) {
 		return workspace.ResultUncertain()
 	}
 	sum := sha256.Sum256(assigned.Data)

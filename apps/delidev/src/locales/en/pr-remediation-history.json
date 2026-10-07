@@ -9,7 +9,7 @@
   "pr-remediation-history.recordedAttemptsLifetimeAutomaticAttemptsSince_9c58b9": "Recorded attempts: <s0/> · Lifetime automatic attempts: <s1/> · Since last resumption: <s2/>",
   "pr-remediation-history.automaticAttemptLimitReachedOfExplicit_56b24c": "Automatic attempt limit reached: <s0/> of <s1/>. Explicit resumption or a higher policy limit is required.",
   "pr-remediation-history.lastExplicitResumption_609b7e": "Last explicit resumption: <s0/>",
-  "pr-remediation-history.anActiveOrUncertainAttemptStill_618805": "An active or uncertain attempt still owns this PR.",
+  "pr-remediation-history.anActiveOrUncertainAttemptStill_618805": "Earlier active or uncertain attempts remain in the history and do not block another fix.",
   "pr-remediation-history.noRemediationChainHasBeenStarted_a87f59": "No remediation chain has been started for this PR.",
   "pr-remediation-history.resumeAutomaticAttemptAllowance_e69c94": "Resume automatic attempt allowance",
   "pr-remediation-history.remediationAttempt_0baa9c": "Remediation attempt {{v0}}",

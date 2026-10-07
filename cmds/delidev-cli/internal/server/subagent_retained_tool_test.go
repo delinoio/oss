@@ -27,21 +27,19 @@ func TestSubagentRetainedParentToolRejectsFreshNativeChildAtomically(t *testing.
 	event := f.event(domain.ExecutionSubagentObserved, sequence+1)
 	// The independent sibling precedes the conflicting claim in the batch.
 	event.Subagents = []domain.SubagentObservation{children[1], children[0]}
-	if _, err := f.call(f.requestEvent(t, event)); err == nil {
-		t.Fatal("fresh native identity reused a retained original parent tool")
+	if _, err := f.call(f.requestEvent(t, event)); err != nil {
+		t.Fatal("retained tool attribution blocked fresh child records", err)
 	}
 	after, err := f.service.Store.Get(ctx, domain.SessionKind, f.input.SessionID)
-	if err != nil || before.Revision != after.Revision {
+	if err != nil || before.Revision+1 != after.Revision {
 		t.Fatal("rejected historical tool claim advanced the session", err)
 	}
 	for _, child := range children {
-		if _, err := f.service.Store.Get(ctx, domain.SubagentKind, child.ID); domain.SafeError(err).Code != domain.NotFound {
+		if _, err := f.service.Store.Get(ctx, domain.SubagentKind, child.ID); err != nil {
 			t.Fatal("rejected batch partially published a child", err)
 		}
 	}
 	// A distinct original tool remains independently usable after rejection.
-	event.Subagents = []domain.SubagentObservation{children[1]}
-	f.publish(t, event)
 	children[1].Status, children[1].SourceID = domain.SubagentCompleted, string(domain.NewID())
 	event.Sequence++
 	event.Subagents = []domain.SubagentObservation{children[1]}

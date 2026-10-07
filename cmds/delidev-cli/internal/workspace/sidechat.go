@@ -55,7 +55,7 @@ func validateSidechatPreparation(input PrepareRequest) error {
 	source := input.SidechatSource
 	if input.ForkProfile != CodexSidechatReferenceV1 || source == nil || source.Preparation.SidechatSource != nil || source.Manifest.Reference != nil || source.Preparation.ForkProfile != "" || source.Preparation.ForkSourceID != "" || source.Preparation.ForkSourcePath != "" || source.Preparation.validateStructure() != nil || domain.UniqueIDs([]domain.ID{input.SessionID, source.Preparation.SessionID}) != nil ||
 		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != source.Preparation.MachineID) ||
-		input.Type != source.Preparation.Type || input.ForkSourceID != source.Preparation.SessionID || input.ForkSourcePath != "" || input.OriginMachineID != source.Preparation.OriginMachineID || input.PrimaryRepository != source.Preparation.PrimaryRepository {
+		input.Type != source.Preparation.Type || domain.OwnershipBlocks(domain.OwnershipResource, input.SessionID, input.ForkSourceID != source.Preparation.SessionID) || input.ForkSourcePath != "" || domain.OwnershipBlocks(domain.OwnershipMachine, input.SessionID, input.OriginMachineID != source.Preparation.OriginMachineID) || input.PrimaryRepository != source.Preparation.PrimaryRepository {
 		return ResultUncertain()
 	}
 	actual, _ := json.Marshal(input.Repositories)

@@ -32,7 +32,7 @@ export function PRFixAction({ row, set, value, selection, disabled, refreshed }:
  });
  const chain = readRemediationChain(document(set).remediation);
  const owner = text(chain?.active_attempt_id);
- const blocked = disabled || fix.busy || fix.uncertain || Boolean(owner);
+ const blocked = disabled || fix.busy || fix.uncertain;
  return <div>{owner ? <p><LocalizedText id="pr-fix.fixAttemptOwnsThisPrInspect_85a121" components={{ s0: <code>{owner}</code> }} /></p> : null}<button disabled={blocked} aria-expanded={open} onClick={() => setOpen(!open)}>{copy("pr-fix.fixNow_879349")}</button>
   {open ? <PRFixForm blocked={blocked} project={project} setProject={setProject} cancel={() => setOpen(false)} send={() => { setNotice(""); void fix.send({ requestId: newRequestId(), schemaVersion: 1, documentJson: encode({ set_id: set.id, set_revision: set.revision.toString(), project_id: project, repository_id: selection.repositoryId, problems: [{ id: row.id, revision: row.revision.toString(), content_version: text(value.content_version) }] }) }, fixAcknowledgement(selection)); }} /> : null}
   <Problem error={fix.error} />{fix.uncertain ? <button disabled={fix.busy} onClick={fix.retry}>{copy("pr-fix.retryOriginalFixRequest_3ecf60")}</button> : null}{notice ? <p role="status">{notice}</p> : null}

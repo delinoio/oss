@@ -110,11 +110,11 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 		if err != nil {
 			return err
 		}
-		if a.Subscription == nil || a.Subscription.RecoveryRequired || a.Subscription.ServerOperation == nil || a.Subscription.Pending == nil {
+		if a.Subscription == nil || domain.OwnershipBlocks(domain.OwnershipCleanup, operation, a.Subscription.RecoveryRequired) || a.Subscription.ServerOperation == nil || a.Subscription.Pending == nil {
 			return subscriptionDenied()
 		}
 		o := a.Subscription.ServerOperation
-		if o.ID != operation || o.Epoch != s.subscriptionServerEpoch() || o.State != domain.SubscriptionWaiting || !o.NativeStarted || o.CallbackForwarded || !time.Now().Before(o.ExpiresAt) || a.Subscription.Pending.ID != o.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
+		if o.ID != operation || domain.OwnershipBlocks(domain.OwnershipInstance, operation, o.Epoch != s.subscriptionServerEpoch()) || o.State != domain.SubscriptionWaiting || !o.NativeStarted || o.CallbackForwarded || !time.Now().Before(o.ExpiresAt) || a.Subscription.Pending.ID != o.ID || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
 			return subscriptionDenied()
 		}
 		p := s.subscriptionProgress[o.ID]
@@ -139,7 +139,7 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 				return nil, err
 			}
 			o := a.Subscription.ServerOperation
-			if o == nil || o.ID != original.ID || o.CallbackForwarded || o.Epoch != original.Epoch || o.State != domain.SubscriptionWaiting || a.Subscription.RecoveryRequired || a.Subscription.Pending == nil || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, actor) != nil {
+			if o == nil || o.ID != original.ID || o.CallbackForwarded || domain.OwnershipBlocks(domain.OwnershipInstance, operation, o.Epoch != original.Epoch) || o.State != domain.SubscriptionWaiting || domain.OwnershipBlocks(domain.OwnershipCleanup, operation, a.Subscription.RecoveryRequired) || a.Subscription.Pending == nil || a.Subscription.Pending.Canceled || subscriptionActorValid(tx, actor) != nil {
 				return nil, subscriptionDenied()
 			}
 			r, _, err := subscriptionAccount(tx, account, 0)

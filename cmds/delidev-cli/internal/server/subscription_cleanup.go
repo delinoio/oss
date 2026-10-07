@@ -105,7 +105,9 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 	result = failedServerLoginOutcome(a, result)
 	if o.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed {
 		if !nativeConfirmed {
-			if err := reconcileFailedServerLoginRuntime(ctx, s.Store.Root(), *o); err != nil {
+			var err error
+			nativeConfirmed, err = reconcileFailedServerLoginRuntime(ctx, s.Store.Root(), *o)
+			if err != nil {
 				return "", err
 			}
 		}
@@ -118,7 +120,11 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 				return nil, subscriptionDenied()
 			}
 			st := current.Subscription
-			st.ServerOperation.CleanupPhase = domain.SubscriptionNativeCleanupConfirmed
+			if nativeConfirmed {
+				st.ServerOperation.CleanupPhase = domain.SubscriptionNativeCleanupConfirmed
+			} else {
+				domain.ObserveOwnership(domain.OwnershipCleanup, operation)
+			}
 			st.ServerOperation.State = result
 			if st.ServerOperation.Diagnostic == nil {
 				st.ServerOperation.Diagnostic = diagnostic
@@ -141,7 +147,7 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 		if err != nil {
 			return "", err
 		}
-		s.logger.InfoContext(ctx, "server_subscription_cleanup_confirmed", "operation_id", operation, "phase", domain.SubscriptionNativeCleanupConfirmed)
+		s.logger.InfoContext(ctx, "server_subscription_cleanup_observed", "operation_id", operation, "phase", domain.SubscriptionNativeCleanupConfirmed, "confirmed", nativeConfirmed)
 	}
 	if credentialAttempt != nil {
 		if err := credentialAttempt(); err != nil {
@@ -160,15 +166,17 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 		if err != nil {
 			return nil, err
 		}
-		if !failedServerLoginOwner(current, operation) || current.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed {
+		if !failedServerLoginOwner(current, operation) || domain.OwnershipBlocks(domain.OwnershipCleanup, operation, current.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed) {
 			return nil, subscriptionDenied()
 		}
 		st := current.Subscription
-		st.ServerOperation.CleanupPhase = domain.SubscriptionCredentialCleanupConfirmed
-		st.ServerOperation.NativeStarted = false
+		if nativeConfirmed || st.ServerOperation.CleanupPhase == domain.SubscriptionNativeCleanupConfirmed {
+			st.ServerOperation.CleanupPhase = domain.SubscriptionCredentialCleanupConfirmed
+			st.ServerOperation.NativeStarted = false
+		}
 		st.ServerOperation.State = failedServerLoginOutcome(current, result)
 		st.Pending = nil
-		st.RecoveryRequired = false
+		st.RecoveryRequired = st.ServerOperation.NativeStarted
 		current.Health = domain.AccountDisconnected
 		current.Validation, current.Catalog, current.Quota = nil, nil, nil
 		current.ConfirmedExhausted = false
@@ -182,6 +190,6 @@ func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, 
 		return "", err
 	}
 	delete(s.subscriptionProgress, operation)
-	s.logger.InfoContext(ctx, "server_subscription_cleanup_confirmed", "operation_id", operation, "phase", domain.SubscriptionCredentialCleanupConfirmed)
+	s.logger.InfoContext(ctx, "server_subscription_credential_cleanup_finished", "operation_id", operation, "phase", domain.SubscriptionCredentialCleanupConfirmed, "native_confirmed", nativeConfirmed)
 	return result, nil
 }

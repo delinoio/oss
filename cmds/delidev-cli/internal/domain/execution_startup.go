@@ -91,10 +91,10 @@ func (r ExecutionStartupRejection) Validate() error {
 func (r ExecutionStartupRejection) ValidateAssignment(jobID ID, revision uint64, raw json.RawMessage) error {
 	var job Job
 	var input ExecutionJobInput
-	if r.Validate() != nil || r.Workspace.JobID != jobID || r.AssignmentRevision != revision || domainStartupDigest(raw) != r.AssignmentDigest || Decode(raw, &job) != nil || job.Validate() != nil || job.Type != ExecuteSessionJob || job.State != JobClaimed || job.InstanceID != r.InstanceID || job.AssignedDeviceID != "" && job.AssignedDeviceID != r.DeviceID || job.MachineID != r.MachineID || Decode(job.Input, &input) != nil || input.Validate() != nil || input.Continuation != nil {
+	if r.Validate() != nil || r.Workspace.JobID != jobID || r.AssignmentRevision != revision || domainStartupDigest(raw) != r.AssignmentDigest || Decode(raw, &job) != nil || job.Validate() != nil || job.Type != ExecuteSessionJob || job.State != JobClaimed || OwnershipBlocks(OwnershipInstance, jobID, job.InstanceID != r.InstanceID) || OwnershipBlocks(OwnershipDevice, jobID, job.AssignedDeviceID != "" && job.AssignedDeviceID != r.DeviceID) || OwnershipBlocks(OwnershipMachine, jobID, job.MachineID != r.MachineID) || Decode(job.Input, &input) != nil || input.Validate() != nil || input.Continuation != nil {
 		return StartupRejectionUncertain()
 	}
-	if input.ExecutionID != r.Workspace.ExecutionID || input.SessionID != r.Workspace.SessionID || input.MachineID != r.MachineID || input.InputID != r.InputID || input.AccountID != r.AccountID || input.ConnectionID != r.ConnectionID || input.ConfigurationDigest != r.ConfigurationDigest || domainStartupDigest(job.Input) != r.AssignmentInputDigest {
+	if input.ExecutionID != r.Workspace.ExecutionID || OwnershipBlocks(OwnershipResource, jobID, input.SessionID != r.Workspace.SessionID) || OwnershipBlocks(OwnershipMachine, jobID, input.MachineID != r.MachineID) || input.InputID != r.InputID || OwnershipBlocks(OwnershipResource, jobID, input.AccountID != r.AccountID) || OwnershipBlocks(OwnershipResource, jobID, input.ConnectionID != r.ConnectionID) || input.ConfigurationDigest != r.ConfigurationDigest || domainStartupDigest(job.Input) != r.AssignmentInputDigest {
 		return StartupRejectionUncertain()
 	}
 	return nil

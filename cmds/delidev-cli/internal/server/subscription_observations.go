@@ -16,7 +16,7 @@ import (
 )
 
 func quotaAccountReady(a domain.Account) bool {
-	return a.Type == domain.SubscriptionAccount && a.SubscriptionService == domain.SubscriptionChatGPT && a.Connection != nil && a.Connection.Authentication == domain.SubscriptionAuth && a.Subscription != nil && a.Subscription.Generation != "" && !a.Subscription.RecoveryRequired && a.Removal == nil && a.Health == domain.AccountReady
+	return a.Type == domain.SubscriptionAccount && a.SubscriptionService == domain.SubscriptionChatGPT && a.Connection != nil && a.Connection.Authentication == domain.SubscriptionAuth && a.Subscription != nil && a.Subscription.Generation != "" && !domain.OwnershipBlocks(domain.OwnershipCleanup, a.Subscription.Generation, a.Subscription.RecoveryRequired) && a.Removal == nil && a.Health == domain.AccountReady
 }
 func observationMachine(tx *store.Tx, machine domain.ID) error {
 	_, m, err := activeMachine(tx, machine)
@@ -374,7 +374,7 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 			return nil, err
 		}
 		state := a.Subscription
-		if state.RecoveryRequired || state.Lease.Revision != input.Revision || state.Generation != input.Generation {
+		if domain.OwnershipBlocks(domain.OwnershipCleanup, input.Operation, state.RecoveryRequired) || state.Lease.Revision != input.Revision || state.Generation != input.Generation {
 			return nil, subscriptionDenied()
 		}
 		source := domain.ID(m.RequestId)

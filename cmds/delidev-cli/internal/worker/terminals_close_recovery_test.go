@@ -127,7 +127,7 @@ func TestTerminalReplacementResumesOriginalCloseJournal(t *testing.T) {
 	}
 }
 
-func TestTerminalReplacementRejectsNonCloseAndChangedJournals(t *testing.T) {
+func TestTerminalReplacementObservesInstanceAndRejectsChangedJournals(t *testing.T) {
 	for _, action := range []domain.TerminalAction{domain.TerminalCreate, domain.TerminalInput, domain.TerminalResize, domain.TerminalClose} {
 		t.Run(string(action), func(t *testing.T) {
 			manager := newTerminalManager(context.Background(), Config{Root: t.TempDir()}, nil, Credential{MachineID: domain.NewID()}, domain.NewID())
@@ -146,8 +146,13 @@ func TestTerminalReplacementRejectsNonCloseAndChangedJournals(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := manager.apply(context.Background(), a); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
-				t.Fatal("replacement accepted old native operation or changed close", err)
+			loaded, loadErr := manager.loadJournal(a)
+			if action == domain.TerminalClose {
+				if loadErr == nil || domain.SafeError(loadErr).Code != domain.RecoveryRequired {
+					t.Fatal("replacement accepted changed operation digest", loadErr)
+				}
+			} else if loadErr != nil || loaded.InstanceID != journal.InstanceID || loaded.Phase != terminalStarted || loaded.Result != nil {
+				t.Fatal("instance observation blocked or altered original operation", loaded, loadErr)
 			}
 			after, err := os.ReadFile(manager.journalPath(a.Operation.ID))
 			if err != nil || !bytes.Equal(before, after) {

@@ -301,7 +301,7 @@ func TestFailedServerLoginCleanupPreservesQueuedCancellation(t *testing.T) {
 	}
 }
 
-func TestFailedServerLoginCleanupRejectsUnprovenRuntime(t *testing.T) {
+func TestFailedServerLoginCleanupContinuesUnprovenRuntimeAndRejectsSymlinks(t *testing.T) {
 	for _, scenario := range []string{"missing-index", "missing-journal", "foreign-journal", "symlink", "live-controller"} {
 		t.Run(scenario, func(t *testing.T) {
 			f, operation := legacyFailedServerLogin(t, true)
@@ -363,20 +363,30 @@ func TestFailedServerLoginCleanupRejectsUnprovenRuntime(t *testing.T) {
 					}
 				}
 			}
-			if err := f.service.recoverFailedServerLogin(failedLoginContext(), f.input.AccountID, operation); err == nil {
-				t.Fatal("unproven native cleanup released recovery")
-			}
+			cleanupErr := f.service.recoverFailedServerLogin(failedLoginContext(), f.input.AccountID, operation)
 			_, a := f.record()
-			if !a.Subscription.RecoveryRequired || a.Subscription.ServerOperation.CleanupPhase != "" || a.Subscription.Pending == nil {
-				t.Fatal("unproven runtime lost its original fence")
+			if scenario == "symlink" {
+				if cleanupErr == nil || a.Subscription.Pending == nil || f.secrets.enumerations != 0 {
+					t.Fatal("unsafe runtime reached credential cleanup", cleanupErr)
+				}
+				if _, err := os.Lstat(home); err != nil {
+					t.Fatal("unsafe runtime was removed", err)
+				}
+				return
+			}
+			if err := a.Subscription.Validate(a); err != nil {
+				t.Fatal("historical native uncertainty invalidated the account format", err)
+			}
+			if cleanupErr != nil || !a.Subscription.RecoveryRequired || !a.Subscription.ServerOperation.NativeStarted || a.Subscription.ServerOperation.CleanupPhase != "" || a.Subscription.Pending != nil {
+				t.Fatal("cleanup blocked or fabricated native confirmation", a.Subscription, cleanupErr)
 			}
 			if home != "" {
-				if _, err := os.Lstat(home); err != nil {
-					t.Fatal("unproven runtime was deleted", err)
+				if _, err := os.Lstat(home); !os.IsNotExist(err) {
+					t.Fatal("scoped runtime cleanup did not continue", err)
 				}
 			}
-			if f.secrets.enumerations != 0 {
-				t.Fatal("unproven process ownership reached protected credentials")
+			if f.secrets.enumerations == 0 {
+				t.Fatal("unknown native ownership blocked protected credential cleanup")
 			}
 		})
 	}

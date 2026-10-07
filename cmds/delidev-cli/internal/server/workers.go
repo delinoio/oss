@@ -470,7 +470,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 						if problem == nil {
 							problem = cloneAuthority(tx, input)
 						}
-						if problem == nil && input.LocalOrigin.DeviceID != actor.DeviceID {
+						if problem == nil && domain.OwnershipBlocks(domain.OwnershipDevice, r.ID, input.LocalOrigin.DeviceID != actor.DeviceID) {
 							problem = localOriginRequired()
 						}
 						if problem != nil {

@@ -151,19 +151,19 @@ func TestSubagentBatchReusedHistoricalIdentityRollsBackEarlierWrites(t *testing.
 	reused.ID = domain.NewID()
 	event := f.event(domain.ExecutionSubagentObserved, 3)
 	event.Subagents = []domain.SubagentObservation{first, reused}
-	if _, err := f.call(f.requestEvent(t, event)); err == nil {
-		t.Fatal("historical native ownership was reused")
+	if _, err := f.call(f.requestEvent(t, event)); err != nil {
+		t.Fatal("historical attribution blocked fresh child records", err)
 	}
-	if _, err := f.service.Store.Get(context.Background(), domain.SubagentKind, first.ID); domain.SafeError(err).Code != domain.NotFound {
-		t.Fatal("rejected batch partially retained its first child", err)
+	if _, err := f.service.Store.Get(context.Background(), domain.SubagentKind, first.ID); err != nil {
+		t.Fatal("accepted batch did not retain its first child", err)
 	}
 	record, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	session, err := store.Decode[domain.Session](record)
-	if err != nil || session.Execution.LastSequence != 2 || len(session.Execution.Subagents) != 0 {
-		t.Fatal("rejected batch advanced original progress", err)
+	if err != nil || session.Execution.LastSequence != 3 || len(session.Execution.Subagents) != 2 {
+		t.Fatal("accepted batch lost its selected progress", err)
 	}
 }
 

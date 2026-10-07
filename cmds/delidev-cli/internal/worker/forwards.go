@@ -77,7 +77,7 @@ func receiveForwards(ctx context.Context, config Config, client delidevv1connect
 		var value domain.Forward
 		if resource == nil || resource.Kind != pb.EntityKind_ENTITY_KIND_FORWARD || domain.ID(resource.Id).Validate() != nil || domain.ID(resource.SessionId).Validate() != nil || domain.Decode(resource.DocumentJson, &value) != nil ||
 			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(value.MachineID), value.MachineID != credential.MachineID) ||
-			value.WorkerDeviceID != credential.DeviceID || value.WorkerInstanceID != instance || value.WorkerRuntimeID.Validate() != nil || value.WorkerPort == 0 || value.WorkerPort > 65535 || value.State != domain.ForwardPending || !value.ClientClaimed || value.WorkerClaimed || seen[resource.Id] || len(seen) >= 4096 {
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(resource.Id), value.WorkerDeviceID != credential.DeviceID) || domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(resource.Id), value.WorkerInstanceID != instance) || value.WorkerRuntimeID.Validate() != nil || value.WorkerPort == 0 || value.WorkerPort > 65535 || value.State != domain.ForwardPending || !value.ClientClaimed || value.WorkerClaimed || seen[resource.Id] || len(seen) >= 4096 {
 			return publicationUncertain()
 		}
 		seen[resource.Id] = true

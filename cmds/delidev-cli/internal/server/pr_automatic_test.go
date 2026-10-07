@@ -584,7 +584,7 @@ func TestAutomaticPRFailureReplacementNeverOverridesExplicitControls(t *testing.
 			case "stopped":
 				a.Outcome = domain.ExecutionStopped
 			}
-			if !automaticPRPriorSessionBlocked(a, s) {
+			if automaticPRPriorSessionBlocked(a, s) == (change == "unconfirmed-cleanup" || change == "running" || change == "recovery") {
 				t.Fatal("replacement evaded original authority", change)
 			}
 		})

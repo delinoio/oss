@@ -8,7 +8,7 @@ export enum AttemptState { Reserved = "reserved", Bound = "bound", Running = "ru
 const count = (value: unknown, max = 10000): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= max;
 const digest = (value: unknown) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const absent = (value: unknown) => value === undefined;
-const audit = (value: Document) => uuid(value.request_id) && Boolean(utcTimestamp(value.at)) && (value.actor_type === "owner" ? absent(value.device_id) : value.actor_type === "client" && uuid(value.device_id));
+const audit = (value: Document) => uuid(value.request_id) && Boolean(utcTimestamp(value.at)) && (value.actor_type === "owner" ? absent(value.device_id) : ["client", "worker"].includes(text(value.actor_type)) && uuid(value.device_id));
 export const activeAttempt = (value: unknown) => [AttemptState.Reserved, AttemptState.Bound, AttemptState.Running, AttemptState.Uncertain].includes(value as AttemptState);
 
 export function readRemediationChain(value: unknown): Document | undefined {
@@ -36,7 +36,7 @@ function policyValid(value: Document): boolean {
 
 export function readRemediationAttempt(row: Resource, set: Resource): Document | undefined {
   const v = document(row), chain = readRemediationChain(document(set).remediation), reserved = object(v.reserved);
-  if (!chain || row.kind !== EntityKind.PROBLEM || row.schemaVersion !== 1 || !uuid(row.id) || row.revision <= 0n || row.revision >= 1n << 63n || row.sessionId || row.projectId || row.documentJson.byteLength > 1 << 20 || v.version !== 1 || v.type !== "pull-request-remediation-attempt" || v.set_id !== set.id || v.chain_id !== chain.id || !count(v.sequence, Number(chain.sequence)) || v.sequence === 0 || !["manual", "automatic"].includes(text(v.mode)) || !Object.values(AttemptState).includes(v.state as AttemptState) || activeAttempt(v.state) !== (chain.active_attempt_id === row.id) || !audit(reserved) || !policyValid(object(v.policy))) return;
+  if (!chain || row.kind !== EntityKind.PROBLEM || row.schemaVersion !== 1 || !uuid(row.id) || row.revision <= 0n || row.revision >= 1n << 63n || row.sessionId || row.projectId || row.documentJson.byteLength > 1 << 20 || v.version !== 1 || v.type !== "pull-request-remediation-attempt" || v.set_id !== set.id || v.chain_id !== chain.id || !count(v.sequence, Number(chain.sequence)) || v.sequence === 0 || !["manual", "automatic"].includes(text(v.mode)) || !Object.values(AttemptState).includes(v.state as AttemptState) || !audit(reserved) || !policyValid(object(v.policy))) return;
   if (absent(v.git_target) !== absent(v.project_id)) return;
   if (!absent(v.git_target)) {
     const git = object(v.git_target), target = object(git.target), original = object(document(set).target);

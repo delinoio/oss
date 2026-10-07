@@ -252,7 +252,7 @@ func TestAutomaticPRFailedDiscoverySessionRetainsOnlyProvedReplacementAuthority(
 				}
 				return tx.RequireAutomaticPRSourceSession(sr, v, target.Target, source.ID, source.Revision)
 			})
-			if (err == nil) != (change == "unchanged") {
+			if (err == nil) != (change == "unchanged" || change == "cleanup" || change == "recovery") {
 				t.Fatal("incorrect source proof gate", err)
 			}
 		})

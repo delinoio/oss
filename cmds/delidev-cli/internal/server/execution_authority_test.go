@@ -511,7 +511,7 @@ func testExecutionGrantRechecksMutableOwnership(t *testing.T, harness domain.Har
 				t.Fatal(err)
 			}
 			accepted, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
-			if change == "replaced-instance" || change == "replaced-connection" {
+			if change == "replaced-instance" || change == "replaced-connection" || change == "expired-heartbeat" {
 				if err != nil {
 					t.Fatal("metadata mismatch blocked the retained grant", change, err)
 				}

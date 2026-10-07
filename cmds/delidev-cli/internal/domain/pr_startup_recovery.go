@@ -47,7 +47,7 @@ func (e PRStartupRecoveryEvidence) Validate(expected ExecutionRecoveryRequest) e
 	if expected.Startup == nil || expected.Validate() != nil || e.Version != 1 || e.JobID != expected.JobID || e.ReportID.Validate() != nil || r.Validate() != nil {
 		return StartupRejectionUncertain()
 	}
-	if r.ServerID != expected.ServerID || r.DeviceID != expected.DeviceID || r.InstanceID != expected.InstanceID || r.MachineID != expected.MachineID || r.InputID != expected.Startup.InputID || r.AccountID != expected.AccountID || r.ConnectionID != expected.ConnectionID || r.ConfigurationDigest != expected.ConfigurationDigest || r.AssignmentRevision != expected.AssignmentRevision || r.AssignmentDigest != expected.AssignmentDigest || r.AssignmentInputDigest != expected.AssignmentInputDigest || r.Workspace.JobID != expected.JobID || r.Workspace.ExecutionID != expected.Startup.ExecutionID || r.Workspace.SessionID != expected.SessionID {
+	if OwnershipBlocks(OwnershipResource, expected.JobID, r.ServerID != expected.ServerID || r.DeviceID != expected.DeviceID || r.InstanceID != expected.InstanceID || r.MachineID != expected.MachineID || r.AccountID != expected.AccountID || r.ConnectionID != expected.ConnectionID || r.Workspace.SessionID != expected.SessionID) || r.InputID != expected.Startup.InputID || r.ConfigurationDigest != expected.ConfigurationDigest || r.AssignmentRevision != expected.AssignmentRevision || r.AssignmentDigest != expected.AssignmentDigest || r.AssignmentInputDigest != expected.AssignmentInputDigest || r.Workspace.JobID != expected.JobID || r.Workspace.ExecutionID != expected.Startup.ExecutionID {
 		return StartupRejectionUncertain()
 	}
 	return nil

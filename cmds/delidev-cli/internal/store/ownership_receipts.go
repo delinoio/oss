@@ -29,6 +29,9 @@ func (t *Tx) receiptMatches(id domain.ID, operation string, input any, saved str
 	}
 	matches := func(value any) (bool, error) {
 		digest, err := mutationDigest(id, operation, value)
+		if err == nil && digest == saved {
+			domain.ObserveOwnership(domain.OwnershipActor, id)
+		}
 		return digest == saved, err
 	}
 	if ok, err := matches(replacement.Interface()); ok || err != nil {

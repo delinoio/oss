@@ -153,7 +153,7 @@ func (m *terminalManager) loadJournal(a terminal.Assignment) (terminalOperationJ
 		j = terminalOperationJournal{TerminalID: a.ID, OperationID: a.Operation.ID, InstanceID: m.instance, Digest: terminalOperationDigest(a), ClaimID: domain.NewID(), ReportID: domain.NewID(), Phase: terminalPrepared}
 		return j, m.saveJournal(j)
 	}
-	if err != nil || domain.Decode(raw, &j) != nil || j.TerminalID != a.ID || j.OperationID != a.Operation.ID || j.InstanceID.Validate() != nil || (j.InstanceID != m.instance && a.Operation.Action != domain.TerminalClose) || j.Digest != terminalOperationDigest(a) || j.ClaimID.Validate() != nil || j.ReportID.Validate() != nil {
+	if err != nil || domain.Decode(raw, &j) != nil || j.TerminalID != a.ID || j.OperationID != a.Operation.ID || j.InstanceID.Validate() != nil || domain.OwnershipBlocks(domain.OwnershipInstance, a.Operation.ID, j.InstanceID != m.instance && a.Operation.Action != domain.TerminalClose) || j.Digest != terminalOperationDigest(a) || j.ClaimID.Validate() != nil || j.ReportID.Validate() != nil {
 		return j, domain.Fail(domain.RecoveryRequired, "The original terminal operation journal is unavailable or changed.", "Close and reconcile original process ownership; never replay uncertain input.")
 	}
 	if recovery := j.CloseRecovery; recovery != nil && (a.Operation.Action != domain.TerminalClose || recovery.InstanceID.Validate() != nil || recovery.ClaimID.Validate() != nil || recovery.ReportID.Validate() != nil) {

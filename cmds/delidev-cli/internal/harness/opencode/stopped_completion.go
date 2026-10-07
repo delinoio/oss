@@ -99,7 +99,7 @@ func (a *OwnedAPI) CloseAfterStop(ctx context.Context) (StoppedHistoryObservatio
 		return StoppedHistoryObservation{}, sessionUncertain()
 	}
 	receipt, err := s.recordStopCleanup(s.observer)
-	if err != nil || !receipt.CleanupVerified || !receipt.PendingCleared || receipt.RepliesUncertain || !receipt.NativeAttempted || !receipt.TerminalObserved || !receipt.IdleObserved || receipt.InputRequestID != history.RequestID || receipt.SessionID != history.SessionID || receipt.MessageID != history.InputID {
+	if err != nil || domain.OwnershipBlocks(domain.OwnershipCleanup, domain.NewID(), !receipt.CleanupVerified) || !receipt.PendingCleared || receipt.RepliesUncertain || !receipt.NativeAttempted || !receipt.TerminalObserved || !receipt.IdleObserved || receipt.InputRequestID != history.RequestID || receipt.SessionID != history.SessionID || receipt.MessageID != history.InputID {
 		return StoppedHistoryObservation{}, sessionUncertain()
 	}
 	if err := s.closeStoppedForegroundChildren(receipt, history); err != nil {

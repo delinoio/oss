@@ -9,7 +9,7 @@
   "pr-remediation-history.recordedAttemptsLifetimeAutomaticAttemptsSince_9c58b9": "기록된 시도: <s0/> · 전체 기간 자동 시도: <s1/> · 최근 재개 이후: <s2/>",
   "pr-remediation-history.automaticAttemptLimitReachedOfExplicit_56b24c": "자동 시도 한도에 도달했습니다: <s1/>회 중 <s0/>회. 직접 재개하거나 정책 한도를 높여야 합니다.",
   "pr-remediation-history.lastExplicitResumption_609b7e": "최근 명시적 재개: <s0/>",
-  "pr-remediation-history.anActiveOrUncertainAttemptStill_618805": "활성 또는 불확실한 시도가 아직 이 PR을 소유합니다.",
+  "pr-remediation-history.anActiveOrUncertainAttemptStill_618805": "기존 활성·미확인 시도는 기록에 남으며 새 수정을 막지 않습니다.",
   "pr-remediation-history.noRemediationChainHasBeenStarted_a87f59": "이 PR에 시작된 문제 해결 체인이 없습니다.",
   "pr-remediation-history.resumeAutomaticAttemptAllowance_e69c94": "자동 시도 허용량 재개",
   "pr-remediation-history.remediationAttempt_0baa9c": "수정 조치 시도 {{v0}}",

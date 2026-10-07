@@ -255,7 +255,7 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 		return nil, err
 	}
 	receipt, err := api.CompactionReceipt(ctx)
-	if err != nil || !receipt.NativeAttempted || !receipt.HTTPAccepted || !receipt.LifecycleCompleted || !receipt.CleanupVerified || receipt.Context.Auto || receipt.Context.ActionID != i.ActionID {
+	if err != nil || !receipt.NativeAttempted || !receipt.HTTPAccepted || !receipt.LifecycleCompleted || domain.OwnershipBlocks(domain.OwnershipCleanup, owner, !receipt.CleanupVerified) || receipt.Context.Auto || receipt.Context.ActionID != i.ActionID {
 		return nil, domain.CompactionUncertain()
 	}
 	native, nativeRef, err := api.RetainCheckpoint(ctx)
@@ -288,11 +288,11 @@ func executeOpenCodeSessionCompaction(ctx context.Context, config Config, owner 
 	if err := security.WriteAtomic(path, data); err != nil {
 		return nil, domain.CompactionUncertain()
 	}
-	result := domain.SessionCompactionResult{Version: 3, Harness: domain.OpenCode, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: domain.SessionCompactionRef{JobID: owner, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, CheckpointDigest: executionInputDigest(data), NativeDigest: nativeRef.SHA256}, OpenCode: &domain.OpenCodeCompactionResult{NativeSessionID: domain.NativeIdentity(sourceRef.SessionID), SourceNativeInputID: domain.NativeIdentity(sourceRef.InputID), UserID: domain.NativeIdentity(record.UserID), PartID: domain.NativeIdentity(record.PartID), SummaryID: domain.NativeIdentity(record.SummaryID), CompletedEventID: domain.NativeIdentity(record.CompletedEventID), HistoryDigest: record.HistoryDigest, Actions: actions, Acknowledged: true, LifecycleCompleted: true, Usages: usages}}
+	result := domain.SessionCompactionResult{Version: 3, Harness: domain.OpenCode, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: receipt.CleanupVerified, Checkpoint: domain.SessionCompactionRef{JobID: owner, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, CheckpointDigest: executionInputDigest(data), NativeDigest: nativeRef.SHA256}, OpenCode: &domain.OpenCodeCompactionResult{NativeSessionID: domain.NativeIdentity(sourceRef.SessionID), SourceNativeInputID: domain.NativeIdentity(sourceRef.InputID), UserID: domain.NativeIdentity(record.UserID), PartID: domain.NativeIdentity(record.PartID), SummaryID: domain.NativeIdentity(record.SummaryID), CompletedEventID: domain.NativeIdentity(record.CompletedEventID), HistoryDigest: record.HistoryDigest, Actions: actions, Acknowledged: true, LifecycleCompleted: true, Usages: usages}}
 	if result.Validate() != nil {
 		return nil, domain.CompactionUncertain()
 	}
-	logger.InfoContext(ctx, "opencode_session_compaction_cleanup_verified", "native_actions", actions)
+	logger.InfoContext(ctx, "opencode_session_compaction_finished", "native_actions", actions, "cleanup_verified", receipt.CleanupVerified)
 	return json.Marshal(result)
 }
 

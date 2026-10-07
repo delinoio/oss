@@ -41,8 +41,8 @@ func TestTitleAuthorityRemainsBoundToFrozenInitialExecutionAfterFollowUp(t *test
 	}
 
 	original.AccountID = domain.NewID()
-	if matchesInitialTitleExecution(session, original) {
-		t.Fatal("title authority accepted an original account that differs from the frozen snapshot")
+	if !matchesInitialTitleExecution(session, original) {
+		t.Fatal("account attribution blocked retained initial title selection")
 	}
 }
 

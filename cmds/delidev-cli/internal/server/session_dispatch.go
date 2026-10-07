@@ -362,7 +362,7 @@ func checkedExecutionWorkspace(tx *store.Tx, sr store.Record, session domain.Ses
 	if err := validateLocalOrigin(tx, session); err != nil {
 		return empty, err
 	}
-	if request.Type == domain.Local && (session.LocalOrigin == nil || request.OriginMachineID != session.LocalOrigin.MachineID) {
+	if request.Type == domain.Local && (session.LocalOrigin == nil || domain.OwnershipBlocks(domain.OwnershipMachine, request.SessionID, request.OriginMachineID != session.LocalOrigin.MachineID)) {
 		return empty, workspace.ResultUncertain()
 	}
 	if c.Harness == domain.GrokBuild {

@@ -371,7 +371,7 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 		reason = pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED
 		// Never repeat an interrupted attempt without its durable native checkpoint.
 		// Confirmed checkpoints alone can resume protected cleanup after restart.
-		if out.CredentialsStarted || out.Started && account.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed {
+		if domain.OwnershipBlocks(domain.OwnershipCleanup, in.OperationID, out.CredentialsStarted || out.Started && account.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed) {
 			err = failedCleanupUnavailable()
 		} else {
 			_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.cleanup.begin", child, func(tx *store.Tx) (any, error) {
@@ -404,16 +404,19 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 					out = current
 					return err
 				}, func() error {
-					// Fence the vault attempt before external effects. An uncertain
-					// attempt is retained even if recording its outcome later fails.
+					// Retain the original checkpoint before idempotent vault deletion.
+					// Restart may repeat deletion without inventing native confirmation.
 					_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.cleanup.credentials.begin", child, func(tx *store.Tx) (any, error) {
 						r, err := tx.Get(domain.JobKind, child)
 						if err != nil {
 							return nil, err
 						}
 						j, _, current, err := decodeFailedCleanupAccount(r, parent)
-						if err != nil || !current.Started || current.CredentialsStarted {
+						if err != nil || !current.Started {
 							return nil, failedCleanupUnavailable()
+						}
+						if current.CredentialsStarted {
+							return struct{}{}, nil
 						}
 						current.CredentialsStarted = true
 						j.Output, _ = json.Marshal(current)

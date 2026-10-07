@@ -81,12 +81,12 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 				blocked := false
 				if account.Type == domain.SubscriptionAccount {
 					managed := account.Subscription
-					blocked = managed == nil || managed.Generation == "" || managed.RecoveryRequired || managed.Lease != nil || managed.Pending != nil && managed.Pending.Action != domain.SubscriptionRefresh || account.Connection == nil || account.Connection.Authentication != domain.SubscriptionAuth
+					blocked = managed == nil || managed.Generation == "" || domain.OwnershipBlocks(domain.OwnershipCleanup, link.ID, managed.RecoveryRequired || managed.Lease != nil || managed.Pending != nil && managed.Pending.Action != domain.SubscriptionRefresh) || account.Connection == nil || account.Connection.Authentication != domain.SubscriptionAuth
 				} else {
 					validation, connection := account.Validation, account.Connection
 					blocked = validation == nil || connection == nil
 					if !blocked {
-						blocked = validation.ConnectionID != connection.ID || validation.State != domain.Observed || validation.Problem != nil || validation.ObservedAt.IsZero() || validation.ObservedAt.Before(connection.ConnectedAt) || validation.ObservedAt.After(t.now.Add(time.Second)) || connection.Authentication != selected.Authentication ||
+						blocked = domain.OwnershipBlocks(domain.OwnershipResource, link.ID, validation.ConnectionID != connection.ID) || validation.State != domain.Observed || validation.Problem != nil || validation.ObservedAt.IsZero() || validation.ObservedAt.Before(connection.ConnectedAt) || validation.ObservedAt.After(t.now.Add(time.Second)) || connection.Authentication != selected.Authentication ||
 							validation.Authentication != domain.CredentialAccepted && validation.Authentication != domain.KeylessEndpoint || (selected.Authentication == domain.KeylessAuth) != (validation.Authentication == domain.KeylessEndpoint)
 					}
 				}

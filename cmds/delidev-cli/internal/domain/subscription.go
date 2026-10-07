@@ -132,7 +132,8 @@ func (s SubscriptionState) Validate(account Account) error {
 				return invalid()
 			}
 		}
-		if o.NativeStarted && (s.Lease != nil || s.Pending == nil || s.Pending.ID != o.ID || s.Pending.Phase != SubscriptionClaimed || s.Pending.MachineID != "" || o.Generation != s.Generation) {
+		// Terminal native uncertainty is historical metadata, not pending intent.
+		if o.NativeStarted && o.Active() && (s.Pending == nil || s.Pending.ID != o.ID || s.Pending.Phase != SubscriptionClaimed || s.Pending.MachineID != "" || o.Generation != s.Generation) {
 			return invalid()
 		}
 		if o.Active() && (s.Pending == nil || s.Pending.ID != o.ID || s.Pending.MachineID != "") {

@@ -40,7 +40,7 @@ func ValidateRepositoryCloneParent(value string) error {
 	return nil
 }
 func (i RepositoryCloneInput) Validate() error {
-	if UniqueIDs([]ID{i.RepositoryID, i.MachineID}) != nil || i.LocalOrigin.MachineID != i.MachineID || i.LocalOrigin.DeviceID.Validate() != nil {
+	if UniqueIDs([]ID{i.RepositoryID, i.MachineID}) != nil || OwnershipBlocks(OwnershipMachine, i.RepositoryID, i.LocalOrigin.MachineID != i.MachineID) || i.LocalOrigin.DeviceID.Validate() != nil {
 		return localCloneInputFailure()
 	}
 	if err := ValidateRepositoryCloneParent(i.ParentPath); err != nil {

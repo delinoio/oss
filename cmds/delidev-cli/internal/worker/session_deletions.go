@@ -49,9 +49,9 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 			for _, raw := range r.Msg.WorkJson {
 				var w domain.SessionDeletionWork
 				if domain.DecodeWithLimit(raw, &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil ||
-					w.ServerID != credential.ServerID ||
-					w.DeviceID != credential.DeviceID ||
-					w.MachineID != credential.MachineID {
+					domain.OwnershipBlocks(domain.OwnershipInstance, w.DeletionID, w.ServerID != credential.ServerID) ||
+					domain.OwnershipBlocks(domain.OwnershipDevice, w.DeletionID, w.DeviceID != credential.DeviceID) ||
+					domain.OwnershipBlocks(domain.OwnershipMachine, w.DeletionID, w.MachineID != credential.MachineID) {
 					config.Logger.WarnContext(ctx, "session_deletion_invalid_work", "code", domain.RecoveryRequired)
 					continue
 				}
@@ -418,9 +418,9 @@ func retiringAssignment(ctx context.Context, config Config, client delidevv1conn
 	}
 	var w domain.SessionDeletionWork
 	if domain.DecodeWithLimit(r.Msg.WorkJson[0], &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(w.ServerID), w.ServerID != credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(w.DeviceID), w.DeviceID != credential.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(w.MachineID), w.MachineID != credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(w.ServerID), domain.OwnershipBlocks(domain.OwnershipInstance, w.DeletionID, w.ServerID != credential.ServerID)) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(w.DeviceID), domain.OwnershipBlocks(domain.OwnershipDevice, w.DeletionID, w.DeviceID != credential.DeviceID)) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(w.MachineID), domain.OwnershipBlocks(domain.OwnershipMachine, w.DeletionID, w.MachineID != credential.MachineID)) ||
 		string(w.SessionID) != resource.SessionId {
 		return false
 	}

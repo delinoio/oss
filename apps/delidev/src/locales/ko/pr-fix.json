@@ -1,5 +1,5 @@
 {
-  "pr-fix.fixAttemptOwnsThisPrInspect_85a121": "수정 시도 <s0/>이(가) 이 PR을 소유합니다. 다른 수정 전에 유지된 기록을 확인하세요.",
+  "pr-fix.fixAttemptOwnsThisPrInspect_85a121": "기존 수정 시도: <s0/>. 새 수정을 진행할 수 있으며 기존 기록은 유지됩니다.",
   "pr-fix.fixNow_879349": "지금 수정",
   "pr-fix.retryOriginalFixRequest_3ecf60": "원래 수정 요청 다시 시도",
   "pr-fix.manualPrFix_5b64d4": "수동 PR 수정",

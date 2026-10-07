@@ -108,7 +108,7 @@ func automaticPRScope(tx *store.Tx, original store.Record) (domain.SessionPullRe
 }
 
 func automaticPRPriorSessionBlocked(attempt domain.PRRemediationAttempt, session domain.Session) bool {
-	if session.AutomaticRemediationStopped || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery {
+	if session.AutomaticRemediationStopped || session.Archive != domain.NotArchived || domain.OwnershipBlocks(domain.OwnershipCleanup, attempt.ExecutionID, session.Recovery != domain.NoRecovery) {
 		return true
 	}
 	if session.Dispatch != domain.DispatchPaused {
@@ -116,7 +116,7 @@ func automaticPRPriorSessionBlocked(attempt domain.PRRemediationAttempt, session
 	}
 	// Only a positively settled failure from this automatic profile may select
 	// a new session. Keep its old queue paused; no implicit Resume is performed.
-	return attempt.Mode != domain.PRRemediationAutomatic || attempt.AutomaticLinkID == "" || attempt.State != domain.PRRemediationFinished || attempt.Outcome != domain.ExecutionFailed || session.Outcome != domain.ExecutionFailed || session.Execution == nil || session.Execution.Outcome != domain.ExecutionFailed || session.Execution.ExecutionID != attempt.ExecutionID || session.Execution.InputID != attempt.InputID || !session.Execution.CleanupVerified || session.ActiveExecutionID != ""
+	return attempt.Mode != domain.PRRemediationAutomatic || attempt.AutomaticLinkID == "" || attempt.State != domain.PRRemediationFinished || attempt.Outcome != domain.ExecutionFailed || session.Outcome != domain.ExecutionFailed || session.Execution == nil || session.Execution.Outcome != domain.ExecutionFailed || session.Execution.ExecutionID != attempt.ExecutionID || session.Execution.InputID != attempt.InputID || domain.OwnershipBlocks(domain.OwnershipCleanup, attempt.ExecutionID, !session.Execution.CleanupVerified || session.ActiveExecutionID != "")
 }
 
 func automaticPROperation(kind domain.PRProblemKind) domain.RepositoryQueryOperation {
@@ -219,7 +219,7 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 		if err != nil {
 			return err
 		}
-		if set.Remediation != nil && set.Remediation.ActiveAttemptID != "" {
+		if set.Remediation != nil && domain.OwnershipBlocks(domain.OwnershipResource, row.ID, set.Remediation.ActiveAttemptID != "") {
 			return nil
 		}
 		if set.Remediation != nil && !set.Remediation.CanStartAutomatic(policy) {

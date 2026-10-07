@@ -264,7 +264,7 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	if stop := value.Stop; stop != nil {
-		if !ref.RequiresResume || stop.RequestID.Validate() != nil || stop.InputRequestID != ref.InputRequestID || stop.SessionID != ref.SessionID || stop.MessageID != ref.InputID || !stop.NativeAttempted || !stop.CleanupVerified || !stop.TerminalObserved || !stop.IdleObserved || !stop.PendingCleared || stop.RepliesUncertain || !stop.InterruptedObserved && !stop.HTTPAccepted {
+		if !ref.RequiresResume || stop.RequestID.Validate() != nil || stop.InputRequestID != ref.InputRequestID || stop.SessionID != ref.SessionID || stop.MessageID != ref.InputID || !stop.NativeAttempted || domain.OwnershipBlocks(domain.OwnershipCleanup, domain.NewID(), !stop.CleanupVerified) || !stop.TerminalObserved || !stop.IdleObserved || !stop.PendingCleared || stop.RepliesUncertain || !stop.InterruptedObserved && !stop.HTTPAccepted {
 			return nativeCheckpoint{}, sessionUncertain()
 		}
 	}

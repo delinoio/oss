@@ -130,6 +130,12 @@ func TestPRStartupRecoveryRejectsForeignOrChangedEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			var result domain.Job
+			if scenario == "original-instance" || scenario == "device" {
+				if domain.Decode(response.Msg.Job.DocumentJson, &result) != nil || result.State != domain.JobSucceeded {
+					t.Fatal("ownership metadata blocked accepted startup recovery")
+				}
+				return
+			}
 			if domain.Decode(response.Msg.Job.DocumentJson, &result) != nil || result.State != domain.JobUncertain {
 				t.Fatal("invalid proof cleared recovery")
 			}

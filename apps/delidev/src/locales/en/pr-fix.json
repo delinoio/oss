@@ -1,5 +1,5 @@
 {
-  "pr-fix.fixAttemptOwnsThisPrInspect_85a121": "Fix attempt <s0/> owns this PR. Inspect its retained history before another fix.",
+  "pr-fix.fixAttemptOwnsThisPrInspect_85a121": "Earlier fix attempt: <s0/>. Another fix can proceed; its retained history remains available.",
   "pr-fix.fixNow_879349": "Fix now",
   "pr-fix.retryOriginalFixRequest_3ecf60": "Retry original fix request",
   "pr-fix.manualPrFix_5b64d4": "Manual PR fix",

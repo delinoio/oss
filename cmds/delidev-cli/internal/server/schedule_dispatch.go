@@ -262,7 +262,7 @@ func scheduleSessionResult(tx *store.Tx, record store.Record, value domain.Sessi
 		return domain.OccurrenceStopped, nil, nil
 	}
 	progress := value.Execution
-	if progress == nil || !progress.CleanupVerified || progress.Waiting != (domain.NativeWaiting{}) || progress.UnconfirmedResponses != 0 || progress.ExecutionID != value.ExecutionSelection().ID {
+	if progress == nil || domain.OwnershipBlocks(domain.OwnershipCleanup, record.ID, !progress.CleanupVerified) || progress.Waiting != (domain.NativeWaiting{}) || progress.UnconfirmedResponses != 0 || progress.ExecutionID != value.ExecutionSelection().ID {
 		return "", nil, nativeCompletionUncertain()
 	}
 	state := map[domain.ExecutionOutcome]domain.OccurrenceState{domain.ExecutionSucceeded: domain.OccurrenceSucceeded, domain.ExecutionFailed: domain.OccurrenceFailed, domain.ExecutionStopped: domain.OccurrenceStopped}[value.Outcome]

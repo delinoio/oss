@@ -144,7 +144,7 @@ func validateRecoveryPreparation(tx *store.Tx, id domain.ID, session domain.Sess
 	if err := validateLocalOrigin(tx, session); err != nil {
 		return err
 	}
-	if input.Type == domain.Local && (session.LocalOrigin == nil || input.OriginMachineID != session.LocalOrigin.MachineID) {
+	if input.Type == domain.Local && (session.LocalOrigin == nil || domain.OwnershipBlocks(domain.OwnershipMachine, input.SessionID, input.OriginMachineID != session.LocalOrigin.MachineID)) {
 		return workspace.ResultUncertain()
 	}
 	return nil

@@ -27,7 +27,7 @@ export function PRRemediationHistory({ selection, validateSet }: Props) {
   const chain = readRemediationChain(rawChain), values = set ? rows.map(row => readRemediationAttempt(row, set)) : [];
   const valid = rows.length <= 20 && new Set(rows.map(row => row.id)).size === rows.length && (set ? validateSet(set) && (rawChain === undefined || Boolean(chain)) && values.every(Boolean) : rows.length === 0 && !history.data?.nextPageToken) && values.every((value, i) => i === 0 || Number(values[i - 1]?.sequence) > Number(value?.sequence)) && (!history.data?.nextPageToken || rows.length > 0);
   const busy = history.isFetching || resume.busy || resume.uncertain;
-  const canResume = valid && Boolean(set && chain?.limit && !chain.active_attempt_id) && !history.error;
+  const canResume = valid && Boolean(set && chain?.limit) && !history.error;
   const stale = confirmation && (confirmation.id !== set?.id || confirmation.revision !== set.revision || !canResume);
   return <section aria-label={copy("pr-remediation-history.prRemediationHistory_932012")}><h4>{copy("pr-remediation-history.prRemediationHistory_932012")}</h4>
     <p>{copy("pr-remediation-history.attemptsRemainRecordedAcrossSessionsAnd_bf906c")}</p>

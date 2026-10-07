@@ -99,13 +99,13 @@ func (t *Tx) RequireAutomaticPRSource(v domain.PRRemediationAttempt) error {
 // session executes the next attempt. This never resumes its old paused queue:
 // the exact retained failed attempt and positive cleanup must still match.
 func (t *Tx) RequireAutomaticPRSourceSession(sr Record, session domain.Session, link domain.SessionPullRequest, sourceID domain.ID, sourceRevision uint64) error {
-	if session.AutomaticRemediationStopped || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery {
+	if session.AutomaticRemediationStopped || session.Archive != domain.NotArchived || domain.OwnershipBlocks(domain.OwnershipCleanup, sr.ID, session.Recovery != domain.NoRecovery) {
 		return prRemediationConflict()
 	}
 	if session.Dispatch != domain.DispatchPaused {
 		return nil
 	}
-	if session.Outcome != domain.ExecutionFailed || session.Execution == nil || session.Execution.Outcome != domain.ExecutionFailed || !session.Execution.CleanupVerified || session.ActiveExecutionID != "" {
+	if session.Outcome != domain.ExecutionFailed || session.Execution == nil || session.Execution.Outcome != domain.ExecutionFailed || domain.OwnershipBlocks(domain.OwnershipCleanup, sr.ID, !session.Execution.CleanupVerified) || session.ActiveExecutionID != "" {
 		return prRemediationConflict()
 	}
 	_, attempt, found, err := t.PRRemediationForInput(session.Execution.InputID)

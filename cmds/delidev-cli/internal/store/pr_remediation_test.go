@@ -268,7 +268,7 @@ func TestPRRemediationBudgetSurvivesRestartReplacementHeadsAndManualWork(t *test
 	}
 }
 
-func TestPRRemediationUncertaintyKeepsSingleOwnerAndCannotBeResumed(t *testing.T) {
+func TestPRRemediationUncertaintyRetainsHistoryAndAllowsNewAttempts(t *testing.T) {
 	s, _ := openTest(t)
 	defer s.Close()
 	f := newRemediationStoreFixture(t, s)
@@ -276,8 +276,9 @@ func TestPRRemediationUncertaintyKeepsSingleOwnerAndCannotBeResumed(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.reserve(t, domain.PRRemediationManual); err == nil {
-		t.Fatal("duplicate active PR")
+	manual, err := f.reserve(t, domain.PRRemediationManual)
+	if err != nil || manual.ID == a.ID {
+		t.Fatal("earlier active attempt blocked a new reservation", err)
 	}
 	a = f.bind(t, a)
 	a, _, err = f.start(t, a, domain.NewID(), f.observation)
@@ -286,7 +287,7 @@ func TestPRRemediationUncertaintyKeepsSingleOwnerAndCannotBeResumed(t *testing.T
 	}
 	a = f.finish(t, a, false)
 	v, _ := Decode[domain.PRRemediationAttempt](a)
-	if v.State != domain.PRRemediationUncertain || f.chain(t).ActiveAttemptID != a.ID {
+	if v.State != domain.PRRemediationUncertain || f.chain(t).ActiveAttemptID != manual.ID {
 		t.Fatal("unverified cleanup freed PR")
 	}
 	_, err = s.Mutate(notificationOwner(), domain.NewID(), "fixture.bad-resume", nil, func(tx *Tx) (any, error) {
@@ -296,15 +297,16 @@ func TestPRRemediationUncertaintyKeepsSingleOwnerAndCannotBeResumed(t *testing.T
 		}
 		return tx.ResumePRRemediation(r.ID, r.Revision)
 	})
-	if err == nil {
-		t.Fatal("resume overrode uncertain ownership")
+	if err != nil {
+		t.Fatal("uncertainty blocked explicit allowance resumption", err)
 	}
-	if _, err = f.reserve(t, domain.PRRemediationAutomatic); err == nil {
-		t.Fatal("uncertain attempt allowed replacement")
+	next, err := f.reserve(t, domain.PRRemediationAutomatic)
+	if err != nil {
+		t.Fatal("uncertainty blocked a new bounded attempt", err)
 	}
 	f.finish(t, a, true)
-	if f.chain(t).ActiveAttemptID != "" || f.chain(t).AutomaticAttempts != 1 {
-		t.Fatal("reconciliation reset chain")
+	if f.chain(t).ActiveAttemptID != next.ID || f.chain(t).AutomaticAttempts != 1 || f.chain(t).Sequence != 3 {
+		t.Fatal("historical completion cleared a newer selection or reset history")
 	}
 }
 
@@ -509,8 +511,8 @@ func TestPRRemediationConcurrentReservationsAndWorkerAuthority(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if accepted != 1 || f.chain(t).Sequence != 1 || f.chain(t).AutomaticAttempts != 0 {
-		t.Fatal("concurrent reservations did not share one owner")
+	if accepted != 8 || f.chain(t).Sequence != 8 || f.chain(t).AutomaticAttempts != 0 {
+		t.Fatal("concurrent reservations lost serialized revision or history")
 	}
 	active := f.chain(t).ActiveAttemptID
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: f.exec.machine})
@@ -566,7 +568,7 @@ func TestPRRemediationCompletionCannotReleaseChangedOriginalAuthority(t *testing
 				}
 			})
 			v, _ := Decode[domain.PRRemediationAttempt](a)
-			if v.State != domain.PRRemediationUncertain || f.chain(t).ActiveAttemptID != a.ID {
+			if v.State != domain.PRRemediationUncertain || f.chain(t).ActiveAttemptID != manual.ID {
 				t.Fatal("foreign completion released PR")
 			}
 		})

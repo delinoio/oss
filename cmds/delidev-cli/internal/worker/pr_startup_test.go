@@ -166,6 +166,13 @@ func TestWorkerPRStartupRejectionBindsJournalAndNeverStartsHarness(t *testing.T)
 				defer os.Remove(path)
 			}
 			output, err := reportPRStartupRejection(copy, owner, f.job, reportedCause)
+			if scenario == "wrong-instance" {
+				var observation domain.ExecutionStartupRejection
+				if err != nil || domain.Decode(output, &observation) != nil || observation.ValidateAssignment(owner, resource.Revision, assigned) != nil || observation.InstanceID != publication.Instance {
+					t.Fatal("instance metadata blocked the immutable rejection", err)
+				}
+				return
+			}
 			if len(output) != 0 || domain.SafeError(err).Code != domain.RecoveryRequired {
 				t.Fatal("unowned rejection gained reporting authority", err)
 			}

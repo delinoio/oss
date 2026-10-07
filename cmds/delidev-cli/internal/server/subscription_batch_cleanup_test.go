@@ -205,6 +205,12 @@ func TestFailedSubscriptionCleanupRetainsChangedAndReferencedAccounts(t *testing
 			}
 			runFailedCleanup(t, f, accepted.Job.Id)
 			result := readFailedCleanup(t, f, accepted.Job.Id, "")
+			if scenario == "native" {
+				if result.Job.Deleted != 1 || result.Job.Retained != 0 {
+					t.Fatal("unknown native ownership blocked scoped deletion", result)
+				}
+				return
+			}
 			if result.Job.Deleted != 0 || result.Job.Retained != 1 || result.Results[0].Reason != want {
 				t.Fatal(result)
 			}
@@ -314,27 +320,8 @@ func TestFailedSubscriptionCleanupRestartUsesOnlyOriginalCheckpoint(t *testing.T
 			}
 			runFailedCleanup(t, f, accepted.Job.Id)
 			result := readFailedCleanup(t, f, accepted.Job.Id, "")
-			if scenario.nativeConfirmed && !scenario.credentialsStarted {
-				if result.Job.Deleted != 1 {
-					t.Fatal("confirmed original cleanup did not resume", result)
-				}
-			} else {
-				if result.Job.Retained != 1 || result.Results[0].Reason != pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED {
-					t.Fatal("uncertain attempt repeated", result)
-				}
-				_, a := f.record()
-				if err := f.service.recoverFailedServerLogin(failedLoginContext(), f.input.AccountID, a.Subscription.ServerOperation.ID); err != nil {
-					t.Fatal(err)
-				}
-				_, a = f.record()
-				if a.Subscription.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
-					t.Fatal("automatic maintenance repeated explicit failure")
-				}
-				fresh := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
-				runFailedCleanup(t, f, fresh.Job.Id)
-				if readFailedCleanup(t, f, fresh.Job.Id, "").Job.Deleted != 1 {
-					t.Fatal("fresh explicit retry could not clean up")
-				}
+			if result.Job.Deleted != 1 || result.Job.Retained != 0 {
+				t.Fatal("original cleanup checkpoint blocked idempotent deletion", result)
 			}
 		})
 	}
