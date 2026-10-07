@@ -57,7 +57,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if err != nil {
 		return store.Record{}, err
 	}
-	if instance.Validate() != nil || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
+	if instance.Validate() != nil || seen.After(time.Now().UTC().Add(time.Second)) || domain.OwnershipBlocks(domain.OwnershipInstance, sr.ID, time.Since(seen) > domain.WorkerConnectionTimeout) {
 		return store.Record{}, domain.Fail(domain.Unavailable, "The original Worker is not currently connected.", "Reconnect the owning machine; the retained input and account selection remain unchanged.")
 	}
 	assignment, completion, assignmentDigest, err := checkedContinuationPredecessor(tx, sr, session)
@@ -280,7 +280,7 @@ func queueUnconfirmedSuccessor(tx *store.Tx, sr store.Record, session domain.Ses
 	if err != nil {
 		return store.Record{}, err
 	}
-	if instance.Validate() != nil || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
+	if instance.Validate() != nil || seen.After(time.Now().UTC().Add(time.Second)) || domain.OwnershipBlocks(domain.OwnershipInstance, sr.ID, time.Since(seen) > domain.WorkerConnectionTimeout) {
 		return store.Record{}, domain.Fail(domain.Unavailable, "The selected Worker is not connected.", "Reconnect the selected Worker.")
 	}
 	prior, err := tx.SessionExecutionJob(sr.ID, session.ExecutionSelection().ID)

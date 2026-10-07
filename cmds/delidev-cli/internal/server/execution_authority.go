@@ -653,6 +653,17 @@ func (a *executionAuthority) close() {
 	}
 }
 
+type executionRegistrationReceiptInput struct {
+	Job, Machine, Instance, Device domain.ID
+	Revision                       uint64
+	Digest                         []byte
+}
+
+func (in executionRegistrationReceiptInput) ReceiptPrincipalMetadata(actor domain.Principal) any {
+	in.Device = actor.DeviceID
+	return in
+}
+
 func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb.RegisterExecutionRequest]) (*connect.Response[pb.RegisterExecutionResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
@@ -663,11 +674,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A claimed execution and private credential digest are required.", "Register the exact current Worker assignment."), correlation)
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
-	identity := struct {
-		Job, Machine, Instance, Device domain.ID
-		Revision                       uint64
-		Digest                         []byte
-	}{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, req.Msg.CredentialDigest}
+	identity := executionRegistrationReceiptInput{domain.ID(meta.Id), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision, req.Msg.CredentialDigest}
 	grant := store.ExecutionGrant{JobID: identity.Job, MachineID: identity.Machine, InstanceID: identity.Instance, DeviceID: identity.Device, ServerEpoch: s.executionAuthority.epoch, Digest: identity.Digest}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "execution.register", identity, func(tx *store.Tx) (any, error) {
 		if err := workerNetworkReady(tx, identity.Machine); err != nil {

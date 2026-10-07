@@ -11,8 +11,19 @@ import (
 // attribution may differ on replay; payload, revisions, and selected references
 // still participate in the exact original digest. Retained revoked device
 // descriptors are metadata here, never an authentication source.
+// PrincipalReceiptInput preserves legacy receipt JSON while identifying fields
+// derived from the authenticated principal rather than selected request data.
+type PrincipalReceiptInput interface{ ReceiptPrincipalMetadata(domain.Principal) any }
+
+func receiptPrincipalValue(input any, actor domain.Principal) (reflect.Value, bool) {
+	if input, ok := input.(PrincipalReceiptInput); ok {
+		return reflect.ValueOf(input.ReceiptPrincipalMetadata(actor)), true
+	}
+	return replaceReceiptPrincipal(reflect.ValueOf(input), actor)
+}
+
 func (t *Tx) receiptMatches(id domain.ID, operation string, input any, saved string) (bool, error) {
-	replacement, changed := replaceReceiptPrincipal(reflect.ValueOf(input), domain.Principal{Type: domain.OwnerDevice})
+	replacement, changed := receiptPrincipalValue(input, domain.Principal{Type: domain.OwnerDevice})
 	if !changed {
 		return false, nil
 	}
@@ -45,7 +56,7 @@ func (t *Tx) receiptMatches(id domain.ID, operation string, input any, saved str
 		}
 		actor := domain.Principal{Type: device.Type, DeviceID: deviceID, MachineID: device.MachineID}
 		for _, principal := range []domain.Principal{actor, {Type: device.Type, DeviceID: deviceID}} {
-			value, _ := replaceReceiptPrincipal(reflect.ValueOf(input), principal)
+			value, _ := receiptPrincipalValue(input, principal)
 			if ok, err := matches(value.Interface()); ok || err != nil {
 				return ok, err
 			}

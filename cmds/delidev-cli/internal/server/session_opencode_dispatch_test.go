@@ -114,7 +114,7 @@ func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) 
 					t.Fatal(err)
 				}
 			}
-			if failure == "version" || failure == "worker-stale" || failure == "validation" {
+			if failure == "version" || failure == "protocol" || failure == "worker-stale" || failure == "validation" {
 				if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
 					t.Fatal("metadata blocked negotiated startup", err)
 				}

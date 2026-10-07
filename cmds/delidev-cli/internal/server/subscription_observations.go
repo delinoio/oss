@@ -37,7 +37,7 @@ func acceptSubscriptionObservation(tx *store.Tx, r store.Record, a domain.Accoun
 		op.Generation != a.Subscription.Generation || op.Validate() != nil {
 		return domain.Fail(domain.Conflict, "The confirmed account generation changed.", "Read the current account and confirm the original operation again before sending.")
 	}
-	if a.Subscription.Lease != nil && (a.Subscription.Lease.Action != domain.SubscriptionExecute || a.Subscription.Lease.MachineID != op.MachineID) {
+	if a.Subscription.Lease != nil && domain.OwnershipBlocks(domain.OwnershipCleanup, op.ID, a.Subscription.Lease.Action != domain.SubscriptionExecute || a.Subscription.Lease.MachineID != op.MachineID) {
 		return subscriptionDenied()
 	}
 	if err := observationMachine(tx, op.MachineID); err != nil {

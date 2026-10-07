@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"golang.org/x/sys/unix"
 )
 

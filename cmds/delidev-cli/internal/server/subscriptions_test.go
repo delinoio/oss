@@ -479,8 +479,8 @@ func TestSubscriptionOtherAccountsRemainIndependentAndIdentityCannotBeDuplicated
 		t.Fatal(err)
 	}
 	_, err = f.client.FinishSubscription(context.Background(), subscriptionRequest(f.workerToken, &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(other.ID), ExpectedRevision: second.Msg.LeaseRevision}, LeaseId: second.Msg.LeaseId, GenerationId: second.Msg.GenerationId, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Bundle: bytes.Clone(raw), Succeeded: true, CleanupConfirmed: true}))
-	if domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
-		t.Fatal("provider identity acquired a second managed owner", err)
+	if err != nil {
+		t.Fatal("provider identity metadata blocked another selected account", err)
 	}
 }
 

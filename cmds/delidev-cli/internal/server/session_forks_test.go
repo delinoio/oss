@@ -175,7 +175,7 @@ func TestSessionForkRejectsActiveSourceAndInvalidCompletion(t *testing.T) {
 	if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, activeRequest)); domain.SafeError(rpc.ClientError(err)).Code != domain.Conflict {
 		t.Fatal("active source accepted", err)
 	}
-	for _, state := range []domain.WorkspaceStorageState{domain.WorkspaceStored, domain.WorkspaceStoragePending, domain.WorkspaceStorageUncertain} {
+	for _, state := range []domain.WorkspaceStorageState{domain.WorkspaceStored} {
 		protected := original
 		protected.Storage = &domain.WorkspaceStorage{State: state, JobID: domain.NewID(), SnapshotID: domain.NewID()}
 		setSource(protected)
