@@ -19,6 +19,16 @@ import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
 
+async function choose(control: HTMLElement, name: string | RegExp) {
+  await waitFor(() => expect(control.matches(":disabled")).toBe(false));
+  fireEvent.click(control);
+  const popup = window.document.getElementById(control.getAttribute("aria-controls")!)!;
+  const option = await within(popup).findByRole("option", { name });
+  const id = option.dataset.pickerId;
+  fireEvent.click(option);
+  await waitFor(() => expect(control.dataset.value).toBe(id));
+}
+
 it("inspects and saves a real owned Git checkout through a separate Go Worker before creating a project", async () => {
   const { directory, transport, providerOrigin, binary, scope, runCLI } = fixture;
   const pairing = JSON.parse(await runCLI(["device", "create-pairing", "--type", "worker", "--name", "Owned Git Worker"]));
@@ -50,7 +60,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
   fireEvent.click(screen.getByRole("button", { name: "Enter a path…" }));
   change("Computer", "remote");
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: (await screen.findByRole("option", { name: "Owned Git Worker" }, { timeout: 15000 }) as HTMLOptionElement).value } });
+  await choose(screen.getByRole("combobox", { name: "Runner Device" }), "Owned Git Worker");
   change("Absolute checkout path", checkout);
   fireEvent.click(screen.getByRole("button", { name: "Inspect folder" }));
   await screen.findByRole("region", { name: "Repository detected" }, { timeout: 15000 });
@@ -99,11 +109,11 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={(id) => { createdSessionId = id; }} created={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   const newSession = within(window.document.querySelector(".new-session-page")!);
   const changeNewSession = (name: string, value: string) => fireEvent.change(newSession.getByLabelText(name), { target: { value } });
-  changeNewSession("Project", (await within(newSession.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
+  await choose(newSession.getByRole("combobox", { name: "Project" }), "Owned project");
   fireEvent.click(newSession.getByRole("button", { name: "Options" }));
   fireEvent.click(newSession.getByRole("button", { name: "Use this computer's Local checkouts" }));
   await waitFor(() => expect((newSession.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true));
-  changeNewSession("Agent Worker", (await newSession.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
+  await choose(newSession.getByRole("combobox", { name: "Agent Worker" }), "Accountless schedule agent");
   changeNewSession("First message", "Local proof fixture without inference");
   fireEvent.click(newSession.getByText("Optional estimated-cost budget"));
   fireEvent.click(newSession.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
@@ -136,8 +146,8 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   let generalSessionId = "";
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={(id) => { generalSessionId = id; }} created={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   expect(screen.queryByLabelText("Project")).toBeNull();
-  change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
-  change("Runs on", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
+  await choose(screen.getByRole("combobox", { name: "Agent Worker" }), "Accountless schedule agent");
+  await choose(screen.getByRole("combobox", { name: "Runs on" }), "Owned Git Worker");
   change("First message", "General Chat acceptance fixture without inference");
   fireEvent.click(screen.getByRole("button", { name: "Start general chat" }));
   await waitFor(() => expect(generalSessionId).not.toBe(""));
@@ -150,9 +160,9 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><Schedules active open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
   change("Schedule name", "Owned schedule");
-  change("Project", (await within(screen.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
-  change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
-  change("Runner Device", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
+  await choose(screen.getByRole("combobox", { name: "Project" }), "Owned project");
+  await choose(screen.getByRole("combobox", { name: "Agent Worker" }), "Accountless schedule agent");
+  await choose(screen.getByRole("combobox", { name: "Runner Device" }), "Owned Git Worker");
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
   await waitFor(() => expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true));
   change("Frequency", "custom"); change("Scheduled prompt", "Private schedule fixture prompt"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
