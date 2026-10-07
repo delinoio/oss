@@ -102,6 +102,7 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 	}
 	var destination string
 	var original domain.ServerSubscriptionOperation
+	var grok bool
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
 			return err
@@ -119,10 +120,17 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 		}
 		p := s.subscriptionProgress[o.ID]
 		callback, state, ok := serverLoginCallback(p.URL)
+		grok = a.SubscriptionService == domain.SubscriptionGrok
+		if grok {
+			callback, state, ok = grokServerCallback(p.URL)
+		}
 		if !ok || p.UserCode != "" {
 			return subscriptionDenied()
 		}
 		query, ok := subscriptionCallbackQuery(req.Msg.CallbackQuery, state)
+		if grok {
+			query, ok = grokCallbackQuery(req.Msg.CallbackQuery, state)
+		}
 		if !ok {
 			return subscriptionDenied()
 		}
@@ -172,7 +180,9 @@ func (s *Service) ForwardSubscriptionCallback(ctx context.Context, req *connect.
 		// Resolve no remote hostname and inherit no proxy. The original native
 		// callback is IPv4-only; retain its exact registered HTTP authority.
 		request.Host = request.URL.Host
-		request.URL.Host = "127.0.0.1:1457"
+		if !grok {
+			request.URL.Host = "127.0.0.1:1457"
+		}
 		response, e := client.Do(request)
 		err = e
 		if response != nil {

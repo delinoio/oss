@@ -71,6 +71,29 @@ compaction are excluded.
 
 ## Storage
 
+The optional `server_operation.grok_oauth` metadata uses closed prepared,
+device-sending, waiting, poll-sending, exchange-sending, refresh-sending, sealed
+and cleaned phases. It retains only an AccountLogin reference and a bounded poll
+sequence. Prepared material and sealed native bundles belong to the protected
+store. Each send claim binds the original account, actor, server epoch, operation,
+generation and lifetime. A confirmed pending or slow-down response alone permits
+another original device poll. A restart cannot grant another exchange or refresh.
+The existing `native_started` server fence represents exclusive credential
+ownership; Go OAuth does not create a server-side Grok process. Codex native
+cleanup and Grok joined HTTP/listener cleanup retain separate evidence.
+
+Use only the fixed `https://auth.x.ai` issuer and public CLI client registration.
+Discovery, authorization, token, device, userinfo and JWKS endpoints are pinned.
+The browser callback is the original canonical `http://127.0.0.1:<port>/callback`.
+The device presentation uses the fixed `https://accounts.x.ai/oauth2/device` page
+and a separate transient user code. Do not expose its complete code-bearing URL.
+Token validation requires Bearer type, bounded expiry, requested grants and the
+fixed ES256 issuer/audience profile. Browser ID tokens require the original nonce.
+Refresh responses without an ID token require an authenticated fixed-issuer
+userinfo read of the original identity. No unverified token hint grants identity.
+Grok logout waits for the original Worker lease and confirms protected deletion
+before success. It does not assert remote issuer revocation.
+
 Use optional existing Account/server-operation metadata and protected-store
 references; add no database migration. Claim exchange and refresh durably before
 sending. Uncertain results remain in recovery and are never resent. Service

@@ -124,9 +124,9 @@ func subscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store.Rec
 		return r, a, err
 	}
 	if a.Type != domain.SubscriptionAccount {
-		return r, a, domain.Fail(domain.Unsupported, "This operation requires a Codex subscription account.", "Preserve API accounts through their existing connection operations.")
+		return r, a, domain.Fail(domain.Unsupported, "This operation requires a subscription account.", "Preserve API accounts through their existing connection operations.")
 	}
-	if a.Type != domain.SubscriptionAccount || a.SubscriptionService != domain.SubscriptionChatGPT || a.ProviderID != "" {
+	if a.SubscriptionService != domain.SubscriptionChatGPT && a.SubscriptionService != domain.SubscriptionGrok || a.ProviderID != "" {
 		return r, a, domain.Fail(domain.Unsupported, "This service has no managed subscription profile.", "Select a ChatGPT service account for the verified Codex lifecycle.")
 	}
 	return r, a, nil
@@ -163,6 +163,9 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		}
 		if _, err = subscriptionInstallation(tx, input.Machine); err != nil {
 			return nil, err
+		}
+		if a.SubscriptionService != domain.SubscriptionChatGPT {
+			return nil, domain.Fail(domain.Unsupported, "Grok login is owned by the server.", "Start login without a Runner Device.")
 		}
 		if a.Subscription == nil {
 			a.Subscription = &domain.SubscriptionState{}
@@ -424,6 +427,9 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		r, a, err := subscriptionAccount(tx, input.Account, 0)
 		if err != nil {
 			return nil, err
+		}
+		if a.SubscriptionService == domain.SubscriptionGrok {
+			return nil, domain.Fail(domain.Unsupported, "This Worker has no verified managed Grok execution profile.", "Preserve the server-owned login and use a negotiated Grok subscription Worker profile.")
 		}
 		if action != domain.SubscriptionExecute && input.Revision > r.Revision {
 			return nil, domain.Fail(domain.Conflict, "The account revision has not been observed.", "Retain the original queued operation and its observed revision.")

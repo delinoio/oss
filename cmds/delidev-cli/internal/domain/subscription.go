@@ -121,7 +121,13 @@ func (s SubscriptionState) Validate(account Account) error {
 		if (o.Action != SubscriptionLogin && o.Action != SubscriptionRefresh && o.Action != SubscriptionLogout) || !o.State.Valid() || o.StartedAt.IsZero() || !o.ExpiresAt.After(o.StartedAt) || (o.Actor.Type != OwnerDevice && o.Actor.Type != ClientDevice) || o.Actor.Type == ClientDevice && o.Actor.DeviceID.Validate() != nil {
 			return invalid()
 		}
-		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
+		if o.Diagnostic != nil && (account.SubscriptionService == SubscriptionGrok || o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
+			return invalid()
+		}
+		if o.GrokDiagnostic != nil && (account.SubscriptionService != SubscriptionGrok || o.Diagnostic != nil || o.GrokDiagnostic.Validate() != nil || o.GrokDiagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
+			return invalid()
+		}
+		if o.GrokOAuth != nil && o.GrokOAuth.Validate(*o, account) != nil {
 			return invalid()
 		}
 		if o.CleanupPhase != "" {
@@ -158,6 +164,8 @@ type ServerSubscriptionOperation struct {
 	ExpiresAt         time.Time                `json:"expires_at"`
 	Diagnostic        *CodexDiagnostic         `json:"diagnostic,omitempty"`
 	CleanupPhase      SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
+	GrokOAuth         *GrokOAuthOperation      `json:"grok_oauth,omitempty"`
+	GrokDiagnostic    *GrokDiagnostic          `json:"grok_diagnostic,omitempty"`
 }
 
 // Cleanup checkpoints release only a failed initial server login. They cannot

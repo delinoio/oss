@@ -91,6 +91,7 @@ type Service struct {
 	prFixRequests                 prFixRequestTracker
 	subscriptionOpen              serverSubscriptionOpener
 	subscriptionCallbackTransport http.RoundTripper
+	grokOAuthTransport            http.RoundTripper
 	subscriptionOnce              sync.Once
 	subscriptionEpoch             domain.ID
 	subscriptionProgress          map[domain.ID]subscriptionProgress

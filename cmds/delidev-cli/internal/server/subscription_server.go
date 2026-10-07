@@ -3,7 +3,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -144,7 +143,7 @@ func (s *Service) serverSubscriptionProgress(ctx context.Context, req *pb.GetSub
 		if a.Subscription.RecoveryRequired || o.Active() && o.Epoch != s.subscriptionServerEpoch() {
 			state = domain.SubscriptionRecovery
 		}
-		response = &pb.GetSubscriptionProgressResponse{Diagnostic: codexDiagnosticMessage(o.Diagnostic), State: loginState(state), Canceled: state == domain.SubscriptionCanceled || a.Subscription.Pending != nil && a.Subscription.Pending.ID == o.ID && a.Subscription.Pending.Canceled}
+		response = &pb.GetSubscriptionProgressResponse{Diagnostic: codexDiagnosticMessage(o.Diagnostic), GrokDiagnostic: grokDiagnosticMessage(o.GrokDiagnostic), State: loginState(state), Canceled: state == domain.SubscriptionCanceled || a.Subscription.Pending != nil && a.Subscription.Pending.ID == o.ID && a.Subscription.Pending.Canceled}
 		p := s.subscriptionProgress[o.ID]
 		if !p.Until.IsZero() && !time.Now().Before(p.Until) {
 			delete(s.subscriptionProgress, o.ID)
@@ -271,6 +270,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	var original domain.ServerSubscriptionOperation
 	var operation domain.SubscriptionOperation
+	var service domain.SubscriptionService
 	err := s.Store.Read(parent, func(tx *store.Tx) error {
 		_, a, err := subscriptionAccount(tx, id, 0)
 		if err != nil {
@@ -281,9 +281,14 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 		}
 		original = *a.Subscription.ServerOperation
 		operation = *a.Subscription.Pending
+		service = a.SubscriptionService
 		return nil
 	})
 	if err != nil {
+		return
+	}
+	if service == domain.SubscriptionGrok {
+		s.runGrokServerSubscription(parent, id)
 		return
 	}
 	unlock, err := s.lockAccounts(parent)
@@ -501,12 +506,16 @@ func (s *Service) publishServerSubscriptionProgress(ctx context.Context, id doma
 }
 
 func suggestedSubscriptionName(identity subscription.Identity) string {
-	for _, candidate := range []string{identity.Email, identity.DisplayName, "ChatGPT"} {
+	fallback := "ChatGPT"
+	if identity.Service == domain.SubscriptionGrok {
+		fallback = "Grok"
+	}
+	for _, candidate := range []string{identity.Email, identity.DisplayName, fallback} {
 		if domain.Text(candidate, "account name", 256, true) == nil {
 			return candidate
 		}
 	}
-	return "ChatGPT"
+	return fallback
 }
 
 func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, operation domain.SubscriptionOperation, bundle []byte, cleanup bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic) error {
@@ -517,6 +526,18 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 	defer unlock()
 	if diagnostic != nil && diagnostic.Validate() != nil {
 		return subscriptionDenied()
+	}
+	if o.GrokDiagnostic != nil && o.GrokDiagnostic.Validate() != nil {
+		return subscriptionDenied()
+	}
+	var service domain.SubscriptionService
+	err = s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, e := subscriptionAccount(tx, id, 0)
+		service = a.SubscriptionService
+		return e
+	})
+	if err != nil {
+		return err
 	}
 	var suggestion *subscriptionProgress
 	defer func() {
@@ -529,11 +550,11 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 	var commitment string
 	success := result == domain.SubscriptionSucceeded && cleanup
 	if success && operation.Action != domain.SubscriptionLogout {
-		_, identity, err = subscription.Parse(bundle)
+		identity, err = subscription.ParseService(service, bundle)
 		if err != nil {
 			return err
 		}
-		raw, _ := json.Marshal(struct{ Account, User string }{identity.Account, identity.User})
+		raw := subscription.CommitmentInput(identity)
 		commitment = s.accountCommitment(s.Identity.ServerID, raw)
 		clear(raw)
 	}
@@ -552,9 +573,10 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 		}
 		if a.Subscription.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
 			success = false
-			result = domain.SubscriptionCanceled
-			if operation.Action != domain.SubscriptionLogin {
+			if operation.Action != domain.SubscriptionLogin || service == domain.SubscriptionGrok && result == domain.SubscriptionRecovery {
 				result = domain.SubscriptionRecovery
+			} else {
+				result = domain.SubscriptionCanceled
 			}
 		}
 		if success && commitment != "" {
@@ -586,7 +608,7 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 			if e != nil {
 				return e
 			}
-			e = subscription.Refreshed(old, bundle)
+			e = subscription.RefreshedService(service, old, bundle)
 			clear(old)
 			if e != nil {
 				return e
@@ -596,12 +618,27 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 			return err
 		}
 	}
+	if service == domain.SubscriptionGrok && cleanup && result != domain.SubscriptionRecovery {
+		keep := o.Generation
+		if success {
+			keep = o.FinishID
+			if operation.Action == domain.SubscriptionLogout {
+				keep = ""
+			}
+		}
+		// Go owns Grok OAuth. Its joined request/listener boundary has no native
+		// runtime. Confirm protected cleanup before publishing terminal success.
+		if err := cleanupSubscriptionReferences(ctx, vault, id, keep); err != nil {
+			return err
+		}
+	}
 	_, err = s.Store.Mutate(ctx, o.FinishID, "subscription.server.finish", struct {
 		Account, Operation domain.ID
 		Cleanup            bool
 		State              domain.SubscriptionLoginState
 		Diagnostic         *domain.CodexDiagnostic
-	}{id, o.ID, cleanup, result, diagnostic}, func(tx *store.Tx) (any, error) {
+		GrokDiagnostic     *domain.GrokDiagnostic `json:"GrokDiagnostic,omitempty"`
+	}{id, o.ID, cleanup, result, diagnostic, o.GrokDiagnostic}, func(tx *store.Tx) (any, error) {
 		r, a, err := subscriptionAccount(tx, id, 0)
 		if err != nil {
 			return nil, err
@@ -612,14 +649,17 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 		}
 		if st.Pending.Canceled || subscriptionActorValid(tx, o.Actor) != nil {
 			success = false
-			result = domain.SubscriptionCanceled
-			if operation.Action != domain.SubscriptionLogin {
+			if operation.Action != domain.SubscriptionLogin || service == domain.SubscriptionGrok && result == domain.SubscriptionRecovery {
 				result = domain.SubscriptionRecovery
+			} else {
+				result = domain.SubscriptionCanceled
 			}
 		}
 		st.ServerOperation.Diagnostic = diagnostic
+		st.ServerOperation.GrokDiagnostic = o.GrokDiagnostic
 		if success {
 			st.ServerOperation.Diagnostic = nil
+			st.ServerOperation.GrokDiagnostic = nil
 		}
 		if !cleanup || result == domain.SubscriptionRecovery {
 			st.RecoveryRequired = true
@@ -629,6 +669,12 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 			st.ServerOperation.NativeStarted = false
 			st.ServerOperation.State = result
 			st.Pending = nil
+			if service == domain.SubscriptionGrok {
+				st.ServerOperation.GrokOAuth = &domain.GrokOAuthOperation{Phase: domain.GrokOAuthCleaned}
+				if !success && operation.Action == domain.SubscriptionLogin {
+					a.Health = domain.AccountDisconnected
+				}
+			}
 			if success && operation.Action != domain.SubscriptionLogout {
 				if err := uniqueSubscriptionIdentity(tx, id, commitment); err != nil {
 					return nil, err
@@ -675,7 +721,7 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 			keep = ""
 		}
 	}
-	if cleanup {
+	if cleanup && !(service == domain.SubscriptionGrok && result == domain.SubscriptionRecovery) {
 		if err := cleanupSubscriptionReferences(ctx, vault, id, keep); err != nil {
 			return err
 		}
@@ -697,6 +743,9 @@ func (s *Service) logServerSubscriptionFinish(ctx context.Context, o domain.Serv
 	s.logger.InfoContext(ctx, "server_subscription_finished", "operation_id", o.ID, "state", result, "cleanup_confirmed", cleanup, "correlation_id", o.ID)
 	if diagnostic != nil {
 		s.logger.WarnContext(ctx, "server_subscription_native_failed", "version", diagnostic.DetectedVersion, "minimum_version", diagnostic.MinimumVersion, "phase", diagnostic.Phase, "code", diagnostic.Code, "correlation_id", diagnostic.CorrelationID, "state", result, "cleanup_confirmed", cleanup)
+	}
+	if d := o.GrokDiagnostic; d != nil && d.Validate() == nil {
+		s.logger.WarnContext(ctx, "grok_subscription_failed", "version", d.DetectedVersion, "supported_version", d.SupportedVersion, "phase", d.Phase, "code", d.Code, "correlation_id", d.CorrelationID, "state", result, "cleanup_confirmed", cleanup)
 	}
 }
 
