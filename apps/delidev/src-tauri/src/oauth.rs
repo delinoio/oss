@@ -1093,6 +1093,18 @@ fn open_authorization(url: &str, stopped: &AtomicBool) -> Result<(), NativeFailu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Parallel OAuth tests can reuse an ephemeral callback port just after its
+    // owner closes it, which makes post-disposal connection probes flaky.
+    // Serialize only tests that create these loopback listeners.
+    static LOOPBACK_LISTENER_TESTS: Mutex<()> = Mutex::new(());
+
+    fn loopback_listener_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        LOOPBACK_LISTENER_TESTS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn scope() -> OAuthScope {
         OAuthScope {
             window: "main".into(),
@@ -1154,6 +1166,7 @@ mod tests {
 
     #[test]
     fn google_profile_binds_loopback_scope_and_closed_callback_fields() {
+        let _listener_guard = loopback_listener_test_guard();
         assert!(registered_client(OAuthProfile::GoogleGemini).is_none());
         let attempt = begin_profile(scope(), OAuthProfile::GoogleGemini).unwrap();
         assert!(attempt.callback.starts_with("http://127.0.0.1:"));
@@ -1226,6 +1239,7 @@ mod tests {
 
     #[test]
     fn hugging_face_profile_requires_registration_and_original_state() {
+        let _listener_guard = loopback_listener_test_guard();
         assert!(registered_client(OAuthProfile::HuggingFace).is_none());
         let host = OAuthHost::default();
         let profiles = host
@@ -1288,6 +1302,7 @@ mod tests {
 
     #[test]
     fn lost_begin_replays_and_disposal_or_window_close_blocks_late_begin() {
+        let _listener_guard = loopback_listener_test_guard();
         let host = OAuthHost::default();
         let scope = scope();
         let first = host
@@ -1324,6 +1339,7 @@ mod tests {
     }
     #[test]
     fn dual_loopback_callback_is_one_shot_and_clears_displayed_url() {
+        let _listener_guard = loopback_listener_test_guard();
         for v6 in [false, true] {
             let host = OAuthHost::default();
             let scope = scope();
@@ -1457,6 +1473,7 @@ mod tests {
     }
     #[test]
     fn original_window_server_generation_and_closed_opener_remain_authoritative() {
+        let _listener_guard = loopback_listener_test_guard();
         let host = OAuthHost::default();
         let scope = scope();
         let initial = host
