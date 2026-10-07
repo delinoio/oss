@@ -72,21 +72,23 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 type JobType string
 
 const (
-	CreateBackupJob         JobType = "create-backup"
-	DeleteBackupJob         JobType = "delete-backup"
-	CloneRepositoryJob      JobType = "clone-repository"
-	InspectRepositoryJob    JobType = "inspect-repository"
-	SaveRepositoryJob       JobType = "save-repository"
-	ImportConfigurationJob  JobType = "import-configuration"
-	PrepareWorkspaceJob     JobType = "prepare-workspace"
-	WorkspaceStorageJob     JobType = "workspace-storage"
-	RecoverExecutionJob     JobType = "recover-execution"
-	RecoverWorkspaceJob     JobType = "recover-workspace"
-	HarnessDiscoveryJob     JobType = "harness-discovery"
-	ExecuteSessionJob       JobType = "execute-session"
-	CompactSessionJob       JobType = "compact-session"
-	ForkSessionJob          JobType = "fork-session"
-	GenerateSessionTitleJob JobType = "generate-session-title"
+	CleanupFailedSubscriptionsJob JobType = "cleanup-failed-subscriptions"
+	CleanupFailedSubscriptionJob  JobType = "cleanup-failed-subscription"
+	CreateBackupJob               JobType = "create-backup"
+	DeleteBackupJob               JobType = "delete-backup"
+	CloneRepositoryJob            JobType = "clone-repository"
+	InspectRepositoryJob          JobType = "inspect-repository"
+	SaveRepositoryJob             JobType = "save-repository"
+	ImportConfigurationJob        JobType = "import-configuration"
+	PrepareWorkspaceJob           JobType = "prepare-workspace"
+	WorkspaceStorageJob           JobType = "workspace-storage"
+	RecoverExecutionJob           JobType = "recover-execution"
+	RecoverWorkspaceJob           JobType = "recover-workspace"
+	HarnessDiscoveryJob           JobType = "harness-discovery"
+	ExecuteSessionJob             JobType = "execute-session"
+	CompactSessionJob             JobType = "compact-session"
+	ForkSessionJob                JobType = "fork-session"
+	GenerateSessionTitleJob       JobType = "generate-session-title"
 )
 
 const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configuration-v1"
@@ -151,13 +153,13 @@ const (
 )
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
+	if !slices.Contains([]JobType{CleanupFailedSubscriptionsJob, CleanupFailedSubscriptionJob, NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {
 		return Fail(InvalidArgument, "Unknown Worker job state.", "Reload the accepted job.")
 	}
-	if j.Type != SaveRepositoryJob && j.Type != ImportConfigurationJob && j.Type != DeleteBackupJob && j.Type != CreateBackupJob {
+	if j.Type != SaveRepositoryJob && j.Type != ImportConfigurationJob && j.Type != DeleteBackupJob && j.Type != CreateBackupJob && j.Type != CleanupFailedSubscriptionsJob && j.Type != CleanupFailedSubscriptionJob {
 		if err := j.MachineID.Validate(); err != nil {
 			return err
 		}

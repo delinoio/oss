@@ -973,3 +973,9 @@ initializes the current functional layout and removes upgrades from schemas
 1–31. Unsupported DBs and backups retain their original files and sidecars;
 no startup, inspection or restore may silently convert or reset them. This
 reservation adds no executable migration or runtime capability.
+
+## Failed subscription cleanup jobs
+
+Server-owned `cleanup-failed-subscriptions` parent jobs and `cleanup-failed-subscription` children use existing generic entities, jobs and receipts, without a database migration. The subscription owner validates their closed input/checkpoint/results, original actor/server, fixed account revisions and original login/deletion identities. Only confirmed account cleanup transactions advance child revisions. Terminal retained attempts cannot rerun automatically; tombstone, deletion receipt, child result and parent counts are atomic. Narrow pending-job filtering occurs before bounds so unrelated Worker history cannot hide the one active batch.
+
+Managed restore eligibility includes queued cleanup parents/children as unsettled ownership. The existing image transformer cancels every historical nonterminal cleanup job and quarantines its receipts. Maintenance selects only pending original live jobs; historical canceled or terminal jobs cannot acquire account deletion authority. Follow the [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations).

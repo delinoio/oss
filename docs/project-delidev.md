@@ -1,6 +1,6 @@
 # Project: DeliDev
 
-Failed-login subscription cleanup reserves System capability 41 and its closed batch/status/result declarations under issue #964. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) and [protocol contract](protos-delidev-v1-contract.md#failed-subscription-cleanup-reservations) require the complete main-first reservation before implementation. This prerequisite grants no cleanup or deletion authority and adds no migration.
+Failed-login subscription cleanup uses System capability 41 after main-first reservation PR #1614. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) owns durable server batches, original login/credential authority, atomic deletion receipts and restore quarantine. The [Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup) owns the one-click action and disposable status presentation. Existing Claude 38 and Grok 39/40 reservations retain ownership; no migration or Rust/native change is added.
 
 ## Goal
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. Issue #964 remains normative, with the explicit owner startup/presentation amendment in #1137; implementation and real-environment evidence are distinct.

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -349,7 +350,7 @@ func TestBackupRestoreKeepsCurrentRevocationsAndSessionDeletion(t *testing.T) {
 }
 
 func TestBackupRestoreRejectsChangedInspectionRevisionAndOwnership(t *testing.T) {
-	for _, mode := range []string{"digest", "revision", "active", "uncertain", "newer", "foreign", "corrupt", "replaced"} {
+	for _, mode := range []string{"digest", "revision", "active", "uncertain", "cleanup", "newer", "foreign", "corrupt", "replaced"} {
 		t.Run(mode, func(t *testing.T) {
 			s, root, ctx, in, original := restoreFixture(t)
 			source := filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")
@@ -365,6 +366,14 @@ func TestBackupRestoreRejectsChangedInspectionRevisionAndOwnership(t *testing.T)
 				}
 				_, err := s.Mutate(ctx, domain.NewID(), "owned", nil, func(tx *Tx) (any, error) {
 					return tx.Put(domain.JobKind, domain.NewID(), 0, "", "", domain.Job{Type: domain.ExecuteSessionJob, State: state, Input: []byte(`{}`)})
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				in.ExpectedRevision, _ = s.RestoreRevision(ctx)
+			case "cleanup":
+				_, err := s.Mutate(ctx, domain.NewID(), "fixture.cleanup.pending", nil, func(tx *Tx) (any, error) {
+					return tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.CleanupFailedSubscriptionsJob, State: domain.JobQueued, Input: []byte(`{}`), AcceptedAt: time.Now().UTC()})
 				})
 				if err != nil {
 					t.Fatal(err)

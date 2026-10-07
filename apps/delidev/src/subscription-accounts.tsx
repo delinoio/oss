@@ -9,6 +9,7 @@ import {
   SubscriptionAction, SubscriptionObservationAction, SubscriptionQuery, SubscriptionServiceId, SystemCapability, SystemQuery,
   clientFailure, isEntityId, newRequestId, subscriptionService, subscriptionServiceNames, type Resource,
 } from "@delinoio/delidev-api-client";
+import { useFailedSubscriptionCleanup } from "./subscription-cleanup";
 import { SubscriptionQuotaControls, quotaAccountAvailable, quotaObservationMachine } from "./subscription-quota";
 import { useSubscriptionLogin } from "./subscription-login";
 import { serviceAccount } from "./subscription-resource";
@@ -76,7 +77,10 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
  const quotaSupported=status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1)===true;
  const flow = useSubscriptionLogin(active, () => { void rows.refetch(); });
  const loginCapable = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1) === true;
- const workflow = Boolean(selected || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain);
+ const accountOperationsBlocked = Boolean(selected || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain);
+ const cleanupCapable = status.data?.capabilities.includes(SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1) === true;
+ const cleanup = useFailedSubscriptionCleanup(active, cleanupCapable && !status.error && !rows.error && Boolean(rows.data) && !accountOperationsBlocked, () => { void rows.refetch(); });
+ const workflow = Boolean(cleanup.blocked || selected || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain);
   useEffect(() => { onWorkflowReadyChange?.(workflow); return () => onWorkflowReadyChange?.(false); }, [onWorkflowReadyChange, workflow]);
   const validPage = !rows.data || rows.data.resources.length <= 50 && rows.data.resources.every((row) => serviceAccount(row)) && new Set(rows.data.resources.map((row) => row.id)).size === rows.data.resources.length;
   const problem = status.error || rows.error;
@@ -87,18 +91,18 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
     const quotaMachine = quotaObservationMachine(object(data.subscription));
     return { id: row.id, alias: resourceName(row), providerName: subscriptionServiceNames[service], brand: service as unknown as SubscriptionBrand,
       connection: data.removal ? SubscriptionConnectionState.CleanupPending : object(data.subscription).recovery_required === true ? SubscriptionConnectionState.CleanupPending : text(object(data.connection).id) ? SubscriptionConnectionState.Connected : SubscriptionConnectionState.Disconnected,
-      refresh: quotaSupported && service===SubscriptionServiceId.ChatGPT && quotaAccountAvailable(data) && isEntityId(quotaMachine) && !quota.busy && !quota.uncertain ? ()=>void quota.send({mutation:{requestId:newRequestId(),id:row.id,expectedRevision:row.revision},machineId:quotaMachine,action:SubscriptionObservationAction.QUOTA,connectionId:text(object(data.connection).id),generationId:text(object(data.subscription).generation)}) : undefined,
+      refresh: quotaSupported && service===SubscriptionServiceId.ChatGPT && quotaAccountAvailable(data) && isEntityId(quotaMachine) && !quota.busy && !quota.uncertain ? ()=>{ if (cleanup.canMutate()) void quota.send({mutation:{requestId:newRequestId(),id:row.id,expectedRevision:row.revision},machineId:quotaMachine,action:SubscriptionObservationAction.QUOTA,connectionId:text(object(data.connection).id),generationId:text(object(data.subscription).generation)}); } : undefined,
  health: text(data.health), enabled: data.enabled === true, providerState: copy("subscription-accounts.extra.22fc4e1096f2"), confirmedExhausted: data.confirmed_exhausted === true,
       windows: items(data.quota).map((entry) => { const window = object(entry); return { id: text(window.id), state: Object.values(QuotaObservationState).find((state) => state === window.state) ?? QuotaObservationState.Unknown, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) }; }),
-      metadataAvailable: true, connect: service === SubscriptionServiceId.ChatGPT ? () => setSelected(row) : undefined,
-      details: () => setSelected(row), edit: () => editAccount(row), delete: () => deleteAccount(row),
+      metadataAvailable: true, connect: service === SubscriptionServiceId.ChatGPT ? () => { if (cleanup.canMutate()) setSelected(row); } : undefined,
+      details: () => { if (cleanup.canMutate()) setSelected(row); }, edit: () => { if (cleanup.canMutate()) editAccount(row); }, delete: () => { if (cleanup.canMutate()) deleteAccount(row); },
     };
   }) : [];
-  const blocked = flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain;
+  const blocked = cleanup.blocked || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain;
   return <>
-    <SubscriptionSettingsView refreshAll={quotaSupported && !blocked ? ()=>void refreshAll.send({requestId:newRequestId()}) : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} />{!validPage ? <p role="alert">{copy("subscription-accounts.theServerReturnedAnUnsupportedSubscription_ac7e8b")}</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
+    <SubscriptionSettingsView actionsBlocked={cleanup.blocked} cleanup={active && readState === SubscriptionReadState.Ready && cleanupCapable && !status.data?.stopping && !accountOperationsBlocked ? cleanup.begin : undefined} cleanupBusy={cleanup.busy} cleanupBlocked={cleanup.blocked} cleanupStatus={cleanup.body} cleanupUnavailable={readState !== SubscriptionReadState.Ready || !active || status.data?.stopping ? copy("subscription-settings.cleanupUnavailable") : !cleanupCapable ? copy("subscription-settings.cleanupUnsupported") : undefined} refreshAll={quotaSupported && !blocked ? ()=>{ if (cleanup.canMutate()) void refreshAll.send({requestId:newRequestId()}); } : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} />{!validPage ? <p role="alert">{copy("subscription-accounts.theServerReturnedAnUnsupportedSubscription_ac7e8b")}</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
       lifecycleUnavailable="ChatGPT sign-in opens your browser and is independent of Runner Devices. Claude Code and Grok sign-in are not supported yet. Quota refresh requires an existing native observation owner."
-      selectService={capable && loginCapable && flow.available && !blocked ? (brand) => { const service = subscriptionService(brand); if (service) flow.begin(service); } : undefined}
+      selectService={capable && loginCapable && flow.available && !blocked ? (brand) => { const service = subscriptionService(brand); if (service && cleanup.canMutate()) flow.begin(service); } : undefined}
       serviceLoginAvailable={(brand) => brand === SubscriptionBrand.ChatGPT}
       pagination={page || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label={copy("subscription-accounts.subscriptionAccountPages_6c8f61")}><button type="button" disabled={!page || rows.isFetching || workflow} onClick={() => setPage("")}>{copy("subscription-accounts.firstPage_0bdbb7")}</button><button type="button" disabled={!rows.data?.nextPageToken || rows.isFetching || workflow} onClick={() => setPage(rows.data!.nextPageToken)}>{copy("subscription-accounts.nextPage_c08ac7")}</button></nav> : null}
       advanced={<p>{copy("subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6")}</p>} />

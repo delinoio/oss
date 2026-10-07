@@ -53,6 +53,18 @@ func (s *Service) recoverFailedServerLogin(ctx context.Context, id, operation do
 		return err
 	}
 	defer unlock()
+	var batchOwned bool
+	err = s.Store.Read(bounded, func(tx *store.Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		var err error
+		batchOwned, err = tx.FailedSubscriptionCleanupOwns(id, operation)
+		return err
+	})
+	if err != nil || batchOwned {
+		return err
+	}
 	_, err = s.cleanupFailedServerLoginLocked(bounded, id, operation, false, domain.SubscriptionFailed, nil)
 	return err
 }
@@ -61,6 +73,12 @@ func (s *Service) recoverFailedServerLogin(ctx context.Context, id, operation do
 // native checkpoint precedes vault work, so an interrupted cleanup can resume
 // without replaying login, callback forwarding or credential publication.
 func (s *Service) cleanupFailedServerLoginLocked(ctx context.Context, id, operation domain.ID, nativeConfirmed bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic) (domain.SubscriptionLoginState, error) {
+	return s.cleanupFailedServerLoginCheckpointLocked(ctx, id, operation, nativeConfirmed, result, diagnostic, nil)
+}
+
+// A batch checkpoint advances its original expected revision in the same
+// transaction as account cleanup. Unrelated edits never become delete authority.
+func (s *Service) cleanupFailedServerLoginCheckpointLocked(ctx context.Context, id, operation domain.ID, nativeConfirmed bool, result domain.SubscriptionLoginState, diagnostic *domain.CodexDiagnostic, checkpoint func(*store.Tx, store.Record, store.Record) error) (domain.SubscriptionLoginState, error) {
 	var a domain.Account
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -113,7 +131,10 @@ func (s *Service) cleanupFailedServerLoginLocked(ctx context.Context, id, operat
 				st.Pending.Canceled = true
 			}
 			current.Health = domain.AccountFailed
-			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", current)
+			updated, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", current)
+			if err == nil && checkpoint != nil {
+				err = checkpoint(tx, r, updated)
+			}
 			return struct{}{}, err
 		})
 		if err != nil {
@@ -145,7 +166,10 @@ func (s *Service) cleanupFailedServerLoginLocked(ctx context.Context, id, operat
 		current.Health = domain.AccountDisconnected
 		current.Validation, current.Catalog, current.Quota = nil, nil, nil
 		current.ConfirmedExhausted = false
-		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", current)
+		updated, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", current)
+		if err == nil && checkpoint != nil {
+			err = checkpoint(tx, r, updated)
+		}
 		return struct{}{}, err
 	})
 	if err != nil {
