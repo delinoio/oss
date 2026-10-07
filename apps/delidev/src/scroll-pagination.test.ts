@@ -118,3 +118,24 @@ it("resumes a failed refresh atomically from its exact failed accepted token", a
   expect(retry.mock.calls.at(-1)?.[0]).toBe("");
   expect(chain.getSnapshot().payloadPages.length).toBeLessThanOrEqual(3);
 });
+
+it("retains only resident payloads for an inert owner while fencing paused reads and final disposal", async () => {
+  const chain = new PaginationChain<Row, Payload>(); chain.activate();
+  await chain.refresh(reader); for (let index = 0; index < 3; index++) await chain.append(reader);
+  const resident = chain.getSnapshot().payloadPages;
+  expect(resident).toHaveLength(3);
+  let finish!: (batch: Awaited<ReturnType<PaginationReader<Row, Payload>>>) => void;
+  const late = vi.fn<PaginationReader<Row, Payload>>(() => new Promise(resolve => { finish = resolve; }));
+  const pending = chain.append(late);
+  chain.suspend(true);
+  const before = chain.getSnapshot();
+  await chain.append(late); await chain.restore("", late); await chain.refresh(late);
+  expect(late).toHaveBeenCalledTimes(1);
+  finish({ rows: [{ id: "late", revision: 1n, title: "Late" }], payload: [{ id: "late", privateContents: "Ignored" }], nextPageToken: "" });
+  await pending;
+  expect(chain.getSnapshot()).toBe(before);
+  expect(chain.getSnapshot().payloadPages).toBe(resident);
+  chain.reset();
+  expect(chain.getSnapshot().payloadPages).toEqual([]);
+  expect(chain.getSnapshot().rows).toEqual([]);
+});

@@ -49,14 +49,14 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
   getSnapshot = () => this.snapshot;
   private publish(next: PaginationSnapshot<Row, Payload>) { this.snapshot = next; for (const listener of this.listeners) listener(); }
   activate() { this.active = true; }
-  suspend() {
+  suspend(retainPayload = false) {
     if (this.snapshot.payloadPages.length) this.retainedPayloadTokens = this.snapshot.payloadPages.map(page => page.token);
     this.active = false;
     this.protectedToken = undefined;
     this.generation++;
     this.controller?.abort();
     this.controller = undefined;
-    if (this.snapshot.loading || this.snapshot.payloadPages.length) this.publish({ ...this.snapshot, payloadPages: [], loading: undefined });
+    if (this.snapshot.loading || !retainPayload && this.snapshot.payloadPages.length) this.publish({ ...this.snapshot, payloadPages: retainPayload ? this.snapshot.payloadPages : [], loading: undefined });
   }
   reset() { this.suspend(); this.pendingRefresh = undefined; this.retainedPayloadTokens = []; this.publish(emptySnapshot<Row, Payload>()); }
   refresh(reader: PaginationReader<Row, Payload>) {

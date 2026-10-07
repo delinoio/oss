@@ -100,7 +100,7 @@ export function ApiProviderSettings({
   const root = useRef<HTMLElement>(null);
   const change = changeState ?? setLocalState;
   const setQuery = (query: string) => change({ query, page: "" });
-  const result = useProviderPages(query, active);
+  const result = useProviderPages(query, active, false, true);
   const activeInventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 1, pageToken: "" }, { enabled: active });
   const presetsQuery = useQuery(ProviderQuery.listProviderPresets, {}, { enabled: active });
   const ready = providerInventoryReady(result.data?.capabilities);

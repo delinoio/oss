@@ -9,19 +9,22 @@ import { PaginationChain, type PaginationBatch, type PaginationReader, type Pagi
 /** scopeKey contains stable connection/query/domain identity, never locale or
  * geometry. Explicit Load/Search/Apply callers set initialRead to false. */
 export function usePaginationChain<Row extends PaginationRow, Payload = never>(
-  scopeKey: string, active: boolean, reader: PaginationReader<Row, Payload>, initialRead = true,
+  scopeKey: string, active: boolean, reader: PaginationReader<Row, Payload>, initialRead = true, retainPayloadOnSuspend = false,
 ) {
   // Native/local adapters do not require a business QueryClient provider.
   // Connect adapters still bind the authenticated provider identity here.
   const client = useContext(QueryClientContext);
   const chain = useMemo(() => new PaginationChain<Row, Payload>(), [scopeKey, client]);
+  // Inert presentation may pause an owner without destroying its mounted
+  // rows. Actual owner/scope disposal always erases retained private payloads.
+  useLayoutEffect(() => () => chain.reset(), [chain]);
   useLayoutEffect(() => {
     if (active) {
       chain.activate();
       if (initialRead || chain.getSnapshot().loaded) void chain.refresh(reader);
     }
-    return () => chain.suspend();
-  }, [chain, active, reader, initialRead]);
+    return () => chain.suspend(retainPayloadOnSuspend);
+  }, [chain, active, reader, initialRead, retainPayloadOnSuspend]);
   const snapshot = useSyncExternalStore(chain.subscribe, chain.getSnapshot);
   const actions = useMemo(() => ({
     append: () => { void chain.append(reader); },

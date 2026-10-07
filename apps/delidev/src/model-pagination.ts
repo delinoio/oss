@@ -11,7 +11,7 @@ function identities<T extends { id: string; revision: bigint }>(rows: T[]) {
   if (rows.length > 50 || rows.some(row => !row.id || row.revision < 1n) || new Set(rows.map(row => row.id)).size !== rows.length) invalid();
   return rows;
 }
-export function useProviderPages(query: string, active: boolean, enabledOnly = false) {
+export function useProviderPages(query: string, active: boolean, enabledOnly = false, retainPayloadOnSuspend = false) {
   const request = useCallback((token: string) => ({ query, enabledOnly, pageSize: 50, pageToken: token }), [query, enabledOnly]);
   const project = useCallback((response: ListProviderInventoryResponse) => {
     if (new Set(response.capabilities).size !== response.capabilities.length || response.capabilities.some(value => !Number.isSafeInteger(value) || value < 0)) invalid();
@@ -23,7 +23,7 @@ export function useProviderPages(query: string, active: boolean, enabledOnly = f
     return { rows, payload: [response], nextPageToken: response.nextPageToken };
   }, []);
   const reader = useConnectPaginationReader(ProviderQuery.listProviderInventory, request, project);
-  const chain = usePaginationChain(`providers:${enabledOnly}:${query}`, active, reader);
+  const chain = usePaginationChain(`providers:${enabledOnly}:${query}`, active, reader, true, retainPayloadOnSuspend);
   usePaginationRefresh(ProviderQuery.listProviderInventory, request(""), active, chain.refresh);
   return { ...chain, data: chain.payloadPages.at(-1)?.payload[0], isLoading: !chain.loaded && !chain.error, isFetching: Boolean(chain.loading), refetch: chain.refresh };
 }

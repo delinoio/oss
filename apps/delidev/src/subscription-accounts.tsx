@@ -80,7 +80,10 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
   const [selected, setSelected] = useState<Resource>();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const capable = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
-  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && capable, "subscriptions", false, AccountTypeFilter.SUBSCRIPTION, "", serviceAccount);
+  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && capable, "subscriptions", false, AccountTypeFilter.SUBSCRIPTION, "", serviceAccount, true);
+  // An inert parent beneath its original edit/delete dialog retains its three
+  // resident pages and mounted disclosure owners. Reads remain suspended; the
+  // Settings visit/category owns disposal when this component unmounts.
   const resident = inventory.payloadPages.flatMap(page => page.payload);
   const rows = { data: inventory.loaded ? { resources: resident, nextPageToken: inventory.nextPageToken } : undefined,
     error: inventory.error?.failure, isFetching: Boolean(inventory.loading), refetch: () => inventory.refreshExplicit() };

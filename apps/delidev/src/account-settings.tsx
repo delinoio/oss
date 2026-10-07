@@ -689,7 +689,7 @@ function ApiAccountSettings({
     return result;
   }, [providerHint, providers, startApiWizard]);
   const accountType = AccountTypeFilter.API;
-  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && accountTypeFilteringReady, section, false, accountType, providerIdFilter);
+  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && accountTypeFilteringReady, section, false, accountType, providerIdFilter, undefined, true);
   const resources = inventory.payloadPages.flatMap(page => page.payload);
   const rows = { data: inventory.loaded ? { resources, nextPageToken: inventory.nextPageToken } : undefined,
     error: inventory.error?.failure, isFetching: Boolean(inventory.loading),
