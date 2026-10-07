@@ -143,12 +143,12 @@ function LocalDesktop() {
     if (!selected || previous.current !== selected) throw new Error("Worker network connection changed");
     return result;
   };
-  const controlLocalWorker: ControlLocalWorker = async (action, generation) => {
+  const controlLocalWorker: ControlLocalWorker = Object.assign(async (action: Parameters<ControlLocalWorker>[0], generation?: string) => {
     const selected = previous.current;
     const value = await invoke<LocalWorkerStatus>("local_worker_control", { action, generation });
     if (!selected || previous.current !== selected) throw new Error("Local Worker connection changed");
     return value;
-  };
+  }, { automatic: true });
   const problem = typeof error === "string" && Object.hasOwn(nativeProblems, error) ? <p role="alert">{nativeProblems[error]}</p> : <Problem error={error} />;
   const connectionSettings = <button onClick={() => setShowConnection(true)}>{copy("desktop.connectionControls_6f99ea")}</button>;
   const updateControls = useMemo<DesktopUpdateControls>(() => ({ readContext: () => invoke("desktop_update_context"), control: async (action, id, revision) => {

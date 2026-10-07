@@ -1,0 +1,39 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Repository inventory only; task dialogs and the shared Settings shell keep
+   their existing geometry and control ownership. */
+.settings-content.settings-repositories .repository-list { display: grid; gap: 16px; }
+.settings-content.settings-repositories .repository-row { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.settings-content.settings-repositories .repository-row-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.settings-content.settings-repositories .repository-icon-tile { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-secondary); background: var(--surface-muted); }
+.repository-icon-tile svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.settings-content.settings-repositories .repository-identity { flex: 1; min-width: 0; }
+.settings-content.settings-repositories .repository-identity h2 { margin: 0; }
+.settings-content.settings-repositories .repository-identity p { margin: 4px 0 0; font-size: 12px; line-height: 18px; color: var(--muted); }
+.settings-content.settings-repositories .repository-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; line-height: 18px; color: var(--text-secondary); background: var(--surface-muted); }
+.settings-content.settings-repositories .repository-badge-attention { color: var(--warning-text); border-color: var(--warning-border); background: var(--warning-background); }
+.settings-content.settings-repositories .repository-badge-attention::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--warning-text); flex-shrink: 0; }
+.settings-content.settings-repositories .repository-manage-actions { margin: 0 0 0 4px; flex-shrink: 0; gap: 8px; }
+.settings-content.settings-repositories .repository-delete { color: var(--danger-text); }
+.settings-content.settings-repositories .repository-metadata { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin: 20px 0 16px; padding: 16px; border-radius: 6px; background: var(--surface-subtle); }
+.settings-content.settings-repositories .repository-metadata > div { min-width: 0; }
+.settings-content.settings-repositories .repository-metadata dt { margin-bottom: 6px; font-size: 12px; line-height: 18px; color: var(--muted); }
+.settings-content.settings-repositories .repository-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.settings-content.settings-repositories .repository-metadata ul { padding: 0; margin: 0; list-style: none; }
+.settings-content.settings-repositories .repository-metadata li + li { margin-top: 8px; }
+.settings-content.settings-repositories .repository-metadata-help { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 18px; }
+.settings-content.settings-repositories .repository-github-name { font-weight: 500; }
+.settings-content.settings-repositories .repository-github-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-content.settings-repositories .repository-github-tools > div { display: contents; }
+.settings-content.settings-repositories .repository-github-tools > div > :is(p, section) { flex-basis: 100%; min-width: 0; margin: 8px 0 0; order: 1; }
+.settings-content.settings-repositories .repository-github-tools > div > p { padding: 12px; border-left: 2px solid var(--warning-border); border-radius: 4px; color: var(--warning-text); background: var(--warning-background); }
+.settings-content.settings-repositories .repository-github-tools > div > section { overflow-x: auto; }
+.settings-content.settings-repositories .repository-resource-id { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; line-height: 18px; }
+.settings-content.settings-repositories .repository-resource-id code { font-size: 12px; line-height: 18px; }
+.settings-content.settings-repositories .settings-pages { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.settings-content.settings-repositories .repository-page-count { margin-right: auto; color: var(--muted); font-size: 12px; line-height: 18px; }
+@container settings-body (width < 640px) {
+  .settings-content.settings-repositories .repository-row-heading { display: grid; grid-template-columns: 40px minmax(0, 1fr); }
+  .settings-content.settings-repositories .repository-metadata { grid-template-columns: minmax(0, 1fr); }
+  .settings-content.settings-repositories .repository-badge { grid-column: 2; justify-self: start; }
+  .settings-content.settings-repositories .repository-manage-actions { grid-column: 2; margin: 0; }
+}

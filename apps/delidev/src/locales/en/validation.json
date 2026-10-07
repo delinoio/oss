@@ -8,7 +8,7 @@
   "validation.e5d23860896b": "Provide at least one explicit rate. A zero rate must be entered as 0.",
   "validation.3574c19968e0": "Keep the source within 2,048 bytes and use at most 16 nonempty exclusion lines of 512 bytes each.",
   "validation.0c01933238f8": "Use an export of at most 384 KiB.",
-  "validation.71aacc919010": "Use a version 1 API-only or version 2 DeliDev configuration export.",
+  "validation.71aacc919010": "Use a version 1 API-only, version 2 or version 3 DeliDev configuration export.",
   "validation.c2538b95da40": "The exported entries are not readable. Validate the original document before continuing.",
   "validation.3944ec33203a": "Service-native subscription configuration requires a version 2 export. Version 1 imports support API configuration only.",
   "validation.1661a2b58b48": "The exported machine references are not readable.",
@@ -20,5 +20,6 @@
   "validation.028484655c91": "The server change preview is incomplete.",
   "validation.082d543863cb": "Select each existing entry explicitly before previewing.",
   "validation.03d54ce010c1": "The review locations are unavailable. Refresh the comparison.",
-  "validation.376b1888b589": "The diff changed before comment editing. Close this editor, refresh the diff, and select the location again."
+  "validation.376b1888b589": "The diff changed before comment editing. Close this editor, refresh the diff, and select the location again.",
+  "validation.sourceRoutesVersion": "Account source routes require a version 3 export."
 }

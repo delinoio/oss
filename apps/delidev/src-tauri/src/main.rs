@@ -21,6 +21,7 @@ use std::{
 struct DesktopLifetime {
     connector: Arc<Connector>,
     supervision: Arc<Supervision>,
+    worker_supervision: Arc<WorkerSupervision>,
     quit_started: Arc<std::sync::atomic::AtomicBool>,
 }
 impl Drop for DesktopLifetime {
@@ -30,6 +31,7 @@ impl Drop for DesktopLifetime {
             return;
         }
         self.supervision.stop();
+        self.worker_supervision.stop();
         if let Err(code) = self.connector.shutdown_owned() {
             tracing::error!(
                 operation = "desktop_sidecar_shutdown",
@@ -46,8 +48,9 @@ use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
     Connection, Connector, DesktopRegistration, LocalServerStatus, LocalWorkerAction,
     LocalWorkerProof, LocalWorkerStatus, NativeFailure, RemovedConnections, SavedConnection,
-    SavedConnectionState, Supervision, WorkerNetworkAction, browser_storage::BrowserStorageMode,
-    bundled_sidecar, canonical_id, connection_origin, default_data_root,
+    SavedConnectionState, Supervision, WorkerNetworkAction, WorkerSupervision,
+    browser_storage::BrowserStorageMode, bundled_sidecar, canonical_id, connection_origin,
+    default_data_root,
 };
 use language_host::{read_language, update_language};
 use notification_host::{
@@ -1648,10 +1651,15 @@ fn run() -> Result<(), NativeFailure> {
         }
     }
     let supervision = Arc::new(Supervision::new(Arc::clone(&connector)));
+    let worker_supervision = Arc::new(WorkerSupervision::new(
+        Arc::clone(&connector),
+        Arc::clone(&supervision),
+    ));
     let quit_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _lifetime = DesktopLifetime {
         connector: Arc::clone(&connector),
         supervision: Arc::clone(&supervision),
+        worker_supervision: Arc::clone(&worker_supervision),
         quit_started: Arc::clone(&quit_started),
     };
     let tray = Arc::new(TrayHost::default());
@@ -1872,8 +1880,10 @@ fn run() -> Result<(), NativeFailure> {
                 // Fence fresh starts synchronously. Browser discovery keeps its
                 // separate observer until its final bounded read pass joins.
                 exiting_supervision.request_stop();
+                worker_supervision.request_stop();
                 exiting.request_stop();
                 let host = Arc::clone(&exiting_supervision);
+                let workers = Arc::clone(&worker_supervision);
                 let sidecar = Arc::clone(&connector);
                 let browser = Arc::clone(&exiting_browser);
                 let tray = Arc::clone(&exiting);
@@ -1887,6 +1897,7 @@ fn run() -> Result<(), NativeFailure> {
                         oauth.stop();
                         windows.join();
                         host.stop();
+                        workers.stop();
                         browser.stop();
                         if let Err(code) = sidecar.shutdown_owned() {
                             tracing::error!(

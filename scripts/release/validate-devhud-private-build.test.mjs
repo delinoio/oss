@@ -15,7 +15,7 @@ test("validates a complete deterministic checksum manifest without Sigstore", ()
   mkdirSync(join(root, "nested"));
   writeFileSync(join(root, "artifact.bin"), "artifact");
   writeFileSync(join(root, "nested/signature.ed25519"), "signature");
-  execFileSync("bash", [checksumScript, "--artifacts-dir", root, "--sigstore-dir", join(root, "sigstore")], { env: { ...process.env, REQUIRE_COSIGN: "0" } });
+  execFileSync("bash", [checksumScript, "--artifacts-dir", root, "--sigstore-dir", join(root, "sigstore"), "--skip-signing"]);
   assert.doesNotThrow(() => validateChecksums(root, false));
   writeFileSync(join(root, "artifact.bin"), "tampered");
   assert.throws(() => validateChecksums(root, false), /invalid SHA256SUMS/u);

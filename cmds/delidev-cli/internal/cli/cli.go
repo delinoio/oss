@@ -74,6 +74,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	if command == "server" && len(rest) > 0 && rest[0] == "desktop-host" {
 		return runDesktopHostCommand(ctx, o, rest[1:], streams)
 	}
+	if command == "worker" && len(rest) > 0 && rest[0] == "desktop-host" {
+		return runDesktopWorkerHostCommand(ctx, o, rest[1:], streams)
+	}
+	if command == "worker" && len(rest) > 0 && rest[0] == "desktop-prepare" {
+		value, err := desktopWorkerExecutable(ctx, o, rest[1:])
+		return emit(value, err)
+	}
 	if command == "service-run" {
 		value, err := runService(ctx, o, rest, streams)
 		return emit(value, err)

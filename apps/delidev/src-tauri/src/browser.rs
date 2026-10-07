@@ -228,6 +228,13 @@ impl Connector {
             listen: self.listen.clone(),
             exiting: std::sync::atomic::AtomicBool::new(false),
             session: std::sync::Arc::clone(&self.session),
+            hosted: std::sync::Mutex::new(Vec::new()),
+            worker_management: std::sync::Mutex::new(crate::LocalWorkerManagement::default()),
+            worker_auto_enabled: std::sync::atomic::AtomicBool::new(false),
+            worker_launch_pending: std::sync::atomic::AtomicBool::new(true),
+            worker_exited: std::sync::Mutex::new(None),
+            worker_pause_generation: std::sync::Mutex::new(None),
+            worker_client_id: std::sync::Mutex::new(None),
         })
     }
 
