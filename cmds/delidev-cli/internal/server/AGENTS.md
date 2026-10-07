@@ -26,6 +26,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Generic resource pagination must fit both binary and JSON Connect encodings and resume after the last returned record when the byte budget truncates a count-bounded page.
 
+- Configuration deletion rejections log only closed phases, safe error codes and validated request/correlation IDs through `log/slog`. Preserve existing account admission, protected-intent, current-revision and complete reference checks; never log raw resource/alias/connection content or native/provider error prose. Desktop API deletion composes the existing disconnect and delete RPCs and does not grant new server cleanup authority. Follow `docs/cmds-delidev-accounts-contract.md`.
+
 - Keyless account cleanup/deletion must remain usable without an OS credential store. Skip vault access only with validated immutable keyless API provider ownership; preserve relay cancellation, cleanup generations, receipt replay and credential-bearing staged-intent reconciliation.
 
 - Repository GitHub access follows the integration contract: derive the exact configured owner/repository/profile/generation, bound and join reads outside locks, and recheck authorization and repository revision before response. Keep all eight endpoint states independent; absent head evidence cannot invent Checks/statuses, and availability cannot imply successful CI, satisfied rules, reviewer identity or future authorization. No fallback token, response URL authority, access persistence or inspection receipt.
