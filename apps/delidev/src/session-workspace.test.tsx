@@ -85,10 +85,13 @@ it("keeps original technical evidence behind Info and opens it from the compact 
   await screen.findByText("Execution is blocked");
   expect(screen.queryByRole("complementary", { name: "Session information" })).toBeNull();
   expect(screen.getByText(/Original installation evidence/).closest("aside")).toHaveProperty("hidden", true);
-  fireEvent.click(screen.getByRole("button", { name: "Show details" }));
+  const opener = screen.getByRole("button", { name: "Show details" });
+  fireEvent.click(opener);
   const evidence = screen.getByText(/Original installation evidence/);
   expect(evidence.closest("details")).toHaveProperty("open", true);
   expect(evidence.closest("aside")).toHaveProperty("hidden", false);
+  fireEvent.keyDown(evidence, { key: "Escape" });
+  expect(document.activeElement).toBe(opener);
   expect(f.control).not.toHaveBeenCalled();
 });
 

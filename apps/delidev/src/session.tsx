@@ -210,6 +210,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const diagnosticsButton = useRef<HTMLButtonElement>(null);
   const browserButton = useRef<HTMLButtonElement>(null);
   const infoButton = useRef<HTMLButtonElement>(null);
+  const panelOpener = useRef<HTMLButtonElement | null>(null);
   const infoHeading = useRef<HTMLHeadingElement>(null);
   const infoEvidence = useRef<HTMLDivElement>(null);
   const budgetDetails = useRef<HTMLDetailsElement>(null);
@@ -274,12 +275,18 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   };
   const closePanel = () => {
     setPanel(SessionPanel.Closed);
-    if (panel !== SessionPanel.Closed) panelButtons[panel].current?.focus();
+    if (panel !== SessionPanel.Closed) {
+      const opener = panelOpener.current;
+      if (opener?.isConnected && !opener.closest("[hidden], [inert]")) opener.focus();
+      else panelButtons[panel].current?.focus();
+    }
   };
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
-    if (panel === next) closePanel(); else setPanel(next);
+    if (panel === next) closePanel();
+    else { panelOpener.current = panelButtons[next].current; setPanel(next); }
   };
-  const showInfo = (target = InfoTarget.Status) => {
+  const showInfo = (opener: HTMLButtonElement, target = InfoTarget.Status) => {
+    panelOpener.current = opener;
     setPanel(SessionPanel.Info); setInfoReveal({ target });
   };
   const problem = object(data.problem);
@@ -321,14 +328,14 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     </div>
     <div className="session-body">
       <div className="session-notices">
-        {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={() => showInfo()}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
-        {text(problem.message) ? <SessionNotice details={() => showInfo()}><strong>{text(data.dispatch) === "blocked" ? copy("session.executionBlocked") : copy("session.attentionRequired")}</strong><span>{failureSummary(text(problem.code) || text(problem.problem_code))}</span></SessionNotice> : null}
-        {recovering ? <SessionNotice details={() => showInfo()}><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></SessionNotice> : null}
-        {Object.hasOwn(data, "startup_rejection") ? <SessionNotice details={() => showInfo()}>{copy("startup-rejection.agentDidNotStart_32a1e1")}</SessionNotice> : null}
-        {budgetBlocked ? <SessionNotice details={() => showInfo(InfoTarget.Budget)}>{copy("session-budget.budgetThresholdReachedNewTurnsAnd_6236ce")}</SessionNotice> : null}
-        {control.error ? <SessionNotice details={() => showInfo()}>{failureSummary(clientFailure(control.error).code)}</SessionNotice> : null}
-        {control.uncertain ? <SessionNotice details={() => showInfo()}>{copy("session.retryTheSameControlRequest_609aff")}</SessionNotice> : null}
-        {send.error ? <SessionNotice details={() => showInfo()}>{failureSummary(clientFailure(send.error).code)}</SessionNotice> : null}
+        {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={opener => showInfo(opener)}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
+        {text(problem.message) ? <SessionNotice details={opener => showInfo(opener)}><strong>{text(data.dispatch) === "blocked" ? copy("session.executionBlocked") : copy("session.attentionRequired")}</strong><span>{failureSummary(text(problem.code) || text(problem.problem_code))}</span></SessionNotice> : null}
+        {recovering ? <SessionNotice details={opener => showInfo(opener)}><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></SessionNotice> : null}
+        {Object.hasOwn(data, "startup_rejection") ? <SessionNotice details={opener => showInfo(opener)}>{copy("startup-rejection.agentDidNotStart_32a1e1")}</SessionNotice> : null}
+        {budgetBlocked ? <SessionNotice details={opener => showInfo(opener, InfoTarget.Budget)}>{copy("session-budget.budgetThresholdReachedNewTurnsAnd_6236ce")}</SessionNotice> : null}
+        {control.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(control.error).code)}</SessionNotice> : null}
+        {control.uncertain ? <SessionNotice details={opener => showInfo(opener)}>{copy("session.retryTheSameControlRequest_609aff")}</SessionNotice> : null}
+        {send.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(send.error).code)}</SessionNotice> : null}
       </div>
       <div className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Problem error={messages.error} />

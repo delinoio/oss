@@ -22,12 +22,12 @@ export function SessionIcon({ kind }: { kind: SessionIconKind }) {
   return <svg className="session-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{paths[kind]}</svg>;
 }
 
-export function SessionNotice({ children, details }: { children: ReactNode; details: () => void }) {
+export function SessionNotice({ children, details }: { children: ReactNode; details: (opener: HTMLButtonElement) => void }) {
   useLocale();
   return <div className="session-notice" role="alert">
     <SessionIcon kind={SessionIconKind.Warning} />
     <div>{children}</div>
-    <button type="button" onClick={details}>{copy("session.showDetails")}</button>
+    <button type="button" onClick={event => details(event.currentTarget)}>{copy("session.showDetails")}</button>
   </div>;
 }
 
