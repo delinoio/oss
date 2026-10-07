@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -18,11 +18,14 @@ function connectSelected() {
   if (next && !(next as HTMLButtonElement).disabled) fireEvent.click(next);
 }
 
-function fixture(args: { selecting?: boolean; metadataReady?: boolean; huggingFace?: boolean; gemini?: boolean; baseten?: boolean; statusGate?: (state: State) => Promise<void>; missingAccount?: boolean; invalidAccount?: boolean; wrongFlow?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
+function fixture(args: { selecting?: boolean; switchProvider?: boolean; metadataReady?: boolean; huggingFace?: boolean; gemini?: boolean; baseten?: boolean; statusGate?: (state: State) => Promise<void>; missingAccount?: boolean; invalidAccount?: boolean; wrongFlow?: boolean; oldNative?: boolean; complete?: (request: CompleteAccountOAuthRequest) => Promise<void>; native?: OAuthNativeControl; startDelay?: Promise<void>; startError?: ConnectError; interruptedStart?: boolean } = {}) {
   const name = args.huggingFace ? "Hugging Face Inference Providers" : args.gemini ? "Google Gemini" : args.baseten ? "Baseten" : "OpenRouter";
   const providerId = newRequestId(), attemptId = newRequestId(), nativeGeneration = newRequestId();
   const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: args.selecting ? 3 : 1, revision: 1n, documentJson: encode({ name, preset_id: args.huggingFace ? "hugging-face" : args.gemini ? "gemini" : args.baseten ? "baseten" : "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true, ...(args.selecting ? { api_formats: (args.gemini ? [APIFormatId.ChatCompletions] : args.baseten ? [APIFormatId.ChatCompletions, APIFormatId.Messages] : Object.values(APIFormatId)).map(protocol => ({ protocol, endpoint: "https://openrouter.ai/api/v1", authentication: "bearer" })) } : {}) }) });
   const selected: AccountProviderSummary = { providerId, provider, displayName: name, enabled: true, oauthAvailable: true, oauthFormatSelectingAvailable: args.selecting, keyGuidance: "", documentationUrl: "" };
+  const alternateProviderId = newRequestId();
+  const alternateProvider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: alternateProviderId, schemaVersion: 3, revision: 1n, documentJson: encode({ name: "Hugging Face Inference Providers", preset_id: "hugging-face", endpoint: "https://huggingface.co/v1", protocol: "openai-chat", authentication: "bearer", enabled: true, api_formats: [APIFormatId.ChatCompletions, APIFormatId.Messages].map(protocol => ({ protocol, endpoint: "https://huggingface.co/v1", authentication: "bearer" })) }) });
+  const alternate: AccountProviderSummary = { providerId: alternateProviderId, provider: alternateProvider, displayName: "Hugging Face Inference Providers", enabled: true, oauthAvailable: true, oauthFormatSelectingAvailable: true, keyGuidance: "", documentationUrl: "" };
   let selectedProtocol = ApiProtocol.UNSPECIFIED;
   const attempt = (state = State.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION, revision = 1n) => create(AccountOAuthAttemptSchema, { id: attemptId, providerId, revision, state, apiProtocol: selectedProtocol, expiresAt: new Date(Date.now() + 600000).toISOString() });
   let retained = attempt(), callback = false, deviceReceipt = "";
@@ -46,8 +49,9 @@ function fixture(args: { selecting?: boolean; metadataReady?: boolean; huggingFa
   let inspect!: () => void;
   function Harness() {
     const flow = useOpenRouterOAuth();
+    const [activeProvider, setActiveProvider] = useState(selected);
     inspect = flow.observe;
-    return <><button onClick={() => flow.start(selected)}>Connect selected OpenRouter</button><OpenRouterOAuth metadataReady={args.metadataReady} flow={flow} back={back} manual={manual} done={done} /></>;
+    return <><button onClick={() => flow.start(activeProvider)}>Connect selected OpenRouter</button>{args.switchProvider ? <button onClick={() => void flow.abandon(false, () => setActiveProvider(alternate))}>Switch OAuth provider</button> : null}<OpenRouterOAuth metadataReady={args.metadataReady} flow={flow} back={back} manual={manual} done={done} /></>;
   }
   const view = render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><SettingsLifetime>{() => <Harness />}</SettingsLifetime></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>);
   return { inspect: () => inspect(), start, complete, cancel, status, native, client, view, rawCode, rawState, manual, back, done, account, recoverDevice: () => { deviceReceipt = newRequestId(); retained=attempt(State.ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED,3n); retained.problem=create(ErrorDetailSchema,{code:"recovery_required"}); }, trigger: () => { callback = true; }, change: (state: State, revision: bigint) => { retained = attempt(state, revision); } };
@@ -355,6 +359,21 @@ it("uses shared metadata choices for Hugging Face and preserves its native authe
   f.trigger();
   await waitFor(() => expect(f.done).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: f.account.id, revision: f.account.revision, schemaVersion: 3 })), { timeout: 2500 });
   expect(f.start.mock.calls[0][0].apiProtocol).toBe(ApiProtocol.ANTHROPIC_MESSAGES);
+});
+
+it("resets the API format selection when the OAuth provider changes", async () => {
+  const f = fixture({ selecting: true, switchProvider: true });
+  await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Profiles)).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
+  fireEvent.change(screen.getByLabelText("API format"), { target: { value: APIFormatId.Responses } });
+  fireEvent.click(screen.getByRole("button", { name: "Switch OAuth provider" }));
+  await waitFor(() => expect(f.native.mock.calls.some(call => call[1] === OAuthNativeAction.Dispose)).toBe(true));
+  fireEvent.click(screen.getByRole("button", { name: "Connect selected OpenRouter" }));
+
+  expect(await screen.findByRole("heading", { name: "Connect Hugging Face Inference Providers" })).toBeTruthy();
+  expect((screen.getByLabelText("API format") as HTMLSelectElement).value).toBe("");
+  expect((screen.getByRole("button", { name: "Continue in browser" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(f.start).not.toHaveBeenCalled();
 });
 
 it("limits Device format choices to its declared profiles", async () => {
