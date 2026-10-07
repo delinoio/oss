@@ -883,6 +883,8 @@ reconfiguration without rewriting historical executions.
 
 The Model step uses source-scoped server catalog autocomplete and permits exact
 native ID input after loading, empty, failed or unsupported discovery results.
+The single-source wizard scrolls the exact active option during keyboard
+navigation, including options nested in retained scroll-payload pages.
 Typing never contacts a provider endpoint. Endpoint refresh uses the deliberate
 existing discovery RPC and original account revision. Codex native observation
 retains explicit selected-account/Runner Device/installation scope, accepted jobs,
