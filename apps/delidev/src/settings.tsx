@@ -18,7 +18,7 @@ import { accountPreferencesDocument } from "./account-preferences";
 import { ConfigurationFields, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { JobState, TrackedJob } from "./jobs";
-import { LocalWorkerControls, LocalWorkerPresentation, type ControlLocalWorker } from "./local-worker-controls";
+import { LocalWorkerControls, LocalWorkerPresentation, type ControlLocalWorker, type LocalWorkerAction } from "./local-worker-controls";
 import { SSHSetup } from "./ssh-setup";
 import { MachineSettings } from "./machine-settings";
 import { NetworkSettings } from "./network-settings";
@@ -310,12 +310,17 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
     </SidebarSurface>
     {/* Each category owns its waits and drafts. Disposal rejects late results
         without canceling or replaying already accepted server/native work. */}
-    <SettingsLifetime key={selection.key}>{opening => <MutationIntents><SettingsWorkspace {...props} selectedCategory={selection.category} entry={selection.entry} navigate={navigate} controlLocalWorker={props.controlLocalWorker ? (action, generation) => opening.native(() => props.controlLocalWorker!(action, generation)) : undefined} /></MutationIntents>}</SettingsLifetime>
+    <SettingsLifetime key={selection.key}>{opening => <MutationIntents><SettingsWorkspace {...props} selectedCategory={selection.category} entry={selection.entry} navigate={navigate} controlLocalWorker={props.controlLocalWorker ? Object.assign((action: LocalWorkerAction, generation?: string) => opening.native(() => props.controlLocalWorker!(action, generation)), { automatic: props.controlLocalWorker.automatic }) : undefined} /></MutationIntents>}</SettingsLifetime>
   </>;
 }
 
 function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, entry, navigate }: SettingsProps & { selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
   useLocale();
+  const openConnectionDiagnostics = () => {
+    // Keep focus in the persistent main region when this category is disposed.
+    window.document.getElementById("main")?.focus({ preventScroll: true });
+    navigate(SettingsCategory.Diagnostics);
+  };
   const oauth = useAccountOAuth();
   const oauthStarted = useRef(false);
   useEffect(() => {
@@ -465,7 +470,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Diagnostics ? <div>{connectionSettings ? <section aria-label={copy("settings.connection_639a40")}><h2>{copy("settings.connection_639a40")}</h2>{connectionSettings}</section> : null}<Doctor title={DoctorTitle.ConnectionDiagnostics} active={visible && area === SettingsArea.Diagnostics} visible={visible} /></div> : null}
           {area === SettingsArea.Configuration ? <div>
-            {controlLocalWorker && isRunnerDevices ? <div hidden={Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
+            {controlLocalWorker && isRunnerDevices ? <div hidden={Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} onDiagnostics={openConnectionDiagnostics} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div hidden={Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             {isApiAccounts ? <div hidden={hasOverlay}>
               <AccountSettings openUsage={openUsage} oauth={oauth} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />

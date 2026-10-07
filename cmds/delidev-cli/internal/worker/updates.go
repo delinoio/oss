@@ -360,3 +360,28 @@ func InstalledExecutable(root, fallback string) (string, error) {
 	}
 	return selected, nil
 }
+
+// Desktop recovery must wait for the original updater, including its drain
+// phase. An exited old controller does not authorize a competing generation.
+func DesktopExecutable(root, fallback string) (string, error) {
+	entries, err := os.ReadDir(filepath.Join(root, "worker-updates"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", updateFailure()
+	}
+	if len(entries) > 4096 {
+		return "", updateFailure()
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		journal, err := ReadUpdateJournal(root, domain.ID(strings.TrimSuffix(entry.Name(), ".json")))
+		if err != nil {
+			return "", err
+		}
+		if journal.Phase != UpdateComplete {
+			return "", updateFailure()
+		}
+	}
+	return InstalledExecutable(root, fallback)
+}
