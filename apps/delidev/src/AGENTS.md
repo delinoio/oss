@@ -731,3 +731,5 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Generic operation presentation follows the desktop operation-result contract. Shared TrackedJob and independent backup/model/Fork/storage/context/import views hide generic headings, raw job/action IDs/revisions and unconditional operation refresh while retaining feature children, progress/problems/cancellation/uncertainty, original read-only failed-status retries and functional completion/recovery controls. Preserve all query/polling/receipt/revision/mutation/lifetime owners, resource IDs/provenance/cleanup proofs, explicit observation lookup, product Check again and account-storage warnings. Remove empty success wrappers without success toasts.
 
 - Keep retained uncertain Fork jobs explicitly reinspectable through their original read query, without replaying Fork creation.
+
+- Do not replace an unsettled native-model observation with a new scope, lookup or discovery. Keep its original status read explicitly retryable.

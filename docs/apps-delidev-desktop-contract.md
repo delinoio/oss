@@ -2273,3 +2273,5 @@ Shared tracked jobs and independent backup, native-model observation, Fork, work
 A failed status read retains a read-only Retry original status read control for its exact original query. Presentation does not change polling, receipt/request identities, revision guards, cancellation, recovery, mutation or lifetime ownership, and does not add success toasts. Product Check again and account-storage warnings retain their separate authority.
 
 Uncertain retained Fork jobs expose the same exact-query read-only status reinspection; it does not submit another Fork.
+
+Retained native-model observations remain read-only reinspectable while uncertain or unreadable. Unsettled observations block scope replacement and new discovery; exact discovery/cancellation retry ownership remains separate.

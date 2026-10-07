@@ -12,11 +12,11 @@ import { chooseScrollOption } from "./test-scroll-picker";
 import { NativeModelSettings } from "./native-model-settings";
 import { chooseScrollOption } from "./test-scroll-picker";
 
-function fixture(loseFirst = false, scoped = false) {
+function fixture(loseFirst = false, scoped = false, observationState = "succeeded") {
   const provider = newRequestId();
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Runner fixture" }) });
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 8n, schemaVersion: 1, documentJson: encode({ alias: "Account fixture", provider_id: provider, connection: { id: newRequestId() } }) });
-  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 3n, schemaVersion: 1, documentJson: encode({ type: "native-codex-models", state: "succeeded", input: { machine_id: machine.id, account_id: account.id, provider_id: provider, installation_generation: 1 }, output: { observed_at: "2026-10-01T00:00:00Z" } }) });
+  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 3n, schemaVersion: 1, documentJson: encode({ type: "native-codex-models", state: observationState, input: { machine_id: machine.id, account_id: account.id, provider_id: provider, installation_generation: 1 }, output: { observed_at: "2026-10-01T00:00:00Z" } }) });
   const requests: DiscoverNativeModelsRequest[] = [];
   const discover = vi.fn(async (request: DiscoverNativeModelsRequest) => {
     requests.push(request);
@@ -24,12 +24,13 @@ function fixture(loseFirst = false, scoped = false) {
     return { job };
   });
   const createModel = vi.fn();
+  const getObservation = vi.fn((_request: { jobId: string }) => ({ job }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_CODEX_MODEL_DISCOVERY_V1] }) });
     router.service(ResourceService, { getResource: request => ({ resource: request.id === machine.id ? machine : request.id === account.id ? account : undefined }), listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MACHINE ? [machine] : request.filter?.kind === EntityKind.ACCOUNT ? [account] : [] }) });
     router.service(NativeModelService, {
       discoverNativeModels: discover,
-      getNativeModelObservation: () => ({ job }),
+      getNativeModelObservation: getObservation,
       listNativeModels: () => ({ job, modelsJson: encode([{ id: "picker-only", model: "executable-only", display_name: "Fixture model", description: "Advisory", reasoning: ["medium"], modalities: ["text"], service_tiers: [] }]) }),
     });
   });
@@ -38,7 +39,7 @@ function fixture(loseFirst = false, scoped = false) {
   const rendered = render(view(scoped ? [account] : undefined));
   const details = screen.getByText("Native Codex model observations").parentElement as HTMLDetailsElement;
   details.open = true; fireEvent(details, new Event("toggle"));
-  return { machine, account, provider, discover, requests, createModel, scoped, selectAccounts: (rows: Resource[]) => rendered.rerender(view(rows)) };
+  return { machine, account, provider, discover, requests, createModel, getObservation, job, scoped, selectAccounts: (rows: Resource[]) => rendered.rerender(view(rows)) };
 }
 
 async function choose(value: ReturnType<typeof fixture>) {
@@ -80,4 +81,18 @@ it("retains the exact discovery receipt after a lost response and blocks a repla
   expect(value.requests[1]).toEqual(value.requests[0]);
   await screen.findByRole("button", { name: "Register Fixture model…" });
   expect(value.createModel).not.toHaveBeenCalled();
+});
+
+
+it("reinspects an uncertain native observation without replacing its accepted request", async () => {
+ const value = fixture(false, false, "uncertain");
+ await choose(value);
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ expect((screen.getByRole("button", { name: "Observe models" }) as HTMLButtonElement).closest("fieldset")?.disabled).toBe(true);
+ expect((screen.getByRole("button", { name: "Inspect observation" }) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(retry);
+ await waitFor(() => expect(value.getObservation).toHaveBeenCalledTimes(2));
+ expect(value.getObservation.mock.calls.every(([request]) => request.jobId === value.job.id)).toBe(true);
+ expect(value.discover).toHaveBeenCalledTimes(1);
 });
