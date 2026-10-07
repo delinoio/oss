@@ -21,22 +21,16 @@ function PayloadPage<Row extends PaginationRow, Payload>({ page, payload, query,
   useLocale();
   const element = useRef<HTMLDivElement>(null);
   const attemptedPosition = useRef<number | undefined>(undefined);
-  const previous = useRef<{ height: number; above: boolean } | undefined>(undefined);
   useLayoutEffect(() => {
     const node = element.current, container = resolveScrollRoot(root.current);
     if (!node || !container) return;
-    const bounds = container.getBoundingClientRect();
     if (payload) {
       const height = node.getBoundingClientRect().height;
-      // A restored page above the viewport must not move the visible anchor.
-      if (previous.current?.above) container.scrollTop += height - previous.current.height;
-      previous.current = undefined;
       query.measure(page.token, height);
       const resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => query.measure(page.token, node.getBoundingClientRect().height)) : undefined;
       resize?.observe(node);
       return () => resize?.disconnect();
     }
-    previous.current = { height: page.height ?? node.getBoundingClientRect().height, above: node.getBoundingClientRect().bottom <= bounds.top };
     if (!active || query.loading || query.error) return;
     const check = () => {
       if (document.visibilityState === "hidden" || container.clientHeight <= 0 || node.closest("[hidden], [inert], [aria-hidden='true']")) return;
@@ -54,7 +48,7 @@ function PayloadPage<Row extends PaginationRow, Payload>({ page, payload, query,
     check();
     return () => { observer?.disconnect(); container.removeEventListener("scroll", check); document.removeEventListener("visibilitychange", check); };
   }, [active, page.token, page.height, payload, query.loading, query.error, query.restore, query.measure, root]);
-  return <div ref={element} style={payload ? undefined : { minHeight: page.height ?? 48 }} data-payload-page onFocusCapture={() => query.protect?.(page.token)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}>
+  return <div ref={element} style={payload ? undefined : { minHeight: page.height ?? 48 }} data-payload-page={page.token} onFocusCapture={() => query.protect?.(page.token)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}>
     {payload ? children(payload, page.rows) : <button type="button" disabled={!active || Boolean(query.loading) || Boolean(query.error)} onClick={() => query.restore(page.token)}>{copy("pagination.restore")}</button>}
   </div>;
 }
@@ -69,10 +63,18 @@ export function ScrollPayloadWindow<Row extends PaginationRow, Payload>({ query,
 }) {
   // Capture focus before React mounts newly restored forms. Their existing
   // autoFocus behavior must not steal focus from a connected composer/control.
+  const container = typeof window === "undefined" ? null : resolveScrollRoot(root.current);
+  const bounds = container?.getBoundingClientRect();
+  const anchor = container && bounds ? [...container.querySelectorAll<HTMLElement>("[data-payload-page]")].find(node => node.getBoundingClientRect().bottom > bounds.top) : undefined;
+  const anchorToken = anchor?.getAttribute("data-payload-page"), anchorTop = anchor?.getBoundingClientRect().top;
   const priorFocus = typeof document === "undefined" ? null : document.activeElement;
   useLayoutEffect(() => {
+    if (container && anchorToken !== undefined && anchorToken !== null && anchorTop !== undefined) {
+      const retained = [...container.querySelectorAll<HTMLElement>("[data-payload-page]")].find(node => node.getAttribute("data-payload-page") === anchorToken);
+      if (retained) container.scrollTop += retained.getBoundingClientRect().top - anchorTop;
+    }
     if (priorFocus instanceof HTMLElement && priorFocus.isConnected && priorFocus !== document.body && document.activeElement !== priorFocus && document.activeElement?.closest("[data-payload-page]")) priorFocus.focus({ preventScroll: true });
-  }, [query.payloadPages]);
+  }, [query.payloadPages, query.pages]);
   const owners = new Map<string, string>();
   for (const page of query.pages) for (const row of page.rows) if (!owners.has(row.id)) owners.set(row.id, page.token);
   const newest = new Map<string, Payload>();

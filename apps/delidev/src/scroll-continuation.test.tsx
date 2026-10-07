@@ -5,7 +5,10 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ScrollContinuation } from "./scroll-continuation";
-import { usePaginationChain } from "./scroll-pagination-query";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { ResourceQuery, EntityKind } from "@delinoio/delidev-api-client";
+import { createRouterTransport } from "@connectrpc/connect";
+import { usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { type PaginationReader } from "./scroll-pagination";
 
 type Row = { id: string; revision: bigint };
@@ -69,4 +72,15 @@ it("suppresses automatic reads when inactive, document-hidden or under a closed 
   renderValue(<details><summary>Closed</summary><List read={read} /></details>);
   await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   await act(async () => { await Promise.resolve(); }); expect(read).toHaveBeenCalledTimes(1);
+});
+
+it("keeps identical refresh inputs isolated from an inactive mounted owner", async () => {
+  const client = new QueryClient(), active = vi.fn(), inactive = vi.fn();
+  function Marker({ enabled, refresh }: { enabled: boolean; refresh: () => void }) {
+    usePaginationRefresh(ResourceQuery.listResources, { filter: { kind: EntityKind.PROJECT, pageSize: 50 } }, enabled, refresh);
+    return null;
+  }
+  render(<TransportProvider transport={createRouterTransport(() => {})}><QueryClientProvider client={client}><Marker enabled={false} refresh={inactive} /><Marker enabled refresh={active} /></QueryClientProvider></TransportProvider>);
+  await act(() => client.invalidateQueries({ refetchType: "active" }));
+  expect(active).toHaveBeenCalledTimes(1); expect(inactive).not.toHaveBeenCalled();
 });

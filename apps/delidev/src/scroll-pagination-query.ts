@@ -3,7 +3,7 @@ import { type DescMessage, type DescMethodUnary, type MessageInitShape, type Mes
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
 import { QueryClientContext, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FailureCode, newRequestId } from "@delinoio/delidev-api-client";
-import { useContext, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+import { useContext, useId, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { PaginationChain, type PaginationBatch, type PaginationReader, type PaginationRow } from "./scroll-pagination";
 
 /** scopeKey contains stable connection/query/domain identity, never locale or
@@ -18,7 +18,7 @@ export function usePaginationChain<Row extends PaginationRow, Payload = never>(
   useLayoutEffect(() => {
     if (active) {
       chain.activate();
-      if (initialRead) void chain.refresh(reader);
+      if (initialRead || chain.getSnapshot().loaded) void chain.refresh(reader);
     }
     return () => chain.suspend();
   }, [chain, active, reader, initialRead]);
@@ -73,7 +73,10 @@ export function usePaginationRefresh<I extends DescMessage, O extends DescMessag
 ) {
   const transport = useTransport();
   const options = createQueryOptions(method, input, { transport });
-  useQuery({ queryKey: [...options.queryKey, { scrollPaginationRefresh: true }],
+  // Identical list inputs can belong to independent mounted owners; a hidden
+  // selector must never supply the active selector's invalidation callback.
+  const owner = useId();
+  useQuery({ queryKey: [...options.queryKey, { scrollPaginationRefresh: owner }],
     queryFn: async () => { refresh(); return null; }, initialData: null, enabled: active,
     refetchOnMount: false, refetchOnWindowFocus: false, refetchIntervalInBackground: false,
     refetchInterval: active ? interval : false, retry: false, staleTime: Infinity, gcTime: 0 });
