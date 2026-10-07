@@ -94,3 +94,16 @@ func TestUnavailableNativeOptionsIdentifyEveryRetainedSelection(t *testing.T) {
 		}
 	}
 }
+
+func TestUnavailableOptionDoesNotReplaceOriginalFormatValidation(t *testing.T) {
+	configuration := managedSubscriptionExecutionConfiguration(t, PermissionDefault)
+	configuration.Options.ApprovalReviewModel = "retained-reviewer"
+	configuration.ModelID = "invalid-model-reference"
+	if err := configuration.Validate(); err == nil || SafeError(err).Code != InvalidArgument {
+		t.Fatal("missing adapter displaced original reference validation", err)
+	}
+	configuration.ModelID = NewID()
+	if err := configuration.Validate(); err == nil || SafeError(err).Code != Unsupported || !strings.Contains(SafeError(err).Message, "approval_review_model") {
+		t.Fatal("well-formed retained selection lost its explicit adapter error", err)
+	}
+}

@@ -116,9 +116,6 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
-	if err := c.validateNativeOptions(); err != nil {
-		return err
-	}
 	if err := c.ValidateSidechat(); err != nil {
 		return err
 	}
@@ -156,7 +153,7 @@ func (c ExecutionConfiguration) Validate() error {
 	if resolved.Instructions != c.Instructions {
 		return Fail(RecoveryRequired, "Retained instructions do not match their ordered templates.", "Reconcile the immutable first-execution configuration.")
 	}
-	return nil
+	return c.validateNativeOptions()
 }
 
 type NativeReferenceKind string
