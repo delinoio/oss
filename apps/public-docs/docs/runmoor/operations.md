@@ -70,6 +70,10 @@ new running version and configuration acceptance. Keep state and managed data;
 never use an older binary with a newer database. The drained backup and rollback
 procedure below remains available.
 
+If another tool or a manual edit conflicts with publication of the updated
+service definition, Runmoor preserves that edit and reports a conflict before
+replacing the running service. Resolve the conflicting definitions before retrying.
+
 In this unreleased workflow, if Stop completed after an interrupted reload,
 wait for the reload command to finish and run `runmoor service start` with the
 same installed CLI and configuration. One Start resumes the verified inactive
