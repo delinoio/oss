@@ -2608,6 +2608,41 @@
         "request_id": 3,
         "replayed": 4
       }
+    },
+    "PublishSubscriptionProgressRequest": {
+      "kind": "message",
+      "members": {
+        "account_id": 1,
+        "lease_id": 2,
+        "machine_id": 3,
+        "instance_id": 4,
+        "url": 5,
+        "user_code": 6
+      }
+    },
+    "TakeSubscriptionResponse": {
+      "kind": "message",
+      "members": {
+        "lease_id": 1,
+        "generation_id": 2,
+        "bundle": 3,
+        "lease_revision": 4,
+        "installation_json": 5
+      }
+    },
+    "FinishSubscriptionRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1,
+        "lease_id": 2,
+        "machine_id": 3,
+        "instance_id": 4,
+        "generation_id": 5,
+        "bundle": 6,
+        "cleanup_confirmed": 7,
+        "refresh_confirmed": 8,
+        "succeeded": 9
+      }
     }
   },
   "reservations": [
@@ -6841,6 +6876,324 @@
       "declaration": "AttachWorkerRequest",
       "member": "protocol_version",
       "number": 10
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1",
+      "number": 38
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1",
+      "number": 20
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressResponse",
+      "member": "login_method",
+      "number": 8
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressResponse",
+      "member": "native_diagnostic",
+      "number": 9
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PublishSubscriptionProgressRequest",
+      "member": "state",
+      "number": 7
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PublishSubscriptionProgressRequest",
+      "member": "login_method",
+      "number": 8
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PublishSubscriptionProgressRequest",
+      "member": "native_diagnostic",
+      "number": 9
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "PublishSubscriptionProgressRequest",
+      "member": "suggested_name",
+      "number": 10
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "TakeSubscriptionResponse",
+      "member": "native_profile_id",
+      "number": 6
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "FinishSubscriptionRequest",
+      "member": "native_identity",
+      "number": 10
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginMethod",
+      "member": "SUBSCRIPTION_LOGIN_METHOD_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginMethod",
+      "member": "SUBSCRIPTION_LOGIN_METHOD_BROWSER_CALLBACK",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "SubscriptionLoginMethod",
+      "member": "SUBSCRIPTION_LOGIN_METHOD_BROWSER_CODE",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_DISCOVERY",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_VERSION",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_RUNTIME",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_LAUNCH",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_LOGIN",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_STATUS",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_EXECUTION",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_HISTORY",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "NativeSubscriptionDiagnosticPhase",
+      "member": "NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_CLEANUP",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "NativeSubscriptionDiagnostic",
+      "member": "detected_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "NativeSubscriptionDiagnostic",
+      "member": "required_version",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "NativeSubscriptionDiagnostic",
+      "member": "phase",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "NativeSubscriptionDiagnostic",
+      "member": "code",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "NativeSubscriptionDiagnostic",
+      "member": "correlation_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "NativeSubscriptionIdentity",
+      "member": "profile_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "NativeSubscriptionIdentity",
+      "member": "identity_commitment",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SubmitSubscriptionLoginCodeRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SubmitSubscriptionLoginCodeRequest",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SubmitSubscriptionLoginCodeRequest",
+      "member": "code",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "SubmitSubscriptionLoginCodeResponse",
+      "member": "accepted",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "TakeSubscriptionLoginCodeRequest",
+      "member": "account_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "TakeSubscriptionLoginCodeRequest",
+      "member": "lease_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "TakeSubscriptionLoginCodeRequest",
+      "member": "machine_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "TakeSubscriptionLoginCodeRequest",
+      "member": "instance_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "TakeSubscriptionLoginCodeRequest",
+      "member": "operation_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "TakeSubscriptionLoginCodeResponse",
+      "member": "code",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "TakeSubscriptionLoginCodeResponse",
+      "member": "submission_id",
+      "number": 2,
+      "newDeclaration": true
     }
   ]
 }

@@ -1,5 +1,32 @@
 # DeliDev v1 Connect contract
 
+## Native Claude subscription reservations
+
+Issue #964 reserves System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20`. Establish the complete closure in
+`allocations.json` on main before dependent implementation. Preserve every
+existing field, Codex bundle assignment and independent capability.
+
+Progress reserves login method/native diagnostic fields 8/9. Worker progress
+reserves state/login method/native diagnostic/suggested name fields 7–10;
+protected Take reserves native profile ID field 6; Finish reserves native
+identity field 10. `SubscriptionLoginMethod` reserves UNSPECIFIED 0,
+BROWSER_CALLBACK 1 and BROWSER_CODE 2. The native diagnostic phase enum reserves
+UNSPECIFIED 0 and discovery/version/runtime/launch/login/status/execution/history/
+cleanup values 1–9. Native diagnostic fields are detected version/required
+version/phase/code/correlation ID 1–5; native identity is profile ID/identity
+commitment 1–2. Code submission reserves mutation/operation ID/code 1–3 and
+accepted response field 1. Original Worker code Take reserves account/lease/
+machine/instance/operation IDs 1–5 and code/submission ID response fields 1–2.
+Wholly new declarations retain one owner and explicit `newDeclaration: true`.
+
+The planned owner/client code submission and original Worker code Take are
+single-use transient input to the original installed Claude process, never
+OAuth exchange or credential distribution. Native credentials remain owned by
+the account's selected Runner Device. This prerequisite adds no active schemas,
+generated bindings, advertisement, login, execution or browser authority and no
+database migration. Follow the subscription and structure contracts.
+
 ## Agent Worker source-route reservations
 
 Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
