@@ -1391,3 +1391,23 @@ it("language changes keep an uncertain conversation operation and never replay i
   expect(value.controls).not.toHaveBeenCalled(); expect(value.creates).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: /같은 메시지/ })).toBeTruthy();
 }, fullShellTimeoutMs);
+
+it("retains one original Runner inspection draft through same-identity connection readiness changes", async () => {
+  const value = fixture();
+  value.machine.documentJson = encode({ name: "Worker One", disabled: false, installations: [{ harness: "claude-code", state: "missing", explicit_path: "" }] });
+  const device = newRequestId(), authority = { endpoint: "http://127.0.0.1:46310", serverId: newRequestId() };
+  const view = (ready: boolean) => <App transport={value.transport} currentDeviceId={device} pairingAuthority={authority} connectionReady={ready} />;
+  const mounted = render(view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Runner Devices" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Inspect installed harnesses" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit executable paths" }));
+  const path = screen.getByLabelText("claude-code executable path");
+  fireEvent.change(path, { target: { value: "/chosen/unchanged-claude" } });
+  mounted.rerender(view(false));
+  expect(screen.getByLabelText("claude-code executable path")).toBe(path);
+  expect(path).toHaveProperty("value", "/chosen/unchanged-claude");
+  mounted.rerender(view(true));
+  expect(screen.getByLabelText("claude-code executable path")).toBe(path);
+  expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
