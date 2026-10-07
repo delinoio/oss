@@ -6,9 +6,9 @@ import { ItemKind, QueryOperation, type GitHubQuery } from "./github-query-model
 import { LocalizedText, copy, useLocale } from "./localization";
 import "./pr-list-cards.css";
 
-export function PRListHeader({ selected, pending, reading, refresh }: { selected: Resource; pending?: ReactNode; reading: boolean; refresh: () => void }) {
+export function PRListHeader({ selected, pending, reading, reloadRequired = false, refresh }: { selected: Resource; pending?: ReactNode; reading: boolean; reloadRequired?: boolean; refresh: () => void }) {
   useLocale();
-  return <><header className="pr-list-header"><div><h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2><p>{resourceName(selected)}</p></div><button type="button" disabled={reading} onClick={refresh}>{copy("github-items.refreshGithubResults_bd77c0")}</button></header>{pending}</>;
+  return <><header className="pr-list-header"><div><h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2><p>{resourceName(selected)}</p></div><button type="button" disabled={reading || reloadRequired} onClick={refresh}>{copy("github-items.refreshGithubResults_bd77c0")}</button></header>{pending}</>;
 }
 
 // Only validated standalone list/search pages use cards. The server's original
