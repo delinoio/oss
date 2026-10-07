@@ -946,7 +946,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .integration-token-guidance summary { cursor: pointer; color: var(--text); font-weight: 500; }
 .integration-token-guidance section { margin-top: 14px; }
 .integration-token-guidance section p:last-child { margin-bottom: 0; }
-.github-integrations button.primary:disabled { color: var(--muted); background: var(--surface-inset); border-color: var(--on-inverse-muted); opacity: 1; }
+.github-integrations button.primary[disabled] { color: var(--muted); background: var(--surface-inset); border-color: var(--on-inverse-muted); opacity: 1; }
 .github-integrations button.integration-danger { color: var(--danger-text); border-color: var(--danger-border); }
 .github-integrations button.integration-danger:hover { background: var(--danger-background); }
 @media (max-width: 1099px) {
