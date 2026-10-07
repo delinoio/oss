@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { LocalizedText, copy, displayLocale, formatDecimal, formatNumber, formatTimestamp, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { apiFormat, apiFormatLabels, supportsResourceSchema, AccountingUnitKind, UsageAccountingProfile, UsageCostState, UsageQuery, newRequestId, type GetUsageSummaryResponse, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
@@ -49,7 +49,8 @@ function Quota({ window, now, compact = false }: { window: SubscriptionQuotaWind
   const value = quotaPresentation(window, now);
   return <div className="api-quota-window"><small>{window.id || copy("api-entry-row.extra.aae8d5aad61f")}</small><strong>{value.percent === undefined ? copy("api-entry-row.notReported_adadfa") : copy("api-entry-row.remaining_fe6b6b", { v0: value.percent })}</strong>{value.percent !== undefined ? <progress value={value.percent} max={100} aria-label={copy("api-entry-row.remaining_f33475", { v0: window.id || copy("api-entry-row.extra.aae8d5aad61f") })} /> : null}<small>{value.state === QuotaObservationState.Observed ? copy("api-entry-row.observed_64fa8a") : value.state === QuotaObservationState.Failed ? copy("api-entry-row.observationFailed_d2fffd") : value.state === QuotaObservationState.Stale ? copy("api-entry-row.staleObservation_ce693c") : value.state === QuotaObservationState.Unsupported ? copy("api-entry-row.unsupported_543246") : copy("api-entry-row.unknown_b764cd")}</small>{!compact && window.observedAt ? <small><LocalizedText id="api-entry-row.observed_e8e2c1" components={{ s0: <time dateTime={window.observedAt}>{formatTimestamp(window.observedAt)}</time> }} /></small> : null}{!compact && window.resetAt ? <small><LocalizedText id="api-entry-row.resets_8693d0" components={{ s0: <time dateTime={window.resetAt}>{formatTimestamp(window.resetAt)}</time> }} /></small> : null}</div>;
 }
-export function ApiEntryRow({ row, provider, active, manage, edit, remove, openUsage }: {
+export function ApiEntryRow({ row, provider, active, manage, edit, remove, openUsage, storage }: {
+  storage?: ReactNode;
   row: Resource; provider?: { displayName: string; enabled: boolean; protocol?: string }; active: boolean;
   manage: () => void; edit: () => void; remove: () => void; openUsage?: (entry: UsageEntry) => void;
 }) {
@@ -88,6 +89,7 @@ export function ApiEntryRow({ row, provider, active, manage, edit, remove, openU
         {menu ? <div id={menuId} className="api-entry-more-panel" role="group" aria-label={copy("api-entry-row.actionsFor_b59837", { v0: name })} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><button type="button" onClick={() => { closeMenu(); edit(); }}>{copy("api-entry-row.editPreferences_00b4cc")}</button><button className="api-entry-delete" type="button" onClick={() => { closeMenu(); remove(); }}>{copy("api-entry-row.deleteEntry_d2968b")}</button></div> : null}
       </div></div>
     </div>
+    {storage}
     <div className="api-entry-usage-status">
       {result.isFetching ? <p role="status">{result.data ? copy("api-entry-row.refreshingUsage_70313a") : copy("api-entry-row.loadingUsage_0134e9")}</p> : null}
       <Problem error={result.error} />{result.error ? <><p role="status">{result.data ? copy("api-entry-row.refreshFailedShowingStaleUsageFrom_b5be80") : copy("api-entry-row.usageIsUnavailableEntryControlsRemain_755eaf")}</p><button type="button" disabled={!active || result.isFetching} onClick={() => void result.refetch()}><LocalizedText id="api-entry-row.retryUsageFor_40ac3c" components={{ s0: <>{name}</> }} /></button></> : null}

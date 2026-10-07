@@ -1,5 +1,18 @@
 # DeliDev native API relay contract
 
+## Original API format authority
+
+Capability 9 account changes do not alter a registered original execution scope.
+Resolve its immutable connection ID against retained server-owned generations,
+then resolve the selected immutable Provider profile and original protected key
+reference. Current-format validation cannot grant or revoke old-format validation;
+shared account disablement, exhaustion and explicit all-generation Disconnect keep
+their original revocation authority. Original streaming and subsequent requests
+remain bound to the original endpoint, authentication and protocol. No key enters
+Worker environments or client account responses. See the
+[account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
 ## Account-selected API profile authority
 
 Every API execution admission and proxy scope uses the common server account

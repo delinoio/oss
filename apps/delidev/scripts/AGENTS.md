@@ -1,3 +1,5 @@
+- `test-account-format-layout.mjs` validates the synthetic capability-9 edit dialog at wide/narrow viewports, native labeled select, Provider lock, key absence, footer/body scrolling and keyboard focus/closure. Keep screenshots outside the checkout and native-select keystroke/native/account acceptance limits explicit.
+
 - `test-subscription-cleanup-layout.mjs` validates the synthetic Settings fixture in English/Korean, light/dark and wide/narrow layouts with keyboard activation and focus preservation. Keep outputs outside the checkout and separate browser fixture evidence from native/account acceptance.
 
 # DeliDev scripts ownership
@@ -72,3 +74,4 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `test-repository-dialog-layout.mjs` covers the GitHub chooser above the retained 640px Add repository task using synthetic revision-bound GitHub replies. Preserve English/Korean, light/dark, four viewports and effective 200% checks, parent inertness, child-only Escape/X/Cancel, independent body scrolling, opener focus and draft/selection retention. Nonmodal sidebar regions do not count as open modals. Keep fixture screenshots and native CEF acceptance separate.
 
 - `test-routing-preview-layout.mjs` validates the opt-in `routingFixture` Settings inventory with host-supplied Playwright. Cover English/Korean, light/dark, contracted viewports and effective 200% layouts, alias/source labels, selected/multi-source/empty/error results, full-ID disclosures, fixed actions, keyboard containment and opener restoration. `DELIDEV_ROUTING_SCREENSHOTS=1` saves synthetic screenshots in a separate host temporary directory; dispose bundles/browser/server and report packaged CEF/native acceptance separately.
+- `test-account-storage-layout.mjs` validates row-local storage notices and Doctor category navigation using `accountStorage=true` in the existing synthetic Settings fixture. Keep English/Korean, light/dark, 960×640 and effective 200% reflow, keyboard disclosure/focus, static CSP and category disposal checks. Build and screenshots stay outside the checkout; never read native credentials or claim packaged CEF/native acceptance.

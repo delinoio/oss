@@ -19,6 +19,7 @@ type apiCredential struct {
 // binds the exact current account/connection/provider before protected access.
 // HTTP never holds accountGate; one original refresh claim survives restarts.
 func (s *Service) resolveAPICredential(ctx context.Context, account, connection, providerID domain.ID) (apiCredential, error) {
+	requestedConnection := connection
 	for {
 		unlock, err := s.lockAccounts(ctx)
 		if err != nil {
@@ -36,7 +37,8 @@ func (s *Service) resolveAPICredential(ctx context.Context, account, connection,
 			if e != nil {
 				return e
 			}
-			if a.Type != domain.APIAccount || a.Connection == nil || a.Removal != nil || a.Connection.ID != connection || a.ProviderID != providerID {
+			a = a.ForConnection(requestedConnection)
+			if a.Type != domain.APIAccount || a.Connection == nil || a.Removal != nil || a.Connection.ID != requestedConnection || a.ProviderID != providerID {
 				return domain.Fail(domain.PermissionDenied, "The original account connection is no longer active.", "Use its current explicit connection.")
 			}
 			row, e = tx.Get(domain.ProviderKind, providerID)
@@ -47,6 +49,7 @@ func (s *Service) resolveAPICredential(ctx context.Context, account, connection,
 			if e != nil {
 				return e
 			}
+			connection = a.Connection.CredentialReferenceID()
 			metadata, oauth, e = tx.AccountOAuthCredential(account, connection)
 			return e
 		})
@@ -183,7 +186,8 @@ func (s *Service) resolveAPICredential(ctx context.Context, account, connection,
 			if e != nil {
 				return e
 			}
-			if a.Connection == nil || a.Connection.ID != connection || a.Removal != nil || a.ProviderID != providerID {
+			a = a.ForConnection(requestedConnection)
+			if a.Connection == nil || a.Connection.CredentialReferenceID() != connection || a.Removal != nil || a.ProviderID != providerID {
 				return oauthCredentialProblem()
 			}
 			row, e = tx.Get(domain.ProviderKind, providerID)

@@ -135,6 +135,41 @@ func TestDoctorInspectsExactReferencesWithoutMutationOrSecretLeak(t *testing.T) 
 		t.Fatal("doctor initialized protected state")
 	}
 }
+
+func TestDoctorInspectsRetainedOAuthCredentialReference(t *testing.T) {
+	s, secrets := newDoctorFixture(t)
+	id, account := doctorAccount(t, s, domain.APIAccount, domain.BearerAuth, true)
+	original := *account.Connection
+	profile := domain.ProviderAPIFormat{Protocol: domain.OpenAIResponses, Endpoint: "https://api.openai.com/v1", Authentication: domain.BearerAuth}
+	original.APIFormat = &profile
+	original.ConnectedAt = time.Now().UTC()
+	account.APIProtocol = domain.OpenAIResponses
+	account.Health = domain.AccountUnverified
+	account.Connection = &domain.AccountConnection{ID: domain.NewID(), CredentialID: original.ID, Authentication: domain.BearerAuth, ConnectedAt: time.Now().UTC(), APIFormat: &profile}
+	account.RetainedConnections = []domain.AccountConnectionGeneration{{Connection: original, Health: domain.AccountUnverified}}
+	if err := account.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	doctorPut(t, s, domain.AccountKind, id, 1, account)
+
+	tokenID := domain.NewID()
+	metadata := domain.AccountOAuthCredential{AccountID: id, ConnectionID: original.ID, ProviderID: account.ProviderID, Preset: domain.PresetHuggingFace, Revision: 1, TokenID: tokenID, ExpiresAt: time.Now().UTC().Add(time.Hour), ClientDigest: strings.Repeat("0", 64), RefreshState: domain.OAuthRefreshIdle}
+	if _, err := s.Store.Mutate(context.Background(), domain.NewID(), "doctor.oauth-fixture", id, func(tx *store.Tx) (any, error) {
+		return nil, tx.PutAccountOAuthCredential(metadata, 0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	secrets.values[credentials.Ref{Owner: id, ID: tokenID, Purpose: credentials.AccountAPI}] = []byte("fixture-retained-oauth-token")
+
+	result, err := s.doctorCredential(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ConnectionID != account.Connection.ID || result.Result.State != domain.DiagnosticObserved || len(secrets.refs) != 1 || secrets.refs[0].ID != tokenID {
+		t.Fatalf("doctor did not inspect the retained OAuth reference for the current connection: result=%+v refs=%+v", result, secrets.refs)
+	}
+}
+
 func TestDoctorPreservesSupersededConnectionsAndRedactsNativeFailures(t *testing.T) {
 	s, secrets := newDoctorFixture(t)
 	id, account := doctorAccount(t, s, domain.APIAccount, domain.BearerAuth, true)

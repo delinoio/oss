@@ -1,5 +1,19 @@
 # DeliDev session acceptance and input queue contract
 
+## API format generations
+
+Capability 9 changes only the current account generation for new sessions. All
+original execution authorization and continuation resolve the immutable assignment's
+connection ID, including proxy requests, subsequent tools, Resume, Fork, Sidechat,
+compaction, title and auxiliary execution. Retained profile/health/validation supply
+original admission evidence; current account enablement, quota/exhaustion, cleanup,
+Worker existence, session restrictions and budget still apply. Changing or validating
+a new format cannot replace original history or interrupt a valid original stream.
+New routing requires current-format validation and Worker compatibility. Incompatible
+Workers are marked for explicit reconfiguration without changing accepted executions.
+Follow the [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
 ## Direct execution startup
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) replaces mandatory installation/protocol inspection for negotiated v4 execution jobs. First, continued and scheduled execution retain the same atomic input, configuration, account routing, leases, budget and Worker authority. The actual process must publish readiness before its API relay can infer. A failed attempt with positive no-send and original cleanup proof keeps its rejected input and immutable assignment; explicit revision-checked Resume creates a distinct same-selection attempt. Uncertain input or cleanup retains original recovery. A retried first execution has a separate native root ID without rewriting the initial selection; continuation and title attribution use that successful original lineage.

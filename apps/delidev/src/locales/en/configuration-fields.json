@@ -170,6 +170,8 @@
   "configuration-fields.choices.connectionRetrying": "The server connection failed while loading these choices; retrying.",
   "configuration-fields.choices.request": "The latest request for these choices failed.",
   "configuration-fields.choices.requestRetrying": "The latest request for these choices failed; retrying.",
+  "configuration-fields.accountFormatKeepsKey": "Your saved API key is kept. The new format applies to future executions.",
+  "configuration-fields.accountFormatFutureExecutions": "Running executions keep their original format. Validate the new format before starting new executions.",
   "configuration-fields.nativeOptionUnavailable": "This execution interface has no corresponding setting. Saved values are retained until you explicitly clear them.",
   "configuration-fields.clearRetainedNativeOption": "Clear retained option",
   "configuration-fields.nativePermissionUnavailable": "This tool uses its native permissions. Codex filesystem sandbox modes have no corresponding setting in this execution interface."

@@ -67,14 +67,15 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 6 {
+	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 7 {
 		t.Fatalf("fresh inventory was not capability-complete: %+v", initial.Msg)
 	}
-	accountTypeFilterAdvertised := false
+	accountTypeFilterAdvertised, formatChangeAdvertised := false, false
 	for _, capability := range initial.Msg.Capabilities {
 		accountTypeFilterAdvertised = accountTypeFilterAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER
+		formatChangeAdvertised = formatChangeAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1
 	}
-	if !accountTypeFilterAdvertised {
+	if !accountTypeFilterAdvertised || !formatChangeAdvertised {
 		t.Fatalf("fresh inventory omitted account-type filtering capability: %+v", initial.Msg.Capabilities)
 	}
 	for _, entry := range initial.Msg.Entries {

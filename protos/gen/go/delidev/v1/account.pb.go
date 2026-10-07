@@ -1223,6 +1223,151 @@ func (x *GetAccountOAuthStatusResponse) GetReplayed() bool {
 	return false
 }
 
+// Changes future execution format without replacing the protected credential.
+type ChangeAccountApiFormatRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Mutation              *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	ApiProtocol           ApiProtocol            `protobuf:"varint,2,opt,name=api_protocol,json=apiProtocol,proto3,enum=delidev.v1.ApiProtocol" json:"api_protocol,omitempty"`
+	Alias                 string                 `protobuf:"bytes,3,opt,name=alias,proto3" json:"alias,omitempty"`
+	Enabled               bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ExcludeAutomatic      bool                   `protobuf:"varint,5,opt,name=exclude_automatic,json=excludeAutomatic,proto3" json:"exclude_automatic,omitempty"`
+	RecoveryNotifications bool                   `protobuf:"varint,6,opt,name=recovery_notifications,json=recoveryNotifications,proto3" json:"recovery_notifications,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ChangeAccountApiFormatRequest) Reset() {
+	*x = ChangeAccountApiFormatRequest{}
+	mi := &file_delidev_v1_account_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeAccountApiFormatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeAccountApiFormatRequest) ProtoMessage() {}
+
+func (x *ChangeAccountApiFormatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_account_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeAccountApiFormatRequest.ProtoReflect.Descriptor instead.
+func (*ChangeAccountApiFormatRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ChangeAccountApiFormatRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *ChangeAccountApiFormatRequest) GetApiProtocol() ApiProtocol {
+	if x != nil {
+		return x.ApiProtocol
+	}
+	return ApiProtocol_API_PROTOCOL_UNSPECIFIED
+}
+
+func (x *ChangeAccountApiFormatRequest) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+func (x *ChangeAccountApiFormatRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *ChangeAccountApiFormatRequest) GetExcludeAutomatic() bool {
+	if x != nil {
+		return x.ExcludeAutomatic
+	}
+	return false
+}
+
+func (x *ChangeAccountApiFormatRequest) GetRecoveryNotifications() bool {
+	if x != nil {
+		return x.RecoveryNotifications
+	}
+	return false
+}
+
+type ChangeAccountApiFormatResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeAccountApiFormatResponse) Reset() {
+	*x = ChangeAccountApiFormatResponse{}
+	mi := &file_delidev_v1_account_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeAccountApiFormatResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeAccountApiFormatResponse) ProtoMessage() {}
+
+func (x *ChangeAccountApiFormatResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_account_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeAccountApiFormatResponse.ProtoReflect.Descriptor instead.
+func (*ChangeAccountApiFormatResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ChangeAccountApiFormatResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *ChangeAccountApiFormatResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ChangeAccountApiFormatResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 var File_delidev_v1_account_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_account_proto_rawDesc = "" +
@@ -1307,7 +1452,19 @@ const file_delidev_v1_account_proto_rawDesc = "" +
 	"\aaccount\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x04 \x01(\bR\breplayed*r\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed\"\xa1\x02\n" +
+	"\x1dChangeAccountApiFormatRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12:\n" +
+	"\fapi_protocol\x18\x02 \x01(\x0e2\x17.delidev.v1.ApiProtocolR\vapiProtocol\x12\x14\n" +
+	"\x05alias\x18\x03 \x01(\tR\x05alias\x12\x18\n" +
+	"\aenabled\x18\x04 \x01(\bR\aenabled\x12+\n" +
+	"\x11exclude_automatic\x18\x05 \x01(\bR\x10excludeAutomatic\x125\n" +
+	"\x16recovery_notifications\x18\x06 \x01(\bR\x15recoveryNotifications\"\x8b\x01\n" +
+	"\x1eChangeAccountApiFormatResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed*r\n" +
 	"\x10AccountOAuthFlow\x12\"\n" +
 	"\x1eACCOUNT_OAUTH_FLOW_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17ACCOUNT_OAUTH_FLOW_PKCE\x10\x01\x12\x1d\n" +
@@ -1322,8 +1479,9 @@ const file_delidev_v1_account_proto_rawDesc = "" +
 	"\x1bACCOUNT_OAUTH_STATE_EXPIRED\x10\x06\x12\x1e\n" +
 	"\x1aACCOUNT_OAUTH_STATE_FAILED\x10\a\x12#\n" +
 	"\x1fACCOUNT_OAUTH_STATE_INTERRUPTED\x10\b\x12)\n" +
-	"%ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED\x10\t2\xa6\x06\n" +
-	"\x0eAccountService\x12W\n" +
+	"%ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED\x10\t2\x97\a\n" +
+	"\x0eAccountService\x12o\n" +
+	"\x16ChangeAccountApiFormat\x12).delidev.v1.ChangeAccountApiFormatRequest\x1a*.delidev.v1.ChangeAccountApiFormatResponse\x12W\n" +
 	"\x0eConnectAccount\x12!.delidev.v1.ConnectAccountRequest\x1a\".delidev.v1.ConnectAccountResponse\x12`\n" +
 	"\x11DisconnectAccount\x12$.delidev.v1.DisconnectAccountRequest\x1a%.delidev.v1.DisconnectAccountResponse\x12]\n" +
 	"\x10GetAccountStatus\x12#.delidev.v1.GetAccountStatusRequest\x1a$.delidev.v1.GetAccountStatusResponse\x12Z\n" +
@@ -1346,75 +1504,83 @@ func file_delidev_v1_account_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_delidev_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_delidev_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_delidev_v1_account_proto_goTypes = []any{
-	(AccountOAuthFlow)(0),                 // 0: delidev.v1.AccountOAuthFlow
-	(AccountOAuthState)(0),                // 1: delidev.v1.AccountOAuthState
-	(*ConnectAccountRequest)(nil),         // 2: delidev.v1.ConnectAccountRequest
-	(*ConnectAccountResponse)(nil),        // 3: delidev.v1.ConnectAccountResponse
-	(*DisconnectAccountRequest)(nil),      // 4: delidev.v1.DisconnectAccountRequest
-	(*DisconnectAccountResponse)(nil),     // 5: delidev.v1.DisconnectAccountResponse
-	(*GetAccountStatusRequest)(nil),       // 6: delidev.v1.GetAccountStatusRequest
-	(*GetAccountStatusResponse)(nil),      // 7: delidev.v1.GetAccountStatusResponse
-	(*ValidateAccountRequest)(nil),        // 8: delidev.v1.ValidateAccountRequest
-	(*ValidateAccountResponse)(nil),       // 9: delidev.v1.ValidateAccountResponse
-	(*AccountOAuthAttempt)(nil),           // 10: delidev.v1.AccountOAuthAttempt
-	(*StartAccountOAuthRequest)(nil),      // 11: delidev.v1.StartAccountOAuthRequest
-	(*StartAccountOAuthResponse)(nil),     // 12: delidev.v1.StartAccountOAuthResponse
-	(*CompleteAccountOAuthRequest)(nil),   // 13: delidev.v1.CompleteAccountOAuthRequest
-	(*AccountOAuthGoogleOptions)(nil),     // 14: delidev.v1.AccountOAuthGoogleOptions
-	(*CancelAccountOAuthRequest)(nil),     // 15: delidev.v1.CancelAccountOAuthRequest
-	(*GetAccountOAuthStatusRequest)(nil),  // 16: delidev.v1.GetAccountOAuthStatusRequest
-	(*CompleteAccountOAuthResponse)(nil),  // 17: delidev.v1.CompleteAccountOAuthResponse
-	(*CancelAccountOAuthResponse)(nil),    // 18: delidev.v1.CancelAccountOAuthResponse
-	(*GetAccountOAuthStatusResponse)(nil), // 19: delidev.v1.GetAccountOAuthStatusResponse
-	(*Mutation)(nil),                      // 20: delidev.v1.Mutation
-	(*Resource)(nil),                      // 21: delidev.v1.Resource
-	(*ErrorDetail)(nil),                   // 22: delidev.v1.ErrorDetail
+	(AccountOAuthFlow)(0),                  // 0: delidev.v1.AccountOAuthFlow
+	(AccountOAuthState)(0),                 // 1: delidev.v1.AccountOAuthState
+	(*ConnectAccountRequest)(nil),          // 2: delidev.v1.ConnectAccountRequest
+	(*ConnectAccountResponse)(nil),         // 3: delidev.v1.ConnectAccountResponse
+	(*DisconnectAccountRequest)(nil),       // 4: delidev.v1.DisconnectAccountRequest
+	(*DisconnectAccountResponse)(nil),      // 5: delidev.v1.DisconnectAccountResponse
+	(*GetAccountStatusRequest)(nil),        // 6: delidev.v1.GetAccountStatusRequest
+	(*GetAccountStatusResponse)(nil),       // 7: delidev.v1.GetAccountStatusResponse
+	(*ValidateAccountRequest)(nil),         // 8: delidev.v1.ValidateAccountRequest
+	(*ValidateAccountResponse)(nil),        // 9: delidev.v1.ValidateAccountResponse
+	(*AccountOAuthAttempt)(nil),            // 10: delidev.v1.AccountOAuthAttempt
+	(*StartAccountOAuthRequest)(nil),       // 11: delidev.v1.StartAccountOAuthRequest
+	(*StartAccountOAuthResponse)(nil),      // 12: delidev.v1.StartAccountOAuthResponse
+	(*CompleteAccountOAuthRequest)(nil),    // 13: delidev.v1.CompleteAccountOAuthRequest
+	(*AccountOAuthGoogleOptions)(nil),      // 14: delidev.v1.AccountOAuthGoogleOptions
+	(*CancelAccountOAuthRequest)(nil),      // 15: delidev.v1.CancelAccountOAuthRequest
+	(*GetAccountOAuthStatusRequest)(nil),   // 16: delidev.v1.GetAccountOAuthStatusRequest
+	(*CompleteAccountOAuthResponse)(nil),   // 17: delidev.v1.CompleteAccountOAuthResponse
+	(*CancelAccountOAuthResponse)(nil),     // 18: delidev.v1.CancelAccountOAuthResponse
+	(*GetAccountOAuthStatusResponse)(nil),  // 19: delidev.v1.GetAccountOAuthStatusResponse
+	(*ChangeAccountApiFormatRequest)(nil),  // 20: delidev.v1.ChangeAccountApiFormatRequest
+	(*ChangeAccountApiFormatResponse)(nil), // 21: delidev.v1.ChangeAccountApiFormatResponse
+	(*Mutation)(nil),                       // 22: delidev.v1.Mutation
+	(*Resource)(nil),                       // 23: delidev.v1.Resource
+	(*ErrorDetail)(nil),                    // 24: delidev.v1.ErrorDetail
+	(ApiProtocol)(0),                       // 25: delidev.v1.ApiProtocol
 }
 var file_delidev_v1_account_proto_depIdxs = []int32{
-	20, // 0: delidev.v1.ConnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	21, // 1: delidev.v1.ConnectAccountResponse.account:type_name -> delidev.v1.Resource
-	20, // 2: delidev.v1.DisconnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	21, // 3: delidev.v1.DisconnectAccountResponse.account:type_name -> delidev.v1.Resource
-	21, // 4: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
-	20, // 5: delidev.v1.ValidateAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	21, // 6: delidev.v1.ValidateAccountResponse.account:type_name -> delidev.v1.Resource
+	22, // 0: delidev.v1.ConnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	23, // 1: delidev.v1.ConnectAccountResponse.account:type_name -> delidev.v1.Resource
+	22, // 2: delidev.v1.DisconnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	23, // 3: delidev.v1.DisconnectAccountResponse.account:type_name -> delidev.v1.Resource
+	23, // 4: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
+	22, // 5: delidev.v1.ValidateAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	23, // 6: delidev.v1.ValidateAccountResponse.account:type_name -> delidev.v1.Resource
 	1,  // 7: delidev.v1.AccountOAuthAttempt.state:type_name -> delidev.v1.AccountOAuthState
-	22, // 8: delidev.v1.AccountOAuthAttempt.problem:type_name -> delidev.v1.ErrorDetail
-	20, // 9: delidev.v1.StartAccountOAuthRequest.provider:type_name -> delidev.v1.Mutation
+	24, // 8: delidev.v1.AccountOAuthAttempt.problem:type_name -> delidev.v1.ErrorDetail
+	22, // 9: delidev.v1.StartAccountOAuthRequest.provider:type_name -> delidev.v1.Mutation
 	14, // 10: delidev.v1.StartAccountOAuthRequest.google:type_name -> delidev.v1.AccountOAuthGoogleOptions
 	10, // 11: delidev.v1.StartAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
 	0,  // 12: delidev.v1.StartAccountOAuthResponse.flow:type_name -> delidev.v1.AccountOAuthFlow
-	20, // 13: delidev.v1.CompleteAccountOAuthRequest.mutation:type_name -> delidev.v1.Mutation
-	20, // 14: delidev.v1.CancelAccountOAuthRequest.mutation:type_name -> delidev.v1.Mutation
+	22, // 13: delidev.v1.CompleteAccountOAuthRequest.mutation:type_name -> delidev.v1.Mutation
+	22, // 14: delidev.v1.CancelAccountOAuthRequest.mutation:type_name -> delidev.v1.Mutation
 	10, // 15: delidev.v1.CompleteAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
-	21, // 16: delidev.v1.CompleteAccountOAuthResponse.account:type_name -> delidev.v1.Resource
+	23, // 16: delidev.v1.CompleteAccountOAuthResponse.account:type_name -> delidev.v1.Resource
 	10, // 17: delidev.v1.CancelAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
-	21, // 18: delidev.v1.CancelAccountOAuthResponse.account:type_name -> delidev.v1.Resource
+	23, // 18: delidev.v1.CancelAccountOAuthResponse.account:type_name -> delidev.v1.Resource
 	10, // 19: delidev.v1.GetAccountOAuthStatusResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
-	21, // 20: delidev.v1.GetAccountOAuthStatusResponse.account:type_name -> delidev.v1.Resource
-	2,  // 21: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
-	4,  // 22: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
-	6,  // 23: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
-	8,  // 24: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
-	11, // 25: delidev.v1.AccountService.StartAccountOAuth:input_type -> delidev.v1.StartAccountOAuthRequest
-	13, // 26: delidev.v1.AccountService.CompleteAccountOAuth:input_type -> delidev.v1.CompleteAccountOAuthRequest
-	15, // 27: delidev.v1.AccountService.CancelAccountOAuth:input_type -> delidev.v1.CancelAccountOAuthRequest
-	16, // 28: delidev.v1.AccountService.GetAccountOAuthStatus:input_type -> delidev.v1.GetAccountOAuthStatusRequest
-	3,  // 29: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
-	5,  // 30: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
-	7,  // 31: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
-	9,  // 32: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
-	12, // 33: delidev.v1.AccountService.StartAccountOAuth:output_type -> delidev.v1.StartAccountOAuthResponse
-	17, // 34: delidev.v1.AccountService.CompleteAccountOAuth:output_type -> delidev.v1.CompleteAccountOAuthResponse
-	18, // 35: delidev.v1.AccountService.CancelAccountOAuth:output_type -> delidev.v1.CancelAccountOAuthResponse
-	19, // 36: delidev.v1.AccountService.GetAccountOAuthStatus:output_type -> delidev.v1.GetAccountOAuthStatusResponse
-	29, // [29:37] is the sub-list for method output_type
-	21, // [21:29] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	23, // 20: delidev.v1.GetAccountOAuthStatusResponse.account:type_name -> delidev.v1.Resource
+	22, // 21: delidev.v1.ChangeAccountApiFormatRequest.mutation:type_name -> delidev.v1.Mutation
+	25, // 22: delidev.v1.ChangeAccountApiFormatRequest.api_protocol:type_name -> delidev.v1.ApiProtocol
+	23, // 23: delidev.v1.ChangeAccountApiFormatResponse.account:type_name -> delidev.v1.Resource
+	20, // 24: delidev.v1.AccountService.ChangeAccountApiFormat:input_type -> delidev.v1.ChangeAccountApiFormatRequest
+	2,  // 25: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
+	4,  // 26: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
+	6,  // 27: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
+	8,  // 28: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
+	11, // 29: delidev.v1.AccountService.StartAccountOAuth:input_type -> delidev.v1.StartAccountOAuthRequest
+	13, // 30: delidev.v1.AccountService.CompleteAccountOAuth:input_type -> delidev.v1.CompleteAccountOAuthRequest
+	15, // 31: delidev.v1.AccountService.CancelAccountOAuth:input_type -> delidev.v1.CancelAccountOAuthRequest
+	16, // 32: delidev.v1.AccountService.GetAccountOAuthStatus:input_type -> delidev.v1.GetAccountOAuthStatusRequest
+	21, // 33: delidev.v1.AccountService.ChangeAccountApiFormat:output_type -> delidev.v1.ChangeAccountApiFormatResponse
+	3,  // 34: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
+	5,  // 35: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
+	7,  // 36: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
+	9,  // 37: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
+	12, // 38: delidev.v1.AccountService.StartAccountOAuth:output_type -> delidev.v1.StartAccountOAuthResponse
+	17, // 39: delidev.v1.AccountService.CompleteAccountOAuth:output_type -> delidev.v1.CompleteAccountOAuthResponse
+	18, // 40: delidev.v1.AccountService.CancelAccountOAuth:output_type -> delidev.v1.CancelAccountOAuthResponse
+	19, // 41: delidev.v1.AccountService.GetAccountOAuthStatus:output_type -> delidev.v1.GetAccountOAuthStatusResponse
+	33, // [33:42] is the sub-list for method output_type
+	24, // [24:33] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_account_proto_init() }
@@ -1430,7 +1596,7 @@ func file_delidev_v1_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_account_proto_rawDesc), len(file_delidev_v1_account_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   18,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

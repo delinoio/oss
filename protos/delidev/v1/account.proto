@@ -8,6 +8,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 
 // Write-only account credentials. Workers cannot invoke this owner/client API.
 service AccountService {
+  rpc ChangeAccountApiFormat(ChangeAccountApiFormatRequest) returns (ChangeAccountApiFormatResponse);
   rpc ConnectAccount(ConnectAccountRequest) returns (ConnectAccountResponse);
   rpc DisconnectAccount(DisconnectAccountRequest) returns (DisconnectAccountResponse);
   rpc GetAccountStatus(GetAccountStatusRequest) returns (GetAccountStatusResponse);
@@ -156,4 +157,20 @@ enum AccountOAuthState {
   ACCOUNT_OAUTH_STATE_INTERRUPTED = 8;
   // buf:lint:ignore ENUM_VALUE_PREFIX
   ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED = 9;
+}
+
+// Changes future execution format without replacing the protected credential.
+message ChangeAccountApiFormatRequest {
+  Mutation mutation = 1;
+  ApiProtocol api_protocol = 2;
+  string alias = 3;
+  bool enabled = 4;
+  bool exclude_automatic = 5;
+  bool recovery_notifications = 6;
+}
+
+message ChangeAccountApiFormatResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }
