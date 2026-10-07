@@ -23,6 +23,169 @@ func writeSuspensionReload(t *testing.T, m *Manager, c Config) {
 	m.ConfigPath = path
 }
 
+func TestLateFailureReloadPreservesOperatorPause(t *testing.T) {
+	for _, failure := range []struct {
+		name        string
+		preparation bool
+		attempts    int
+		code        ErrorCode
+	}{
+		{"session authentication", false, 1, ErrAuth},
+		{"preparation authentication", true, 1, ErrAuth},
+		{"preparation circuit breaker", true, 3, ErrPreparation},
+	} {
+		for _, control := range []struct {
+			name  string
+			phase PoolPhase
+			force bool
+		}{
+			{"ready", Ready, false},
+			{"global pause", Suspended, false},
+			{"scoped pause", Paused, false},
+			{"scoped stop", Paused, false},
+			{"scoped force stop", Paused, true},
+		} {
+			t.Run(failure.name+"/"+control.name, func(t *testing.T) {
+				m, c, remote, _, oldID := testManager(t)
+				if len(m.Store.View().Managed) != 0 {
+					t.Fatal("fixture must use a manually pinned pool")
+				}
+				runnerID := seedRunner(t, m, oldID, Preparing)
+				if err := m.Store.Update(func(s *Snapshot) error {
+					s.Pools[oldID].PreparationFailures = failure.attempts - 1
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				name := c.Pools[0].Name
+				var err error
+				switch control.name {
+				case "global pause":
+					err = m.Pause("")
+				case "scoped pause":
+					err = m.Pause(name)
+				case "scoped stop", "scoped force stop":
+					err = m.StopPool(name, control.force)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				blocked := problem(failure.code, "Fixture late dependency failure.", "Correct the dependency and resume.")
+				if failure.preparation {
+					m.failPreparation(runnerID, blocked)
+				} else {
+					m.poolProblem(oldID, blocked, true)
+				}
+				s := m.Store.View()
+				if control.phase == Paused && s.Pools[oldID].Phase != Paused {
+					t.Fatalf("late failure erased scoped pause: %+v", s.Pools[oldID])
+				}
+				if !failure.preparation || !control.force {
+					if p := s.Pools[oldID].Problem; p == nil || p.Code != failure.code {
+						t.Fatalf("late failure lost its pool diagnostic: %+v", p)
+					}
+				}
+				wantFailures := s.Pools[oldID].PreparationFailures
+				var wantProblem *Problem
+				if p := s.Pools[oldID].Problem; p != nil {
+					copy := *p
+					wantProblem = &copy
+				}
+				if failure.preparation {
+					r := s.Runners[runnerID]
+					if r.Phase != Cleaning || r.Terminated || r.Resources != (Resources{1, 128}) {
+						t.Fatalf("late failure bypassed reserved runner cleanup: %+v", r)
+					}
+					wantFailures := failure.attempts
+					if control.force {
+						wantFailures = failure.attempts - 1
+					} else if r.Problem == nil || r.Problem.Code != failure.code {
+						t.Fatalf("late failure lost its runner diagnostic: %+v", r)
+					}
+					if s.Pools[oldID].PreparationFailures != wantFailures {
+						t.Fatal("late failure changed preparation counting")
+					}
+				}
+				c.Connections[0].Credential.Env = "RUNMOOR_REPLACEMENT_CREDENTIAL"
+				if failure.code == ErrPreparation {
+					c.Pools[0].Resources.MemoryMiB++
+				}
+				writeSuspensionReload(t, m, c)
+				if err := m.Reload(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				s = m.Store.View()
+				if s.Pools[oldID].Phase != Draining || s.Paused != (control.name == "global pause") || s.Stopping {
+					t.Fatal("reload changed the independent lifecycle controls")
+				}
+				var replacement *PoolState
+				for id, p := range s.Pools {
+					if id != oldID {
+						replacement = p
+					}
+				}
+				if replacement == nil || replacement.Phase != control.phase {
+					t.Fatalf("corrected reload changed operator pause: %+v", replacement)
+				}
+				if replacement.Phase == Ready {
+					if replacement.PreparationFailures != 0 || replacement.Problem != nil {
+						t.Fatalf("corrected reload retained a recovered diagnostic: %+v", replacement)
+					}
+				} else {
+					if replacement.PreparationFailures != wantFailures {
+						t.Fatalf("corrected reload changed preparation-failure count: got %d want %d", replacement.PreparationFailures, wantFailures)
+					}
+					if (replacement.Problem == nil) != (wantProblem == nil) || replacement.Problem != nil && *replacement.Problem != *wantProblem {
+						t.Fatalf("corrected reload changed the retained pool diagnostic: got %+v want %+v", replacement.Problem, wantProblem)
+					}
+				}
+				if err := m.Resume(context.Background(), name); err != nil {
+					t.Fatal(err)
+				}
+				// Finish the old generation's ordinary ownership boundary before
+				// checking acquisition eligibility on the explicitly resumed pool.
+				m.cleanup(context.Background(), runnerID)
+				m.retirePool(context.Background(), oldID)
+				if _, err := m.ensureScaleSet(context.Background(), replacement.ID, remote); err != nil {
+					t.Fatal(err)
+				}
+				if err := m.Store.Update(func(s *Snapshot) error {
+					s.Pools[replacement.ID].Session = remote.session.ID()
+					s.Pools[replacement.ID].Demand = 1
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				s = m.Store.View()
+				if !eligible(s, s.Pools[replacement.ID]) || len(Schedule(s)) == 0 {
+					t.Fatal("explicit resume did not restore eligible work after cleanup")
+				}
+			})
+		}
+	}
+}
+
+func TestTerminalPausedFailureDoesNotRestartPoolLoop(t *testing.T) {
+	m, c, _, _, pool := testManager(t)
+	if err := m.Pause(c.Pools[0].Name); err != nil {
+		t.Fatal(err)
+	}
+	m.poolProblem(pool, problem(ErrAuth, "Fixture credential is invalid.", "Replace the credential."), true)
+
+	if !poolLoopStopped(m.Store.View().Pools[pool]) {
+		t.Fatal("terminal paused failure did not stop the pool loop")
+	}
+	if err := m.step(); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	_, running := m.poolLoops[pool]
+	m.mu.Unlock()
+	if running {
+		t.Fatal("manager step restarted a terminal paused pool loop")
+	}
+}
+
 func TestValidatedReloadRecoversOnlyRelatedSuspensions(t *testing.T) {
 	for _, tc := range []struct {
 		name            string

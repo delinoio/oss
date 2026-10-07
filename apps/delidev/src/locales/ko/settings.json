@@ -127,5 +127,21 @@
   "settings.savedKind.PROVIDER": "제공자를 저장했습니다.",
   "settings.savedKind.MODEL": "모델을 저장했습니다.",
   "settings.savedKind.SETTINGS": "서버 환경 설정을 저장했습니다.",
-  "settings.savedKind.fallback": "설정을 저장했습니다."
+  "settings.savedKind.fallback": "설정을 저장했습니다.",
+  "settings.repositoryDescription": "작업할 Git 저장소와 GitHub 접근 설정을 관리하세요.",
+  "settings.repositoryRemoteSource": "Git 원격 저장소",
+  "settings.repositoryCheckoutSource": "폴더 기반 저장소",
+  "settings.repositoryUnsupported": "지원되지 않는 형식",
+  "settings.repositoryGithubConfigured": "GitHub 설정됨",
+  "settings.repositoryGithubNeedsSetup": "GitHub 미설정",
+  "settings.repositoryFolders": "등록된 폴더",
+  "settings.repositoryNoFolders": "등록된 폴더 없음",
+  "settings.repositoryNoGithubIdentity": "소유자와 저장소 이름 미설정",
+  "settings.repositoryAccessNotChecked": "저장된 설정입니다. 접근 권한은 별도로 확인하세요.",
+  "settings.repositoryId": "저장소 ID",
+  "settings.repositoryEmptyTitle": "등록된 저장소가 없습니다",
+  "settings.repositoryEmptyHelp": "저장소 추가를 눌러 프로젝트에서 사용할 Git 저장소를 등록하세요.",
+  "settings.repositoryPageEmpty": "이 페이지에 저장소가 없습니다.",
+  "settings.repositoryPageCount_one": "이 페이지의 저장소 {{count}}개",
+  "settings.repositoryPageCount_other": "이 페이지의 저장소 {{count}}개"
 }
