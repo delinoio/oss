@@ -169,3 +169,23 @@ it("keeps an acknowledged unsettled observation locked after malformed status", 
  expect((screen.getByRole("button", { name: "Observe models" }) as HTMLButtonElement).closest("fieldset")?.disabled).toBe(true);
  expect(value.discover).toHaveBeenCalledTimes(1);
 });
+
+
+it.each(["missing", "unrecognized"])("reinspects a retained native observation with %s state without releasing ownership", async mode => {
+ const value = fixture(false, false, "unrecognized-state");
+ if (mode === "missing") {
+  const data = JSON.parse(new TextDecoder().decode(value.job.documentJson));
+  delete data.state; value.job.documentJson = encode(data);
+ }
+ await choose(value);
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ expect((screen.getByLabelText("Original observation ID") as HTMLInputElement).disabled).toBe(true);
+ expect((screen.getByRole("button", { name: "Observe models" }) as HTMLButtonElement).closest("fieldset")?.disabled).toBe(true);
+ const succeeded = { ...value.job, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(value.job.documentJson)), state: "succeeded" }) };
+ value.getObservation.mockResolvedValueOnce({ job: succeeded });
+ fireEvent.click(retry);
+ await screen.findByRole("button", { name: "Register Fixture model…" });
+ expect(value.getObservation.mock.calls.map(([request]) => request.jobId)).toEqual([value.job.id, value.job.id]);
+ expect(value.discover).toHaveBeenCalledTimes(1); expect(value.createModel).not.toHaveBeenCalled();
+});
