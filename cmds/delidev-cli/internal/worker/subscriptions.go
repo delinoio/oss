@@ -306,7 +306,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	if err != nil {
 		return domain.SafeError(err)
 	}
-	homeInfo, err := os.Stat(home)
+	homeInfo, err := security.StableStat(home)
 	if err != nil {
 		return subscription.Invalid()
 	}
@@ -573,7 +573,7 @@ func verifyManagedSubscriptionProfile(ctx context.Context, config Config, execut
 	if err != nil {
 		return false, domain.SafeError(err)
 	}
-	info, err := os.Stat(home)
+	info, err := security.StableStat(home)
 	if err != nil {
 		return false, subscription.Invalid()
 	}

@@ -33,5 +33,21 @@
   "account-deletion.extra.432a2d9f1fe9": "선택한 서버를 업데이트하거나 지원되는 로그아웃 절차를 완료한 뒤 계정을 삭제하세요.",
   "account-deletion.extra.2ce284085b03": "다른 계정 작업이 아직 진행 중입니다.",
   "account-deletion.extra.37108ca03e31": "원래 작업을 완료한 뒤 삭제를 다시 확인하세요.",
-  "account-deletion.sentence.1ab129957de8": "계정을 유지했습니다. 다시 삭제하기 전에 연결 및 진단을 확인하세요.{{v0}}"
+  "account-deletion.sentence.1ab129957de8": "계정을 유지했습니다. 다시 삭제하기 전에 연결 및 진단을 확인하세요.{{v0}}",
+  "account-deletion.api.title": "항목 삭제",
+  "account-deletion.api.description": "이 항목의 연결을 해제하고 보호된 자격 증명을 제거한 뒤 저장된 설정을 삭제합니다.",
+  "account-deletion.api.consequences": "실행 중인 작업은 취소됩니다. 보존된 세션과 이력은 유지됩니다. 참조된 항목은 종속 설정을 재구성하기 전까지 삭제할 수 없습니다.",
+  "account-deletion.api.browserCleanup": "브라우저 프로필 정리는 오프라인 기기를 포함한 각 등록 기기에서 독립적으로 계속됩니다.",
+  "account-deletion.api.keepEntry": "항목 유지",
+  "account-deletion.api.confirm": "연결 해제 후 항목 삭제",
+  "account-deletion.api.checking": "현재 항목을 확인하는 중...",
+  "account-deletion.api.disconnecting": "연결을 해제하고 자격 증명을 정리하는 중...",
+  "account-deletion.api.deleting": "항목 설정을 삭제하는 중...",
+  "account-deletion.api.paused": "항목 삭제가 중단되었습니다.",
+  "account-deletion.api.changed": "항목이 변경되었거나 정리 완료를 확인할 수 없습니다.",
+  "account-deletion.api.refreshGuidance": "항목을 새로고침하고 현재 상태를 확인한 뒤 삭제하세요.",
+  "account-deletion.api.cleanupUnconfirmed": "자격 증명 정리 완료를 확인할 수 없습니다. 항목은 유지되었습니다.",
+  "account-deletion.api.retryCleanupGuidance": "원래 자격 증명 정리 요청만 재시도하세요.",
+  "account-deletion.api.departure": "이 카테고리를 벗어나면 자동 삭제가 중단됩니다. 승인된 연결 해제와 정리는 계속됩니다.",
+  "account-deletion.api.refresh": "항목을 새로고침하여 다시 확인"
 }

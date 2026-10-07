@@ -1,5 +1,7 @@
 # Project: DeliDev
 
+API account protocol selection reserves ProviderInventory capability 7 and its complete profile/filter declarations under issue #964 before implementation. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-protocol-reservations) owns this prerequisite; it adds no runtime or database authority.
+
 Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
 
 Failed-login subscription cleanup reserves System capability 41 and its closed batch/status/result declarations under issue #964. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) and [protocol contract](protos-delidev-v1-contract.md#failed-subscription-cleanup-reservations) require the complete main-first reservation before implementation. This prerequisite grants no cleanup or deletion authority and adds no migration.
@@ -55,6 +57,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Direct execution startup (planned)](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
@@ -237,3 +240,19 @@ No migration is added. Existing personal login import, external tokens,
 Console/API login, cross-device authentication and Claude quotas/credits remain
 excluded. Actual account and packaged-platform acceptance remain separate from
 fixtures/builds. See [the subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
+The owner-approved native Claude subscription extension spans the existing
+subscription, desktop, harness, protocol and storage owners. Reserve System 38,
+Worker 20 and the complete login-code/progress/native-identity declarations on
+main before implementation. Authentication remains in an original installed
+Claude Code account profile on the selected Runner Device; server metadata does
+not grant credentials, cross-device execution or cleanup authority. The
+reservation prerequisite activates no support and adds no migration. Follow
+[the subscription contract](cmds-delidev-subscription-contract.md#planned-native-claude-subscriptions).
+
+The approved inline-Worker-model replacement composes the current-only DB 32 /
+protocol 2 reset. Its complete main-first declarations and ownership are defined
+in the catalog, structure, storage, desktop, protocol, usage, transfer and
+subagent contracts. Independent Models and persistent API catalogs are removed
+only with complete activation. Earlier DB retention is waived by the owner;
+explicit reset does not convert history or grant native/credential cleanup.
+Earlier backups remain unsupported.

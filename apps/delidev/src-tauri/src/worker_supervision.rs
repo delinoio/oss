@@ -124,13 +124,13 @@ impl WorkerSupervision {
 
     pub fn stop(&self) {
         self.request_stop();
-        if let Some(task) = self.task.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            if task.join().is_err() {
-                tracing::error!(
-                    operation = "local_worker_supervision",
-                    phase = "join-failed"
-                );
-            }
+        if let Some(task) = self.task.lock().unwrap_or_else(|e| e.into_inner()).take()
+            && task.join().is_err()
+        {
+            tracing::error!(
+                operation = "local_worker_supervision",
+                phase = "join-failed"
+            );
         }
     }
 }
@@ -294,15 +294,14 @@ impl Connector {
             "--client-id".into(),
             client_id.into(),
         ];
-        if mode == WorkerHostMode::Ensure {
-            if let Some(generation) = self
+        if mode == WorkerHostMode::Ensure
+            && let Some(generation) = self
                 .worker_exited
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone()
-            {
-                args.extend(["--exited-generation".into(), generation.into()]);
-            }
+        {
+            args.extend(["--exited-generation".into(), generation.into()]);
         }
         let value = self.run_host_child(&executable, &args, true)?;
         if value.get("state").and_then(|v| v.as_str()) == Some("service-managed") {
