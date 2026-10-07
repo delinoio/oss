@@ -92,7 +92,7 @@ export const ResourceSelectionPending = createContext<((identity: string, pendin
 // only for the retained selection and a deliberate selection callback.
 export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
   useLocale();
-  const inspectRunner = useRunnerRemediation();
+  const inspectRunner = useRunnerRemediation({ active });
   const reportRead = useContext(AgentReadProblem), reportPending = useContext(ResourceSelectionPending), readIdentity = useId(), remediationIdentity = useId();
   const transport = useTransport(), client = useQueryClient(), generation = useRef(0);
   const latestChange = useRef(change); latestChange.current = change;

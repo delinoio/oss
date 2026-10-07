@@ -55,8 +55,8 @@ it("uses one presenter and preserves the original draft after its calling task d
   const reads = vi.fn(() => ({ resource: row }));
   const transport = createRouterTransport(router => router.service(ResourceService, { getResource: reads }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  function Surface({ label }: { label: string }) { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>{label}</button>{open?.body}</>; }
-  const view = (first: boolean) => <TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active>{first ? <Surface key="first" label="First caller" /> : null}<Surface key="second" label="Second caller" /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>;
+  function Surface({ label, active = true }: { label: string; active?: boolean }) { const open = useRunnerRemediation({ active }); return <><button onClick={() => open?.(row)}>{label}</button>{open?.body}</>; }
+  const view = (first: boolean, secondActive = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active>{first ? <Surface key="first" label="First caller" /> : null}<Surface key="second" label="Second caller" active={secondActive} /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>;
   const rendered = render(view(true)); fireEvent.click(screen.getByText("First caller"));
   await screen.findByText("Borrowed Runner"); fireEvent.click(screen.getByRole("button", { name: "Edit executable paths" }));
   fireEvent.change(screen.getByLabelText("claude-code executable path"), { target: { value: "/original/draft" } });
@@ -65,6 +65,10 @@ it("uses one presenter and preserves the original draft after its calling task d
   rendered.rerender(view(false));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   expect((screen.getByLabelText("claude-code executable path") as HTMLInputElement).value).toBe("/original/draft");
+  rendered.rerender(view(false, false)); expect(screen.queryByRole("dialog")).toBeNull();
+  rendered.rerender(view(false, true)); expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByText("Second caller"));
+  await waitFor(() => expect((screen.getByLabelText("claude-code executable path") as HTMLInputElement).value).toBe("/original/draft"));
   fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
   const before = reads.mock.calls.length;
   await new Promise(resolve => setTimeout(resolve, 10)); expect(reads.mock.calls.length).toBe(before);

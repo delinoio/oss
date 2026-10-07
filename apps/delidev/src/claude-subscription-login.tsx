@@ -251,7 +251,7 @@ export function useClaudeSubscriptionLogin(
     return { rows: response.resources.map(row => ({ id: row.id, revision: row.revision, label: resourceName(row), eligible: validRunnerObservation(row) && eligibleRunner(row), observation: claudeRunnerObservation(row) })), payload: response.resources, nextPageToken: response.nextPageToken };
   }, []);
   const machineReader = useConnectPaginationReader(ResourceQuery.listResources, machineRequest, machineProject);
-  const inspectRunner = useRunnerRemediation();
+  const inspectRunner = useRunnerRemediation({ active: active && !hidden && view?.step === Step.Runner && !view.busy });
   const machinesActive = active && !hidden && view?.step === Step.Runner && !view.busy;
   const machines = usePaginationChain(`claude-runners:${pending.current?.opening ?? ""}`, machinesActive, machineReader);
   usePaginationRefresh(ResourceQuery.listResources, machineRequest(""), machinesActive, machines.refresh);
