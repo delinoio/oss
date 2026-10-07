@@ -2,6 +2,31 @@
 
 > Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
 
+## Key-preserving API format editing
+
+With ProviderInventory capability 9, Edit AI account enables supported formats for
+connected API accounts and saves the format plus existing editable preferences
+through `ChangeAccountApiFormat`. The saved key stays in place; the help states that
+future executions use the new format, current executions retain their original
+format, and separate Validate connection is required. Saving sends no provider
+request. Provider identity and keyless/key ownership stay fixed. Without capability
+9, the original capability-7 disconnect/cleanup/re-entry behavior remains.
+
+Retain the existing 768px dialog, field order, checkbox controls, Provider lock,
+small-screen scrolling/fixed footer, Settings lifetime, labeled native select,
+keyboard selection, Escape/X/Cancel closure and opener focus restoration. The
+capability-9 action reads Save changes. Capability/profile loading errors, pending
+cleanup, an active save and an uncertain result retain existing protection. Exact
+uncertain retries reuse the original request. Late responses after disposal cannot
+close or refresh a replacement editor.
+
+Observation-only account updates adopt the latest protected fields and bigint
+revision while retaining editable draft values. Changes to editable preferences or
+format elsewhere show a conflict and retain the draft. Provider cards remain locked
+for current and retained account generations; reference-read failures block saves.
+Incompatible Workers show the existing explicit reconfiguration notice. Native
+window/provider acceptance is separate from component/browser fixtures.
+
 ## Modal background visibility
 
 All app-owned dialogs and compact modal navigation drawers use a transparent
@@ -902,7 +927,7 @@ After preparing the native assets and sidecar, run these permission tests with
 from the repository root; the default library feature set excludes native ACL
 generation.
 
-Account settings separate **AI Subscription** and **AI API Keys** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory’s Add AI API key action opens the entry form directly with that exact enabled saved provider entry, consuming each deliberate event key once. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Category navigation stays locked during account creation, settings and connection workflows; application navigation remains available, with exact uncertain requests retained for deliberate retry. Independent server capability 30 enables ChatGPT browser login followed by editable account naming under the subscription Settings contract; Claude Code and Grok remain unsupported. The collapsed Advanced settings disclosure owns search, provider filters, disconnected metadata creation and the subscription-provider section, which permits only native-subscription protocol, subscription authentication and an empty endpoint. Issue #1143 defines the compact subscription list and planned provider cards in [the subscription Settings contract](apps-delidev-subscription-settings-contract.md); native lifecycle controls require their independent capability.
+Account settings separate **AI Subscription** and **AI API Keys** presentation sections while continuing to query the existing Account resource. Each section sends the server-side account-type selector; provider-row links add the exact provider ID. Filtering must happen before pagination, and cursors must remain scoped to the exact account type and provider. The desktop requires the provider activation, active-model filter, account-provider filter and explicit account-type-filter capability markers before enabling split lists or the guided API account flow. It must never fall back to a mixed list, client-page filtering or an inferred all-enabled provider inventory. The API provider inventory’s Add AI API key action opens the entry form directly with that exact enabled saved provider entry, consuming each deliberate event key once. The wizard rechecks the fresh provider identity, authentication, protocol, endpoint and enabled state before saving account metadata and before an explicit credential connection; it never validates or discovers models automatically. API connection, validation, health, quota, exhaustion and credential cleanup remain distinct states. Category navigation stays locked during account creation, settings and connection workflows; application navigation remains available, with exact uncertain requests retained for deliberate retry. Independent server capability 30 enables ChatGPT browser login followed by editable account naming under the subscription Settings contract; Claude follows its independently negotiated selected-Runner flow; Grok remains unsupported. The collapsed Advanced settings disclosure owns search, provider filters, disconnected metadata creation and the subscription-provider section, which permits only native-subscription protocol, subscription authentication and an empty endpoint. Issue #1143 defines the compact subscription list and planned provider cards in [the subscription Settings contract](apps-delidev-subscription-settings-contract.md); native lifecycle controls require their independent capability.
 
 Issue #1145 replaces the creation picker’s search, radios, selected markers, numbered steps and Continue with native provider action buttons. Choose an API provider / Select a provider to connect your entry. precedes one server-ordered page of enabled saved API entries. The picker requests `query: ""`, `enabledOnly: true`, `pageSize: 50` and its own cursor, independent of AI API Keys’ unsearched account-provider inventory and API Providers’ search. Both account and picker inventories must retain all four capability gates; no generic resource page or credential inference can supply eligibility. Direct-entry details remain disabled while either inventory lacks the gates, and become unavailable again if those capabilities are lost. The clicked UUID and complete summary/Resource are retained as one bounded hint even when the account-filter page does not contain that provider. The clicked snapshot remains authoritative across unrelated inventory refreshes; the existing fresh provider checks validate or reject its contract before writes.
 
@@ -1069,7 +1094,7 @@ Read the original pairing resource before allowing disclosure, poll only while t
 
 Diagnostics uses the direct read-only doctor RPC, only while selected or after explicit refresh. Decode at most 1 MiB of strict UTF-8 and display known fields as inert text. The version-2 [diagnostics contract](cmds-delidev-diagnostics-contract.md) distinguishes running server/platform/protocol/schema, separately sampled database/WAL/logical/filesystem sizes, retained resource counts, Worker connection and installation observations, and exact account credential read classifications. Preserve decimal-string integer precision with BigInt. Show missing measurements as unavailable, explicit 50-record partial inventory notices, and superseded connections independently of successful reads. A failed refresh labels retained observations; unsupported/malformed reports establish no health. Legacy reports retain only their original bounded fields and an explicit missing-capacity/protected-store notice. Owner credential availability, store decryptability, provider readiness, protocol handshake and cleanup are separate facts. No repair, login, harness probe or inference starts from this screen.
 
-The approved issue #1144 Diagnostics hierarchy, record-local disclosures and responsive presentation are owned by the [Diagnostics presentation contract](apps-delidev-diagnostics-contract.md). Its state is local to the active Settings category; page-level Escape and reflow retain disclosures, while category departure or leaving Settings disposes them.
+The approved issue #1144 Diagnostics hierarchy, record-local disclosures and responsive presentation are owned by the [Diagnostics presentation contract](apps-delidev-diagnostics-contract.md). Account storage results now appear below each owning AI Subscription / AI API Keys row, with failed reads announced as alerts and ordinary/unavailable states distinguished. Connection & diagnostics retains only navigation guidance for those account results. Each category shares the original bounded read-only Doctor RPC, fences account/revision/connection generations, and preserves explicit native/account operations independently. Its state is local to the active Settings category; page-level Escape and reflow retain disclosures, while category departure or leaving Settings disposes them.
 
 ### Local execution proof
 The main-only `local_worker_proof` command is read-only infrastructure. It invokes Go inspection for the fixed `desktop-client` and CLI-owned `worker` subdirectories, checks exact server/endpoint parity, validates the private credential's canonical Worker/machine/token shape and returns only the proof needed by a Local product mutation. It accepts no renderer path, command or chosen machine. Missing, foreign or malformed registration fails without pairing, starting or replacing a Worker; Worker bootstrap/lifecycle uses its separate explicit native control boundary.
@@ -2007,6 +2032,33 @@ Profile/page/filter choices survive child dismissal and reopening within the sam
 
 AI Subscription offers the explicit capability-41 Auto cleanup action under the [subscription Settings contract](apps-delidev-subscription-settings-contract.md#automatic-failed-login-cleanup). Its inline status/result and original request/status retries belong to the current category lifetime. Account mutations freeze while pending; category and application navigation remain available. Departure disposes local waits and continuations without canceling the accepted server batch. Preserve shared theme controls, responsive wrapping, accessible live status and existing focus; no task dialog or native ownership is added.
 
+## Claude subscription task and native browser ownership
+
+System 38 and original Worker 20 independently enable the approved Claude
+subscription flow in the existing 960px Settings task dialog. Preserve the
+Runner Device → Sign in → Account name order, explicit once-only Start,
+conditional masked approval input, success-bound default Claude naming and
+Later retention. Management exposes the owner Runner, Sign in again and
+logout. X/Escape hide retained work; only explicit Cancel sign-in cancels it.
+The existing task host owns focus, scrolling, responsive stacking and hidden
+operation restoration. See the [subscription Settings contract](apps-delidev-subscription-settings-contract.md#claude-account-onboarding-and-management).
+
+Native `claude-subscription-open` / `claude-subscription-reopen` actions bind the
+trusted main window epoch, authenticated server, Settings opening, original
+operation, exact validated original URL and one browser generation. The closed
+Claude CLI URL profile pins HTTPS Claude authorization, its original client,
+PKCE, scope and native redirect. This binding creates no loopback listener or
+callback receiver and cannot enter provider/Codex OAuth Take/BindOpen paths.
+Initial replay does not open another browser; explicit reopening uses the same
+binding. Disposal/window/server changes erase presentation authority. URL and
+code remain transient and absent from cache, persisted state and logs.
+
+Go on the selected original local/remote Runner owns lifecycle and execution;
+Tauri owns only trusted browser presentation. No renderer authority can import
+personal authentication, exchange a code, move a profile or infer cleanup.
+Validate desktop/narrow viewports, both themes and 200% zoom separately from
+real macOS/Windows/Linux account and packaged application acceptance. An
+unverified platform cannot be reported as complete.
 ## Inline Worker models and endpoint-only completion reservation
 
 The approved existing wizard uses endpoint-only API completion, exact direct input and official subscription suggestions without Saved choices. Keep keyboard, focus, localization, themes and responsive behavior. Clear editor-local responses on source/account/generation/lifetime changes and errors. Native observations retain no register/use action. Usage selects pricing by source and native ID.

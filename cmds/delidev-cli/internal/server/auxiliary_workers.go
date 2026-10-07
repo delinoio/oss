@@ -168,7 +168,7 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 				return updated, retireErr
 			}
 		}
-		_, account, err := accountFromTx(tx, input.AccountID, 0)
+		_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 		if err != nil || !account.Enabled || account.Type != domain.APIAccount || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.ProviderID {
 			updated, retireErr := retireQueuedTitle(tx, record, job, domain.JobCanceled, domain.TitleSkipped, domain.TitleReasonAuthorityLost, domain.Fail(domain.Unauthenticated, "The original account connection no longer authorizes title inference.", "Keep the placeholder; do not substitute another account."))
 			return updated, retireErr

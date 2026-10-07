@@ -123,7 +123,7 @@ func inspectHosted(ctx context.Context, client *http.Client, provider domain.Pro
 		target, _ := url.Parse(verification)
 		raw, failure := getURL(ctx, client, provider, key, *target, standardHeader)
 		if failure.Failure != NoFailure {
-			return failure.withTime(o.ObservedAt)
+			return failure.withTime(o.ObservedAt).withDiagnostic(CredentialCheckStage, RequestFailedReason)
 		}
 		remaining -= len(raw)
 		problem := verifyHostedCredential(raw, p)
@@ -131,7 +131,7 @@ func inspectHosted(ctx context.Context, client *http.Client, provider domain.Pro
 		if problem != NoFailure {
 			o.Failure = problem
 			o.HTTPStatus = http.StatusOK
-			return o
+			return o.withDiagnostic(CredentialCheckStage, CredentialResponseReason)
 		}
 		o.Authentication = CredentialAccepted
 	}
@@ -146,30 +146,30 @@ func inspectHosted(ctx context.Context, client *http.Client, provider domain.Pro
 		raw, failure := getURL(ctx, client, provider, key, target, header)
 		if failure.Failure != NoFailure {
 			failure.Authentication = o.Authentication
-			return failure.withTime(o.ObservedAt)
+			return failure.withTime(o.ObservedAt).withDiagnostic(ModelCatalogStage, RequestFailedReason)
 		}
 		remaining -= len(raw)
 		o.HTTPStatus = http.StatusOK
 		if remaining < 0 {
 			clear(raw)
 			o.Failure = ResponseTooLarge
-			return o
+			return o.withDiagnostic(ModelCatalogStage, CatalogLimitReason)
 		}
 		parsed, err := parseHostedPage(raw, p, page, received, key)
 		clear(raw)
 		if err != nil {
 			o.Failure = InvalidResponse
-			return o
+			return o.withDiagnostic(ModelCatalogStage, hostedParseReason(err))
 		}
 		received += parsed.received
 		if received > maxModels {
 			o.Failure = ResponseTooLarge
-			return o
+			return o.withDiagnostic(ModelCatalogStage, CatalogLimitReason)
 		}
 		if parsed.total != nil {
 			if total != nil && *total != *parsed.total {
 				o.Failure = InvalidResponse
-				return o
+				return o.withDiagnostic(ModelCatalogStage, CatalogPaginationReason)
 			}
 			value := *parsed.total
 			total = &value
@@ -177,7 +177,7 @@ func inspectHosted(ctx context.Context, client *http.Client, provider domain.Pro
 		for _, id := range parsed.identities {
 			if seenModels[id] {
 				o.Failure = InvalidResponse
-				return o
+				return o.withDiagnostic(ModelCatalogStage, DuplicateModelReason)
 			}
 			seenModels[id] = true
 		}
@@ -192,13 +192,32 @@ func inspectHosted(ctx context.Context, client *http.Client, provider domain.Pro
 		}
 		if seenTokens[parsed.next] || !boundedToken(parsed.next, key) || parsed.received == 0 {
 			o.Failure = InvalidResponse
-			return o
+			return o.withDiagnostic(ModelCatalogStage, CatalogPaginationReason)
 		}
 		seenTokens[parsed.next] = true
 		token = parsed.next
 	}
 	o.Failure = ResponseTooLarge
-	return o
+	return o.withDiagnostic(ModelCatalogStage, CatalogLimitReason)
+}
+
+// Classify parser failures without retaining or logging provider-controlled text.
+func hostedParseReason(err error) InspectionReason {
+	if err == nil {
+		return ""
+	}
+	switch err.Error() {
+	case "duplicate model identity":
+		return DuplicateModelReason
+	case "invalid pagination token", "invalid model page metadata", "missing model cursor", "incomplete model page", "unsupported model pagination":
+		return CatalogPaginationReason
+	case "oversized model page":
+		return CatalogLimitReason
+	case "invalid model array", "trailing model array", "invalid models success", "invalid model list":
+		return ModelResponseReason
+	default:
+		return modelParseReason(err)
+	}
 }
 
 func verifyHostedCredential(raw []byte, p profile) Failure {

@@ -198,6 +198,6 @@ func (s *Service) inspectAccount(ctx context.Context, meta *pb.Mutation, operati
 	if observation.Problem != nil {
 		problemCode = observation.Problem.Code
 	}
-	s.logger.Info("account_inspection_finished", "operation", operation, "account_id", input.ID, "request_id", meta.RequestId, "failure", observation.Failure, "error_code", problemCode, "authentication", observation.Authentication, "model_count", len(observation.Models), "http_status", observation.HTTPStatus, "duration_ms", time.Since(started).Milliseconds(), "correlation_id", correlation)
+	s.logger.Info("account_inspection_finished", "operation", operation, "account_id", input.ID, "request_id", meta.RequestId, "failure", observation.Failure, "inspection_stage", observation.Stage, "inspection_reason", observation.Reason, "error_code", problemCode, "authentication", observation.Authentication, "model_count", len(observation.Models), "http_status", observation.HTTPStatus, "duration_ms", time.Since(started).Milliseconds(), "correlation_id", correlation)
 	return result, nil
 }

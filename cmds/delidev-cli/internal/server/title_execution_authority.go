@@ -109,7 +109,7 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 			return denied()
 		}
 	}
-	_, account, err := accountFromTx(tx, input.AccountID, 0)
+	_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 	if err != nil || !account.Enabled || account.Type != domain.APIAccount || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.ProviderID {
 		return denied()
 	}

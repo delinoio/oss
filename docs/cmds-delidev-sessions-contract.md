@@ -2,6 +2,19 @@
 
 > Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
 
+## API format generations
+
+Capability 9 changes only the current account generation for new sessions. All
+original execution authorization and continuation resolve the immutable assignment's
+connection ID, including proxy requests, subsequent tools, Resume, Fork, Sidechat,
+compaction, title and auxiliary execution. Retained profile/health/validation supply
+original admission evidence; current account enablement, quota/exhaustion, cleanup,
+Worker existence, session restrictions and budget still apply. Changing or validating
+a new format cannot replace original history or interrupt a valid original stream.
+New routing requires current-format validation and Worker compatibility. Incompatible
+Workers are marked for explicit reconfiguration without changing accepted executions.
+Follow the [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
 
 ## Direct execution startup
 

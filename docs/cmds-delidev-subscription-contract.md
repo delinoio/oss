@@ -1,4 +1,4 @@
-# DeliDev managed Codex subscriptions
+# DeliDev native subscriptions
 
 > Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
 
@@ -19,32 +19,102 @@ Confirmed deletion, tombstone/browser obligations, the existing configuration re
 
 `GetFailedSubscriptionCleanup(job_id, page_token)` returns current revision/state, total/processed/deleted/retained counts and at most 50 original account results. Signed cursors bind the actor and batch. Result metadata contains only the original alias, account ID, closed outcome/reason and safe problem code. Logs contain job/operation IDs, counts, phases and safe codes. Existing generic jobs/receipts need no migration or Rust/native change.
 
-## Planned native Claude subscriptions
+## Native Claude subscriptions
 
-The owner-approved Claude extension includes browser login, reauthentication,
-logout and session execution on an explicitly selected local or remote Runner
-Device. It reserves System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
-`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the protocol closure on main before
-implementation. These reservations do not change the currently unsupported
-Claude lifecycle or activate any capability.
+PR #1612 established System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the complete protocol allocation
+closure on main at `8a698d04d51f9db3a041b909edf85a7811f09ff3` before feature
+implementation. The server advertises 38 for the existing SubscriptionService's
+Claude branch. An original Worker advertises 20 only after verifying installed
+Claude Code `2.1.236` through an isolated empty profile and confirmed cleanup.
+A reserved number or ordinary installation observation never grants this lane.
 
-The planned original installed Claude Code 2.1.236 process owns authentication
-in one private account-specific `CLAUDE_CONFIG_DIR`. Existing personal logins,
-external token input, Console/API login, credential transfer between machines
-and Claude quota/credit operations remain excluded. Native credentials stay on
-their original Runner Device; the server retains only profile references,
-identity commitments, generations and original lifecycle/execution ownership.
-Single-use browser approval input reaches only that original native login.
-Login/status/logout and execution must retain independent native evidence;
-status alone cannot prove token refresh, process cleanup or deletion. This
-extension adds no database migration. Follow the protocol and structure
-contracts for main-first reservations and independent complete feature delivery.
+An owner or authorized paired client explicitly selects a local or remote
+Runner Device for login. `claude auth login --claudeai`, `auth status` and
+`auth logout` run on that Worker with an account-specific private
+`CLAUDE_CONFIG_DIR` and matching secure-storage directory. DeliDev reconstructs
+the native environment; personal profiles, imported/external tokens,
+Console/API login and API relay authentication are excluded. The original CLI
+owns OAuth exchange, credentials and automatic renewal. DeliDev does not read
+native authentication files or distribute their bytes to the server or another
+machine. Claude quota/credit inspection and redemption remain excluded.
+
+Server-owned optional Account JSON retains an opaque native profile UUID,
+original owner machine, keyed identity commitment, authentication generation
+and original operation/lease metadata. The Worker computes the commitment from
+bounded native identity under its private server-scoped key. The original login
+also pins that commitment in its private profile owner record; fresh native
+status must match before reauthentication completion or execution input. A
+missing pin or changed account retains the ownership fence. Raw identity stays
+local. Authentication success requires the original login process to exit,
+joined owned descendants and `auth status` proving first-party `claude.ai`
+subscription authentication with no API-key source. Reauthentication reuses the
+same owned profile and identity, creates a new generation and preserves the
+connection ID. A different native identity cannot replace that account.
+
+One exclusive account lease serializes login, reauthentication, execution and
+logout. Login/reauthentication cannot enter behind another lease. Logout may
+queue behind execution after atomically revoking readiness and canceling that
+execution. Execution checks the service/model/harness, dedicated capability,
+original owner Runner, profile and generation before consuming an input. Wrong
+Runner, old Worker and API-authentication selections fail without a fallback.
+Existing native permission, model, effort, continuation, history, usage,
+publication and Stop checks remain required. Native subscription execution has
+no API proxy path and injects no API key or relay token into the CLI.
+
+`SubmitSubscriptionLoginCode` is an owner/client write-only operation bound to
+the original actor, account revision, operation and live native login. It
+accepts one bounded visible-ASCII readline input only for the native
+browser-code method. The server records the original request claim before
+retaining bytes in memory. `TakeSubscriptionLoginCode` permits only the original
+Worker/device/instance/lease and records consumption before releasing bytes
+once. Exact submit receipt replay never replenishes input. Lost memory, a lost
+Take response or canceled/expired/revoked ownership never permits another code
+submission or native launch. Neither code nor original browser URL enters jobs,
+receipts, resources, synchronized state, shared caches or logs.
+
+Progress exposes only the original initiating principal's live native URL,
+closed login method and safe diagnostic metadata. URL validation pins the
+original CLI's HTTPS host/path, client, PKCE and subscription scopes; DeliDev
+never reconstructs or repairs the URL. Native browser presentation binds the
+original trusted desktop window, server/lifetime, operation and exact URL.
+Explicit reopening uses that same binding. Claude presentation creates no
+DeliDev callback listener or code-exchange authority.
+
+Cancellation wins before successful connection publication. A claimed operation
+remains fenced until its original process joins and native logout/status plus
+owned-profile removal are confirmed. Restart, offline/replaced Worker,
+uncertain delivery and failed cleanup retain the original operation/lease and
+recovery ownership. Reconnect does not repeat Take, native login or code input.
+The original Worker may reconcile its durable original process journal and
+report cleanup-only recovery under the retained lease; that path cannot publish
+a login success or authorize execution. Closed success receipts remain
+immutable even if their response is lost.
+
+Logout runs the official CLI, independently proves disconnected status and then
+removes only the canonical, inode-bound owned profile under the existing
+2,048-file/64 MiB cleanup bound. Oversized, symlinked, replaced or uncertain
+profiles retain recovery; they are not reported as removed. Account deletion
+requires confirmed native logout/profile cleanup and no retained owner,
+generation, lease or operation. Session checkpoints retain a digest-bound
+profile reference and independently bounded native history, never authentication
+files. Restored ownership metadata is quarantined and cannot adopt another
+Worker's credentials. Portable configuration contains no native ownership.
+No SQLite migration is added; real migrations 1–31 and reserved baseline 32
+remain unchanged.
+
+Fixture, build and browser-layout results do not establish actual account login
+or packaged macOS/Windows/Linux acceptance. Each platform requires real original
+CLI login, multiple-account isolation, first/follow-up input, Stop/Resume,
+logout/deletion and original offline/restart/cleanup evidence before support is
+reported complete. Keep the outstanding matrix visible in PR/CI evidence.
+Follow the desktop, protocol, harness, storage and structure contracts.
 
 ## Scope
 
 Issue #1095 implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. An explicitly selected paired Worker owns execution processes and its private authentication files. The independently negotiated server login lane owns browser login, authentication refresh and logout without a Worker. The complete product requirements remain in [issue #964's snapshot](cmds-delidev-requirements.md).
 
-Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens`, Claude subscriptions and concurrent use of one managed bundle are excluded. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
+Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens` and concurrent use of one managed Codex bundle are excluded. Claude follows its independently negotiated device-owned lane above. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
 
 ## Runtime and Language
 
@@ -99,7 +169,7 @@ The pinned native login-completed envelope includes nullable `onboardingEntrypoi
 
 ## Server browser login and account naming
 
-System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by PR #1332. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude Code and Grok remain unsupported. API authentication, execution selection and existing quota authority do not change.
+System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by PR #1332. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude requires the explicit Runner lane under capability 38; Grok remains unsupported. API authentication, execution selection and existing quota authority do not change.
 
 Go records the original actor, operation, server epoch, bounded lifetime, finish identity and closed progress state in optional server-owned `server_operation` metadata. Accepted request replay returns the original receipt without another native launch. Claiming requires the original queued pending operation and no Worker credential lease; `native_started` is an exclusive credential fence. An existing execution lease retains ownership while queued refresh/logout waits. Cancellation is serialized with final publication. Successful native completion, joined process closure, final-file comparison, private-runtime removal, vault staging and old-reference cleanup precede confirmed success. Uncertain cleanup and previous-epoch operations retain recovery ownership and cannot relaunch or redistribute credentials. Optional JSON metadata requires no database migration and does not alter migrations 26–30.
 

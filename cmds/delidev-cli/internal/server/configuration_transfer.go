@@ -71,7 +71,7 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	switch v := value.(type) {
 	case *domain.Agent:
 		if v.ReconfigurationRequired {
-			return nil, domain.SubscriptionReconfigurationRequired()
+			return nil, domain.AgentReconfigurationRequired()
 		}
 	case *domain.Provider:
 		if v.Protocol == domain.NativeSubscription {
@@ -79,6 +79,7 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		}
 	case *domain.Account:
 		v.Subscription = nil
+		v.RetainedConnections = nil
 		v.Health = domain.AccountDisconnected
 		v.Quota = []domain.QuotaWindow{}
 		v.ConfirmedExhausted = false

@@ -2,6 +2,14 @@
 
 > Runtime ownership behavior follows [runtime ownership observations](cmds-delidev-ownership-contract.md). Its authentication, nonblocking observation and retained-handle rules supersede runtime ownership restrictions below; component/source ownership and unrelated validation remain separate.
 
+## API format generation exclusion
+
+Portable v4 retains selected API protocols and Provider profiles, with unchanged
+v1–3 import semantics. Capability-9 current/retained connection generations,
+`credential_id`, health/validation/catalog and protected credentials are excluded.
+Imported API accounts always start disconnected and cannot import old execution
+authority. See the [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
 
 ## API format bundle version 4
 

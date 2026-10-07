@@ -7,7 +7,7 @@ import { SubscriptionService, FailedSubscriptionCleanupState, FailedSubscription
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
 import { LanguagePreference, LanguageProblem, LanguageProvider, type LanguageBridge, type LanguageSnapshot } from "./language";
-import { document as resourceDocument, encode } from "./documents";
+import { document as resourceDocument, object, text, encode } from "./documents";
 import { LocalWorkerState, LocalWorkerManagementState, type LocalWorkerStatus } from "./local-worker-controls";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import { i18n, SupportedLanguage } from "./localization";
@@ -25,11 +25,13 @@ function ToastFixtureControls() {
 }
 const populated = args.get("populated") === "true";
 const githubOnboarding = args.get("github-onboarding") === "true";
-const apiUsage = args.get("apiUsage") === "true";
+const apiFormatEdit = args.get("apiFormatEdit") === "true";
+const apiUsage = apiFormatEdit || args.get("apiUsage") === "true";
 const longNames = args.get("longNames") === "true";
 const projectWizard = args.get("projectWizard") === "true";
 const cleanupFixture = args.get("cleanupFixture") === "true";
-const subscriptionBackground = args.get("subscriptionBackground") === "true";
+const accountStorageFixture = args.get("accountStorage") === "true";
+const subscriptionBackground = args.get("subscriptionBackground") === "true" || accountStorageFixture;
 const theme = Object.values(Theme).find(value => value === args.get("theme")) ?? Theme.System;
 const hoverFixture = args.get("sessionHover") === "true";
 if (hoverFixture) void i18n.changeLanguage(args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English);
@@ -64,6 +66,11 @@ const fixtureWorker: LocalWorkerStatus = {
 
 const subscription = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: "ChatGPT fixture", type: "subscription", subscription_service: "chatgpt", enabled: true, exclude_automatic: false, recovery_notifications: false, health: "disconnected", quota: [] }) });
 const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, schemaVersion: 1, revision: 1n, documentJson: encode({ name: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: false }) });
+if (apiFormatEdit) {
+  const original = resourceDocument(provider);
+  provider.schemaVersion = 3;
+  provider.documentJson = encode({ ...original, endpoint: "https://openrouter.ai/api/v1", authentication: "bearer", api_formats: ["openai-chat", "openai-responses", "anthropic-messages"].map(protocol => ({ protocol, endpoint: "https://openrouter.ai/api/v1", authentication: "bearer" })) });
+}
 const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Fixture model with a complete long identity", native_id: "example-model-native-".repeat(12), alias: "example-model", provider_id: provider.id, new: true, hidden: false, harnesses: ["codex"] }) });
 const extraModels = args.get("manyModels") === "true" ? Array.from({ length: 20 }, (_, index) => create(ResourceSchema, { ...model, id: newRequestId(), documentJson: encode({ ...resourceDocument(model), name: `Fixture model ${index + 2}`, native_id: `example-model-${index + 2}` }) })) : [];
 const backup = { id: newRequestId(), revision: 1n, sizeBytes: 9007199254740993n, modifiedAt: "2026-09-29T00:00:00.123Z" };
@@ -71,15 +78,22 @@ const creationId = newRequestId();
 const records = populated ? [
   ...[EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY, EntityKind.MACHINE].map(kind => create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision: 1n, documentJson: encode({ name: `Example ${EntityKind[kind]} ${"long-name-".repeat(15)}`, harness: "codex", contents: "Complete fixture instruction text.\nSecond line retained.", repositories: [], accounts: [], templates: [] }) })),
   model, ...extraModels,
-  ...["Personal API", "Team API", "Backup API"].map((alias, index) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias, type: "api", provider_id: provider.id, enabled: true, health: "unverified", ...(index < 2 && !hiddenWorkerChoices ? { connection: { authentication: "keyless" } } : {}) }) })),
+  ...["Personal API", "Team API", "Backup API"].map((alias, index) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias, type: "api", provider_id: provider.id, enabled: true, health: "unverified", ...(index < 2 && !hiddenWorkerChoices ? { connection: { authentication: "keyless", ...(accountStorageFixture ? { id: newRequestId() } : {}) } } : {}) }) })),
   ...["api", "subscription"].map(type => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias: apiUsage && type === "api" ? longNames ? "OpenRouter-long-identity-".repeat(10) : "OpenRouter" : `Fixture ${type} entry`, type, provider_id: provider.id, connection: apiUsage && type === "api" ? { id: newRequestId() } : "disconnected", health: "unverified", enabled: true, quota: [] }) })),
   create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SETTINGS, schemaVersion: 1, revision: 1n, documentJson: encode({ default_routing: "priority", automatic_fetch: false, notifications: false, remediation: { ci_failure: false, review_feedback: false, merge_conflict: false, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 3 } }) }),
   create(ResourceSchema, { id: newRequestId(), kind: EntityKind.INTEGRATION, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Fixture GitHub profile", provider: "github.com", token_kind: "fine-grained", resource_owner: "fixture-owner", ...(args.get("repository-pat") === "true" ? { connection: { generation_id: newRequestId() } } : {}) }) }),
   create(ResourceSchema, { id: currentDeviceId, kind: EntityKind.DEVICE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Example desktop", type: "client", paired_at: "2026-10-01T08:00:00Z", revoked: false }) }),
   create(ResourceSchema, { id: newRequestId(), kind: EntityKind.DEVICE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Example runner", type: "worker", machine_id: machineId, paired_at: "2026-10-01T07:30:00Z", revoked: false }) }),
 ] : [];
+if (apiFormatEdit) {
+  const account = records.find(row => row.kind === EntityKind.ACCOUNT && resourceDocument(row).alias === "OpenRouter")!;
+  const original = resourceDocument(account);
+  account.schemaVersion = 3;
+  account.documentJson = encode({ ...original, api_protocol: "openai-chat", exclude_automatic: false, recovery_notifications: true, connection: { id: newRequestId(), authentication: "bearer" } });
+}
 if (projectWizard) records.push(...["oss", "delidev"].map(name => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name }) })));
 const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+if (apiFormatEdit) capabilities.push(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1);
 let notificationPreferences = { revision: 1n, interactions: true, terminals: false };
 const fixtureTransport = createRouterTransport(router => {
   router.service(IntegrationService, { listGitHubRepositories: request => {
@@ -111,7 +125,10 @@ const fixtureTransport = createRouterTransport(router => {
     return { resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, schemaVersion: request.schemaVersion, revision: 1n, documentJson: request.documentJson }) };
   } : undefined });
   if (githubOnboarding) router.service(IntegrationService, { inspectGitHubToken: request => ({ requestId: request.requestId, state: GitHubTokenIdentityState.VERIFIED, identity: { id: "17", nodeId: "U_17", login: "fixture-user" } }) });
-  router.service(SystemService, { getStatus: () => ({ serverId, protocolVersion: 1, capabilities: [...(subscriptionBackground ? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, ...(cleanupFixture ? [SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1] : [])] : []), SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.REMOTE_REPOSITORIES_V1, ...(githubOnboarding ? [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] : []), ...(args.get("repository-pat") === "true" ? [SystemCapability.REPOSITORY_CLONE_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] : [])] }), listBackups: () => ({ backups: populated ? [backup] : [] }), inspectBackup: () => ({ backup, sha256: "a".repeat(64), schemaVersion: 30, serverId }), listBackupCreations: () => ({ jobs: populated ? [{ id: creationId, backupId: backup.id, revision: 1n, state: BackupCreationState.SUCCEEDED }] : [] }), listBackupDeletions: () => ({ jobs: [] }), getDoctor: () => ({ reportJson: encode({ schema_version: 2, server_id: serverId, version: "0.1.0", os: "darwin", architecture: "arm64", protocol_version: 1, database_schema_version: 24, listener: "http://127.0.0.1:46310", observed_at: "2026-10-01T08:00:00.000Z", database: "ready", credential_store: "owner-credential-ready", inference_probes: false, storage: { result: { state: "observed" }, database_bytes: "9007199254740993", wal_bytes: "391432", logical_database_bytes: "561152", volume_capacity_bytes: "18446744073709551615", volume_available_bytes: "950436651008", resources: [] }, machines: [], credentials: [], more_machines: false, more_credentials: false }) }) });
+  router.service(SystemService, { getStatus: () => ({ serverId, protocolVersion: 1, capabilities: [...(subscriptionBackground ? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, ...(cleanupFixture ? [SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1] : [])] : []), SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.REMOTE_REPOSITORIES_V1, ...(githubOnboarding ? [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] : []), ...(args.get("repository-pat") === "true" ? [SystemCapability.REPOSITORY_CLONE_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] : [])] }), listBackups: () => ({ backups: populated ? [backup] : [] }), inspectBackup: () => ({ backup, sha256: "a".repeat(64), schemaVersion: 30, serverId }), listBackupCreations: () => ({ jobs: populated ? [{ id: creationId, backupId: backup.id, revision: 1n, state: BackupCreationState.SUCCEEDED }] : [] }), listBackupDeletions: () => ({ jobs: [] }), getDoctor: () => ({ reportJson: encode({ schema_version: 2, server_id: serverId, version: "0.1.0", os: "darwin", architecture: "arm64", protocol_version: 1, database_schema_version: 24, listener: "http://127.0.0.1:46310", observed_at: "2026-10-01T08:00:00.000Z", database: "ready", credential_store: "owner-credential-ready", inference_probes: false, storage: { result: { state: "observed" }, database_bytes: "9007199254740993", wal_bytes: "391432", logical_database_bytes: "561152", volume_capacity_bytes: "18446744073709551615", volume_available_bytes: "950436651008", resources: [] }, machines: [], credentials: accountStorageFixture ? [subscription, ...records.filter(row => row.kind === EntityKind.ACCOUNT && resourceDocument(row).type === "api")].map(row => {
+    const data = resourceDocument(row), connectionId = text(object(data.connection).id);
+    return { account_id: row.id, connection_id: connectionId || undefined, result: data.type === "subscription" ? { state: "unavailable", code: "unsupported" } : text(data.alias).startsWith("OpenRouter") ? { state: "failed", code: "permission_denied", guidance: `Synthetic protected-store permissions guidance. ${"Original-reference-".repeat(30)}` } : connectionId ? { state: "not-applicable" } : { state: "unconfigured" } };
+  }) : [], more_machines: false, more_credentials: false }) }) });
 });
 const transport = fixtureTransport;
 createRoot(document.getElementById("root")!).render(<LanguageProvider bridge={languageBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={Object.assign(async () => fixtureWorker, { automatic: Boolean(automaticWorker) })} /></AppearanceProvider></LanguageProvider>);

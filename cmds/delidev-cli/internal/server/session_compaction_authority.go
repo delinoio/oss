@@ -6,6 +6,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -74,6 +75,13 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	p, err := store.Decode[domain.Provider](pr)
+	if err != nil {
+		return denied()
+	}
+	_, account, err := executionAccountFromTx(tx, v.AccountID, v.ConnectionID)
+	if err == nil {
+		p, err = providers.ResolveAccountProfile(p, account)
+	}
 	if err != nil {
 		return denied()
 	}

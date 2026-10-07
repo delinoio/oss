@@ -5,7 +5,7 @@
 
 ## Scope
 
-Issue #1143 owns the compact AI Subscription presentation; #1235 composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to #1096/#1104; unsupported Claude/Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
+Issue #1143 owns the compact AI Subscription presentation; #1235 composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to #1096/#1104; Claude lifecycle uses its independent capability 38 and original Runner; unsupported Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
 
 ## Runtime and Language
 
@@ -23,7 +23,7 @@ The production controller negotiates System `SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 
 
 Existing-account preference edits and the quota recovery notification toggle patch only their allowlisted top-level JSON tokens through the shared Account preference scanner. They preserve original protected bytes, including uint64 lease revisions above JavaScript's safe integer range. Post-login naming uses the same scanner for alias alone. The original expected protobuf revision, request UUID and resource bytes remain immutable for uncertain retries. Malformed JSON cannot produce a preference request; Go retains protected observation, numeric schema, authorization and stale-revision checks. These saves grant no authentication, quota or execution authority.
 
-Add account requires inventory capability 17, independent server-login capability 30 and the trusted desktop native browser control. One deliberate ChatGPT action creates an account named ChatGPT and immediately requests ordinary browser login with omitted machine selection. Duplicate clicks, Strict Mode, status polling and reconnect cannot start another account or login. Claude Code and Grok retain explicit Coming soon/unsupported guidance and cannot create an apparently supported login. Existing disconnected ChatGPT accounts can start the same flow deliberately. Authentication refresh and logout use the server lane without a Runner Device; logout confirms the exact current revision. Existing quota controls keep their original Worker authority and never infer an owner from server login.
+ChatGPT Add account requires inventory capability 17, independent server-login capability 30 and the trusted desktop native browser control. One deliberate ChatGPT action creates an account named ChatGPT and immediately requests ordinary browser login with omitted machine selection. Duplicate clicks, Strict Mode, status polling and reconnect cannot start another account or login. Claude uses the independent capability 38 flow below. Grok retains explicit Coming soon/unsupported guidance and cannot create an apparently supported login. Existing disconnected ChatGPT accounts can start the same flow deliberately. Authentication refresh and logout use the server lane without a Runner Device; logout confirms the exact current revision. Existing quota controls keep their original Worker authority and never infer an owner from server login.
 
 ChatGPT deletion is owned by `account-deletion.tsx` inside the active category. `Delete {alias}?` offers `Disconnect and delete account` and `Keep account`, explaining execution cancellation, protected credential removal and retained history/reference restrictions. One explicit confirmation reads the exact current account and then requests server-lane logout under capability 30. A current original server logout is observed without another request; other pending operations, recovery and removal remain blocking. Already disconnected, fully cleared accounts skip logout and require no native capability.
 
@@ -106,8 +106,64 @@ Row quota refresh remains unavailable while a lifecycle operation, removal/recov
 
 Retain the existing login-first hierarchy, Back action, theme and account lifetime. A ChatGPT native failed/unsupported/expired/recovery result shows `ChatGPT sign-in failed` as `role="status"`, followed by an ordinary `role="alert"` explanation and compact version, optional legacy minimum version, failed step, error code and optional opaque reference. Reconstruct explanations from closed metadata; never render server/native raw text. An empty detected version shows `Not detected`; an absent or invalid diagnostic shows `Not reported`. Keep independent recovery/cleanup uncertainty visible. Guidance points to Connection & diagnostics before another explicit sign-in.
 
-The approved 1280×800 preview illustrates initialization failure; it is not observed failure evidence for Codex 0.159.2. Preserve natural wrapping on narrow screens, the departure footer and existing controls. Failure adds no button, copy action, modal, focus movement, browser/device-code fallback or automatic retry. Claude/Grok retain their existing unsupported message. Confirmed naming keeps its original once-only focus behavior. Original Settings lifetime, late-callback suppression and once-only mutations remain unchanged.
+The approved 1280×800 preview illustrates initialization failure; it is not observed failure evidence for Codex 0.159.2. Preserve natural wrapping on narrow screens, the departure footer and existing controls. Failure adds no button, copy action, modal, focus movement, browser/device-code fallback or automatic retry. Grok retains its existing unsupported message; Claude account onboarding and management follow below. Confirmed naming keeps its original once-only focus behavior. Original Settings lifetime, late-callback suppression and once-only mutations remain unchanged.
 
+## Claude account onboarding and management
+
+Claude Add account requires inventory 17, System `CLAUDE_SUBSCRIPTIONS_V1 = 38`
+and trusted native browser control. The existing wide 960px Settings task dialog
+shows Runner Device → Sign in → Account name. Opening the task does not save an
+account or start authentication. Select one local/remote machine advertising
+Worker `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` with the single verified original
+Claude Code `2.1.236` installation. Bounded Runner pages and explicit refresh
+retain current selection semantics; discovery metadata alone cannot enable it.
+One explicit Start sign-in saves default disconnected Claude metadata and
+submits one sticky original login request. Duplicate clicks, Strict Mode,
+reconnect and progress polling cannot create another account or operation.
+
+Login shows the selected Runner and opens the official CLI's original URL
+through the lifetime/window/server-bound native browser action. Open browser
+again is explicit and reuses that same binding. Only the native browser-code
+method shows the masked Approval code input. The input remains outside React
+state, shared query/mutation caches, persistence and logs; hide clears unsent
+input. Submit clears the DOM value immediately and zeroizes the outgoing buffer
+when the request finishes. An uncertain result keeps the original one-time
+claim and permits no second code or automatic replay. No DeliDev callback/code
+exchange is involved.
+
+Success requires fresh original operation, account/profile owner, generation
+and connection proof before the Account name step. Focus moves once to the
+default `Claude` name; user edits use the exact alias-only patch. Save account
+name and Later both retain the connected account. Management displays the
+original owner Runner, Sign in again and logout. Reauthentication targets that
+same profile/machine and may not move authentication. Claude shows no quota or
+reset-credit controls.
+
+X, Escape and Back hide an active task through the existing shared task host;
+its original controller keeps observing accepted work. The subscriptions view
+offers View original operation to reopen a hidden task without starting another
+login. Explicit Cancel sign-in
+requests cancellation and waits for original cleanup. Category/Settings
+departure disposes presentation/native browser authority without canceling
+accepted Worker work. Failed, expired, unsupported, permission and recovery
+states use ordinary status/alert text with closed safe diagnostic
+version/phase/code/correlation fields. They never expose native output, URLs,
+identities or automatic retries. Unknown acceptance retains only the original
+request and offers explicit original-request reconciliation.
+
+Claude deletion composes the existing confirmed account-deletion controller.
+Connected accounts require capability 38 and logout on their original owner
+Runner. Only typed original success plus a fresh unchanged account with no
+connection, generation, profile/owner, lease, pending operation, removal or
+recovery permits configuration deletion. Offline/uncertain cleanup keeps the
+account. Already fully cleared accounts require no native capability. Historical
+references and protected server deletion rules remain authoritative.
+
+Keep the existing focus trap, trigger restoration, scrolling body/fixed footer,
+40px controls and responsive button stacking. Test 1280×800 and 480×800, both
+themes and 200% zoom. Browser/component fixtures and generated preview boards
+do not establish packaged CEF or actual account/platform acceptance. The
+approved preview is design input only and must not enter repository assets.
 ## Automatic failed-login cleanup
 
 `subscription-cleanup.tsx` owns the explicit capability-41 action and metadata-only generated Connect Query status reads. Your subscriptions places Auto cleanup / 자동 정리 immediately before Refresh all / 모두 새로고침, with shared 40px controls, 8px corners and an 8px wrapping gap. The idle help is Deletes failed login and disconnected subscription accounts. / 실패한 로그인 계정과 연결 해제된 구독 계정을 삭제합니다. The server selects fully disconnected subscription configurations for every supported service, in addition to failed initial ChatGPT logins; referenced or unconfirmed-cleanup accounts remain retained with reasons. There is no confirmation dialog. Missing capability, unreadable permission/connection, stopping server or another account workflow disables admission with a readable reason.
@@ -120,3 +176,7 @@ Uncertain acceptance retains only its original UUID/wire request for an explicit
 ## Explicit failed-login account deletion
 
 The ChatGPT deletion task sends one existing `DeleteConfiguration` request for a failed initial LOGIN without independent connection/generation/Worker ownership, including credential-cleanup-pending recovery. Go owns original native cleanup, protected credential cleanup and deletion through a durable single-account job. The client does not submit a replacement LOGIN or LOGOUT. It preserves the originally confirmed request/revision for uncertain retries and closes only on a matching successful deletion acknowledgment. Accepted server deletion survives task departure; late responses cannot invoke a disposed completion callback. A definite terminal retained result requires fresh account observation and explicit confirmation. Fully disconnected accounts retain ordinary configuration deletion, and connected ChatGPT accounts retain their original logout sequence.
+
+## Account storage observations
+
+The subscription list passes a presentation-only storage result slot to each account row and a shared reader toolbar to the category. Follow [Account-storage presentation](apps-delidev-diagnostics-contract.md#account-storage-presentation). Reuse the original read-only Doctor report; subscription inspection remains unsupported and shows an ordinary localized notice rather than an error. Preserve original account/connection identity, bounded incomplete inventories, previous/unconfirmed observations and visit disposal. The result cannot authorize login, quota refresh, disconnect or cleanup. Existing operation failures and independently durable cleanup remain in their original owning flows.

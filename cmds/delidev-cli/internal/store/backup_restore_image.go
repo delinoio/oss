@@ -60,7 +60,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	// Only a current, still-connected original OAuth result retains vault
 	// authority across restore. Neither an older account image nor a disconnected
 	// current descriptor can recover an old credential generation.
-	const connectedOAuthAccounts = `SELECT e.id FROM current_state.entities e JOIN current_state.account_oauth_attempts a ON e.id=json_extract(a.body,'$.account_id') WHERE e.kind='account' AND a.state='connected' AND json_extract(e.body,'$.connection.id')=json_extract(a.body,'$.connect_request_id')`
+	const connectedOAuthAccounts = `SELECT e.id FROM current_state.entities e JOIN current_state.account_oauth_attempts a ON e.id=json_extract(a.body,'$.account_id') WHERE e.kind='account' AND a.state='connected' AND json_type(e.body,'$.connection')='object' AND COALESCE(json_extract(e.body,'$.connection.credential_id'),json_extract(e.body,'$.connection.id'))=json_extract(a.body,'$.connect_request_id')`
 	queries := []string{
 		// A historical image cannot replace current once-only OAuth dispatch or
 		// cleanup evidence. Eligibility already excludes every unresolved attempt.
@@ -228,10 +228,11 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			}
 			v.Health = domain.AccountDisconnected
 			v.Connection, v.Removal, v.Validation, v.Catalog = nil, nil, nil, nil
+			v.RetainedConnections = nil
 			v.Quota, v.ConfirmedExhausted = nil, false
 			if v.Subscription != nil {
 				state := v.Subscription
-				if state.Generation != "" || state.IdentityCommitment != "" || state.Pending != nil || state.Lease != nil || state.RecoveryRequired {
+				if state.NativeProfileID != "" || state.OwnerMachineID != "" || state.Generation != "" || state.IdentityCommitment != "" || state.Pending != nil || state.Lease != nil || state.RecoveryRequired {
 					// The vault is outside this image. Retain historical references
 					// without authorizing an older bundle or native claim.
 					state.RecoveryRequired = true

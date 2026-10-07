@@ -47,7 +47,14 @@ const (
 )
 
 type managedSubscriptionJournal struct {
-	Version                                                 uint32 `json:"version"`
+	CleanupFinish                                           domain.ID `json:"cleanup_finish,omitempty"`
+	LeaseRevision                                           uint64    `json:"lease_revision,omitempty"`
+	Version                                                 uint32    `json:"version"`
+	NativeProfileID                                         domain.ID `json:"native_profile_id,omitempty"`
+	NativeIdentity                                          string    `json:"native_identity,omitempty"`
+	ExecutionStarted                                        bool      `json:"execution_started,omitempty"`
+	NativeStarted                                           bool      `json:"native_started,omitempty"`
+	CodeSubmissionID                                        domain.ID `json:"code_submission_id,omitempty"`
 	Lease, Account, Operation, Instance, Finish, Generation domain.ID
 	Action                                                  pb.SubscriptionAction
 	State                                                   managedJournalState
@@ -110,7 +117,9 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 		clear(response.Msg.Bundle)
 		return nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
+	claim.LeaseRevision = response.Msg.LeaseRevision
 	claim.Generation = domain.ID(response.Msg.GenerationId)
+	claim.NativeProfileID = domain.ID(response.Msg.NativeProfileId)
 	if err := writeJSON(journalPath, claim); err != nil {
 		clear(response.Msg.Bundle)
 		return nil, &managedExecutionUncertain{subscription.Invalid()}
@@ -186,12 +195,14 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) {
 			return subscription.Invalid()
 		}
 		var op domain.SubscriptionOperation
 		var observation *domain.SubscriptionObservationOperation
-		if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
+		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil {
+			op = domain.SubscriptionOperation{ID: account.Subscription.Lease.OperationID}
+		} else if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
 			observation = account.Subscription.Observation
 			op = domain.SubscriptionOperation{ID: observation.ID, Action: observation.Action, MachineID: observation.MachineID, Actor: observation.Actor}
 		} else if account.Subscription.Pending != nil {
@@ -217,6 +228,12 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 						return nil
 					}
 					return err
+				}
+				if account.SubscriptionService == domain.SubscriptionClaude {
+					if account.Subscription.RecoveryRequired {
+						return runClaudeRecovery(ctx, config, client, credential, domain.ID(r.Id), account)
+					}
+					return runClaudeAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op)
 				}
 				return runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op)
 			}
@@ -534,7 +551,7 @@ func managedSubscriptionCapability(resource *pb.Resource) bool {
 
 func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 	for _, v := range values {
-		if v == domain.ManagedCodexSubscriptionsV1 {
+		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 {
 			return true
 		}
 	}

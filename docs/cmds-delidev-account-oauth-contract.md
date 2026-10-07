@@ -25,7 +25,8 @@ actor/login/credential ownership, once-only exchange and cleanup stay intact.
 The desktop uses one provider-metadata-driven format presentation for manual and
 OAuth connections: explicitly choose among multiple formats, or display the sole
 format. Preserve Google project binding and device approval. Existing accounts
-require Disconnect and confirmed cleanup before format changes. No historical
+may use capability 9 for the key-preserving change without a new OAuth exchange;
+capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
 account/execution rewrite, protocol conversion or native change is authorized.
 
 

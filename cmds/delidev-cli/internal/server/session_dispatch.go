@@ -222,13 +222,22 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 			}
 		}
 	}
-	_, account, err := accountFromTx(tx, input.AccountID, 0)
+	_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 	if err != nil {
 		return empty, err
 	}
-	managed := c.Subscription && c.SubscriptionService == domain.SubscriptionChatGPT && account.SubscriptionService == c.SubscriptionService && account.ProviderID == "" && c.ProviderID == "" && account.Type == domain.SubscriptionAccount && c.Harness == domain.Codex && account.Subscription != nil && account.Subscription.Generation != "" && !account.Subscription.RecoveryRequired && (account.Subscription.Pending == nil || account.Subscription.Pending.Action == domain.SubscriptionRefresh) && account.Connection != nil && account.Connection.Authentication == domain.SubscriptionAuth
-	if managed && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
-		return empty, domain.Fail(domain.Unsupported, "The selected Runner Device has no managed Codex capability.", "Connect a Runner Device with a verified managed authentication profile before dispatching this account.")
+	managed := c.Subscription && account.Type == domain.SubscriptionAccount && account.SubscriptionService == c.SubscriptionService && c.SubscriptionService.Harness() == c.Harness && account.ProviderID == "" && c.ProviderID == "" && account.Subscription != nil && account.Subscription.Generation != "" && !account.Subscription.RecoveryRequired && (account.Subscription.Pending == nil || c.Harness == domain.Codex && account.Subscription.Pending.Action == domain.SubscriptionRefresh) && account.Connection != nil && account.Connection.Authentication == domain.SubscriptionAuth
+	if managed {
+		capability := domain.ManagedCodexSubscriptionsV1
+		if c.Harness == domain.ClaudeCode {
+			capability = domain.NativeClaudeSubscriptionsV1
+			if account.Subscription.OwnerMachineID != input.MachineID || account.Subscription.NativeProfileID == "" {
+				return empty, domain.Fail(domain.PermissionDenied, "This Claude account belongs to another Runner Device.", "Select the Runner Device that owns its native login before sending input.")
+			}
+		}
+		if !slices.Contains(machine.WorkerCapabilities, capability) {
+			return empty, domain.Fail(domain.Unsupported, "The selected Runner Device cannot execute this native subscription.", "Update and verify its native subscription profile before sending input.")
+		}
 	}
 	apiReady := account.Type == domain.APIAccount && account.Validation != nil && !domain.OwnershipBlocks(domain.OwnershipResource, input.ExecutionID, account.Validation.ConnectionID != input.ConnectionID) && account.Validation.State == domain.Observed && account.Validation.Problem == nil && !account.Validation.ObservedAt.IsZero() && account.Connection != nil && !account.Validation.ObservedAt.Before(account.Connection.ConnectedAt) && !account.Validation.ObservedAt.After(time.Now().UTC().Add(time.Second)) && (account.Validation.Authentication == domain.CredentialAccepted || account.Validation.Authentication == domain.KeylessEndpoint)
 	if !account.Enabled || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || domain.OwnershipBlocks(domain.OwnershipResource, input.ExecutionID, account.Connection.ID != input.ConnectionID) || account.Health != domain.AccountReady || (!managed && !apiReady) {

@@ -1,3 +1,5 @@
+- `test-account-format-layout.mjs` validates the synthetic capability-9 edit dialog at wide/narrow viewports, native labeled select, Provider lock, key absence, footer/body scrolling and keyboard focus/closure. Keep screenshots outside the checkout and native-select keystroke/native/account acceptance limits explicit.
+
 - `test-subscription-cleanup-layout.mjs` validates the synthetic Settings fixture in English/Korean, light/dark and wide/narrow layouts with keyboard activation and focus preservation. Keep outputs outside the checkout and separate browser fixture evidence from native/account acceptance.
 
 # DeliDev scripts ownership
@@ -70,3 +72,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - `DELIDEV_LAYOUT_PROJECTS_ONLY=1` scopes `test-settings-layout.mjs` to the three New Project wizard stages using the synthetic `projectWizard=true` fixture. Cover English/Korean, light/dark, 1440×900, 1280×820, 960×640, 640×480 and half-size effective 200% layout, native checkbox keyboard selection, explicit primary gating, stage focus, fixed footer, narrow wrapping, draft preservation/discard and dialog dismissal/restoration. Keep screenshots outside the checkout and report effective layout separately from actual browser chrome zoom and packaged CEF/platform acceptance.
 - `test-repository-dialog-layout.mjs` covers the GitHub chooser above the retained 640px Add repository task using synthetic revision-bound GitHub replies. Preserve English/Korean, light/dark, four viewports and effective 200% checks, parent inertness, child-only Escape/X/Cancel, independent body scrolling, opener focus and draft/selection retention. Nonmodal sidebar regions do not count as open modals. Keep fixture screenshots and native CEF acceptance separate.
+
+- `test-account-storage-layout.mjs` validates row-local storage notices and Doctor category navigation using `accountStorage=true` in the existing synthetic Settings fixture. Keep English/Korean, light/dark, 960×640 and effective 200% reflow, keyboard disclosure/focus, static CSP and category disposal checks. Build and screenshots stay outside the checkout; never read native credentials or claim packaged CEF/native acceptance.

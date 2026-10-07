@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.account-storage-header { margin: 16px 0; color: var(--muted); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.account-storage-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; color: var(--text); }
+.account-storage-toolbar button { min-height: 40px; white-space: normal; }
+.account-storage-notice { min-width: 0; margin: 16px 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--surface-muted); overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+.account-storage-notice[data-failed] { color: var(--danger-text); border-color: var(--danger-border); background: var(--danger-background); }
+.account-storage-notice p { margin: 0 0 8px; }
+.account-storage-summary { display: flex; align-items: flex-start; gap: 12px; }
+.account-storage-summary > div { min-width: 0; }
+.account-storage-summary svg { flex: 0 0 20px; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.account-storage-notice details { color: var(--text-secondary); }
+.account-storage-notice summary { min-height: 40px; padding: 8px 0; cursor: pointer; }
+.account-storage-notice summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.account-storage-notice dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px 16px; }
+.account-storage-notice dd { margin: 0; min-width: 0; font-variant-numeric: tabular-nums; }
+.account-storage-notice :last-child { margin-bottom: 0; }
+@media (max-width: 759px) { .account-storage-toolbar { align-items: flex-start; flex-direction: column; } .account-storage-notice dl { grid-template-columns: minmax(0, 1fr); } }

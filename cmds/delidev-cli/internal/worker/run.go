@@ -20,6 +20,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -29,18 +30,19 @@ import (
 )
 
 type Config struct {
-	startup              *executionStartupAttempt
-	network              *workerNetworkRuntime
-	observations         *managedObservationRegistry
-	inspectionMetadata   bool
-	remoteWorkspaceClone bool
-	repositoryClone      bool
-	updatesEnabled       bool
-	terminals            *terminalManager
-	Root                 string
-	StartupID            domain.ID
-	Logger               *slog.Logger
-	Ready                func(domain.ID)
+	startup                  *executionStartupAttempt
+	nativeClaudeInstallation *domain.Installation
+	network                  *workerNetworkRuntime
+	observations             *managedObservationRegistry
+	inspectionMetadata       bool
+	remoteWorkspaceClone     bool
+	repositoryClone          bool
+	updatesEnabled           bool
+	terminals                *terminalManager
+	Root                     string
+	StartupID                domain.ID
+	Logger                   *slog.Logger
+	Ready                    func(domain.ID)
 	// Admitted runs only after this original process owns its generation/lock.
 	// It publishes desktop ownership independently of network readiness.
 	Admitted         func(Lifecycle)
@@ -254,6 +256,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		cancel()
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
+		claudeCapabilityExpected := false
 		metadataExpected := false
 		remoteCloneExpected := false
 		cloneExpected := false
@@ -281,6 +284,31 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			managedCapabilityExpected = true
 			titleCapabilityExpected = true
 			profile := "implemented-adapters-v1"
+			config.nativeClaudeInstallation = nil
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1) {
+				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
+				claudeCapabilityExpected, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)
+				stop()
+				if claudeCapabilityExpected {
+					var machine domain.Machine
+					if domain.Decode(attached.Msg.Machine.DocumentJson, &machine) == nil {
+						for index := range machine.Installations {
+							candidate := machine.Installations[index]
+							if candidate.Harness == domain.ClaudeCode && candidate.Version == claude.SupportedVersion && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
+								config.nativeClaudeInstallation = &candidate
+								break
+							}
+						}
+					}
+				}
+				if err != nil {
+					if domain.SafeError(err).Code == domain.RecoveryRequired {
+						return err
+					}
+					config.Logger.InfoContext(ctx, "native_claude_subscription_profile_unavailable", "code", domain.SafeError(err).Code)
+					err = nil
+				}
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}
@@ -295,6 +323,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if managedCapabilityExpected {
 				profile += "\x00managed"
+			}
+			if claudeCapabilityExpected {
+				profile += "\x00native-claude-subscriptions-v1"
 			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
@@ -366,6 +397,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedCapabilityExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1)
 			}
+			if claudeCapabilityExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
+			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
 			}
@@ -423,7 +457,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
-			err = watchAttached(ctx, config, client, credential, instance, auxiliary, managedCapabilityExpected && managedSubscriptionCapability(attached.Msg.Machine))
+			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected) && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}

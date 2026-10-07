@@ -4,14 +4,15 @@
 
 ## Key-preserving API format change reservations
 
-Issue #964 reserves ProviderInventory capability
+PR #1666 established the complete reservations on main before activation.
+Issue #964 owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
 reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
-reserves request fields mutation 1, api_protocol 2, alias 3, enabled 4,
-exclude_automatic 5 and recovery_notifications 6; its response reserves account 1,
+uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
 request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
-Establish these complete allocations on main before implementation. Reservations
-alone grant no format change, key access or execution authority.
+Capability 9 now activates this dedicated operation. The reservation-only PR
+granted no format change, key access or execution authority.
 
 The approved extension permits changing a connected API account's format while
 keeping its protected key. Go owns atomic preference/profile publication and
@@ -50,7 +51,8 @@ actor/login/credential ownership, once-only exchange and cleanup stay intact.
 The desktop uses one provider-metadata-driven format presentation for manual and
 OAuth connections: explicitly choose among multiple formats, or display the sole
 format. Preserve Google project binding and device approval. Existing accounts
-require Disconnect and confirmed cleanup before format changes. No historical
+may use capability 9 for the key-preserving change without a new OAuth exchange;
+capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
 account/execution rewrite, protocol conversion or native change is authorized.
 
 
@@ -105,11 +107,11 @@ remain unchanged. Reservations activate nothing and add no migration.
 
 
 
-## Native Claude subscription reservations
+## Native Claude subscription allocations
 
-Issue #964 reserves System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
-`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20`. Establish the complete closure in
-`allocations.json` on main before dependent implementation. Preserve every
+PR #1612 established System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20`, with the complete closure in
+`allocations.json`, on main before this activation. Preserve every
 existing field, Codex bundle assignment and independent capability.
 
 Progress reserves login method/native diagnostic fields 8/9. Worker progress
@@ -125,12 +127,19 @@ accepted response field 1. Original Worker code Take reserves account/lease/
 machine/instance/operation IDs 1–5 and code/submission ID response fields 1–2.
 Wholly new declarations retain one owner and explicit `newDeclaration: true`.
 
-The planned owner/client code submission and original Worker code Take are
-single-use transient input to the original installed Claude process, never
-OAuth exchange or credential distribution. Native credentials remain owned by
-the account's selected Runner Device. This prerequisite adds no active schemas,
-generated bindings, advertisement, login, execution or browser authority and no
-database migration. Follow the subscription and structure contracts.
+The existing SubscriptionService now exposes `SubmitSubscriptionLoginCode`
+for the initiating owner/client and `TakeSubscriptionLoginCode` only for the
+original authenticated Worker/device/instance/lease. Code is write-only bytes:
+a durable claim precedes memory-only retention and durable consumption precedes
+one delivery. No replay redistributes bytes. Take/Finish retain existing Codex
+bundle fields; Claude forbids bundle bytes and refresh-confirmed claims and
+uses only native profile/identity metadata. Progress has closed method and
+safe version/phase/code/correlation diagnostics, with no transcript or identity.
+Generate Go and TypeScript from the reconciled schemas. Capability 38 does not
+grant Worker readiness; capability 20 requires verified original native
+installation and empty-profile cleanup. Native credentials remain on the
+selected Runner. No database migration is added. Follow the subscription and
+structure contracts; the main reservation alone granted no support.
 
 ## Agent Worker account source routes
 

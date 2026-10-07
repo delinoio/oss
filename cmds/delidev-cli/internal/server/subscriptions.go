@@ -81,6 +81,13 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 		if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
 			o.State = domain.SubscriptionCanceled
 		}
+		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
+			o.State = domain.SubscriptionCanceled
+			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
+				state.NativeProfileID = ""
+				state.OwnerMachineID = ""
+			}
+		}
 		state.Pending = nil
 		if _, err := tx.Put(domain.AccountKind, record.ID, record.Revision, "", "", account); err != nil {
 			return err
@@ -131,6 +138,11 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 	m := req.Msg.Mutation
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.requestClaudeSubscription(ctx, req)
 	}
 	if req.Msg.MachineId == "" {
 		return s.requestServerSubscription(ctx, req)
@@ -214,6 +226,11 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.cancelClaudeSubscription(ctx, req)
+	}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.cancel", disconnectAccountInput{domain.ID(m.Id), m.ExpectedRevision}, func(tx *store.Tx) (any, error) {
 		r, a, err := subscriptionAccount(tx, domain.ID(m.Id), m.ExpectedRevision)
 		if err != nil {
@@ -250,6 +267,11 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 
 func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Request[pb.GetSubscriptionProgressRequest]) (*connect.Response[pb.GetSubscriptionProgressResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
+	if matched, err := s.isClaudeSubscription(ctx, req.Msg.AccountId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.getClaudeSubscriptionProgress(ctx, req)
+	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -331,15 +353,25 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 				if err != nil {
 					return err
 				}
+				if a.SubscriptionService == domain.SubscriptionClaude && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) || a.SubscriptionService == domain.SubscriptionChatGPT && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+					continue
+				}
 				state := a.Subscription
-				if state != nil && state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued && state.Observation.MachineID == domain.ID(req.Msg.MachineId) && !domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) && (state.Lease == nil || state.Lease.Action == domain.SubscriptionExecute && state.Lease.InstanceID == domain.ID(req.Msg.InstanceId)) {
+				if state != nil && a.SubscriptionService == domain.SubscriptionClaude && state.RecoveryRequired && state.Lease != nil && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
 					records = append(records, r)
 					if len(records) == 4 {
 						break
 					}
 					continue
 				}
-				if state != nil && state.Pending != nil && state.Pending.MachineID == domain.ID(req.Msg.MachineId) && state.Pending.Phase == domain.SubscriptionQueued && state.Lease == nil && !domain.OwnershipBlocks(domain.OwnershipCleanup, "", state.RecoveryRequired) {
+				if state != nil && state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued && state.Observation.MachineID == domain.ID(req.Msg.MachineId) && !state.RecoveryRequired && (state.Lease == nil || state.Lease.Action == domain.SubscriptionExecute && state.Lease.InstanceID == domain.ID(req.Msg.InstanceId)) {
+					records = append(records, r)
+					if len(records) == 4 {
+						break
+					}
+					continue
+				}
+				if state != nil && state.Pending != nil && state.Pending.MachineID == domain.ID(req.Msg.MachineId) && state.Pending.Phase == domain.SubscriptionQueued && state.Lease == nil && !state.RecoveryRequired {
 					records = append(records, r)
 					if len(records) == 4 {
 						break
@@ -409,6 +441,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	}()
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.takeClaudeSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
@@ -631,6 +668,11 @@ var subscriptionUserCode = regexp.MustCompile(`^[A-Z0-9-]{4,32}$`)
 
 func (s *Service) PublishSubscriptionProgress(ctx context.Context, req *connect.Request[pb.PublishSubscriptionProgressRequest]) (*connect.Response[pb.PublishSubscriptionProgressResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
+	if matched, err := s.isClaudeSubscription(ctx, req.Msg.AccountId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.publishClaudeSubscriptionProgress(ctx, req)
+	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -684,6 +726,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	defer clear(req.Msg.Bundle)
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.finishClaudeSubscription(ctx, req)
 	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
@@ -987,7 +1034,7 @@ func (s *Service) markSubscriptionRecovery(id domain.ID) error {
 		return accountReceipt{ID: r.ID}, err
 	})
 	if err == nil {
-		delete(s.subscriptionProgress, pending)
+		s.clearClaudeLoginInput(pending)
 	}
 	return err
 }
@@ -1053,7 +1100,7 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 	})
 	if err == nil {
 		for _, operation := range presentations {
-			delete(s.subscriptionProgress, operation)
+			s.clearClaudeLoginInput(operation)
 		}
 	}
 	return err
