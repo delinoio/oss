@@ -28,11 +28,11 @@ it("registers a URL and connects a project on a real server without any Worker o
   expect(document(repositories[0])).toMatchObject({ remote_url: "git@github.com:fixture/remote-only.git", checkouts: [] });
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
   fireEvent.click(screen.getByRole("button", { name: "New Project" }));
-  fireEvent.change(screen.getByLabelText("Name", { exact: true }), { target: { value: "Remote project" } });
-  await screen.findByRole("option", { name: "remote-only" });
-  fireEvent.change(screen.getByLabelText("Add Repository", { exact: true }), { target: { value: repositories[0].id } });
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "remote-only" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.change(screen.getByLabelText("Project name", { exact: true }), { target: { value: "Remote project" } });
   fireEvent.change(screen.getByLabelText("Primary repository", { exact: true }), { target: { value: repositories[0].id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("heading", { name: "Remote project" });
   const projects = (await resources.listResources({ filter: { kind: EntityKind.PROJECT } })).resources;

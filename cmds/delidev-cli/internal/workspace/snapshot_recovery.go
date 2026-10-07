@@ -426,12 +426,22 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 			}
 			partial = false
 		}
+		if _, finalErr := os.Lstat(m.finalRemovalClaimPath(r.OperationID)); finalErr == nil {
+			claim, _, _, claimErr := m.readRemovalClaimState(r, raw)
+			if claimErr != nil {
+				return ResultUncertain()
+			}
+			_, finalErr = m.readFinalRemovalClaim(r, claim)
+			return finalErr
+		} else if !errors.Is(finalErr, os.ErrNotExist) {
+			return ResultUncertain()
+		}
 		exists, err := storageExists(path)
 		if err != nil {
 			return err
 		}
 		if !exists {
-			return nil
+			return ResultUncertain()
 		}
 	}
 	if err := m.verifyRemovalInventory(ctx, r, path, partial, intent, pending, removed); err != nil {
@@ -671,10 +681,8 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
 				return result, err
 			}
-			if removed {
-				if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
-					return result, ResultUncertain()
-				}
+			if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
+				return result, ResultUncertain()
 			}
 			if err := security.SyncParent(root); err != nil {
 				return result, ResultUncertain()
@@ -747,10 +755,8 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err := m.confirmRemoval(ctx, original, removal, true); err != nil {
 				return result, err
 			}
-			if removed {
-				if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
-					return result, ResultUncertain()
-				}
+			if err := m.removeClaimedSnapshotTree(ctx, original, removal, true); err != nil {
+				return result, ResultUncertain()
 			}
 			if err := security.SyncParent(removal); err != nil {
 				return result, ResultUncertain()
@@ -815,6 +821,47 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return ResultUncertain()
+	}
+	finalPath := m.finalRemovalClaimPath(ref.OperationID)
+	if _, finalErr := os.Lstat(finalPath); finalErr == nil {
+		if !intentExists {
+			return ResultUncertain()
+		}
+		r := StorageRequest{OperationID: ref.OperationID, SnapshotID: ref.SnapshotID, Action: ref.Action, Preparation: PrepareRequest{SessionID: ref.SessionID}}
+		claim, _, _, err := m.readRemovalClaimState(r, raw)
+		if err != nil {
+			return err
+		}
+		final, err := m.readFinalRemovalClaim(r, claim)
+		if err != nil || final.State != storageFinalRootRemoved || m.finalRemovalAbsent(ref.OperationID) != nil {
+			return ResultUncertain()
+		}
+		if err := os.Remove(finalPath); err != nil {
+			return err
+		}
+		if err := security.SyncParent(finalPath); err != nil {
+			return err
+		}
+	} else if !errors.Is(finalErr, os.ErrNotExist) {
+		return ResultUncertain()
+	}
+	// Older acknowledged receipts predate the final-root proof namespace. A
+	// missing parent is the legacy empty namespace, not an unsynchronized proof
+	// removal; the bounded inventory below validates that no new final root exists.
+	namespace, namespaceErr := finalRemovalNamespaceInventory(ctx, m.Root, map[domain.ID]bool{ref.OperationID: true})
+	if namespaceErr != nil || len(namespace[ref.OperationID]) != 0 {
+		return ResultUncertain()
+	}
+	// A foreign public removal name may exist when the initial no-replace rename
+	// failed before any claim was published. It is safe to retire this operation's
+	// intent only when both claim records and the private final-root namespace are
+	// absent; the foreign name remains untouched and blocks generic deletion.
+	if err := storageNameAbsent(filepath.Join(m.Root, "workspace-removals", string(ref.OperationID))); err != nil {
+		claimRaw, claimErr := security.ReadPrivate(claimPath, maxStorageRemovalClaim)
+		journalRaw, journalErr := security.ReadPrivate(journalPath, maxStorageRemovalJournal)
+		if !errors.Is(claimErr, os.ErrNotExist) || !errors.Is(journalErr, os.ErrNotExist) || claimRaw != nil || journalRaw != nil {
+			return ResultUncertain()
+		}
 	}
 	claim, err := security.ReadPrivate(claimPath, maxStorageRemovalClaim)
 	if err == nil {

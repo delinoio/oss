@@ -1,0 +1,35 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.project-creation section[hidden] { display: none; }
+.project-creation-steps { display: flex; gap: 16px; list-style: none; margin: 0 0 24px; padding: 0 0 24px; border-bottom: 1px solid var(--border); }
+.project-creation-steps li { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-size: 12px; color: var(--muted); }
+.project-creation-steps li > span { display: grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 50%; color: var(--text); background: var(--surface-muted); }
+.project-creation-steps li[aria-current], .project-creation-steps li[data-complete=true] { color: var(--link); font-weight: 600; }
+.project-creation-steps li[aria-current] > span, .project-creation-steps li[data-complete=true] > span { color: var(--on-accent); background: var(--accent); }
+.project-creation h3, .project-creation h4 { margin: 0 0 8px; }
+.project-creation h4 { margin-top: 24px; }
+.project-creation p { color: var(--muted); }
+.project-repository-results { max-height: 280px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.project-repository-results:empty { border: 0; }
+.project-repository-choice { min-width: 0; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.project-repository-choice:last-child { border-bottom: 0; }
+.project-repository-choice label.checkbox { margin: 0; align-items: center; gap: 12px; overflow-wrap: anywhere; }
+.project-repository-choice small { display: block; color: var(--muted); }
+.project-selected-repositories { list-style: none; padding: 0; margin: 8px 0; }
+.project-selected-repositories li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; padding: 8px 12px; margin-block: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); }
+.project-repository-position { flex: none; display: grid; place-items: center; min-width: 24px; min-height: 24px; border-radius: 4px; background: var(--surface-hover); }
+.project-repository-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.project-selected-repositories .actions { flex: none; margin: 0; }
+.project-selected-repositories .actions button { min-width: 40px; padding: 4px 8px; }
+.project-repository-identity { font-size: 12px; color: var(--muted); }
+.project-repository-identity code { display: block; overflow-wrap: anywhere; }
+.project-creation-summary { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.project-creation-summary dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px 16px; }
+.project-creation-summary dt { color: var(--muted); }
+.project-creation-summary dd { margin: 0; overflow-wrap: anywhere; }
+.project-creation-summary ol { margin: 0; padding-left: 20px; }
+@container settings-body (width < 480px) { .project-creation-steps { gap: 8px; } .project-creation-steps li { flex-direction: column; align-items: flex-start; } .project-creation-summary dl { grid-template-columns: minmax(0, 1fr); } }
+/* Effective 200% layout on a 640x480 viewport needs room for a wrapped footer.
+   Keep 40px actions and the scrolling body within the shared dialog bounds. */
+@media (max-height: 360px) {
+  .settings-task-dialog:has(.project-creation) :is(.settings-task-header, .settings-task-footer, .settings-task-body) { padding: 8px 16px; }
+}
