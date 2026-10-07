@@ -79,6 +79,7 @@ message GetSubscriptionProgressResponse {
   string generation = 6;
   // Safe metadata for the original native failure; absent on older servers.
   CodexDiagnostic diagnostic = 7;
+  GrokDiagnostic grok_diagnostic = 10;
 }
 message WatchSubscriptionRequest {
   string machine_id = 1;
@@ -238,4 +239,29 @@ enum CodexDiagnosticPhase {
   CODEX_DIAGNOSTIC_PHASE_EXECUTION = 10;
   CODEX_DIAGNOSTIC_PHASE_HISTORY = 11;
   CODEX_DIAGNOSTIC_PHASE_CLEANUP = 12;
+}
+
+// Original-operation metadata reconstructed from closed local failures.
+message GrokDiagnostic {
+  string detected_version = 1;
+  string supported_version = 2;
+  GrokDiagnosticPhase phase = 3;
+  string code = 4;
+  string message = 5;
+  string guidance = 6;
+  string correlation_id = 7;
+}
+enum GrokDiagnosticPhase {
+  GROK_DIAGNOSTIC_PHASE_UNSPECIFIED = 0;
+  GROK_DIAGNOSTIC_PHASE_DISCOVERY = 1;
+  GROK_DIAGNOSTIC_PHASE_VERSION = 2;
+  GROK_DIAGNOSTIC_PHASE_PROFILE = 3;
+  GROK_DIAGNOSTIC_PHASE_RUNTIME = 4;
+  GROK_DIAGNOSTIC_PHASE_LOGIN = 5;
+  GROK_DIAGNOSTIC_PHASE_REFRESH = 6;
+  GROK_DIAGNOSTIC_PHASE_LOGOUT = 7;
+  GROK_DIAGNOSTIC_PHASE_MODELS = 8;
+  GROK_DIAGNOSTIC_PHASE_EXECUTION = 9;
+  GROK_DIAGNOSTIC_PHASE_HISTORY = 10;
+  GROK_DIAGNOSTIC_PHASE_CLEANUP = 11;
 }

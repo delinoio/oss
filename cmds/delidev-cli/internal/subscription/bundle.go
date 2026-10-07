@@ -28,7 +28,11 @@ type Bundle struct {
 	LastRefresh time.Time `json:"last_refresh"`
 }
 
-type Identity struct{ Account, User, Email, Plan, DisplayName string }
+type Identity struct {
+	Account, User, Email, Plan, DisplayName string
+	Service                                 domain.SubscriptionService
+	Issuer, PrincipalType, PrincipalID      string
+}
 
 func Invalid() *domain.Error {
 	return domain.Fail(domain.RecoveryRequired, "The managed Codex authentication evidence is invalid or incomplete.", "Retain exclusive ownership and reconcile the original operation; never import or redistribute an older login.")

@@ -25,6 +25,8 @@ type SystemCapability int32
 
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                    SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1     SystemCapability = 39
+	SystemCapability_SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1 SystemCapability = 40
 	SystemCapability_SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1     SystemCapability = 34
 	SystemCapability_SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1            SystemCapability = 31
 	SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1         SystemCapability = 37
@@ -72,6 +74,8 @@ const (
 var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
+		39: "SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1",
+		40: "SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1",
 		34: "SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1",
 		31: "SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1",
 		37: "SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1",
@@ -111,6 +115,8 @@ var (
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                      0,
+		"SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1":       39,
+		"SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1":   40,
 		"SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1":       34,
 		"SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1":              31,
 		"SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1":           37,
@@ -2911,9 +2917,11 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x86\x0e\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xee\x0e\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x120\n" +
+	",SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_LOGIN_V1\x10'\x124\n" +
+	"0SYSTEM_CAPABILITY_GROK_SUBSCRIPTION_EXECUTION_V1\x10(\x120\n" +
 	",SYSTEM_CAPABILITY_GITHUB_TOKEN_ONBOARDING_V1\x10\"\x12)\n" +
 	"%SYSTEM_CAPABILITY_REPOSITORY_CLONE_V1\x10\x1f\x12,\n" +
 	"(SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1\x10%\x121\n" +
