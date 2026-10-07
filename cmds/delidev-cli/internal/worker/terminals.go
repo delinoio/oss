@@ -189,7 +189,8 @@ func (m *terminalManager) reportInstance(ctx context.Context, instance, id, oper
 func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if assignment.ID.Validate() != nil || assignment.SessionID.Validate() != nil || assignment.Operation.ID.Validate() != nil || assignment.Terminal.MachineID != m.credential.MachineID {
+	if assignment.ID.Validate() != nil || assignment.SessionID.Validate() != nil || assignment.Operation.ID.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", assignment.Terminal.MachineID != m.credential.MachineID) {
 		return domain.TerminalUnavailable()
 	}
 	switch assignment.Operation.Action {
@@ -206,8 +207,16 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 	}
 	claimID, reportID := j.ClaimID, j.ReportID
 	recoveryClaim := false
-	if j.InstanceID != m.instance || j.CloseRecovery != nil {
-		if j.CloseRecovery == nil || j.CloseRecovery.InstanceID != m.instance {
+	if j.
+		InstanceID !=
+		m.instance ||
+		j.CloseRecovery != nil {
+		if j.CloseRecovery == nil ||
+
+			j.
+				CloseRecovery.
+				InstanceID !=
+				m.instance {
 			j.CloseRecovery = &terminalCloseRecovery{InstanceID: m.instance, ClaimID: domain.NewID(), ReportID: domain.NewID()}
 			if err := m.saveJournal(j); err != nil {
 				return err
@@ -222,7 +231,8 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 			return rpc.ClientError(err)
 		}
 		var original terminal.Assignment
-		if domain.Decode(claimed.Msg.AssignmentJson, &original) != nil || terminalOperationDigest(original) != j.Digest || original.Terminal.InstanceID != m.instance {
+		if domain.Decode(claimed.Msg.AssignmentJson, &original) != nil || terminalOperationDigest(original) != j.Digest ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", original.Terminal.InstanceID != m.instance) {
 			return domain.TerminalUnavailable()
 		}
 		assignment = original
@@ -291,7 +301,8 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 			result.State, result.Problem = domain.TerminalUncertain, domain.Fail(domain.RecoveryRequired, "The original terminal already owns a shell.", "Reattach to it; never create a replacement for this request.")
 			return result
 		}
-		if a.Preparation == nil || a.Manifest == nil || a.Preparation.SessionID != a.SessionID || a.Preparation.MachineID != m.credential.MachineID {
+		if a.Preparation == nil || a.Manifest == nil || a.Preparation.SessionID != a.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", a.Preparation.MachineID != m.credential.MachineID) {
 			result.State, result.Problem = domain.TerminalUncertain, workspace.ResultUncertain()
 			return result
 		}

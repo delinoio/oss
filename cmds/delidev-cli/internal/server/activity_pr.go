@@ -97,7 +97,8 @@ func validatePRActivitySource(tx *store.Tx, activity store.Record, v domain.PRAc
 	}
 	if v.Action == domain.PRActivityVerifiedHandled {
 		proof, err := store.Decode[domain.PRHandlingVerification](activity)
-		if err != nil || proof.Validate() != nil || activity.ID != v.VerificationID || proof.SetID != v.SetID || !slices.Equal(proof.Problems, v.Problems) || proof.Actor != v.Actor {
+		if err != nil || proof.Validate() != nil || activity.ID != v.VerificationID || proof.SetID != v.SetID || !slices.Equal(proof.Problems, v.Problems) ||
+			domain.OwnershipBlocks(domain.OwnershipActor, "", proof.Actor != v.Actor) {
 			return invalidActivity()
 		}
 		for _, ref := range v.Problems {

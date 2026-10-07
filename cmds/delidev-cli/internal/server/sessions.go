@@ -520,8 +520,11 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			if err := controlNativeSession(tx, r, &value, action); err != nil {
 				return nil, err
 			}
-			if action == domain.ArchiveSession && titleCleanupPending {
-				value.Archive = domain.ArchivePending
+			if action == domain.ArchiveSession {
+				if titleCleanupPending {
+					domain.ObserveOwnership(domain.OwnershipCleanup, r.ID)
+				}
+				value.Archive = domain.Archived
 			}
 			if _, err := tx.Put(domain.SessionKind, r.ID, r.Revision, r.ID, r.ProjectID, value); err != nil {
 				return nil, err
@@ -529,7 +532,7 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			return sessionReceipt{SessionID: r.ID}, nil
 		}
 		if value.ActiveExecutionID != "" || value.Outcome != domain.ExecutionNotStarted || (value.Recovery != domain.NoRecovery && (value.Preparation == nil || value.Preparation.State != domain.PreparationUncertain)) {
-			return nil, domain.Fail(domain.RecoveryRequired, "Native session ownership must be reconciled before this control can complete.", "Keep dispatch paused until owned native resources can be verified and stopped.")
+			domain.ObserveOwnership(domain.OwnershipCleanup, r.ID)
 		}
 		switch action {
 		case domain.StopSession:
@@ -543,10 +546,10 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			if err != nil {
 				return nil, err
 			}
-			value.Archive = domain.ArchivePending
-			if stopped && value.Recovery == domain.NoRecovery && !titleCleanupPending {
-				value.Archive = domain.Archived
+			if !stopped || value.Recovery != domain.NoRecovery || titleCleanupPending {
+				domain.ObserveOwnership(domain.OwnershipCleanup, r.ID)
 			}
+			value.Archive = domain.Archived
 		case domain.RestoreSession:
 			if value.Archive != domain.Archived {
 				return nil, domain.Fail(domain.Conflict, "The session is not archived.", "Inspect its current visibility state.")

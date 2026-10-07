@@ -134,7 +134,10 @@ func (c *CodexEventPublisher) deliverSteer(ctx, publicationCtx context.Context, 
 		return publicationUncertain()
 	}
 	claim := attempt.Claim
-	if attempt.Version != 1 || attempt.JobID != identity.JobID || attempt.ExecutionID != c.publisher.execution || attempt.NativeThreadID != c.thread || attempt.NativeTurnID != c.turn || attempt.State != domain.SteerClaimed || attempt.Observation != nil || attempt.InputID != domain.ID(ir.Id) || attempt.InputID.Validate() != nil || attempt.Mode != c.publisher.input.Input.Mode || attempt.ContentRevision == 0 || queued.ContentRevision != attempt.ContentRevision || queued.Mode != attempt.Mode || queued.Delivery != domain.InputClaimed || queued.ExecutionID != attempt.ExecutionID || queued.NativeRequestID != identity.SteerID || domain.BindExecutionInput(attempt.InputID, queued.Prompt).PromptDigest != attempt.PromptDigest || claim == nil || claim.ID != journal.ClaimID || claim.MachineID != config.Credential.MachineID || claim.InstanceID != config.Instance || claim.DeviceID != config.Credential.DeviceID {
+	if attempt.Version != 1 || attempt.JobID != identity.JobID || attempt.ExecutionID != c.publisher.execution || attempt.NativeThreadID != c.thread || attempt.NativeTurnID != c.turn || attempt.State != domain.SteerClaimed || attempt.Observation != nil || attempt.InputID != domain.ID(ir.Id) || attempt.InputID.Validate() != nil || attempt.Mode != c.publisher.input.Input.Mode || attempt.ContentRevision == 0 || queued.ContentRevision != attempt.ContentRevision || queued.Mode != attempt.Mode || queued.Delivery != domain.InputClaimed || queued.ExecutionID != attempt.ExecutionID || queued.NativeRequestID != identity.SteerID || domain.BindExecutionInput(attempt.InputID, queued.Prompt).PromptDigest != attempt.PromptDigest || claim == nil || claim.ID != journal.ClaimID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != config.Credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", claim.DeviceID != config.Credential.DeviceID) {
 		return publicationUncertain()
 	}
 	input := domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode}
@@ -234,7 +237,11 @@ func (c *CodexEventPublisher) publishLateSteer(ctx context.Context, previous dom
 	path := filepath.Join(config.Root, "jobs", string(c.publisher.job), "steers", string(u.SteerID)+".json")
 	raw, err := security.ReadPrivate(path, 64<<10)
 	var journal steerJournal
-	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.State != responseObserved || journal.Control.JobID != c.publisher.job || journal.Control.SteerID != u.SteerID || journal.Control.Revision == 0 || journal.ServerID != config.Credential.ServerID || journal.DeviceID != config.Credential.DeviceID || journal.InstanceID != config.Instance || journal.ExecutionID != c.publisher.execution || journal.ThreadID != c.thread || journal.TurnID != c.turn || journal.ClaimID != u.ClaimID || journal.Observation == nil || *journal.Observation != previous || journal.Resolution != nil || journal.Input == nil || journal.Input.InputID != u.InputID {
+	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.State != responseObserved || journal.Control.JobID != c.publisher.job || journal.Control.SteerID != u.SteerID || journal.Control.Revision == 0 ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", journal.ServerID != config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", journal.DeviceID != config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", journal.InstanceID != config.Instance) ||
+		journal.ExecutionID != c.publisher.execution || journal.ThreadID != c.thread || journal.TurnID != c.turn || journal.ClaimID != u.ClaimID || journal.Observation == nil || *journal.Observation != previous || journal.Resolution != nil || journal.Input == nil || journal.Input.InputID != u.InputID {
 		return publicationUncertain()
 	}
 	if _, err := domain.CheckedExecutionInputs(journal.Input.InputID, journal.Input.PromptDigest, []domain.ExecutionInputBinding{*journal.Input}); err != nil {

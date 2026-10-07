@@ -211,7 +211,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       {!automaticTitles ? <div className="notice" role="status"><strong>{copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}</strong><p>{copy("new-session.updateTheDelidevServerAndConnect_039a1d")}</p><button type="button" onClick={openSettings}>{copy("new-session.openSettings_3f9401")}</button><Problem error={status.error} /></div> : null}
       {budgetProblem ? <p role="alert">{budgetProblem}</p> : null}
       {promptLimit ? <p role="alert">{copy("new-session.theFirstMessageExceeds256Kib_9ced04")}</p> : null}
-      
+
       <Problem error={selectedProject.error || mutation.error} />
       {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("new-session.retryTheSameSessionCreation_c70ddb")}</button> : null}
       {invalidAcknowledgment ? <div className="problem" role="alert"><strong>{copy("new-session.creationWasAcknowledgedWithoutAReadable_4432e2")}</strong><p>{copy("new-session.yourMessageIsRetainedRefreshThe_295fd7")}</p><button type="button" onClick={back}>{copy("new-session.inspectSessions_aa8dcc")}</button></div> : null}

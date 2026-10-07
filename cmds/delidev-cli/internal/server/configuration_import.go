@@ -248,7 +248,8 @@ func finishConfigurationImport(tx *store.Tx, record store.Record, parent domain.
 		if err != nil {
 			return err
 		}
-		if child.Type != domain.InspectRepositoryJob || child.ParentID != record.ID || child.MachineID != expected.MachineID {
+		if child.Type != domain.InspectRepositoryJob || child.ParentID != record.ID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", child.MachineID != expected.MachineID) {
 			return transferInvalid()
 		}
 		switch child.State {

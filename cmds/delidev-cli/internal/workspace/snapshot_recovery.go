@@ -624,7 +624,9 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err != nil {
 				return result, err
 			}
-			if metadata.SessionID != r.Preparation.SessionID || metadata.MachineID != r.Preparation.MachineID || manifestDigest(snapshot.Workspace) != manifestDigest(r.Manifest) || (original.SnapshotDigest != "" && metadata.SHA256 != original.SnapshotDigest) {
+			if metadata.SessionID != r.Preparation.SessionID ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", metadata.MachineID != r.Preparation.MachineID) ||
+				manifestDigest(snapshot.Workspace) != manifestDigest(r.Manifest) || (original.SnapshotDigest != "" && metadata.SHA256 != original.SnapshotDigest) {
 				return result, ResultUncertain()
 			}
 			if original.Action == StorageCreate || original.Action == StorageCleanup {

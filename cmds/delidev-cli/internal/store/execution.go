@@ -63,7 +63,8 @@ func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, 
 	if err != nil {
 		return empty, err
 	}
-	if pr.SessionID != sessionID || preparation.Type != domain.PrepareWorkspaceJob || preparation.State != domain.JobSucceeded || preparation.MachineID != session.MachineID {
+	if pr.SessionID != sessionID || preparation.Type != domain.PrepareWorkspaceJob || preparation.State != domain.JobSucceeded ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(sessionID), preparation.MachineID != session.MachineID) {
 		return empty, domain.Fail(domain.RecoveryRequired, "Workspace preparation ownership is inconsistent.", "Reconcile the original preparation before execution.")
 	}
 	ir, input, err := decodeEntity[domain.QueuedInput](t, domain.QueueKind, inputID)

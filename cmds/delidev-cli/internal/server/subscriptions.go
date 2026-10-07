@@ -73,7 +73,9 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 			return err
 		}
 		state := account.Subscription
-		if state == nil || state.Pending == nil || state.Pending.Actor.DeviceID != device || state.Pending.Phase != domain.SubscriptionQueued {
+		if state == nil || state.Pending == nil ||
+			state.Pending.Actor.DeviceID != device ||
+			state.Pending.Phase != domain.SubscriptionQueued {
 			continue
 		}
 		if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
@@ -372,7 +374,8 @@ func (s *Service) subscriptionLease(ctx context.Context, tx *store.Tx, id, lease
 	}
 	l := a.Subscription.Lease
 	actor, _ := domain.PrincipalFrom(ctx)
-	if actor.DeviceID != l.DeviceID {
+	if actor.DeviceID !=
+		l.DeviceID {
 		domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 	}
 	if l.ID != lease {
@@ -501,7 +504,9 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				return nil, err
 			}
 
-			if execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
+			if domain.OwnershipBlocks(domain.OwnershipResource, "", execution.AccountID != r.ID) ||
+				domain.OwnershipBlocks(domain.OwnershipResource, "", execution.ConnectionID != a.Connection.ID) ||
+				!execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
 				return nil, subscriptionDenied()
 			}
 			if canceled, err := tx.JobCancellationRequested(jr.ID); err != nil || canceled {
@@ -509,12 +514,16 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
 			op := state.Observation
-			if op == nil || op.ID != input.Operation || op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionObservationQueued || op.Generation != state.Generation || !quotaAccountReady(a) || state.Pending != nil || observationMachine(tx, input.Machine) != nil || subscriptionActorValid(tx, op.Actor) != nil {
+			if op == nil || op.ID != input.Operation || op.Action != action ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", op.MachineID != input.Machine) ||
+				op.Phase != domain.SubscriptionObservationQueued || op.Generation != state.Generation || !quotaAccountReady(a) || state.Pending != nil || observationMachine(tx, input.Machine) != nil || subscriptionActorValid(tx, op.Actor) != nil {
 				return nil, subscriptionDenied()
 			}
 		} else {
 			op := state.Pending
-			if op == nil || op.ID != input.Operation || op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued || op.Canceled {
+			if op == nil || op.ID != input.Operation || op.Action != action ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", op.MachineID != input.Machine) ||
+				op.Phase != domain.SubscriptionQueued || op.Canceled {
 				return nil, subscriptionDenied()
 			}
 			if err := subscriptionActorValid(tx, op.Actor); err != nil {
@@ -1013,7 +1022,9 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 				if lease.Epoch == s.subscriptionServerEpoch() {
 					continue
 				}
-			} else if lease.MachineID != machine || lease.InstanceID != instance || (lease.Action == domain.SubscriptionExecute) != executionOnly {
+			} else if lease.MachineID != machine ||
+				lease.InstanceID != instance ||
+				(lease.Action == domain.SubscriptionExecute) != executionOnly {
 				continue
 			}
 			if state.Pending != nil {

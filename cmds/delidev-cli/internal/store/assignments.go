@@ -87,7 +87,10 @@ func (t *Tx) restoreReceiptAssignment(record Record) error {
 		if err != nil {
 			return err
 		}
-		if r.ID != record.ID || r.Kind != domain.JobKind || r.SessionID != record.SessionID || r.ProjectID != record.ProjectID || r.Revision >= record.Revision || claim.Type != original.Type || claim.InstanceID != original.InstanceID || claim.MachineID != original.MachineID || claim.ParentID != original.ParentID || !claim.AcceptedAt.Equal(original.AcceptedAt) || !bytes.Equal(claim.Input, original.Input) {
+		if r.ID != record.ID || r.Kind != domain.JobKind || r.SessionID != record.SessionID || r.ProjectID != record.ProjectID || r.Revision >= record.Revision || claim.Type != original.Type ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != original.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != original.MachineID) ||
+			claim.ParentID != original.ParentID || !claim.AcceptedAt.Equal(original.AcceptedAt) || !bytes.Equal(claim.Input, original.Input) {
 			return domain.Fail(domain.RecoveryRequired, "Legacy claim receipts conflict with accepted job ownership.", "Preserve the original database and Worker journal.")
 		}
 		if candidate != nil && (candidate.Revision != r.Revision || !bytes.Equal(candidate.Data, r.Data)) {

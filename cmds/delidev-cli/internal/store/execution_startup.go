@@ -43,7 +43,10 @@ func (t *Tx) VerifiedStartupRejection(sessionID domain.ID) (Record, domain.Execu
 	var original domain.Job
 	var result domain.ExecutionStartupRejection
 	state := j.State == domain.JobFailed && r.Workspace.Reason != domain.Canceled || j.State == domain.JobCanceled && r.Workspace.Reason == domain.Canceled
-	if !state || j.Type != domain.ExecuteSessionJob || j.FinishedAt == nil || j.Problem == nil || j.Problem.Code != r.Workspace.Reason || jr.SessionID != sr.ID || jr.ProjectID != sr.ProjectID || j.MachineID != s.MachineID || j.InstanceID != r.InstanceID || a.SessionID != sr.ID || a.ProjectID != sr.ProjectID || r.ValidateAssignment(a.ID, a.Revision, a.Data) != nil || domain.Decode(a.Data, &original) != nil || !bytes.Equal(j.Input, original.Input) || domain.Decode(j.Input, &input) != nil || !s.OwnsExecution(input) || domain.Decode(j.Output, &result) != nil {
+	if !state || j.Type != domain.ExecuteSessionJob || j.FinishedAt == nil || j.Problem == nil || j.Problem.Code != r.Workspace.Reason || jr.SessionID != sr.ID || jr.ProjectID != sr.ProjectID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(sessionID), j.MachineID != s.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(sessionID), j.InstanceID != r.InstanceID) ||
+		a.SessionID != sr.ID || a.ProjectID != sr.ProjectID || r.ValidateAssignment(a.ID, a.Revision, a.Data) != nil || domain.Decode(a.Data, &original) != nil || !bytes.Equal(j.Input, original.Input) || domain.Decode(j.Input, &input) != nil || !s.OwnsExecution(input) || domain.Decode(j.Output, &result) != nil {
 		return Record{}, empty, false, domain.StartupRejectionUncertain()
 	}
 	expected, _ := json.Marshal(r)

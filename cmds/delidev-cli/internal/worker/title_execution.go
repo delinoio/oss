@@ -93,7 +93,9 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		return nil, publicationUncertain()
 	}
 	var input domain.AuxiliaryTitleInput
-	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.MachineID != connection.Credential.MachineID || input.OriginalJobID != job.ParentID {
+	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(jobID), input.MachineID != connection.Credential.MachineID) ||
+		input.OriginalJobID != job.ParentID {
 		return nil, publicationUncertain()
 	}
 	runtimeRoot := filepath.Join(config.Root, "title-runtimes")

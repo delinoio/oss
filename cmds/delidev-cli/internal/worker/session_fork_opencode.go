@@ -48,7 +48,8 @@ type openCodeForkCheckpoint struct {
 func readOpenCodeForkSource(ctx context.Context, root string, credential Credential, i domain.ForkJobInput) (openCodeExecutionCheckpoint, error) {
 	var empty openCodeExecutionCheckpoint
 	a := i.SourceAssignment
-	if i.Validate() != nil || a.Configuration.Harness != domain.OpenCode || credential.MachineID != a.MachineID {
+	if i.Validate() != nil || a.Configuration.Harness != domain.OpenCode ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", credential.MachineID != a.MachineID) {
 		return empty, executionCheckpointUncertain()
 	}
 	path, err := openCodeCheckpointPath(root, i.SourceJobID)
@@ -67,7 +68,14 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 	if a.Continuation != nil {
 		history = a.Continuation.HistoryExecutionID
 	}
-	if r.Completion != terminal || r.InputMode != a.Input.Mode || r.PromptSHA256 != executionInputDigest([]byte(a.Input.Prompt)) || r.AssignmentInputSHA256 != executionInputDigest(mustForkJSON(a)) || r.HistoryExecutionID != history || ref.ServerID != credential.ServerID || ref.DeviceID != credential.DeviceID || ref.MachineID != a.MachineID || ref.SessionID != i.SourceSessionID || ref.ExecutionID != a.ExecutionID || ref.JobID != i.SourceJobID || ref.InputID != a.InputID || ref.AccountID != a.AccountID || ref.ConnectionID != a.ConnectionID || ref.ConfigurationDigest != a.ConfigurationDigest || ref.ThreadRequestID != a.ThreadRequestID || ref.InputRequestID != a.TurnRequestID {
+	if r.Completion != terminal || r.InputMode != a.Input.Mode || r.PromptSHA256 != executionInputDigest([]byte(a.Input.Prompt)) || r.AssignmentInputSHA256 != executionInputDigest(mustForkJSON(a)) || r.HistoryExecutionID != history ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", ref.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", ref.DeviceID != credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", ref.MachineID != a.MachineID) ||
+		ref.SessionID != i.SourceSessionID || ref.ExecutionID != a.ExecutionID || ref.JobID != i.SourceJobID || ref.InputID != a.InputID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", ref.AccountID != a.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", ref.ConnectionID != a.ConnectionID) ||
+		ref.ConfigurationDigest != a.ConfigurationDigest || ref.ThreadRequestID != a.ThreadRequestID || ref.InputRequestID != a.TurnRequestID {
 		return empty, executionCheckpointUncertain()
 	}
 	checkpoint, err := readOpenCodeExecutionCheckpoint(ctx, root, r, i.Completion.NativeCheckpointDigest)
@@ -88,7 +96,9 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 
 func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, job domain.Job, i domain.ForkJobInput) (output json.RawMessage, returned error) {
 	c := config.execution
-	if runtime.GOOS == "windows" || c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || c.Instance != job.InstanceID || c.Credential.DeviceID != job.AssignedDeviceID || i.Validate() != nil || i.Version != 2 || i.SourceAssignment.Version != 4 && !domain.ValidNativeVersionMetadata(i.SourceAssignment.Installation.Version) {
+	if runtime.GOOS == "windows" || c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || c.Instance != job.InstanceID ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(owner), c.Credential.DeviceID != job.AssignedDeviceID) ||
+		i.Validate() != nil || i.Version != 2 || i.SourceAssignment.Version != 4 && !domain.ValidNativeVersionMetadata(i.SourceAssignment.Installation.Version) {
 		return nil, executionCheckpointUncertain()
 	}
 	var prep workspace.PrepareRequest
@@ -295,7 +305,16 @@ func readOpenCodeForkCheckpoint(ctx context.Context, root string, credential Cre
 	}
 	home := filepath.Join(root, "runtimes", string(f.RuntimeID))
 	raw, err := security.ReadPrivate(filepath.Join(home, "fork-completion.json"), maxOpenCodeExecutionCheckpointBytes)
-	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || value.Version != 2 || !bytes.Equal(mustForkJSON(value), raw) || value.JobID != f.JobID || value.ServerID != credential.ServerID || value.DeviceID != credential.DeviceID || value.SessionID != i.SessionID || value.MachineID != i.MachineID || credential.MachineID != i.MachineID || value.RuntimeID != f.RuntimeID || value.ConfigurationDigest != i.ConfigurationDigest || value.AccountID != i.AccountID || value.ConnectionID != i.ConnectionID || value.ManifestDigest != executionInputDigest(i.Manifest) || value.NativeReference.SessionID != string(f.NativeThreadID) || value.NativeReference.InputID != string(f.NativeTurnID) || value.NativeReference.CreationRequestID != value.Requests.Fork || value.Requests.Validate() != nil || value.InstanceID.Validate() != nil || value.Revision == 0 || !canonicalDigest(value.AssignmentDigest) || !canonicalDigest(value.JobInputDigest) || len(value.Claims) != 5 {
+	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || value.Version != 2 || !bytes.Equal(mustForkJSON(value), raw) || value.JobID != f.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", value.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", value.DeviceID != credential.DeviceID) ||
+		value.SessionID != i.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", value.MachineID != i.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", credential.MachineID != i.MachineID) ||
+		value.RuntimeID != f.RuntimeID || value.ConfigurationDigest != i.ConfigurationDigest ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", value.AccountID != i.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", value.ConnectionID != i.ConnectionID) ||
+		value.ManifestDigest != executionInputDigest(i.Manifest) || value.NativeReference.SessionID != string(f.NativeThreadID) || value.NativeReference.InputID != string(f.NativeTurnID) || value.NativeReference.CreationRequestID != value.Requests.Fork || value.Requests.Validate() != nil || value.InstanceID.Validate() != nil || value.Revision == 0 || !canonicalDigest(value.AssignmentDigest) || !canonicalDigest(value.JobInputDigest) || len(value.Claims) != 5 {
 		return openCodeForkCheckpoint{}, executionCheckpointUncertain()
 	}
 	ids, err := opencode.InspectForkCheckpoint(ctx, filepath.Join(home, "native"), value.Native, value.NativeReference)

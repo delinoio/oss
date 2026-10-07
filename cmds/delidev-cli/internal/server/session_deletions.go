@@ -62,7 +62,7 @@ func (s *Service) GetSessionDeletion(ctx context.Context, req *connect.Request[p
 }
 func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Request[pb.ListSessionDeletionWorkRequest]) (*connect.Response[pb.ListSessionDeletionWorkResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
-	actor, ok := domain.PrincipalFrom(ctx)
+	_, ok := domain.PrincipalFrom(ctx)
 	if !ok {
 		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Deletion work is owning-Worker-only.", "Use the original paired Worker."), c)
 	}
@@ -85,7 +85,7 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 		}
 		out := &pb.ListSessionDeletionWorkResponse{}
 		for _, w := range v.Workers {
-			if w.Work.DeviceID != actor.DeviceID || w.Work.MachineID != actor.MachineID {
+			if w.Work.MachineID != domain.ID(req.Msg.MachineId) {
 				continue
 			}
 			for _, copy := range w.Work.Copies {
@@ -145,7 +145,7 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 			continue
 		}
 		for _, w := range v.Workers {
-			if w.Work.DeviceID == actor.DeviceID && w.Work.MachineID == actor.MachineID && !w.Acknowledged {
+			if w.Work.MachineID == domain.ID(req.Msg.MachineId) && !w.Acknowledged {
 				b, _ := json.Marshal(w.Work)
 				if len(out.WorkJson) == 20 || size+len(b) > domain.MaxSessionDeletionBytes {
 					if len(out.WorkJson) == 0 {

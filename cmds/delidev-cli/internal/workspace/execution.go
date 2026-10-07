@@ -41,12 +41,13 @@ type executionClaim struct {
 // The durable claim lives outside the workspace so a missing/replaced workspace
 // cannot erase uncertainty after a Worker crash. It grants no server authority.
 type ExecutionLease struct {
-	once       sync.Once
-	manager    *Manager
-	claim      executionClaim
-	cwd        string
-	release    func() error
-	closeError error
+	once             sync.Once
+	manager          *Manager
+	claim            executionClaim
+	cwd              string
+	release          func() error
+	closeError       error
+	cleanupConfirmed bool
 }
 
 func (m *Manager) executionClaimPath(session domain.ID) string {
@@ -87,9 +88,13 @@ func (m *Manager) noActiveExecutionClaim(session domain.ID) error {
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	if err != nil || claim.State != executionClaimClosed {
-		return ResultUncertain()
+	if err != nil {
+		return err
 	}
+	if claim.State != executionClaimClosed {
+		domain.ObserveOwnership(domain.OwnershipCleanup, claim.JobID)
+	}
+
 	return nil
 }
 
@@ -184,31 +189,24 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 		previous = nil
 	}
 	validation := preparationIdentity
-	if previous == nil {
-		if err == nil {
-			if prior.State == executionClaimClosed {
-				return nil, domain.Fail(domain.Conflict, "This workspace already has a retained first execution.", "Reconcile its native history before explicit Resume; never repeat the initial input.")
-			}
-			return nil, ResultUncertain()
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, ResultUncertain()
-		}
-		if err := m.requireNoExecutionHistory(input.SessionID); err != nil {
-			return nil, err
-		}
-	} else {
-		if err != nil || prior.State != executionClaimClosed || prior.JobID != previous.JobID || prior.ExecutionID != previous.ExecutionID {
-			return nil, ResultUncertain()
-		}
-		if prior.Version != 2 {
-			return nil, domain.Fail(domain.RecoveryRequired, "This retained execution lacks continuation workspace identity evidence.", "Preserve its original files and native history for explicit recovery; never replay the first input.")
+	hadPrior := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if hadPrior {
+		if prior.State != executionClaimClosed || previous == nil || prior.JobID != previous.JobID || prior.ExecutionID != previous.ExecutionID {
+			domain.ObserveOwnership(domain.OwnershipCleanup, jobID)
 		}
 		if _, err := process.ObserveOwnerContext(ctx, m.Git.ProcessRoot, prior.JobID); err != nil {
 			return nil, err
 		}
+	} else if previous != nil {
+		domain.ObserveOwnership(domain.OwnershipCleanup, jobID)
+	}
+	if previous != nil {
 		validation = continuationIdentity
 	}
+
 	// Retired execution IDs remain unusable even when a caller supplies a fresh
 	// job ID. The current closed predecessor is checked separately above.
 	if _, err := os.Lstat(m.executionHistoryPath(input.SessionID, executionID)); !errors.Is(err, os.ErrNotExist) {
@@ -239,8 +237,8 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	if err != nil {
 		return nil, err
 	}
-	if previous != nil && (prior.ManifestDigest != manifestDigest || prior.WorkspaceDigest != identityDigest) {
-		return nil, ResultUncertain()
+	if hadPrior && (prior.ManifestDigest != manifestDigest || prior.WorkspaceDigest != identityDigest) {
+		domain.ObserveOwnership(domain.OwnershipResource, jobID)
 	}
 	if previous == nil {
 		if err := prGate.finish(m.preflightPreparedPRs(ctx, input, manifest)); err != nil {
@@ -259,7 +257,7 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	if _, err := os.Lstat(ownerDirectory); !errors.Is(err, os.ErrNotExist) {
 		return nil, ResultUncertain()
 	}
-	if previous != nil {
+	if hadPrior {
 		if err := m.retainClosedExecutionClaim(prior); err != nil {
 			return nil, err
 		}
@@ -272,14 +270,19 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 		claim.PreviousJobID, claim.PreviousExecutionID = previous.JobID, previous.ExecutionID
 	}
 	var original *executionClaim
-	if previous != nil {
+	if hadPrior {
 		original = &prior
 	}
 	if err := m.publishExecutionClaim(claim, original, security.WriteAtomic, security.SyncParent); err != nil {
 		return nil, err
 	}
 	m.Logger.InfoContext(ctx, "workspace_execution_claimed", "session_id", input.SessionID, "job_id", jobID, "execution_id", executionID, "continuation", previous != nil)
-	return &ExecutionLease{manager: m, claim: claim, cwd: manifest.PrimaryPath, release: lock.Close}, nil
+	// The session lock serializes metadata publication only. A live predecessor
+	// cannot hold admission until its cleanup is confirmed.
+	if err := lock.Close(); err != nil {
+		return nil, err
+	}
+	return &ExecutionLease{manager: m, claim: claim, cwd: manifest.PrimaryPath, release: func() error { return nil }}, nil
 }
 
 func (l *ExecutionLease) WorkingDirectory() string { return l.cwd }
@@ -298,11 +301,27 @@ func (l *ExecutionLease) ReconcileNative(ctx context.Context) error {
 	return nil
 }
 
-// Close must follow the native client's own Close/join. It independently checks
-// every indexed process scope before recording cleanup and unlocking. Unproven
-// cleanup leaves the durable claim active after the OS lock is released. A
-// synchronization failure remains uncertain even if its closed write landed;
-// neither case authorizes repeating the first execution.
+// CleanupConfirmed reports observation separately from permission to proceed.
+func (l *ExecutionLease) CleanupConfirmed() bool { return l.cleanupConfirmed }
+
+func (l *ExecutionLease) observeNative(ctx context.Context) (bool, error) {
+	retained, err := l.manager.readExecutionClaim(l.claim.SessionID)
+	if errors.Is(err, os.ErrNotExist) {
+		domain.ObserveOwnership(domain.OwnershipCleanup, l.claim.JobID)
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if retained != l.claim {
+		domain.ObserveOwnership(domain.OwnershipResource, l.claim.JobID)
+		return false, nil
+	}
+	return process.ObserveOwnerContext(ctx, l.manager.Git.ProcessRoot, l.claim.JobID)
+}
+
+// Close follows the original native join. Unconfirmed cleanup releases admission
+// but preserves the active historical claim; actual I/O failures remain errors.
 func (l *ExecutionLease) Close() error {
 	l.once.Do(func() {
 		defer func() {
@@ -317,10 +336,15 @@ func (l *ExecutionLease) Close() error {
 		}()
 		bounded, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := l.ReconcileNative(bounded); err != nil {
-			l.closeError = ResultUncertain()
+		confirmed, err := l.observeNative(bounded)
+		if err != nil {
+			l.closeError = err
 			return
 		}
+		if !confirmed {
+			return
+		}
+		l.cleanupConfirmed = true
 		closed := l.claim
 		closed.State = executionClaimClosed
 		raw, err := json.Marshal(closed)
@@ -337,7 +361,7 @@ func (m *Manager) executionHistoryPath(session, execution domain.ID) string {
 
 func (m *Manager) retainClosedExecutionClaim(claim executionClaim) error {
 	if claim.State != executionClaimClosed {
-		return ResultUncertain()
+		domain.ObserveOwnership(domain.OwnershipCleanup, claim.JobID)
 	}
 	path := m.executionHistoryPath(claim.SessionID, claim.ExecutionID)
 	if err := security.PrivateDir(filepath.Dir(path)); err != nil {

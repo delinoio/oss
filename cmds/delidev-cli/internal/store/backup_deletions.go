@@ -280,7 +280,7 @@ func (s *Store) RestoreBackupDeletionIntents(ctx context.Context, server domain.
 		if err != nil {
 			return storageError(err)
 		}
-		if v.Input.ServerID != server {
+		if domain.OwnershipBlocks(domain.OwnershipInstance, "", v.Input.ServerID != server) {
 			return deletionConflict()
 		}
 		if _, _, err = s.acceptBackupDeletion(ctx, v, true); err != nil {
@@ -369,7 +369,9 @@ func (s *Store) runBackupDeletion(ctx context.Context, id, server domain.ID, syn
 		return Record{}, err
 	}
 	var v backupDeletionIntent
-	if job.Type != domain.DeleteBackupJob || domain.Decode(job.Input, &v) != nil || v.JobID != id || v.Input.ServerID != server || v.Input.validate() != nil || !v.AcceptedAt.Equal(job.AcceptedAt) {
+	if job.Type != domain.DeleteBackupJob || domain.Decode(job.Input, &v) != nil || v.JobID != id ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id), v.Input.ServerID != server) ||
+		v.Input.validate() != nil || !v.AcceptedAt.Equal(job.AcceptedAt) {
 		return Record{}, backupUnavailable()
 	}
 	err = s.persistDeletionIntentState(v, job.State, syncParent)

@@ -104,12 +104,24 @@ func nativeUpdateClient(o options, saved string) (client, error) {
 		}
 		scope = filepath.Join(o.dataDir, "connections", saved, "client")
 		credential, e := worker.LoadCredential(scope)
-		if e != nil || credential.Type != domain.ClientDevice || credential.ServerID != profile.ServerID || credential.DeviceID != profile.DeviceID || credential.PairingID != profile.PairingID || credential.Endpoint != profile.Endpoint {
+		if e != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.ClientDevice) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance,
+				"",
+
+				credential.
+					ServerID !=
+					profile.ServerID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice,
+				"",
+				credential.
+					DeviceID !=
+					profile.DeviceID) ||
+			credential.PairingID != profile.PairingID || credential.Endpoint != profile.Endpoint {
 			return client{}, workerUpdateFailure()
 		}
 	}
 	credential, e := worker.LoadCredential(scope)
-	if e != nil || credential.Type != domain.ClientDevice {
+	if e != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.ClientDevice) {
 		return client{}, workerUpdateFailure()
 	}
 	if saved == "" && credential.Endpoint != "http://127.0.0.1:46310" {

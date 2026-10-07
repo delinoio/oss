@@ -126,7 +126,8 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	if err != nil {
 		return result, err
 	}
-	if original.ID != progress.JobID || job.Type != domain.ExecuteSessionJob || (job.State != domain.JobUncertain && !job.State.Terminal()) || job.MachineID != session.MachineID {
+	if original.ID != progress.JobID || job.Type != domain.ExecuteSessionJob || (job.State != domain.JobUncertain && !job.State.Terminal()) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != session.MachineID) {
 		return result, domain.ExecutionRecoveryUncertain()
 	}
 	assigned, err := tx.JobAssignment(original.ID)
@@ -138,7 +139,10 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		return result, err
 	}
 	var input domain.ExecutionJobInput
-	if claim.Type != domain.ExecuteSessionJob || claim.State != domain.JobClaimed || claim.InstanceID != job.InstanceID || claim.MachineID != job.MachineID || assigned.SessionID != sr.ID || !bytes.Equal(claim.Input, job.Input) || domain.Decode(claim.Input, &input) != nil || input.Validate() != nil || !session.OwnsExecution(input) || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID {
+	if claim.Type != domain.ExecuteSessionJob || claim.State != domain.JobClaimed ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != job.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != job.MachineID) ||
+		assigned.SessionID != sr.ID || !bytes.Equal(claim.Input, job.Input) || domain.Decode(claim.Input, &input) != nil || input.Validate() != nil || !session.OwnsExecution(input) || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID {
 		return result, domain.ExecutionRecoveryUncertain()
 	}
 	if err := checkContinuationInputs(tx, sr.ID, input, *progress); err != nil {
@@ -163,7 +167,9 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	if err != nil {
 		return result, err
 	}
-	if grant.ExecutionID != input.ExecutionID || grant.MachineID != job.MachineID || grant.InstanceID != claim.InstanceID {
+	if grant.ExecutionID != input.ExecutionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", grant.MachineID != job.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", grant.InstanceID != claim.InstanceID) {
 		return result, domain.ExecutionRecoveryUncertain()
 	}
 	history := input.ExecutionID
@@ -193,7 +199,11 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 			}
 			initial, err := store.Decode[domain.Job](first)
 			var original domain.ExecutionJobInput
-			if err != nil || domain.Decode(initial.Input, &original) != nil || original.Validate() != nil || (original.Version != 1 && original.Version != 4) || original.Configuration.Harness != domain.OpenCode || original.ExecutionID != history || original.SessionID != sr.ID || original.MachineID != input.MachineID || original.ConfigurationDigest != input.ConfigurationDigest || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID {
+			if err != nil || domain.Decode(initial.Input, &original) != nil || original.Validate() != nil || (original.Version != 1 && original.Version != 4) || original.Configuration.Harness != domain.OpenCode || original.ExecutionID != history || original.SessionID != sr.ID ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", original.MachineID != input.MachineID) ||
+				original.ConfigurationDigest != input.ConfigurationDigest ||
+				domain.OwnershipBlocks(domain.OwnershipResource, "", original.AccountID != input.AccountID) ||
+				domain.OwnershipBlocks(domain.OwnershipResource, "", original.ConnectionID != input.ConnectionID) {
 				return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 			}
 			creation = original.ThreadRequestID
@@ -235,7 +245,8 @@ func validateExecutionRecoveryResult(tx *store.Tx, record store.Record, job doma
 		return validatePRStartupRecoveryResult(tx, record, job, expected, raw)
 	}
 	var evidence domain.ExecutionRecoveryEvidence
-	if domain.Decode(job.Input, &expected) != nil || domain.Decode(raw, &evidence) != nil || evidence.Validate(expected) != nil || expected.JobID != job.ParentID || expected.SessionID != record.SessionID || expected.MachineID != job.MachineID {
+	if domain.Decode(job.Input, &expected) != nil || domain.Decode(raw, &evidence) != nil || evidence.Validate(expected) != nil || expected.JobID != job.ParentID || expected.SessionID != record.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", expected.MachineID != job.MachineID) {
 		return domain.ExecutionRecoveryUncertain()
 	}
 	sr, session, err := sessionRecord(tx, record.SessionID)

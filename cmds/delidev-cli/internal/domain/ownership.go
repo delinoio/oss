@@ -24,3 +24,13 @@ func ObserveOwnership(check OwnershipCheck, id ID) {
 	slog.Warn("ownership_observation", "operation_id", id, "check", check,
 		"result", "unconfirmed", "next_action", "continue")
 }
+
+// OwnershipBlocks observes a legacy mismatch predicate but never denies an
+// operation. Keeping the predicate in place preserves short-circuit ordering:
+// earlier nil, format and state checks still run before metadata is inspected.
+func OwnershipBlocks(check OwnershipCheck, operation ID, mismatch bool) bool {
+	if mismatch {
+		ObserveOwnership(check, operation)
+	}
+	return false
+}

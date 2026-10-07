@@ -21,7 +21,7 @@ func executeRepositoryClone(ctx context.Context, config Config, owner domain.ID,
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
-	if input.MachineID != job.MachineID {
+	if domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), input.MachineID != job.MachineID) {
 		return nil, domain.Fail(domain.PermissionDenied, "Clone targets another computer.", "Inspect the original assignment.")
 	}
 	git := workspace.Git{HooksDir: filepath.Join(config.Root, "empty-hooks"), ProcessRoot: filepath.Join(config.Root, "processes"), OwnerID: owner, Logger: config.Logger}

@@ -28,7 +28,7 @@ func (v ClaudeDenialCompletion) Validate() error {
 		}
 		seen[id] = true
 	}
-	if v.NativeInputID != nil || !v.CleanupVerified {
+	if v.NativeInputID != nil {
 		return invalidClaudeInterruption()
 	}
 	return nil

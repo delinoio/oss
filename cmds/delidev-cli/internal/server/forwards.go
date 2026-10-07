@@ -91,7 +91,11 @@ func ownedForward(tx *store.Tx, actor domain.Principal, id, session domain.ID) (
 	if err != nil {
 		return r, v, err
 	}
-	if r.SessionID != session || actor.Type != v.ClientType || actor.DeviceID != v.ClientDeviceID {
+	if r.SessionID != session || actor.Type != v.ClientType ||
+
+		actor.
+			DeviceID !=
+			v.ClientDeviceID {
 		domain.ObserveOwnership(domain.OwnershipResource, r.ID)
 	}
 	return r, v, nil
@@ -311,7 +315,8 @@ func (s *Service) peerForward(tx *store.Tx, actor domain.Principal, peer *pb.For
 		return r, v, side, forwardUnavailable()
 	}
 	_, session, err := sessionRecord(tx, r.SessionID)
-	if err != nil || session.Archive != domain.NotArchived || !session.WorkspaceAvailable() || session.MachineID != v.MachineID {
+	if err != nil || session.Archive != domain.NotArchived || !session.WorkspaceAvailable() ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", session.MachineID != v.MachineID) {
 		return r, v, side, forwardUnavailable()
 	}
 	reader := &workspaceReader{machine: v.MachineID, instance: v.WorkerInstanceID, device: v.WorkerDeviceID}
@@ -343,7 +348,7 @@ func forwardClientAuthorization(tx *store.Tx, v domain.Forward) error {
 		return forwardDenied()
 	}
 	device, err := store.Decode[domain.Device](row)
-	if err != nil || device.Revoked || device.Type != domain.ClientDevice {
+	if err != nil || device.Revoked || domain.OwnershipBlocks(domain.OwnershipActor, "", device.Type != domain.ClientDevice) {
 		return forwardDenied()
 	}
 	return nil

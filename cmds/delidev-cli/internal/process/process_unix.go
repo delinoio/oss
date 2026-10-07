@@ -5,6 +5,7 @@ package process
 import (
 	"context"
 	"golang.org/x/sys/unix"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -65,7 +66,13 @@ func ProcessAlive(p Process) bool {
 func ReconcileProcess(p Process) error {
 	if p.ScopeDir != "" {
 		scope, err := readScope(p.ScopeDir)
-		if err != nil || scope.OwnerID != p.OwnerID || p.OwnerID.Validate() != nil || scope.Owner.PID != p.PID || scope.Owner.Birth != p.Birth {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return ownershipError()
+			}
+			return err
+		}
+		if scope.OwnerID != p.OwnerID || p.OwnerID.Validate() != nil || scope.Owner.PID != p.PID || scope.Owner.Birth != p.Birth {
 			return ownershipError()
 		}
 		if scope.Complete {

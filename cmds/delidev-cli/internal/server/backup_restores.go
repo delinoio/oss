@@ -76,7 +76,9 @@ func (s *Service) RestoreBackup(ctx context.Context, req *connect.Request[pb.Res
 				}
 			}
 		}
-		time.AfterFunc(100*time.Millisecond, s.stop)
+		if s.stop != nil {
+			time.AfterFunc(100*time.Millisecond, s.stop)
+		}
 	}
 	if err != nil {
 		s.logger.WarnContext(ctx, "backup_restore_failed", "request_id", req.Msg.RequestId, "correlation_id", correlation, "code", domain.SafeError(err).Code)

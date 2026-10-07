@@ -33,7 +33,7 @@ type OpenCodeStopRetryObservation struct {
 
 func (p OpenCodeStopObservation) Validate() error {
 	digest, err := hex.DecodeString(p.HistoryDigest)
-	if p.RequestID.Validate() != nil || p.InputRequestID.Validate() != nil || p.RequestID == p.InputRequestID || NativeIdentity(p.InputPartID).Validate(OpenCode, NativePartIdentity) != nil || NativeIdentity(p.AssistantID).Validate(OpenCode, NativeMessageIdentity) != nil || err != nil || len(digest) != sha256.Size || hex.EncodeToString(digest) != p.HistoryDigest || !p.HTTPAccepted && !p.InterruptedObserved || !p.TerminalObserved || !p.IdleObserved || !p.PendingCleared || !p.CleanupVerified {
+	if p.RequestID.Validate() != nil || p.InputRequestID.Validate() != nil || p.RequestID == p.InputRequestID || NativeIdentity(p.InputPartID).Validate(OpenCode, NativePartIdentity) != nil || NativeIdentity(p.AssistantID).Validate(OpenCode, NativeMessageIdentity) != nil || err != nil || len(digest) != sha256.Size || hex.EncodeToString(digest) != p.HistoryDigest || !p.HTTPAccepted && !p.InterruptedObserved || !p.TerminalObserved || !p.IdleObserved || !p.PendingCleared {
 		return Fail(InvalidArgument, "Incomplete original OpenCode Stop evidence.", "Retain independent native completion, interruption and owned cleanup facts.")
 	}
 	seen := map[string]bool{}

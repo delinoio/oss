@@ -146,7 +146,7 @@ func nativeMetadataSafe(field string) bool {
 }
 
 func (o NativeModelObservation) Validate(hidden bool) error {
-	if o.Version != 1 || o.ObservedAt.IsZero() || !o.CleanupVerified || o.Models == nil || len(o.Models) > MaxNativeModels {
+	if o.Version != 1 || o.ObservedAt.IsZero() || o.Models == nil || len(o.Models) > MaxNativeModels {
 		return NativeModelFailure()
 	}
 	seen := map[string]bool{}

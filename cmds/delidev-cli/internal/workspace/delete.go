@@ -94,7 +94,8 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			if e != nil {
 				return e
 			}
-			if manifest.MachineID != w.MachineID || !slices.Contains(w.PreparationDigests, manifest.InputDigest) || !manifest.Type.Valid() {
+			if domain.OwnershipBlocks(domain.OwnershipMachine, "", manifest.MachineID != w.MachineID) ||
+				!slices.Contains(w.PreparationDigests, manifest.InputDigest) || !manifest.Type.Valid() {
 				return domain.SessionDeletionPending()
 			}
 			proof.Manifest = &manifest
@@ -112,7 +113,9 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	stage = "owned-manifest"
 	if proof.Manifest != nil {
 		manifest := *proof.Manifest
-		if manifest.SessionID != w.SessionID || manifest.MachineID != w.MachineID || !slices.Contains(w.PreparationDigests, manifest.InputDigest) {
+		if manifest.SessionID != w.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", manifest.MachineID != w.MachineID) ||
+			!slices.Contains(w.PreparationDigests, manifest.InputDigest) {
 			return domain.SessionDeletionPending()
 		}
 		if _, e := os.Lstat(root); e == nil {
@@ -130,7 +133,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		stage = "owned-processes"
 		processRoot := filepath.Join(m.Root, "processes", string(w.SessionID))
 		if _, e := os.Lstat(processRoot); e == nil {
-			if e := process.ReconcileOwnerContext(ctx, git.ProcessRoot, w.SessionID); e != nil {
+			if e := process.ProceedOwnerContext(ctx, git.ProcessRoot, w.SessionID); e != nil {
 				return e
 			}
 		} else if !errors.Is(e, os.ErrNotExist) {

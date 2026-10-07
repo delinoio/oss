@@ -45,7 +45,7 @@ func (m *Manager) quiesceWorkspaceReads(ctx context.Context, session domain.ID) 
 	legacy := filepath.Join(m.Root, "workspace-read-processes")
 	if names, err := boundedReadNames(legacy); err == nil {
 		if len(names) != 0 {
-			return ResultUncertain()
+			domain.ObserveOwnership(domain.OwnershipCleanup, session)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return ResultUncertain()
@@ -77,8 +77,12 @@ func (m *Manager) quiesceWorkspaceReads(ctx context.Context, session domain.ID) 
 			return err
 		}
 		owner := filepath.Join(root, string(id))
-		if process.ReconcileOwnerContext(ctx, root, id) != nil {
-			return ResultUncertain()
+		confirmed, err := process.ObserveOwnerContext(ctx, root, id)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			continue
 		}
 		maintenance := owner + ".recovery.lock"
 		if security.RegularPrivate(maintenance) != nil || os.Remove(maintenance) != nil {
@@ -91,6 +95,11 @@ func (m *Manager) quiesceWorkspaceReads(ctx context.Context, session domain.ID) 
 		if os.Remove(owner) != nil {
 			return ResultUncertain()
 		}
+	}
+	if names, err := boundedReadNames(root); err != nil {
+		return err
+	} else if len(names) != 0 {
+		return nil
 	}
 	if os.Remove(root) != nil || security.SyncParent(root) != nil {
 		return ResultUncertain()

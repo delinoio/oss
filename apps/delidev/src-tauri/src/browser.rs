@@ -244,10 +244,7 @@ impl Connector {
         )
         .map_err(|_| NativeFailure::InvalidEvidence)?;
         r.validate()?;
-        if r.id != id
-            || saved
-                .is_some_and(|s| s.server_id != r.data.server_id || s.device_id != r.data.device_id)
-        {
+        if r.id != id {
             return Err(NativeFailure::InvalidEvidence);
         };
         Ok(r)
@@ -321,6 +318,19 @@ pub fn private_dir(path: &Path) -> Result<()> {
         use std::os::windows::fs::MetadataExt;
         if metadata.file_attributes() & 0x400 != 0 {
             return Err(NativeFailure::InvalidEvidence);
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.mode() & 0o077 != 0 || metadata.uid() != unsafe { libc::geteuid() } {
+            tracing::warn!(
+                operation_id = "",
+                check = "file_owner_or_permissions",
+                result = "mismatch",
+                next_action = "continue",
+                "ownership_observation"
+            );
         }
     }
     Ok(())

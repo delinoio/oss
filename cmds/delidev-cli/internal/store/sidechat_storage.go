@@ -134,7 +134,9 @@ func (s *Store) BeginSidechatStorageRetirement(ctx context.Context, operation, s
 			} else if err != nil {
 				return err
 			}
-			if child.SidechatParentID != r.SessionID || child.ServerID != server || len(child.Dependents) != 0 {
+			if child.SidechatParentID != r.SessionID ||
+				domain.OwnershipBlocks(domain.OwnershipInstance, "", child.ServerID != server) ||
+				len(child.Dependents) != 0 {
 				return domain.SessionDeletionPending()
 			}
 			plan.Parent.Dependents = append(plan.Parent.Dependents, child)
@@ -157,7 +159,10 @@ func (s *Store) BeginSidechatStorageRetirement(ctx context.Context, operation, s
 	} else if domain.DecodeWithLimit(raw, &plan, maxSidechatStorageRetirementBytes) != nil {
 		return domain.SessionDeletionPending()
 	}
-	if plan.Version != 1 || plan.JobID != operation || plan.JobDigest != deletionInputDigest(j.Input) || plan.Parent.SessionID != r.SessionID || plan.Parent.ID != operation || plan.Parent.ServerID != server || plan.Parent.Actor != *input.SidechatActor || plan.Parent.validate() != nil || len(plan.Parent.Dependents) != len(input.SidechatDependents) {
+	if plan.Version != 1 || plan.JobID != operation || plan.JobDigest != deletionInputDigest(j.Input) || plan.Parent.SessionID != r.SessionID || plan.Parent.ID != operation ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", plan.Parent.ServerID != server) ||
+		domain.OwnershipBlocks(domain.OwnershipActor, "", plan.Parent.Actor != *input.SidechatActor) ||
+		plan.Parent.validate() != nil || len(plan.Parent.Dependents) != len(input.SidechatDependents) {
 		return domain.SessionDeletionPending()
 	}
 	for n, child := range plan.Parent.Dependents {

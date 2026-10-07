@@ -5,10 +5,10 @@ package process
 import (
 	"context"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -31,7 +31,10 @@ func init() {
 			os.Exit(3)
 		}
 		for {
-			time.Sleep(time.Second)
+			if _, err := os.Stat(barrier); err == nil {
+				os.Exit(0)
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 	executable, _ := os.Executable()
@@ -89,7 +92,7 @@ func orphan(t *testing.T) (*Handle, Process, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = h.Close() })
+	t.Cleanup(func() { _ = os.WriteFile(barrier, nil, 0600); _ = h.Close() })
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatal("start barrier allowed side effects")
 	}
@@ -97,53 +100,48 @@ func orphan(t *testing.T) (*Handle, Process, string) {
 		t.Fatal(err)
 	}
 	identity := awaitOrphan(t, marker)
-	t.Cleanup(func() {
-		if ProcessAlive(identity) {
-			_ = syscall.Kill(identity.PID, syscall.SIGKILL)
-		}
-	})
 	return h, identity, barrier
 }
-func TestOwnedDaemonizedDescendants(t *testing.T) {
+func TestUnheldDescendantsSurviveWithoutCleanupProof(t *testing.T) {
 	for _, mode := range []string{"natural-exit", "stop", "disconnect", "reconcile", "supervisor-death"} {
 		t.Run(mode, func(t *testing.T) {
-			if mode == "supervisor-death" && runtime.GOOS != "darwin" {
-				t.Skip("Linux supervisor death intentionally retains ancestry uncertainty")
-			}
 			h, child, barrier := orphan(t)
+			var err error
 			switch mode {
 			case "natural-exit":
 				if err := os.WriteFile(barrier, nil, 0600); err != nil {
 					t.Fatal(err)
 				}
-				if err := h.Wait(); err != nil {
-					t.Fatal(err)
-				}
+				err = h.Wait()
 			case "stop":
-				if err := h.Stop(); err != nil {
-					t.Fatal(err)
-				}
+				err = h.Stop()
 			case "disconnect":
 				_ = h.native.conn.Close()
 				<-h.Done()
-				if err := ReconcileProcess(h.Identity()); err != nil {
-					t.Fatal(err)
-				}
+				err = ReconcileProcess(h.Identity())
 			case "reconcile":
-				if err := ReconcileProcess(h.Identity()); err != nil {
-					t.Fatal(err)
-				}
+				err = ReconcileProcess(h.Identity())
 			case "supervisor-death":
+				// Simulate an external crash of this test-only supervisor.
 				if err := syscall.Kill(h.Identity().PID, syscall.SIGKILL); err != nil {
 					t.Fatal(err)
 				}
 				<-h.Done()
-				if err := ReconcileProcess(h.Identity()); err != nil {
+				err = ReconcileProcess(h.Identity())
+			}
+			if mode == "natural-exit" {
+				if err != nil {
 					t.Fatal(err)
 				}
+				return
 			}
-			if ProcessAlive(child) {
-				t.Fatal("owned orphan survived confirmed stop")
+			if domain.SafeError(err).Code != domain.RecoveryRequired || !ProcessAlive(child) {
+				t.Fatal("unheld descendant was signaled or cleanup became confirmed", err)
+			}
+			raw, readErr := os.ReadFile(filepath.Join(h.Identity().ScopeDir, "ownership.json"))
+			var journal map[string]any
+			if readErr != nil || json.Unmarshal(raw, &journal) != nil || journal["complete"] == true {
+				t.Fatal("uncertainty became durable success", readErr)
 			}
 		})
 	}
@@ -151,13 +149,13 @@ func TestOwnedDaemonizedDescendants(t *testing.T) {
 func TestStopCannotCrossExecutionScope(t *testing.T) {
 	first, a, _ := orphan(t)
 	second, b, _ := orphan(t)
-	if err := first.Stop(); err != nil {
+	if err := first.Stop(); domain.SafeError(err).Code != domain.RecoveryRequired {
 		t.Fatal(err)
 	}
-	if ProcessAlive(a) || !ProcessAlive(b) {
-		t.Fatal("stop crossed execution ownership")
+	if !ProcessAlive(a) || !ProcessAlive(b) {
+		t.Fatal("Stop signaled a process without its retained handle")
 	}
-	if err := second.Stop(); err != nil {
+	if err := second.Stop(); domain.SafeError(err).Code != domain.RecoveryRequired {
 		t.Fatal(err)
 	}
 }

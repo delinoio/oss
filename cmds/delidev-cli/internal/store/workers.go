@@ -266,3 +266,17 @@ func (t *Tx) Jobs(machine, parent domain.ID, state domain.JobState, after domain
 	}
 	return records, storageError(rows.Err())
 }
+
+// WorkerMachineForInstance resolves the requested routing target independently
+// of the authenticated caller's role. It does not mutate stored attribution.
+func (t *Tx) WorkerMachineForInstance(instance domain.ID) (domain.ID, error) {
+	if err := instance.Validate(); err != nil {
+		return "", err
+	}
+	var machine domain.ID
+	err := t.tx.QueryRowContext(t.ctx, "SELECT machine_id FROM worker_instances WHERE instance_id=? ORDER BY machine_id LIMIT 1", instance).Scan(&machine)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", domain.Fail(domain.NotFound, "The Worker instance does not exist.", "Select a registered Worker instance.")
+	}
+	return machine, storageError(err)
+}

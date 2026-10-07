@@ -52,8 +52,8 @@ func TestDiagnosticStorageReportsSeparateMeasurementsWithoutEvents(t *testing.T)
 		}
 		defer os.Chmod(path, 0600)
 		partial, err := s.DiagnosticStorage(context.Background())
-		if err == nil || partial.LogicalDatabaseBytes == nil || partial.DatabaseBytes != nil || partial.VolumeAvailableBytes != nil {
-			t.Fatal("private-file failure became healthy or discarded prior facts")
+		if err != nil || partial.LogicalDatabaseBytes == nil || partial.DatabaseBytes == nil || partial.VolumeAvailableBytes == nil {
+			t.Fatal("shared permissions blocked actual storage observation", err)
 		}
 	}
 }

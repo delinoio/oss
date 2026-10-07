@@ -55,7 +55,8 @@ func InspectCompletedExecution(ctx context.Context, manager *workspace.Manager, 
 	if (harness != domain.Codex && harness != domain.OpenCode && harness != domain.ClaudeCode) || (harness == domain.OpenCode) != (ref.OpenCode != nil) || (harness == domain.ClaudeCode) != (ref.Claude != nil) || ref.OpenCode != nil && ref.OpenCode.Validate() != nil || ref.Claude != nil && ref.Claude.Validate() != nil {
 		return evidence, executionCheckpointUncertain()
 	}
-	if manager == nil || ref.Checkpoint.validateForHarness(harness) != nil || ref.Checkpoint.Completion.Version != 1 || ref.AssignmentRevision == 0 || !canonicalDigest(ref.AssignmentDigest) || domain.UniqueIDs([]domain.ID{ref.ServerID, ref.DeviceID, ref.InstanceID}) != nil || ref.Preparation.SessionID != ref.Checkpoint.SessionID || ref.Preparation.MachineID != ref.Checkpoint.MachineID {
+	if manager == nil || ref.Checkpoint.validateForHarness(harness) != nil || ref.Checkpoint.Completion.Version != 1 || ref.AssignmentRevision == 0 || !canonicalDigest(ref.AssignmentDigest) || domain.UniqueIDs([]domain.ID{ref.ServerID, ref.DeviceID, ref.InstanceID}) != nil || ref.Preparation.SessionID != ref.Checkpoint.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", ref.Preparation.MachineID != ref.Checkpoint.MachineID) {
 		return evidence, executionCheckpointUncertain()
 	}
 	logger := manager.Logger
@@ -147,7 +148,9 @@ func readCompletedExecution(root string, ref CompletedExecutionRef) (journal, do
 	raw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(job)+".json"), 2<<20)
 	var prior journal
 	var completion domain.ExecutionCompletion
-	if err != nil || domain.Decode(raw, &prior) != nil || prior.Version != 1 || prior.JobID != job || prior.InstanceID != ref.InstanceID || prior.Revision != ref.AssignmentRevision || prior.Digest != ref.AssignmentDigest || (prior.State != journalFinished && prior.State != journalReported) || prior.Problem != nil || prior.ReportID.Validate() != nil || domain.Decode(prior.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(domain.ExecutionRecoveryRequest{Harness: ref.Harness}.NativeHarness()) != nil {
+	if err != nil || domain.Decode(raw, &prior) != nil || prior.Version != 1 || prior.JobID != job ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", prior.InstanceID != ref.InstanceID) ||
+		prior.Revision != ref.AssignmentRevision || prior.Digest != ref.AssignmentDigest || (prior.State != journalFinished && prior.State != journalReported) || prior.Problem != nil || prior.ReportID.Validate() != nil || domain.Decode(prior.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(domain.ExecutionRecoveryRequest{Harness: ref.Harness}.NativeHarness()) != nil {
 		return prior, completion, executionCheckpointUncertain()
 	}
 	terminal := completion
@@ -157,7 +160,11 @@ func readCompletedExecution(root string, ref CompletedExecutionRef) (journal, do
 	}
 	raw, err = security.ReadPrivate(filepath.Join(root, "jobs", string(job), "publication.json"), 1<<20)
 	var publication publicationJournal
-	if err != nil || domain.Decode(raw, &publication) != nil || publication.Version != 1 || publication.JobID != job || publication.InstanceID != ref.InstanceID || publication.ServerID != ref.ServerID || publication.DeviceID != ref.DeviceID || publication.Revision != ref.AssignmentRevision || publication.AssignmentDigest != ref.AssignmentDigest || publication.Pending != nil || publication.LastSequence != completion.LastSequence {
+	if err != nil || domain.Decode(raw, &publication) != nil || publication.Version != 1 || publication.JobID != job ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.InstanceID != ref.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.ServerID != ref.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", publication.DeviceID != ref.DeviceID) ||
+		publication.Revision != ref.AssignmentRevision || publication.AssignmentDigest != ref.AssignmentDigest || publication.Pending != nil || publication.LastSequence != completion.LastSequence {
 		return prior, completion, executionCheckpointUncertain()
 	}
 	return prior, completion, nil

@@ -244,9 +244,9 @@ func TestNotificationBatchesHaveExplicitOverflow(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, ctx := range []context.Context{context.Background(), domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice})} {
-		assertCode(t, s.Read(ctx, func(tx *Tx) error { _, _, err := tx.NotificationCandidates(20); return err }), domain.PermissionDenied)
-	}
+	assertCode(t, s.Read(context.Background(), func(tx *Tx) error { _, _, err := tx.NotificationCandidates(20); return err }), domain.PermissionDenied)
+	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice})
+	assertCode(t, s.Read(worker, func(tx *Tx) error { _, _, err := tx.NotificationCandidates(20); return err }), domain.Unauthenticated)
 }
 
 func TestSubscriptionRecoveryInboxAndNotificationDeduplicateWithoutSessionAuthority(t *testing.T) {

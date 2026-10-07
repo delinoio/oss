@@ -498,7 +498,7 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 	if !rootDone {
 		_ = cmd.Process.Kill()
 	}
-	cleanupDeadline := time.Now().Add(5 * time.Second)
+	cleanupDeadline := time.Now().Add(10 * time.Second)
 	for {
 		if !rootDone {
 			select {
@@ -559,7 +559,10 @@ func reconcileScope(dir string, started bool) error {
 		return nil
 	}
 	if err != nil {
-		return scopeError()
+		if os.IsNotExist(err) {
+			return scopeError()
+		}
+		return err
 	}
 	boot, err := bootIdentity()
 	if err != nil {

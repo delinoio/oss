@@ -57,7 +57,7 @@ func (v ExecutionInteraction) ClaudeToolApprovalContinuationEvidence(tool Execut
 
 func (v ExecutionInteraction) claudeCallbackContinuationEvidence(tool ExecutionMessage, expected ClaudeCallbackEvidence, reply ClaudePermissionResponse, claim *QuestionResponseClaim, echo *ClaudeReplyEcho, delivery, acceptance uint64) bool {
 	s := v.ClaudeSettlement
-	if v.Closure != InteractionNativeClosed || v.ClaudeCancellation != nil || claim == nil || claim.ID.Validate() != nil || claim.JobID.Validate() != nil || claim.InstanceID.Validate() != nil || claim.DeviceID.Validate() != nil || claim.MachineID.Validate() != nil || echo == nil || s == nil || s.Evidence != expected {
+	if v.Closure != InteractionNativeClosed || v.ClaudeCancellation != nil || claim == nil || claim.ID.Validate() != nil || claim.JobID.Validate() != nil || claim.InstanceID.Validate() != nil || claim.DeviceID != "" && claim.DeviceID.Validate() != nil || claim.MachineID.Validate() != nil || echo == nil || s == nil || s.Evidence != expected {
 		return false
 	}
 	if tool.ExecutionID != v.ExecutionID || tool.NativeThreadID != v.NativeThreadID || tool.NativeTurnID != v.NativeTurnID || tool.NativeID != v.NativeItemID || tool.State != MessageComplete || tool.Role != ToolMessage || tool.NativeParentID != tool.ClaudeTool.NativeMessageID || s.ArrivalID != v.Claude.ArrivalID || s.ToolMessageID != tool.ClaudeTool.Reference.ID || s.ResultNativeID != tool.ClaudeTool.Result.NativeEventID || s.Sequence != v.LastSequence || s.Sequence != acceptance || echo.ArrivalID != s.ArrivalID || v.FirstSequence == 0 || delivery <= v.FirstSequence || delivery >= s.Sequence || echo.Sequence <= v.FirstSequence || echo.Sequence >= tool.LastSequence || tool.LastSequence >= s.Sequence {

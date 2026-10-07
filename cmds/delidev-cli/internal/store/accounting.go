@@ -26,7 +26,10 @@ func (t *Tx) PutGrokAccounting(jobID, projectID domain.ID, input domain.Executio
 		return err
 	}
 	usage, err := Decode[domain.GrokUsageRecord](source)
-	if err != nil || source.SessionID != input.SessionID || usage.ExecutionID != input.ExecutionID || usage.ThreadID != p.NativeThreadID || usage.TurnID != p.NativeTurnID || usage.Harness != domain.GrokBuild || usage.Version != record.Version || usage.AccountID != record.AccountID || usage.ConnectionID != record.ConnectionID || usage.ProviderID != record.ProviderID || usage.ModelID != record.ModelID || usage.Sequence >= completion.LastSequence || usage.Usage.Ordinal != 1 || usage.Usage.Counts != record.Terminal.Counts {
+	if err != nil || source.SessionID != input.SessionID || usage.ExecutionID != input.ExecutionID || usage.ThreadID != p.NativeThreadID || usage.TurnID != p.NativeTurnID || usage.Harness != domain.GrokBuild || usage.Version != record.Version ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(jobID), usage.AccountID != record.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(jobID), usage.ConnectionID != record.ConnectionID) ||
+		usage.ProviderID != record.ProviderID || usage.ModelID != record.ModelID || usage.Sequence >= completion.LastSequence || usage.Usage.Ordinal != 1 || usage.Usage.Counts != record.Terminal.Counts {
 		return corrupt()
 	}
 	body, err := json.Marshal(record)

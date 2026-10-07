@@ -129,7 +129,7 @@ func TestPRRemediationSessionsUseOriginalLinksAndActivityWithoutResuming(t *test
 	if err := s.Read(worker, func(tx *Tx) error {
 		_, _, err := tx.PRRemediationSessions(f.project, target, PRRemediationSessionPosition{}, 2)
 		return err
-	}); domain.SafeError(err).Code != domain.PermissionDenied {
+	}); domain.SafeError(err).Code != domain.Unauthenticated {
 		t.Fatal("Worker selected remediation sessions", err)
 	}
 	paused := readExecutionSession(t, s, ids[3])

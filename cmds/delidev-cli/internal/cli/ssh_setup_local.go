@@ -107,11 +107,41 @@ func localSSHSetup(ctx context.Context, o options, args []string, input io.Reade
 		// A replay observes original readiness only. Missing progress cannot authorize
 		// another pair, lifecycle admission or process spawn.
 		credential, e := worker.LoadCredential(*root)
-		if e != nil || credential.Type != domain.WorkerDevice || credential.ServerID != document.ServerID || credential.Endpoint != document.Grant.Endpoint || intent.Device != "" && intent.Device != credential.DeviceID || intent.Machine != "" && intent.Machine != credential.MachineID || intent.Device == "" && credential.PairingID != document.Grant.PairingID {
+		if e != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance,
+				"",
+
+				credential.
+					ServerID !=
+					document.ServerID,
+			) ||
+			credential.Endpoint != document.Grant.Endpoint || intent.Device != "" && intent.Device != credential.DeviceID || intent.Machine != "" && intent.Machine != credential.MachineID || intent.Device == "" && credential.PairingID != document.Grant.PairingID {
 			return nil, sshLocalFailure()
 		}
 		status, e := worker.Status(*root)
-		if e != nil || status.State != worker.StateRunning || intent.Generation == "" || status.Lifecycle.Generation != intent.Generation || status.Lifecycle.ServerID != document.ServerID || status.Lifecycle.DeviceID != credential.DeviceID || status.Lifecycle.MachineID != credential.MachineID || (!intent.Reused && status.Lifecycle.WorkerVersion != rpc.Version) {
+		if e != nil || status.State != worker.StateRunning || intent.Generation == "" || status.Lifecycle.Generation != intent.Generation ||
+			domain.OwnershipBlocks(domain.OwnershipInstance,
+				"",
+
+				status.Lifecycle.
+					ServerID !=
+					document.
+						ServerID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice,
+				"",
+				status.
+					Lifecycle.
+					DeviceID !=
+					credential.
+						DeviceID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine,
+				"",
+
+				status.Lifecycle.
+					MachineID !=
+					credential.
+						MachineID) ||
+			(!intent.Reused && status.Lifecycle.WorkerVersion != rpc.Version) {
 			return nil, sshLocalFailure()
 		}
 		result := sshsetup.SetupResult{Version: 1, OperationID: document.OperationID, ServerID: document.ServerID, DeviceID: credential.DeviceID, MachineID: credential.MachineID, Generation: status.Lifecycle.Generation, WorkerVersion: status.Lifecycle.WorkerVersion, Target: target, Running: true, Reused: intent.Reused}
@@ -130,7 +160,14 @@ func localSSHSetup(ctx context.Context, o options, args []string, input io.Reade
 	}
 	credential, e := worker.LoadCredential(*root)
 	if e == nil {
-		if credential.ServerID != document.ServerID || credential.Endpoint != document.Grant.Endpoint || credential.Type != domain.WorkerDevice {
+		if domain.OwnershipBlocks(domain.OwnershipInstance,
+			"",
+
+			credential.
+				ServerID !=
+				document.ServerID,
+		) ||
+			credential.Endpoint != document.Grant.Endpoint || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) {
 			return nil, sshLocalFailure()
 		}
 		intent.Device = credential.DeviceID

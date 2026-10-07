@@ -33,7 +33,9 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID || preparation.MachineID != input.MachineID || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
+	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), preparation.MachineID != input.MachineID) ||
+		workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
 		return nil, workspace.ResultUncertain()
 	}
 	// Repository instruction/configuration and native Git identity have separate
@@ -246,5 +248,6 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		return nil, err
 	}
 	logger.InfoContext(nativeCtx, "grok_execution_workspace_closed", "last_sequence", completion.LastSequence)
+	completion.CleanupVerified = lease.CleanupConfirmed()
 	return json.Marshal(completion)
 }

@@ -69,7 +69,9 @@ func queueExecutionStartupRetry(tx *store.Tx, sr store.Record, session domain.Se
 	}
 	job, err := store.Decode[domain.Job](previous)
 	var input domain.ExecutionJobInput
-	if err != nil || !job.State.Terminal() || job.Type != domain.ExecuteSessionJob || job.Startup == nil || job.Startup.Failure == nil || job.Startup.Failure.State != domain.StartupFailed || previous.SessionID != sr.ID || job.MachineID != session.MachineID || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != session.Startup.ExecutionID || input.Remediation != nil || !session.OwnsExecution(input) {
+	if err != nil || !job.State.Terminal() || job.Type != domain.ExecuteSessionJob || job.Startup == nil || job.Startup.Failure == nil || job.Startup.Failure.State != domain.StartupFailed || previous.SessionID != sr.ID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != session.MachineID) ||
+		domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != session.Startup.ExecutionID || input.Remediation != nil || !session.OwnsExecution(input) {
 		return store.Record{}, domain.StartupRejectionUncertain()
 	}
 	ir, err := tx.Get(domain.QueueKind, input.InputID)

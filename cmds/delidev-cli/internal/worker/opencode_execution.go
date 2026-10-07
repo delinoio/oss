@@ -40,7 +40,9 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID || preparation.MachineID != input.MachineID || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
+	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), preparation.MachineID != input.MachineID) ||
+		workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
 		return nil, workspace.ResultUncertain()
 	}
 	executable := input.Installation.ResolvedPath
@@ -363,6 +365,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 			if err := lease.Close(); err != nil {
 				return nil, err
 			}
+			completion.CleanupVerified = lease.CleanupConfirmed()
 			return json.Marshal(completion)
 		}
 		observation, err := api.Next(readContext)

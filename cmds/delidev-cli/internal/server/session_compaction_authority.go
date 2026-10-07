@@ -20,7 +20,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	instance, seen, err := tx.WorkerInstance(g.MachineID)
-	if err != nil || instance != g.InstanceID || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
+	if err != nil || domain.OwnershipBlocks(domain.OwnershipInstance, "", instance != g.InstanceID) || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
 		return denied()
 	}
 	dr, err := tx.Get(domain.DeviceKind, g.DeviceID)
@@ -28,7 +28,8 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	device, err := store.Decode[domain.Device](dr)
-	if err != nil || device.Revoked || device.Type != domain.WorkerDevice || device.MachineID != g.MachineID {
+	if err != nil || device.Revoked || domain.OwnershipBlocks(domain.OwnershipActor, "", device.Type != domain.WorkerDevice) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", device.MachineID != g.MachineID) {
 		return denied()
 	}
 	_, machine, err := activeMachine(tx, g.MachineID)
@@ -58,7 +59,11 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 			return denied()
 		}
 		state, lease := account.Subscription, account.Subscription.Lease
-		if lease.Action != domain.SubscriptionExecute || lease.OperationID != g.JobID || lease.MachineID != g.MachineID || lease.InstanceID != g.InstanceID || lease.DeviceID != g.DeviceID || lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
+		if lease.Action != domain.SubscriptionExecute || lease.OperationID != g.JobID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", lease.MachineID != g.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", lease.InstanceID != g.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, "", lease.DeviceID != g.DeviceID) ||
+			lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
 			return denied()
 		}
 		return apiproxy.Scope{ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, SubscriptionService: v.Configuration.SubscriptionService, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Harness: v.Configuration.Harness}, nil

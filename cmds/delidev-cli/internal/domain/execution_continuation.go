@@ -65,7 +65,7 @@ func (s Session) ExecutionSelection() ExecutionSelection {
 func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 	initial := s.InitialExecution
 	selected := s.ExecutionSelection()
-	if initial == nil || s.MachineID != i.MachineID || s.AgentID != i.Configuration.AgentID || initial.ConfigurationDigest != i.ConfigurationDigest || selected.ID != i.ExecutionID || selected.InputID != i.InputID || selected.AccountID != i.AccountID || selected.ConnectionID != i.ConnectionID {
+	if initial == nil || OwnershipBlocks(OwnershipMachine, i.ExecutionID, s.MachineID != i.MachineID) || s.AgentID != i.Configuration.AgentID || initial.ConfigurationDigest != i.ConfigurationDigest || selected.ID != i.ExecutionID || selected.InputID != i.InputID || selected.AccountID != i.AccountID || selected.ConnectionID != i.ConnectionID {
 		return false
 	}
 	if i.Retry != nil && i.Continuation == nil && i.Fork == nil {
@@ -75,7 +75,7 @@ func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 		if i.Fork != nil {
 			return s.Fork != nil && s.CurrentExecution != nil && initial.ID == i.Fork.RuntimeID && s.Fork.JobID == i.Fork.JobID && s.Fork.CheckpointDigest == i.Fork.CheckpointDigest && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID
 		}
-		return s.CurrentExecution == nil && initial.ID == i.ExecutionID && initial.InputID == i.InputID
+		return s.CurrentExecution != nil && s.NativeExecutionRoot() == i.ExecutionID || s.CurrentExecution == nil && initial.ID == i.ExecutionID && initial.InputID == i.InputID
 	}
 	authorized := initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID || slices.ContainsFunc(s.AccountChanges, func(change SessionAccountChange) bool {
 		return change.AccountID == selected.AccountID && change.ConnectionID == selected.ConnectionID

@@ -66,7 +66,7 @@ func publicationUncertain() *domain.Error {
 }
 
 func OpenExecutionPublisher(config PublicationConfig) (publisher *ExecutionPublisher, returned error) {
-	if config.Assignment == nil || config.Client == nil || config.Assignment.Kind != pb.EntityKind_ENTITY_KIND_JOB || config.Assignment.SchemaVersion != 1 || config.Assignment.Revision == 0 || config.Credential.Type != domain.WorkerDevice {
+	if config.Assignment == nil || config.Client == nil || config.Assignment.Kind != pb.EntityKind_ENTITY_KIND_JOB || config.Assignment.SchemaVersion != 1 || config.Assignment.Revision == 0 || domain.OwnershipBlocks(domain.OwnershipActor, "", config.Credential.Type != domain.WorkerDevice) {
 		return nil, publicationUncertain()
 	}
 	if err := config.Credential.Validate(); err != nil {
@@ -80,11 +80,14 @@ func OpenExecutionPublisher(config PublicationConfig) (publisher *ExecutionPubli
 		return nil, err
 	}
 	var job domain.Job
-	if domain.Decode(config.Assignment.DocumentJson, &job) != nil || job.Validate() != nil || job.State != domain.JobClaimed || job.Type != domain.ExecuteSessionJob || job.MachineID != config.Credential.MachineID || job.InstanceID != config.Instance {
+	if domain.Decode(config.Assignment.DocumentJson, &job) != nil || job.Validate() != nil || job.State != domain.JobClaimed || job.Type != domain.ExecuteSessionJob ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != config.Credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", job.InstanceID != config.Instance) {
 		return nil, publicationUncertain()
 	}
 	var input domain.ExecutionJobInput
-	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != config.Assignment.SessionId || input.MachineID != job.MachineID {
+	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != config.Assignment.SessionId ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) {
 		return nil, publicationUncertain()
 	}
 	directory := filepath.Join(config.Root, "jobs", string(jobID))
@@ -108,7 +111,11 @@ func OpenExecutionPublisher(config PublicationConfig) (publisher *ExecutionPubli
 	raw, err := security.ReadPrivate(path, 1<<20)
 	if err == nil {
 		var retained publicationJournal
-		if domain.Decode(raw, &retained) != nil || retained.Version != state.Version || retained.JobID != state.JobID || retained.InstanceID != state.InstanceID || retained.ServerID != state.ServerID || retained.DeviceID != state.DeviceID || retained.Revision != state.Revision || retained.AssignmentDigest != state.AssignmentDigest || retained.LastSequence > domain.MaxExecutionEvents {
+		if domain.Decode(raw, &retained) != nil || retained.Version != state.Version || retained.JobID != state.JobID ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", retained.InstanceID != state.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", retained.ServerID != state.ServerID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, "", retained.DeviceID != state.DeviceID) ||
+			retained.Revision != state.Revision || retained.AssignmentDigest != state.AssignmentDigest || retained.LastSequence > domain.MaxExecutionEvents {
 			return nil, publicationUncertain()
 		}
 		if p := retained.Pending; p != nil && (p.RequestID.Validate() != nil || p.Event.Validate() != nil || p.Event.ExecutionID != input.ExecutionID || p.Event.Sequence != retained.LastSequence+1) {

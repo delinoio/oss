@@ -89,7 +89,14 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 		return nil, domain.Fail(domain.Unsupported, "The local server is incompatible with this client.", "Preserve running work and select a compatible client.")
 	}
 	parsed, err := url.Parse(endpoint.URL)
-	if err != nil || (parsed.Hostname() != "localhost" && !net.ParseIP(parsed.Hostname()).IsLoopback()) || endpoint.ServerID != identity.ServerID {
+	if err != nil || (parsed.Hostname() != "localhost" && !net.ParseIP(parsed.Hostname()).IsLoopback()) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance,
+			"",
+			endpoint.
+				ServerID !=
+				identity.
+					ServerID,
+		) {
 		return nil, domain.Fail(domain.Conflict, "The selected scope does not identify its local server.", "Inspect its original endpoint and owner identity without replacing either.")
 	}
 	if err := security.PrivateDir(root); err != nil {
@@ -103,7 +110,14 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if saved, err := worker.LoadCredential(root); err == nil {
-		if saved.Type != kind || saved.ServerID != identity.ServerID || saved.Endpoint != endpoint.URL {
+		if saved.Type != kind ||
+			domain.OwnershipBlocks(domain.OwnershipInstance,
+				"",
+				saved.ServerID !=
+					identity.
+						ServerID,
+			) ||
+			saved.Endpoint != endpoint.URL {
 			return nil, domain.Fail(domain.Conflict, "The device is paired to a different authority.", "Use its original server or explicitly select another client scope.")
 		}
 		c, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true}, strings.NewReader(saved.Token))
@@ -143,7 +157,14 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 		if err := attempt.RequestID.Validate(); err != nil {
 			return nil, err
 		}
-		if attempt.ServerID != identity.ServerID || attempt.Endpoint != endpoint.URL {
+		if domain.OwnershipBlocks(domain.OwnershipInstance,
+			"",
+			attempt.
+				ServerID !=
+				identity.
+					ServerID,
+		) ||
+			attempt.Endpoint != endpoint.URL {
 			return nil, domain.Fail(domain.Conflict, "A different local pairing attempt is retained.", "Restore its original authority or explicitly select a separate device scope.")
 		}
 	}
@@ -171,7 +192,13 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 	if err := domain.Decode(raw, &grant); err != nil {
 		return nil, err
 	}
-	if grant.ServerID != attempt.ServerID || grant.Endpoint != attempt.Endpoint {
+	if domain.OwnershipBlocks(domain.OwnershipInstance,
+		"",
+		grant.ServerID !=
+			attempt.
+				ServerID,
+	) ||
+		grant.Endpoint != attempt.Endpoint {
 		return nil, domain.Fail(domain.Conflict, "The retained grant belongs to a different authority.", "Preserve the original local pairing attempt for inspection.")
 	}
 	var credential worker.Credential

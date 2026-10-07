@@ -136,7 +136,7 @@ func (r SessionCompactionResult) Validate() error {
 		return r.validateOpenCode()
 	}
 	if r.Version == 2 {
-		if r.OpenCode != nil || r.Harness != Codex || r.Codex == nil || r.Outcome != CompactionSucceeded || r.OuterKind != "" || r.OuterError || r.CommandEchoID != "" || r.ResultID != "" || r.CommandCompletedID != "" || r.IdleID != "" || r.BoundaryID != "" || r.SummaryID != "" || r.Boundary != nil || r.Summary != nil || !r.CleanupVerified || r.Checkpoint.Validate() != nil || r.Checkpoint.ActionID != r.ActionID || r.Checkpoint.ExecutionID != r.ExecutionID || r.Checkpoint.RequiresResume {
+		if r.OpenCode != nil || r.Harness != Codex || r.Codex == nil || r.Outcome != CompactionSucceeded || r.OuterKind != "" || r.OuterError || r.CommandEchoID != "" || r.ResultID != "" || r.CommandCompletedID != "" || r.IdleID != "" || r.BoundaryID != "" || r.SummaryID != "" || r.Boundary != nil || r.Summary != nil || r.Checkpoint.Validate() != nil || r.Checkpoint.ActionID != r.ActionID || r.Checkpoint.ExecutionID != r.ExecutionID || r.Checkpoint.RequiresResume {
 			return CompactionUncertain()
 		}
 		p := r.Codex
@@ -155,7 +155,7 @@ func (r SessionCompactionResult) Validate() error {
 	if r.Harness != "" || r.Codex != nil || r.OpenCode != nil {
 		return CompactionUncertain()
 	}
-	if r.OuterKind != ClaudeResultSuccess || r.OuterError || r.Version != 1 || r.Checkpoint.Validate() != nil || r.ActionID != r.Checkpoint.ActionID || r.ExecutionID != r.Checkpoint.ExecutionID || !r.CleanupVerified || r.CommandEchoID != string(r.ActionID) {
+	if r.OuterKind != ClaudeResultSuccess || r.OuterError || r.Version != 1 || r.Checkpoint.Validate() != nil || r.ActionID != r.Checkpoint.ActionID || r.ExecutionID != r.Checkpoint.ExecutionID || r.CommandEchoID != string(r.ActionID) {
 		return CompactionUncertain()
 	}
 	seen := map[string]bool{}

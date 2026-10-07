@@ -85,7 +85,12 @@ func OpenClaudeBindingPublisher(p *ExecutionPublisher) (*ClaudeBindingPublisher,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, state := p.input, p.state
-	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.ClaudeCode || (i.Version != 4 && i.Installation.Version != claude.SupportedVersion) || state.JobID != p.job || i.ExecutionID != p.execution || state.InstanceID != p.config.Instance || state.ServerID != p.config.Credential.ServerID || state.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID || i.ThreadRequestID == i.TurnRequestID {
+	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.ClaudeCode || (i.Version != 4 && i.Installation.Version != claude.SupportedVersion) || state.JobID != p.job || i.ExecutionID != p.execution ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.InstanceID != p.config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.ServerID != p.config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", state.DeviceID != p.config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", i.MachineID != p.config.Credential.MachineID) ||
+		i.ThreadRequestID == i.TurnRequestID {
 		return nil, publicationUncertain()
 	}
 	if _, _, err := claudeExecutionSettings(i.Configuration, i.Input.Mode); err != nil {
@@ -149,7 +154,11 @@ func (c *ClaudeBindingPublisher) verify() error {
 	p := c.publisher
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed || p.release == nil || p.state.AssignmentDigest != c.journal.AssignmentDigest || p.state.JobID != c.journal.JobID || p.state.InstanceID != c.journal.InstanceID || p.state.ServerID != c.journal.ServerID || p.state.DeviceID != c.journal.DeviceID || p.state.Revision != c.journal.Revision {
+	if p.closed || p.release == nil || p.state.AssignmentDigest != c.journal.AssignmentDigest || p.state.JobID != c.journal.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", p.state.InstanceID != c.journal.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", p.state.ServerID != c.journal.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", p.state.DeviceID != c.journal.DeviceID) ||
+		p.state.Revision != c.journal.Revision {
 		return c.block()
 	}
 	pending := c.stage == claudeBindingPending || c.stage == claudeAcceptancePending || c.stage == claudeContentPending || c.stage == claudeProgressPending

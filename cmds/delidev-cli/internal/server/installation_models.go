@@ -84,7 +84,9 @@ func installationRecord(tx *store.Tx, kind domain.Kind, id domain.ID, actor doma
 	if json.Unmarshal(r.Data, &projection) != nil {
 		return r, installationFailure(domain.PermissionDenied)
 	}
-	if projection.Actor != actor {
+	if projection.
+		Actor !=
+		actor {
 		domain.ObserveOwnership(domain.OwnershipActor, r.ID)
 	}
 	return r, nil
@@ -105,7 +107,8 @@ func (s *Service) readInstallation(ctx context.Context, kind domain.Kind, id str
 			var owner struct {
 				ServerID domain.ID `json:"server_id"`
 			}
-			if json.Unmarshal(r.Data, &owner) != nil || owner.ServerID != s.Identity.ServerID {
+			if json.Unmarshal(r.Data, &owner) != nil ||
+				domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id), owner.ServerID != s.Identity.ServerID) {
 				return installationFailure(domain.RecoveryRequired)
 			}
 		}

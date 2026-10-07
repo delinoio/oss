@@ -260,7 +260,9 @@ func (t *Tx) validateOccurrenceSession(id domain.ID, value domain.ScheduleOccurr
 		return err
 	}
 	expected := domain.ScheduleOrigin{ScheduleID: value.ScheduleID, OccurrenceID: id, ConfigurationRevision: value.ConfigurationRevision, Trigger: value.Trigger}
-	if r.ProjectID != value.Selection.ProjectID || session.Source != domain.ScheduledSession || session.ScheduleOrigin == nil || *session.ScheduleOrigin != expected || session.ProjectID != value.Selection.ProjectID || session.MachineID != value.Selection.MachineID || session.Workspace != value.Selection.Workspace || session.AgentID != value.Selection.AgentID {
+	if r.ProjectID != value.Selection.ProjectID || session.Source != domain.ScheduledSession || session.ScheduleOrigin == nil || *session.ScheduleOrigin != expected || session.ProjectID != value.Selection.ProjectID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(id), session.MachineID != value.Selection.MachineID) ||
+		session.Workspace != value.Selection.Workspace || session.AgentID != value.Selection.AgentID {
 		return scheduleConflict()
 	}
 	return nil

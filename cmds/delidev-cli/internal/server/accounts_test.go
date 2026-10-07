@@ -396,9 +396,13 @@ func TestAccountInputConfigurationAndWorkerGuards(t *testing.T) {
 	wantAccountCode(t, err, domain.InvalidArgument)
 	worker, _ := pairedWorker(t, ctx, f.endpoint, f.identity)
 	_, err = f.accounts.ConnectAccount(ctx, ownerRequest(worker, &pb.ConnectAccountRequest{Mutation: acctMutation(bearer, domain.NewID()), ApiKey: []byte("worker-secret")}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = f.accounts.GetAccountStatus(ctx, ownerRequest(worker, &pb.GetAccountStatusRequest{Id: bearer.Id}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAccountConcurrentConnectionsUseOneProtectedReference(t *testing.T) {

@@ -33,7 +33,8 @@ func acceptSubscriptionObservation(tx *store.Tx, r store.Record, a domain.Accoun
 	if !quotaAccountReady(a) || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
 		return subscriptionDenied()
 	}
-	if op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || op.Validate() != nil {
+	if domain.OwnershipBlocks(domain.OwnershipResource, "", op.ConnectionID != a.Connection.ID) ||
+		op.Generation != a.Subscription.Generation || op.Validate() != nil {
 		return domain.Fail(domain.Conflict, "The confirmed account generation changed.", "Read the current account and confirm the original operation again before sending.")
 	}
 	if a.Subscription.Lease != nil && (a.Subscription.Lease.Action != domain.SubscriptionExecute || a.Subscription.Lease.MachineID != op.MachineID) {
@@ -273,7 +274,8 @@ func (s *Service) ReconcileSubscriptionCredit(ctx context.Context, req *connect.
 			return nil, subscriptionDenied()
 		}
 		op := a.Subscription.Observation
-		if op == nil || op.ID != input.Operation || op.Action != domain.SubscriptionResetCredit || op.Phase != domain.SubscriptionObservationUncertain || op.ConnectionID != input.Connection {
+		if op == nil || op.ID != input.Operation || op.Action != domain.SubscriptionResetCredit || op.Phase != domain.SubscriptionObservationUncertain ||
+			domain.OwnershipBlocks(domain.OwnershipResource, "", op.ConnectionID != input.Connection) {
 			return nil, domain.InvalidSubscriptionObservation()
 		}
 		if a.Subscription.Lease != nil && a.Subscription.Lease.Action != domain.SubscriptionExecute {
@@ -325,7 +327,11 @@ func (s *Service) ClaimSubscriptionObservation(ctx context.Context, req *connect
 			return nil, subscriptionDenied()
 		}
 		op := a.Subscription.Observation
-		if op == nil || op.ID != input.Operation || op.Generation != input.Generation || op.ConnectionID != a.Connection.ID || op.Phase != domain.SubscriptionObservationQueued || op.MachineID != input.Machine || subscriptionActorValid(tx, op.Actor) != nil {
+		if op == nil || op.ID != input.Operation || op.Generation != input.Generation ||
+			domain.OwnershipBlocks(domain.OwnershipResource, "", op.ConnectionID != a.Connection.ID) ||
+			op.Phase != domain.SubscriptionObservationQueued ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", op.MachineID != input.Machine) ||
+			subscriptionActorValid(tx, op.Actor) != nil {
 			return nil, subscriptionDenied()
 		}
 		op.Phase = domain.SubscriptionObservationSending
@@ -374,7 +380,8 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		source := domain.ID(m.RequestId)
 		if input.Operation != "" {
 			op := state.Observation
-			if op == nil || op.ID != input.Operation || op.Phase != domain.SubscriptionObservationSending || op.Generation != input.Generation || op.MachineID != input.Machine {
+			if op == nil || op.ID != input.Operation || op.Phase != domain.SubscriptionObservationSending || op.Generation != input.Generation ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", op.MachineID != input.Machine) {
 				return nil, subscriptionDenied()
 			}
 			if op.Action == domain.SubscriptionQuota && (observed.Outcome != "" || observed.ConsumeUncertain) || op.Action == domain.SubscriptionResetCredit && (observed.ConsumeUncertain == (observed.Outcome != "")) {

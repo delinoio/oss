@@ -122,3 +122,39 @@ func TestOwnerRecoveryFinishesInterruptedRetirement(t *testing.T) {
 		t.Fatal("interrupted retirement remained in the active owner index")
 	}
 }
+
+func TestUnconfirmedAdmissionPreservesJournalAndFilesystemErrors(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "processes")
+	owner := domain.NewID()
+	confirmed, err := ObserveOwnerContext(context.Background(), root, owner)
+	if err != nil || confirmed {
+		t.Fatal("missing journal did not remain unconfirmed", err)
+	}
+	path := filepath.Join(root, string(owner), string(domain.NewID()))
+	if err := security.PrivateDir(path); err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(path, "ownership.json")
+	raw := []byte(`{"version":1,"owner_id":"` + string(owner) + `","owner":{},"complete":false}`)
+	if err := os.WriteFile(journal, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err = ObserveOwnerContext(context.Background(), root, owner)
+	if err != nil || confirmed {
+		t.Fatal("unconfirmed metadata blocked admission or became proof", err)
+	}
+	after, err := os.ReadFile(journal)
+	if err != nil || string(after) != string(raw) {
+		t.Fatal("unconfirmed cleanup rewrote the original journal", err)
+	}
+	// A directory in place of the journal is an actual file-type error.
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(journal, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ObserveOwnerContext(context.Background(), root, owner); err == nil {
+		t.Fatal("actual filesystem error was ignored")
+	}
+}

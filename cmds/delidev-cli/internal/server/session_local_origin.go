@@ -54,7 +54,10 @@ func validateLocalOrigin(tx *store.Tx, session domain.Session) error {
 		if domain.UniqueIDs([]domain.ID{origin.MachineID, origin.DeviceID}) != nil {
 			return domain.Fail(domain.InvalidArgument, "Local origin metadata is invalid.", "Use valid machine and device references.")
 		}
-		if origin.MachineID != session.MachineID {
+		if origin.
+			MachineID !=
+			session.
+				MachineID {
 			domain.ObserveOwnership(domain.OwnershipMachine, session.MachineID)
 		}
 	}

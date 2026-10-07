@@ -188,7 +188,13 @@ func executeSessionCompaction(ctx context.Context, config Config, owner domain.I
 	ctx = bounded
 	c := config.execution
 	var i domain.SessionCompactionInput
-	if c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || config.executionContext == nil || domain.DecodeCompactionInput(job.Input, &i) != nil || i.Validate() != nil || c.Credential.MachineID != i.Assignment.MachineID || job.ParentID != i.SourceJobID || job.AssignedDeviceID != c.Credential.DeviceID || job.InstanceID != c.Instance || job.MachineID != c.Credential.MachineID || c.Assignment.Revision == 0 {
+	if c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || config.executionContext == nil || domain.DecodeCompactionInput(job.Input, &i) != nil || i.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), c.Credential.MachineID != i.Assignment.MachineID) ||
+		job.ParentID != i.SourceJobID ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(owner), job.AssignedDeviceID != c.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(owner), job.InstanceID != c.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), job.MachineID != c.Credential.MachineID) ||
+		c.Assignment.Revision == 0 {
 		return nil, domain.CompactionUncertain()
 	}
 	if i.Assignment.Configuration.Harness == domain.OpenCode {
@@ -437,13 +443,21 @@ func readSessionCompactionCheckpoint(ctx context.Context, root string, credentia
 	}
 	originalRaw, originalErr := json.Marshal(p.Input.Assignment)
 	canonical, err := json.Marshal(p)
-	if err != nil || originalErr != nil || !bytes.Equal(data, canonical) || p.Version != compactionCheckpointVersion || p.Input.Validate() != nil || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID || executionInputDigest(originalRaw) != input.Continuation.AssignmentInputDigest {
+	if err != nil || originalErr != nil || !bytes.Equal(data, canonical) || p.Version != compactionCheckpointVersion || p.Input.Validate() != nil || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", p.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", p.DeviceID != credential.DeviceID) ||
+		p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", p.Input.Assignment.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", p.Input.Assignment.ConnectionID != input.ConnectionID) ||
+		p.Input.SourceJobID != input.Continuation.Previous.JobID || executionInputDigest(originalRaw) != input.Continuation.AssignmentInputDigest {
 		return nil, domain.CompactionUncertain()
 	}
 	var journal journal
 	raw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(ref.JobID)+".json"), 2<<20)
 	var result domain.SessionCompactionResult
-	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.InstanceID.Validate() != nil || journal.ReportID.Validate() != nil || journal.Revision != p.AssignmentRevision || p.AssignmentRevision == 0 || journal.InstanceID != p.InstanceID || journal.JobID != ref.JobID || journal.Digest != p.AssignmentDigest || (journal.State != journalFinished && journal.State != journalReported) || journal.Problem != nil || domain.Decode(journal.Output, &result) != nil || result.Validate() != nil || result.Checkpoint != ref {
+	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.InstanceID.Validate() != nil || journal.ReportID.Validate() != nil || journal.Revision != p.AssignmentRevision || p.AssignmentRevision == 0 ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", journal.InstanceID != p.InstanceID) ||
+		journal.JobID != ref.JobID || journal.Digest != p.AssignmentDigest || (journal.State != journalFinished && journal.State != journalReported) || journal.Problem != nil || domain.Decode(journal.Output, &result) != nil || result.Validate() != nil || result.Checkpoint != ref {
 		return nil, domain.CompactionUncertain()
 	}
 	if err := readSessionCompactionClaims(root, p); err != nil {

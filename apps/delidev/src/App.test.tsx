@@ -380,23 +380,20 @@ it("locks shortcuts for pending and uncertain creates and retries the unchanged 
   expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
 });
 
-it("locks shortcuts during Local proof and preserves the original project on completion", async () => {
+it("selects Local without credential proof or blocked project shortcuts", async () => {
   viewport();
   const first = shortcutProject("First project"), second = shortcutProject("Second project");
   const value = fixture([], [], [first, second], false, true);
-  let release!: (proof: { machineId: string; token: string }) => void;
-  const readLocalWorker = vi.fn(() => new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; }));
+  const readLocalWorker = vi.fn(() => Promise.reject(new Error("proof must not be requested")));
   render(<App transport={value.transport} readLocalWorker={readLocalWorker} />);
   fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  expect(readLocalWorker).not.toHaveBeenCalled();
   const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
-  expect(shortcut).toHaveProperty("disabled", true);
-  fireEvent.click(shortcut);
-  await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
   expect(shortcut).toHaveProperty("disabled", false);
-  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
-  expect(screen.getByRole("button", { name: "Use this computer's Local checkouts" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(shortcut);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", second.id);
   expect(value.creates).not.toHaveBeenCalled();
 });
 

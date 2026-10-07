@@ -255,7 +255,8 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 					return nil, err
 				}
 				preview, err := store.Decode[domain.Job](pr)
-				if err != nil || preview.Type != domain.WorkspaceStorageJob || preview.State != domain.JobSucceeded || pr.SessionID != sr.ID || preview.MachineID != session.MachineID {
+				if err != nil || preview.Type != domain.WorkspaceStorageJob || preview.State != domain.JobSucceeded || pr.SessionID != sr.ID ||
+					domain.OwnershipBlocks(domain.OwnershipMachine, "", preview.MachineID != session.MachineID) {
 					return nil, workspace.ResultUncertain()
 				}
 				var output workspace.StorageResult
@@ -272,7 +273,8 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 				return nil, err
 			}
 			snapshot, err := store.Decode[workspace.SnapshotMetadata](snapshotRecord)
-			if err != nil || snapshot.Deleted || snapshot.SessionID != sr.ID || snapshot.MachineID != session.MachineID {
+			if err != nil || snapshot.Deleted || snapshot.SessionID != sr.ID ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", snapshot.MachineID != session.MachineID) {
 				return nil, workspace.ResultUncertain()
 			}
 			input.SnapshotMetadata = &snapshot
@@ -398,7 +400,8 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 			return err
 		}
 		predecessor, err := store.Decode[domain.Job](predecessorRecord)
-		if err != nil || predecessor.Type != domain.WorkspaceStorageJob || predecessor.State != domain.JobUncertain || predecessorRecord.SessionID != sr.ID || predecessor.MachineID != session.MachineID {
+		if err != nil || predecessor.Type != domain.WorkspaceStorageJob || predecessor.State != domain.JobUncertain || predecessorRecord.SessionID != sr.ID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", predecessor.MachineID != session.MachineID) {
 			return workspace.ResultUncertain()
 		}
 		// A failed or canceled recovery has not settled the predecessor. Keep
@@ -463,7 +466,9 @@ func finishWorkspaceStorage(tx *store.Tx, r store.Record, job domain.Job) error 
 }
 func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) error {
 	var output workspace.StorageResult
-	if domain.Decode(raw, &output) != nil || output.Version != 1 || output.OperationID != input.OperationID || output.Action != input.Action || output.SessionID != input.Preparation.SessionID || output.MachineID != input.Preparation.MachineID || !output.CleanupVerified || output.SourceBytes > workspace.MaxSnapshotBytes || output.RemovedSourceBytes > output.SourceBytes {
+	if domain.Decode(raw, &output) != nil || output.Version != 1 || output.OperationID != input.OperationID || output.Action != input.Action || output.SessionID != input.Preparation.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", output.MachineID != input.Preparation.MachineID) ||
+		!output.CleanupVerified || output.SourceBytes > workspace.MaxSnapshotBytes || output.RemovedSourceBytes > output.SourceBytes {
 		return workspace.ResultUncertain()
 	}
 	if input.Action == workspace.StorageRecover {
@@ -518,7 +523,9 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 		}
 	} else {
 		snapshot := output.Snapshot
-		if snapshot == nil || snapshot.ID != input.SnapshotID || snapshot.SessionID != output.SessionID || snapshot.MachineID != output.MachineID || !storageDigestValid(snapshot.SHA256) || snapshot.SizeBytes > workspace.MaxSnapshotBytes || snapshot.CreatedAt.IsZero() || snapshot.RepositoryCount != uint32(len(input.Manifest.Repositories)) || snapshot.Deleted != (input.Action == workspace.StorageDelete) {
+		if snapshot == nil || snapshot.ID != input.SnapshotID || snapshot.SessionID != output.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", snapshot.MachineID != output.MachineID) ||
+			!storageDigestValid(snapshot.SHA256) || snapshot.SizeBytes > workspace.MaxSnapshotBytes || snapshot.CreatedAt.IsZero() || snapshot.RepositoryCount != uint32(len(input.Manifest.Repositories)) || snapshot.Deleted != (input.Action == workspace.StorageDelete) {
 			return workspace.ResultUncertain()
 		}
 		if !snapshot.Deleted && output.RetainedSnapshotBytes < snapshot.SizeBytes {
@@ -527,7 +534,9 @@ func validateWorkspaceStorageResult(input workspace.StorageRequest, raw []byte) 
 		if pinned := input.SnapshotMetadata; pinned != nil {
 			// Observations preserve the accepted snapshot. Deletion changes only its
 			// tombstone, never size, age or ownership.
-			if snapshot.ID != pinned.ID || snapshot.SessionID != pinned.SessionID || snapshot.MachineID != pinned.MachineID || snapshot.SHA256 != pinned.SHA256 || snapshot.SizeBytes != pinned.SizeBytes || !snapshot.CreatedAt.Equal(pinned.CreatedAt) || snapshot.RepositoryCount != pinned.RepositoryCount {
+			if snapshot.ID != pinned.ID || snapshot.SessionID != pinned.SessionID ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", snapshot.MachineID != pinned.MachineID) ||
+				snapshot.SHA256 != pinned.SHA256 || snapshot.SizeBytes != pinned.SizeBytes || !snapshot.CreatedAt.Equal(pinned.CreatedAt) || snapshot.RepositoryCount != pinned.RepositoryCount {
 				return workspace.ResultUncertain()
 			}
 		}
@@ -555,7 +564,8 @@ func storageRecoveryInput(tx *store.Tx, sessionID domain.ID, session domain.Sess
 		return err
 	}
 	job, err := store.Decode[domain.Job](record)
-	if err != nil || job.Type != domain.WorkspaceStorageJob || job.State != domain.JobUncertain || record.SessionID != sessionID || job.MachineID != session.MachineID {
+	if err != nil || job.Type != domain.WorkspaceStorageJob || job.State != domain.JobUncertain || record.SessionID != sessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(sessionID), job.MachineID != session.MachineID) {
 		return workspace.ResultUncertain()
 	}
 	assigned, err := tx.JobAssignment(id)
@@ -563,7 +573,10 @@ func storageRecoveryInput(tx *store.Tx, sessionID domain.ID, session domain.Sess
 		return err
 	}
 	claim, err := store.Decode[domain.Job](assigned)
-	if err != nil || claim.Type != domain.WorkspaceStorageJob || claim.State != domain.JobClaimed || claim.MachineID != job.MachineID || claim.InstanceID != job.InstanceID || assigned.SessionID != sessionID {
+	if err != nil || claim.Type != domain.WorkspaceStorageJob || claim.State != domain.JobClaimed ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(sessionID), claim.MachineID != job.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(sessionID), claim.InstanceID != job.InstanceID) ||
+		assigned.SessionID != sessionID {
 		return workspace.ResultUncertain()
 	}
 	var original workspace.StorageRequest

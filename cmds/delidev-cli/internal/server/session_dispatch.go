@@ -346,12 +346,15 @@ func checkedExecutionWorkspace(tx *store.Tx, sr store.Record, session domain.Ses
 	if err != nil {
 		return empty, err
 	}
-	if prepared.SessionID != sr.ID || job.Type != domain.PrepareWorkspaceJob || job.State != domain.JobSucceeded || job.MachineID != session.MachineID {
+	if prepared.SessionID != sr.ID || job.Type != domain.PrepareWorkspaceJob || job.State != domain.JobSucceeded ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != session.MachineID) {
 		return empty, workspace.ResultUncertain()
 	}
 	var request workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(job.Input, &request) != nil || domain.Decode(job.Output, &manifest) != nil || request.SessionID != sr.ID || request.MachineID != session.MachineID || request.Type != session.Workspace || workspace.ValidateResult(request, manifest, machine.OS) != nil {
+	if domain.Decode(job.Input, &request) != nil || domain.Decode(job.Output, &manifest) != nil || request.SessionID != sr.ID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", request.MachineID != session.MachineID) ||
+		request.Type != session.Workspace || workspace.ValidateResult(request, manifest, machine.OS) != nil {
 		return empty, workspace.ResultUncertain()
 	}
 	if err := validateLocalOrigin(tx, session); err != nil {

@@ -31,7 +31,9 @@ type PRWorkspaceMatch struct {
 }
 
 func validPRCandidateRequest(request ReadRequest) bool {
-	if request.ID.Validate() != nil || request.Deadline.IsZero() || request.Preparation.SessionID.Validate() != nil || request.Preparation.MachineID.Validate() != nil || request.Manifest.SessionID != request.Preparation.SessionID || request.Manifest.MachineID != request.Preparation.MachineID || request.Manifest.Type != request.Preparation.Type || request.PRCandidate == nil || request.PRCandidate.Validate() != nil || request.Query != (domain.WorkspaceReadQuery{}) || (request.Preparation.Type != domain.Worktree && request.Preparation.Type != domain.Local) {
+	if request.ID.Validate() != nil || request.Deadline.IsZero() || request.Preparation.SessionID.Validate() != nil || request.Preparation.MachineID.Validate() != nil || request.Manifest.SessionID != request.Preparation.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", request.Manifest.MachineID != request.Preparation.MachineID) ||
+		request.Manifest.Type != request.Preparation.Type || request.PRCandidate == nil || request.PRCandidate.Validate() != nil || request.Query != (domain.WorkspaceReadQuery{}) || (request.Preparation.Type != domain.Worktree && request.Preparation.Type != domain.Local) {
 		return false
 	}
 	count := 0

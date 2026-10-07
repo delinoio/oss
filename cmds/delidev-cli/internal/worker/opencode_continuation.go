@@ -16,7 +16,9 @@ import (
 func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, credential Credential, input domain.ExecutionJobInput) (openCodeExecutionCheckpoint, error) {
 	var empty openCodeExecutionCheckpoint
 	c := input.Continuation
-	if c == nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode || credential.MachineID != input.MachineID || c.Completion.Version != 2 {
+	if c == nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", credential.MachineID != input.MachineID) ||
+		c.Completion.Version != 2 {
 		return empty, executionCheckpointUncertain()
 	}
 	bindings, err := domain.CheckedExecutionInputs(c.Previous.InputID, c.PromptDigest, c.Previous.AcceptedInputs)
@@ -36,7 +38,14 @@ func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, creden
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	r := saved.Reference
 	ref := r.Claim
-	if r.Completion != terminal || r.InputMode != c.InputMode || r.PromptSHA256 != c.PromptDigest || r.AssignmentInputSHA256 != c.AssignmentInputDigest || r.HistoryExecutionID != c.HistoryExecutionID || ref.ServerID != credential.ServerID || ref.DeviceID != credential.DeviceID || ref.MachineID != input.MachineID || ref.SessionID != input.SessionID || ref.ExecutionID != c.Previous.ExecutionID || ref.JobID != c.Previous.JobID || ref.InputID != c.Previous.InputID || ref.AccountID != input.AccountID || ref.ConnectionID != input.ConnectionID || ref.ConfigurationDigest != input.ConfigurationDigest || ref.InputRequestID == input.TurnRequestID || ref.ThreadRequestID == input.ThreadRequestID {
+	if r.Completion != terminal || r.InputMode != c.InputMode || r.PromptSHA256 != c.PromptDigest || r.AssignmentInputSHA256 != c.AssignmentInputDigest || r.HistoryExecutionID != c.HistoryExecutionID ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", ref.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", ref.DeviceID != credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", ref.MachineID != input.MachineID) ||
+		ref.SessionID != input.SessionID || ref.ExecutionID != c.Previous.ExecutionID || ref.JobID != c.Previous.JobID || ref.InputID != c.Previous.InputID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", ref.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", ref.ConnectionID != input.ConnectionID) ||
+		ref.ConfigurationDigest != input.ConfigurationDigest || ref.InputRequestID == input.TurnRequestID || ref.ThreadRequestID == input.ThreadRequestID {
 		return empty, executionCheckpointUncertain()
 	}
 	checkpoint, err := readOpenCodeExecutionCheckpoint(ctx, root, r, c.Completion.NativeCheckpointDigest)
@@ -68,12 +77,18 @@ func verifyOpenCodeContinuationJournals(root string, ref openCodeClaimReference,
 	raw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(ref.JobID)+".json"), 2<<20)
 	var operation journal
 	var done domain.ExecutionCompletion
-	if err != nil || domain.Decode(raw, &operation) != nil || operation.Version != 1 || operation.JobID != ref.JobID || operation.InstanceID != ref.InstanceID || operation.Revision != ref.Revision || operation.Digest != ref.AssignmentDigest || (operation.State != journalFinished && operation.State != journalReported) || operation.Problem != nil || operation.ReportID.Validate() != nil || domain.Decode(operation.Output, &done) != nil || done != completion {
+	if err != nil || domain.Decode(raw, &operation) != nil || operation.Version != 1 || operation.JobID != ref.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", operation.InstanceID != ref.InstanceID) ||
+		operation.Revision != ref.Revision || operation.Digest != ref.AssignmentDigest || (operation.State != journalFinished && operation.State != journalReported) || operation.Problem != nil || operation.ReportID.Validate() != nil || domain.Decode(operation.Output, &done) != nil || done != completion {
 		return executionCheckpointUncertain()
 	}
 	raw, err = security.ReadPrivate(filepath.Join(root, "jobs", string(ref.JobID), "publication.json"), 1<<20)
 	var publication publicationJournal
-	if err != nil || domain.Decode(raw, &publication) != nil || publication.Version != 1 || publication.JobID != ref.JobID || publication.InstanceID != ref.InstanceID || publication.ServerID != ref.ServerID || publication.DeviceID != ref.DeviceID || publication.Revision != ref.Revision || publication.AssignmentDigest != ref.AssignmentDigest || publication.Pending != nil || publication.LastSequence != completion.LastSequence {
+	if err != nil || domain.Decode(raw, &publication) != nil || publication.Version != 1 || publication.JobID != ref.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.InstanceID != ref.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.ServerID != ref.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", publication.DeviceID != ref.DeviceID) ||
+		publication.Revision != ref.Revision || publication.AssignmentDigest != ref.AssignmentDigest || publication.Pending != nil || publication.LastSequence != completion.LastSequence {
 		return executionCheckpointUncertain()
 	}
 	return nil

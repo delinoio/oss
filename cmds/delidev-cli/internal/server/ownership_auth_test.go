@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"bytes"
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -53,5 +55,62 @@ func TestRegisteredWorkerProductAccessPreservesAuthenticationAndRevocation(t *te
 	}
 	if _, err := system.GetOverview(ctx, ownerRequest(other, &pb.GetOverviewRequest{})); err != nil {
 		t.Fatal("unrevoked registration lost access", err)
+	}
+}
+
+func TestUnconfirmedSuccessorPreservesHistoryAndStopIntent(t *testing.T) {
+	f := newContinuationFixture(t, domain.ExecutionSucceeded)
+	original, err := f.service.Store.Get(context.Background(), domain.JobKind, domain.ID(f.job.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued := f.enqueue(t, "a new input after unconfirmed cleanup", domain.ExecuteMode)
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.cleanup.observation", nil, func(tx *store.Tx) (any, error) {
+		sr, session, err := sessionRecord(tx, domain.ID(f.change.Session.Id))
+		if err != nil {
+			return nil, err
+		}
+		session.Execution.CleanupVerified = false
+		session.Recovery, session.Dispatch = domain.NeedsRecovery, domain.DispatchPaused
+		_, err = tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err == nil {
+		t.Fatal("Stop intent was lost")
+	}
+	f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+	current, err := store.Decode[domain.Session](f.refresh(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := f.service.Store.Get(context.Background(), domain.JobKind, func() domain.ID {
+		var id domain.ID
+		_ = f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+			r, e := tx.SessionExecutionJob(domain.ID(f.change.Session.Id), current.ExecutionSelection().ID)
+			id = r.ID
+			return e
+		})
+		return id
+	}())
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Decode[domain.Job](next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input domain.ExecutionJobInput
+	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.InputID != domain.ID(queued.Id) || input.ExecutionID == f.input.ExecutionID || input.Continuation != nil || input.Fork != nil {
+		t.Fatal("fresh input did not receive a distinct attempt")
+	}
+	retained, err := f.service.Store.Get(context.Background(), domain.JobKind, original.ID)
+	if err != nil || retained.Revision != original.Revision || !bytes.Equal(retained.Data, original.Data) {
+		t.Fatal("historical execution was rewritten", err)
+	}
+	if current.InitialExecution.ID != f.input.ExecutionID || current.NativeExecutionRoot() != input.ExecutionID {
+		t.Fatal("initial snapshot was replaced or new native attempt lacks its own reference")
 	}
 }

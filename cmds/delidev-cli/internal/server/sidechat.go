@@ -28,7 +28,9 @@ func requireSidechatParent(tx *store.Tx, child domain.Session) error {
 	if err != nil {
 		return err
 	}
-	if !parent.WorkspaceAvailable() || parent.MachineID != child.MachineID || parent.ProjectID != child.ProjectID || parent.Workspace != child.Workspace || parent.InitialExecution == nil || parent.IsSidechat() {
+	if !parent.WorkspaceAvailable() ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", parent.MachineID != child.MachineID) ||
+		parent.ProjectID != child.ProjectID || parent.Workspace != child.Workspace || parent.InitialExecution == nil || parent.IsSidechat() {
 		return domain.SidechatUnavailable()
 	}
 	actual, _ := json.Marshal(parent.InitialExecution)

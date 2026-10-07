@@ -58,7 +58,8 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 			return nil, executionEventConflict()
 		}
 		var input domain.ExecutionJobInput
-		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != event.ExecutionID || input.SessionID != jobRecord.SessionID || input.MachineID != identity.Machine {
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != event.ExecutionID || input.SessionID != jobRecord.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != identity.Machine) {
 			return nil, executionEventConflict()
 		}
 		sr, session, err := sessionRecord(tx, input.SessionID)

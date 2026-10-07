@@ -141,7 +141,7 @@ func (s *Store) runBackupCreation(ctx context.Context, id, server domain.ID, cop
 	if err != nil {
 		return row, err
 	}
-	if original.Input.ServerID != server {
+	if domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id), original.Input.ServerID != server) {
 		return row, backupUnavailable()
 	}
 	if job.State.Terminal() {

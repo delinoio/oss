@@ -58,7 +58,7 @@ type StorageRequest struct {
 
 func (r StorageRequest) Validate() error {
 	if len(r.SidechatDependents) != 0 || r.SidechatActor != nil {
-		if r.Action != StorageCleanup || len(r.SidechatDependents) == 0 || len(r.SidechatDependents) > 256 || r.SidechatActor == nil || (r.SidechatActor.Type != domain.OwnerDevice && r.SidechatActor.Type != domain.ClientDevice) || r.SidechatActor.MachineID != "" || r.SidechatActor.Type == domain.ClientDevice && r.SidechatActor.DeviceID.Validate() != nil || domain.UniqueIDs(append([]domain.ID{r.Preparation.SessionID, r.OperationID}, r.SidechatDependents...)) != nil {
+		if r.Action != StorageCleanup || len(r.SidechatDependents) == 0 || len(r.SidechatDependents) > 256 || r.SidechatActor == nil || !r.SidechatActor.ValidMetadata() || domain.UniqueIDs(append([]domain.ID{r.Preparation.SessionID, r.OperationID}, r.SidechatDependents...)) != nil {
 			return ResultUncertain()
 		}
 	}
@@ -80,7 +80,8 @@ func (r StorageRequest) Validate() error {
 			return ResultUncertain()
 		}
 		first := r.Recovery.Claims[0]
-		if first.InstanceID != r.Recovery.InstanceID || first.Revision != r.Recovery.Revision || first.AssignmentDigest != r.Recovery.AssignmentDigest {
+		if domain.OwnershipBlocks(domain.OwnershipInstance, "", first.InstanceID != r.Recovery.InstanceID) ||
+			first.Revision != r.Recovery.Revision || first.AssignmentDigest != r.Recovery.AssignmentDigest {
 			return ResultUncertain()
 		}
 		ids := []domain.ID{}
@@ -266,14 +267,19 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 	if err := m.noActiveExecutionClaim(r.Preparation.SessionID); err != nil {
 		return result, err
 	}
+	cleanupConfirmed := true
 	if claim, err := m.readExecutionClaim(r.Preparation.SessionID); err == nil {
-		if err := process.ReconcileOwnerContext(ctx, m.Git.ProcessRoot, claim.JobID); err != nil {
+		confirmed, err := process.ObserveOwnerContext(ctx, m.Git.ProcessRoot, claim.JobID)
+		cleanupConfirmed = cleanupConfirmed && confirmed
+		if err != nil {
 			return result, err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return result, ResultUncertain()
 	}
-	if err := process.ReconcileOwnerContext(ctx, m.Git.ProcessRoot, r.Preparation.SessionID); err != nil {
+	confirmed, err := process.ObserveOwnerContext(ctx, m.Git.ProcessRoot, r.Preparation.SessionID)
+	cleanupConfirmed = cleanupConfirmed && confirmed
+	if err != nil {
 		return result, err
 	}
 	result = StorageResult{WorkspaceState: r.PreviousState, Version: 1, OperationID: r.OperationID, Action: r.Action, SessionID: r.Preparation.SessionID, MachineID: r.Preparation.MachineID}
@@ -324,7 +330,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		}
 		result.RetainedSnapshotBytes = retained
 		if r.Action == StoragePreview {
-			result.CleanupVerified = true
+			result.CleanupVerified = cleanupConfirmed
 			return result, nil
 		}
 		if r.Action == StorageCleanup && result.PreviewDigest != r.PreviewDigest {
@@ -353,7 +359,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			if err := validateStorageRoot(root, live); err != nil {
 				return result, err
 			}
-			if err := process.ReconcileOwnerContext(ctx, m.Git.ProcessRoot, r.Preparation.SessionID); err != nil {
+			confirmed, err := process.ObserveOwnerContext(ctx, m.Git.ProcessRoot, r.Preparation.SessionID)
+			cleanupConfirmed = cleanupConfirmed && confirmed
+			if err != nil {
 				return result, err
 			}
 			removal := filepath.Join(m.Root, "workspace-removals", string(r.OperationID))
@@ -402,13 +410,15 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			result.RemovedSourceBytes = result.SourceBytes
 			result.WorkspaceState = domain.WorkspaceStored
 		}
-		result.CleanupVerified = true
+		result.CleanupVerified = cleanupConfirmed
 	case StorageInspect, StorageRestore, StorageDelete:
 		snap, metadata, err := m.inspectSnapshot(ctx, r.SnapshotID)
 		if err != nil {
 			return result, err
 		}
-		if metadata.SessionID != r.Preparation.SessionID || metadata.MachineID != r.Preparation.MachineID || metadata.SHA256 != r.SnapshotDigest || manifestDigest(snap.Workspace) != manifestDigest(r.Manifest) {
+		if metadata.SessionID != r.Preparation.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", metadata.MachineID != r.Preparation.MachineID) ||
+			metadata.SHA256 != r.SnapshotDigest || manifestDigest(snap.Workspace) != manifestDigest(r.Manifest) {
 			return result, ResultUncertain()
 		}
 		result.Snapshot = &metadata
@@ -512,7 +522,7 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 			return result, ResultUncertain()
 		}
 		result.RetainedSnapshotBytes = retained
-		result.CleanupVerified = true
+		result.CleanupVerified = cleanupConfirmed
 	}
 	result.CapacityBytes, result.FreeBytesAfter = storageCapacity(m.Root)
 	m.Logger.Info("workspace_storage_completed", "session_id", result.SessionID, "operation_id", r.OperationID, "action", r.Action)

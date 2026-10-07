@@ -47,7 +47,10 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 			}
 			for _, raw := range r.Msg.WorkJson {
 				var w domain.SessionDeletionWork
-				if domain.DecodeWithLimit(raw, &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil || w.ServerID != credential.ServerID || w.DeviceID != credential.DeviceID || w.MachineID != credential.MachineID {
+				if domain.DecodeWithLimit(raw, &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil ||
+					w.ServerID != credential.ServerID ||
+					w.DeviceID != credential.DeviceID ||
+					w.MachineID != credential.MachineID {
 					config.Logger.WarnContext(ctx, "session_deletion_invalid_work", "code", domain.RecoveryRequired)
 					continue
 				}
@@ -186,7 +189,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				return proof, domain.SessionDeletionPending()
 			}
 			var j journal
-			if domain.Decode(raw, &j) != nil || j.Version != 1 || j.JobID != copy.JobID || j.InstanceID != copy.InstanceID || j.Revision != copy.Revision || j.Digest != copy.Digest || j.ReportID.Validate() != nil {
+			if domain.Decode(raw, &j) != nil || j.Version != 1 || j.JobID != copy.JobID ||
+				domain.OwnershipBlocks(domain.OwnershipInstance, "", j.InstanceID != copy.InstanceID) ||
+				j.Revision != copy.Revision || j.Digest != copy.Digest || j.ReportID.Validate() != nil {
 				return proof, domain.SessionDeletionPending()
 			}
 			if copy.Type != domain.PrepareWorkspaceJob || j.Problem == nil || len(j.Output) != 0 {
@@ -380,7 +385,11 @@ func retiringAssignment(ctx context.Context, config Config, client delidevv1conn
 		return false
 	}
 	var w domain.SessionDeletionWork
-	if domain.DecodeWithLimit(r.Msg.WorkJson[0], &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil || w.ServerID != credential.ServerID || w.DeviceID != credential.DeviceID || w.MachineID != credential.MachineID || string(w.SessionID) != resource.SessionId {
+	if domain.DecodeWithLimit(r.Msg.WorkJson[0], &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", w.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", w.DeviceID != credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", w.MachineID != credential.MachineID) ||
+		string(w.SessionID) != resource.SessionId {
 		return false
 	}
 	for _, copy := range w.Copies {

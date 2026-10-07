@@ -103,13 +103,13 @@ func (s *Store) executionCandidates(ctx context.Context, after domain.ID, limit 
 	}
 	eligibility := "(json_extract(body,'$.initial_execution') IS NULL AND json_extract(body,'$.outcome')='not-started')"
 	if includeContinuations {
-		eligibility += " OR (json_extract(body,'$.initial_execution') IS NOT NULL AND json_extract(body,'$.execution.cleanup_verified')=1 AND json_extract(body,'$.next_execution_intent') IN ('continue-automatically','explicit-resume'))"
+		eligibility += " OR (json_extract(body,'$.initial_execution') IS NOT NULL AND json_extract(body,'$.next_execution_intent') IN ('continue-automatically','explicit-resume'))"
 	}
 	var result []Record
 	var more bool
 	err := s.Read(ctx, func(tx *Tx) error {
 		var err error
-		result, more, err = tx.sessionPage(limit, "SELECT "+recordColumns+" FROM entities WHERE kind='session' AND id>? AND ("+eligibility+") AND COALESCE(json_extract(body,'$.active_execution_id'),'')='' AND json_extract(body,'$.archive')='active' AND json_extract(body,'$.recovery')='none' AND json_extract(body,'$.dispatch') IN ('blocked','ready') AND json_extract(body,'$.preparation.state')='ready' AND json_extract(body,'$.pending_inputs')>0 ORDER BY id LIMIT ?", after, limit+1)
+		result, more, err = tx.sessionPage(limit, "SELECT "+recordColumns+" FROM entities WHERE kind='session' AND id>? AND ("+eligibility+") AND json_extract(body,'$.archive')='active' AND json_extract(body,'$.dispatch') IN ('blocked','ready') AND json_extract(body,'$.preparation.state')='ready' AND json_extract(body,'$.pending_inputs')>0 ORDER BY id LIMIT ?", after, limit+1)
 		return err
 	})
 	return result, more, err

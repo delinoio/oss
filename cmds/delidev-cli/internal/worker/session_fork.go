@@ -62,7 +62,8 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	var input domain.ForkJobInput
-	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || config.execution == nil || config.execution.Credential.MachineID != job.MachineID {
+	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || config.execution == nil ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), config.execution.Credential.MachineID != job.MachineID) {
 		return nil, executionCheckpointUncertain()
 	}
 	logger := config.Logger
@@ -338,7 +339,12 @@ func readForkCheckpoint(root string, input domain.ExecutionJobInput) (codex.Cont
 		return result.Native, err
 	}
 	raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(f.RuntimeID), "fork-completion.json"), maxExecutionCheckpointBytes)
-	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &result) != nil || ((input.Configuration.SidechatPolicy == "" && result.Version != 1) || (input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 && result.Version != 3)) || result.SidechatPolicy != input.Configuration.SidechatPolicy || result.JobID != f.JobID || result.SessionID != input.SessionID || result.MachineID != input.MachineID || result.RuntimeID != f.RuntimeID || result.ConfigurationDigest != input.ConfigurationDigest || result.AccountID != input.AccountID || result.ConnectionID != input.ConnectionID || result.ManifestDigest != executionInputDigest(input.Manifest) || string(result.Native.ThreadID) != string(f.NativeThreadID) || string(result.Native.TurnID) != string(f.NativeTurnID) || result.Native.Status != codex.TurnCompleted || string(mustForkJSON(result)) != string(raw) {
+	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &result) != nil || ((input.Configuration.SidechatPolicy == "" && result.Version != 1) || (input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 && result.Version != 3)) || result.SidechatPolicy != input.Configuration.SidechatPolicy || result.JobID != f.JobID || result.SessionID != input.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", result.MachineID != input.MachineID) ||
+		result.RuntimeID != f.RuntimeID || result.ConfigurationDigest != input.ConfigurationDigest ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", result.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", result.ConnectionID != input.ConnectionID) ||
+		result.ManifestDigest != executionInputDigest(input.Manifest) || string(result.Native.ThreadID) != string(f.NativeThreadID) || string(result.Native.TurnID) != string(f.NativeTurnID) || result.Native.Status != codex.TurnCompleted || string(mustForkJSON(result)) != string(raw) {
 		return codex.ContinuationCheckpoint{}, executionCheckpointUncertain()
 	}
 	return result.Native, nil

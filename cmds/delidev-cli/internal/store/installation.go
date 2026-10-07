@@ -89,8 +89,12 @@ func (s *Store) WorkerDeletionIdle(tx *Tx, machine domain.ID) (bool, error) {
 // Installation projections select matching live scope before applying bounds;
 // unrelated completed history never hides a pending update or signed admission.
 func (t *Tx) InstallationUpdates(machine, device domain.ID, version string, pending bool) ([]Record, error) {
-	query := "SELECT id,kind,revision,session_id,project_id,body,created_at,updated_at FROM entities WHERE kind=? AND json_extract(CAST(body AS TEXT),'$.machine_id')=? AND json_extract(CAST(body AS TEXT),'$.device_id')=?"
-	args := []any{domain.UpdateKind, machine, device}
+	query := "SELECT id,kind,revision,session_id,project_id,body,created_at,updated_at FROM entities WHERE kind=? AND json_extract(CAST(body AS TEXT),'$.machine_id')=?"
+	args := []any{domain.UpdateKind, machine}
+	if device != "" {
+		query += " AND json_extract(CAST(body AS TEXT),'$.device_id')=?"
+		args = append(args, device)
+	}
 	if pending {
 		query += " AND json_extract(CAST(body AS TEXT),'$.state') IN ('WAITING_FOR_IDLE','RUNNING','UNCERTAIN')"
 	} else {

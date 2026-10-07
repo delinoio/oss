@@ -154,7 +154,7 @@ func superviseTerminal(dir string, scope processScope, command processCommand, d
 	if !rootDone {
 		_ = cmd.Process.Kill()
 	}
-	cleanupDeadline := time.Now().Add(5 * time.Second)
+	cleanupDeadline := time.Now().Add(10 * time.Second)
 	for {
 		if !rootDone {
 			select {

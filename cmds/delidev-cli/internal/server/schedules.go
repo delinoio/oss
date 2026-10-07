@@ -129,7 +129,8 @@ func (s *Service) SaveSchedule(ctx context.Context, req *connect.Request[pb.Save
 			}
 			value.LocalOrigin = proof
 		} else if definition.Workspace == domain.Local {
-			if meta.ExpectedRevision == 0 || previous.Definition.Workspace != domain.Local || previous.Definition.MachineID != definition.MachineID {
+			if meta.ExpectedRevision == 0 || previous.Definition.Workspace != domain.Local ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", previous.Definition.MachineID != definition.MachineID) {
 				return nil, localOriginRequired()
 			}
 			value.LocalOrigin = previous.LocalOrigin

@@ -134,7 +134,11 @@ func openGrokClaims(p *ExecutionPublisher) (*grokClaimJournal, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, publication := p.input, p.state
-	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.GrokBuild || (i.Version != 4 && i.Installation.Version != grok.SupportedVersion) || i.Continuation != nil || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.GrokBuild || (i.Version != 4 && i.Installation.Version != grok.SupportedVersion) || i.Continuation != nil || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.InstanceID != p.config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.ServerID != p.config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", publication.DeviceID != p.config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", i.MachineID != p.config.Credential.MachineID) {
 		return nil, grokClaimUncertain()
 	}
 	ref := grokClaimReference{Version: 1, JobID: p.job, InstanceID: publication.InstanceID, ServerID: publication.ServerID, DeviceID: publication.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, CreationRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: publication.Revision, AssignmentDigest: publication.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}
@@ -203,7 +207,9 @@ func (s grokClaimState) validateNext(c grokClaim) error {
 	}
 	if len(s.Claims) < 4 {
 		m := c.Mode
-		if m == nil || c.Creation != nil || c.Input != nil || c.Stop != nil || c.Closure != nil || c.FileReply != nil || c.QuestionReply != nil || c.PlanReply != nil || m.Validate() != nil || m.OwnerID != s.Reference.JobID || m.ProductSessionID != s.Reference.SessionID || m.NativeSessionID != s.Claims[1].Creation.NativeSessionID || m.RequestID == s.Reference.CreationRequestID || m.RequestID == s.Reference.InputRequestID {
+		if m == nil || c.Creation != nil || c.Input != nil || c.Stop != nil || c.Closure != nil || c.FileReply != nil || c.QuestionReply != nil || c.PlanReply != nil || m.Validate() != nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, "", m.OwnerID != s.Reference.JobID) ||
+			m.ProductSessionID != s.Reference.SessionID || m.NativeSessionID != s.Claims[1].Creation.NativeSessionID || m.RequestID == s.Reference.CreationRequestID || m.RequestID == s.Reference.InputRequestID {
 			return grokClaimUncertain()
 		}
 		if len(s.Claims) == 2 {
@@ -308,7 +314,9 @@ func (s grokClaimState) validateNextInput(c grokClaim) error {
 	}
 	if c.Stop != nil {
 		stop := c.Stop
-		if len(s.Claims) != 4 || stop.Validate() != nil || stop.OwnerID != s.Reference.JobID || stop.ProductSessionID != s.Reference.SessionID || stop.InputRequestID != s.Reference.InputRequestID || stop.RequestID == s.Reference.CreationRequestID || stop.NativeSessionID != s.Claims[3].Input.NativeSessionID || stop.NativePromptID != s.Claims[3].Input.NativePromptID {
+		if len(s.Claims) != 4 || stop.Validate() != nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, "", stop.OwnerID != s.Reference.JobID) ||
+			stop.ProductSessionID != s.Reference.SessionID || stop.InputRequestID != s.Reference.InputRequestID || stop.RequestID == s.Reference.CreationRequestID || stop.NativeSessionID != s.Claims[3].Input.NativeSessionID || stop.NativePromptID != s.Claims[3].Input.NativePromptID {
 			return grokClaimUncertain()
 		}
 		return nil

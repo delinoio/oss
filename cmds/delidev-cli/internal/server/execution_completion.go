@@ -10,7 +10,8 @@ import (
 
 func nativeExecutionScope(tx *store.Tx, record store.Record, job domain.Job) (domain.ExecutionJobInput, store.Record, domain.Session, error) {
 	var input domain.ExecutionJobInput
-	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID || input.MachineID != job.MachineID {
+	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) {
 		return input, store.Record{}, domain.Session{}, executionEventConflict()
 	}
 	sr, session, err := sessionRecord(tx, input.SessionID)
@@ -74,7 +75,10 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	previousDispatch := session.Dispatch
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 	if verified {
-		progress.CleanupVerified = true
+		progress.CleanupVerified = completion.CleanupVerified
+		if !completion.CleanupVerified {
+			domain.ObserveOwnership(domain.OwnershipCleanup, record.ID)
+		}
 		if input.Configuration.Harness == domain.GrokBuild && progress.GrokStop == nil && session.Outcome == domain.ExecutionSucceeded {
 			// Stop/Archive can commit after ordinary native success but before
 			// this cleanup report. Retain native success and cleanup independently;
@@ -118,6 +122,7 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 		// sufficient. Keep the execution/input claim reachable for recovery;
 		// neither an error nor an empty journal can authorize another send.
 		job.State, job.Problem, job.Output = domain.JobUncertain, nativeCompletionUncertain(), nil
+		session.Dispatch = previousDispatch
 		if err := retainNativeUncertainty(tx, input, sr, &session); err != nil {
 			return store.Record{}, err
 		}
@@ -150,7 +155,13 @@ func retainNativeUncertainty(tx *store.Tx, input domain.ExecutionJobInput, sr st
 	if err := invalidateQuestionResponses(tx, input); err != nil {
 		return err
 	}
-	session.Recovery, session.Dispatch, session.NextExecutionIntent = domain.NeedsRecovery, domain.DispatchPaused, ""
+	previousDispatch := session.Dispatch
+	session.Recovery = domain.NeedsRecovery
+	session.NextExecutionIntent = ""
+	if previousDispatch != domain.DispatchPaused && session.Archive == domain.NotArchived {
+		session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, domain.ContinueAutomatically
+	}
+	domain.ObserveOwnership(domain.OwnershipCleanup, input.ExecutionID)
 	if session.Problem == nil {
 		session.Problem = nativeCompletionUncertain()
 	}

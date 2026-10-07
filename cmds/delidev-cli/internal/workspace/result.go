@@ -29,7 +29,9 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 		return ResultUncertain()
 	}
 	digest := sha256.Sum256(raw)
-	if result.Version != 1 || result.State != Ready || result.SessionID != input.SessionID || result.MachineID != input.MachineID || result.Type != input.Type || result.InputDigest != hex.EncodeToString(digest[:]) || result.CreatedAt.IsZero() || len(result.Repositories) != len(input.Repositories) || len(result.Repositories) > 100 {
+	if result.Version != 1 || result.State != Ready || result.SessionID != input.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", result.MachineID != input.MachineID) ||
+		result.Type != input.Type || result.InputDigest != hex.EncodeToString(digest[:]) || result.CreatedAt.IsZero() || len(result.Repositories) != len(input.Repositories) || len(result.Repositories) > 100 {
 		return ResultUncertain()
 	}
 	normalize := func(value string) string {

@@ -80,7 +80,9 @@ func (m *Manager) cleanupStorageStaging(ctx context.Context, r StorageRequest) e
 		return ResultUncertain()
 	}
 	claim, err := m.readStagingClaim(r.OperationID)
-	if err != nil || claim.Reference != removalReference(r) || claim.MachineID != r.Preparation.MachineID || claim.PreparationDigest != r.Manifest.InputDigest || claim.RequestDigest != storageRequestDigest(r) {
+	if err != nil || claim.Reference != removalReference(r) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != r.Preparation.MachineID) ||
+		claim.PreparationDigest != r.Manifest.InputDigest || claim.RequestDigest != storageRequestDigest(r) {
 		return ResultUncertain()
 	}
 	// The opened remover checks native identity before touching any entry. A
@@ -107,7 +109,9 @@ func (m *Manager) cleanupDeletionStaging(ctx context.Context, w domain.SessionDe
 			continue
 		}
 		claim, err := m.readStagingClaim(copy.JobID)
-		if err != nil || claim.Reference.SessionID != w.SessionID || claim.Reference.SnapshotID != copy.SnapshotID || claim.MachineID != w.MachineID || !slices.Contains(w.PreparationDigests, claim.PreparationDigest) {
+		if err != nil || claim.Reference.SessionID != w.SessionID || claim.Reference.SnapshotID != copy.SnapshotID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != w.MachineID) ||
+			!slices.Contains(w.PreparationDigests, claim.PreparationDigest) {
 			return domain.SessionDeletionPending()
 		}
 		if err := removeSnapshotTree(ctx, path, claim.RootIdentity); err != nil {

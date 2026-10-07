@@ -154,7 +154,12 @@ func finishRepositoryClone(tx *store.Tx, record store.Record, job domain.Job, re
 	}
 	if problem == nil {
 		err := cloneAuthority(tx, input)
-		if err == nil && job.AssignedDeviceID != input.LocalOrigin.DeviceID {
+		if err == nil &&
+
+			job.
+				AssignedDeviceID !=
+				input.LocalOrigin.
+					DeviceID {
 			err = localOriginRequired()
 		}
 		inspection := outcome.Inspection

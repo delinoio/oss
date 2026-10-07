@@ -183,7 +183,8 @@ func (s *Service) changeUpdate(ctx context.Context, m *pb.Mutation, cancel bool)
 			return nil, e
 		}
 		o, e := store.Decode[updateOperation](r)
-		if e != nil || o.ServerID != s.Identity.ServerID {
+		if e != nil ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", o.ServerID != s.Identity.ServerID) {
 			return nil, installationFailure(domain.RecoveryRequired)
 		}
 		if cancel {
@@ -213,18 +214,27 @@ func (s *Service) changeUpdate(ctx context.Context, m *pb.Mutation, cancel bool)
 		return installationReceipt{r.ID}, e
 	})
 }
-func updateWorker(ctx context.Context, instance string) (domain.Principal, error) {
+func (s *Service) updateWorker(ctx context.Context, instance string) (domain.Principal, domain.ID, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
-	if !ok || actor.Type != domain.WorkerDevice || actor.DeviceID.Validate() != nil || actor.MachineID.Validate() != nil {
-		return actor, installationFailure(domain.PermissionDenied)
+	if !ok {
+		return actor, "", installationFailure(domain.Unauthenticated)
 	}
-	return actor, workerActor(ctx, string(actor.MachineID), instance)
+	var machine domain.ID
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		var err error
+		machine, err = tx.WorkerMachineForInstance(domain.ID(instance))
+		return err
+	})
+	return actor, machine, err
 }
-func workerUpdateRecord(tx *store.Tx, id domain.ID, actor domain.Principal, instance domain.ID) (store.Record, updateOperation, error) {
+func workerUpdateRecord(tx *store.Tx, id domain.ID, actor domain.Principal, machine, instance domain.ID) (store.Record, updateOperation, error) {
 	if e := tx.Authorize(); e != nil {
 		return store.Record{}, updateOperation{}, e
 	}
-	if e := currentInstance(tx, actor.MachineID, instance); e != nil {
+	if e := currentInstance(tx, machine, instance); e != nil {
 		return store.Record{}, updateOperation{}, e
 	}
 	r, e := tx.Get(domain.UpdateKind, id)
@@ -232,7 +242,7 @@ func workerUpdateRecord(tx *store.Tx, id domain.ID, actor domain.Principal, inst
 		return r, updateOperation{}, e
 	}
 	o, e := store.Decode[updateOperation](r)
-	if e != nil || o.MachineID != actor.MachineID || o.DeviceID != actor.DeviceID || o.Component != updates.Worker {
+	if e != nil || o.Component != updates.Worker {
 		return r, o, installationFailure(domain.PermissionDenied)
 	}
 	if e = originalInstallationActor(tx, o.Actor); e != nil {
@@ -259,7 +269,7 @@ func (s *Service) updateIdle(tx *store.Tx, machine domain.ID) (bool, error) {
 	return true, nil
 }
 func (s *Service) PollWorkerUpdate(ctx context.Context, req *connect.Request[pb.PollWorkerUpdateRequest]) (*connect.Response[pb.PollWorkerUpdateResponse], error) {
-	actor, e := updateWorker(ctx, req.Msg.InstanceId)
+	_, machineID, e := s.updateWorker(ctx, req.Msg.InstanceId)
 	if e != nil {
 		return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -269,7 +279,7 @@ func (s *Service) PollWorkerUpdate(ctx context.Context, req *connect.Request[pb.
 		if e := tx.Authorize(); e != nil {
 			return e
 		}
-		if e := currentInstance(tx, actor.MachineID, domain.ID(req.Msg.InstanceId)); e != nil {
+		if e := currentInstance(tx, machineID, domain.ID(req.Msg.InstanceId)); e != nil {
 			return e
 		}
 		if req.Msg.OriginalUpdateId != "" {
@@ -282,7 +292,7 @@ func (s *Service) PollWorkerUpdate(ctx context.Context, req *connect.Request[pb.
 				return e
 			}
 			o, e := store.Decode[updateOperation](r)
-			if e != nil || o.ServerID != s.Identity.ServerID || o.Component != updates.Worker || o.DeviceID != actor.DeviceID || o.MachineID != actor.MachineID {
+			if e != nil || o.Component != updates.Worker {
 				return installationFailure(domain.PermissionDenied)
 			}
 			// Historical success retains attribution after creator revocation.
@@ -296,7 +306,7 @@ func (s *Service) PollWorkerUpdate(ctx context.Context, req *connect.Request[pb.
 			// Inspection grants no idle admission, claim, report or installation.
 			return nil
 		}
-		rows, e := tx.InstallationUpdates(actor.MachineID, actor.DeviceID, "", true)
+		rows, e := tx.InstallationUpdates(machineID, "", "", true)
 		if e != nil {
 			return e
 		}
@@ -305,7 +315,7 @@ func (s *Service) PollWorkerUpdate(ctx context.Context, req *connect.Request[pb.
 			if e != nil {
 				return e
 			}
-			if o.MachineID == actor.MachineID && o.DeviceID == actor.DeviceID && (o.State == updates.Waiting || o.State == updates.Running || o.State == updates.Uncertain) {
+			if o.MachineID == machineID && (o.State == updates.Waiting || o.State == updates.Running || o.State == updates.Uncertain) {
 				if result != nil {
 					return installationFailure(domain.RecoveryRequired)
 				}
@@ -313,7 +323,7 @@ func (s *Service) PollWorkerUpdate(ctx context.Context, req *connect.Request[pb.
 			}
 		}
 		if result != nil {
-			idle, e = s.updateIdle(tx, actor.MachineID)
+			idle, e = s.updateIdle(tx, machineID)
 		}
 		return e
 	})
@@ -323,7 +333,7 @@ func (s *Service) PollWorkerUpdate(ctx context.Context, req *connect.Request[pb.
 	return connect.NewResponse(&pb.PollWorkerUpdateResponse{Update: result, Idle: idle}), nil
 }
 func (s *Service) ClaimWorkerUpdate(ctx context.Context, req *connect.Request[pb.ClaimWorkerUpdateRequest]) (*connect.Response[pb.ClaimWorkerUpdateResponse], error) {
-	actor, e := updateWorker(ctx, req.Msg.InstanceId)
+	actor, machineID, e := s.updateWorker(ctx, req.Msg.InstanceId)
 	if e == nil {
 		e = checkInstallationMutation(req.Msg.Mutation)
 	}
@@ -336,21 +346,21 @@ func (s *Service) ClaimWorkerUpdate(ctx context.Context, req *connect.Request[pb
 		Request *pb.ClaimWorkerUpdateRequest
 	}{actor, req.Msg}
 	result, e := s.Store.Mutate(ctx, domain.ID(m.RequestId), "installation.update.claim", input, func(tx *store.Tx) (any, error) {
-		r, o, e := workerUpdateRecord(tx, domain.ID(m.Id), actor, domain.ID(req.Msg.InstanceId))
+		r, o, e := workerUpdateRecord(tx, domain.ID(m.Id), actor, machineID, domain.ID(req.Msg.InstanceId))
 		if e != nil {
 			return nil, e
 		}
 		if r.Revision != m.ExpectedRevision || o.State != updates.Waiting || o.ClaimRequestID != "" {
 			return nil, installationFailure(domain.Conflict)
 		}
-		idle, e := s.updateIdle(tx, actor.MachineID)
+		idle, e := s.updateIdle(tx, machineID)
 		if e != nil {
 			return nil, e
 		}
 		if !idle {
 			return nil, installationFailure(domain.Conflict)
 		}
-		_, machine, e := activeMachine(tx, actor.MachineID)
+		_, machine, e := activeMachine(tx, machineID)
 		if e != nil {
 			return nil, e
 		}
@@ -370,7 +380,7 @@ func (s *Service) ClaimWorkerUpdate(ctx context.Context, req *connect.Request[pb
 	var r store.Record
 	e = s.Store.Read(ctx, func(tx *store.Tx) error {
 		var problem error
-		r, _, problem = workerUpdateRecord(tx, domain.ID(m.Id), actor, domain.ID(req.Msg.InstanceId))
+		r, _, problem = workerUpdateRecord(tx, domain.ID(m.Id), actor, machineID, domain.ID(req.Msg.InstanceId))
 		return problem
 	})
 	if e != nil {
@@ -379,7 +389,7 @@ func (s *Service) ClaimWorkerUpdate(ctx context.Context, req *connect.Request[pb
 	return connect.NewResponse(&pb.ClaimWorkerUpdateResponse{Update: rpc.Resource(r), RequestId: string(result.RequestID), Replayed: result.Replayed}), nil
 }
 func (s *Service) ReportWorkerUpdate(ctx context.Context, req *connect.Request[pb.ReportWorkerUpdateRequest]) (*connect.Response[pb.ReportWorkerUpdateResponse], error) {
-	actor, e := updateWorker(ctx, req.Msg.InstanceId)
+	actor, machineID, e := s.updateWorker(ctx, req.Msg.InstanceId)
 	if e == nil {
 		e = checkInstallationMutation(req.Msg.Mutation)
 	}
@@ -392,14 +402,14 @@ func (s *Service) ReportWorkerUpdate(ctx context.Context, req *connect.Request[p
 		Request *pb.ReportWorkerUpdateRequest
 	}{actor, req.Msg}
 	result, e := s.Store.Mutate(ctx, domain.ID(m.RequestId), "installation.update.report", input, func(tx *store.Tx) (any, error) {
-		r, o, e := workerUpdateRecord(tx, domain.ID(m.Id), actor, domain.ID(req.Msg.InstanceId))
+		r, o, e := workerUpdateRecord(tx, domain.ID(m.Id), actor, machineID, domain.ID(req.Msg.InstanceId))
 		if e != nil {
 			return nil, e
 		}
 		if o.State != updates.Running && o.State != updates.Uncertain || o.ClaimRequestID == "" || o.ClaimedRevision != m.ExpectedRevision {
 			return nil, installationFailure(domain.Conflict)
 		}
-		_, machine, e := activeMachine(tx, actor.MachineID)
+		_, machine, e := activeMachine(tx, machineID)
 		if e != nil {
 			return nil, e
 		}
@@ -433,7 +443,7 @@ func (s *Service) ReportWorkerUpdate(ctx context.Context, req *connect.Request[p
 	var r store.Record
 	e = s.Store.Read(ctx, func(tx *store.Tx) error {
 		var problem error
-		r, _, problem = workerUpdateRecord(tx, domain.ID(m.Id), actor, domain.ID(req.Msg.InstanceId))
+		r, _, problem = workerUpdateRecord(tx, domain.ID(m.Id), actor, machineID, domain.ID(req.Msg.InstanceId))
 		return problem
 	})
 	if e != nil {

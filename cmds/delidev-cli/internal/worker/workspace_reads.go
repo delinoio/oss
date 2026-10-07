@@ -61,7 +61,8 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 			continue
 		}
 		var request workspace.ReadRequest
-		if len(message.RequestJson) > 2<<20 || domain.Decode(message.RequestJson, &request) != nil || request.ID.Validate() != nil || request.Preparation.MachineID != credential.MachineID {
+		if len(message.RequestJson) > 2<<20 || domain.Decode(message.RequestJson, &request) != nil || request.ID.Validate() != nil ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", request.Preparation.MachineID != credential.MachineID) {
 			return workspace.ResultUncertain()
 		}
 		report := &pb.ReportWorkspaceReadRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ReadId: string(request.ID)}

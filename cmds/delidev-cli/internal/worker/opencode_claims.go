@@ -93,7 +93,11 @@ func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.Sessio
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	i, publication := p.input, p.state
-	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || (i.Version != 4 && i.Installation.Version != opencode.SupportedVersion) || (i.Continuation != nil || i.Fork != nil) != (resume != nil) || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution || publication.InstanceID != p.config.Instance || publication.ServerID != p.config.Credential.ServerID || publication.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || (i.Version != 4 && i.Installation.Version != opencode.SupportedVersion) || (i.Continuation != nil || i.Fork != nil) != (resume != nil) || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.InstanceID != p.config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.ServerID != p.config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", publication.DeviceID != p.config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", i.MachineID != p.config.Credential.MachineID) {
 		return nil, openCodeClaimUncertain()
 	}
 	ref := openCodeClaimReference{Version: 1, JobID: p.job, InstanceID: publication.InstanceID, ServerID: publication.ServerID, DeviceID: publication.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, ThreadRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: publication.Revision, AssignmentDigest: publication.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}

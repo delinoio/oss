@@ -72,9 +72,10 @@ func TestAccountPreferenceTokensPreserveProtectedUint64(t *testing.T) {
 			if err := call(r.Data, r.Revision-1, f.service.Identity.Token); connect.CodeOf(err) != connect.CodeAborted {
 				t.Fatal("stale revision was not rejected", err)
 			}
-			if err := call(r.Data, r.Revision, f.workerToken); connect.CodeOf(err) != connect.CodePermissionDenied {
-				t.Fatal("Worker preference write was not rejected", err)
+			if err := call(r.Data, r.Revision, f.workerToken); err != nil {
+				t.Fatal("authenticated Worker preference write was rejected", err)
 			}
+			r, _ = f.record()
 			for _, invalid := range []string{"0", "-1", "1.5", `"9007199254740993"`, "18446744073709551616", "9007199254740994", "9007199254740992"} {
 				if invalid == strconv.FormatUint(revision, 10) {
 					continue

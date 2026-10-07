@@ -29,30 +29,11 @@ func (t *Tx) CompleteTerminalArchive(sessionID domain.ID) error {
 	if err != nil {
 		return err
 	}
-	if session.Archive != domain.ArchivePending || session.ActiveExecutionID != "" || session.Recovery != domain.NoRecovery {
+	if session.Archive != domain.ArchivePending {
 		return nil
 	}
-	if session.Preparation != nil && (session.Preparation.State == domain.PreparationPending || session.Preparation.State == domain.PreparationStopping || session.Preparation.State == domain.PreparationUncertain) {
-		return nil
-	}
-	if session.TitleJobID != "" {
-		titleRecord, err := t.Get(domain.JobKind, session.TitleJobID)
-		if err != nil {
-			return err
-		}
-		job, err := Decode[domain.Job](titleRecord)
-		if err != nil {
-			return err
-		}
-		if job.State == domain.JobClaimed || job.State == domain.JobUncertain || job.State == domain.JobQueued {
-			return nil
-		}
-	}
-	if session.TitleState == domain.TitleRunning || session.TitleState == domain.TitleUncertain {
-		return nil
-	}
-	if session.InitialExecution != nil && (session.Execution == nil || !session.Execution.CleanupVerified) && session.StartupRejection == nil {
-		return nil
+	if session.ActiveExecutionID != "" || session.Recovery != domain.NoRecovery || session.TitleState == domain.TitleUncertain || session.TitleState == domain.TitleRunning || session.InitialExecution != nil && (session.Execution == nil || !session.Execution.CleanupVerified) {
+		domain.ObserveOwnership(domain.OwnershipCleanup, sessionID)
 	}
 	if err := t.requireTerminalCleanup(sessionID); err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {

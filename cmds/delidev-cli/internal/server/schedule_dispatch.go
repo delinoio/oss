@@ -245,7 +245,9 @@ func scheduleSessionResult(tx *store.Tx, record store.Record, value domain.Sessi
 			return "", nil, err
 		}
 		expected := map[domain.PreparationState]domain.JobState{domain.PreparationFailed: domain.JobFailed, domain.PreparationCanceled: domain.JobCanceled, domain.PreparationReady: domain.JobSucceeded}[value.Preparation.State]
-		if expected == "" || r.SessionID != record.ID || job.Type != domain.PrepareWorkspaceJob || job.MachineID != value.MachineID || job.State != expected || job.FinishedAt == nil {
+		if expected == "" || r.SessionID != record.ID || job.Type != domain.PrepareWorkspaceJob ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != value.MachineID) ||
+			job.State != expected || job.FinishedAt == nil {
 			return "", nil, nativeCompletionUncertain()
 		}
 		if expected == domain.JobFailed {

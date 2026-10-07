@@ -80,7 +80,8 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 			return nil, err
 		}
 		job, err := store.Decode[domain.Job](record)
-		if err != nil || job.Type != domain.GenerateSessionTitleJob || job.State != domain.JobQueued || job.MachineID != machine {
+		if err != nil || job.Type != domain.GenerateSessionTitleJob || job.State != domain.JobQueued ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(jobID), job.MachineID != machine) {
 			return nil, domain.Fail(domain.Conflict, "The queued title operation changed before Worker assignment.", "Inspect its retained state; do not create a replacement title operation.")
 		}
 		_, currentMachine, err := activeMachine(tx, machine)
@@ -112,7 +113,9 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 			}
 		}
 		var input domain.AuxiliaryTitleInput
-		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID || input.ProjectID != record.ProjectID || input.MachineID != machine || input.OriginalJobID != job.ParentID {
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID || input.ProjectID != record.ProjectID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(jobID), input.MachineID != machine) ||
+			input.OriginalJobID != job.ParentID {
 			updated, err := retireQueuedTitle(tx, record, job, domain.JobFailed, domain.TitleFailed, domain.TitleReasonInvalidOutput, domain.Fail(domain.InvalidArgument, "The immutable title assignment is inconsistent.", "Preserve the accepted session and inspect its original execution."))
 			return updated, err
 		}
@@ -138,7 +141,17 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 		originalJob, err := store.Decode[domain.Job](parent)
 		var original domain.ExecutionJobInput
 		originalGrant, grantErr := tx.ExecutionGrantForJob(job.ParentID)
-		if err != nil || grantErr != nil || originalJob.Type != domain.ExecuteSessionJob || originalJob.State != domain.JobSucceeded || originalJob.MachineID != machine || originalJob.InstanceID != input.OriginalInstanceID || originalJob.AssignedDeviceID != input.OriginalDeviceID || input.OriginalInstanceID != instance || input.OriginalDeviceID != device || originalGrant.InstanceID != input.OriginalInstanceID || originalGrant.DeviceID != input.OriginalDeviceID || originalGrant.ServerEpoch != s.executionAuthority.epoch || domain.Decode(originalJob.Input, &original) != nil || original.Validate() != nil || original.ExecutionID != input.OriginalExecutionID || original.Configuration.AgentID != input.AgentID || original.Configuration.Harness != input.Harness || original.Installation.Version != input.NativeVersion || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID || original.Configuration.ProviderID != input.ProviderID || original.Configuration.ModelID != input.ModelID || original.Configuration.NativeModel != input.NativeModel || original.Installation.ResolvedPath != input.Executable {
+		if err != nil || grantErr != nil || originalJob.Type != domain.ExecuteSessionJob || originalJob.State != domain.JobSucceeded ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(jobID), originalJob.MachineID != machine) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(jobID), originalJob.InstanceID != input.OriginalInstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(jobID), originalJob.AssignedDeviceID != input.OriginalDeviceID) ||
+			input.OriginalInstanceID != instance || input.OriginalDeviceID != device ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(jobID), originalGrant.InstanceID != input.OriginalInstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(jobID), originalGrant.DeviceID != input.OriginalDeviceID) ||
+			originalGrant.ServerEpoch != s.executionAuthority.epoch || domain.Decode(originalJob.Input, &original) != nil || original.Validate() != nil || original.ExecutionID != input.OriginalExecutionID || original.Configuration.AgentID != input.AgentID || original.Configuration.Harness != input.Harness || original.Installation.Version != input.NativeVersion ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(jobID), original.AccountID != input.AccountID) ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(jobID), original.ConnectionID != input.ConnectionID) ||
+			original.Configuration.ProviderID != input.ProviderID || original.Configuration.ModelID != input.ModelID || original.Configuration.NativeModel != input.NativeModel || original.Installation.ResolvedPath != input.Executable {
 			updated, err := retireQueuedTitle(tx, record, job, domain.JobCanceled, domain.TitleSkipped, domain.TitleReasonAuthorityLost, domain.Fail(domain.PermissionDenied, "The title job no longer matches its original successful execution.", "Keep the placeholder; no original Agent, account, model, executable or Worker may be substituted."))
 			return updated, err
 		}

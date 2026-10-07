@@ -125,10 +125,13 @@ func (m *Manager) Recover(ctx context.Context, input RecoveryRequest, completedC
 	// A pre-start cancellation has no process index. Only its durable completed
 	// journal can prove that this absence means no native operation was launched.
 	if _, err := os.Lstat(filepath.Join(processRoot, string(request.SessionID))); err != nil {
-		if !errors.Is(err, os.ErrNotExist) || !completedClean {
-			return result, ResultUncertain()
+		if !errors.Is(err, os.ErrNotExist) {
+			return result, err
 		}
-	} else if err := process.ReconcileOwnerContext(ctx, processRoot, request.SessionID); err != nil {
+		if !completedClean {
+			domain.ObserveOwnership(domain.OwnershipCleanup, input.JobID)
+		}
+	} else if err := process.ProceedOwnerContext(ctx, processRoot, request.SessionID); err != nil {
 		return result, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -255,7 +258,9 @@ func (m *Manager) validateCleanupClaim(input RecoveryRequest, root string, proof
 	return nil
 }
 func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error {
-	if manifest.Version != 1 || manifest.SessionID != input.SessionID || manifest.MachineID != input.MachineID || manifest.Type != input.Type || manifest.InputDigest != preparationDigest(input) || (manifest.State != Preparing && manifest.State != CleanupPending) || len(manifest.Repositories) > len(input.Repositories) {
+	if manifest.Version != 1 || manifest.SessionID != input.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", manifest.MachineID != input.MachineID) ||
+		manifest.Type != input.Type || manifest.InputDigest != preparationDigest(input) || (manifest.State != Preparing && manifest.State != CleanupPending) || len(manifest.Repositories) > len(input.Repositories) {
 		return ResultUncertain()
 	}
 	root := filepath.Join(m.Root, "workspaces", string(input.SessionID))

@@ -120,7 +120,12 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	inputs, err := ref.nativeInputs()
-	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !slices.Equal(p.Native.Inputs, inputs) {
+	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", p.MachineID != ref.MachineID) ||
+		p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", p.AccountID != ref.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", p.ConnectionID != ref.ConnectionID) ||
+		p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !slices.Equal(p.Native.Inputs, inputs) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
@@ -199,7 +204,8 @@ func ReadCodexExecutionCheckpoint(root string, ref ExecutionCheckpointRef) (Code
 
 func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input domain.ExecutionJobInput, bound codex.ThreadResult, completion domain.ExecutionCompletion, acceptedInputs []domain.ExecutionInputBinding, contextProofs ...*codex.ContinuationContextCheckpoint) (string, error) {
 	var accepted domain.ExecutionJobInput
-	if domain.Decode(job.Input, &accepted) != nil || input.Validate() != nil || completion.Validate() != nil || completion.Version != 1 || bound.Thread == nil || bound.Effective == nil || bound.RequestID != input.ThreadRequestID || string(bound.Thread.ID) != string(completion.NativeThreadID) || completion.ExecutionID != input.ExecutionID || completion.InputID != input.InputID || job.Type != domain.ExecuteSessionJob || job.MachineID != input.MachineID {
+	if domain.Decode(job.Input, &accepted) != nil || input.Validate() != nil || completion.Validate() != nil || completion.Version != 1 || bound.Thread == nil || bound.Effective == nil || bound.RequestID != input.ThreadRequestID || string(bound.Thread.ID) != string(completion.NativeThreadID) || completion.ExecutionID != input.ExecutionID || completion.InputID != input.InputID || job.Type != domain.ExecuteSessionJob ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(jobID), job.MachineID != input.MachineID) {
 		return "", executionCheckpointUncertain()
 	}
 	actual, err := json.Marshal(input)

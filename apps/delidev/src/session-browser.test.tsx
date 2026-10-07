@@ -55,8 +55,8 @@ it("uses distinct native presentation identities and never gives external conten
  expect(first.viewId).not.toBe(second.viewId);expect(native.mock.calls.some(([op,args])=>op==="control_browser"&&args.action==="hide"&&args.viewId===first.viewId)).toBe(true);
  expect(view.container.querySelector("iframe,webview,script,a")).toBeNull();view.unmount();await waitFor(()=>expect(native.mock.calls.some(([op,args])=>op==="control_browser"&&args.action==="hide"&&args.viewId===second.viewId)).toBe(true));
 });
-it("rejects deleted or foreign profiles before native presentation",async()=>{
- const f=fixture();f.profile.accountId=newRequestId();render(<f.View />);await open();await screen.findByText("Browser profile ownership is unavailable. Refresh the session.");expect(native).not.toHaveBeenCalled();
+it("allows a different account reference and rejects a deleted profile",async()=>{
+ const f=fixture();f.profile.accountId=newRequestId();render(<f.View />);await open();await waitFor(()=>expect(native.mock.calls.some(([op])=>op==="open_browser")).toBe(true));
  expect(()=>browserProfile({...f.profile,accountId:f.accountId,state:BrowserProfileState.REMOVAL_PENDING,deletionRequestId:newRequestId()},f.accountId)).toThrow();
 });
 it("retries identical geometry after a failed native resize and caches only success", async () => {

@@ -12,7 +12,7 @@ import (
 )
 
 func continuationConflict() error {
-	return domain.Fail(domain.Conflict, "The session is not ready for another turn.", "Keep input queued until the preceding execution, native history and owned cleanup are verified; explicitly resume paused sessions.")
+	return domain.Fail(domain.Conflict, "The session is not ready for another turn.", "Check workspace availability, the selected account and queued input; explicitly resume paused sessions.")
 }
 
 func continuationDigest(raw []byte) string {
@@ -24,6 +24,9 @@ func continuationDigest(raw []byte) string {
 // initial snapshot/route; the successor retains the exact preceding progress.
 // There is no native, credential or filesystem operation inside this transaction.
 func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, explicit bool) (store.Record, error) {
+	if session.Recovery != domain.NoRecovery || session.Execution == nil || !session.Execution.CleanupVerified {
+		return queueUnconfirmedSuccessor(tx, sr, session, explicit)
+	}
 	if session.CompactionJobID != "" {
 		return store.Record{}, domain.CompactionUncertain()
 	}
@@ -171,7 +174,9 @@ func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domai
 	}
 	var assignment domain.ExecutionJobInput
 	var completion domain.ExecutionCompletion
-	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID || job.MachineID != session.MachineID || domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(assignment.Configuration.Harness) != nil || session.Execution.JobID != previous.ID {
+	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != session.MachineID) ||
+		domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(assignment.Configuration.Harness) != nil || session.Execution.JobID != previous.ID {
 		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", nativeCompletionUncertain()
 	}
 	terminalState := map[domain.ExecutionOutcome]domain.JobState{domain.ExecutionSucceeded: domain.JobSucceeded, domain.ExecutionFailed: domain.JobFailed, domain.ExecutionStopped: domain.JobCanceled}[completion.Outcome]
@@ -213,4 +218,85 @@ func continuationAssignment(session domain.Session, assignment domain.ExecutionJ
 		input.Continuation.PreviousAccountID, input.Continuation.PreviousConnectionID = assignment.AccountID, assignment.ConnectionID
 	}
 	return input
+}
+
+// An unconfirmed predecessor remains historical. A fresh attempt consumes only a
+// new queued input; it never replays a claimed input or manufactures a checkpoint.
+func queueUnconfirmedSuccessor(tx *store.Tx, sr store.Record, session domain.Session, explicit bool) (store.Record, error) {
+	if session.InitialExecution == nil || !session.WorkspaceAvailable() || session.Archive != domain.NotArchived || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || (session.Dispatch == domain.DispatchPaused && !explicit) {
+		return store.Record{}, continuationConflict()
+	}
+	domain.ObserveOwnership(domain.OwnershipCleanup, session.ExecutionSelection().ID)
+	ir, err := tx.OldestQueuedInput(sr.ID)
+	if err != nil {
+		if explicit && domain.SafeError(err).Code == domain.MissingInput {
+			session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, domain.ContinueExplicitly
+			_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
+			return store.Record{}, err
+		}
+		return store.Record{}, err
+	}
+	next, err := store.Decode[domain.QueuedInput](ir)
+	if err != nil {
+		return store.Record{}, err
+	}
+	if next.Delivery != domain.InputQueued || next.ExecutionID != "" || next.NativeRequestID != "" || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(next.Prompt)) {
+		return store.Record{}, continuationConflict()
+	}
+	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
+		return store.Record{}, err
+	}
+	_, machine, err := activeMachine(tx, session.MachineID)
+	if err != nil {
+		return store.Record{}, err
+	}
+	instance, seen, err := tx.WorkerInstance(session.MachineID)
+	if err != nil {
+		return store.Record{}, err
+	}
+	if instance.Validate() != nil || seen.After(time.Now().UTC().Add(time.Second)) || time.Since(seen) > domain.WorkerConnectionTimeout {
+		return store.Record{}, domain.Fail(domain.Unavailable, "The selected Worker is not connected.", "Reconnect the selected Worker.")
+	}
+	prior, err := tx.SessionExecutionJob(sr.ID, session.ExecutionSelection().ID)
+	if err != nil {
+		return store.Record{}, err
+	}
+	old, err := store.Decode[domain.Job](prior)
+	if err != nil {
+		return store.Record{}, err
+	}
+	var input domain.ExecutionJobInput
+	if err := domain.Decode(old.Input, &input); err != nil {
+		return store.Record{}, err
+	}
+	if err := input.Validate(); err != nil {
+		return store.Record{}, err
+	}
+	input.ExecutionID, input.InputID = domain.NewID(), ir.ID
+	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
+	input.MachineID = session.MachineID
+	input.AccountID, input.ConnectionID = session.ContinuationAccount()
+	input.Input = domain.SessionInput{Prompt: next.Prompt, Mode: next.Mode}
+	input.Continuation, input.Fork, input.Retry, input.Remediation = nil, nil, nil, nil
+	input, err = checkedExecutionAssignment(tx, sr, session, machine, input)
+	if err != nil {
+		return store.Record{}, err
+	}
+	next.Delivery, next.ExecutionID, next.NativeRequestID = domain.InputClaimed, input.ExecutionID, input.TurnRequestID
+	if _, err := tx.Put(domain.QueueKind, ir.ID, ir.Revision, sr.ID, sr.ProjectID, next); err != nil {
+		return store.Record{}, err
+	}
+	session.CurrentExecution = &domain.ExecutionSelection{ID: input.ExecutionID, InputID: input.InputID, AccountID: input.AccountID, ConnectionID: input.ConnectionID}
+	session.NativeExecutionRootID, session.ActiveExecutionID = input.ExecutionID, input.ExecutionID
+	session.Outcome, session.Dispatch, session.Recovery = domain.ExecutionNotStarted, domain.DispatchClaimed, domain.NoRecovery
+	session.Execution, session.Startup, session.Problem = nil, nil, nil
+	session.ExecutionRecoveryJobID, session.CurrentNativeHistory, session.NextExecutionIntent, session.CompactionJobID = "", "", "", ""
+	if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
+		return store.Record{}, err
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return store.Record{}, err
+	}
+	return tx.PutJob(domain.NewID(), 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobQueued, MachineID: session.MachineID, Input: raw, AcceptedAt: time.Now().UTC()})
 }

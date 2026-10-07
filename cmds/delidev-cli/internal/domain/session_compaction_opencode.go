@@ -19,7 +19,7 @@ type OpenCodeCompactionResult struct {
 
 func (r SessionCompactionResult) validateOpenCode() error {
 	p := r.OpenCode
-	if r.Harness != OpenCode || p == nil || r.Codex != nil || r.Outcome != CompactionSucceeded || r.OuterKind != "" || r.OuterError || r.CommandEchoID != "" || r.ResultID != "" || r.CommandCompletedID != "" || r.IdleID != "" || r.BoundaryID != "" || r.SummaryID != "" || r.Boundary != nil || r.Summary != nil || !r.CleanupVerified || r.Checkpoint.Validate() != nil || r.Checkpoint.ActionID != r.ActionID || r.Checkpoint.ExecutionID != r.ExecutionID || r.Checkpoint.RequiresResume {
+	if r.Harness != OpenCode || p == nil || r.Codex != nil || r.Outcome != CompactionSucceeded || r.OuterKind != "" || r.OuterError || r.CommandEchoID != "" || r.ResultID != "" || r.CommandCompletedID != "" || r.IdleID != "" || r.BoundaryID != "" || r.SummaryID != "" || r.Boundary != nil || r.Summary != nil || r.Checkpoint.Validate() != nil || r.Checkpoint.ActionID != r.ActionID || r.Checkpoint.ExecutionID != r.ExecutionID || r.Checkpoint.RequiresResume {
 		return CompactionUncertain()
 	}
 	if p.NativeSessionID.Validate(OpenCode, NativeThreadIdentity) != nil || p.SourceNativeInputID.Validate(OpenCode, NativeTurnIdentity) != nil || p.UserID.Validate(OpenCode, NativeMessageIdentity) != nil || p.PartID.Validate(OpenCode, NativePartIdentity) != nil || p.SummaryID.Validate(OpenCode, NativeMessageIdentity) != nil || p.CompletedEventID.Validate(OpenCode, NativeEventIdentity) != nil || p.UserID == p.SourceNativeInputID || p.SummaryID == p.UserID || p.SummaryID == p.SourceNativeInputID || !validCompactionDigest(p.HistoryDigest) || p.Actions == 0 || p.Actions > 128 || !p.Acknowledged || !p.LifecycleCompleted || p.Usages == nil || len(p.Usages) > 128 {

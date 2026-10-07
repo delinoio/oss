@@ -80,7 +80,9 @@ func (s *Service) readNetworkSaveIntent() (networkSaveIntent, bool, error) {
 	if err != nil {
 		return intent, false, domain.SafeError(err)
 	}
-	if domain.Decode(raw, &intent) != nil || intent.Version != 1 || intent.ServerID != s.Identity.ServerID || intent.RequestID.Validate() != nil || intent.Input.ID.Validate() != nil || intent.Input.Definition.Validate() != nil || len(intent.Input.Commitment) != 64 || intent.Input.Clear || (intent.State != networkSavePending && intent.State != networkSaveCleanup) || !hmac.Equal([]byte(intent.Authentication), []byte(s.networkSaveAuthentication(intent))) {
+	if domain.Decode(raw, &intent) != nil || intent.Version != 1 ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", intent.ServerID != s.Identity.ServerID) ||
+		intent.RequestID.Validate() != nil || intent.Input.ID.Validate() != nil || intent.Input.Definition.Validate() != nil || len(intent.Input.Commitment) != 64 || intent.Input.Clear || (intent.State != networkSavePending && intent.State != networkSaveCleanup) || !hmac.Equal([]byte(intent.Authentication), []byte(s.networkSaveAuthentication(intent))) {
 		return networkSaveIntent{}, false, networkSaveRecovery()
 	}
 	return intent, true, nil

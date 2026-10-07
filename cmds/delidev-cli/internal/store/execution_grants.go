@@ -33,7 +33,11 @@ func (t *Tx) PutExecutionGrant(grant ExecutionGrant) error {
 	var old ExecutionGrant
 	err := t.tx.QueryRowContext(t.ctx, "SELECT digest,execution_id,machine_id,instance_id,device_id,server_epoch FROM execution_grants WHERE job_id=?", grant.JobID).Scan(&old.Digest, &old.ExecutionID, &old.MachineID, &old.InstanceID, &old.DeviceID, &old.ServerEpoch)
 	if err == nil {
-		if !bytes.Equal(old.Digest, grant.Digest) || old.ExecutionID != grant.ExecutionID || old.MachineID != grant.MachineID || old.InstanceID != grant.InstanceID || old.DeviceID != grant.DeviceID || old.ServerEpoch != grant.ServerEpoch {
+		if !bytes.Equal(old.Digest, grant.Digest) || old.ExecutionID != grant.ExecutionID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", old.MachineID != grant.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", old.InstanceID != grant.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, "", old.DeviceID != grant.DeviceID) ||
+			old.ServerEpoch != grant.ServerEpoch {
 			return domain.Fail(domain.Conflict, "This execution already has another credential binding.", "Reconcile its original native attempt; do not replace the credential or replay input.")
 		}
 		return nil

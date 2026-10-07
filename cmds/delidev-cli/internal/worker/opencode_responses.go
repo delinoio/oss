@@ -155,7 +155,10 @@ func (c *OpenCodeEventPublisher) deliverOpenCodeResponse(ctx, publicationCtx con
 		decision := opencode.PermissionDecision(permission.Decision)
 		native.Decision, native.Feedback, mutation = &decision, permission.Feedback, opencode.ReplyPermissionMutation
 	}
-	if claim == nil || claim.ID != journal.ClaimID || claim.JobID != identity.JobID || claim.MachineID != config.Credential.MachineID || claim.InstanceID != config.Instance || claim.DeviceID != config.Credential.DeviceID {
+	if claim == nil || claim.ID != journal.ClaimID || claim.JobID != identity.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != config.Credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", claim.DeviceID != config.Credential.DeviceID) {
 		return c.fail(publicationUncertain())
 	}
 	digest, err := domain.OpenCodeResponseDigest(question, permission)

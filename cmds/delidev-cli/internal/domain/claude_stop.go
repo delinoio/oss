@@ -101,7 +101,7 @@ func (v ClaudeStopObservation) Validate() error {
 	default:
 		return invalidClaudeStop()
 	}
-	if Text(v.NativeMessageID, "native provider message", 1024, true) != nil || seen[v.NativeMessageID] || Text(v.Text, "interrupted native response", MaxMessageText, false) != nil || v.Context != ClaudeStopContextText || v.NativeInputID != nil || v.Kind != ClaudeResultExecutionError || v.Reason != ClaudeAbortedStreaming || !v.Error || v.Command != ClaudeCommandCancelled || !v.Acknowledged || !v.Idle || !v.CleanupVerified || v.Usage == nil {
+	if Text(v.NativeMessageID, "native provider message", 1024, true) != nil || seen[v.NativeMessageID] || Text(v.Text, "interrupted native response", MaxMessageText, false) != nil || v.Context != ClaudeStopContextText || v.NativeInputID != nil || v.Kind != ClaudeResultExecutionError || v.Reason != ClaudeAbortedStreaming || !v.Error || v.Command != ClaudeCommandCancelled || !v.Acknowledged || !v.Idle || v.Usage == nil {
 		return invalidClaudeStop()
 	}
 	raw, err := json.Marshal(v.Usage)

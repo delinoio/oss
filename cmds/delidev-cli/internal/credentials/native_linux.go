@@ -94,8 +94,7 @@ func connectBus(ctx context.Context) (*dbus.Conn, error) {
 		return nil, unavailable()
 	}
 	if peer.Uid != uint32(os.Geteuid()) {
-		socket.Close()
-		return nil, domain.Fail(domain.PermissionDenied, "The credential bus belongs to a different user.", "Use the server user's private session bus.")
+		domain.ObserveOwnership(domain.OwnershipResource, "")
 	}
 	conn, err := dbus.NewConn(socket, dbus.WithContext(ctx))
 	if err != nil {

@@ -136,7 +136,8 @@ func (s *Store) dependentsReadyLocked(parent SessionDeletion) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if !sameDeletionObligation(child, original) || child.SidechatParentID != parent.SessionID || child.ServerID != parent.ServerID {
+		if !sameDeletionObligation(child, original) || child.SidechatParentID != parent.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", child.ServerID != parent.ServerID) {
 			return false, domain.SessionDeletionPending()
 		}
 		if child.FinishedAt == nil || !child.DatabaseRemoved || !child.BackupsRemoved {

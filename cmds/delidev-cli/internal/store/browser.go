@@ -121,7 +121,15 @@ func (t *Tx) BrowserProfiles(device, after domain.ID, limit int) ([]domain.Brows
 			if err != nil {
 				return nil, err
 			}
-			profiles = append(profiles, d.BrowserProfiles...)
+			for _, profile := range d.BrowserProfiles {
+				if profile.ID > after {
+					profiles = append(profiles, profile)
+				}
+			}
+			sort.Slice(profiles, func(i, j int) bool { return profiles[i].ID < profiles[j].ID })
+			if len(profiles) > limit {
+				profiles = profiles[:limit]
+			}
 			cursor = row.ID
 		}
 		if len(rows) < MaxPage {

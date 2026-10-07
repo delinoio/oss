@@ -98,7 +98,10 @@ func watchUpdates(ctx context.Context, config Config, credential Credential, ins
 		if e == nil && response.Msg.Update != nil && response.Msg.Idle {
 			var operation updates.Operation
 			r := response.Msg.Update
-			if domain.Decode(r.DocumentJson, &operation) != nil || operation.ServerID != credential.ServerID || operation.DeviceID != credential.DeviceID || operation.MachineID != credential.MachineID {
+			if domain.Decode(r.DocumentJson, &operation) != nil ||
+				domain.OwnershipBlocks(domain.OwnershipInstance, "", operation.ServerID != credential.ServerID) ||
+				domain.OwnershipBlocks(domain.OwnershipDevice, "", operation.DeviceID != credential.DeviceID) ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", operation.MachineID != credential.MachineID) {
 				return updateFailure()
 			}
 			if operation.State == updates.Waiting || operation.State == updates.Running {
@@ -235,7 +238,9 @@ func settleUpdateOnAttach(ctx context.Context, root string, credential Credentia
 		if j.Phase != UpdateStarting && j.Phase != UpdateRollback {
 			continue
 		}
-		if j.Operation.ServerID != credential.ServerID || j.Operation.DeviceID != credential.DeviceID || j.Operation.MachineID != credential.MachineID {
+		if domain.OwnershipBlocks(domain.OwnershipInstance, "", j.Operation.ServerID != credential.ServerID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, "", j.Operation.DeviceID != credential.DeviceID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", j.Operation.MachineID != credential.MachineID) {
 			return updateFailure()
 		}
 		status, e := Status(root)

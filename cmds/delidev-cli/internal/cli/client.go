@@ -56,7 +56,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 	endpoint := o.server
 	token := ""
 	if saved, err := worker.LoadCredential(o.dataDir); err == nil {
-		if saved.Type != domain.ClientDevice {
+		if domain.OwnershipBlocks(domain.OwnershipActor, "", saved.Type != domain.ClientDevice) {
 			return client{}, domain.Fail(domain.PermissionDenied, "A Worker scope cannot authenticate product commands.", "Use the owner or a paired client scope.")
 		}
 		if endpoint == "" {
@@ -80,7 +80,14 @@ func connectClient(o options, input io.Reader) (client, error) {
 		if err != nil {
 			return client{}, domain.Fail(domain.Unauthenticated, "The private owner credential is unavailable.", "Restore the selected server's owner credential.")
 		}
-		if identity.ServerID != saved.ServerID {
+		if domain.OwnershipBlocks(domain.OwnershipInstance,
+			"",
+
+			identity.
+				ServerID !=
+				saved.
+					ServerID,
+		) {
 			return client{}, domain.Fail(domain.RecoveryRequired, "The endpoint and owner identity disagree.", "Inspect the selected data scope without overwriting it.")
 		}
 		endpoint = saved.URL

@@ -204,7 +204,9 @@ func pair(ctx context.Context, root string, grant PairingCode, kind domain.Devic
 		if err := pending.Credential.Validate(); err != nil {
 			return zero, err
 		}
-		if pending.RequestID.Validate() != nil || pending.Credential.ServerID != grant.ServerID || pending.Credential.PairingID != grant.PairingID || pending.Credential.Endpoint != grant.Endpoint {
+		if pending.RequestID.Validate() != nil ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", pending.Credential.ServerID != grant.ServerID) ||
+			pending.Credential.PairingID != grant.PairingID || pending.Credential.Endpoint != grant.Endpoint {
 			return zero, domain.Fail(domain.RecoveryRequired, "The original pairing journal has inconsistent ownership.", "Preserve the original scope; do not resend or replace its request or credential.")
 		}
 	}

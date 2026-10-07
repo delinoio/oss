@@ -50,7 +50,8 @@ func (t *Tx) terminalArchiveBarrier(id domain.ID, value any) (any, error) {
 		if !terminal.Live() {
 			continue
 		}
-		session.Archive = domain.ArchivePending
+		domain.ObserveOwnership(domain.OwnershipCleanup, r.ID)
+		session.Archive = domain.Archived
 		if terminal.CloseRequestID == "" {
 			terminal.CloseRequestID = domain.NewID()
 			if _, err := t.Put(domain.TerminalKind, r.ID, r.Revision, r.SessionID, r.ProjectID, terminal); err != nil {

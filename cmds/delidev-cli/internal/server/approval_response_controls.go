@@ -31,7 +31,7 @@ func (s *Service) ClaimApprovalResponse(ctx context.Context, req *connect.Reques
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
 	identity := approvalClaimIdentity{domain.ID(meta.Id), domain.ID(req.Msg.ResponseId), domain.ID(req.Msg.JobId), domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), actor.DeviceID, meta.ExpectedRevision}
-	for _, id := range []domain.ID{identity.Interaction, identity.Response, identity.Job, identity.Machine, identity.Instance, identity.Device} {
+	for _, id := range []domain.ID{identity.Interaction, identity.Response, identity.Job, identity.Machine, identity.Instance} {
 		if err := id.Validate(); err != nil {
 			return nil, rpc.Error(err, correlation)
 		}

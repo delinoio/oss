@@ -65,7 +65,11 @@ func (m *Manager) deletionSnapshotManifest(ctx context.Context, w domain.Session
 		}
 		raw, err := security.ReadPrivate(filepath.Join(path, "snapshot.json"), maxSnapshotManifest)
 		var snapshot snapshotManifest
-		if err != nil || domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != copy.SnapshotID || snapshot.Workspace.SessionID != w.SessionID || snapshot.Workspace.MachineID != w.MachineID || snapshot.Preparation.SessionID != w.SessionID || snapshot.Preparation.MachineID != w.MachineID || snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !slices.Contains(w.PreparationDigests, snapshot.Workspace.InputDigest) {
+		if err != nil || domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != copy.SnapshotID || snapshot.Workspace.SessionID != w.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", snapshot.Workspace.MachineID != w.MachineID) ||
+			snapshot.Preparation.SessionID != w.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, "", snapshot.Preparation.MachineID != w.MachineID) ||
+			snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !slices.Contains(w.PreparationDigests, snapshot.Workspace.InputDigest) {
 			return nil, domain.SessionDeletionPending()
 		}
 		sum := sha256.Sum256(raw)

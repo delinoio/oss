@@ -19,12 +19,13 @@ import (
 func reportPRStartupRejection(config Config, owner domain.ID, job domain.Job, cause error) (json.RawMessage, error) {
 	fail := domain.StartupRejectionUncertain
 	c := config.execution
-	if c == nil || c.Assignment == nil || c.Client == nil || c.Assignment.Kind != pb.EntityKind_ENTITY_KIND_JOB || c.Assignment.SchemaVersion != 1 || domain.ID(c.Assignment.Id) != owner || c.Credential.Validate() != nil || c.Credential.Type != domain.WorkerDevice {
+	if c == nil || c.Assignment == nil || c.Client == nil || c.Assignment.Kind != pb.EntityKind_ENTITY_KIND_JOB || c.Assignment.SchemaVersion != 1 || domain.ID(c.Assignment.Id) != owner || c.Credential.Validate() != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", c.Credential.Type != domain.WorkerDevice) {
 		return nil, fail()
 	}
 	var original domain.Job
 	var input domain.ExecutionJobInput
-	if domain.Decode(c.Assignment.DocumentJson, &original) != nil || domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.Continuation != nil || c.Assignment.SessionId != string(input.SessionID) || c.Credential.MachineID != input.MachineID {
+	if domain.Decode(c.Assignment.DocumentJson, &original) != nil || domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.Continuation != nil || c.Assignment.SessionId != string(input.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), c.Credential.MachineID != input.MachineID) {
 		return nil, fail()
 	}
 	current, err := json.Marshal(job)
@@ -36,7 +37,9 @@ func reportPRStartupRejection(config Config, owner domain.ID, job domain.Job, ca
 	// arbitrary error nor a missing publisher/native journal can replace it.
 	raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(owner)+".json"), 2<<20)
 	var operation journal
-	if err != nil || domain.Decode(raw, &operation) != nil || operation.Version != 1 || operation.State != journalStarted || operation.JobID != owner || operation.InstanceID != c.Instance || operation.Revision != c.Assignment.Revision || operation.Digest != executionInputDigest(c.Assignment.DocumentJson) || operation.ReportID.Validate() != nil || operation.Problem != nil || len(operation.Output) != 0 {
+	if err != nil || domain.Decode(raw, &operation) != nil || operation.Version != 1 || operation.State != journalStarted || operation.JobID != owner ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(owner), operation.InstanceID != c.Instance) ||
+		operation.Revision != c.Assignment.Revision || operation.Digest != executionInputDigest(c.Assignment.DocumentJson) || operation.ReportID.Validate() != nil || operation.Problem != nil || len(operation.Output) != 0 {
 		return nil, fail()
 	}
 	if _, err := os.Lstat(filepath.Join(config.Root, "jobs", string(owner))); !errors.Is(err, os.ErrNotExist) {

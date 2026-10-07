@@ -54,7 +54,9 @@ func (v SessionDeletion) validate() error {
 	}
 	dependentIDs := []domain.ID{v.SessionID}
 	for _, child := range v.Dependents {
-		if len(child.Dependents) != 0 || child.SidechatParentID != v.SessionID || child.ServerID != v.ServerID || child.validate() != nil {
+		if len(child.Dependents) != 0 || child.SidechatParentID != v.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", child.ServerID != v.ServerID) ||
+			child.validate() != nil {
 			return domain.SessionDeletionPending()
 		}
 		dependentIDs = append(dependentIDs, child.SessionID)
@@ -72,7 +74,9 @@ func (v SessionDeletion) validate() error {
 	}
 	devices := []domain.ID{}
 	for _, w := range v.Workers {
-		if w.Work.Validate() != nil || w.Work.DeletionID != v.ID || w.Work.SessionID != v.SessionID || w.Work.ServerID != v.ServerID || w.Acknowledged && w.RequestID.Validate() != nil || !w.Acknowledged && w.RequestID != "" {
+		if w.Work.Validate() != nil || w.Work.DeletionID != v.ID || w.Work.SessionID != v.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", w.Work.ServerID != v.ServerID) ||
+			w.Acknowledged && w.RequestID.Validate() != nil || !w.Acknowledged && w.RequestID != "" {
 			return domain.SessionDeletionPending()
 		}
 
@@ -205,7 +209,10 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 	}
 	old, e := s.readSessionDeletion(session)
 	if e == nil {
-		if old.RequestID != request || old.Actor != actor || old.ServerID != server || old.ExpectedRevision != revision {
+		if old.RequestID != request ||
+			domain.OwnershipBlocks(domain.OwnershipActor, "", old.Actor != actor) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", old.ServerID != server) ||
+			old.ExpectedRevision != revision {
 			return old, false, deletionConflict()
 		}
 		// Repair an intent whose original SQL acknowledgement was lost. The
@@ -276,7 +283,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 		} else if err != nil {
 			return v, false, err
 		}
-		if child.SidechatParentID != v.SessionID || child.ServerID != v.ServerID || len(child.Dependents) != 0 {
+		if child.SidechatParentID != v.SessionID ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, "", child.ServerID != v.ServerID) ||
+			len(child.Dependents) != 0 {
 			return v, false, domain.SessionDeletionPending()
 		}
 		v.Dependents = append(v.Dependents, child)
@@ -536,7 +545,7 @@ func (s *Store) RestoreSessionDeletionIntents(ctx context.Context, server domain
 		return e
 	}
 	for _, v := range items {
-		if v.ServerID != server {
+		if domain.OwnershipBlocks(domain.OwnershipInstance, "", v.ServerID != server) {
 			return domain.SessionDeletionPending()
 		}
 		tx, e := s.db.BeginTx(ctx, nil)
@@ -835,7 +844,7 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			index = len(v.Workers) - 1
 		}
 		w := &v.Workers[index].Work
-		if w.MachineID != original.MachineID {
+		if domain.OwnershipBlocks(domain.OwnershipMachine, "", w.MachineID != original.MachineID) {
 			return v, domain.SessionDeletionPending()
 		}
 		h := sha256.Sum256(a.Data)
@@ -849,7 +858,9 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 		}
 		if j.Type == domain.WorkspaceStorageJob {
 			var input workspace.StorageRequest
-			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != v.SessionID || input.Preparation.MachineID != original.MachineID || (input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
+			if workspace.DecodeStorageRequest(original.Input, &input) != nil || input.OperationID != r.ID || input.Preparation.SessionID != v.SessionID ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", input.Preparation.MachineID != original.MachineID) ||
+				(input.SnapshotID != "" && input.SnapshotID.Validate() != nil) {
 				return v, domain.SessionDeletionPending()
 			}
 			copy.SnapshotID = input.SnapshotID

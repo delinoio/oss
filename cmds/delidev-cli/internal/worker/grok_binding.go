@@ -88,13 +88,25 @@ func newGrokBindingPublisher(p *ExecutionPublisher, journal *grokClaimJournal) (
 	if err != nil {
 		return nil, err
 	}
-	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Continuation != nil || (i.Version != 4 && i.Installation.Version != grok.SupportedVersion) || state.JobID != p.job || i.ExecutionID != p.execution || state.InstanceID != p.config.Instance || state.ServerID != p.config.Credential.ServerID || state.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Continuation != nil || (i.Version != 4 && i.Installation.Version != grok.SupportedVersion) || state.JobID != p.job || i.ExecutionID != p.execution ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.InstanceID != p.config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.ServerID != p.config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", state.DeviceID != p.config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", i.MachineID != p.config.Credential.MachineID) {
 		return nil, publicationUncertain()
 	}
 	journal.mu.Lock()
 	defer journal.mu.Unlock()
 	r := journal.state.Reference
-	if journal.closed || journal.failed || journal.release == nil || len(journal.state.Claims) != 0 || r.JobID != p.job || r.SessionID != i.SessionID || r.ExecutionID != i.ExecutionID || r.InstanceID != state.InstanceID || r.ServerID != state.ServerID || r.DeviceID != state.DeviceID || r.MachineID != i.MachineID || r.InputID != i.InputID || r.AccountID != i.AccountID || r.ConnectionID != i.ConnectionID || r.CreationRequestID != i.ThreadRequestID || r.InputRequestID != i.TurnRequestID || r.AssignmentDigest != state.AssignmentDigest || r.ConfigurationDigest != i.ConfigurationDigest || r.Revision != state.Revision || (mode == domain.GrokPlanMode) != (r.Version == 2) {
+	if journal.closed || journal.failed || journal.release == nil || len(journal.state.Claims) != 0 || r.JobID != p.job || r.SessionID != i.SessionID || r.ExecutionID != i.ExecutionID ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", r.InstanceID != state.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", r.ServerID != state.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", r.DeviceID != state.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", r.MachineID != i.MachineID) ||
+		r.InputID != i.InputID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", r.AccountID != i.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", r.ConnectionID != i.ConnectionID) ||
+		r.CreationRequestID != i.ThreadRequestID || r.InputRequestID != i.TurnRequestID || r.AssignmentDigest != state.AssignmentDigest || r.ConfigurationDigest != i.ConfigurationDigest || r.Revision != state.Revision || (mode == domain.GrokPlanMode) != (r.Version == 2) {
 		return nil, publicationUncertain()
 	}
 	path, err := grokClaimsPath(p.config.Root, p.job)
@@ -209,7 +221,9 @@ func (c *GrokBindingPublisher) BindSession(ctx context.Context, binding grok.Ses
 		digest := sha256.Sum256([]byte(instructions))
 		instructionsDigest = hex.EncodeToString(digest[:])
 	}
-	if binding.InstructionsDigest != instructionsDigest || binding.OwnerID != c.reference.JobID || binding.ProductSessionID != c.reference.SessionID || binding.CreationRequestID != c.reference.CreationRequestID || domain.NativeIdentity(binding.NativeSessionID).Validate(domain.GrokBuild, domain.NativeThreadIdentity) != nil || observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode) != nil {
+	if binding.InstructionsDigest != instructionsDigest ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", binding.OwnerID != c.reference.JobID) ||
+		binding.ProductSessionID != c.reference.SessionID || binding.CreationRequestID != c.reference.CreationRequestID || domain.NativeIdentity(binding.NativeSessionID).Validate(domain.GrokBuild, domain.NativeThreadIdentity) != nil || observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode) != nil {
 		return c.block()
 	}
 	claims, err := c.readClaims()

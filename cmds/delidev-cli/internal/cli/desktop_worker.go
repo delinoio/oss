@@ -40,7 +40,28 @@ func desktopWorkerAuthority(ctx context.Context, o options, expected string, cli
 	if err != nil {
 		return err
 	}
-	if clientID.Validate() != nil || saved.DeviceID != clientID || endpoint.URL != expected || endpoint.ServerID != identity.ServerID || saved.Type != domain.ClientDevice || saved.Endpoint != expected || saved.ServerID != identity.ServerID {
+	if clientID.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipDevice,
+			"",
+			saved.
+				DeviceID !=
+				clientID,
+		) ||
+		endpoint.URL != expected ||
+		domain.OwnershipBlocks(domain.OwnershipInstance,
+			"",
+
+			endpoint.
+				ServerID !=
+				identity.ServerID,
+		) ||
+		domain.OwnershipBlocks(domain.OwnershipActor, "", saved.Type != domain.ClientDevice) || saved.Endpoint != expected ||
+		domain.OwnershipBlocks(domain.OwnershipInstance,
+			"",
+
+			saved.ServerID !=
+				identity.
+					ServerID) {
 		return recoveryRequired()
 	}
 	paired, err := connectClient(options{dataDir: filepath.Join(o.dataDir, "desktop-client")}, nil)
@@ -69,7 +90,14 @@ func desktopWorkerRegistration(ctx context.Context, o options, root, expected st
 	if err != nil {
 		return err
 	}
-	if saved.Type != domain.WorkerDevice || saved.ServerID != identity.ServerID || saved.Endpoint != expected {
+	if domain.OwnershipBlocks(domain.OwnershipActor, "", saved.Type != domain.WorkerDevice) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance,
+			"",
+
+			saved.ServerID !=
+				identity.
+					ServerID) ||
+		saved.Endpoint != expected {
 		return recoveryRequired()
 	}
 	paired, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true}, strings.NewReader(saved.Token))

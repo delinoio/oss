@@ -396,9 +396,9 @@ func TestAccountOAuthRestartInterruptsAwaitingAndWorkerCannotStart(t *testing.T)
 	}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
 	_, err = f.s.StartAccountOAuth(worker, connect.NewRequest(&pb.StartAccountOAuthRequest{Provider: acctMutation(f.provider, domain.NewID())}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	wantAccountCode(t, err, domain.Unauthenticated)
 	_, err = f.s.GetAccountOAuthStatus(worker, connect.NewRequest(&pb.GetAccountOAuthStatusRequest{AttemptId: a.Attempt.Id}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	wantAccountCode(t, err, domain.Unauthenticated)
 }
 
 func TestAccountOAuthUnownedDurableDispatchCannotRemainLiveOrResend(t *testing.T) {

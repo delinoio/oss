@@ -46,7 +46,7 @@ func PrepareNetwork(ctx context.Context, root string, grant *PairingCode, name s
 	if err != nil {
 		return workernetwork.Recipient{}, err
 	}
-	if credential.Type != domain.WorkerDevice {
+	if domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) {
 		return workernetwork.Recipient{}, domain.Fail(domain.PermissionDenied, "Only a Worker can prepare a network recipient.", "Select the original Worker scope.")
 	}
 	vault, err := credentials.Open(filepath.Join(root, "network-vault"), credential.ServerID, logger)

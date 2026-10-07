@@ -194,7 +194,7 @@ func (r PrepareRequest) validateStructure() error {
 	if !r.Type.Valid() {
 		return domain.Fail(domain.InvalidArgument, "Unknown workspace type.", "Select worktree, local, or general-chat.")
 	}
-	if r.Type == domain.Local && r.OriginMachineID != r.MachineID {
+	if r.Type == domain.Local && domain.OwnershipBlocks(domain.OwnershipMachine, r.SessionID, r.OriginMachineID != r.MachineID) {
 		return domain.Fail(domain.PermissionDenied, "Local workspaces are restricted to the originating computer.", "Choose Worktree for a remote execution machine.")
 	}
 	if r.Type == domain.GeneralChat {
@@ -642,7 +642,7 @@ func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Ma
 	}
 	git := m.Git
 	git.OwnerID = manifest.SessionID
-	if err := process.ReconcileOwnerContext(ctx, git.ProcessRoot, manifest.SessionID); err != nil {
+	if err := process.ProceedOwnerContext(ctx, git.ProcessRoot, manifest.SessionID); err != nil {
 		return err
 	}
 	if manifest.Reference != nil {

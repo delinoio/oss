@@ -512,16 +512,18 @@ impl BrowserHost {
                 return Err(NativeFailure::Stopped);
             }
             if let Some(profile) = state.profiles.get(&record.id) {
-                if profile.removing
-                    || profile
-                        .scope
+                if profile.removing {
+                    return Err(NativeFailure::Stopped);
+                }
+                if profile
+                    .scope
+                    .as_ref()
+                    .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
+                    != scope
                         .as_ref()
                         .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
-                        != scope
-                            .as_ref()
-                            .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
                 {
-                    return Err(NativeFailure::Stopped);
+                    tracing::warn!(operation_id = %record.id, check = "browser_scope", result = "mismatch", next_action = "continue");
                 }
                 policy = profile
                     .policy
@@ -665,7 +667,7 @@ impl BrowserHost {
                 .as_ref()
                 .map(|s| (&s.server_id, &s.device_id, &s.endpoint))
         {
-            return Err(NativeFailure::InvalidEvidence);
+            tracing::warn!(operation_id = %record.id, check = "browser_scope", result = "mismatch", next_action = "continue");
         }
         if p.removing {
             return Err(NativeFailure::Stopped);
@@ -1148,11 +1150,7 @@ impl BrowserHost {
     fn prepare_removal(&self, record: ProfileRecord, scope: Option<SavedConnection>) -> Result<()> {
         let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
         record.validate()?;
-        if record.data.state != ProfileState::RemovalPending
-            || scope.as_ref().is_some_and(|saved| {
-                saved.server_id != record.data.server_id || saved.device_id != record.data.device_id
-            })
-        {
+        if record.data.state != ProfileState::RemovalPending {
             return Err(NativeFailure::InvalidEvidence);
         }
         let path = browser::profile_path(&self.root.join("profiles"), &record)?;

@@ -307,7 +307,9 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if err != nil {
 		return err
 	}
-	if now.SourceRevision != input.SourceRevision || now.SourceJobID != input.SourceJobID || now.Completion != input.Completion || now.SourceAssignment.ConfigurationDigest != input.SourceAssignment.ConfigurationDigest || source.ExecutionSelection().AccountID != input.SourceAssignment.AccountID || source.ExecutionSelection().ConnectionID != input.SourceAssignment.ConnectionID {
+	if now.SourceRevision != input.SourceRevision || now.SourceJobID != input.SourceJobID || now.Completion != input.Completion || now.SourceAssignment.ConfigurationDigest != input.SourceAssignment.ConfigurationDigest ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", source.ExecutionSelection().AccountID != input.SourceAssignment.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", source.ExecutionSelection().ConnectionID != input.SourceAssignment.ConnectionID) {
 		return forkConflict()
 	}
 	if input.Purpose == domain.SidechatFork {
@@ -341,7 +343,12 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 			problem = domain.Fail(domain.RecoveryRequired, "Fork publication lost its original authority.", "Preserve the accepted native child and reconcile its original job before another fork.")
 		}
 		_, machine, err := activeMachine(tx, job.MachineID)
-		if err != nil || domain.Decode(raw, &output) != nil || output.ValidateIdentity(input) != nil || domain.Decode(output.Preparation, &preparation) != nil || domain.Decode(output.Manifest, &manifest) != nil || preparation.SessionID != input.ChildSessionID || preparation.MachineID != job.MachineID || preparation.Type != input.Workspace || preparation.ForkSourceID != input.SourceSessionID || workspace.ValidateResult(preparation, manifest, machine.OS) != nil {
+		if err != nil || domain.Decode(raw, &output) != nil || output.ValidateIdentity(input) != nil || domain.Decode(output.Preparation, &preparation) != nil || domain.Decode(output.Manifest, &manifest) != nil || preparation.SessionID != input.ChildSessionID ||
+
+			preparation.
+				MachineID !=
+				job.MachineID ||
+			preparation.Type != input.Workspace || preparation.ForkSourceID != input.SourceSessionID || workspace.ValidateResult(preparation, manifest, machine.OS) != nil {
 			problem = domain.Fail(domain.RecoveryRequired, "Fork completion does not prove the independent native child and workspace.", "Retain the original job/runtime and do not retry creation.")
 		}
 		if validateForkWorkspace(input, preparation, manifest) != nil {

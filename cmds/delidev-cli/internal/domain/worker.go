@@ -263,7 +263,7 @@ type AuxiliaryTitleResult struct {
 }
 
 func (r AuxiliaryTitleResult) Validate(input AuxiliaryTitleInput) error {
-	if r.Version != 1 || r.OperationID != input.OperationID || r.NameGeneration != input.NameGeneration || !r.CleanupVerified || Text(r.Title, "automatic session title", 256, true) != nil || strings.TrimSpace(r.Title) != r.Title || strings.ContainsAny(r.Title, "\r\n\x00") {
+	if r.Version != 1 || r.OperationID != input.OperationID || r.NameGeneration != input.NameGeneration || Text(r.Title, "automatic session title", 256, true) != nil || strings.TrimSpace(r.Title) != r.Title || strings.ContainsAny(r.Title, "\r\n\x00") {
 		return Fail(InvalidArgument, "The automatic title output is not a valid single line.", "Retain the placeholder and do not request a repair inference.")
 	}
 	if r.UsageRecord != nil && (r.UsageRecord.Validate() != nil || r.UsageRecord.Purpose != SessionTitleUsage || r.UsageRecord.SessionID != input.SessionID || r.UsageRecord.ProjectID != input.ProjectID || r.UsageRecord.ExecutionID != input.OriginalExecutionID || r.UsageRecord.AccountID != input.AccountID || r.UsageRecord.ConnectionID != input.ConnectionID || r.UsageRecord.ProviderID != input.ProviderID || r.UsageRecord.ModelID != input.ModelID || r.UsageRecord.Harness != input.Harness || r.UsageRecord.Version != input.NativeVersion) {

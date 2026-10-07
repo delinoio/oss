@@ -96,7 +96,11 @@ func watchAuxiliary(ctx context.Context, config Config, client delidevv1connect.
 				return publicationUncertain()
 			}
 			var job domain.Job
-			if domain.Decode(message.Job.DocumentJson, &job) != nil || job.Validate() != nil || job.Type != domain.GenerateSessionTitleJob || job.MachineID != credential.MachineID || job.InstanceID != instance || job.State != domain.JobClaimed || job.AssignedDeviceID != credential.DeviceID {
+			if domain.Decode(message.Job.DocumentJson, &job) != nil || job.Validate() != nil || job.Type != domain.GenerateSessionTitleJob ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != credential.MachineID) ||
+				domain.OwnershipBlocks(domain.OwnershipInstance, "", job.InstanceID != instance) ||
+				job.State != domain.JobClaimed ||
+				domain.OwnershipBlocks(domain.OwnershipDevice, "", job.AssignedDeviceID != credential.DeviceID) {
 				return publicationUncertain()
 			}
 			id := domain.ID(message.Job.Id)

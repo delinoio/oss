@@ -89,7 +89,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID || preparation.MachineID != input.MachineID || workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
+	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), preparation.MachineID != input.MachineID) ||
+		workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
 		return nil, workspace.ResultUncertain()
 	}
 	executable := input.Installation.ResolvedPath
@@ -607,11 +609,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		default:
 			return nil, publicationUncertain()
 		}
-		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: true, PRPush: push}
+		completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), LastSequence: sequence, Outcome: outcome, CleanupVerified: lease.CleanupConfirmed(), PRPush: push}
 		if err := completion.Validate(); err != nil {
 			return nil, err
 		}
 		if hasChildren {
+			completion.CleanupVerified = lease.CleanupConfirmed()
 			return json.Marshal(completion)
 		}
 		// Preserve exact native continuation evidence before the operation
@@ -630,6 +633,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, err
 		}
 		logger.InfoContext(ctx, "native_execution_checkpoint_retained")
+		completion.CleanupVerified = lease.CleanupConfirmed()
 		return json.Marshal(completion)
 	}
 }

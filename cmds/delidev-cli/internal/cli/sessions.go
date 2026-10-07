@@ -380,7 +380,12 @@ func localCreationCredential(ctx context.Context, c client, input domain.CreateS
 	if err != nil {
 		return "", domain.Fail(domain.Unauthenticated, "The local Worker credential is unavailable or invalid.", "Use this computer's private paired Worker directory.")
 	}
-	if credential.Type != domain.WorkerDevice || credential.MachineID != input.MachineID || credential.Endpoint != c.endpoint {
+	if domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine,
+			"",
+			credential.
+				MachineID != input.MachineID) ||
+		credential.Endpoint != c.endpoint {
 		return "", domain.Fail(domain.PermissionDenied, "The local Worker scope does not match the selected machine and server.", "Select the machine paired in this computer's Worker scope.")
 	}
 	status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))

@@ -20,7 +20,9 @@ func prStartupRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		return result, err
 	}
 	job, err := store.Decode[domain.Job](original)
-	if err != nil || job.Type != domain.ExecuteSessionJob || job.State != domain.JobUncertain || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || len(job.Output) != 0 || job.MachineID != session.MachineID || job.AssignedDeviceID.Validate() != nil {
+	if err != nil || job.Type != domain.ExecuteSessionJob || job.State != domain.JobUncertain || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || len(job.Output) != 0 ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != session.MachineID) ||
+		job.AssignedDeviceID.Validate() != nil {
 		return result, fail()
 	}
 	assignment, err := tx.JobAssignment(original.ID)
@@ -29,7 +31,11 @@ func prStartupRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	}
 	claim, err := store.Decode[domain.Job](assignment)
 	var input domain.ExecutionJobInput
-	if err != nil || claim.Type != domain.ExecuteSessionJob || claim.State != domain.JobClaimed || claim.InstanceID != job.InstanceID || claim.AssignedDeviceID != job.AssignedDeviceID || claim.MachineID != job.MachineID || assignment.SessionID != sr.ID || assignment.ProjectID != sr.ProjectID || !bytes.Equal(claim.Input, job.Input) || domain.Decode(claim.Input, &input) != nil || input.Validate() != nil || input.Continuation != nil || !session.OwnsExecution(input) {
+	if err != nil || claim.Type != domain.ExecuteSessionJob || claim.State != domain.JobClaimed ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != job.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", claim.AssignedDeviceID != job.AssignedDeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != job.MachineID) ||
+		assignment.SessionID != sr.ID || assignment.ProjectID != sr.ProjectID || !bytes.Equal(claim.Input, job.Input) || domain.Decode(claim.Input, &input) != nil || input.Validate() != nil || input.Continuation != nil || !session.OwnsExecution(input) {
 		return result, fail()
 	}
 	if _, err := tx.ExecutionGrantForJob(original.ID); err == nil {
@@ -42,7 +48,8 @@ func prStartupRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		return result, err
 	}
 	device, err := store.Decode[domain.Device](dr)
-	if err != nil || device.Type != domain.WorkerDevice || device.Revoked || device.MachineID != job.MachineID {
+	if err != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", device.Type != domain.WorkerDevice) || device.Revoked ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", device.MachineID != job.MachineID) {
 		return result, fail()
 	}
 	_, machine, err := activeMachine(tx, job.MachineID)
@@ -51,7 +58,9 @@ func prStartupRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.Type != domain.Worktree || preparation.SessionID != sr.ID || preparation.MachineID != session.MachineID || len(preparation.Repositories) != 1 || preparation.Repositories[0].PRTarget == nil || workspace.ValidateResult(preparation, manifest, machine.OS) != nil {
+	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.Type != domain.Worktree || preparation.SessionID != sr.ID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", preparation.MachineID != session.MachineID) ||
+		len(preparation.Repositories) != 1 || preparation.Repositories[0].PRTarget == nil || workspace.ValidateResult(preparation, manifest, machine.OS) != nil {
 		return result, fail()
 	}
 	ir, err := tx.Get(domain.QueueKind, input.InputID)
@@ -73,7 +82,9 @@ func prStartupRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 
 func validatePRStartupRecoveryResult(tx *store.Tx, record store.Record, job domain.Job, expected domain.ExecutionRecoveryRequest, raw []byte) error {
 	var evidence domain.PRStartupRecoveryEvidence
-	if domain.Decode(raw, &evidence) != nil || evidence.Validate(expected) != nil || expected.JobID != job.ParentID || expected.SessionID != record.SessionID || expected.MachineID != job.MachineID || job.AssignedDeviceID != expected.DeviceID {
+	if domain.Decode(raw, &evidence) != nil || evidence.Validate(expected) != nil || expected.JobID != job.ParentID || expected.SessionID != record.SessionID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", expected.MachineID != job.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", job.AssignedDeviceID != expected.DeviceID) {
 		return domain.StartupRejectionUncertain()
 	}
 	sr, session, err := sessionRecord(tx, record.SessionID)

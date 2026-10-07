@@ -19,7 +19,9 @@ func (t *Tx) AccountOAuthCredential(account, connection domain.ID) (domain.Accou
 	if err != nil {
 		return v, false, storageError(err)
 	}
-	if domain.Decode(raw, &v) != nil || v.Validate() != nil || v.Revision != revision || v.AccountID != account || v.ConnectionID != connection {
+	if domain.Decode(raw, &v) != nil || v.Validate() != nil || v.Revision != revision ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", v.AccountID != account) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, "", v.ConnectionID != connection) {
 		return v, false, corrupt()
 	}
 	return v, true, nil

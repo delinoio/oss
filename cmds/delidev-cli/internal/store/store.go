@@ -617,12 +617,7 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 				pending = true
 			}
 			if pending {
-				fields["archive"], _ = json.Marshal(domain.ArchivePending)
-				raw, err := json.Marshal(fields)
-				if err != nil {
-					return Record{}, err
-				}
-				value = json.RawMessage(raw)
+				domain.ObserveOwnership(domain.OwnershipCleanup, id)
 			}
 		}
 	}

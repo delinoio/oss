@@ -86,6 +86,13 @@ func ObserveOwnerContext(ctx context.Context, root string, owner domain.ID) (boo
 	return err == nil, err
 }
 
+// ProceedOwnerContext permits admission without upgrading an uncertain observation.
+// Callers that publish cleanup evidence must use ObserveOwnerContext instead.
+func ProceedOwnerContext(ctx context.Context, root string, owner domain.ID) error {
+	_, err := ObserveOwnerContext(ctx, root, owner)
+	return err
+}
+
 func launchFailure(code domain.Code) *domain.Error {
 	switch code {
 	case domain.NotFound:

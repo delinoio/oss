@@ -55,7 +55,9 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
   const mount = () => render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><Workspace /></QueryClientProvider></TransportProvider></StrictMode>);
   const add = async (local = true) => { fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "https://github.com/delinoio/oss.git" } });
-    if (local) fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
+    await screen.findByRole("option", { name: "Runner" });
+ fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: machine.id } });
+ if (local) fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
   };
   const chooseAndReview = async () => { await add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByRole("region", { name: "Repository detected" }); await waitFor(() => expect((within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(false)); };
   return { machine, resources, jobs, clone, repositories, listResources, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource, clearStatusError: () => { currentStatusError = undefined; } };
@@ -75,7 +77,7 @@ it("keeps inspected-folder registration available on older servers", async () =>
   fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
-  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByRole("option", { name: "Runner" }); fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: f.machine.id } }); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   await screen.findByRole("region", { name: "Repository detected" });
   const add = within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement;
   await waitFor(() => expect(add.disabled).toBe(false));
@@ -87,7 +89,7 @@ it("keeps inspected-folder registration available on older servers", async () =>
 
 it("registers the canonical checkout using folder selection and Add repository only", async () => {
   const f = fixture(); f.mount(); await f.chooseAndReview();
-  expect(f.choose).toHaveBeenCalledTimes(1); expect(f.proof).toHaveBeenCalledTimes(1);
+  expect(f.choose).toHaveBeenCalledTimes(1); expect(f.proof).not.toHaveBeenCalled();
   expect(f.inspected.mock.calls[0][0]).toMatchObject({ machineId: f.machine.id, path: "/alias/repo", preferredRemote: "" });
   expect(screen.getByText("/canonical/oss")).toBeTruthy(); expect(screen.getByText("delinoio/oss")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Add inspected checkout" })).toBeNull();
@@ -213,8 +215,8 @@ it.each(["picker", "proof", "inspection", "save"])("discards a late %s result af
   if (phase === "proof") f.proof.mockReturnValueOnce(pending.promise);
   if (phase === "inspection") f.inspected.mockReturnValueOnce(pending.promise);
   if (phase === "save") f.save.mockReturnValueOnce(pending.promise);
-  f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
-  if (phase !== "picker") await waitFor(() => expect(f.proof).toHaveBeenCalledTimes(1));
+  f.mount(); await f.add(); await screen.findByRole("option", { name: "Runner" }); fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: f.machine.id } }); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  if (phase !== "picker") await waitFor(() => expect(f.proof).not.toHaveBeenCalled());
   if (phase === "inspection") await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
   if (phase === "save") { await screen.findByRole("region", { name: "Repository detected" }); fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" })); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1)); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings" }));
@@ -235,7 +237,7 @@ it.each(["picker", "proof", "inspection", "save"])("discards a late %s result af
 
 it("retries uncertain inspection and save with the original exact requests", async () => {
   const f = fixture(); f.inspected.mockRejectedValueOnce(new ConnectError("lost", Code.Unavailable)); f.save.mockRejectedValueOnce(new ConnectError("lost", Code.Unavailable));
-  f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  f.mount(); await f.add(); await screen.findByRole("option", { name: "Runner" }); fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: f.machine.id } }); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same inspection" }));
   await screen.findByRole("region", { name: "Repository detected" }); expect(f.inspected.mock.calls[0][0]).toEqual(f.inspected.mock.calls[1][0]);
   fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
@@ -246,7 +248,7 @@ it("retries uncertain inspection and save with the original exact requests", asy
 
 it.each([LocalWorkerState.NotStarted, LocalWorkerState.Exited])("retains the folder and reports known %s status without starting a Worker", async state => {
   const f = fixture(); f.control.mockResolvedValueOnce({ machine_id: f.machine.id, state, controller_active: false });
-  f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  f.mount(); await f.add(); await screen.findByRole("option", { name: "Runner" }); fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: f.machine.id } }); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   await screen.findByText(/Worker (is stopped|exited)/);
   expect((screen.getByRole("textbox", { name: "Absolute checkout path" }) as HTMLInputElement).value).toBe("/alias/repo");
   expect(f.inspected).not.toHaveBeenCalled(); expect(f.control.mock.calls).toEqual([["status", undefined]]);
@@ -254,7 +256,7 @@ it.each([LocalWorkerState.NotStarted, LocalWorkerState.Exited])("retains the fol
 
 it("rejects an exit-uncertain Worker before submitting inspection", async () => {
   const f = fixture(); f.control.mockResolvedValueOnce({ machine_id: f.machine.id, state: LocalWorkerState.Uncertain, controller_active: false });
-  f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  f.mount(); await f.add(); await screen.findByRole("option", { name: "Runner" }); fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: f.machine.id } }); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   await screen.findByText(/Worker exit is unconfirmed/);
   expect((screen.getByRole("textbox", { name: "Absolute checkout path" }) as HTMLInputElement).value).toBe("/alias/repo");
   expect(f.inspected).not.toHaveBeenCalled(); expect(f.control.mock.calls).toEqual([["status", undefined]]);
@@ -273,7 +275,7 @@ it.each([
   ["unexpected", /Folder selection failed/],
 ])("reports picker %s before any Worker verification", async (error, guidance) => {
   const f = fixture(); f.choose.mockRejectedValueOnce(error); f.mount(); await f.add();
-  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByRole("option", { name: "Runner" }); fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: f.machine.id } }); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   await screen.findByText(guidance);
   expect(f.proof).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
   expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
@@ -291,12 +293,12 @@ it("preserves the current confirmation and options when a replacement picker fai
   await screen.findByText(/Another window is choosing a folder/);
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained name");
   expect(screen.getByText("/canonical/oss")).toBeTruthy();
-  expect(f.proof).toHaveBeenCalledTimes(1); expect(f.control).toHaveBeenCalledTimes(1); expect(f.inspected).toHaveBeenCalledTimes(1);
+  expect(f.proof).not.toHaveBeenCalled(); expect(f.control).toHaveBeenCalledTimes(1); expect(f.inspected).toHaveBeenCalledTimes(1);
 });
 
 it("does not label unreadable proof as an absent registration", async () => {
   const f = fixture(); f.proof.mockRejectedValueOnce("permission-denied"); f.mount(); await f.add();
-  fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByText(/Access.*was denied/);
+  await screen.findByRole("option", { name: "Runner" }); fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: f.machine.id } }); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByText(/Access.*was denied/);
   expect(f.inspected).not.toHaveBeenCalled(); expect(screen.queryByText(/unregistered/i)).toBeNull();
 });
 
@@ -346,7 +348,7 @@ it.each(["Cancel", "Close Add repository", "Escape"])("dismisses with %s, restor
 it("discards a pending inspection when the child dialog closes inside Settings", async () => {
   const f = fixture(); const pending = deferred<any>();
   f.inspected.mockReturnValueOnce(pending.promise); f.mount(); await f.add();
-  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+  await screen.findByRole("option", { name: "Runner" }); fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: f.machine.id } }); fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await f.add();
@@ -375,7 +377,7 @@ it("clones with fresh local proof and no frontend registration after acceptance"
   expect((screen.getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(true);
   const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fireEvent.click(button); await screen.findByText("Repository clone accepted");
-  expect(f.proof).toHaveBeenCalledTimes(1); expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
+  expect(f.proof).not.toHaveBeenCalled(); expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
   expect(f.clone.mock.calls[0][0]).toMatchObject({ machineId: f.machine.id, localWorkerToken: "A".repeat(43), url: "https://github.com/delinoio/oss.git", parentPath: "/parent", directoryName: "oss" });
   fireEvent.click(screen.getByRole("button", { name: "Close Add repository" }));
   f.resources.set(f.jobs[0].id, { ...f.jobs[0], revision: 2n, documentJson: encode({ type: "clone-repository", machine_id: f.machine.id, state: "succeeded" }) });
@@ -385,7 +387,7 @@ it("retains the exact clone request through an uncertain response", async () => 
   const f = fixture(metadata, true); f.clone.mockRejectedValueOnce(new ConnectError("Response lost", Code.Unavailable)); f.mount(); await f.add(); cloneInputs();
   const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false)); fireEvent.click(button);
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same clone request" })); await screen.findByText("Repository clone accepted");
-  expect(f.clone.mock.calls[1][0]).toEqual(f.clone.mock.calls[0][0]); expect(f.proof).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
+  expect(f.clone.mock.calls[1][0]).toEqual(f.clone.mock.calls[0][0]); expect(f.proof).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
 });
 it("rejects an older Worker before sending clone and retains local folder registration", async () => {
   const f = fixture(metadata, true); f.resources.set(f.machine.id, { ...f.machine, documentJson: encode({ name: "Older Worker", worker_capabilities: [] }) }); f.mount(); await f.add(); cloneInputs();

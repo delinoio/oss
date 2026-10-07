@@ -140,7 +140,11 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 		ref.Version = 2
 	}
 	path, err := openCodeClaimsPath(p.config.Root, p.job)
-	if err != nil || ref.validate() != nil || state.JobID != p.job || i.ExecutionID != p.execution || state.InstanceID != p.config.Instance || state.ServerID != p.config.Credential.ServerID || state.DeviceID != p.config.Credential.DeviceID || i.MachineID != p.config.Credential.MachineID {
+	if err != nil || ref.validate() != nil || state.JobID != p.job || i.ExecutionID != p.execution ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.InstanceID != p.config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.ServerID != p.config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, "", state.DeviceID != p.config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, "", i.MachineID != p.config.Credential.MachineID) {
 		return nil, publicationUncertain()
 	}
 	journal.mu.Lock()

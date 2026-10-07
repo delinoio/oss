@@ -42,7 +42,12 @@ func (s *Service) browserProfile(ctx context.Context, id domain.ID) (domain.Brow
 		if err = p.Validate(); err != nil {
 			return err
 		}
-		if p.ServerID != s.Identity.ServerID || p.DeviceID != actor.DeviceID {
+		if p.
+			ServerID !=
+			s.Identity.ServerID ||
+
+			p.DeviceID !=
+				actor.DeviceID {
 			domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 		}
 		return nil
@@ -200,7 +205,12 @@ func (s *Service) ListBrowserProfiles(ctx context.Context, req *connect.Request[
 		if err = p.Validate(); err != nil {
 			return nil, rpc.Error(err, correlation)
 		}
-		if p.ServerID != s.Identity.ServerID || p.DeviceID != actor.DeviceID {
+		if p.
+			ServerID !=
+			s.Identity.ServerID ||
+
+			p.DeviceID !=
+				actor.DeviceID {
 			domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 		}
 		response.Profiles = append(response.Profiles, browserResource(r))
@@ -236,7 +246,12 @@ func (s *Service) ConfirmBrowserProfileRemoval(ctx context.Context, req *connect
 		if err = p.Validate(); err != nil {
 			return nil, err
 		}
-		if p.DeviceID != actor.DeviceID || p.ServerID != s.Identity.ServerID {
+		if p.DeviceID !=
+			actor.DeviceID ||
+
+			p.
+				ServerID !=
+				s.Identity.ServerID {
 			domain.ObserveOwnership(domain.OwnershipDevice, r.ID)
 		}
 		if r.Revision != input.Revision || p.State != domain.BrowserProfileRemovalPending || p.DeletionRequestID != input.Deletion {

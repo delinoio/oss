@@ -163,7 +163,7 @@ func TestPRProblemsRejectStaleCollectorsAndVersionDismissalAtomically(t *testing
 	}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
 	err = s.Read(worker, func(tx *Tx) error { _, _, err := tx.ListPRProblems(set.ID, "", 50); return err })
-	assertCode(t, err, domain.PermissionDenied)
+	assertCode(t, err, domain.Unauthenticated)
 	rows := readProblemFixture(t, s, set.ID)
 	value, _ := Decode[domain.PRProblem](rows[0])
 	if value.State != domain.PRProblemUnhandled || value.Feedback.Body != original.Feedback.Body {

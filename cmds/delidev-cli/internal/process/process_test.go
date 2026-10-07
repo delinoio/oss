@@ -162,6 +162,9 @@ func TestCancellationAndForeignOwnerRecovery(t *testing.T) {
 	if err := h.Resume(); err != nil {
 		t.Fatal(err)
 	}
+	if err := ReconcileProcess(h.Identity()); err != errCleanupUnconfirmed || !ProcessAlive(h.Identity()) {
+		t.Fatal("cold recovery signaled a live process or manufactured cleanup", err)
+	}
 	foreign := h.Identity()
 	foreign.OwnerID = domain.NewID()
 	if err := ReconcileProcess(foreign); err == nil {
@@ -219,10 +222,10 @@ func TestOutputFailureRequiresReconciliation(t *testing.T) {
 	if h.Wait() == nil {
 		t.Fatal("dropped native output reported success")
 	}
-	if err := ReconcileProcess(h.Identity()); err != nil {
+	if err := ReconcileProcess(h.Identity()); err != nil && err != errCleanupUnconfirmed {
 		t.Fatal(err)
 	}
-	if err := ReconcileOwner(c.Directory, c.OwnerID); err != nil {
+	if _, err := ObserveOwnerContext(ctx, c.Directory, c.OwnerID); err != nil {
 		t.Fatal(err)
 	}
 }
