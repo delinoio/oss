@@ -316,3 +316,22 @@ it("announces standalone initial Load and refresh while preserving returned card
   await waitFor(() => expect(results.queryByText("Reading GitHub…")).toBeNull());
   expect(value.query).toHaveBeenCalledTimes(2);
 });
+
+
+it("explains a continuation page containing only unchanged duplicate pull requests", async () => {
+  const value = fixture(), read = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async request => {
+    const response = await read(request), data = JSON.parse(new TextDecoder().decode(response.documentJson));
+    if (data.query.page === 1) data.next_page = 2;
+    return { ...response, documentJson: encode(data) };
+  });
+  render(<App transport={value.transport} />);
+  const pane = await open(); await choose(value.rows[0]);
+  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByText("Original fixture title");
+  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
+  const second = within(await screen.findByRole("region", { name: "Pull request results · Page 2" }));
+  expect(second.getByText("No pull requests were returned on page 2.")).toBeTruthy();
+  expect(screen.getAllByText("Original fixture title")).toHaveLength(1);
+  expect(value.query).toHaveBeenCalledTimes(2);
+});
