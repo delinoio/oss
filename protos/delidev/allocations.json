@@ -8432,6 +8432,27 @@
       "member": "authentication",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "kind": "enum",
+      "declaration": "ProviderInventoryCapability",
+      "member": "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1",
+      "number": 8
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "StartAccountOAuthRequest",
+      "member": "api_protocol",
+      "number": 4
+    },
+    {
+      "issue": 964,
+      "kind": "message",
+      "declaration": "AccountOAuthAttempt",
+      "member": "api_protocol",
+      "number": 7
     }
   ]
 }
