@@ -102,3 +102,14 @@ it("clearly presents skipped access for a saved remote connection without invoki
   expect(screen.getByRole("status").textContent).toContain("checking was skipped");
   expect(native.invoke).not.toHaveBeenCalled();
 });
+
+it("offers original registration presentation locally on denial without initiating inspection or retry", async () => {
+  const f = fixture(), registration = vi.fn(), attempt = newRequestId();
+  native.invoke.mockResolvedValue({ attempt_id: attempt, state: CredentialAccessState.Failed, issue: CredentialAccessIssue.PermissionDenied });
+  render(<CredentialAccessGate {...f.props} registration={registration} />);
+  const button = await screen.findByRole("button", { name: "Connection controls" });
+  expect(registration).not.toHaveBeenCalled();
+  fireEvent.click(button);
+  expect(registration).toHaveBeenCalledOnce();
+  expect(native.invoke.mock.calls.every(([command, args]) => command === "desktop_credential_access" && args.action === CredentialAccessAction.Observe)).toBe(true);
+});

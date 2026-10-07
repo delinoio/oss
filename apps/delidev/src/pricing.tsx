@@ -36,7 +36,7 @@ function priceInput(draft: Draft) {
   if (bytes(basis.source) > 2048 || basis.exclusions.length > 16 || basis.exclusions.some((value) => !value.trim() || bytes(value) > 512)) throw new ProductError("validation.3574c19968e0");
   return basis;
 }
-function PricingEditor({ model, initial, modelRevision, current, readError, saved, cancel }: { model: Resource; initial?: PricingVersion; modelRevision: bigint; current?: { pricing?: PricingVersion; modelRevision: bigint }; readError?: unknown; saved: (value?: PricingVersion) => void; cancel: () => void }) {
+function PricingEditor({ model, initial, modelRevision, current, readError, retryRead, saved, cancel }: { model: Resource; initial?: PricingVersion; modelRevision: bigint; current?: { pricing?: PricingVersion; modelRevision: bigint }; readError?: unknown; retryRead: () => void; saved: (value?: PricingVersion) => void; cancel: () => void }) {
   useLocale();
   const taskFormId = useId();
   const [draft, setDraft] = useState(() => draftPrice(initial?.basis));
@@ -61,7 +61,7 @@ function PricingEditor({ model, initial, modelRevision, current, readError, save
   </fieldset><p>{copy("pricing.leaveUnavailableRatesBlankEnter0_1a6a0a")}</p>
     {draft.inputMode === InputPricingMode.CACHED_DISCOUNT ? <p>{copy("pricing.inputCacheEstimatesRequireConsistentNative_33a2eb")}</p> : null}
     {stale ? <p role="alert">{copy("pricing.theModelOrPriceChangedElsewhere_c5c5d8")}</p> : null}
-    {problem ? <p role="alert">{problem}</p> : null}<Problem error={readError || mutation.error} />
+    {problem ? <p role="alert">{problem}</p> : null}<Problem error={readError || mutation.error} actions={readError ? <button type="button" disabled={blocked} onClick={retryRead}>{copy("ui.retryCurrentRead")}</button> : undefined} />
     <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={blocked || Boolean(stale || readError) || !current}>{copy("pricing.savePricingVersion_5baab6")}</button>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("pricing.retryTheSamePrice_de1e7a")}</button> : null}<button type="button" data-settings-task-cancel disabled={blocked} onClick={cancel}>{copy("pricing.cancelPricingEdit_dc5004")}</button></SettingsTaskActions>
   </form>;
 }
@@ -76,7 +76,7 @@ export function ModelPricing({ model, active, close }: { model: Resource; active
     <p>{copy("pricing.enterASourceBackedEstimateBasis_fa3472")}</p>
     {accepted ? <p role="status"><LocalizedText id="pricing.acceptedPricingVersionCurrentSelectionIs_5b49f3" components={{ s0: <>{accepted.revision.toString()}</> }} /></p> : null}
     {missingResult ? <p role="alert">{copy("pricing.theServerAcknowledgedThePriceWithout_617a41")}</p> : null}
-    {editing ? <PricingEditor model={model} initial={editing.initial} modelRevision={editing.modelRevision} current={data} readError={current.error} saved={(value) => { setEditing(undefined); setAccepted(value); setMissingResult(!value); void current.refetch(); }} cancel={() => setEditing(undefined)} /> : <><Problem error={current.error} />{data && current.error ? <p>{copy("pricing.theLastRetrievedPricingMayBe_b7ff30")}</p> : null}{data?.pricing ? <PricingBasis value={data.pricing} /> : data ? <p>{copy("pricing.noPricingBasisHasBeenConfigured_e602ce")}</p> : <p role="status">{copy("pricing.loadingPricing_856f08")}</p>}
+    {editing ? <PricingEditor model={model} initial={editing.initial} modelRevision={editing.modelRevision} current={data} readError={current.error} retryRead={() => { if (active && !current.isFetching) void current.refetch(); }} saved={(value) => { setEditing(undefined); setAccepted(value); setMissingResult(!value); void current.refetch(); }} cancel={() => setEditing(undefined)} /> : <><Problem error={current.error} actions={current.error ? <button type="button" disabled={!active || current.isFetching} onClick={() => void current.refetch()}>{copy("ui.retryCurrentRead")}</button> : undefined} />{data && current.error ? <p>{copy("pricing.theLastRetrievedPricingMayBe_b7ff30")}</p> : null}{data?.pricing ? <PricingBasis value={data.pricing} /> : data ? <p>{copy("pricing.noPricingBasisHasBeenConfigured_e602ce")}</p> : <p role="status">{copy("pricing.loadingPricing_856f08")}</p>}
     {data && data.modelRevision !== model.revision ? <p role="alert">{copy("pricing.theModelConfigurationChangedReturnTo_063c62")}</p> : null}
     <div className="actions"><button disabled={!data || Boolean(current.error || current.isFetching || missingResult) || data.modelRevision !== model.revision} onClick={() => { if (data) setEditing({ initial: data.pricing, modelRevision: data.modelRevision }); }}>{copy("pricing.editTokenPricing_44ae61")}</button><button onClick={close}>{copy("pricing.backToModels_a28c02")}</button></div></>}
   </section>;
