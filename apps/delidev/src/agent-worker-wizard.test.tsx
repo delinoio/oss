@@ -974,3 +974,15 @@ it("retains selected legacy account status after its independent read fails", as
   await waitFor(() => expect(screen.getByRole("checkbox", { name: /Personal API/ }).closest("label")!.textContent).toContain("Connected · Health: unverified"));
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
+
+
+it("focuses legacy account choices when a valid source has no selected account", async () => {
+  const value = fixture(); await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice("Account source"), `api:${value.provider.id}`);
+  const account = await screen.findByRole("checkbox", { name: /Personal API/ });
+  next();
+  expect(globalThis.document.activeElement).toBe(account);
+  expect(screen.queryByRole("combobox", { name: "Account source" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});

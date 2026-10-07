@@ -150,8 +150,8 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
     if (!Object.values(Harness).includes(data.harness as Harness)) { fail(Step.Harness, copy("agent-worker-wizard.chooseSupportedHarness"), "harness"); return false; }
     if (through >= Step.Accounts) {
       if (!source || source.kind === SourceKind.Subscription && subscriptionServiceHarnesses[source.id as SubscriptionServiceId] !== data.harness) { fail(Step.Accounts, copy("agent-worker-wizard.chooseAccountSourceForHarness"), "source"); return false; }
-      if (!ids.length || ids.length > 1000 || ids.some(id => !knownAccounts[id] || !sameSource(knownAccounts[id]!, source))) { fail(Step.Accounts, copy("agent-worker-wizard.selectCurrentAccount"), "source"); return false; }
-      if (selectedRows.some(row => !accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness)))) { fail(Step.Accounts, copy("agent-worker-wizard.accountApiFormatMismatch"), "source"); return false; }
+      if (!ids.length || ids.length > 1000 || ids.some(id => !knownAccounts[id] || !sameSource(knownAccounts[id]!, source))) { fail(Step.Accounts, copy("agent-worker-wizard.selectCurrentAccount"), "account"); return false; }
+      if (selectedRows.some(row => !accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness)))) { fail(Step.Accounts, copy("agent-worker-wizard.accountApiFormatMismatch"), "account"); return false; }
       if (data.routing === Routing.Fixed && ids.length !== 1 || links.some(link => !Number.isInteger(link.weight) || Number(link.weight) < 1 || Number(link.weight) > 1000)) { fail(Step.Accounts, copy("agent-worker-wizard.fixedRoutingWeights"), "routing"); return false; }
     }
     if (through >= Step.Model && (!input.trim() || new TextEncoder().encode(input.trim()).byteLength > 256 || model && sourceKey(modelSource(model)) !== sourceKey(source))) { fail(Step.Model, copy("agent-worker-wizard.selectModelFromSource"), "model"); return false; }
@@ -167,7 +167,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   }, [active, mutation.error, mutation.uncertain, model?.id, initial?.id, currentModel.refetch, current.refetch]);
   useEffect(() => {
     if (!active || !mutation.error || mutation.uncertain || step !== Step.Configure) return;
-    if (ids.some(id => !knownAccounts[id] || !sameSource(knownAccounts[id]!, source))) fail(Step.Accounts, copy("agent-worker-wizard.selectedAccountChanged"), "source");
+    if (ids.some(id => !knownAccounts[id] || !sameSource(knownAccounts[id]!, source))) fail(Step.Accounts, copy("agent-worker-wizard.selectedAccountChanged"), "account");
     else if (model && (currentModel.error || currentModel.data?.resource && currentModel.data.resource.revision !== model.revision)) fail(Step.Model, copy("agent-worker-wizard.selectedModelUnavailable"), "model");
   }, [active, mutation.error, mutation.uncertain, step, data.accounts, knownAccounts, source, model, currentModel.data, currentModel.error]);
   const pick = (row?: ModelSuggestion) => { if (row?.resource && row.resource.id === model?.id) void currentModel.refetch(); setModel(row?.resource); if (row) setInput(row.nativeId); setPopup(false); setHighlight(-1); setProblem(""); };
