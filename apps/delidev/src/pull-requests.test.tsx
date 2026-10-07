@@ -243,3 +243,122 @@ it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unco
   expect(pane.getByRole("alert").textContent).toMatch(/Use plain words/);
   expect(value.query).not.toHaveBeenCalled();
 });
+
+
+it("uses standalone cards with exact UTC precision, Draft and unknown author evidence across language changes", async () => {
+  const value = fixture(), original = value.query.getMockImplementation()!;
+  const updated = "2026-10-07T08:07:22.123456789Z", observed = "2026-10-07T08:11:52.759123456Z", title = "Long title ".repeat(80);
+  value.query.mockImplementation(async request => {
+    const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson));
+    data.observed_at = observed; data.items[0] = { ...data.items[0], title, draft: true, updated_at: updated, author: { id: "19", node_id: "U_19", login: "long-author-name-".repeat(5), kind: "unknown", provider_type: "FutureActor" } };
+    return { ...reply, documentJson: encode(data) };
+  });
+  const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
+  expect(value.query).not.toHaveBeenCalled(); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  const heading = await screen.findByRole("heading", { name: title.trim() });
+  const card = heading.closest("article")!; expect(card.className).toBe("pr-list-card");
+  expect(within(card).getByText("Open")).toBeTruthy(); expect(within(card).getByText("Draft")).toBeTruthy(); expect(within(card).getByText(/Unverified author type/)).toBeTruthy();
+  expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
+  expect(screen.getByText("Open · Page 1 · 20 per page")).toBeTruthy();
+  expect(view.container.querySelector(".pending-pr-actions")?.getAttribute("data-empty")).toBe("true");
+  expect(screen.getAllByRole("button", { name: "Refresh GitHub results" })).toHaveLength(1);
+  await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
+  expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).textContent).toBe(observed); expect(value.query).toHaveBeenCalledTimes(1);
+});
+
+it.each([Code.PermissionDenied, Code.Unavailable])("keeps the card observation after failed explicit refresh %s and explicitly retries it", async code => {
+  const value = fixture(); render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByRole("heading", { name: "Original fixture title" }); value.query.mockRejectedValueOnce(new ConnectError("Synthetic read failed", code));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub results" })); await screen.findByRole("alert");
+  expect(screen.getByRole("heading", { name: "Original fixture title" })).toBeTruthy(); expect(screen.getByText(/Previous observation/)).toBeTruthy();
+  expect(value.query).toHaveBeenCalledTimes(2); fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub results" }));
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3)); await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(value.query.mock.calls[2][0]).toEqual(value.query.mock.calls[1][0]);
+});
+
+it("keeps successful empty query pages distinct from initial errors", async () => {
+  const value = fixture(), original = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async request => { const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson)); data.items = []; return { ...reply, documentJson: encode(data) }; });
+  render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByText("No pull requests were returned on page 1."); expect(screen.queryByRole("alert")).toBeNull();
+});
+
+
+it("does not label an unverified non-UTC timestamp as a UTC card observation", async () => {
+  const value = fixture(), original = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async request => { const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson)); data.observed_at = "2026-10-07T17:11:52+09:00"; return { ...reply, documentJson: encode(data) }; });
+  const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByRole("alert"); expect(view.container.querySelector(".pr-list-card")).toBeNull(); expect(screen.queryByText("No pull requests were returned on page 1.")).toBeNull();
+});
+
+
+it("announces standalone initial Load and refresh while preserving returned cards", async () => {
+  const value = fixture(), read = value.query.getMockImplementation()!;
+  let finish!: () => void;
+  const pending = new Promise<void>(resolve => { finish = resolve; });
+  value.query.mockImplementationOnce(async request => { await pending; return read(request); });
+  render(<App transport={value.transport} />);
+  const pane = await open(); await choose(value.rows[0]);
+  expect(value.query).not.toHaveBeenCalled();
+  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  const results = within(await screen.findByRole("region", { name: "GitHub query results" }));
+  expect((await results.findByText("Reading GitHub…")).getAttribute("role")).toBe("status");
+  await act(async () => { finish(); await pending; });
+  await results.findByText("Original fixture title");
+  expect(results.queryByText("Reading GitHub…")).toBeNull();
+  let refreshed!: () => void;
+  const refreshing = new Promise<void>(resolve => { refreshed = resolve; });
+  value.query.mockImplementationOnce(async request => { await refreshing; return read(request); });
+  fireEvent.click(results.getByRole("button", { name: "Refresh GitHub results" }));
+  expect((await results.findByText("Reading GitHub…")).getAttribute("role")).toBe("status");
+  expect(results.getByText("Original fixture title")).toBeTruthy();
+  await act(async () => { refreshed(); await refreshing; });
+  await waitFor(() => expect(results.queryByText("Reading GitHub…")).toBeNull());
+  expect(value.query).toHaveBeenCalledTimes(2);
+});
+
+
+it("explains a continuation page containing only unchanged duplicate pull requests", async () => {
+  const value = fixture(), read = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async request => {
+    const response = await read(request), data = JSON.parse(new TextDecoder().decode(response.documentJson));
+    if (data.query.page === 1) data.next_page = 2;
+    return { ...response, documentJson: encode(data) };
+  });
+  render(<App transport={value.transport} />);
+  const pane = await open(); await choose(value.rows[0]);
+  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByText("Original fixture title");
+  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
+  const second = within(await screen.findByRole("region", { name: "Pull request results · Page 2" }));
+  expect(second.getByText("No pull requests were returned on page 2.")).toBeTruthy();
+  expect(screen.getAllByText("Original fixture title")).toHaveLength(1);
+  expect(value.query).toHaveBeenCalledTimes(2);
+});
+
+
+it("reserves boundary-expiry recovery for explicit Reload list instead of header Refresh", async () => {
+  const value = fixture(), read = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async request => {
+    const response = await read(request), data = JSON.parse(new TextDecoder().decode(response.documentJson));
+    if (value.query.mock.calls.length === 1) data.next_page = 2;
+    if (data.query.page === 2) data.items[0].updated_at = "2026-09-29T00:00:00Z";
+    return { ...response, documentJson: encode(data) };
+  });
+  render(<App transport={value.transport} />);
+  const pane = await open(); await choose(value.rows[0]);
+  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByText("Original fixture title");
+  fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
+  const reload = await screen.findByRole("button", { name: "Reload list" });
+  const refresh = screen.getByRole("button", { name: "Refresh GitHub results" });
+  expect(refresh).toHaveProperty("disabled", true);
+  fireEvent.click(refresh);
+  expect(value.query).toHaveBeenCalledTimes(2);
+  expect(screen.getAllByText("Original fixture title")).toHaveLength(1);
+  fireEvent.click(reload);
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(refresh).toHaveProperty("disabled", false));
+  expect(submitted(value, 2).page).toBe(1);
+  expect(screen.queryByRole("button", { name: "Reload list" })).toBeNull();
+});

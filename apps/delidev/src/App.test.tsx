@@ -985,6 +985,7 @@ it("opens a dedicated PR workspace and reads GitHub only after Load", async () =
   fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repository.id}` }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Load pull requests" }) as HTMLButtonElement).disabled).toBe(false));
   expect(value.githubQuery).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(1));
   const request = JSON.parse(new TextDecoder().decode(value.githubQuery.mock.calls[0][0].queryJson));

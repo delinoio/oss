@@ -105,7 +105,7 @@ it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps
     await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
     if (state === "failed GitHub reload") await waitFor(() => expect(screen.getAllByRole("alert").some(alert => !screen.getByRole("region", { name: "Pending PR actions" }).contains(alert) && alert.textContent?.includes("server_unavailable"))).toBe(true));
-    else await screen.findByText("No pull requests on this returned page.");
+    else await screen.findByText("No pull requests were returned on page 1.");
   }
   const queries = f.query.mock.calls.length;
   fireEvent.click(f.pending().getByRole("button", { name: "Retry original fix request" }));
