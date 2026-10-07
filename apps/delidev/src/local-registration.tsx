@@ -27,7 +27,7 @@ function recoveryProblem(error: unknown) {
   return copy("local-registration.extra.881bd1533eb2");
 }
 
-export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = true, target, inline = true }: { target?: HTMLElement; inline?: boolean; active?: boolean; busy: boolean; setBusy: (value: boolean) => void; recovered: (connection: NativeConnection) => Promise<void> }) {
+export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = true, target, inline = true, readGeneration }: { readGeneration?: () => number; target?: HTMLElement; inline?: boolean; active?: boolean; busy: boolean; setBusy: (value: boolean) => void; recovered: (connection: NativeConnection, admissionGeneration?: number) => Promise<void | boolean> }) {
   useLocale();
   const [status, setStatus] = useState<DesktopRegistration>();
   const [confirm, setConfirm] = useState(false);
@@ -37,10 +37,12 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const inspect = async () => {
     if (busy || operating.current) return;
+    const admissionGeneration = readGeneration?.();
+    const current = () => alive.current && (admissionGeneration === undefined || admissionGeneration === readGeneration?.());
     operating.current = true; setBusy(true); setError(undefined);
     try {
       const value = registration(await invoke<DesktopRegistration>("inspect_local_registration"));
-      if (!alive.current) return;
+      if (!current()) return;
       if (pending && pending.serverId !== value.server_id) throw "invalid-evidence";
       setStatus(value);
       if (value.state === RegistrationState.Recovering) {
@@ -52,23 +54,26 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
         // Retire the completed request; any new recovery needs fresh confirmation.
         setPending(undefined); setConfirm(false);
       }
-    } catch (reason) { if (alive.current) { setError(reason); setStatus(undefined); } }
-    finally { operating.current = false; if (alive.current) setBusy(false); }
+    } catch (reason) { if (current()) { setError(reason); setStatus(undefined); } }
+    finally { operating.current = false; if (current()) setBusy(false); }
   };
   const recover = async () => {
     if (busy || operating.current || !status || (status.state === RegistrationState.Authorized && !pending)) return;
     const original = pending ?? { serverId: status.server_id, deviceId: status.device_id, revision: status.revision, requestId: newRequestId() };
+    const admissionGeneration = readGeneration?.();
+    const current = () => alive.current && (admissionGeneration === undefined || admissionGeneration === readGeneration?.());
     operating.current = true; setPending(original); setBusy(true); setError(undefined);
     try {
       const connection = await invoke<NativeConnection>("recover_local_registration", { deviceId: original.deviceId, revision: original.revision, requestId: original.requestId });
       if (!alive.current) return;
       validateDesktopRuntime(connection);
       if (!id.test(connection.device_id) || connection.device_id === original.deviceId || connection.server_id !== status.server_id) throw "invalid-evidence";
-      await recovered(connection);
+      const accepted = await (admissionGeneration === undefined ? recovered(connection) : recovered(connection, admissionGeneration));
       if (!alive.current) return;
+      if (accepted === false) throw "invalid-evidence";
       setPending(undefined); setConfirm(false); setStatus(undefined);
     } catch (reason) { if (alive.current) setError(reason); }
-    finally { operating.current = false; if (alive.current) setBusy(false); }
+    finally { operating.current = false; if (current()) setBusy(false); }
   };
   const view = <section aria-label={copy("local-registration.desktopRegistration_65a097")}>
     <button disabled={busy} onClick={() => void inspect()}>{copy("local-registration.checkDesktopRegistration_a540c5")}</button>

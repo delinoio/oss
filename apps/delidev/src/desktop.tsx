@@ -74,6 +74,21 @@ function LocalDesktop() {
     setConnectionEpoch((epoch) => epoch + 1);
     setError(undefined);
   };
+  const acceptRecovery = async (connection: NativeConnection, admissionGeneration?: number) => {
+    let generation = admissionGeneration ?? connectionReadGeneration.current;
+    if (generation !== connectionReadGeneration.current) {
+      // Recovery can publish its own connection-change event. Reconcile only
+      // the exact returned native outcome, never adopt a sibling replacement.
+      generation = connectionReadGeneration.current;
+      const observed = await invoke<NativeConnection | null>("launch_local");
+      if (generation !== connectionReadGeneration.current || !observed
+        || observed.server_id !== connection.server_id || observed.device_id !== connection.device_id
+        || observed.endpoint !== connection.endpoint || observed.runtime_generation !== connection.runtime_generation
+        || observed.runtime_key !== connection.runtime_key || observed.token !== connection.token) return false;
+    }
+    await acceptConnection(connection, () => generation === connectionReadGeneration.current);
+    return generation === connectionReadGeneration.current && previous.current === connection;
+  };
   const connect = async (action: "connect_local" | "retry_local" = "connect_local") => {
     if (busy || connecting.current) return;
     connecting.current = true;
@@ -172,7 +187,7 @@ function LocalDesktop() {
         <button onClick={() => setShowSaved(true)}>{copy("desktop.savedServers_4bf084")}</button>
       </section>
     </Modal>
-    <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptConnection} active={showConnection || inlineRecovery || error === "permission-denied" || error === "credential-unavailable"} target={showConnection ? recoveryTarget ?? undefined : undefined} inline={inlineRecovery || error === "permission-denied" || error === "credential-unavailable"} />
+    <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptRecovery} readGeneration={() => connectionReadGeneration.current} active={showConnection || inlineRecovery || error === "permission-denied" || error === "credential-unavailable"} target={showConnection ? recoveryTarget ?? undefined : undefined} inline={inlineRecovery || error === "permission-denied" || error === "credential-unavailable"} />
     <SavedConnections visible={showSaved} close={() => setShowSaved(false)} actions={savedActions} />
   </>;
 
