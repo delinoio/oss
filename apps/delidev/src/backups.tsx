@@ -28,7 +28,7 @@ function modificationLabel(value: string) {
 // All three existing list RPCs are requested with pageSize 20. Reject a
 // malformed envelope before the chain can adopt any row or continuation.
 function boundedBackupPage<T extends { id: string }>(items: T[], nextPageToken: string) {
-  if (items.length > 20 || items.some(item => !item.id) || typeof nextPageToken !== "string") throw new Error("Invalid backup page");
+  if (items.length > 20 || items.some(item => !item.id) || new Set(items.map(item => item.id)).size !== items.length || typeof nextPageToken !== "string") throw new Error("Invalid backup page");
   return items;
 }
 

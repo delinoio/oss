@@ -477,3 +477,32 @@ it("pauses all backup inventory readers during original inspection without repla
   expect(f.inspect.mock.calls.every(([request]) => request.id === f.id)).toBe(true);
   expect(f.create).not.toHaveBeenCalled(); expect(f.remove).not.toHaveBeenCalled();
 });
+
+
+it.each(["inventory", "creation", "deletion"])("rejects duplicate IDs in a whole %s page and retries its exact token", async kind => {
+  const f = fixture();
+  const nextID = newRequestId();
+  const token = `${kind}-duplicate-page`;
+  const continuation = `${kind}-must-not-adopt`;
+  if (kind === "inventory") f.list.mockResolvedValueOnce({ backups: [f.backup], nextPageToken: token }).mockResolvedValueOnce({ backups: [{ ...f.backup, id: nextID }, { ...f.backup, id: nextID }], nextPageToken: continuation }).mockResolvedValue({ backups: [{ ...f.backup, id: nextID }] });
+  if (kind === "creation") f.creations.mockResolvedValueOnce({ jobs: [f.creation], nextPageToken: token }).mockResolvedValueOnce({ jobs: [{ ...f.creation, id: nextID }, { ...f.creation, id: nextID }], nextPageToken: continuation }).mockResolvedValue({ jobs: [{ ...f.creation, id: nextID }] });
+  if (kind === "deletion") f.deletions.mockResolvedValueOnce({ jobs: [f.deletion], nextPageToken: token }).mockResolvedValueOnce({ jobs: [{ ...f.deletion, id: nextID }, { ...f.deletion, id: nextID }], nextPageToken: continuation }).mockResolvedValue({ jobs: [{ ...f.deletion, id: nextID }] });
+  render(f.view());
+  if (kind === "deletion") fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
+  const label = kind === "inventory" ? "Database backups" : kind === "creation" ? "Creation jobs" : "Deletion jobs";
+  const owner = kind === "inventory" ? f.list : kind === "creation" ? f.creations : f.deletions;
+  const original = kind === "inventory" ? f.backup.id : kind === "creation" ? f.creation.id : f.deletion.id;
+  const idText = (id: string) => kind === "inventory" ? id : new RegExp(id);
+  await screen.findByText(idText(original));
+  fireEvent.click(await screen.findByRole("button", { name: `Load more ${label}` }));
+  const retry = await screen.findByRole("button", { name: "Retry" });
+  expect(screen.getByText(idText(original))).toBeTruthy();
+  expect(screen.queryByText(idText(nextID))).toBeNull();
+  expect(screen.queryByRole("button", { name: `Load more ${label}` })).toBeNull();
+  expect(owner.mock.calls.map(([request]) => request.pageToken)).toEqual(["", token]);
+  fireEvent.click(retry);
+  await screen.findByText(idText(nextID));
+  expect(screen.getByText(idText(original))).toBeTruthy();
+  expect(owner.mock.calls.map(([request]) => request.pageToken)).toEqual(["", token, token]);
+  expect(f.inspect).not.toHaveBeenCalled(); expect(f.create).not.toHaveBeenCalled(); expect(f.remove).not.toHaveBeenCalled();
+});
