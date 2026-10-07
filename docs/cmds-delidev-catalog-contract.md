@@ -1,16 +1,106 @@
 # DeliDev provider and model catalog
 
-## Planned Agent Worker source routes
+## Ordered Agent Worker account sources
 
-The owner-approved extension under issue #964 reserves System capability 36
-and SaveAgentWorkerRequest field 5 before implementation. One Agent Worker will
-retain one Harness and ordered source groups, each with same-source accounts
-and its own typed model choice. Model reuse/creation and Worker saving remain
-atomic. A new session may advance only when every account in the preceding group
-has confirmed quota exhaustion; authentication, connection, compatibility and
-unknown quota cannot authorize fallback. Observed quota recovery restores source
-priority for later new sessions. Existing sessions keep their selected account
-and model. Reservations alone grant no support and introduce no migration.
+PR #1371 established System capability 36 and SaveAgentWorkerRequest field 5 on
+main before this extension. Capability 35 remains reserved for known subscription
+models. Capability 36 advertises configuration and routing support, never native
+execution authority. No SQLite migration is added.
+
+Agent schema 3 uses an ordered nonempty `routes` list. Each route contains
+`model_id`, ordered `accounts` with weights 1–1,000, and an optional `routing`
+override. The legacy top-level model/accounts/routing and routes are exclusive.
+One Worker retains one Harness, name, instructions and native options. Every
+route uses one live API Provider or service-native subscription identity; sources
+and accounts cannot repeat. Across all routes the existing 1,000-account bound
+applies. Legacy schema 1, retired schema 2 and accountless CLI/RPC writes remain
+compatible. Adding another source upgrades a Worker to schema 3; removing sources
+keeps schema 3, including when one remains. Legacy writes cannot replace an
+existing schema-3 Worker. Historical documents and sessions are never migrated.
+
+`SaveAgentWorker.route_models` aligns typed selections exactly with the route
+order and is exclusive with `model`. Go derives every source from current account
+records inside one receipt transaction. Canonical selections require exact model
+revisions; direct native IDs reuse/create source-scoped canonical models. All
+model changes, complete relationship checks and the Worker save commit together,
+or roll back together. Replayed original requests retain their exact identities.
+
+The first execution claim of a new session evaluates sources in configured order.
+A source advances only when every configured candidate is classified as confirmed
+quota exhaustion. Missing accounts, project restrictions, disabled accounts,
+invalid authentication/generation/validation, unsupported model/harness/provider
+protocol, and unavailable quota that cannot establish exhaustion are blockers.
+A failed query or elapsed reset time never clears exhaustion. Only observed
+recovery can clear the existing server-owned exhaustion flag; later new sessions
+then prefer the earlier source again. Within the chosen group all six existing
+policies and inherited server defaults remain available. New UI groups default
+to Priority. Sequential, rotation and quota tie state are keyed by stable live
+source identity; only the selected group's state changes atomically with the
+initial snapshot and dispatch. Read-only preview uses the same selector.
+
+The initial Route preserves every source's canonical model ID/revision/native ID,
+policy, ordered weighted candidates, quota evidence and blockers, plus the selected
+source index. ExecutionConfiguration and the native Worker assignment retain their
+existing selected-source shape. Existing executions keep their original model,
+account, connection and Usage/cost attribution. Relationship checks, project
+selection, deletion protection and portable version 3 include all sources.
+Schedules use the ordinary first-execution boundary.
+
+Codex requires an explicitly configured Responses provider. The OpenRouter managed
+Chat preset and existing connections are not rewritten. Use a compatible custom
+provider/account configuration and retain execution-time validation. OpenRouter
+[documents Responses](https://openrouter.ai/docs/api/api-reference/responses/create-responses).
+No automatic harness switch, active-session retry/account switch or new subscription
+execution profile is introduced.
+
+## Known subscription model suggestions
+
+`internal/knownmodels` owns the versioned, embedded `catalog.json`, the validated
+private download cache and one joined server refresh loop. Its immutable fetch
+URL is `https://raw.githubusercontent.com/delinoio/oss/main/cmds/delidev-cli/internal/knownmodels/catalog.json`.
+Only reviewed main data reaches installed servers. A single app/server upgrade
+adds the feature; later catalog changes need no release. No SQLite migration is
+introduced. Cache publication uses the existing atomic private-file writer.
+
+Schema 1 includes a semantic SHA-256 catalog version, reviewed-data date, source
+URLs/revisions/digests, and exactly ChatGPT, Claude and Grok in that order. Each
+service has 1–200 unique exact native IDs with display name, order and source keys.
+Known minimum harness versions and definite retirement dates are retained. A
+retirement date removes a new suggestion on that UTC date, including offline use.
+Unknown fields/schema, duplicate keys/IDs, invalid dates/digests, empty or oversized
+inventories and incomplete provenance cannot replace the last valid catalog.
+
+`ProviderService.ListKnownSubscriptionModels(subscription_service)` requires
+owner or paired-client role plus current store authorization. It returns at most
+200 candidates, catalog version/date and BUNDLED, CACHE or ONLINE source. Worker
+credentials are denied. The read neither downloads data nor reads account secrets,
+starts native tools or creates saved models. Initial reads use the embedded or
+valid private cached catalog. Successful server downloads refresh after 24 hours;
+failures retain the last valid catalog and retry after one hour. Restart retains
+the last successful download deadline when the cached reviewed date is newer than
+the bundled date or when both the date and semantic catalog version exactly
+match. An equal-date version mismatch is ambiguous, so the server uses the
+bundled catalog and refreshes immediately. Each request has a 15-second deadline
+and 1 MiB body limit. Redirects, ambient proxies and route fallback are
+forbidden; server shutdown cancels and joins the request and maintenance owner.
+
+Known metadata is separate from native discovery, credential/account entitlement,
+readiness and canonical saved-model authority. Known selections use the existing
+atomic Worker native-ID save. Saved selections retain exact model ID/revision
+checks. Removal from recommendations never removes saved models, configurations
+or immutable historical execution attribution. API endpoint discovery is unchanged.
+
+The collector uses the revision-pinned official Codex `models-manager/models.json`
+(public visibility and nonempty subscription plans), official Codex retirement
+notices, Claude Code family/selection instructions plus the current official
+model table, and the Grok Build recommended coding default. API-only inventory,
+hidden models and arbitrary configuration examples are excluded. A failed or
+empty extraction is fatal. Source-only/date-only reads preserve reviewed bytes;
+changes to IDs, display names, order or model metadata produce a review PR under
+[the workflow contract](repository-workflow-contract.md#delidev-known-model-catalog).
+If a reviewer closes that PR without merging, the publisher records the closed
+candidate version and does not reopen it until a genuinely changed catalog is
+collected.
 
 
 ## Scope

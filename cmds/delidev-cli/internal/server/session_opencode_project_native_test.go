@@ -145,7 +145,7 @@ func prepareOpenCodeProjectFixture(t *testing.T, f *firstDispatchFixture, kind d
 		// Only repository metadata is a fixture; preparation and session APIs run normally.
 		repository := domain.NewID()
 		_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.project-repository", nil, func(tx *store.Tx) (any, error) {
-			return tx.Put(domain.RepositoryKind, repository, 0, "", "", domain.Repository{Name: "Private project fixture", Checkouts: []domain.Checkout{{MachineID: f.selection.MachineID, Path: checkout}}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}, AutoFetch: false})
+			return tx.Put(domain.RepositoryKind, repository, 0, "", "", domain.Repository{RemoteURL: fmt.Sprintf("https://github.com/fixture/repo-%d.git", index), Name: "Private project fixture", Checkouts: []domain.Checkout{{MachineID: f.selection.MachineID, Path: checkout}}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}, AutoFetch: false})
 		})
 		if err != nil {
 			t.Fatal(err)

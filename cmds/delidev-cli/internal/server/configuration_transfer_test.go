@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -61,7 +63,7 @@ func TestConfigurationTransferExportExcludesRuntimeAndKeepsExactInstructions(t *
 	selection := transferSelection()
 	var accountID domain.ID
 	for _, entry := range selection.Bundle.Entries {
-		value, err := configurationValue(entry.Kind, entry.Document)
+		value, err := configurationValue(entry.Kind, entry.Document, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,6 +110,147 @@ func TestConfigurationTransferExportExcludesRuntimeAndKeepsExactInstructions(t *
 		t.Fatal("export omitted instructions")
 	}
 }
+
+func TestConfigurationTransferExportReferencedMachineLimit(t *testing.T) {
+	for _, source := range []string{"repository-override", "server-default"} {
+		for _, test := range []struct {
+			name             string
+			checkouts        int
+			separatePolicy   bool
+			duplicateMachine bool
+			wantMachines     int
+			wantLimit        bool
+		}{
+			{name: "64-checkouts-plus-policy", checkouts: 64, separatePolicy: true, wantLimit: true},
+			{name: "63-checkouts-plus-policy", checkouts: 63, separatePolicy: true, wantMachines: 64},
+			{name: "64-checkouts-reuse-policy", checkouts: 64, wantMachines: 64},
+			{name: "64-checkouts-shared-across-repositories", checkouts: 64, separatePolicy: true, duplicateMachine: true, wantMachines: 64},
+			{name: "65-checkouts-shared-across-repositories", checkouts: 65, duplicateMachine: true, wantLimit: true},
+		} {
+			t.Run(source+"/"+test.name, func(t *testing.T) {
+				s, _ := newDoctorFixture(t)
+				machines := make([]domain.ID, test.checkouts)
+				for i := range machines {
+					machines[i] = domain.NewID()
+				}
+				policy := domain.DefaultRemediationPolicy()
+				policy.MachineID = machines[0]
+				if test.separatePolicy {
+					policy.MachineID = domain.NewID()
+				}
+				_, err := s.Store.Mutate(context.Background(), domain.NewID(), "transfer.fixture.machines", nil, func(tx *store.Tx) (any, error) {
+					for i, id := range machines {
+						if _, err := tx.Put(domain.MachineKind, id, 0, "", "", domain.Machine{Name: fmt.Sprintf("machine-%d", i), OS: "linux", Architecture: "amd64"}); err != nil {
+							return nil, err
+						}
+					}
+					if test.separatePolicy {
+						if _, err := tx.Put(domain.MachineKind, policy.MachineID, 0, "", "", domain.Machine{Name: "policy-only", OS: "linux", Architecture: "amd64"}); err != nil {
+							return nil, err
+						}
+					}
+					return nil, nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				repositories := []domain.Repository{{RemoteURL: "https://github.com/fixture/first.git", Name: "first", AutoFetch: true}}
+				if test.duplicateMachine {
+					repositories = append(repositories, domain.Repository{RemoteURL: "https://github.com/fixture/second.git", Name: "second", AutoFetch: true})
+				}
+				for i, machineID := range machines {
+					repositoryIndex := 0
+					if test.duplicateMachine && i == len(machines)-1 {
+						repositoryIndex = 1
+						machineID = machines[0]
+					}
+					repositories[repositoryIndex].Checkouts = append(repositories[repositoryIndex].Checkouts, domain.Checkout{MachineID: machineID, Path: "/fixture/checkout"})
+				}
+				for _, repository := range repositories {
+					if source == "repository-override" {
+						repository.Remediation = &policy
+					}
+					doctorPut(t, s, domain.RepositoryKind, domain.NewID(), 0, repository)
+				}
+				if source == "server-default" {
+					settings := domain.DefaultSettings()
+					settings.Remediation = policy
+					doctorPut(t, s, domain.SettingsKind, domain.NewID(), 0, settings)
+				}
+				var before map[domain.ID]store.Record
+				if err := s.Store.Read(context.Background(), func(tx *store.Tx) error {
+					var err error
+					before, err = configurationSnapshot(tx)
+					return err
+				}); err != nil {
+					t.Fatal(err)
+				}
+				_, beforeSequence, err := s.Store.Snapshot(context.Background(), store.Filter{Kind: domain.RepositoryKind, Limit: 10})
+				if err != nil {
+					t.Fatal(err)
+				}
+				response, err := s.ExportConfiguration(transferOwner(), connect.NewRequest(&pb.ExportConfigurationRequest{}))
+				_, afterSequence, snapshotErr := s.Store.Snapshot(context.Background(), store.Filter{Kind: domain.RepositoryKind, Limit: 10})
+				if snapshotErr != nil || beforeSequence != afterSequence {
+					t.Fatal("export changed state/events", snapshotErr)
+				}
+				for id, original := range before {
+					current, getErr := s.Store.Get(context.Background(), original.Kind, id)
+					if getErr != nil || current.Revision != original.Revision || !bytes.Equal(current.Data, original.Data) {
+						t.Fatal("export changed source configuration", getErr)
+					}
+				}
+				if test.wantLimit {
+					if connect.CodeOf(err) != connect.CodeResourceExhausted || response != nil {
+						t.Fatalf("expected bounded rejection without a document, got %v", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				var bundle domain.ConfigurationBundle
+				if err = domain.Decode(response.Msg.DocumentJson, &bundle); err != nil {
+					t.Fatal(err)
+				}
+				if len(bundle.Machines) != test.wantMachines || len(bundle.Entries) != len(before) {
+					t.Fatalf("incomplete export: %d machines, %d entries", len(bundle.Machines), len(bundle.Entries))
+				}
+				selection := domain.ConfigurationImportSelection{Bundle: bundle}
+				foundPolicy := false
+				for _, machine := range bundle.Machines {
+					foundPolicy = foundPolicy || machine.ID == policy.MachineID
+					selection.Machines = append(selection.Machines, domain.ConfigurationMachineBinding{SourceID: machine.ID, TargetID: machine.ID})
+				}
+				if !foundPolicy {
+					t.Fatal("export omitted remediation machine")
+				}
+				for _, entry := range bundle.Entries {
+					original := before[entry.ID]
+					if !bytes.Equal(entry.Document, original.Data) {
+						t.Fatal("export changed portable configuration")
+					}
+					action := domain.ConfigurationReuse
+					if entry.Kind == domain.SettingsKind {
+						action = domain.ConfigurationReplace
+					}
+					selection.Bindings = append(selection.Bindings, domain.ConfigurationBinding{SourceID: entry.ID, TargetID: entry.ID, ExpectedRevision: original.Revision, Action: action})
+					if entry.Kind == domain.RepositoryKind {
+						var repository domain.Repository
+						if err := domain.Decode(entry.Document, &repository); err != nil {
+							t.Fatal(err)
+						}
+						for _, checkout := range repository.Checkouts {
+							selection.Checkouts = append(selection.Checkouts, domain.ConfigurationCheckoutBinding{RepositoryID: entry.ID, MachineID: checkout.MachineID, Path: checkout.Path})
+						}
+					}
+				}
+				transferPreview(t, s, selection)
+			})
+		}
+	}
+}
+
 func TestConfigurationImportPreviewReadOnlyAtomicRemappingAndReplay(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	selection := transferSelection()
@@ -290,7 +433,7 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 			selection := transferSelection()
 			sources := []domain.ID{domain.NewID(), domain.NewID()}
 			targets := []domain.ID{domain.NewID(), domain.NewID()}
-			repository := domain.Repository{Name: "Both checkouts", AutoFetch: true}
+			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Both checkouts", AutoFetch: true}
 			for i, source := range sources {
 				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"})
 				selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: source, Name: "source", OS: "linux", Architecture: "amd64"})
@@ -333,6 +476,27 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 				report := transferApply(t, s, preview, domain.NewID())
 				if report.State != domain.JobQueued {
 					t.Fatal(report)
+				}
+				var children []store.Record
+				if err := s.Store.Read(context.Background(), func(tx *store.Tx) error {
+					var err error
+					children, err = tx.Jobs("", report.JobID, "", "", 10)
+					return err
+				}); err != nil {
+					t.Fatal(err)
+				}
+				for _, child := range children {
+					job, err := store.Decode[domain.Job](child)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var input domain.RepositoryInspectionInput
+					if err := domain.Decode(job.Input, &input); err != nil {
+						t.Fatal(err)
+					}
+					if input.ExpectedRemoteIdentity != "" {
+						t.Fatal("legacy Worker received the post-capability source identity")
+					}
 				}
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
 			}
@@ -512,5 +676,59 @@ func TestConfigurationImportExplicitReuseAndDeletedReceiptCannotRecreate(t *test
 	job, _ := store.Decode[domain.Job](row)
 	if bytes.Contains(job.Input, []byte("no retained copy")) {
 		t.Fatal("terminal job retained instructions")
+	}
+}
+
+func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	selection := transferSelection()
+	selection.Bundle.Version = 3
+	provider := transferEntry(domain.ProviderKind, domain.Provider{Name: "Responses fallback", Endpoint: "https://fallback.example.test/v1", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth})
+	model := transferEntry(domain.ModelKind, domain.Model{ProviderID: provider.ID, NativeID: "fallback", Name: "Fallback model", Harnesses: []domain.Harness{domain.Codex}, Manual: true, MetadataSource: domain.Unknown})
+	account := transferEntry(domain.AccountKind, domain.Account{Alias: "Fallback", ProviderID: provider.ID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}})
+	for i, entry := range selection.Bundle.Entries {
+		if entry.Kind != domain.AgentKind {
+			continue
+		}
+		var agent domain.Agent
+		if err := domain.Decode(entry.Document, &agent); err != nil {
+			t.Fatal(err)
+		}
+		priority := domain.Priority
+		agent.Routes = []domain.AgentSourceRoute{{ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: &priority}, {ModelID: model.ID, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 7}}, Routing: &priority}}
+		agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
+		selection.Bundle.Entries[i].Document, _ = json.Marshal(agent)
+	}
+	selection.Bundle.Entries = append(selection.Bundle.Entries, account, model, provider)
+	raw, _ := json.Marshal(selection)
+	_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := selection.Bundle.Version
+	for _, version := range []uint32{1, 2} {
+		selection.Bundle.Version = version
+		raw, _ = json.Marshal(selection)
+		_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
+		if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+			t.Fatalf("legacy bundle accepted routes: %v", err)
+		}
+	}
+	selection.Bundle.Version = original
+	preview := transferPreview(t, s, selection)
+	result := transferApply(t, s, preview, domain.NewID())
+	if len(result.Resources) != len(selection.Bundle.Entries) {
+		t.Fatalf("incomplete import: %+v", result)
+	}
+	records, err := s.Store.List(context.Background(), store.Filter{Kind: domain.AgentKind, Limit: 10})
+	if err != nil || len(records) != 1 {
+		t.Fatalf("agents: %v %v", records, err)
+	}
+	imported, err := store.Decode[domain.Agent](records[0])
+	if err != nil || len(imported.Routes) != 2 {
+		t.Fatalf("routes: %+v %v", imported, err)
+	}
+	if imported.Routes[1].ModelID == model.ID || imported.Routes[1].Accounts[0].ID == account.ID || imported.Routes[1].Accounts[0].Weight != 7 {
+		t.Fatal("route references/order were not remapped")
 	}
 }

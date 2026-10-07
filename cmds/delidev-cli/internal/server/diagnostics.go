@@ -194,7 +194,17 @@ func (s *Service) doctorCredential(ctx context.Context, id domain.ID) (domain.Di
 		defer vault.Close()
 		reader = vault
 	}
-	secret, err := reader.Get(ctx, credentials.Ref{Owner: id, ID: account.Connection.ID, Purpose: credentials.AccountAPI})
+	tokenID := account.Connection.ID
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		v, ok, e := tx.AccountOAuthCredential(id, account.Connection.ID)
+		if ok {
+			tokenID = v.TokenID
+		}
+		return e
+	}); err != nil {
+		return result, err
+	}
+	secret, err := reader.Get(ctx, credentials.Ref{Owner: id, ID: tokenID, Purpose: credentials.AccountAPI})
 	clear(secret)
 	if err != nil {
 		result.Result = doctorFailure(err, "Inspect this original account connection and the server OS credential store. Unlock it yourself if required; do not recreate missing protected keys.")

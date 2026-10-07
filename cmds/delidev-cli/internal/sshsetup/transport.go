@@ -231,16 +231,28 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 
 // Command is private to the installation state machine. Product callers supply
 // closed operations, never shell strings or arbitrary target paths.
-func (c *Connection) command(ctx context.Context, command string, input io.Reader) ([]byte, error) {
+func (c *Connection) command(ctx context.Context, command string, input io.Reader) (raw []byte, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
+	// NewSession, exec replies and channel close writes can all block on the
+	// peer. Install cancellation first and close the owned socket, since a
+	// session close cannot settle unanswered SSH protocol messages. Keep this
+	// callback active through session cleanup and join transport shutdown.
+	join := joinCancellation(ctx, func() { c.conn.Close(); c.client.Wait() })
+	defer func() {
+		join()
+		if ctx.Err() != nil {
+			raw, err = nil, domain.SafeError(ctx.Err())
+		}
+	}()
+	if ctx.Err() != nil {
+		return nil, domain.SafeError(ctx.Err())
+	}
 	session, e := c.client.NewSession()
 	if e != nil {
 		return nil, failure(domain.Unavailable)
 	}
 	defer session.Close()
-	join := joinCancellation(ctx, func() { session.Close() })
-	defer join()
 	var output, discard boundedBuffer
 	session.Stdout = &output
 	session.Stderr = &discard

@@ -1,7 +1,5 @@
 # DeliDev TypeScript client
 
-Pure client fixtures use the cacheable `test:unit` Turbo leaf; the real temporary Go server uses uncached `test:integration`. CI serializes that integration after desktop pure UI and before desktop integration/QA through explicit task dependencies. Local `pnpm test` executes both client suites. Imported-layout fixtures hash the shared protocol layout file. See `docs/repository-workflow-contract.md`.
-
 Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAccountOAuth, CancelAccountOAuth and GetAccountOAuthStatus, with exact bigint revisions and closed OAuth state/connection-method enums. Authorization URL exists only in original live Start; status carries metadata only. Completion code is a write-only bounded byte array: use a direct authenticated RPC without query/mutation-cache retention, clear transient buffers, and recover only the original completion identity without code. No client-side retry may repeat an exchange. Preserve all four existing account-flow gates independently of capability 5 under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Request diagnostic client
@@ -67,7 +65,7 @@ The library does not log resource documents, credentials, cursors, exception obj
 ## Build and Test
 - `pnpm --filter @delinoio/delidev-api-client lint`, `test`, and `build` validate types, synchronization/transport fixtures and generated exports.
 - The test command compiles and starts the real Go server in a private temporary scope, exercises binary RPC, coherent snapshots, revision events, idempotent mutation replay, indexed deletion and typed authentication failure, then stops its owned process. It never reads user credentials, invokes inference, or starts a Worker. Go is required; the integration task is uncached.
-- Run root protocol formatting/lint/compatibility and repeat generation without drift. The dedicated `delidev-client` CI job runs client validation and is selected by DeliDev command/client/schema inputs; `delidev-protocol` separately checks schemas and generated freshness. CI may reuse its own once-built current-checkout executable through the absolute `DELIDEV_TEST_BINARY` test input while retaining per-fixture private state and process cleanup. Local tests retain their temporary source build and the integration task remains uncached. Generated `dist` is an explicit compilation output and is removed from the final worktree.
+- Run root protocol formatting/lint/compatibility and repeat generation without drift. The dedicated `delidev-protocol` CI job runs client validation, DeliDev Go binding tests and desktop tests. DeliDev desktop/command/protocol/client and shared configuration inputs select it; DevHud-only source inputs do not. Shared `pnpm proto:check` retains repository-wide schema checks. Generated `dist` is an explicit compilation output and is removed from the final worktree.
 
 ## Dependencies and Integrations
 Pinned Buf protobuf 2.14.0, Connect/Connect Web 2.1.2 and Connect Query 2.3.1 follow repository versions. React Query integration uses generated service namespaces; no second product transport or client-side routing/eligibility engine is introduced. The Go server and its canonical resource schemas remain authoritative.
@@ -240,9 +238,20 @@ Independent server subscription login exports capability 30, the closed Subscrip
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
 
-## GitHub token-first client boundary
+## Repository addition
 
-Generated IntegrationService/IntegrationQuery expose InspectGitHubToken and PrepareGitHubTokenForm under System capability 34. Use the direct generated Connect client for PAT inspection and final connection in the creation wizard, keeping write-only bytes outside React Query. Validate request IDs, closed states, canonical identity fields and exact form kind/owner/access/URL before progression or native dispatch. Only the current verified wizard draft may retain owned PAT memory until explicit save; clear every request copy and the original on failure, Back, cancellation, departure or save termination. Original non-secret create requests and token-replacement identities survive uncertainty only for explicit reconciliation; token reentry is required. Existing profile/revision-bound form descriptors, Manage/Rename/deletion and CLI compatibility remain unchanged. Follow the integration and desktop contracts.
+System capability 37 permits repository saves/imports with a required credential-free `remote_url` and empty `checkouts`. Clients must verify this gate before sending URL registration or importing the new URL-only repository shape. Legacy checkout-backed repository saves/imports omit `remote_url` and retain the pre-capability contract. The existing save RPC and durable job also cover registration without Worker proof or inspection children. Repository and Project export/import need no machine or path binding when checkouts are empty. Worker capability 19 separately permits managed workspace and independent Fork clones; 31/32 and Worker 18 keep their existing immediate Local Clone and metadata contracts.
+
+Generated `IntegrationQuery.listGitHubRepositories` and
+`WorkerQuery.cloneRepository` retain the main-established declarations and
+independent System 31/32 / Worker 18 capabilities. Listing is an explicit
+revision-bound profile/page read; preserve exact remote IDs, current generation,
+constructed URLs and page-local filtering. The client never receives a saved PAT.
+Clone sends fresh transient local Worker proof and optional selected GitHub
+metadata; its original durable job completes registration server-side. Keep proof
+outside read keys, drafts and persistence. Retain identical uncertain mutation
+bytes only in the disposable dialog registry; close/departure drops that registry
+and guards all late callbacks without canceling accepted business work.
 
 ## Agent Worker wizard bindings
 

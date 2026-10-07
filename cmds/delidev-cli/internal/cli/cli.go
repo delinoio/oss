@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -69,6 +70,13 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	rest := remaining[1:]
 	if command == "server" && len(rest) > 0 && rest[0] == "desktop-host" {
 		return runDesktopHostCommand(ctx, o, rest[1:], streams)
+	}
+	if command == "worker" && len(rest) > 0 && rest[0] == "desktop-host" {
+		return runDesktopWorkerHostCommand(ctx, o, rest[1:], streams)
+	}
+	if command == "worker" && len(rest) > 0 && rest[0] == "desktop-prepare" {
+		value, err := desktopWorkerExecutable(ctx, o, rest[1:])
+		return emit(value, err)
 	}
 	if command == "service-run" {
 		value, err := runService(ctx, o, rest, streams)
@@ -386,6 +394,22 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		body, err := readDocument(*input, streams.In)
 		if err != nil {
 			return emit(nil, err)
+		}
+		if kind == domain.RepositoryKind {
+			var repository domain.Repository
+			if err := domain.Decode(body, &repository); err != nil {
+				return emit(nil, err)
+			}
+			if _, err := domain.ParseRepositoryCloneURL(repository.RemoteURL); err != nil {
+				return emit(nil, err)
+			}
+			status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+			if err != nil {
+				return emit(nil, rpc.ClientError(err))
+			}
+			if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1) {
+				return emit(nil, domain.Fail(domain.Unsupported, "This server does not support remote repositories.", "Update the server before saving a repository."))
+			}
 		}
 		ensureRequest(&o)
 		response, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, Kind: rpc.WireKind(kind), SchemaVersion: rpc.ResourceSchemaVersion(kind, body), DocumentJson: body}))

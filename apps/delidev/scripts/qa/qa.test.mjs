@@ -72,7 +72,8 @@ test("real Go environments isolate RPC state, Workers, revocation and failures",
       const path = join(environment.root, "git-fixture"); await mkdir(path);
       await run.processes.run("git", ["init", "--initial-branch=main", path]);
       await run.processes.run("git", ["-C", path, "-c", "user.name=QA", "-c", "user.email=qa@example.invalid", "commit", "--allow-empty", "-m", "QA fixture"]);
-      const response = await configuration(environment).saveConfiguration({ kind: api.EntityKind.REPOSITORY, schemaVersion: 1, mutation: { requestId: api.newRequestId() }, documentJson: new TextEncoder().encode(JSON.stringify({ name: "QA repository", checkouts: [{ machine_id: environment.workerCredential.machine_id, path }], preferred_remote: "", github_owner: "", github_name: "", integration_id: "" })) });
+      await run.processes.run("git", ["-C", path, "remote", "add", "origin", "https://github.com/fixture/qa-repository.git"]);
+      const response = await configuration(environment).saveConfiguration({ kind: api.EntityKind.REPOSITORY, schemaVersion: 1, mutation: { requestId: api.newRequestId() }, documentJson: new TextEncoder().encode(JSON.stringify({ name: "QA repository", remote_url: "https://github.com/fixture/qa-repository.git", checkouts: [{ machine_id: environment.workerCredential.machine_id, path }], preferred_remote: "", github_owner: "", github_name: "", integration_id: "" })) });
       assert(response.job);
       const repository = await until(async () => (await list(environment, api.EntityKind.REPOSITORY))[0]);
       repositories.set(environment, repository);

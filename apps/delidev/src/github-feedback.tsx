@@ -1,3 +1,5 @@
+import { formatTimestamp } from "./localization";
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object, text, type Document } from "./documents";
 import { actorValid, bounded, date, positive } from "./github-query-model";
 
@@ -60,23 +62,24 @@ export function validPRFeedback(raw: unknown, item: Document): boolean {
 }
 
 export function PRFeedback({ value }: { value: Document }) {
+  useLocale();
   const threads = new Map((value.threads as Document[]).map(thread => [text(thread.node_id), thread]));
   const entries = value.entries as Document[];
   const excluded = Number(value.excluded_draft_reviews) + [...threads.values()].reduce((sum, thread) => sum + Number(thread.excluded_drafts), 0);
-  return <section aria-label="Published PR feedback">
-    <p>{entries.length} published feedback entries · {threads.size} review threads{excluded ? ` · ${excluded} unsubmitted drafts excluded` : ""}</p>
-    <p>Approved and dismissed reviews remain visible. GitHub review dismissal is separate from handling feedback in DeliDev. Author identity alone does not verify a GitHub App or current repository permission.</p>
-    {entries.length === 0 ? <p>No published feedback was returned.</p> : entries.map(entry => {
+  return <section aria-label={copy("github-feedback.publishedPrFeedback_ae2ab7")}>
+    <p><LocalizedText id="github-feedback.publishedFeedbackEntriesReviewThreads_08c0b6" components={{ s0: <>{entries.length}</>, s1: <>{threads.size}</>, s2: <>{excluded ? copy("github-feedback.unsubmittedDraftsExcluded_cfcf2f", { v0: excluded }) : ""}</> }} /></p>
+    <p>{copy("github-feedback.approvedAndDismissedReviewsRemainVisible_18cf11")}</p>
+    {entries.length === 0 ? <p>{copy("github-feedback.noPublishedFeedbackWasReturned_d30a4a")}</p> : entries.map(entry => {
       const author = object(entry.author), thread = threads.get(text(entry.thread_node_id)), code = object(entry.code);
-      const kind = entry.kind === "review" ? "Review body" : entry.kind === "review-comment" ? "Code review comment" : "PR conversation comment";
+      const kind = entry.kind === "review" ? copy("github-feedback.extra.7f33299db6b9") : entry.kind === "review-comment" ? copy("github-feedback.extra.a965be705c49") : copy("github-feedback.extra.f79456bcd564");
       return <article className="result" key={text(entry.node_id)}>
-        <h5>{kind} · {text(author.login) || "Author unavailable"}</h5>
-        {entry.author != null ? <p>{text(author.native_type)} · {text(author.id) || "Numeric identity unavailable"} · <code>{text(author.node_id)}</code></p> : null}
-        <p>Published {text(entry.published_at)}{entry.last_edited_at ? ` · Edited ${text(entry.last_edited_at)}` : ""}{entry.native_state ? ` · ${text(entry.native_state)}` : ""}{entry.review_state ? ` · Review ${text(entry.review_state)}` : ""}</p>
-        {thread ? <p>{thread.resolved ? "Thread resolved on GitHub" : "Thread unresolved on GitHub"}{thread.outdated ? " · Outdated code position" : ""}</p> : null}
-        <pre>{text(entry.body) || "Empty review body."}</pre>
-        {entry.code != null ? <details><summary>Code context · {text(code.path)}</summary><p>Current line: {code.line == null ? "Unavailable" : String(code.line)} · Original line: {code.original_line == null ? "Unavailable" : String(code.original_line)}</p><pre>{text(code.diff_hunk)}</pre></details> : null}
-        <details><summary>Feedback identity and content version</summary><p>GitHub address: <code>{text(entry.url)}</code></p><p>Original ID: {text(entry.id)} · <code>{text(entry.node_id)}</code></p><p>Content version: <code>{text(entry.content_version)}</code></p></details>
+        <h5>{kind} · {text(author.login) || copy("github-feedback.extra.a326f4758492")}</h5>
+        {entry.author != null ? <p>{text(author.native_type)} · {text(author.id) || copy("github-feedback.extra.de4e3fe5f1d2")} · <code>{text(author.node_id)}</code></p> : null}
+        <p><LocalizedText id="github-feedback.published_3e1d2d" components={{ s0: <>{formatTimestamp(text(entry.published_at))}</>, s1: <>{entry.last_edited_at ? copy("github-feedback.edited_01b606", { v0: formatTimestamp(text(entry.last_edited_at)) }) : ""}</>, s2: <>{entry.native_state ? copy("github-feedback.message_2fa20b", { v0: text(entry.native_state) }) : ""}</>, s3: <>{entry.review_state ? copy("github-feedback.review_741980", { v0: text(entry.review_state) }) : ""}</> }} /></p>
+        {thread ? <p>{thread.resolved ? copy("github-feedback.threadResolvedOnGithub_0cf45e") : copy("github-feedback.threadUnresolvedOnGithub_2d3df9")}{thread.outdated ? copy("github-feedback.outdatedCodePosition_881964") : ""}</p> : null}
+        <pre>{text(entry.body) || copy("github-feedback.extra.b8e6ea915c53")}</pre>
+        {entry.code != null ? <details><summary><LocalizedText id="github-feedback.codeContext_df3a2f" components={{ s0: <>{text(code.path)}</> }} /></summary><p><LocalizedText id="github-feedback.currentLineOriginalLine_72e6d7" components={{ s0: <>{code.line == null ? copy("github-feedback.unavailable_ca1844") : String(code.line)}</>, s1: <>{code.original_line == null ? copy("github-feedback.unavailable_ca1844") : String(code.original_line)}</> }} /></p><pre>{text(code.diff_hunk)}</pre></details> : null}
+        <details><summary>{copy("github-feedback.feedbackIdentityAndContentVersion_56157d")}</summary><p><LocalizedText id="github-feedback.githubAddress_e2d25b" components={{ s0: <code>{text(entry.url)}</code> }} /></p><p><LocalizedText id="github-feedback.originalId_b7f034" components={{ s0: <>{text(entry.id)}</>, s1: <code>{text(entry.node_id)}</code> }} /></p><p><LocalizedText id="github-feedback.contentVersion_0bc2d3" components={{ s0: <code>{text(entry.content_version)}</code> }} /></p></details>
       </article>;
     })}
   </section>;

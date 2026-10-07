@@ -163,7 +163,15 @@ func validateSessionSelection(tx *store.Tx, input domain.CreateSession) error {
 		if err != nil {
 			return err
 		}
-		if !slices.ContainsFunc(repo.Checkouts, func(c domain.Checkout) bool { return c.MachineID == input.MachineID }) {
+		if input.Workspace == domain.Worktree {
+			if _, err := domain.ParseRepositoryCloneURL(repo.RemoteURL); err != nil {
+				return err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
+				return domain.Fail(domain.Unsupported, "The selected Runner Device does not support remote workspace cloning.", "Update and reconnect that Worker before starting a Worktree session.")
+			}
+		}
+		if input.Workspace == domain.Local && !slices.ContainsFunc(repo.Checkouts, func(c domain.Checkout) bool { return c.MachineID == input.MachineID }) {
 			return domain.Fail(domain.MissingInput, "A project repository has no checkout on the selected Worker.", "Inspect and configure every project repository on that machine.")
 		}
 	}

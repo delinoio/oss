@@ -341,7 +341,7 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 		{"login", "0.159.2", domain.CodexLogin, domain.Unauthenticated, false},
 		{"timeout", "0.159.2", domain.CodexLogin, domain.Unavailable, false},
 		{"cleanup", "0.159.2", domain.CodexCleanup, domain.RecoveryRequired, true},
-		{"native-recovery", "0.159.2", domain.CodexLogin, domain.RecoveryRequired, true},
+		{"native-recovery", "0.159.2", domain.CodexLogin, domain.RecoveryRequired, false},
 		{"login-cleanup", "0.159.2", domain.CodexLogin, domain.Unauthenticated, true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {

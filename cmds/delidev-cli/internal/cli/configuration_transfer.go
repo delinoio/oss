@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -39,6 +40,33 @@ func configurationTransfer(ctx context.Context, c client, o options, args []stri
 		raw, err = readDocument(*input, streams.In)
 		if err != nil {
 			return nil, err
+		}
+	}
+	if operation != "export" {
+		hasRepository := false
+		if operation == "preview" {
+			var selection domain.ConfigurationImportSelection
+			if domain.Decode(raw, &selection) == nil {
+				for _, entry := range selection.Bundle.Entries {
+					hasRepository = hasRepository || entry.Kind == domain.RepositoryKind
+				}
+			}
+		} else {
+			var preview domain.ConfigurationImportPreview
+			if domain.Decode(raw, &preview) == nil {
+				for _, entry := range preview.Plan.Changes {
+					hasRepository = hasRepository || entry.Kind == domain.RepositoryKind
+				}
+			}
+		}
+		if hasRepository {
+			status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1) {
+				return nil, domain.Fail(domain.Unsupported, "This server does not support remote repositories.", "Update the server before importing repositories.")
+			}
 		}
 	}
 	switch operation {

@@ -15,10 +15,20 @@ import (
 // calls the service manager, changes registration or changes service intent.
 type LaunchAdmission struct {
 	root string
+	kind Kind
 	lock *security.Lock
 }
 
 func AdmitLaunch(ctx context.Context, root string) (*LaunchAdmission, error) {
+	return AdmitKindLaunch(ctx, root, Server)
+}
+
+// AdmitKindLaunch shares the original service-control gate without granting
+// manager control. Desktop Workers must not compete with installed services.
+func AdmitKindLaunch(ctx context.Context, root string, kind Kind) (*LaunchAdmission, error) {
+	if !kind.Valid() {
+		return nil, domain.Fail(domain.InvalidArgument, "Invalid service kind.", "Select server or worker.")
+	}
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -27,7 +37,7 @@ func AdmitLaunch(ctx context.Context, root string) (*LaunchAdmission, error) {
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}
-	m := New(canonical, Server, nil)
+	m := New(canonical, kind, nil)
 	if err := m.check(); err != nil {
 		return nil, err
 	}
@@ -45,7 +55,7 @@ func AdmitLaunch(ctx context.Context, root string) (*LaunchAdmission, error) {
 				lock.Close()
 				return nil, domain.SafeError(err)
 			}
-			return &LaunchAdmission{root: canonical, lock: lock}, nil
+			return &LaunchAdmission{root: canonical, kind: kind, lock: lock}, nil
 		}
 		if domain.SafeError(err).Code != domain.Conflict {
 			return nil, err
@@ -59,6 +69,6 @@ func AdmitLaunch(ctx context.Context, root string) (*LaunchAdmission, error) {
 }
 
 func (a *LaunchAdmission) Managed() (installed, stopped bool, err error) {
-	return ManagedIntent(a.root, Server)
+	return ManagedIntent(a.root, a.kind)
 }
 func (a *LaunchAdmission) Close() error { return a.lock.Close() }

@@ -132,8 +132,14 @@ func (s Scope) allows(operation Operation) bool {
 // it is called after request validation, and its returned bytes are cleared.
 // Reference callbacks must enforce session/account/connection/model ownership;
 // absent callbacks refuse native state references instead of trusting an ID.
+type Credential struct {
+	Key          []byte
+	QuotaProject string
+}
+
 type Lease struct {
-	Scope Scope
+	Credential func(context.Context) (Credential, error)
+	Scope      Scope
 	// BindModel narrows this request to a canonical model already authorized by
 	// the same original execution/account. It cannot acquire another credential
 	// or widen provider, cancellation, operation or native-reference ownership.

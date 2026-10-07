@@ -2102,6 +2102,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sys-locale",
  "tauri",
  "tauri-build",
  "tauri-runtime-cef",

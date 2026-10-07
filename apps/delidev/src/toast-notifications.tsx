@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { copy, resolveMessage, useLocale } from "./localization";
 import { createContext, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ToastKind, ToastPause, ToastStore, type NotificationController, type ToastNotification } from "./toast-store";
@@ -13,6 +14,7 @@ const Context = createContext<NotificationController>(absent);
 export function useNotifications(): NotificationController { return useContext(Context); }
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
+  useLocale();
   const [store] = useState(() => new ToastStore());
   useLayoutEffect(() => { store.activate(); return () => store.dispose(); }, [store]);
   return <Context.Provider value={store}>{children}<NotificationViewport store={store} /></Context.Provider>;
@@ -27,6 +29,7 @@ function modalVisible() {
   });
 }
 function NotificationViewport({ store }: { store: ToastStore }) {
+  useLocale();
   const notifications = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const active = notifications.length > 0;
   const [covered, setCovered] = useState(modalVisible);
@@ -69,16 +72,19 @@ function NotificationViewport({ store }: { store: ToastStore }) {
     target?.focus({ preventScroll: true });
     if (target && document.activeElement !== target && available(fallback)) fallback.focus({ preventScroll: true });
   };
-  return createPortal(<div className="toast-viewport" role="region" aria-label="Notifications" hidden={!active || covered}>
+  return createPortal(<div className="toast-viewport" role="region" aria-label={copy("toast-notifications.notifications_788011")} hidden={!active || covered}>
     {notifications.map(notice => <Toast key={notice.id} notice={notice} store={store} restoreFocus={restoreFocus} />)}
   </div>, document.body);
 }
 
-const labels: Record<ToastKind, string> = { [ToastKind.Success]: "Success", [ToastKind.Info]: "Information", [ToastKind.Warning]: "Warning", [ToastKind.Error]: "Error" };
+const labels: Record<ToastKind, string> = { get [ToastKind.Success]() { return copy("toast-notifications.success_c88a0b"); }, get [ToastKind.Info]() { return copy("toast-notifications.information_1cb0ba"); }, get [ToastKind.Warning]() { return copy("toast-notifications.warning_e981dd"); }, get [ToastKind.Error]() { return copy("toast-notifications.error_54a0e8"); } };
 function ToastIcon({ kind }: { kind: ToastKind }) {
+  useLocale();
   return <svg className="toast-icon" aria-hidden="true" viewBox="0 0 24 24">{kind === ToastKind.Success ? <><circle cx="12" cy="12" r="10" /><path d="m7 12 3 3 7-7" /></> : kind === ToastKind.Warning ? <><path d="m12 3 10 18H2L12 3Z" /><path d="M12 9v5m0 3h.01" /></> : <><circle cx="12" cy="12" r="10" /><path d={kind === ToastKind.Error ? "m8 8 8 8m0-8-8 8" : "M12 11v6m0-10h.01"} /></>}</svg>;
 }
 function Toast({ notice, store, restoreFocus }: { notice: ToastNotification; store: ToastStore; restoreFocus: () => void }) {
+  useLocale();
+  const message = resolveMessage(notice.message)!;
   const ref = useRef<HTMLElement>(null);
   const close = () => {
     const ownsFocus = ref.current?.contains(document.activeElement);
@@ -89,7 +95,7 @@ function Toast({ notice, store, restoreFocus }: { notice: ToastNotification; sto
     onMouseEnter={() => store.pause(notice.id, ToastPause.Hover, true)} onMouseLeave={() => store.pause(notice.id, ToastPause.Hover, false)}
     onFocus={() => store.pause(notice.id, ToastPause.Focus, true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) store.pause(notice.id, ToastPause.Focus, false); }}
     onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } }}>
-    <div className="toast-content" role={notice.kind === ToastKind.Error ? "alert" : "status"} aria-atomic="true"><ToastIcon kind={notice.kind} /><p><span className="toast-kind-label">{labels[notice.kind]}: </span>{notice.message}</p></div>
-    <button className="toast-close" type="button" aria-label={`Dismiss notification: ${notice.message}`} onClick={close}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12m0-12L6 18" /></svg></button>
+    <div className="toast-content" role={notice.kind === ToastKind.Error ? "alert" : "status"} aria-atomic="true"><ToastIcon kind={notice.kind} /><p><span className="toast-kind-label">{labels[notice.kind]}: </span>{message}</p></div>
+    <button className="toast-close" type="button" aria-label={copy("toast-notifications.dismissNotification_1dd388", { v0: message })} onClick={close}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m6 6 12 12m0-12L6 18" /></svg></button>
   </article>;
 }

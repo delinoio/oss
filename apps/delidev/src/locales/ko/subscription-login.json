@@ -1,0 +1,13 @@
+{
+  "subscription-login.retryOriginalRequest_008780": "원래 요청 다시 시도",
+  "subscription-login.extra.22765583eb23": "브라우저 로그인에는 데스크톱 앱이 필요합니다.",
+  "subscription-login.extra.07d42279a62f": "원래 로그인 요청을 확인하지 못했습니다. 이 화면을 열어 둔 채 원래 요청을 다시 시도하세요.",
+  "subscription-login.extra.c7ce5cc2ddce": "브라우저를 열지 못했습니다. 브라우저 다시 열기로 원래 로그인 페이지를 여세요.",
+  "subscription-login.extra.53784001245e": "원래 콜백 상태가 불확실합니다. 서버 확인을 기다리고 있으며 콜백 전달은 재시도하지 않습니다.",
+  "subscription-login.extra.c8dad9da5412": "원래 콜백 결과가 불확실합니다. 서버의 로그인 확인을 기다리고 있으며 콜백은 다시 전송하지 않습니다.",
+  "subscription-login.extra.0e515dfbf962": "원래 로그인 상태를 검증하지 못했습니다. 다음 상태 확인을 기다리는 중입니다.",
+  "subscription-login.extra.34521ed193ad": "브라우저를 열지 못했습니다. 브라우저 열기를 다시 시도할 수 있습니다.",
+  "subscription-login.extra.13e06932e780": "원래 취소를 확인하지 못했습니다. 로그인 상태를 계속 확인합니다.",
+  "subscription-login.extra.21ebd4c8705a": "계정 이름을 저장하지 못했습니다. 편집은 유지됩니다; 현재 계정을 확인하고 다시 저장하세요.",
+  "subscription-login.extra.557b693dbfb7": "기존 요청을 확인하지 못했습니다."
+}

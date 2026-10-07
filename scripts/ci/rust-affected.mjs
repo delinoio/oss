@@ -1,9 +1,9 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, matchesGlob, posix, resolve } from "node:path";
+import { isAbsolute, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { changedFiles, Event, jobPaths } from "./plan.mjs";
+import { changedFiles, Event, jobPaths, matchesPath } from "./plan.mjs";
 
 export const rustJobs = Object.freeze(["rust-test", "rust-clippy"]);
 export const excludedRustPackages = Object.freeze(["forge-scene", "forge-glb", "forge-fbx"]);
@@ -57,7 +57,7 @@ export function selectRustPackages({ event, range, plan, cwd = process.cwd(), bi
   let reason;
   if (event === Event.Manual) reason = "manual";
   else if (rustJobs.some(id => jobs[id] && plan.forced[id])) reason = "forced";
-  else if (range.paths.some(path => globalInputs.some(pattern => matchesGlob(path, pattern)))) reason = "shared-input";
+  else if (range.paths.some(path => globalInputs.some(pattern => matchesPath(path, pattern)))) reason = "shared-input";
   // Package detection runs at the event head, while PR tests retain the merge
   // checkout. A changed dependency graph requires the merged workspace baseline.
   if (!reason && validationHead !== range.head && git(cwd, "diff", "--name-only", "-z", range.head, validationHead, "--", "Cargo.toml", "Cargo.lock", ":(glob)**/Cargo.toml", ":(glob)**/Cargo.lock", ".cargo", "rust-toolchain", "rust-toolchain.toml").length) reason = "merge-graph";
@@ -82,7 +82,7 @@ export function selectRustPackages({ event, range, plan, cwd = process.cwd(), bi
     // planning logs. Remove the override after a pinned CLI uses stderr for logs.
     const environment = { ...process.env, RUST_LOG: "off", GIT_CONFIG_COUNT: String(count + 2), [`GIT_CONFIG_KEY_${count}`]: "diff.renames", [`GIT_CONFIG_VALUE_${count}`]: "false", [`GIT_CONFIG_KEY_${count + 1}`]: "core.quotepath", [`GIT_CONFIG_VALUE_${count + 1}`]: "false" };
     const names = inventory(run(binary, ["--output", "json", "list"], workspace, environment), workspace);
-    if (!reason && range.paths.some(path => rustJobs.some(id => jobs[id] && jobPaths[id].paths.some(pattern => matchesGlob(path, pattern))) && ![...names.values()].some(directory => directory === "." || path.startsWith(directory + "/")))) reason = "external-input";
+    if (!reason && range.paths.some(path => rustJobs.some(id => jobs[id] && jobPaths[id].paths.some(pattern => matchesPath(path, pattern))) && ![...names.values()].some(directory => directory === "." || path.startsWith(directory + "/")))) reason = "external-input";
     let packages;
     if (reason) packages = [...names.keys()];
     else {

@@ -152,6 +152,26 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 				if err != nil || again.ReportID != proof.ReportID {
 					t.Fatal("exact cleanup retry failed", err)
 				}
+				removal := filepath.Join(config.Root, "workspace-removals", string(input.OperationID))
+				if err := os.Mkdir(removal, 0700); err != nil {
+					t.Fatal(err)
+				}
+				foreignRemoval := filepath.Join(removal, "foreign")
+				if err := os.WriteFile(foreignRemoval, []byte("replacement removal namespace"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := deleteSessionCopies(context.Background(), config, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("completed proof ignored reappearing removal namespace", err)
+				}
+				if raw, err := os.ReadFile(foreignRemoval); err != nil || string(raw) != "replacement removal namespace" {
+					t.Fatal("completed replay traversed foreign removal namespace", err)
+				}
+				if err := os.Remove(foreignRemoval); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(removal); err != nil {
+					t.Fatal(err)
+				}
 				if err := os.WriteFile(journals[0], []byte("fixture reappearing journal"), 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -228,6 +248,103 @@ func TestSessionDeletionPreservesUnattributedAtomicWrite(t *testing.T) {
 			}
 			if raw, err := os.ReadFile(path); err != nil || string(raw) != "unknown-original-owner" {
 				t.Fatal("unattributed write removed", err)
+			}
+		})
+	}
+}
+
+func TestSessionDeletionPreservesForeignRemovalAfterRealCleanup(t *testing.T) {
+	config, work, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "keep"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manager := workspace.Manager{Root: config.Root, Logger: config.Logger}
+	prepare := workspace.PrepareRequest{SessionID: work.SessionID, MachineID: work.MachineID, OriginMachineID: work.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
+	input := workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), Action: workspace.StoragePreview, PreviousState: domain.WorkspacePresent, Preparation: prepare, Manifest: manifest}
+	preview, err := manager.Storage(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.OperationID, input.SnapshotID, input.Action, input.PreviewDigest = domain.NewID(), domain.NewID(), workspace.StorageCleanup, preview.PreviewDigest
+	raw, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance := work.Copies[0].InstanceID
+	job := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: work.MachineID, InstanceID: instance, AssignedDeviceID: work.DeviceID, Input: raw, AcceptedAt: time.Now().UTC()}
+	document, err := json.Marshal(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := &pb.Resource{Id: string(input.OperationID), Revision: 2, SchemaVersion: 1, Kind: pb.EntityKind_ENTITY_KIND_JOB, SessionId: string(work.SessionID), DocumentJson: document}
+	result, err := runJob(context.Background(), config, instance, resource, job)
+	if err != nil || result.Problem != nil {
+		t.Fatal("real cleanup failed", err, result.Problem)
+	}
+	work.Copies = append(work.Copies, domain.SessionDeletionCopy{JobID: input.OperationID, SnapshotID: input.SnapshotID, Type: job.Type, Revision: 2, InstanceID: instance, Digest: result.Digest})
+	proofPaths := []string{
+		filepath.Join(config.Root, "storage-removal-intents", string(input.OperationID)+".json"),
+		filepath.Join(config.Root, "storage-removal-claims", string(input.OperationID)+".json"),
+		filepath.Join(config.Root, "storage-removal-claims", string(input.OperationID)+".pending"),
+	}
+	originalProof := map[string]string{}
+	for _, path := range proofPaths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal("real removal proof missing", err)
+		}
+		originalProof[path] = string(raw)
+	}
+	removal := filepath.Join(config.Root, "workspace-removals", string(input.OperationID))
+	if err := os.Mkdir(removal, 0700); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(removal, "foreign")
+	if err := os.WriteFile(foreign, []byte("must preserve replacement bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		proof, err := deleteSessionCopies(context.Background(), config, work)
+		if domain.SafeError(err).Code != domain.RecoveryRequired || proof.Complete {
+			t.Fatal("permanent deletion adopted replacement removal namespace", proof, err)
+		}
+		if raw, err := os.ReadFile(foreign); err != nil || string(raw) != "must preserve replacement bytes" {
+			t.Fatal("foreign removal namespace was deleted", err)
+		}
+		for path, original := range originalProof {
+			if raw, err := os.ReadFile(path); err != nil || string(raw) != original {
+				t.Fatal("still-needed removal proof changed", err)
+			}
+		}
+	}
+}
+
+func TestSessionCopyRemoverPreservesReappearingStorageNamespace(t *testing.T) {
+	for _, directory := range []string{"workspace-removals", "snapshot-staging"} {
+		t.Run(directory, func(t *testing.T) {
+			root := t.TempDir()
+			parent := filepath.Join(root, directory)
+			if err := security.PrivateDir(parent); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(parent, string(domain.NewID()))
+			if err := removeSessionCopy(context.Background(), root, path); err != nil {
+				t.Fatal("absent namespace blocked callback", err)
+			}
+			// Workspace validation has finished. A new private tree at the same
+			// job-derived name must never reach the generic traversal callback.
+			if err := os.Mkdir(path, 0700); err != nil {
+				t.Fatal(err)
+			}
+			foreign := filepath.Join(path, "foreign")
+			if err := os.WriteFile(foreign, []byte("preserve later replacement"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := removeSessionCopy(context.Background(), root, path); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("generic callback adopted reappearing namespace", err)
+			}
+			if raw, err := os.ReadFile(foreign); err != nil || string(raw) != "preserve later replacement" {
+				t.Fatal("generic callback traversed replacement namespace", err)
 			}
 		})
 	}

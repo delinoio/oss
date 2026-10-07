@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
 const exact = (v: Document, fields: string[]) => Object.keys(v).length === fields.length && fields.every((key) => Object.hasOwn(v, key));
@@ -32,15 +33,17 @@ export function validClaudeToolSummary(value: unknown): boolean {
 }
 
 export function NativeClaudeToolProgress({ value }: { value: unknown }) {
+  useLocale();
   const v = object(value), ref = object(v.tool);
   return <>
-    <dl><dt>Tool</dt><dd>{ref.name as string}</dd>{v.task_id !== undefined ? <><dt>Task</dt><dd>{v.task_id as string}</dd></> : null}<dt>Reported elapsed seconds</dt><dd>{v.elapsed_time_seconds as string}</dd><dt>Heartbeat</dt><dd>{v.heartbeat === null ? "Not reported" : v.heartbeat ? "Reported" : "Explicitly false"}</dd></dl>
-    {v.tool_use_id !== undefined ? <details><summary>Original heartbeat references</summary><dl><dt>Progress identity</dt><dd>{v.tool_use_id as string}</dd><dt>Owning tool identity</dt><dd>{v.parent_tool_use_id as string}</dd></dl></details> : null}
-    <p>Tool progress does not confirm completion, approval or execution success.</p>
+    <dl><dt>{copy("native-claude-tool-progress.tool_2e53bd")}</dt><dd>{ref.name as string}</dd>{v.task_id !== undefined ? <><dt>{copy("native-claude-tool-progress.task_4bc74b")}</dt><dd>{v.task_id as string}</dd></> : null}<dt>{copy("native-claude-tool-progress.reportedElapsedSeconds_b10c17")}</dt><dd>{v.elapsed_time_seconds as string}</dd><dt>{copy("native-claude-tool-progress.heartbeat_9df894")}</dt><dd>{v.heartbeat === null ? copy("native-claude-tool-progress.notReported_adadfa") : v.heartbeat ? copy("native-claude-tool-progress.reported_34540b") : copy("native-claude-tool-progress.explicitlyFalse_ae527b")}</dd></dl>
+    {v.tool_use_id !== undefined ? <details><summary>{copy("native-claude-tool-progress.originalHeartbeatReferences_7ce3e3")}</summary><dl><dt>{copy("native-claude-tool-progress.progressIdentity_280f08")}</dt><dd>{v.tool_use_id as string}</dd><dt>{copy("native-claude-tool-progress.owningToolIdentity_ed9c5e")}</dt><dd>{v.parent_tool_use_id as string}</dd></dl></details> : null}
+    <p>{copy("native-claude-tool-progress.toolProgressDoesNotConfirmCompletion_43ed36")}</p>
   </>;
 }
 
 export function NativeClaudeToolSummary({ value }: { value: unknown }) {
+  useLocale();
   const v = object(value);
-  return <details><summary>Original tool summary</summary><pre>{v.summary as string}</pre><ul>{(v.preceding_tools as Document[]).map((ref) => <li key={ref.id as string}>{ref.name as string}</li>)}</ul><p>This summary does not confirm tool completion or approval.</p></details>;
+  return <details><summary>{copy("native-claude-tool-progress.originalToolSummary_064588")}</summary><pre>{v.summary as string}</pre><ul>{(v.preceding_tools as Document[]).map((ref) => <li key={ref.id as string}>{ref.name as string}</li>)}</ul><p>{copy("native-claude-tool-progress.thisSummaryDoesNotConfirmTool_e61647")}</p></details>;
 }

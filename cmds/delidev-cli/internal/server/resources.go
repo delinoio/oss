@@ -260,6 +260,13 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 			return rpc.Error(err, correlation)
 		}
 		for _, event := range events {
+			kind := rpc.WireKind(event.Kind)
+			if kind == pb.EntityKind_ENTITY_KIND_UNSPECIFIED {
+				// Private store kinds, including routing, have no public resource.
+				// Advance over their durable rows so a full private page cannot loop.
+				cursor.Sequence = event.Cursor
+				continue
+			}
 			token, err := s.Identity.EncodeCursor(security.Cursor{Scope: cursor.Scope, Sequence: event.Cursor})
 			if err != nil {
 				return rpc.Error(err, correlation)
@@ -278,7 +285,7 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 			if err := controller.SetWriteDeadline(time.Now().Add(15 * time.Second)); err != nil {
 				return rpc.Error(err, correlation)
 			}
-			if err := stream.Send(&pb.WatchEventsResponse{Cursor: token, Id: string(event.ID), EntityId: string(event.EntityID), Kind: rpc.WireKind(event.Kind), SessionId: string(event.SessionID), Revision: event.Revision, Action: action, Time: event.Time.Format(time.RFC3339Nano)}); err != nil {
+			if err := stream.Send(&pb.WatchEventsResponse{Cursor: token, Id: string(event.ID), EntityId: string(event.EntityID), Kind: kind, SessionId: string(event.SessionID), Revision: event.Revision, Action: action, Time: event.Time.Format(time.RFC3339Nano)}); err != nil {
 				return rpc.Error(err, correlation)
 			}
 			if err := controller.SetWriteDeadline(time.Time{}); err != nil {
@@ -302,7 +309,7 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 }
 func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb.SaveConfigurationRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 {
+	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported configuration schema and mutation identity are required.", "Use schema version 1 for API configuration or version 2 for subscription identity, a UUID-v7 request ID and the current expected revision."), correlation)
 	}
 	kind, err := rpc.Kind(req.Msg.Kind)
@@ -310,7 +317,7 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		return nil, rpc.Error(err, correlation)
 	}
 	expectedSchema := rpc.ResourceSchemaVersion(kind, req.Msg.DocumentJson)
-	if req.Msg.SchemaVersion != expectedSchema && !(kind == domain.AgentKind && req.Msg.SchemaVersion == 2) {
+	if req.Msg.SchemaVersion != expectedSchema && !(kind == domain.AgentKind && req.Msg.SchemaVersion == 2 && expectedSchema != 3) {
 		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Configuration schema does not match its identity family.", "Use schema 2 for service accounts/native models and schema 1 for API configuration. Update older clients before configuring subscriptions."), correlation)
 	}
 	if kind == domain.AccountKind || kind == domain.ProviderKind {
@@ -552,13 +559,13 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 					return err
 				}
 				if kind == domain.AccountKind {
-					for _, account := range agent.Accounts {
+					for _, account := range agent.AllAccounts() {
 						if account.ID == id {
 							return conflict()
 						}
 					}
 				}
-				if kind == domain.ModelKind && agent.ModelID == id {
+				if kind == domain.ModelKind && slices.Contains(agent.ModelIDs(), id) {
 					return conflict()
 				}
 				if kind == domain.TemplateKind {
@@ -587,7 +594,7 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 			}
 		}
 	}
-	if kind == domain.AccountKind {
+	if kind == domain.AccountKind || kind == domain.ModelKind {
 		filter := store.Filter{Kind: domain.SessionKind, Limit: store.MaxPage}
 		count := 0
 		for {
@@ -597,29 +604,31 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 			}
 			count += len(records)
 			if count > 10000 {
-				return domain.Fail(domain.ResourceExhausted, "Account reference validation exceeded its session bound.", "Reduce the retained scope before deleting the account.")
+				return domain.Fail(domain.ResourceExhausted, "Execution reference validation exceeded its session bound.", "Reduce the retained scope before deleting this configuration.")
 			}
 			for _, record := range records {
 				session, err := store.Decode[domain.Session](record)
 				if err != nil {
 					return err
 				}
+				if kind == domain.ModelKind {
+					if initial := session.InitialExecution; initial != nil {
+						if executionReferencesModel(*initial, id) {
+							return conflict()
+						}
+					}
+					if session.Fork != nil && executionReferencesModel(session.Fork.Snapshot, id) {
+						return conflict()
+					}
+					continue
+				}
+
 				if session.CurrentExecution != nil && session.CurrentExecution.AccountID == id {
 					return conflict()
 				}
 				if initial := session.InitialExecution; initial != nil {
-					if initial.InitialAccountID == id || initial.Route.Selected == id {
+					if executionReferencesAccount(*initial, id) {
 						return conflict()
-					}
-					for _, account := range initial.Configuration.Accounts {
-						if account.ID == id {
-							return conflict()
-						}
-					}
-					for _, candidate := range initial.Route.Candidates {
-						if candidate.ID == id {
-							return conflict()
-						}
 					}
 					if session.ProjectID != "" {
 						policy, err := tx.ExecutionProjectPolicy(session)
@@ -631,6 +640,9 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 						}
 					}
 				}
+				if session.Fork != nil && executionReferencesAccount(session.Fork.Snapshot, id) {
+					return conflict()
+				}
 			}
 			if len(records) < filter.Limit {
 				break
@@ -639,4 +651,43 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		}
 	}
 	return nil
+}
+
+func executionReferencesModel(execution domain.InitialExecution, id domain.ID) bool {
+	if execution.Configuration.ModelID == id {
+		return true
+	}
+	for _, source := range execution.Route.Sources {
+		if source.ModelID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func executionReferencesAccount(execution domain.InitialExecution, id domain.ID) bool {
+	if execution.InitialAccountID == id || execution.Route.Selected == id {
+		return true
+	}
+	for _, account := range execution.Configuration.Accounts {
+		if account.ID == id {
+			return true
+		}
+	}
+	for _, source := range execution.Route.Sources {
+		if source.Route.Selected == id {
+			return true
+		}
+		for _, candidate := range source.Route.Candidates {
+			if candidate.ID == id {
+				return true
+			}
+		}
+	}
+	for _, candidate := range execution.Route.Candidates {
+		if candidate.ID == id {
+			return true
+		}
+	}
+	return false
 }

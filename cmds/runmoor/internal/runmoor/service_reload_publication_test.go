@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-func replaceFixtureDefinition(t *testing.T, f *reloadFixture, binary string) []byte {
+func replacePublicationDefinition(t *testing.T, f *reloadFixture, binary string) []byte {
 	t.Helper()
 	body, err := serviceDefinition(f.r.Platform, binary, f.path)
 	if err != nil {
@@ -70,12 +70,12 @@ func TestServiceReloadPublicationPreservesTwoExternalWriters(t *testing.T) {
 					if j.Publication != publicationClaimPending {
 						t.Fatal("claim preceded durable intent")
 					}
-					first = replaceFixtureDefinition(t, f, "/external/first/runmoor")
+					first = replacePublicationDefinition(t, f, "/external/first/runmoor")
 				} else if from == reloadClaimPath(j) {
 					if j.Publication != publicationRestorePending {
 						t.Fatal("restoration preceded durable intent")
 					}
-					latest = replaceFixtureDefinition(t, f, "/external/latest/runmoor")
+					latest = replacePublicationDefinition(t, f, "/external/latest/runmoor")
 				} else {
 					t.Fatal("changed claim authorized target publication")
 				}
@@ -107,11 +107,11 @@ func TestServiceReloadPublicationRejectsWriterBeforeTargetRename(t *testing.T) {
 			f.r.RenameDefinition = func(from, to string) error {
 				j := fixtureReloadJournal(t, f)
 				if from == reloadTargetPath(j) && timing == "before publish" {
-					latest = replaceFixtureDefinition(t, f, "/external/latest/runmoor")
+					latest = replacePublicationDefinition(t, f, "/external/latest/runmoor")
 				}
 				err := renameServiceDefinitionNoReplace(from, to)
 				if err == nil && from == f.r.Unit && timing == "after claim" {
-					latest = replaceFixtureDefinition(t, f, "/external/latest/runmoor")
+					latest = replacePublicationDefinition(t, f, "/external/latest/runmoor")
 				}
 				return err
 			}
@@ -129,7 +129,7 @@ func TestServiceReloadPublicationRejectsWriterBeforeTargetRename(t *testing.T) {
 func TestServiceReloadPublicationRestoresChangedClaimOnlyIntoVacancy(t *testing.T) {
 	f := newReloadFixture(t, "linux")
 	var foreign []byte
-	f.r.BeforePublish = func() { foreign = replaceFixtureDefinition(t, f, "/external/runmoor") }
+	f.r.BeforePublish = func() { foreign = replacePublicationDefinition(t, f, "/external/runmoor") }
 	if err := f.reload(); err == nil || f.mutated() {
 		t.Fatal("changed claim authorized replacement")
 	}
@@ -161,7 +161,7 @@ func TestServiceReloadPublicationRecoversInterruptedRenames(t *testing.T) {
 			restoring := strings.Contains(boundary, "restore")
 			var foreign []byte
 			if restoring {
-				f.r.BeforePublish = func() { foreign = replaceFixtureDefinition(t, f, "/external/runmoor") }
+				f.r.BeforePublish = func() { foreign = replacePublicationDefinition(t, f, "/external/runmoor") }
 			}
 			interrupted := false
 			f.r.RenameDefinition = func(from, to string) error {
@@ -415,7 +415,7 @@ func TestServiceDefinitionRenameNeverReplacesDestination(t *testing.T) {
 func TestServiceReloadPublicationRecoversRestoreSyncFailure(t *testing.T) {
 	f := newReloadFixture(t, "linux")
 	var foreign []byte
-	f.r.BeforePublish = func() { foreign = replaceFixtureDefinition(t, f, "/external/runmoor") }
+	f.r.BeforePublish = func() { foreign = replacePublicationDefinition(t, f, "/external/runmoor") }
 	calls := 0
 	f.r.SyncDefinitionDir = func(path string) error {
 		calls++

@@ -23,7 +23,7 @@ func TestCLIConnectionCommandsPreservePrivatePairingAndRequireExplicitScope(t *t
 	ready := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- server.Serve(ctx, server.Config{DataDir: serverRoot, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(server.Endpoint) { close(ready) })
+		done <- server.Serve(ctx, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: serverRoot, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(server.Endpoint) { close(ready) })
 	}()
 	t.Cleanup(func() {
 		stop()

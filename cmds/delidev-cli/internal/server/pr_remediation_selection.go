@@ -158,12 +158,19 @@ func planPRRemediationWorkspace(tx *store.Tx, sessionID, projectID domain.ID, po
 	if preview.Configuration.Harness == domain.Codex {
 		c := preview.Configuration
 		settings := codex.ThreadSettings{Model: c.NativeModel, Provider: codex.APIProvider, Effort: c.Effort, Instructions: c.Instructions, Options: c.Options}
+		// This validates only the native wire options and ordered root count.
+		// Remote paths do not exist yet; typed repository IDs stand in for
+		// nonempty wire strings and never enter an execution assignment.
 		for _, repo := range preparation.Repositories {
+			cwd := repo.Checkout
+			if repo.SourceKind == workspace.RemoteCloneSource {
+				cwd = string(repo.ID)
+			}
 			if repo.ID == preparation.PrimaryRepository {
-				settings.Cwd = repo.Checkout
+				settings.Cwd = cwd
 			}
 			if len(preparation.Repositories) > 1 {
-				settings.WorkspaceRoots = append(settings.WorkspaceRoots, repo.Checkout)
+				settings.WorkspaceRoots = append(settings.WorkspaceRoots, cwd)
 			}
 		}
 		if err := codex.ValidateSelection(settings); err != nil {

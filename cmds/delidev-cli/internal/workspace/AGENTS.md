@@ -2,6 +2,8 @@
 
 Follow the root and parent instructions and docs/cmds-delidev-workspace-contract.md.
 
+- Repository Clone owns a separate original-job-bound private staging claim and has a ten-minute execution deadline. Capture the empty staging checkout's native identity before Git so completion cannot adopt its replacement. Use credential-free HTTPS/SSH URLs and the computer's existing Git credentials, with an explicit `origin` remote and no PAT, hooks or recursive submodules. Publish the validated checkout without replacing any destination. Cleanup requires the original claim, parent/staging native identities and joined process termination; uncertainty retains files for recovery. Published checkouts become user-owned Local folders and remain intact after registration failure or configuration deletion. This exception to snapshot-only scratch creation grants no snapshot/session deletion ownership.
+
 - Sidechat uses `codex-sidechat-reference-v1` under `docs/cmds-delidev-sidechat-contract.md`. Retain original preparation/manifest and native directory identities; child metadata owns no parent files, repositories or General Chat directory. Reads/execution revalidate the exact parent and reference metadata while permitting ordinary file edits. Preparation/storage/terminal paths cannot expand that reference. Parent deletion, preparation cleanup and source-removing storage require all reference metadata to be independently removed after joined child cleanup. Child removal checks the original metadata inode and sole manifest entry and never traverses source roots; unknown/replaced ownership remains pending.
 
 - Worker-local snapshots and cleanup follow docs/cmds-delidev-storage-contract.md. Preserve ordered all-repository manifests, commits/unpushed history, index/worktree state, ignored/untracked regular files, modes and symlinks without dereferencing links. Reject unsupported special files, external Git object dependencies and undeclared nested Git administration, including directories and filesystem case aliases.
@@ -31,7 +33,7 @@ Follow the root and parent instructions and docs/cmds-delidev-workspace-contract
 
 - Every Worker-owned Git invocation enables Windows long paths per command, including initial preparation; never modify source Git configuration or depend on ambient settings. Native failure logs contain only ownership IDs, stable cause/code, exit status and closed read-only/offline flags, never argv, paths or native output.
 
-- Permanent deletion validates reserved snapshots against the original session/machine/preparation and captures the stored workspace manifest before removal. Restored independent Git stays within its managed root; never run its removal against an original Local/source checkout.
+- Permanent deletion validates reserved snapshots against the original session/machine/preparation and captures the stored workspace manifest before removal. Restored independent Git stays within its managed root; never run its removal against an original Local/source checkout. Permanent deletion reconciles present original removal namespaces under the session/observation/snapshot gates through their immutable job/session/snapshot-bound intent, version-2 claim, exact intent digest, native root identity and partial-removal journal. Require preexisting proof; never recapture ownership, replay native input or retire proof before validated namespace absence. Foreign roots and changed/new entries remain recovery-required.
 
 - Workspace file/diff/private PR observations and preparation/recovery/storage/permanent deletion share a separate cross-process per-session gate through anchored handles and read-child cleanup. Keep execution leases independent so views remain usable during native runs. New read process indexes bind the original session in the version-2 namespace before launch; reconcile them before destructive work. Unknown/legacy unassigned ownership stays recovery-required. Include the session-bound namespace in deletion absence checks and reject new observations behind its deletion tombstone.
 
@@ -74,3 +76,23 @@ Compact settled removal proof to one original inventory path per entry, without 
 - Failed unpublished Sidechat reference preparation rolls back only the original inode-bound metadata through independent bounded cleanup. Foreign or replaced metadata remains pending; referenced parent files are never removed.
 
 - Sidechat preparation synchronizes a private 4 MiB original-job/parent/child/inode-bound claim in sidechat-preparations/ before manifest publication. Failure and restart cleanup remove only matching original metadata; missing, malformed or changed claims cannot adopt existing roots. Published-child deletion retires the matching claim only after metadata absence. Parent files and native thread ownership never follow from this claim.
+
+- Remote Worktree sources follow the workspace contract: persist original clone ownership before Git, require native commitments and joined process cleanup, retain uncertain outcomes and legacy accepted requests, and keep independent Fork Git stores and metadata-only Sidechat lifetimes. Managed session clones are an explicit scratch-creation exception with session ownership; they grant no Local folder deletion authority.
+- Managed Worktree clones use the restricted clone Git profile for remote URL
+  changes, inspection, PR preparation and automatic fetches. Add every configured
+  preferred/base/starting remote name against the one pinned repository URL and
+  mirror initial tracking refs without stale fallback. Validate Git's effective
+  source URL before networking, isolate `insteadOf` rules, and retain only the
+  configured credential-helper and SSH settings in the restricted environment.
+  When Windows adds the command-local `core.longpaths` setting, append it to
+  the existing indexed `GIT_CONFIG_*` entries; never replace retained
+  credentials or SSH configuration with a second config count.
+  One ten-minute context covers the complete clone, validation, resolution and
+  checkout flow; never widen the ambient transport policy for an alias or later
+  fetch.
+- Local repository saves bind each configured checkout to the server's opaque
+  source identity. The Worker computes that identity from the selected effective
+  remote without returning the raw URL; GitHub transport forms normalize only
+  within their established namespace, while generic SSH user/path namespaces
+  remain distinct. A mismatch fails the save before the checkout can become
+  Local execution authority.

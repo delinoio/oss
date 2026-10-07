@@ -1281,6 +1281,158 @@
     "WatchForwardRequestsResponse": {
       "kind": "message",
       "file": "delidev/v1/worker.proto"
+    },
+    "PullRequestFixService": {
+      "kind": "service",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "GetPullRequestFixCapabilitiesRequest": {
+      "kind": "message",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "GetPullRequestFixCapabilitiesResponse": {
+      "kind": "message",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "PullRequestFixProfile": {
+      "kind": "enum",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "RequestPullRequestFixRequest": {
+      "kind": "message",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "RequestPullRequestFixResponse": {
+      "kind": "message",
+      "file": "delidev/v1/pr_fix.proto"
+    },
+    "TerminalService": {
+      "kind": "service",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "TerminalAction": {
+      "kind": "enum",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "CreateTerminalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ControlTerminalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "CreateTerminalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ControlTerminalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "WatchTerminalOutputRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "WatchTerminalOutputResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "WatchTerminalsRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "WatchTerminalsResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ClaimTerminalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ClaimTerminalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ReportTerminalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "ReportTerminalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "PublishTerminalOutputRequest": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "PublishTerminalOutputResponse": {
+      "kind": "message",
+      "file": "delidev/v1/terminal.proto"
+    },
+    "BrowserService": {
+      "kind": "service",
+      "file": "delidev/v1/browser.proto"
+    },
+    "RegisterBrowserProfileRequest": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "RegisterBrowserProfileResponse": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "GetBrowserProfileRequest": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "GetBrowserProfileResponse": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "ListBrowserProfilesRequest": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "ListBrowserProfilesResponse": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "ConfirmBrowserProfileRemovalRequest": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "ConfirmBrowserProfileRemovalResponse": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "GetAccountBrowserCleanupRequest": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "GetAccountBrowserCleanupResponse": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "BrowserProfile": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "BrowserProfileState": {
+      "kind": "enum",
+      "file": "delidev/v1/browser.proto"
+    },
+    "BrowserCapability": {
+      "kind": "enum",
+      "file": "delidev/v1/browser.proto"
+    },
+    "GetBrowserCapabilitiesRequest": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
+    },
+    "GetBrowserCapabilitiesResponse": {
+      "kind": "message",
+      "file": "delidev/v1/browser.proto"
     }
   }
 }

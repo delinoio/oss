@@ -31,6 +31,7 @@ service WorkerService {
   rpc WatchAuxiliaryWork(WatchAuxiliaryWorkRequest) returns (stream WatchAuxiliaryWorkResponse);
   rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
+  rpc CloneRepository(CloneRepositoryRequest) returns (CloneRepositoryResponse);
   rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
   rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
   rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
@@ -125,6 +126,8 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_REPOSITORY_CLONE_V1 = 18;
+  WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1 = 19;
   WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1 = 17;
   WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1 = 16;
   WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 = 5;
@@ -338,4 +341,31 @@ message ReportWorkerNativeRouteRequest {
 }
 message ReportWorkerNativeRouteResponse {
   bool replayed = 1;
+}
+
+// Selection metadata never grants Git authentication to the Worker.
+message RepositoryCloneGitHubSelection {
+  string profile_id = 1;
+  uint64 expected_revision = 2;
+  string repository_id = 3;
+  string node_id = 4;
+  string owner = 5;
+  string name = 6;
+}
+
+message CloneRepositoryRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  string parent_path = 3;
+  string url = 4;
+  string directory_name = 5;
+  // Fresh originating computer proof; never retained in a job or receipt.
+  string local_worker_token = 6;
+  RepositoryCloneGitHubSelection github_selection = 7;
+}
+
+message CloneRepositoryResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }

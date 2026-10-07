@@ -10,7 +10,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -361,27 +360,50 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			a.wait.Done()
 		})
 	}
-	lease.Key = func(ctx context.Context) ([]byte, error) {
+	lease.Credential = func(ctx context.Context) (apiproxy.Credential, error) {
 		if leaseContext.Err() != nil {
-			return nil, executionDenied()
+			return apiproxy.Credential{}, executionDenied()
 		}
 		unlock, err := a.service.lockAccounts(ctx)
 		if err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
-		defer unlock()
+		locked := true
+		defer func() {
+			if locked {
+				unlock()
+			}
+		}()
 		if leaseContext.Err() != nil {
-			return nil, executionDenied()
+			return apiproxy.Credential{}, executionDenied()
 		}
 		if _, err := a.resolve(ctx, grant); err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
-		vault, err := a.service.secrets()
+
+		unlock()
+		locked = false
+		// Refresh owns its own gate and performs HTTP outside it. Recheck the
+		// original execution immediately before and after that operation.
+		credential, err := a.service.resolveAPICredential(ctx, scope.AccountID, scope.ConnectionID, scope.ProviderID)
 		if err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
-		return vault.Get(ctx, credentials.Ref{Owner: scope.AccountID, ID: scope.ConnectionID, Purpose: credentials.AccountAPI})
+		if leaseContext.Err() != nil {
+			clear(credential.key)
+			return apiproxy.Credential{}, executionDenied()
+		}
+		if _, err = a.resolve(ctx, grant); err != nil {
+			clear(credential.key)
+			return apiproxy.Credential{}, err
+		}
+		return apiproxy.Credential{Key: credential.key, QuotaProject: credential.quotaProject}, nil
 	}
+	lease.Key = func(ctx context.Context) ([]byte, error) {
+		credential, err := lease.Credential(ctx)
+		return credential.Key, err
+	}
+
 	if scope.Purpose != domain.SessionTitleUsage && scope.Provider.Protocol == domain.OpenAIResponses {
 		lease.ObserveHistory = func(ctx context.Context, accountBound bool) error {
 			if leaseContext.Err() != nil {

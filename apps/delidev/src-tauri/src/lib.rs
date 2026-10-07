@@ -18,9 +18,11 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
 mod browser_opener;
+pub mod language;
 pub mod oauth;
 pub mod provider_guidance;
 pub mod updater;
+pub mod widget_writer;
 pub mod window_registry;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
@@ -100,6 +102,10 @@ pub use worker_network::WorkerNetworkAction;
 mod desktop_host;
 mod supervision;
 pub use supervision::{LocalServerState, LocalServerStatus, Supervision};
+mod worker_supervision;
+pub use worker_supervision::{
+    LocalWorkerManagement, LocalWorkerManagementState, WorkerSupervision,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -197,6 +203,12 @@ pub struct Connector {
     listen: String,
     exiting: AtomicBool,
     hosted: Mutex<Vec<desktop_host::DesktopChild>>,
+    worker_management: Mutex<LocalWorkerManagement>,
+    worker_auto_enabled: AtomicBool,
+    worker_launch_pending: AtomicBool,
+    worker_exited: Mutex<Option<String>>,
+    worker_pause_generation: Mutex<Option<String>>,
+    worker_client_id: Mutex<Option<String>>,
 }
 
 impl Connector {
@@ -296,6 +308,12 @@ impl Connector {
             command_timeout: COMMAND_TIMEOUT,
             listen: "127.0.0.1:46310".into(),
             exiting: AtomicBool::new(false),
+            worker_management: Mutex::new(LocalWorkerManagement::default()),
+            worker_auto_enabled: AtomicBool::new(false),
+            worker_launch_pending: AtomicBool::new(true),
+            worker_exited: Mutex::new(None),
+            worker_pause_generation: Mutex::new(None),
+            worker_client_id: Mutex::new(None),
             hosted: Mutex::new(Vec::new()),
         })
     }
@@ -485,12 +503,21 @@ impl Connector {
     }
 
     fn sidecar_command(&self, arguments: &[OsString], input: bool) -> Result<Command> {
+        self.sidecar_command_at(&self.executable, arguments, input)
+    }
+
+    fn sidecar_command_at(
+        &self,
+        executable: &Path,
+        arguments: &[OsString],
+        input: bool,
+    ) -> Result<Command> {
         let metadata =
-            fs::symlink_metadata(&self.executable).map_err(|_| NativeFailure::SidecarMissing)?;
+            fs::symlink_metadata(executable).map_err(|_| NativeFailure::SidecarMissing)?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
             return Err(NativeFailure::SidecarMissing);
         }
-        let mut command = Command::new(&self.executable);
+        let mut command = Command::new(executable);
         command
             .arg("--data-dir")
             .arg(&self.root)
@@ -868,3 +895,5 @@ mod repository_folder_tests {
         );
     }
 }
+
+pub mod localization;
