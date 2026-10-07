@@ -34,9 +34,9 @@ export function ProjectCreation({ data, change, active, visible, blocked, busy, 
   const form = useRef<HTMLFormElement>(null), focused = useRef(false);
   const formId = useId(), inputId = useId();
   const catalog = useProjectRepositoryCatalog(active && visible);
-  const query = useDeferredValue(search.trim().toLocaleLowerCase());
+  const query = useDeferredValue(search.trim().toLowerCase());
   const names = useMemo(() => new Map(catalog.rows.filter(row => row.supported).map(row => [row.id, row.name])), [catalog.rows]);
-  const matches = useMemo(() => catalog.rows.filter(row => row.name.toLocaleLowerCase().includes(query)), [catalog.rows, query]);
+  const matches = useMemo(() => catalog.rows.filter(row => row.name.toLowerCase().includes(query)), [catalog.rows, query]);
   const pageIndex = Math.min(page, Math.max(0, Math.ceil(matches.length / 50) - 1));
   const choices = matches.slice(pageIndex * 50, (pageIndex + 1) * 50);
   const ids = items(data.repositories).map(text);
@@ -98,7 +98,7 @@ export function ProjectCreation({ data, change, active, visible, blocked, busy, 
       <fieldset disabled={blocked || step !== Step.Repositories}>
         <label className="project-repository-search" htmlFor={inputId}>{copy("project-creation.search")}<input id={inputId} data-project-focus="search" type="search" autoComplete="off" maxLength={256} value={search} placeholder={copy("project-creation.search")} aria-controls={`${inputId}-results`} onChange={event => { setSearch(event.target.value); setPage(0); }} /></label>
         <div id={`${inputId}-results`} className="project-repository-results" role="group" aria-label={copy("project-creation.repositoryChoices")}>
-          {choices.map(row => <div key={row.id} className="project-repository-choice"><label className="checkbox"><input type="checkbox" checked={ids.includes(row.id)} disabled={!row.supported || (!ids.includes(row.id) && ids.length >= 1000)} onChange={event => repositories(event.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />{row.name || copy("project-creation.nameUnavailable")}</label>{!row.supported || catalog.rows.some(other => other.id !== row.id && other.name === row.name) ? <RepositoryIdentity id={row.id} /> : null}{!row.supported ? <small>{copy("project-creation.unsupportedRepository")}</small> : null}</div>)}
+          {choices.map((row, index) => { const duplicateName = catalog.rows.some(other => other.id !== row.id && other.name === row.name); const identityId = `${inputId}-repository-${index}-identity`; return <div key={row.id} className="project-repository-choice"><label className="checkbox"><input type="checkbox" aria-describedby={duplicateName ? identityId : undefined} checked={ids.includes(row.id)} disabled={!row.supported || (!ids.includes(row.id) && ids.length >= 1000)} onChange={event => repositories(event.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />{row.name || copy("project-creation.nameUnavailable")}</label>{duplicateName || !row.supported ? <RepositoryIdentity id={row.id} /> : null}{duplicateName ? <span id={identityId} className="project-repository-id"><code>{row.id}</code></span> : null}{!row.supported ? <small>{copy("project-creation.unsupportedRepository")}</small> : null}</div>; })}
         </div>
         {matches.length > 50 ? <nav className="actions" aria-label={copy("project-creation.resultPages")}><button type="button" disabled={pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>{copy("project-creation.previousResults")}</button><button type="button" disabled={(pageIndex + 1) * 50 >= matches.length} onClick={() => setPage(pageIndex + 1)}>{copy("project-creation.nextResults")}</button></nav> : null}
         {catalog.loading ? <p role="status">{copy(catalog.rows.length ? "project-creation.loadingMore" : "project-creation.loading")}</p> : null}

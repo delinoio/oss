@@ -128,6 +128,12 @@ it("stops repeated cursors without falsely reporting empty inventory", async () 
   expect(value.list.mock.calls.filter(([token]) => token === "repeat")).toHaveLength(1);
 });
 
+it("rejects repository IDs repeated across catalog pages", async () => {
+  const value = fixture(); value.list.mockImplementation(async token => token ? { resources: [value.rows[0]!] } : { resources: [value.rows[0]!], nextPageToken: "second" }); render(value.view());
+  await screen.findByText("The repository list is invalid or its page cursor repeated. Reload repositories.");
+  expect(value.list.mock.calls.filter(([token]) => token === "second")).toHaveLength(1);
+});
+
 it("distinguishes loading, final emptiness and no matches", async () => {
   const pending = deferred<Page>(), value = fixture(); value.list.mockReturnValue(pending.promise); render(value.view());
   expect(screen.getByText("Loading repositories…")).toBeTruthy(); expect(screen.queryByText(/No registered repositories/)).toBeNull();
@@ -140,9 +146,21 @@ it("does not confuse duplicate names or offer unsupported schemas", async () => 
   const first = repository("Duplicate"), second = repository("Duplicate"), unsupported = create(ResourceSchema, { ...repository("Future"), schemaVersion: 2 });
   const value = fixture([first, second, unsupported]); render(value.view());
   const duplicates = await screen.findAllByRole("checkbox", { name: "Duplicate" }); fireEvent.click(duplicates[0]); fireEvent.click(duplicates[1]);
+  const identity = duplicates[0]!.getAttribute("aria-describedby"); expect(identity).toBeTruthy(); expect(document.getElementById(identity!)?.textContent).toContain(first.id);
   expect((screen.getByRole("checkbox", { name: "Repository name unavailable" }) as HTMLInputElement).disabled).toBe(true);
   next(); expect(within(primary()).getByRole("option", { name: "Duplicate (entry 1)" }).getAttribute("value")).toBe(first.id);
   expect(within(primary()).getByRole("option", { name: "Duplicate (entry 2)" }).getAttribute("value")).toBe(second.id);
+});
+
+it("uses locale-independent repository search matching", async () => {
+  const value = fixture([repository("IMAGE")]);
+  const localeLowerCase = vi.spyOn(String.prototype, "toLocaleLowerCase").mockImplementation(function (this: string) { return this === "IMAGE" ? "ımage" : this.toLowerCase(); });
+  try {
+    render(value.view()); fireEvent.change(search(), { target: { value: "image" } });
+    expect(await screen.findByRole("checkbox", { name: "IMAGE" })).toBeTruthy();
+  } finally {
+    localeLowerCase.mockRestore();
+  }
 });
 
 it("shows final registered emptiness without enabling repository advancement", async () => {
