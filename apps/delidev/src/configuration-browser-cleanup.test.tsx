@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { BrowserService, ConfigurationService, EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
+import { AccountService, BrowserService, ConfigurationService, EntityKind, ResourceSchema, newRequestId, type DeleteConfigurationRequest, type DisconnectAccountRequest } from "@delinoio/delidev-api-client";
 import { ConfigurationDeletion } from "./configuration-actions";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
@@ -16,12 +16,21 @@ import { SettingsDialogSize, SettingsTaskBackground, SettingsTaskDialog, Setting
 function fixture(type: "subscription" | "api") {
   const initial = create(ResourceSchema, {
     id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 3n, schemaVersion: type === "api" ? 1 : 2,
-    documentJson: encode({ alias: "Original fixture", type, ...(type === "subscription" ? { subscription_service: "claude" } : {}) }),
+    documentJson: encode({ alias: "Original fixture", type, ...(type === "subscription" ? { subscription_service: "claude" } : { provider_id: newRequestId(), health: "connected", connection: { id: newRequestId() } }) }),
   });
-  const remove = vi.fn(async (_request: unknown) => ({}));
+  let current = initial;
+  const acknowledgment = (request: DeleteConfigurationRequest) => ({ id: initial.id, requestId: request.mutation!.requestId });
+  const remove = vi.fn(async (request: DeleteConfigurationRequest) => acknowledgment(request));
+  const disconnect = vi.fn(async (request: DisconnectAccountRequest) => {
+    const data = JSON.parse(new TextDecoder().decode(initial.documentJson));
+    delete data.connection; data.health = "disconnected";
+    current = create(ResourceSchema, { ...initial, revision: 4n, documentJson: encode(data) });
+    return { account: current, requestId: request.mutation!.requestId };
+  });
   const cleanup = vi.fn(async (_request: unknown) => ({ pending: 2, removed: 1 }));
   const deleted = vi.fn();
   const transport = createRouterTransport(router => {
+    router.service(AccountService, { getAccountStatus: async () => ({ account: current }), disconnectAccount: disconnect });
     router.service(ConfigurationService, { deleteConfiguration: remove });
     router.service(BrowserService, { getAccountBrowserCleanup: cleanup });
   });
@@ -29,7 +38,7 @@ function fixture(type: "subscription" | "api") {
   function Task() {
     const [open, setOpen] = useState(false);
     return <SettingsTasks><div className="settings-content"><SettingsTaskBackground><h1 tabIndex={-1}>Fixture accounts</h1><button onClick={() => setOpen(true)}>Delete fixture account</button></SettingsTaskBackground></div>
-      {open ? <SettingsTaskDialog title="Delete configuration" size={SettingsDialogSize.Confirmation} close={() => setOpen(false)}><ConfigurationDeletion initial={initial} deleted={() => { deleted(); setOpen(false); }} close={() => setOpen(false)} /></SettingsTaskDialog> : null}
+      {open ? <SettingsTaskDialog title={type === "api" ? "Delete entry" : "Delete configuration"} size={SettingsDialogSize.Confirmation} close={() => setOpen(false)}><ConfigurationDeletion initial={initial} deleted={() => { deleted(); setOpen(false); }} close={() => setOpen(false)} /></SettingsTaskDialog> : null}
     </SettingsTasks>;
   }
   function View() {
@@ -42,10 +51,10 @@ function fixture(type: "subscription" | "api") {
   render(<View />);
   const opener = screen.getByRole("button", { name: "Delete fixture account" });
   opener.focus(); fireEvent.click(opener);
-  return { initial, remove, cleanup, deleted, client, View, opener };
+  return { initial, remove, acknowledgment, disconnect, cleanup, deleted, client, View, opener };
 }
 function dismiss(method: "X" | "Escape") {
-  if (method === "X") fireEvent.click(screen.getByRole("button", { name: "Close Delete configuration" }));
+  if (method === "X") fireEvent.click(screen.getByRole("button", { name: /^Close Delete (entry|configuration)$/ }));
   else fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
 }
 
@@ -53,16 +62,17 @@ it.each(["subscription", "api"] as const)("closes %s deletion once without waiti
   const f = fixture(type);
   f.cleanup.mockRejectedValue(new ConnectError("Cleanup observation unavailable", Code.Unavailable));
   if (type === "api") {
-    expect(screen.getByRole("heading", { name: "Delete entry?", level: 2 })).toBeTruthy();
-    expect(screen.getByText(/Disconnect the entry/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete entry", level: 2 })).toBeTruthy();
+    expect(screen.getByText(/This disconnects the entry/)).toBeTruthy();
   }
-  expect(screen.getByText(/Browser profile cleanup remains pending/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  expect(screen.getByText(type === "api" ? /Browser profile cleanup continues independently/ : /Browser profile cleanup remains pending/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: type === "api" ? "Disconnect and delete entry" : "Confirm configuration deletion" }));
   await waitFor(() => expect(f.deleted).toHaveBeenCalledTimes(1));
   expect(screen.queryByRole("dialog")).toBeNull();
   await waitFor(() => expect(document.activeElement).toBe(f.opener));
   expect(f.remove).toHaveBeenCalledTimes(1);
-  expect(f.remove.mock.calls[0][0]).toMatchObject({ kind: EntityKind.ACCOUNT, mutation: { id: f.initial.id, expectedRevision: 3n } });
+  expect(f.disconnect).toHaveBeenCalledTimes(type === "api" ? 1 : 0);
+  expect(f.remove.mock.calls[0][0]).toMatchObject({ kind: EntityKind.ACCOUNT, mutation: { id: f.initial.id, expectedRevision: type === "api" ? 4n : 3n } });
   expect(f.cleanup).not.toHaveBeenCalled();
   expect(screen.queryByText("API key entry deleted")).toBeNull();
   expect(screen.queryByText("Account configuration deleted")).toBeNull();
@@ -71,8 +81,8 @@ it.each(["subscription", "api"] as const)("closes %s deletion once without waiti
 
 it.each(["X", "Escape"] as const)("ignores a closed API deletion after %s without completion or taking focus", async method => {
   const f = fixture("api"); let release!: () => void;
-  f.remove.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve; }); return {}; });
-  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  f.remove.mockImplementationOnce(async request => { await new Promise<void>(resolve => { release = resolve; }); return f.acknowledgment(request); });
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect and delete entry" }));
   await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
   dismiss(method);
   const destination = screen.getByRole("button", { name: "Return to category" }); destination.focus();
@@ -88,7 +98,7 @@ it.each(["X", "Escape"] as const)("ignores a closed API deletion after %s withou
 it("keeps the exact uncertain deletion retry within its open task", async () => {
   const f = fixture("api");
   f.remove.mockRejectedValueOnce(new ConnectError("Lost deletion acknowledgment", Code.Unavailable));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect and delete entry" }));
   await screen.findByRole("button", { name: "Retry the same deletion" });
   const original = f.remove.mock.calls[0][0];
   expect(f.deleted).not.toHaveBeenCalled();
@@ -102,8 +112,8 @@ it("keeps the exact uncertain deletion retry within its open task", async () => 
 
 it.each([Code.Aborted, Code.PermissionDenied, Code.Unauthenticated])("keeps the dialog after a definite deletion failure %s", async code => {
   const f = fixture("api"); f.remove.mockRejectedValue(new ConnectError("Deletion rejected", code));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Confirm configuration deletion" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect and delete entry" }));
+  await screen.findByRole("button", { name: "Refresh entry for confirmation" });
   expect(screen.getByRole("dialog")).toBeTruthy();
   expect(f.deleted).not.toHaveBeenCalled();
   expect(f.cleanup).not.toHaveBeenCalled();
@@ -112,8 +122,8 @@ it.each([Code.Aborted, Code.PermissionDenied, Code.Unauthenticated])("keeps the 
 
 it("ignores a late API deletion acknowledgment after category disposal", async () => {
   const f = fixture("api"); let release!: () => void;
-  f.remove.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve; }); return {}; });
-  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  f.remove.mockImplementationOnce(async request => { await new Promise<void>(resolve => { release = resolve; }); return f.acknowledgment(request); });
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect and delete entry" }));
   await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
   dismiss("Escape");
   fireEvent.click(screen.getByRole("button", { name: "Leave category" }));

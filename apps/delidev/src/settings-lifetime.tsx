@@ -21,8 +21,9 @@ function guarded<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-// A category or one of its task dialogs owns this scope. Task dismissal disposes
-// only that task; category departure also fences every nested task transport.
+// One active category or external project creation opening owns this scope. A
+// task dialog may create a nested scope; departure fences every nested task
+// transport while independent connection controllers stay mounted.
 export class SettingsOpening {
   readonly id = newRequestId();
   readonly controller = new AbortController();

@@ -46,6 +46,7 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 60000, refetchOnWindowFocus: false } } });
   const openSession = vi.fn();
   const openSettings = vi.fn();
+  const newProject = vi.fn();
   let currentProps = props;
   let selectSurface!: (surface: Surface) => void;
   const newSession = vi.fn(() => { if (stateful) selectSurface(Surface.NewSession); });
@@ -54,12 +55,12 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   function Harness() {
     const [surface, setSurface] = useState(Surface.Sessions);
     selectSurface = setSurface;
-    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} newGeneralChat={newGeneralChat} openSettings={openSettings} {...currentProps} />;
+    return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} newGeneralChat={newGeneralChat} newProject={newProject} openSettings={openSettings} {...currentProps} />;
   }
   const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><Harness /></QueryClientProvider></TransportProvider>;
   const view = render(tree());
   const setProps = (next: Partial<ComponentProps<typeof Sidebar>>) => { currentProps = { ...currentProps, ...next }; view.rerender(tree()); };
-  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, newGeneralChat, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
+  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, newGeneralChat, newProject, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
 }
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
@@ -532,7 +533,7 @@ it("retries an expanded project's exact session page without refetching other sc
   expect(value.sessionRequests.filter((request) => !request.projectId)).toHaveLength(1);
 });
 
-it("routes the icon rail to the matching surface and opens New project through Settings", async () => {
+it("routes the icon rail to the matching surface and opens New project independently of Settings", async () => {
   const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
   await screen.findByRole("button", { name: "Sessions" });
   const newProject = screen.getByRole("button", { name: "New project" });
@@ -541,7 +542,8 @@ it("routes the icon rail to the matching surface and opens New project through S
   fireEvent.focus(newProject);
   expect(window.document.querySelector(".sidebar-action-tooltip")?.textContent).toBe("New project");
   fireEvent.click(newProject);
-  expect(value.openSettings).toHaveBeenCalledWith("new-project");
+  expect(value.newProject).toHaveBeenCalledOnce();
+  expect(value.openSettings).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   expect(value.navigate).toHaveBeenCalledWith(Surface.PullRequests);
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
@@ -639,7 +641,8 @@ it("keeps the archive popup open for changes and restores its opener on Escape",
   const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
   await screen.findByText("No projects loaded.");
   fireEvent.click(screen.getByRole("button", { name: "Create a project" }));
-  expect(value.openSettings).toHaveBeenCalledWith("new-project");
+  expect(value.newProject).toHaveBeenCalledOnce();
+  expect(value.openSettings).not.toHaveBeenCalled();
   const opener = screen.getByRole("button", { name: "Project and conversation options" });
   fireEvent.click(opener);
   const popup = screen.getByRole("dialog", { name: "Project and conversation options" });

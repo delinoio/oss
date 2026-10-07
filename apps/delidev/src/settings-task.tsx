@@ -10,7 +10,7 @@ import { DialogSurface } from "./ui";
 import { copy, useLocale } from "./localization";
 
 export { SettingsDialogFocus, SettingsDialogSize } from "./settings-task-context";
-interface Host { outlet: HTMLDivElement | null; modal: boolean; register: (id: string, mounted: boolean) => void }
+interface Host { outlet: HTMLDivElement | null; statusTarget: HTMLDivElement | null; setStatusTarget: (node: HTMLDivElement | null) => void; modal: boolean; register: (id: string, mounted: boolean) => void }
 const HostContext = createContext<Host | undefined>(undefined);
 const ScopeContext = createContext(false);
 
@@ -22,19 +22,26 @@ export function SettingsTaskScope({ children }: { children: ReactNode }) {
 
 export function SettingsTasks({ children }: { children: ReactNode }) {
   const [outlet, setOutlet] = useState<HTMLDivElement | null>(null);
+  const [statusTarget, setStatusTarget] = useState<HTMLDivElement | null>(null);
   const tasks = useRef(new Set<string>());
   const [modal, setModal] = useState(false);
   const register = useCallback((id: string, mounted: boolean) => {
     if (mounted) tasks.current.add(id); else tasks.current.delete(id);
     setModal(tasks.current.size > 0);
   }, []);
-  const host = useMemo(() => ({ outlet, modal, register }), [outlet, modal, register]);
+  const host = useMemo(() => ({ outlet, statusTarget, setStatusTarget, modal, register }), [outlet, statusTarget, modal, register]);
   return <HostContext.Provider value={host}>{children}<div className="settings-task-outlet" ref={setOutlet} /></HostContext.Provider>;
+}
+
+export function SettingsTaskStatusOutlet({ className = "" }: { className?: string }) {
+  const host = useContext(HostContext);
+  return <div className={`settings-task-status ${className}`} ref={host?.setStatusTarget} />;
 }
 
 export function SettingsTaskBackground({ children }: { children: ReactNode }) {
   const host = useContext(HostContext);
-  // Only a mounted modal disables the category. Closing a task releases it.
+  // Dialogs are portaled outside this fieldset. Only a mounted task disables
+  // the category; dismissal releases it before the close callback returns.
   return <fieldset className="settings-task-background" disabled={host?.modal} inert={host?.modal || undefined} aria-hidden={host?.modal || undefined} onClickCapture={event => {
     if (event.target instanceof Element) event.target.closest<HTMLButtonElement>("button")?.focus({ preventScroll: true });
   }}>{children}</fieldset>;
@@ -61,7 +68,7 @@ function containTab(event: KeyboardEvent<HTMLDialogElement>) {
   else if (!event.shiftKey && (active === last || !controls.includes(active as HTMLElement))) { event.preventDefault(); first.focus(); }
 }
 
-interface DialogProps extends SettingsTaskPresentation { close: () => void; children: ReactNode; onDismiss?: () => void }
+interface DialogProps extends SettingsTaskPresentation { close: () => void; children: ReactNode; retained?: boolean; onDismiss?: () => void; activation?: number; fallbackFocus?: () => HTMLElement | null }
 export function SettingsTaskDialog(props: DialogProps) {
   const parent = useContext(SettingsTaskContext);
   const scoped = useContext(ScopeContext);
@@ -79,11 +86,13 @@ function SettingsTaskStep({ title, size, focus, children, onDismiss }: DialogPro
   const context = useMemo(() => ({ ...task, stepId: id }), [task, id]);
   return task.stepTarget ? createPortal(<SettingsTaskContext.Provider value={context}><div data-settings-task-step hidden={task.activeStep !== id}>{children}</div></SettingsTaskContext.Provider>, task.stepTarget) : null;
 }
-function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, onDismiss: dismissed }: DialogProps) {
+function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, onDismiss: dismissed, fallbackFocus }: DialogProps) {
   useLocale();
   const opening = useSettingsOpening()!, client = useQueryClient();
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const returnFocus = useRef(fallbackFocus);
+  returnFocus.current = fallbackFocus;
   const openerRetired = useRef(false);
   const closeRequested = useRef(false);
   const categoryContent = useRef(document.querySelector<HTMLElement>(".settings-content"));
@@ -101,7 +110,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     setActiveStep([...presentations.current.keys()].at(-1));
   }, []);
   const current = presentation ?? { title, size, focus };
-  const dismissWithClose = useCallback((idleClose?: () => void) => {
+  const dismissWithClose = useCallback((idleClose?: () => void, _force = false) => {
     if (closeRequested.current) return;
     closeRequested.current = true;
     // Fence late continuations before callbacks can mount another task. Disposal
@@ -146,10 +155,9 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
         if (anotherModal(node)) return;
         const focused = document.activeElement;
         if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return;
-        // Keep the original reference to recognize automatic browser focus
-        // restoration, but never return to a confirmed-removed opener.
-        const openerTarget = !openerRetired.current && opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") ? opener.current : null;
-        const fallback = categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>("h1") : null;
+        const openerDialog = opener.current?.closest("dialog");
+        const openerTarget = !openerRetired.current && opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") && !opener.current.closest("[hidden]") && (!openerDialog || openerDialog.open) && (!returnFocus.current || available(opener.current)) ? opener.current : null;
+        const fallback = returnFocus.current?.() ?? (categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null);
         // The opener or category fallback can still be inert until this parent
         // teardown commits. Release their task backgrounds before checking
         // visibility, while preserving unrelated hidden/disabled boundaries.

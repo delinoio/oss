@@ -89,8 +89,9 @@ export function useRetainedMutationAccepted(key: string, accepted: () => void) {
 }
 
 // Exact pending requests outlive session navigation. Only switching the whole
-// connection discards that registry. Settings categories and task dialogs own
-// separate nested registries; disposal cannot reach another task or session.
+// connection discards that registry. Settings categories, task dialogs, and
+// external project creation own nested opening registries; departure discards
+// their intents, and late results cannot reach a replacement.
 export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void, acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean, retainOnError = false) {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
