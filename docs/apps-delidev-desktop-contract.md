@@ -1850,6 +1850,10 @@ and visit lifetime remain authoritative; page-level Escape preserves the visit.
 The separate issue #1236 host change must not be implemented or reverted by this
 category treatment.
 
+Backup inventory, creation history and deletion history reject duplicate IDs
+within an RPC page as a whole. Retain the previous accepted range and retry the
+exact failed page token without adopting malformed rows or continuation.
+
 Inventory is one semantic table with Modified (UTC) / Backup ID, Size, Integrity
 and action headers. Preserve server order, complete wrapped UUIDs and roughly 92px
 rows. English UTC modification labels include seconds; original fractional
