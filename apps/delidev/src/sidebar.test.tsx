@@ -125,7 +125,7 @@ it("opens project creation shortcuts without toggling groups or reading collapse
   expect(disabled.getAttribute("title")).toBe("Same name 프로젝트의 새 세션");
 });
 
-it("keeps creation shortcuts out of unknown-project and General Chat groups", async () => {
+it("keeps project creation shortcuts out of unknown-project and General Chat groups", async () => {
   const unknown = resource(EntityKind.SESSION, "Unknown parent", newRequestId());
   const general = resource(EntityKind.SESSION, "Projectless");
   mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [unknown, general] }) });
@@ -605,7 +605,7 @@ it("discards delayed named continuations on collapse and preserves accepted rows
   expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
   value.setProps({ surface: Surface.NewGeneralChat });
   expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "New general chat" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getAllByRole("button", { name: "New general chat" })[0].getAttribute("aria-current")).toBe("page");
   expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
   value.setProps({ surface: Surface.Activity });
@@ -786,4 +786,28 @@ it.each([false, true])("keeps global recovery visible with General Chat collapse
   expect(general.getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByRole("button", { name: /Visible fallback after failure/ })).toBe(row);
   expect(value.openSession).not.toHaveBeenCalled();
+});
+
+
+it("keeps the General Chat header shortcut independent of disclosure and project locks", async () => {
+  const setDrawerOpen = vi.fn();
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }), props: { projectSelectionBlocked: true, setDrawerOpen } });
+  const toggle = await screen.findByRole("button", { name: "General Chat" });
+  const group = toggle.parentElement!;
+  const shortcut = within(group).getByRole("button", { name: "New general chat" });
+  expect(toggle.contains(shortcut)).toBe(false);
+  expect(shortcut.getAttribute("title")).toBe("New general chat");
+  expect(shortcut).toHaveProperty("disabled", false);
+  for (const expanded of [true, false, true]) {
+    expect(toggle.getAttribute("aria-expanded")).toBe(String(expanded));
+    fireEvent.click(shortcut);
+    expect(toggle.getAttribute("aria-expanded")).toBe(String(expanded));
+    expect(setDrawerOpen).toHaveBeenLastCalledWith(false);
+    fireEvent.click(toggle);
+  }
+  expect(value.newGeneralChat).toHaveBeenCalledTimes(3);
+  expect(value.newSession).not.toHaveBeenCalled();
+  await act(() => i18n.changeLanguage("ko"));
+  expect(within(group).getByRole("button", { name: "새 일반 대화" })).toBe(shortcut);
+  expect(shortcut.getAttribute("title")).toBe("새 일반 대화");
 });
