@@ -19,14 +19,15 @@ function fixture() {
   const apply = vi.fn(async (_input: unknown) => ({ resultJson: encode({ job_id: jobId, state: "queued", resources: [] }) }));
   const status = vi.fn(async () => ({ capabilities: [SystemCapability.REMOTE_REPOSITORIES_V1] }));
   let state = "queued";
+  const getResource = vi.fn((_input: { id: string; kind: EntityKind }) => ({ resource: create(ResourceSchema, { id: jobId, kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ type: "import-configuration", state }) }) }));
   const transport = createRouterTransport((router) => {
     router.service(ConfigurationService, { exportConfiguration: exported, previewConfigurationImport: preview, applyConfigurationImport: apply });
     router.service(SystemService, { getStatus: status });
-    router.service(ResourceService, { getResource: () => ({ resource: create(ResourceSchema, { id: jobId, kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ type: "import-configuration", state }) }) }), listResources: () => ({ resources: [] }) });
+    router.service(ResourceService, { getResource, listResources: () => ({ resources: [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { bundle, previewBytes, exported, preview, apply, client, view, status, state: (next: string) => { state = next; } };
+  return { bundle, previewBytes, exported, preview, apply, client, view, status, getResource, jobId, state: (next: string) => { state = next; } };
 }
 function load(bundle: unknown) {
   fireEvent.change(screen.getByRole("textbox", { name: "Configuration JSON" }), { target: { value: typeof bundle === "string" ? bundle : JSON.stringify(bundle) } });
@@ -221,4 +222,22 @@ it("keeps legacy checkout-backed repository imports available without capability
   await screen.findByRole("button", { name: "Apply reviewed configuration" });
   expect(value.status).not.toHaveBeenCalled();
   expect(value.preview).toHaveBeenCalledTimes(1);
+});
+
+
+it.each(["foreign ID", "wrong kind"])("keeps polling and retries the original import after a %s terminal response", async (invalid) => {
+  const value = fixture();
+  value.getResource.mockImplementation(() => ({ resource: create(ResourceSchema, { id: invalid === "foreign ID" ? newRequestId() : value.jobId, kind: invalid === "wrong kind" ? EntityKind.TEMPLATE : EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "succeeded" }) }) }));
+  render(value.view()); load(value.bundle);
+  fireEvent.click(screen.getByRole("button", { name: "Preview configuration changes" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Apply reviewed configuration" }));
+  await screen.findByRole("button", { name: "Retry original status read" });
+  expect(screen.queryByRole("button", { name: "Return to retained import document" })).toBeNull();
+  const reads = value.getResource.mock.calls.length;
+  await waitFor(() => expect(value.getResource.mock.calls.length).toBeGreaterThan(reads), { timeout: 3500 });
+  value.getResource.mockImplementation(() => ({ resource: create(ResourceSchema, { id: value.jobId, kind: EntityKind.JOB, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "succeeded" }) }) }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry original status read" }));
+  await screen.findByText(/Configuration import completed/);
+  expect(value.getResource.mock.calls.every(([request]) => request.id === value.jobId && request.kind === EntityKind.JOB)).toBe(true);
+  expect(value.apply).toHaveBeenCalledTimes(1);
 });
