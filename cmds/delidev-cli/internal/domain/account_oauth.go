@@ -37,37 +37,41 @@ func (s AccountOAuthState) Valid() bool {
 // resources, snapshots, events or portable configuration. Secrets and callback/
 // authorization URLs belong only to the original process's ephemeral controller.
 type AccountOAuthAttempt struct {
-	DeviceRequestID     ID                `json:"device_request_id,omitempty"`
-	Preset              ProviderPresetID  `json:"preset,omitempty"`
-	StateCommitment     string            `json:"state_commitment,omitempty"`
-	QuotaProject        string            `json:"quota_project,omitempty"`
-	Version             uint32            `json:"version"`
-	ID                  ID                `json:"id"`
-	Revision            uint64            `json:"revision"`
-	ServerID            ID                `json:"server_id"`
-	ProviderID          ID                `json:"provider_id"`
-	ProviderRevision    uint64            `json:"provider_revision"`
-	Actor               Principal         `json:"actor"`
-	Generation          ID                `json:"generation"`
-	StartRequestID      ID                `json:"start_request_id"`
-	CompletionRequestID ID                `json:"completion_request_id,omitempty"`
-	CompletionRevision  uint64            `json:"completion_revision,omitempty"`
-	AccountID           ID                `json:"account_id"`
-	CreateRequestID     ID                `json:"create_request_id"`
-	ConnectRequestID    ID                `json:"connect_request_id"`
-	State               AccountOAuthState `json:"state"`
-	StartedAt           time.Time         `json:"started_at"`
-	ExpiresAt           time.Time         `json:"expires_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
-	CallbackCommitment  string            `json:"callback_commitment,omitempty"`
-	CodeCommitment      string            `json:"code_commitment,omitempty"`
-	StagingClaimed      bool              `json:"staging_claimed"`
-	Sealed              bool              `json:"sealed"`
-	CleanupPending      bool              `json:"cleanup_pending"`
-	Problem             *Error            `json:"problem,omitempty"`
+	APIFormat           *ProviderAPIFormat `json:"api_format,omitempty"`
+	DeviceRequestID     ID                 `json:"device_request_id,omitempty"`
+	Preset              ProviderPresetID   `json:"preset,omitempty"`
+	StateCommitment     string             `json:"state_commitment,omitempty"`
+	QuotaProject        string             `json:"quota_project,omitempty"`
+	Version             uint32             `json:"version"`
+	ID                  ID                 `json:"id"`
+	Revision            uint64             `json:"revision"`
+	ServerID            ID                 `json:"server_id"`
+	ProviderID          ID                 `json:"provider_id"`
+	ProviderRevision    uint64             `json:"provider_revision"`
+	Actor               Principal          `json:"actor"`
+	Generation          ID                 `json:"generation"`
+	StartRequestID      ID                 `json:"start_request_id"`
+	CompletionRequestID ID                 `json:"completion_request_id,omitempty"`
+	CompletionRevision  uint64             `json:"completion_revision,omitempty"`
+	AccountID           ID                 `json:"account_id"`
+	CreateRequestID     ID                 `json:"create_request_id"`
+	ConnectRequestID    ID                 `json:"connect_request_id"`
+	State               AccountOAuthState  `json:"state"`
+	StartedAt           time.Time          `json:"started_at"`
+	ExpiresAt           time.Time          `json:"expires_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
+	CallbackCommitment  string             `json:"callback_commitment,omitempty"`
+	CodeCommitment      string             `json:"code_commitment,omitempty"`
+	StagingClaimed      bool               `json:"staging_claimed"`
+	Sealed              bool               `json:"sealed"`
+	CleanupPending      bool               `json:"cleanup_pending"`
+	Problem             *Error             `json:"problem,omitempty"`
 }
 
 func (a AccountOAuthAttempt) Validate() error {
+	if a.APIFormat != nil && (a.APIFormat.Validate() != nil || a.APIFormat.Authentication != BearerAuth) {
+		return Fail(RecoveryRequired, "OAuth inference profile is invalid.", "Preserve the original attempt and selected profile.")
+	}
 	validDigest := func(v string) bool {
 		b, e := hex.DecodeString(v)
 		return e == nil && len(b) == 32 && hex.EncodeToString(b) == v

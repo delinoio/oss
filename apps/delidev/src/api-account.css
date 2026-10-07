@@ -126,3 +126,5 @@
 
 .account-oauth-device { margin: 16px 0; }
 .account-oauth-user-code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-family: monospace; user-select: all; }
+
+.api-format-choice output { display: block; min-height: 40px; padding: 10px 12px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--surface); }

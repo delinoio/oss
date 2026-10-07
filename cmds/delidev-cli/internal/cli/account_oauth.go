@@ -37,11 +37,12 @@ func accountOAuthCommand(ctx context.Context, c client, o options, args []string
 	var id string
 	var revision uint64
 	var codeStdin, callbackStdin, recover bool
-	var callbackURL, googleProject string
+	var callbackURL, googleProject, apiProtocol string
 	if op == "start" {
 		f.StringVar(&id, "provider-id", "", "")
 		f.StringVar(&callbackURL, "callback-url", "", "")
 		f.StringVar(&googleProject, "google-project-id", "", "")
+		f.StringVar(&apiProtocol, "api-protocol", "", "")
 	} else {
 		f.StringVar(&id, "attempt-id", "", "")
 	}
@@ -76,6 +77,16 @@ func accountOAuthCommand(ctx context.Context, c client, o options, args []string
 	m := &pb.Mutation{Id: id, ExpectedRevision: revision, RequestId: string(o.requestID)}
 	if op == "start" {
 		start := &pb.StartAccountOAuthRequest{Provider: m, CallbackUrl: callbackURL}
+		if apiProtocol != "" {
+			format := domain.APIProtocol(apiProtocol)
+			if !format.API() {
+				return nil, domain.Fail(domain.InvalidArgument, "Invalid OAuth API format.", "Select openai-responses, openai-chat or anthropic-messages.")
+			}
+			if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1); err != nil {
+				return nil, err
+			}
+			start.ApiProtocol = rpc.WireAPIFormat(domain.ProviderAPIFormat{Protocol: format}).Protocol
+		}
 		if googleProject != "" {
 			start.Google = &pb.AccountOAuthGoogleOptions{QuotaProjectId: googleProject}
 		}

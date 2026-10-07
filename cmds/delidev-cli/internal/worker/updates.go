@@ -86,8 +86,11 @@ func updateFailure() error {
 	return domain.Fail(domain.RecoveryRequired, "The original Worker update is unconfirmed.", "Preserve both working binaries, registration and workspaces; inspect this exact operation without repeating replacement.")
 }
 func watchUpdates(ctx context.Context, config Config, credential Credential, instance domain.ID) error {
-	httpClient, transport := rpc.HTTPClient()
-	defer transport.CloseIdleConnections()
+	httpClient, closeHTTP, err := networkHTTPClientFor(ctx, config, credential)
+	if err != nil {
+		return err
+	}
+	defer closeHTTP()
 	client := delidevv1connect.NewInstallationServiceClient(httpClient, credential.Endpoint)
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -262,7 +265,10 @@ func settleUpdateOnAttach(ctx context.Context, root string, credential Credentia
 			if j.Phase != UpdateStarting || j.Outcome != pb.WorkerUpdateOutcome_WORKER_UPDATE_OUTCOME_SUCCEEDED {
 				return updateFailure()
 			}
-			h, tr := rpc.HTTPClient()
+			h, tr, e := networkHTTPClient(ctx, root, credential)
+			if e != nil {
+				return e
+			}
 			client := delidevv1connect.NewInstallationServiceClient(h, credential.Endpoint)
 			bounded, stop := context.WithTimeout(ctx, 10*time.Second)
 			observed, e := client.PollWorkerUpdate(bounded, authenticated(credential, &pb.PollWorkerUpdateRequest{InstanceId: string(instance), OriginalUpdateId: string(j.ID)}))
@@ -279,7 +285,10 @@ func settleUpdateOnAttach(ctx context.Context, root string, credential Credentia
 			continue
 		}
 		j.Outcome = outcome
-		httpClient, transport := rpc.HTTPClient()
+		httpClient, transport, e := networkHTTPClient(ctx, root, credential)
+		if e != nil {
+			return e
+		}
 		client := delidevv1connect.NewInstallationServiceClient(httpClient, credential.Endpoint)
 		bounded, stop := context.WithTimeout(ctx, 10*time.Second)
 		e = reportUpdate(bounded, root, client, credential, instance, &j, version)

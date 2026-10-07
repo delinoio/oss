@@ -5,7 +5,8 @@ import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
-import { AccountService, AccountOAuthFlow as WireOAuthFlow, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type ErrorDetail, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
+import { APIFormatId, APIAuthenticationId, ApiProtocol, apiFormatLabels, apiFormatToWire, providerAPIFormats, supportsResourceSchema, AccountService, AccountOAuthFlow as WireOAuthFlow, AccountOAuthState, ErrorDetailSchema, EntityKind, FailureCode, clientFailure, newRequestId, type ErrorDetail, type AccountOAuthAttempt, type CompleteAccountOAuthResponse, type CancelAccountOAuthResponse, type GetAccountOAuthStatusResponse, type Mutation, type Resource } from "@delinoio/delidev-api-client";
+import { APIFormatChoice } from "./api-format-choice";
 import type { AccountProviderSummary } from "./account-settings";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document } from "./documents";
@@ -21,7 +22,7 @@ export function OAuthNativeProvider({ control, children }: { control: OAuthNativ
 enum Stage { Configure, Starting, Awaiting, Exchanging, Saving, Canceling, Recovering, Connected, Canceled, Expired, Interrupted, Recovery }
 interface View { provider: AccountProviderSummary; stage: Stage; userCode?: string; attempt?: AccountOAuthAttempt; account?: Resource; problem?: string | OwnedMessage; openFailed?: boolean }
 interface Pending {
-  provider: AccountProviderSummary; quotaProject?: string; userCode?: string; nativeOpening: string; generation: string; callback: string; startId: string;
+  provider: AccountProviderSummary; protocol?: APIFormatId; quotaProject?: string; userCode?: string; nativeOpening: string; generation: string; callback: string; startId: string;
   attempt?: AccountOAuthAttempt; completion?: Mutation; cancel?: Mutation; problem?: string | OwnedMessage; openFailed?: boolean; bound: boolean; serverStartDispatched: boolean; polling: boolean; busy: boolean; disposed: boolean;
 }
 const validId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
@@ -57,8 +58,14 @@ function checkedAttempt(value: AccountOAuthAttempt | undefined, pending: Pending
 function checkedAccount(value: Resource | undefined, pending: Pending): Resource | undefined {
   if (!value) return undefined;
   const body = document(value);
-  if (value.kind !== EntityKind.ACCOUNT || value.schemaVersion !== 1 || !validId(value.id) || value.revision < 1n || body.type !== "api" || body.provider_id !== pending.provider.providerId) throw new Error("Unsupported OAuth account");
+  if (value.kind !== EntityKind.ACCOUNT || !supportsResourceSchema(value) || !validId(value.id) || value.revision < 1n || body.type !== "api" || body.provider_id !== pending.provider.providerId) throw new Error("Unsupported OAuth account");
+  if (pending.protocol && (body.api_protocol !== pending.protocol || value.schemaVersion !== 3)) throw new Error("OAuth account API format changed");
   return value;
+}
+
+function oauthFormats(provider: AccountProviderSummary) {
+  const body = document(provider.provider);
+  return (provider.apiFormats ?? providerAPIFormats(body)).filter(profile => profile.authentication === APIAuthenticationId.Bearer);
 }
 
 export function useAccountOAuth() {
@@ -101,6 +108,7 @@ export function useAccountOAuth() {
       value.completion ??= { $typeName: "delidev.v1.Mutation", id: attempt.id, expectedRevision: 1n, requestId: result.requestId };
     }
     value.attempt = attempt;
+    if (value.protocol && attempt.state !== AccountOAuthState.ACCOUNT_OAUTH_STATE_CANCELED && attempt.apiProtocol !== apiFormatToWire(value.protocol)) throw new Error("OAuth API format changed");
     if (attempt.state !== AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION) value.userCode = undefined;
     if (attempt.state === AccountOAuthState.ACCOUNT_OAUTH_STATE_CONNECTED) { value.problem = undefined; value.openFailed = false; }
     if (current(value)) setView({ provider: value.provider, stage: stage(attempt.state), attempt, account, userCode: value.userCode,
@@ -129,10 +137,13 @@ export function useAccountOAuth() {
         value.generation = result.generation; value.callback = result.callback_url ?? "";
       }
       value.serverStartDispatched = true;
-      const result = await service.startAccountOAuth({ provider: { id: value.provider.providerId, expectedRevision: value.provider.provider.revision, requestId: value.startId }, callbackUrl: value.callback, google: value.quotaProject ? { quotaProjectId: value.quotaProject } : undefined });
+      const result = await service.startAccountOAuth({ provider: { id: value.provider.providerId, expectedRevision: value.provider.provider.revision, requestId: value.startId }, callbackUrl: value.callback, apiProtocol: value.protocol ? apiFormatToWire(value.protocol) : ApiProtocol.UNSPECIFIED, google: value.quotaProject ? { quotaProjectId: value.quotaProject } : undefined });
       if (!current(value)) return;
       if (result.requestId !== value.startId) throw new Error("start receipt");
       value.attempt = checkedAttempt(result.attempt, value);
+      // Retain admitted identity before checking format so explicit cancellation
+      // remains possible even when the server returns an unsupported projection.
+      if (value.protocol && value.attempt.apiProtocol !== apiFormatToWire(value.protocol)) throw new Error("OAuth API format changed");
       const device = profileOf(value.provider) === AccountOAuthProfile.Baseten;
       if (profileOf(value.provider) !== AccountOAuthProfile.OpenRouter && result.flow !== (device ? WireOAuthFlow.ACCOUNT_OAUTH_FLOW_DEVICE : WireOAuthFlow.ACCOUNT_OAUTH_FLOW_PKCE)) throw new Error("OAuth flow");
       if (device && result.userCode && (!/^[!-~]{1,64}$/.test(result.userCode))) throw new Error("Device user code");
@@ -158,8 +169,7 @@ export function useAccountOAuth() {
     if (!native || pending.current || opening?.disposed || !supports(provider) || !provider.enabled) return;
     const value: Pending = { provider, nativeOpening: newRequestId(), generation: "", callback: "", startId: newRequestId(), bound: false, serverStartDispatched: false, polling: false, busy: false, disposed: false };
     pending.current = value;
-    if (profileOf(provider) === AccountOAuthProfile.GoogleGemini) setView({ provider, stage: Stage.Configure });
-    else { setView({ provider, stage: Stage.Starting }); void startOriginal(value); }
+    setView({ provider, stage: Stage.Configure });
   };
   const observe = async (value: Pending) => {
     if (!current(value) || !value.attempt) return;
@@ -242,14 +252,26 @@ export function useAccountOAuth() {
     catch { failure(value, ownedMessage("account-oauth.extra.01b9ed071310")); }
     finally { value.busy = false; }
   };
-  const continueInBrowser = (project: string) => {
+  const selectProtocol = (protocol: APIFormatId | "") => {
+    const value = pending.current;
+    if (!value || !current(value) || value.serverStartDispatched || value.busy) return;
+    value.protocol = protocol || undefined;
+    setView(previous => previous ? { ...previous } : previous);
+  };
+  const continueInBrowser = (project: string, protocol: APIFormatId | "") => {
     const value = pending.current;
     if (!value || !current(value) || value.serverStartDispatched || value.busy || value.quotaProject) return;
-    if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)) { failure(value, ownedMessage("account-oauth.invalidGoogleCloudProjectId_9e2b1c")); return; }
-    value.quotaProject = project;
+    if (value.provider.oauthFormatSelectingAvailable) {
+      if (!protocol || !oauthFormats(value.provider).some(profile => profile.protocol === protocol)) return;
+      value.protocol = protocol;
+    }
+    if (profileOf(value.provider) === AccountOAuthProfile.GoogleGemini) {
+      if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)) { failure(value, ownedMessage("account-oauth.invalidGoogleCloudProjectId_9e2b1c")); return; }
+      value.quotaProject = project;
+    }
     setView({ provider: value.provider, stage: Stage.Starting }); void startOriginal(value);
   };
-  return { view, continueInBrowser, available: Boolean(native), supports, start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
+  return { view, selectedProtocol: pending.current?.protocol, selectProtocol, continueInBrowser, available: Boolean(native), supports, start, abandon, reopen, recover, retryStart: () => { const value = pending.current; if (value && !value.attempt) void startOriginal(value); }, observe: () => { const value = pending.current; if (value) void observe(value); }, completionClaimed: Boolean(pending.current?.completion), canLeave: Boolean(pending.current && (!pending.current.serverStartDispatched || pending.current.attempt)) };
 }
 export const useOpenRouterOAuth = useAccountOAuth;
 export type AccountOAuthFlow = ReturnType<typeof useAccountOAuth>;
@@ -265,7 +287,7 @@ function recoveryMessage(provider: AccountProviderSummary): string {
   return profileOf(provider) === AccountOAuthProfile.OpenRouter ? "The original result requires recovery. Inspect the OpenRouter keys dashboard; local cancellation cannot revoke a provider key. Recover only the original saved local result." : `The original ${provider.displayName} result requires recovery. Local cancellation cannot revoke provider access. Recover only the original saved local result, or cancel and reconnect.`;
 }
 
-export function AccountOAuth({ flow, back, manual, done }: { flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; done: (account: Resource) => void }) {
+export function AccountOAuth({ flow, back, manual, done, metadataReady = true, metadataProblem }: { metadataReady?: boolean; metadataProblem?: ReactNode; flow: OpenRouterOAuthFlow; back: () => void; manual: () => void; done: (account: Resource) => void }) {
   useLocale();
   const visible = useSettingsTaskVisible(), closeTask = useCloseSettingsTask(back), inTask = useInSettingsTask();
   const heading = useRef<HTMLHeadingElement>(null), view = flow.view;
@@ -282,18 +304,29 @@ export function AccountOAuth({ flow, back, manual, done }: { flow: OpenRouterOAu
   const busy = view.stage === Stage.Starting || view.stage === Stage.Exchanging || view.stage === Stage.Saving || view.stage === Stage.Canceling || view.stage === Stage.Recovering;
   const waiting = view.stage === Stage.Awaiting;
   const configuring = view.stage === Stage.Configure;
-  const huggingFace = profileOf(view.provider) === AccountOAuthProfile.HuggingFace;
+  const gemini = profileOf(view.provider) === AccountOAuthProfile.GoogleGemini;
+  const selecting = view.provider.oauthFormatSelectingAvailable;
+  const formats = selecting ? oauthFormats(view.provider) : (view.provider.apiFormats ?? providerAPIFormats(document(view.provider.provider))).filter(profile => profile.protocol === document(view.provider.provider).protocol);
+  const protocol = flow.selectedProtocol || (formats.length === 1 ? formats[0].protocol : "");
   const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());
   return <section className="api-keys-view account-oauth-card" aria-labelledby="account-oauth-title">
-    <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>{configuring ? copy("account-oauth.chooseGoogleCloudProject_0f5a3e") : huggingFace ? copy("account-oauth.connectHuggingFaceInferenceProviders_7b4d2c") : copy("account-oauth.connectOpenrouter_6c38bc")}</h2>
-    <p className="account-oauth-subheading">{configuring ? copy("account-oauth.chooseGoogleCloudProject_0f5a3e") : copy("account-oauth.completeSignInInYourBrowser_64e524")}</p>
-    {configuring ? <p>{copy("account-oauth.useGoogleCloudProjectToPay_2b7c11")}</p> : <p>{huggingFace ? copy("account-oauth.approveAccessOnProviderDelidevWill_7f1c4a", { v0: providerServiceName(view.provider) }) : copy("account-oauth.approveAccessOnOpenrouterDelidevWill_8d81b0")}</p>}
-    {configuring ? <label className="account-oauth-project">{copy("account-oauth.googleCloudProjectId_4e7d2a")}<input value={project} maxLength={30} autoComplete="off" spellCheck={false} onChange={event => setProject(event.target.value)} /></label> : null}
+    <h2 id="account-oauth-title" tabIndex={-1} ref={heading}>{copy("account-oauth.connectProvider", { v0: view.provider.displayName })}</h2>
+    <p className="account-oauth-subheading">{configuring ? copy(formats.length === 1 ? "account-oauth.confirmFormat" : "account-oauth.chooseFormat") : copy("account-oauth.completeSignInInYourBrowser_64e524")}</p>
+    {configuring ? <>
+      {gemini ? <p>{copy("account-oauth.useGoogleCloudProjectToPay_2b7c11")}</p> : null}
+      <APIFormatChoice profiles={formats} value={protocol} disabled={!metadataReady} onChange={flow.selectProtocol} />
+      {!selecting ? <p>{copy("account-oauth.legacyFormat")}</p> : null}
+      {formats.length === 0 ? <p role="alert">{copy("account-oauth.formatUnavailable")}</p> : null}
+    </> : <p>{copy("account-oauth.approveAccessOnProviderDelidevWill_7f1c4a", { v0: providerServiceName(view.provider) })}</p>}
+    {!metadataReady && configuring ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
+    {configuring ? metadataProblem : null}
+    {!configuring && (flow.selectedProtocol || protocol) ? <p>{copy("account-settings.apiFormat")}: {apiFormatLabels[flow.selectedProtocol || protocol as APIFormatId]}</p> : null}
+    {configuring && gemini ? <label className="account-oauth-project">{copy("account-oauth.googleCloudProjectId_4e7d2a")}<input value={project} maxLength={30} autoComplete="off" spellCheck={false} onChange={event => setProject(event.target.value)} /></label> : null}
     {!configuring ? <div className="account-oauth-progress" role="status" aria-live="polite"><span className="account-oauth-spinner" aria-hidden="true" />{progress}</div> : null}
     {waiting && view.userCode ? <div className="account-oauth-device"><p>{copy("account-oauth.ifAskedEnterThisCode_6d3a1f")}</p><output aria-label={copy("account-oauth.temporaryAuthorizationCode_1d4e7a")} className="account-oauth-user-code">{view.userCode}</output></div> : null}
     {view.problem ? <p role="alert">{resolveMessage(view.problem)}</p> : null}
-    <SettingsTaskActions>{configuring ? <button onClick={() => flow.continueInBrowser(project)}>{copy("account-oauth.continueInBrowser_7c2d9b")}</button> : <button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button>}<button hidden={configuring} data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></SettingsTaskActions>
+    <SettingsTaskActions>{configuring ? <button className="primary" disabled={!metadataReady || !protocol || gemini && !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)} onClick={() => flow.continueInBrowser(project, protocol)}>{copy("account-oauth.continueInBrowser_7c2d9b")}</button> : <button disabled={!waiting || flow.completionClaimed} onClick={() => void flow.reopen()}>{copy("account-oauth.openBrowserAgain_63833e")}</button>}<button hidden={configuring} data-settings-task-cancel disabled={!inTask && (busy && !view.problem || !flow.canLeave)} onClick={inTask ? closeTask : () => leave(false, back)}>{copy("account-oauth.cancel_19766e")}</button><button disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(false, back)}>{copy("account-oauth.backToProviders_efe541")}</button></SettingsTaskActions>
     <button className="account-oauth-fallback" disabled={busy && !view.problem || !flow.canLeave} onClick={() => leave(true, manual)}>{copy("account-oauth.useAnApiKeyInstead_b728ab")}</button>
     {view.problem && !configuring ? <SettingsTaskActions><button onClick={flow.observe} disabled={!view.attempt}>{copy("account-oauth.inspectOriginalAttempt_887b78")}</button>{!view.attempt ? <button onClick={flow.retryStart}>{copy("account-oauth.retryOriginalStart_eefc3a")}</button> : null}{flow.completionClaimed ? <button onClick={() => void flow.recover()}>{copy("account-oauth.recoverSavedResult_3cb5e6")}</button> : null}</SettingsTaskActions> : null}
     <footer><p>{copy("account-oauth.yourCredentialWillBeStoredSecurely_26be74")}</p>{!configuring ? <p>{copy("account-oauth.youCanValidateYourAccountAfter_70f97e")}</p> : null}</footer>

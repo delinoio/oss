@@ -17,10 +17,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -34,7 +34,7 @@ func desktopWorkerAuthority(ctx context.Context, o options, expected string, cli
 	if err != nil {
 		return err
 	}
-	endpoint, err := server.LoadEndpoint(o.dataDir)
+	endpoint, err := localEndpoint(o)
 	if err != nil {
 		return err
 	}
@@ -46,11 +46,12 @@ func desktopWorkerAuthority(ctx context.Context, o options, expected string, cli
 		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(saved.DeviceID), saved.DeviceID != clientID) ||
 		endpoint.URL != expected ||
 		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(endpoint.ServerID), endpoint.ServerID != identity.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipActor, "", saved.Type != domain.ClientDevice) || saved.Endpoint != expected ||
+		domain.OwnershipBlocks(domain.OwnershipActor, "", saved.Type != domain.ClientDevice) ||
+		!localEndpointMatches(o, saved.ServerID, saved.Endpoint, expected) ||
 		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(saved.ServerID), saved.ServerID != identity.ServerID) {
 		return recoveryRequired()
 	}
-	paired, err := connectClient(options{dataDir: filepath.Join(o.dataDir, "desktop-client")}, nil)
+	paired, err := connectClient(options{dataDir: filepath.Join(o.dataDir, "desktop-client"), desktop: o.desktop}, nil)
 	if err != nil {
 		return err
 	}
@@ -78,10 +79,19 @@ func desktopWorkerRegistration(ctx context.Context, o options, root, expected st
 	}
 	if domain.OwnershipBlocks(domain.OwnershipActor, "", saved.Type != domain.WorkerDevice) ||
 		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(saved.ServerID), saved.ServerID != identity.ServerID) ||
-		saved.Endpoint != expected {
+		!localEndpointMatches(o, saved.ServerID, saved.Endpoint, expected) {
 		return recoveryRequired()
 	}
-	paired, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true}, strings.NewReader(saved.Token))
+	if o.desktop != nil {
+		owner, local, err := desktopruntime.LocalRoot(root, saved.ServerID, saved.Endpoint)
+		if err != nil {
+			return err
+		}
+		if !local || owner != o.dataDir {
+			return recoveryRequired()
+		}
+	}
+	paired, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true, desktop: o.desktop}, strings.NewReader(saved.Token))
 	if err != nil {
 		return err
 	}
@@ -93,13 +103,41 @@ func desktopWorkerRegistration(ctx context.Context, o options, root, expected st
 	if status.Msg.ServerId != string(saved.ServerID) || status.Msg.ProtocolVersion != rpc.ProtocolVersion || status.Msg.Stopping {
 		return recoveryRequired()
 	}
+	if o.desktop != nil {
+		return desktopruntime.Follow(root, saved.ServerID)
+	}
 	return nil
+}
+
+// Short native controllers do not inherit the resident host's in-memory target.
+// Load its private locator and retain the generation for this admission. Never
+// use ordinary discovery or the immutable pairing address as a fallback.
+func desktopWorkerTarget(ctx context.Context, o options) (context.Context, options, error) {
+	if o.server != "" || o.tokenStdin {
+		return ctx, o, usage()
+	}
+	identity, err := security.LoadIdentity(o.dataDir)
+	if err != nil {
+		return ctx, o, err
+	}
+	target, err := desktopruntime.Load(o.dataDir, identity.ServerID)
+	if err != nil {
+		return ctx, o, err
+	}
+	o.desktop = &target
+	return desktopruntime.WithTarget(ctx, &target), o, nil
 }
 
 // Preparation is an intentional native bootstrap, not a renderer/read operation.
 // Its selected private path never enters renderer metadata. The selected original
 // process independently revalidates the signed selection below.
-func desktopWorkerExecutable(ctx context.Context, o options, args []string) (any, error) {
+func desktopWorkerExecutable(ctx context.Context, o options, args []string) (result any, failure error) {
+	phase := "arguments"
+	defer func() {
+		if failure != nil {
+			slog.Warn("desktop_worker_preparation", "phase", phase, "code", domain.SafeError(failure).Code)
+		}
+	}()
 	fs := flags("worker desktop-prepare")
 	mode := fs.String("mode", "", "launch, retry or ensure")
 	clientID := fs.String("client-id", "", "original desktop client identity")
@@ -111,17 +149,26 @@ func desktopWorkerExecutable(ctx context.Context, o options, args []string) (any
 	}
 	bounded, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
-	if err := desktopWorkerAuthority(bounded, o, "http://"+server.DefaultListen, domain.ID(*clientID)); err != nil {
+	phase = "runtime-target"
+	bounded, o, err := desktopWorkerTarget(bounded, o)
+	if err != nil {
 		return nil, err
 	}
+	phase = "client-authority"
+	if err := desktopWorkerAuthority(bounded, o, o.desktop.Endpoint, domain.ID(*clientID)); err != nil {
+		return nil, err
+	}
+	phase = "local-pairing"
 	if *mode != "ensure" {
-		if _, err := pairLocalDeviceAt(bounded, o, filepath.Join(o.dataDir, "worker"), domain.WorkerDevice, false, "http://"+server.DefaultListen); err != nil {
+		if _, err := pairLocalDeviceAt(bounded, o, filepath.Join(o.dataDir, "worker"), domain.WorkerDevice, false, o.desktop.Endpoint); err != nil {
 			return nil, err
 		}
 	}
-	if err := desktopWorkerRegistration(bounded, o, filepath.Join(o.dataDir, "worker"), "http://"+server.DefaultListen); err != nil {
+	phase = "worker-registration"
+	if err := desktopWorkerRegistration(bounded, o, filepath.Join(o.dataDir, "worker"), o.desktop.Endpoint); err != nil {
 		return nil, err
 	}
+	phase = "executable-selection"
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -139,7 +186,12 @@ func runDesktopWorkerHostCommand(ctx context.Context, o options, args []string, 
 	pipeSignal := make(chan os.Signal, 1)
 	signal.Notify(pipeSignal, syscall.SIGPIPE)
 	defer signal.Stop(pipeSignal)
-	value, err := desktopWorkerHost(ctx, o, args, streams, "http://"+server.DefaultListen)
+	ctx, o, err := desktopWorkerTarget(ctx, o)
+	if err != nil {
+		slog.Warn("desktop_worker_admission", "phase", "runtime-target", "code", domain.SafeError(err).Code)
+		return emitResult(streams, o, nil, err)
+	}
+	value, err := desktopWorkerHost(ctx, o, args, streams, o.desktop.Endpoint)
 	return emitResult(streams, o, value, err)
 }
 
@@ -316,7 +368,9 @@ func desktopWorkerHost(ctx context.Context, o options, args []string, streams IO
 	}
 	defer log.Close()
 	logger := slog.New(slog.NewJSONHandler(log, nil))
-	err = worker.Run(running, worker.Config{Root: root, StartupID: original, Logger: logger, Admitted: func(intent worker.Lifecycle) {
+	// Admission pins its original host, while the surviving Local Worker uses
+	// its existing proved locator transport to reconnect after a desktop restart.
+	err = worker.Run(desktopruntime.WithTarget(running, nil), worker.Config{Root: root, StartupID: original, Logger: logger, Admitted: func(intent worker.Lifecycle) {
 		unlock()
 		// Publish ownership before readiness; server lease expiry can delay the
 		// first attachment while this same Worker safely reconnects.

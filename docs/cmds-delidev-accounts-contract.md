@@ -46,9 +46,13 @@ is introduced.
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
-own the main-first capability 8 and Start/attempt format fields. Preserve manual
-format profiles, original defaults and independent OAuth eligibility. Reservations
-alone activate no support and add no database migration.
+own the main-first capability 8 and Start/attempt format fields established
+by reservation PR #1657. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. The common
+manual/OAuth connection UI requires selection for multiple profiles and displays
+a sole profile read-only; server-owned Start pins explicit OAuth selections through
+completion/recovery. Provider registration remains independently gated. No
+database migration is added.
 
 ## Per-account API formats
 

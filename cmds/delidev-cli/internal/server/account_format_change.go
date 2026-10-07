@@ -23,6 +23,10 @@ type changeAccountFormatInput struct {
 
 func (s *Service) ChangeAccountApiFormat(ctx context.Context, req *connect.Request[pb.ChangeAccountApiFormatRequest]) (*connect.Response[pb.ChangeAccountApiFormatResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
+	actor, ok := domain.PrincipalFrom(ctx)
+	if !ok || actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice {
+		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "This account operation requires an owner or paired client.", "Use an owner or paired client credential."), correlation)
+	}
 	if err := validateAccountMutation(req.Msg.Mutation); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}

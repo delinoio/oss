@@ -18,7 +18,8 @@ function resource(kind: EntityKind, value: Document, revision = 1n) {
 async function chooseAPIFormat(protocol?: string) {
   const select = screen.getByLabelText("API format") as HTMLSelectElement;
   await waitFor(() => expect(select.matches(":disabled")).toBe(false));
-  fireEvent.change(select, { target: { value: protocol ?? select.options[1].value } });
+  if (select.tagName === "SELECT") fireEvent.change(select, { target: { value: protocol ?? select.options[1].value } });
+  else { expect(select.tagName).toBe("OUTPUT"); if (protocol) expect(select.textContent).toBe(protocol === "openai-chat" ? "OpenAI Chat Completions" : protocol === "openai-responses" ? "OpenAI Responses" : "Anthropic Messages"); }
 }
 
 function requestId(value: unknown): string {

@@ -74,19 +74,19 @@ export function SettingsTaskDialog(props: DialogProps) {
   const scoped = useContext(ScopeContext);
   return parent ? <SettingsTaskStep {...props} /> : scoped ? <SettingsTaskWindow {...props} /> : <SettingsTaskScope><SettingsTaskWindow {...props} /></SettingsTaskScope>;
 }
-function SettingsTaskStep({ title, size, focus, children, onDismiss }: DialogProps) {
+function SettingsTaskStep({ title, subtitle, size, focus, children, onDismiss }: DialogProps) {
   const task = useContext(SettingsTaskContext)!, id = useId();
   const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   useSettingsTaskDismiss(() => onDismiss?.());
   const present = task.present;
   useLayoutEffect(() => {
-    present(id, { title, size, focus });
+    present(id, { title, subtitle, size, focus });
     return () => { present(id); requestAnimationFrame(() => { if (available(opener.current)) opener.current?.focus({ preventScroll: true }); }); };
-  }, [id, present, title, size, focus]);
+  }, [id, present, title, subtitle, size, focus]);
   const context = useMemo(() => ({ ...task, stepId: id }), [task, id]);
   return task.stepTarget ? createPortal(<SettingsTaskContext.Provider value={context}><div data-settings-task-step hidden={task.activeStep !== id}>{children}</div></SettingsTaskContext.Provider>, task.stepTarget) : null;
 }
-function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, onDismiss: dismissed, fallbackFocus }: DialogProps) {
+function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, onDismiss: dismissed, fallbackFocus }: DialogProps) {
   useLocale();
   const opening = useSettingsOpening()!, client = useQueryClient();
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null);
@@ -109,7 +109,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     setPresentation([...presentations.current.values()].at(-1));
     setActiveStep([...presentations.current.keys()].at(-1));
   }, []);
-  const current = presentation ?? { title, size, focus };
+  const current = presentation ?? { title, subtitle, size, focus };
   const dismissWithClose = useCallback((idleClose?: () => void, _force = false) => {
     if (closeRequested.current) return;
     closeRequested.current = true;
@@ -195,7 +195,7 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     {(!host || host.outlet) ? createPortal(<>
 
     <DialogSurface ref={dialog} onKeyDown={containTab} className="settings-task-dialog" data-size={current.size} aria-modal="true" aria-labelledby={`${id}-title`} onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss(); }}>
-      <header className="settings-task-header"><div><h2 ref={heading} tabIndex={-1} id={`${id}-title`}>{current.title}</h2><p>{copy("settings.savedOnTheSelectedServer_93dbee")}</p></div><button type="button" className="settings-task-close" aria-label={`${copy("settings-task.close")} ${current.title}`} onClick={dismiss}>×</button></header>
+      <header className="settings-task-header"><div><h2 ref={heading} tabIndex={-1} id={`${id}-title`}>{current.title}</h2><p>{current.subtitle ?? copy("settings.savedOnTheSelectedServer_93dbee")}</p></div><button type="button" className="settings-task-close" aria-label={`${copy("settings-task.close")} ${current.title}`} onClick={dismiss}>×</button></header>
       <div className="settings-task-body settings-content-column"><div hidden={Boolean(activeStep)}>{children}</div><div ref={setStepTarget} /></div>
       <div ref={setActions} className="settings-task-footer" />
     </DialogSurface></>, host?.outlet ?? document.body) : null}

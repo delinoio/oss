@@ -624,3 +624,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Native settings failures log closed option names and failure stage without selected values or native output. Forward available settings unchanged and preserve original no-send versus uncertain-delivery classifications; missing adapters never authorize omission/default retry.
 - Published Fork runtimes retain their original resolved startup executable independently of source-owned job journals. Resolve the child-owned identity first; legacy journal fallback cannot select a replacement after missing original evidence. Follow the Fork and direct startup contracts.
+
+- Short desktop Worker preparation/admission loads the private same-server runtime locator and proves the original generation before authentication. Preserve immutable client/Worker credentials and local-pairing proof, persist no-fallback following before admission, and use the existing Local Worker transport for reconnect and update polling/reporting. Missing, foreign or failed runtime proof never permits ordinary discovery or stale-address fallback.
