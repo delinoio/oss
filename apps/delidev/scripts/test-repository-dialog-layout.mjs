@@ -42,7 +42,7 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   // Half-sized CSS viewports model effective 200% layout. Native/browser chrome
   // zoom and packaged CEF behavior require independent platform acceptance.
-  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440, 900], [960, 640], [640, 480], [480, 320]]) {
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440, 900], [1280, 820], [960, 640], [640, 480], [480, 320], [320, 240]]) {
     const l = value => language === "ko" ? messages.get(value) ?? value : value;
     const c = name => catalogs[language][`repository-github.${name}`];
     await page.setViewportSize({ width, height });
@@ -55,6 +55,8 @@ try {
     await opener.click();
     const dialog = page.getByRole("dialog", { name: l("Add repository"), exact: true });
     await dialog.waitFor();
+    assert.equal(await dialog.getByRole("button", {name:"Cancel",exact:true}).count(),0);
+    assert.equal(await dialog.getByRole("button", {name:"Back to repositories",exact:true}).count(),0);
     assert(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).evaluate(node => node === document.activeElement));
     assert(await page.locator(".settings-content h1").filter({ hasText: l("Repositories") }).isVisible());
     assert(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).isVisible());
@@ -84,11 +86,11 @@ try {
     const profileId = await profile.locator("option").nth(1).getAttribute("value"); await profile.selectOption(profileId);
     const repository = child.getByRole("button", { name: `example/desktop ${c("private")}`, exact: true }); await repository.waitFor();
     const childLayout = await child.evaluate(node => {
-      const rect = node.getBoundingClientRect(), body = node.querySelector(".repository-github-body"), header = node.querySelector("header").getBoundingClientRect(), footer = node.querySelector("footer").getBoundingClientRect();
-      return { width: rect.width, height: rect.height, top: rect.top, overflow: node.scrollWidth > node.clientWidth || body.scrollWidth > body.clientWidth, scroll: body.scrollHeight > body.clientHeight, headerTop: header.top, footerBottom: footer.bottom, title: getComputedStyle(node.querySelector("h2")).fontSize, controls: [...node.querySelectorAll("button,input,select")].every(control => control.getBoundingClientRect().height >= 39.5) };
+      const rect = node.getBoundingClientRect(), body = node.querySelector(".repository-github-body"), header = node.querySelector("header").getBoundingClientRect();
+      return { width: rect.width, height: rect.height, top: rect.top, overflow: node.scrollWidth > node.clientWidth || body.scrollWidth > body.clientWidth, scroll: body.scrollHeight > body.clientHeight, headerTop: header.top, hasFooter: Boolean(node.querySelector("footer")), title: getComputedStyle(node.querySelector("h2")).fontSize, controls: [...node.querySelectorAll("button,input,select")].every(control => control.getBoundingClientRect().height >= 39.5) };
     });
     assert(childLayout.width <= 560.5 && childLayout.width <= width - 31 && childLayout.height <= height - 47 && childLayout.top >= 23 && !childLayout.overflow && childLayout.controls, JSON.stringify(childLayout));
-    assert.equal(childLayout.title, "20px"); assert(childLayout.headerTop >= childLayout.top && childLayout.footerBottom <= childLayout.top + childLayout.height);
+    assert.equal(childLayout.title, "20px"); assert(childLayout.headerTop >= childLayout.top && !childLayout.hasFooter);
     if (height <= 480) assert(childLayout.scroll, "The child body must scroll on small viewports");
     if (previews && width === 1440 && theme === "light") { const path = join(previews, `${language}.png`); await page.screenshot({ path }); console.log(JSON.stringify({ operation: "repository_dialog_preview", language, path, nativeAcceptance: "not-performed" })); }
     await dialog.getByRole("textbox", { name: "Git URL", exact: true }).evaluate(node => node.focus());
@@ -96,9 +98,9 @@ try {
     for (const key of ["Tab", "Shift+Tab"]) for (let step = 0; step < 12; step++) { await page.keyboard.press(key); assert(await child.evaluate(node => node.contains(document.activeElement)), "Focus escaped the child dialog"); }
     const filter = child.getByRole("textbox", { name: c("filter"), exact: true }); await filter.fill("desktop");
     await page.mouse.click(8, 8); assert.equal(await page.locator("dialog[open]:not([role=region])").count(), 2, "Backdrop clicks must retain both dialogs");
-    for (const action of ["Escape", "Close", "Cancel"]) {
+    for (const action of ["Escape", "Close"]) {
       if (action === "Escape") await page.keyboard.press("Escape");
-      else await child.getByRole("button", { name: c(action === "Close" ? "close" : "cancel"), exact: true }).click();
+      else await child.getByRole("button", { name: c("close"), exact: true }).click();
       await child.waitFor({ state: "detached" }); assert.equal(await page.locator("dialog[open]:not([role=region])").count(), 1);
       assert(await chooser.evaluate(node => node === document.activeElement), "Child close must restore its opener");
       assert.equal(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).inputValue(), "https://github.com/owner/repo.git");
@@ -114,11 +116,11 @@ try {
     assert(await opener.evaluate(node => node === document.activeElement), "Opener focus was not restored");
     await opener.click();
     assert.equal(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).inputValue(), "");
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await dialog.locator(".settings-task-close").click();
     cases++;
   }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ operation: "repository_dialog_layout", result: "passed", cases, themes: 2, languages: 2, viewports: 4, nestedDialogs: true, nativeAcceptance: "not-performed" }));
+  console.log(JSON.stringify({ operation: "repository_dialog_layout", result: "passed", cases, themes: 2, languages: 2, viewports: 6, nestedDialogs: true, nativeAcceptance: "not-performed" }));
 } catch (error) {
   console.error(JSON.stringify({ operation: "repository_dialog_layout", result: "failed", cases, visibleButtons: page ? await page.getByRole("button").allTextContents() : [] }));
   throw error;

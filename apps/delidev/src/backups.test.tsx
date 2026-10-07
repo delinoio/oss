@@ -295,19 +295,19 @@ it("focuses inspection only at activation and restores the opener or list-headin
   const heading = screen.getByRole("heading", { name: `Inspection: ${f.id}` });
   expect(document.activeElement).toBe(heading);
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Backup integrity inspection" })));
-  const stableAction = screen.getByRole("button", { name: "Close backup inspection" });
+  const stableAction = screen.getByRole("button", { name: "Close Backup integrity inspection" });
   stableAction.focus();
   await waitFor(() => expect(f.inspect).toHaveBeenCalledTimes(1));
   await act(async () => finish({ backup: f.backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() }));
   expect(document.activeElement).toBe(stableAction);
-  fireEvent.click(screen.getByRole("button", { name: "Close backup inspection" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Backup integrity inspection" }));
   await waitFor(() => expect(document.activeElement).toBe(opener));
   fireEvent.click(opener);
   await screen.findByText("Database integrity and original server identity verified.");
   f.list.mockResolvedValueOnce({ backups: [] });
   fireEvent.click(screen.getByRole("button", { name: "Refresh backups" }));
   await screen.findByText("No managed backups.");
-  fireEvent.click(screen.getByRole("button", { name: "Close backup inspection" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Backup integrity inspection" }));
   expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Database backups" }));
 });
 
@@ -401,7 +401,7 @@ it("disposes tab, inspection and uncertain-write presentation on a Strict Mode o
   const view = render(f.lifetimeView());
   fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
   await screen.findByRole("button", { name: "Delete selected backup…" });
-  fireEvent.click(screen.getByRole("button", { name: "Close backup inspection" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Backup integrity inspection" }));
   fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
   fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
   await screen.findByRole("button", { name: "Retry the same backup creation" });

@@ -200,7 +200,7 @@ it("retains pairing through reconnect and discards it after category departure",
   expect(screen.queryByRole("textbox", { name: "Device name" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create pairing document" }));
   expect((screen.getByRole("textbox", { name: "Device name" }) as HTMLInputElement).value).toBe("");
-  fireEvent.click(screen.getByRole("button", { name: "Cancel pairing" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Pair another device" }));
   const trigger = screen.getByRole("button", { name: "Create pairing document" });
   await waitFor(() => expect(window.document.activeElement).toBe(trigger));
   expect(trigger.closest(".settings-toolbar")).toBeTruthy();

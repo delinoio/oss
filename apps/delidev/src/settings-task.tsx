@@ -139,7 +139,8 @@ function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, f
     const frame = requestAnimationFrame(() => {
       if (!node.open || anotherModal(node)) return;
       const target = current.focus === SettingsDialogFocus.Heading ? heading.current
-        : current.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>("[data-settings-task-cancel]") ?? node.querySelector<HTMLElement>("button:not(.primary):not(.settings-task-close)")
+        : current.focus === SettingsDialogFocus.Close ? node.querySelector<HTMLElement>(".settings-task-close")
+        : current.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>("[data-settings-task-cancel]:not(:disabled)") ?? node.querySelector<HTMLElement>(".settings-task-close")
         : node.querySelector<HTMLElement>("input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled)");
       (target ?? heading.current)?.focus({ preventScroll: true });
     });
@@ -188,7 +189,7 @@ function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, f
   useLayoutEffect(() => {
     const node = dialog.current;
     if (!presentation || !node?.open || anotherModal(node)) return;
-    const target = presentation.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>(".settings-task-footer [data-settings-task-cancel]") ?? node.querySelector<HTMLElement>(".settings-task-footer button:not(.primary)") : presentation.focus === SettingsDialogFocus.Input ? node.querySelector<HTMLElement>(".settings-task-body [data-settings-task-step]:not([hidden]) input:not(:disabled)") : heading.current;
+    const target = presentation.focus === SettingsDialogFocus.Close ? node.querySelector<HTMLElement>(".settings-task-close") : presentation.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>(".settings-task-footer [data-settings-task-cancel]:not(:disabled)") ?? node.querySelector<HTMLElement>(".settings-task-close") : presentation.focus === SettingsDialogFocus.Input ? node.querySelector<HTMLElement>(".settings-task-body [data-settings-task-step]:not([hidden]) input:not(:disabled)") : heading.current;
     (target ?? heading.current)?.focus({ preventScroll: true });
   }, [presentation]);
   const content = <SettingsTaskContext.Provider value={context}>
@@ -209,7 +210,10 @@ function associateForm(children: ReactNode, form?: string, task?: React.ContextT
   return Children.map(nodes, child => {
     if (!isValidElement(child)) return child;
     if (child.type === Fragment) return cloneElement(child as React.ReactElement<{ children: ReactNode }>, { children: associateForm((child.props as { children: ReactNode }).children, form, task) });
-    if (child.type !== "button") return child;
+    // Only explicitly audited dismissal duplicates opt in; marked business or
+    // nested cancellation controls keep their existing adaptation.
+    if (child.type === SettingsTaskDismissButton && task && !task.stepId) return null;
+    if (child.type !== "button" && child.type !== SettingsTaskDismissButton) return child;
     const button = child as React.ReactElement<ButtonHTMLAttributes<HTMLButtonElement> & { "data-settings-task-cancel"?: boolean }>;
     // Local cancellation remains available while a request is pending. Nested
     // steps keep their own Back/Keep callback and the parent's lifetime.
@@ -221,9 +225,18 @@ function associateForm(children: ReactNode, form?: string, task?: React.ContextT
     return cloneElement(button, { ...(cancel ? { disabled: false, onClick: cancel } : {}), form: button.props.form ?? form, type: button.props.type ?? (form ? "submit" : "button") });
   });
 }
+// Use only when the complete action equals header dismissal in a top-level task.
+// Page cancellation and nested return remain available with their original guards.
+export function SettingsTaskDismissButton(props: ButtonHTMLAttributes<HTMLButtonElement> & { "data-settings-task-cancel"?: boolean }) {
+  const task = useContext(SettingsTaskContext);
+  return task && !task.stepId ? null : <button {...props} />;
+}
+
 export function SettingsTaskActions({ children, className = "", form }: { children: ReactNode; className?: string; form?: string }) {
   const task = useContext(SettingsTaskContext);
   if (task?.activeStep !== task?.stepId) return null;
-  const content = <div className={`actions ${className}`}>{associateForm(children, form, task)}</div>;
+  const associated = associateForm(children, form, task);
+  if (!Children.toArray(associated).length) return null;
+  const content = <div className={`actions ${className}`}>{associated}</div>;
   return task?.actions ? createPortal(content, task.actions) : content;
 }

@@ -203,7 +203,7 @@ it("focuses newly entered editors once, retains drafts through inactivity, and r
   expect(screen.getByRole("textbox", { name: "Resource owner" }).hasAttribute("disabled")).toBe(true);
   expect(screen.getByText("Token type and owner cannot be changed after creation.")).toBeTruthy();
   fireEvent.change(name, { target: { value: "Renamed" } });
-  const cancel = screen.getByRole("button", { name: "Cancel edit" }); cancel.focus();
+  const cancel = screen.getByRole("button", { name: "Close Rename GitHub profile" }); cancel.focus();
   view.rerender(f.view(false)); view.rerender(f.view(true));
   expect(name.value).toBe("Renamed"); expect(document.activeElement).toBe(cancel);
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));

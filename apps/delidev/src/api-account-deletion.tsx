@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskDismissButton } from "./settings-task";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
@@ -199,12 +200,12 @@ export function ApiAccountDeletion({ initial, active, deleted, close }: { initia
       <p>{copy("account-deletion.api.description")}</p>
       <p>{copy("account-deletion.api.consequences")}</p>
       <p className="settings-scope">{copy("account-deletion.api.browserCleanup")}</p>
-      <SettingsTaskActions><button data-settings-task-cancel disabled={!active} onClick={close}>{copy("account-deletion.api.keepEntry")}</button><button className="api-account-deletion-confirm" disabled={!active || !apiEntry(confirmed)} onClick={() => void confirm()}>{copy("account-deletion.api.confirm")}</button></SettingsTaskActions>
+      <SettingsTaskActions><SettingsTaskDismissButton data-settings-task-cancel disabled={!active} onClick={close}>{copy("account-deletion.api.keepEntry")}</SettingsTaskDismissButton><button className="api-account-deletion-confirm" disabled={!active || !apiEntry(confirmed)} onClick={() => void confirm()}>{copy("account-deletion.api.confirm")}</button></SettingsTaskActions>
     </> : <>
       <p role="status">{copy(view.stage === Stage.Checking ? "account-deletion.api.checking" : view.stage === Stage.Disconnecting ? "account-deletion.api.disconnecting" : view.stage === Stage.Deleting ? "account-deletion.api.deleting" : "account-deletion.api.paused")}</p>
       {view.failure ? <div className="problem" role="alert"><strong>{copy("ui.requestFailed")}</strong><p>{view.failure.message}</p><p>{view.failure.guidance}</p><details><summary>{copy("ui.technicalDetails")}</summary><code>{view.failure.code}</code></details>{view.failure.correlationId ? <small>{copy("ui.reference_0eac07", { v0: view.failure.correlationId })}</small> : null}</div> : null}
       <p className="settings-scope">{copy("account-deletion.api.departure")}</p>
-      <SettingsTaskActions><button data-settings-task-cancel disabled={!active} onClick={close}>{copy("account-connection.backToAiApiKeys_2d6214")}</button>{view.stage === Stage.Paused ? <button disabled={!active || pending.current?.busy} onClick={pending.current?.retry !== undefined ? retry : () => void refresh()}>{copy(pending.current?.retry === Retry.Disconnect ? "account-connection.retryOriginalCredentialCleanup_bb5e5d" : pending.current?.retry === Retry.Delete ? "account-deletion.retryTheSameDeletion_b32bf6" : pending.current?.retry === Retry.Status ? "account-deletion.retryOriginalStatusCheck_88bd61" : "account-deletion.api.refresh")}</button> : null}</SettingsTaskActions>
+      <SettingsTaskActions><SettingsTaskDismissButton data-settings-task-cancel disabled={!active} onClick={close}>{copy("account-connection.backToAiApiKeys_2d6214")}</SettingsTaskDismissButton>{view.stage === Stage.Paused ? <button disabled={!active || pending.current?.busy} onClick={pending.current?.retry !== undefined ? retry : () => void refresh()}>{copy(pending.current?.retry === Retry.Disconnect ? "account-connection.retryOriginalCredentialCleanup_bb5e5d" : pending.current?.retry === Retry.Delete ? "account-deletion.retryTheSameDeletion_b32bf6" : pending.current?.retry === Retry.Status ? "account-deletion.retryOriginalStatusCheck_88bd61" : "account-deletion.api.refresh")}</button> : null}</SettingsTaskActions>
     </>}
   </section>;
 }

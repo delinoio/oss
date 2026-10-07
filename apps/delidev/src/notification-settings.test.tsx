@@ -83,7 +83,7 @@ it("retains stale notification drafts across settings visibility and never saves
   expect(await screen.findByText(/These preferences changed elsewhere/)).toBeTruthy();
   expect((screen.getByRole("button", { name: "Save notification preferences" }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Edit notification preferences" }));
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(screen.getAllByText("Disabled")).toHaveLength(2);
 });
@@ -118,7 +118,7 @@ it.each(["success", "failure"] as const)("ignores a closed notification editor's
   await waitFor(() => expect((screen.getByRole("button", { name: "Save notification preferences" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Edit notification preferences" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Edit notification preferences" }));
   const fresh = screen.getByRole("dialog"), checkbox = screen.getByRole("checkbox", { name: "Execution completion, failure and interruption" }) as HTMLInputElement;
@@ -153,7 +153,7 @@ it("focuses labeled checkboxes after Edit and waits for Save refetch before retu
   expect(document.getElementById(first.getAttribute("aria-describedby")!)?.textContent).toBe("When a session needs your answer or approval.");
   fireEvent.click(screen.getByRole("checkbox", { name: "Execution completion, failure and interruption" }));
   expect(value.save).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel notification edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Edit notification preferences" }));
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit notification preferences" }));
   expect(screen.getByText("Disabled")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Edit notification preferences" }));

@@ -28,18 +28,19 @@ export function failureSummary(code?: string): string {
 export function DialogSurface(props: ComponentPropsWithRef<"dialog">) {
   return <dialog {...props} onCancel={event => { event.preventDefault(); props.onCancel?.(event); }}>{props.children}</dialog>;
 }
-export function Modal({ title, close, children, visible = true, className, initialFocus, trapFocus = false }: { title: string; close: () => void; children: ReactNode; visible?: boolean; className?: string; initialFocus?: RefObject<HTMLElement | null>; trapFocus?: boolean }) {
+export function Modal({ title, close, children, visible = true, className, initialFocus, focusClose = false, trapFocus = false }: { title: string; close: () => void; children: ReactNode; visible?: boolean; className?: string; initialFocus?: RefObject<HTMLElement | null>; focusClose?: boolean; trapFocus?: boolean }) {
   useLocale();
   const id = useId();
   const ref = useRef<HTMLDialogElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     if (!visible) return;
     const opener = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
     dialog.showModal();
-    initialFocus?.current?.focus();
+    (focusClose ? closeButton.current : initialFocus?.current)?.focus();
     return () => { dialog.close(); if (opener?.isConnected) opener.focus(); };
-  }, [visible, initialFocus]);
+  }, [visible, initialFocus, focusClose]);
   return <DialogSurface ref={ref} className={className} aria-labelledby={id} onCancel={(event) => { event.preventDefault(); close(); }} onKeyDown={event => {
     if (!trapFocus || event.key !== "Tab") return;
     // Some desktop browser hosts include their chrome in the native modal's
@@ -50,7 +51,7 @@ export function Modal({ title, close, children, visible = true, className, initi
     const focus = document.activeElement;
     if (!event.currentTarget.contains(focus) || (event.shiftKey ? focus === first : focus === last)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
   }}>
-    <header><h2 id={id}>{title}</h2><button onClick={close} aria-label={copy("ui.close_0fbe2a", { v0: title })}>{copy("ui.close_7d9eb7")}</button></header>
+    <header><h2 id={id}>{title}</h2><button ref={closeButton} type="button" onClick={close} aria-label={copy("ui.close_0fbe2a", { v0: title })}>{copy("ui.close_7d9eb7")}</button></header>
     {children}
   </DialogSurface>;
 }

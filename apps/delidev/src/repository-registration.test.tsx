@@ -324,13 +324,14 @@ it("observes an accepted save after close without restoring or replaying the wiz
 });
 
 
-it.each(["Cancel", "Close Add repository", "Escape"])("dismisses with %s, restores the opener and discards the draft", async action => {
+it.each(["Close Add repository", "Escape"])("dismisses with %s, restores the opener and discards the draft", async action => {
   const f = fixture(); f.mount();
   const opener = await screen.findByRole("button", { name: "Add repository" });
   opener.focus(); await f.add();
   const dialog = screen.getByRole("dialog", { name: "Add repository" });
   expect(window.document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Git URL" }));
   expect(screen.getByRole("region", { name: "No repositories yet", hidden: true })).toBeTruthy();
+  expect(within(dialog).queryByRole("button", {name:"Cancel"})).toBeNull(); expect(within(dialog).queryByRole("button", {name:"Back to repositories"})).toBeNull();
   fireEvent.click(within(dialog).getByRole("button", { name: "Enter a path…" }));
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Absolute checkout path" }), { target: { value: "/discard" } });
   if (action === "Escape") fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
@@ -347,7 +348,7 @@ it("discards a pending inspection when the child dialog closes inside Settings",
   f.inspected.mockReturnValueOnce(pending.promise); f.mount(); await f.add();
   fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
   await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Add repository" }));
   await f.add();
   pending.resolve({ job: row(EntityKind.JOB, { machine_id: f.machine.id, state: "succeeded", output: metadata }) });
   await new Promise(resolve => setTimeout(resolve, 20));
@@ -402,7 +403,7 @@ it("shows only usable PAT profiles and requires explicit profile and repository 
   fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
   await screen.findByText("Repository clone accepted"); expect(f.clone.mock.calls[0][0].githubSelection).toMatchObject({ profileId: profile.id, owner: "delinoio", name: "oss" });
 });
-it.each(["Escape", "Close", "Cancel"])("closes only the GitHub child with %s and preserves the parent draft and chooser state", async action => {
+it.each(["Escape", "Close"])("closes only the GitHub child with %s and preserves the parent draft and chooser state", async action => {
   const f = fixture(metadata, true), profile = connectedProfile(f); f.mount(); await f.add(false);
   const parent = screen.getByRole("dialog", { name: "Add repository" });
   const url = within(parent).getByRole("textbox", { name: "Git URL" }) as HTMLInputElement;
@@ -411,6 +412,7 @@ it.each(["Escape", "Close", "Cancel"])("closes only the GitHub child with %s and
   const body = parent.querySelector(".settings-task-body")!; body.scrollTop = 40;
   const opener = await screen.findByRole("button", { name: "Choose from GitHub" }); fireEvent.click(opener);
   const child = screen.getByRole("dialog", { name: "Choose a GitHub repository" });
+  expect(within(child).queryByRole("button", {name:"Cancel"})).toBeNull(); expect(child.querySelector("footer")).toBeNull();
   expect(parent.contains(child)).toBe(false); expect(screen.getAllByRole("dialog")).toHaveLength(2);
   const select = within(child).getByRole("combobox", { name: "GitHub profile" }); expect(document.activeElement).toBe(select);
   fireEvent.click(select); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
@@ -449,7 +451,7 @@ it("ignores a late repository page after child cancellation or Settings departur
   const reply = await f.repositories({ profileId: profile.id, expectedRevision: profile.revision, page: 1 }); f.repositories.mockClear(); f.repositories.mockReturnValueOnce(response.promise);
   f.mount(); await f.add(false); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
   fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) })); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(1));
-  fireEvent.click(within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).getByRole("button", { name: "Close Choose a GitHub repository" }));
   const opener = screen.getByRole("button", { name: "Choose from GitHub" });
   await act(async () => response.resolve(reply)); expect(document.activeElement).toBe(opener);
   expect(screen.queryByRole("dialog", { name: "Choose a GitHub repository" })).toBeNull(); expect(f.save).not.toHaveBeenCalled();
@@ -468,7 +470,7 @@ it("updates child language in place without resetting selection, filter, focus o
   expect(screen.getByRole("dialog", { name: "GitHub 저장소 선택" })).toBe(child); expect(document.activeElement).toBe(filter); expect(filter.value).toBe("oss");
   expect(screen.getByRole("combobox", { name: "GitHub 프로필" }).getAttribute("data-value")).toBe(profile.id);
   expect(screen.getByRole("button", { name: "delinoio/oss 비공개 · 보관됨" })).toBeTruthy(); expect(f.repositories).toHaveBeenCalledTimes(calls);
-  fireEvent.click(within(child).getByRole("button", { name: "취소" })); expect(document.activeElement).toBe(screen.getByRole("button", { name: "GitHub에서 선택" }));
+  fireEvent.click(within(child).getByRole("button", { name: "GitHub 저장소 선택 닫기" })); expect(document.activeElement).toBe(screen.getByRole("button", { name: "GitHub에서 선택" }));
 });
 it("focuses the child heading without admitting reads on an unsupported server", async () => {
   const f = fixture(); connectedProfile(f); f.mount(); await f.add(false);
@@ -477,7 +479,7 @@ it("focuses the child heading without admitting reads on an unsupported server",
   expect(document.activeElement).toBe(within(child).getByRole("heading", { name: "Choose a GitHub repository" }));
   expect((within(child).getByRole("combobox", { name: "GitHub profile" }) as HTMLSelectElement).disabled).toBe(true);
   expect(within(child).getByText(/Update the selected server to choose repositories/)).toBeTruthy(); expect(f.repositories).not.toHaveBeenCalled();
-  fireEvent.click(within(child).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(within(child).getByRole("button", { name: "Close Choose a GitHub repository" }));
 });
 it("retains the child and parent on permission denial and rejects stale profile choices", async () => {
   const f = fixture(metadata, true), profile = connectedProfile(f); f.repositories.mockRejectedValueOnce(new ConnectError("Repository access denied", Code.PermissionDenied));
@@ -505,7 +507,7 @@ it("preserves a selected profile when more profiles append", async () => {
   const f = fixture(metadata, true, true, true, undefined, true), profile = connectedProfile(f); f.mount(); await f.add();
   fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
   fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(screen.getByRole("option", { name: resourceName(profile) }));
-  fireEvent.click(within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).getByRole("button", { name: "Close Choose a GitHub repository" }));
   fireEvent.click(await screen.findByRole("button", { name: "Load more GitHub profile" }));
   await screen.findByRole("button", { name: "Choose from GitHub" });
   fireEvent.click(screen.getByRole("button", { name: "Choose from GitHub" }));

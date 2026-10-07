@@ -33,7 +33,7 @@ it("discards pending code preparation without issuing into a replacement task", 
   let release!: (digest: ArrayBuffer) => void;
   vi.stubGlobal("crypto", { getRandomValues: webcrypto.getRandomValues.bind(webcrypto), subtle: { digest: () => new Promise<ArrayBuffer>(resolve => { release = resolve; }) } });
   render(value.view()); issue();
-  fireEvent.click(screen.getByRole("button", { name: "Cancel pairing" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Pair another device" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create pairing document" }));
   const name = screen.getByLabelText("Device name") as HTMLInputElement;
@@ -60,7 +60,7 @@ it("issues only a code digest, privately reveals the exact pinned grant and hide
   view.rerender(value.view());
   fireEvent.click(await screen.findByRole("button", { name: "Reveal private document" }));
   expect((screen.getByLabelText("Private pairing document") as HTMLTextAreaElement).value).toBe(raw);
-  fireEvent.click(screen.getByRole("button", { name: "Discard private pairing document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Pair another device" }));
   expect(screen.queryByLabelText("Private pairing document")).toBeNull();
   expect(value.issue).toHaveBeenCalledTimes(1);
 });
@@ -69,7 +69,7 @@ it("retains identical issuance after a lost response and settings visibility cha
   value.issue.mockRejectedValueOnce(new ConnectError("lost", Code.Unavailable));
   const view = render(value.view()); issue();
   await screen.findByRole("button", { name: "Retry original pairing issuance" });
-  expect((screen.getByRole("button", { name: "Discard private pairing document" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Close Pair another device" }) as HTMLButtonElement).disabled).toBe(false);
   view.rerender(value.view(false)); view.rerender(value.view());
   fireEvent.click(screen.getByRole("button", { name: "Retry original pairing issuance" }));
   await screen.findByRole("button", { name: "Reveal private document" });
@@ -110,7 +110,7 @@ it("blocks malformed acknowledgments and expired grant exposure", async () => {
   const value = fixture(true); render(value.view()); issue();
   await screen.findByText(/Pairing document expired/);
   expect(screen.queryByRole("button", { name: "Reveal private document" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Discard private pairing document" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Pair another device" }));
   value.issue.mockImplementationOnce(async () => ({ pairing: value.resource, requestId: newRequestId() }));
   issue();
   await screen.findByText(/acknowledged without a matching grant/);

@@ -42,3 +42,5 @@ dialog.settings-task-dialog { width: min(768px, calc(100vw - 32px)); max-width: 
 
 .settings-task-body .project-field-group:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .settings-task-body :is(.project-field-group p, .agent-section-summary, .integration-secondary) { font-size: 12px; line-height: 18px; color: var(--muted); }
+
+.settings-task-footer:empty { display: none; }

@@ -81,8 +81,8 @@ function dismissTask(method: "X" | "Escape") {
 }
 
 it.each([
-  ["Delete account", "X"], ["Delete account", "Escape"], ["Delete account", "Cancel"],
-  ["Edit preferences", "X"], ["Edit preferences", "Escape"], ["Edit preferences", "Cancel"],
+  ["Delete account", "X"], ["Delete account", "Escape"],
+  ["Edit preferences", "X"], ["Edit preferences", "Escape"],
 ] as const)("keeps subscription content and disclosures visible beneath %s through %s dismissal", async (action, dismissal) => {
   const value = fixture();
   render(<value.Harness settings />);
@@ -258,7 +258,7 @@ it.each(["X", "Escape"] as const)("discards an idle deletion confirmation on %s"
   fireEvent.click(screen.getByRole("button", { name: `More actions for ${alias}` }));
   fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
   expect(screen.getByRole("button", { name: confirmLabel })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Keep account" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Close / }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
 });
@@ -267,7 +267,7 @@ it("preserves explicit Back abandonment after a definite idle failure", async ()
   const value = fixture(false); value.remove.mockRejectedValue(new ConnectError("referenced", Code.Aborted));
   await openSettingsDeletion(value);
   fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
-  fireEvent.click(await screen.findByRole("button", { name: "Back to subscriptions" }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Close / }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   expect(value.remove).toHaveBeenCalledTimes(1);

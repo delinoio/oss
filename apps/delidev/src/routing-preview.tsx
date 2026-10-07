@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskDismissButton } from "./settings-task";
 import { useMemo, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, isEntityId, type Resource, EntityKind } from "@delinoio/delidev-api-client";
@@ -88,6 +89,6 @@ export function RoutingPreview({ agent, active, close }: { agent: Resource; acti
       {route.sources?.length ? <section className="routing-sources"><h3>{copy("configuration-actions.sourceDecisions")}</h3><ol>{route.sources.map((source, index) => <li key={`${index}:${source.source}`} className="routing-source"><h4>{index + 1} · {source.source}{route.source_index === index ? copy("configuration-actions.selectedSource") : ""}</h4><p>{copy("configuration-actions.sourceModel", { v0: source.native_model, v1: source.model_id })}</p>{source.problem ? <ServiceProblem code={text(source.problem.code)}>{text(source.problem.message)}</ServiceProblem> : null}<dl className="routing-policy"><div><dt>{copy("routing-preview.policy")}</dt><dd>{policyLabel(source.route.policy) || statusLabel("unknown")}</dd></div></dl><Fallback route={source.route} /><Candidates route={source.route} metadata={metadata} /></li>)}</ol></section> : null}
       <section className="routing-account-section"><h3>{copy("routing-preview.candidates")}</h3><Candidates route={route} metadata={metadata} /></section></> : null}
     <p className="routing-note">{copy("configuration-actions.thisPreviewIsReadOnlyAnd_dd9bb1")}</p>
-    <SettingsTaskActions><button type="button" data-settings-task-cancel onClick={closeTask}>{copy("settings-task.close")}</button></SettingsTaskActions>
+    <SettingsTaskActions><SettingsTaskDismissButton type="button" data-settings-task-cancel onClick={closeTask}>{copy("settings-task.close")}</SettingsTaskDismissButton></SettingsTaskActions>
   </section>;
 }

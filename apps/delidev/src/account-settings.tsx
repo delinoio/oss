@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskDismissButton } from "./settings-task";
 import { useAccountStorage } from "./account-storage";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
@@ -556,7 +557,7 @@ function AccountCreationWizard({
       <Problem error={providerRead.error} />
       {unknownResponse ? <p role="alert">{copy("account-settings.theServerAcknowledgedARequestWithout_eb87fb")}</p> : null}
       <Problem error={connect.error} />
-      <SettingsTaskActions className=""><button type="button" disabled={unknownResponse || providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>{copy("account-settings.manageConnection_ad2892")}</button><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={unknownResponse ? closeTask : close}>{copy("account-settings.done_11a676")}</button></SettingsTaskActions>
+      <SettingsTaskActions className=""><button type="button" disabled={unknownResponse || providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={() => openManage(current)}>{copy("account-settings.manageConnection_ad2892")}</button><SettingsTaskDismissButton type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={unknownResponse ? closeTask : close}>{copy("account-settings.done_11a676")}</SettingsTaskDismissButton></SettingsTaskActions>
     </section>;
   }
 

@@ -51,6 +51,7 @@ let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";
+const dismissalOnly = process.env.DELIDEV_LAYOUT_DISMISSAL_ONLY === "1";
 const projectsOnly = process.env.DELIDEV_LAYOUT_PROJECTS_ONLY === "1";
 const languageOnly = process.env.DELIDEV_LAYOUT_LANGUAGE_ONLY === "1";
 let language = "en";
@@ -238,6 +239,26 @@ try {
       await checkHiddenAccountChoices();
     }
     console.log(JSON.stringify({ operation: "accounts_layout", result: "passed", accountsChecks: hiddenChoicesChecked, languages: 2, themes: 2, viewports: 4, effectiveZoomViewports: 2, nativeAcceptance: "not-performed" }));
+  } else if (dismissalOnly) {
+    let dismissalChecks = 0;
+    for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const zoom of [1,2]) for (const [width,height] of [[1440,900],[1280,820],[960,640],[640,480]]) {
+      await page.setViewportSize({width:width/zoom,height:height/zoom});
+      await page.goto(`${origin}/?theme=${theme}&populated=true&language=${language}`);
+      await page.getByRole("button", {name:l("Settings"),exact:true}).click(); await select("Projects");
+      const opener=page.locator(".settings-content button").filter({hasText:new RegExp(`^${l("Delete")}$`)}).first(); await opener.click();
+      const dialog=page.getByRole("dialog"), close=dialog.locator(".settings-task-close"); await dialog.waitFor();
+      await page.waitForFunction(()=>document.activeElement?.classList.contains("settings-task-close"));
+      assert.equal(await dialog.getByRole("button",{name:l("Keep configuration"),exact:true}).count(),0);
+      assert(await dialog.evaluate(node=>{const box=node.getBoundingClientRect();return box.width<=innerWidth-31&&box.height<=innerHeight-47&&node.scrollWidth<=node.clientWidth;}));
+      for(const key of ["Tab","Shift+Tab"]) for(let i=0;i<6;i++){await page.keyboard.press(key);assert(await dialog.evaluate(node=>node.contains(document.activeElement)));}
+      await close.focus(); await page.keyboard.press("Enter"); await dialog.waitFor({state:"detached"});
+      assert(await opener.evaluate(node=>node===document.activeElement),"Safe header activation restores the original opener");
+      const create=page.getByRole("button",{name:l("New Project"),exact:true});await create.click();await dialog.waitFor();
+      assert.equal(await dialog.getByRole("button",{name:l("Cancel"),exact:true}).count(),0);
+      await page.keyboard.press("Escape");await dialog.waitFor({state:"detached"});assert(await create.evaluate(node=>node===document.activeElement));
+      dismissalChecks++;
+    }
+    console.log(JSON.stringify({operation:"dialog_dismissal_layout",result:"passed",dismissalChecks,languages:2,themes:2,viewports:4,effectiveZoom:[1,2],nativeAcceptance:"not-performed"}));
   } else if (projectsOnly) {
     let projectStepChecks = 0;
     for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const zoom of [1, 2]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
@@ -378,8 +399,8 @@ try {
       await page.getByRole("button", { name: "Back", exact: true }).click();
       assert.equal(await token.inputValue(), "", "Back clears token");
       assert(await token.evaluate(node => node === document.activeElement), "Back restores password focus");
-      await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      assert(await page.getByRole("button", { name: "New GitHub profile", exact: true }).evaluate(node => node === document.activeElement), "Cancel restores opener focus");
+      await page.locator(".settings-task-close").click();
+      assert(await page.getByRole("button", { name: "New GitHub profile", exact: true }).evaluate(node => node === document.activeElement), "Header dismissal restores opener focus");
       keyboardChecks += 4;
     }
     console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: 0, childFormChecks: 0, harnessChecks: 0, hiddenAccountChoiceChecks: 0, languages: 1, themes: 1, inventories: 1, viewports: 5, effectiveZoomChecks: 2, primarySurfaceChecks: 0, keyboardChecks, onboardingChecks, nativeAcceptance: "not-performed", githubAccountAcceptance: "not-performed" }));
@@ -434,7 +455,7 @@ try {
       await page.getByRole("button", { name: l("Back"), exact: true }).click();
       assert(await page.getByRole("checkbox", { name: /^Personal API/ }).isChecked());
       assert(await page.getByRole("checkbox", { name: /^Team API/ }).isChecked());
-      await page.getByRole("button", { name: l("Cancel"), exact: true }).click();
+      await page.locator(".settings-task-close").click();
       formsChecked += 4;
       if (language === "en") {
         await page.goto(`${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=en`);
@@ -465,7 +486,7 @@ try {
           assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Repository registration overflow");
           assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
           formsChecked++;
-          await page.getByRole("button", { name: "Back to repositories", exact: true }).click();
+          await page.locator(".settings-task-close").click();
           continue;
         }
         if (category === "AI API Keys") await page.getByRole("button", { name: /^Fixture provider/ }).click();
@@ -516,7 +537,7 @@ try {
     await page.goto(`${origin}/?theme=dark&language=${language}`); await page.getByRole("button", { name: l("Settings"), exact: true }).click();
     for (const category of categories) { await select(category); if (category === "Git") await checkGit(); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
     await select("Agent Workers"); await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
-    await checkWizard(); await page.getByRole("button", { name: l("Cancel"), exact: true }).click();
+    await checkWizard(); await page.locator(".settings-task-close").click();
     }
     if (language === "en") for (const [width,height] of viewports) {
       await page.setViewportSize({ width: width / 2, height: height / 2 });
@@ -565,7 +586,7 @@ try {
     await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Projects");
     await page.getByRole("button", { name: /^Delete Example PROJECT/ }).click();
     const dialog = page.getByRole("dialog"); await dialog.waitFor();
-    await page.waitForFunction(() => document.activeElement?.textContent === "Keep configuration");
+    await page.waitForFunction(() => document.activeElement?.classList.contains("settings-task-close"));
     assert.equal(await dialog.evaluate(node => Math.round(node.getBoundingClientRect().width)), 480);
     await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
     await select("Backups");
@@ -589,7 +610,7 @@ try {
     await page.screenshot({ path: screenshotPath });
   }
   }
-  if (!projectsOnly && !accountsOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
+  if (!projectsOnly && !accountsOnly && !dismissalOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

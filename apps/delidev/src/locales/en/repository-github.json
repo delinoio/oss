@@ -2,7 +2,6 @@
   "repository-github.choose": "Choose from GitHub",
   "repository-github.title": "Choose a GitHub repository",
   "repository-github.close": "Close Choose a GitHub repository",
-  "repository-github.cancel": "Cancel",
   "repository-github.checkingProfiles": "Checking connected GitHub profiles…",
   "repository-github.refreshGitHubProfiles": "Refresh GitHub profiles",
   "repository-github.firstProfilePage": "First profile page",
