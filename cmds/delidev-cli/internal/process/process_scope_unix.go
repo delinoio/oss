@@ -168,14 +168,23 @@ func startProcess(c *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSi
 		conn.Close()
 		return nil, scopeError()
 	}
-	// Read the journal independently; do not accept a socket peer's claimed PID.
-	saved, err := readScope(dir)
-	if err != nil || saved.OwnerID != owner || ready.Scope.OwnerID != owner || saved.Owner.PID != ready.Scope.Owner.PID || saved.Owner.Birth != ready.Scope.Owner.Birth || !ProcessAlive(saved.Owner) {
+	// The already retained supervisor control connection owns the new operation.
+	// Journals and sampled process identities are observations, never replacement
+	// termination handles or admission proof.
+	if ready.Scope.Version != 1 || ready.Scope.Boot == "" || ready.Scope.OwnerID.Validate() != nil {
 		conn.Close()
-		return nil, scopeError()
+		return nil, domain.Fail(domain.InvalidArgument, "Invalid native readiness metadata.", "Use the supported supervisor protocol.")
+	}
+	saved, readErr := readScope(dir)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) && readErr != errCleanupUnconfirmed {
+		conn.Close()
+		return nil, readErr
+	}
+	if readErr != nil || saved.OwnerID != owner || ready.Scope.OwnerID != owner || saved.Owner.PID != ready.Scope.Owner.PID || saved.Owner.Birth != ready.Scope.Owner.Birth || !ProcessAlive(ready.Scope.Owner) {
+		domain.ObserveOwnership(domain.OwnershipInstance, owner)
 	}
 	_ = conn.SetReadDeadline(time.Time{})
-	identity := saved.Owner
+	identity := ready.Scope.Owner
 	identity.ScopeDir = dir
 	identity.OwnerID = owner
 	p := &managedProcess{identity: identity, terminal: terminal != nil, command: processCommand{Terminal: terminal, Path: c.Path, Args: c.Args, Env: c.Env, Dir: c.Dir}, conn: conn, done: make(chan struct{}), inputAck: make(chan struct{}, 1), cleanup: cleanup}
@@ -222,7 +231,7 @@ func startProcess(c *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSi
 					p.waitErr, p.reconcileErr = err, err
 					return
 				}
-				if err != nil || !s.Complete {
+				if err != nil || !s.Complete || s.OwnerID != owner || s.Owner.PID != identity.PID || s.Owner.Birth != identity.Birth {
 					p.reconcileErr = scopeError()
 					domain.ObserveOwnership(domain.OwnershipCleanup, owner)
 				} else if err = cleanup(); err != nil {

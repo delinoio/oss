@@ -15,7 +15,7 @@ Each launch retains immutable UUID-v7 execution/job/session attribution and a pr
 ## Interfaces and Contracts
 The [subagent observation profile](cmds-delidev-subagents-contract.md) preserves cleanup ownership for every live/unavailable descendant after parent completion. The Worker keeps the original process open while native children settle, without sending child-control operations. History reads and closed tree state do not independently prove process cleanup; a failed, canceled or uncertain inspection retains the existing owned-process cleanup/report boundary.
 
-A launch creates durable ownership and reaches a start barrier before receiving the actual command. Explicit resume crosses that barrier once. Command arguments, environment, input and output never enter ownership journals. Native stdin, stdout and stderr remain distinct byte streams with bounded framing and backpressure, preserving partial multibyte sequences for the adapter to decode.
+A launch creates durable ownership and reaches a start barrier before receiving the actual command. Explicit resume crosses that barrier once. The retained control connection admits input after a valid ready frame; mismatched journal owner, process-birth or readiness observations log and continue. Actual transport, framing and filesystem I/O failures remain errors. Command arguments, environment, input and output never enter ownership journals. Native stdin, stdout and stderr remain distinct byte streams with bounded framing and backpressure, preserving partial multibyte sequences for the adapter to decode.
 
 Natural exit, cancellation and parent disconnection attempt joined cleanup through retained handles. Record confirmed cleanup separately from admission. A missing, unreadable or mismatched ownership journal logs an unconfirmed observation; it never reconstructs a termination target from a PID, birth sample or service label. Actual I/O errors remain errors. Unknown cleanup permits subsequent work without claiming the previous process exited.
 
@@ -23,9 +23,9 @@ Linux uses a dedicated re-executed subreaper and retains the original command pr
 
 A Unix stdout/stderr pipe setup failure after the start barrier but before command launch persists completed ownership before supervisor exit. Failure to persist that proof retains recovery uncertainty; native-started failures still require descendant reconciliation.
 
-Unix reconciliation atomically persists completion when the current boot identity
-differs from the valid original journal. Preserve the original owner, process birth,
-boot identity and kernel metadata; a failed publication remains a recovery error.
+Unix reconciliation may persist completion only from an observed changed boot
+identity and a valid original journal. Preserve the original owner, process birth,
+boot identity and kernel metadata; a failed publication remains an actual error.
 The existing owner maintenance and released-controller checks retire that completed
 scope on a later scan. Same-boot supervisor death and missing, invalid or mismatched
 ownership still cannot supply reboot completion proof.
