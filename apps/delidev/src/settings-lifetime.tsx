@@ -21,8 +21,9 @@ function guarded<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-// One active category or external project creation opening owns this scope.
-// Its departure disposes it while independent connection controllers stay mounted.
+// One active category or external project creation opening owns this scope. A
+// task dialog may create a nested scope; departure fences every nested task
+// transport while independent connection controllers stay mounted.
 export class SettingsOpening {
   readonly id = newRequestId();
   readonly controller = new AbortController();
