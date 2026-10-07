@@ -62,7 +62,6 @@
   "doctor.databaseSchema_bf3efc": "Database schema",
   "doctor.boundEndpoint_5501d6": "Bound endpoint",
   "doctor.serverIdentity_fa4fb0": "Server identity",
-  "doctor.thisServerReturnedALegacyReport_0a90d0": "This server returned a legacy report. Capacity and protected-storage health are not yet reported.",
   "doctor.readOnlyObservationsFromTheSelected_9e6c27": "Read-only observations from the selected server.",
   "doctor.refreshDiagnostics_7bce98": "Refresh diagnostics",
   "doctor.connection_639a40": "Connection",

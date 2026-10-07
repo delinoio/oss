@@ -39,7 +39,7 @@ function wireService(source?: Source) {
 }
 function sameSource(row: Resource, source?: Source) {
   const data = document(row);
-  return row.kind === EntityKind.ACCOUNT && supportsResourceSchema(row) && data.retired !== true && (source?.kind === SourceKind.Subscription
+  return row.kind === EntityKind.ACCOUNT && supportsResourceSchema(row) && (source?.kind === SourceKind.Subscription
     ? data.type === "subscription" && data.subscription_service === source.id && !data.provider_id
     : source?.kind === SourceKind.Api && data.type === "api" && data.provider_id === source.id);
 }
@@ -52,7 +52,7 @@ function showAccountChoice(row: Resource) {
 }
 function modelSource(row: Resource): Source | undefined {
   const data = document(row);
-  if (row.kind !== EntityKind.MODEL || data.retired === true || !supportsResourceSchema(row)) return undefined;
+  if (row.kind !== EntityKind.MODEL || !supportsResourceSchema(row)) return undefined;
   if (data.source_kind === "subscription" && subscriptionService(data.subscription_service)) return { kind: SourceKind.Subscription, id: text(data.subscription_service) };
   return text(data.provider_id) ? { kind: SourceKind.Api, id: text(data.provider_id) } : undefined;
 }
@@ -224,7 +224,6 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     if (!validate(Step.Configure) || stale || Boolean(initial && (current.error || !current.data?.resource))) return;
     if (!form.current?.checkValidity()) { const invalid = form.current?.querySelector<HTMLInputElement>("input:invalid, select:invalid, textarea:invalid"); if (invalid) { const details = invalid.closest("details"); if (details) details.open = true; invalid.focus(); } return; }
     const next: Document = { ...data, model_id: model?.id ?? "" };
-    delete next.reconfiguration_required;
     void mutation.send({ mutation: { id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(next), model: { selection: model ? { case: "modelId", value: model.id } : { case: "nativeId", value: input.trim() }, expectedModelRevision: model?.revision ?? 0n } });
   }} onInvalidCapture={revealAgentInvalidControl}>
     <h2>{initial ? copy("agent-worker-wizard.editAgentWorker") : copy("agent-worker-wizard.newAgentWorker")}</h2>
@@ -232,7 +231,6 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
     <h3 ref={heading} tabIndex={-1}>{stepName(step)}</h3>
     <Problem error={status.error} />
     {status.isLoading ? <p role="status">{copy("agent-worker-wizard.checkingServerSupport")}</p> : status.data && !supported ? <p role="alert">{copy("agent-worker-wizard.updateServerWizard")}</p> : null}
-    {initial && data.reconfiguration_required === true ? <p role="status">{copy("agent-worker-wizard.reconfigurationRequired")}</p> : null}
     <fieldset disabled={blocked || !supported}>
       <section hidden={step !== Step.Harness}>
         <p id={`${listID}-harness-help`}>{copy("agent-worker-wizard.chooseTool")}</p>
@@ -306,7 +304,7 @@ export function AgentWorkerWizard({ initial, active, saved, cancel }: { initial?
         <Problem error={currentModel.error} />
       </section>
       <fieldset hidden={step !== Step.Configure} disabled={step !== Step.Configure}>
-        <ConfigurationFields kind={EntityKind.AGENT} data={data} change={change} active={active && step === Step.Configure} existing={Boolean(initial)} workerWizard />
+        <ConfigurationFields kind={EntityKind.AGENT} data={data} change={change} active={active && step === Step.Configure} existing={Boolean(initial)} />
         <section className="worker-summary" aria-label={copy("agent-worker-wizard.workerConfigurationSummary")}><h4>{copy("agent-worker-wizard.reviewConfiguration")}</h4><p>{harnessNames[data.harness as Harness]} · {sourceLabel}</p><p>{copy("agent-worker-wizard.modelSummary", { v0: input || copy("agent-worker-wizard.noneSelected") })}</p><ol>{ids.map(id => <li key={id}>{knownAccounts[id] ? resourceName(knownAccounts[id]) : id}</li>)}</ol><p>{copy("agent-worker-wizard.routingSummary", { v0: text(data.routing) || copy("agent-worker-wizard.serverDefault") })}</p><p>{copy("agent-worker-wizard.savedCompatibility")}</p></section>
       </fieldset>
     </fieldset>

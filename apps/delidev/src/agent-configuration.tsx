@@ -7,7 +7,7 @@ import "./agent-configuration.css";
 // never controls their mounting, query keys, enablement or refresh lifetime.
 export const AgentReadProblem = createContext<((label: string, problem: boolean) => void) | undefined>(undefined);
 
-enum AgentSection { Reasoning = "Reasoning", Accounts = "Accounts & routing", Instructions = "Instructions", Native = "Native harness options" }
+enum AgentSection { Reasoning = "Reasoning", Instructions = "Instructions", Native = "Native harness options" }
 const nativeKeys = ["subagent_model", "subagent_effort", "max_concurrency", "approval_policy", "approval_review_model", "service_tier"];
 const permissionKeys = ["permission", "claude_permission"];
 
@@ -26,7 +26,6 @@ function SectionIcon({ section }: { section: AgentSection }) {
   useLocale();
   const paths: Record<AgentSection, string> = {
     [AgentSection.Reasoning]: "M9 18h6M10 21h4M8 14a6 6 0 1 1 8 0l-1 2H9l-1-2Z",
-    [AgentSection.Accounts]: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-4",
     [AgentSection.Instructions]: "M8 3h10v18H6V5h2v-2ZM9 8h6M9 12h6M9 16h4",
     [AgentSection.Native]: "m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18",
   };
@@ -41,27 +40,24 @@ function Disclosure({ section, summary, children, invalidValue = false, note }: 
   const problem = invalid || invalidValue || Object.values(reads).some(Boolean);
   return <div className="agent-optional-section">
     <details className="agent-disclosure" onInvalidCapture={event => { event.currentTarget.open = true; setInvalid(true); }} onChangeCapture={event => setInvalid(Boolean(firstInvalidControl(event.currentTarget)))}>
-      <summary><SectionIcon section={section} /><span className="agent-section-copy"><span className="agent-section-title">{copy(section === AgentSection.Reasoning ? "agent-configuration.section.reasoning" : section === AgentSection.Accounts ? "agent-configuration.section.accounts" : section === AgentSection.Instructions ? "agent-configuration.section.instructions" : "agent-configuration.section.native")}{problem ? <span className="agent-section-problem" role="status">{copy("agent-configuration.needsAttention_c1ebc7")}</span> : null}</span><span className="agent-section-summary">{summary}</span></span><svg className="agent-chevron" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m9 5 7 7-7 7" /></svg></summary>
+      <summary><SectionIcon section={section} /><span className="agent-section-copy"><span className="agent-section-title">{copy(section === AgentSection.Reasoning ? "agent-configuration.section.reasoning" : section === AgentSection.Instructions ? "agent-configuration.section.instructions" : "agent-configuration.section.native")}{problem ? <span className="agent-section-problem" role="status">{copy("agent-configuration.needsAttention_c1ebc7")}</span> : null}</span><span className="agent-section-summary">{summary}</span></span><svg className="agent-chevron" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m9 5 7 7-7 7" /></svg></summary>
       <div className="agent-section-fields"><AgentReadProblem.Provider value={reportRead}>{children}</AgentReadProblem.Provider></div>
     </details>
     {note ? <p className="agent-section-note">{note}</p> : null}
   </div>;
 }
 
-export function AgentConfiguration({ data, core, permissions, reasoning, accounts, instructions, native, routingProblem }: { data: Document; core: ReactNode; permissions: ReactNode; reasoning: ReactNode; accounts?: ReactNode; instructions: ReactNode; native: ReactNode; routingProblem: boolean }) {
+export function AgentConfiguration({ data, core, permissions, reasoning, instructions, native }: { data: Document; core: ReactNode; permissions: ReactNode; reasoning: ReactNode; instructions: ReactNode; native: ReactNode }) {
   useLocale();
   const coreId = useId();
   const optionalId = useId();
-  const links = items(data.accounts);
   const options = object(data.options);
   const concurrency = options.max_concurrency;
   const invalidConcurrency = concurrency !== undefined && (typeof concurrency !== "number" || !Number.isInteger(concurrency) || concurrency < 0 || concurrency > 64);
-  const invalidWeight = links.some(link => { const weight = object(link).weight; return typeof weight !== "number" || !Number.isInteger(weight) || weight < 1 || weight > 1000; });
   return <>
     <section className="agent-core" aria-labelledby={coreId}><header><h4 id={coreId}>{copy("agent-configuration.coreSettings_3f8268")}</h4><p>{copy("agent-configuration.requiredFieldsAreMarked_a99eff")}</p></header>{core}<div className="agent-permissions">{permissions}</div></section>
     <section className="agent-optional" aria-labelledby={optionalId}><header><h4 id={optionalId}>{copy("agent-configuration.optionalSettings_e88b5c")}</h4><p>{copy("agent-configuration.leaveTheseUnchangedToKeepThe_73a428")}</p></header>
       <Disclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, copy("agent-configuration.extra.2bab94029bed"))} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</Disclosure>
-      {accounts !== undefined ? <Disclosure section={AgentSection.Accounts} summary={copy("agent-configuration.sentence.ad26a61b1351", { v0: links.length, v1: retainedSummary(data.routing, copy("agent-configuration.extra.42b998374988")) })} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? copy("agent-configuration.extra.8116757327fb") : undefined}>{accounts}</Disclosure> : null}
       <Disclosure section={AgentSection.Instructions} summary={copy("agent-configuration.sentence.74d105c1160d", { v0: items(data.templates).length })}>{instructions}</Disclosure>
       <Disclosure section={AgentSection.Native} summary={nativeSummary(data)} invalidValue={invalidConcurrency}>{native}</Disclosure>
     </section>

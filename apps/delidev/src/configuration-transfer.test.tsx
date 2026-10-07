@@ -11,8 +11,8 @@ import { encode } from "./documents";
 
 function fixture() {
   const source = newRequestId(), target = newRequestId(), jobId = newRequestId();
-  const bundle = { version: 1, entries: [{ id: source, kind: "template", document: { name: "Instructions", contents: "Exact text\n한국어 <script>never execute</script>\n" } }], machines: [] };
-  const previewDocument = { plan: { version: 1, changes: [{ source_id: source, id: target, kind: "template", action: "create", expected_revision: 0, after: bundle.entries[0]!.document }], machines: [] }, token: "server-scoped-preview" };
+  const bundle = { version: 2, entries: [{ id: source, kind: "template", document: { name: "Instructions", contents: "Exact text\n한국어 <script>never execute</script>\n" } }], machines: [] };
+  const previewDocument = { plan: { version: 2, changes: [{ source_id: source, id: target, kind: "template", action: "create", expected_revision: 0, after: bundle.entries[0]!.document }], machines: [] }, token: "server-scoped-preview" };
   const previewBytes = encode(previewDocument);
   const exported = vi.fn(async () => ({ documentJson: encode(bundle) }));
   const preview = vi.fn(async (_input: unknown) => ({ previewJson: previewBytes }));
@@ -61,7 +61,7 @@ it("invalidates reviewed changes after editing while retaining the original docu
 });
 it("preserves integers outside JavaScript's safe range in exported and submitted documents", async () => {
   const value = fixture();
-  const model = `{"version":1,"entries":[{"id":"${newRequestId()}","kind":"model","document":{"name":"Model","context_limit":18446744073709551615}}],"machines":[]}`;
+  const model = `{"version":2,"entries":[{"id":"${newRequestId()}","kind":"model","document":{"name":"Model","context_limit":18446744073709551615}}],"machines":[]}`;
   value.exported.mockResolvedValueOnce({ documentJson: new TextEncoder().encode(model) });
   render(value.view()); fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
   expect((await screen.findByRole("textbox", { name: "Exported configuration" }) as HTMLTextAreaElement).value).toBe(model);
@@ -143,7 +143,7 @@ it("keeps both inputs mounted and exposes state-derived stages without navigatio
 
 it("selects the exact exported Unicode and uint64 document for copying without importing", async () => {
   const value = fixture();
-  const raw = JSON.stringify({ version: 1, entries: [{ id: newRequestId(), kind: "template", document: { name: "한국어", contents: 'Exact "quoted" text\n', revision: "18446744073709551615" } }], machines: [] }).replace('"18446744073709551615"', "18446744073709551615");
+  const raw = JSON.stringify({ version: 2, entries: [{ id: newRequestId(), kind: "template", document: { name: "한국어", contents: 'Exact "quoted" text\n', revision: "18446744073709551615" } }], machines: [] }).replace('"18446744073709551615"', "18446744073709551615");
   value.exported.mockResolvedValueOnce({ documentJson: new TextEncoder().encode(raw) });
   render(value.view()); fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
   const exported = await screen.findByRole("textbox", { name: "Exported configuration" }) as HTMLTextAreaElement;
@@ -176,7 +176,7 @@ it("loads a UTF-8 file immediately and retains editable input after invalid UTF-
   expect(value.apply).not.toHaveBeenCalled();
 });
 
-it("accepts service-native v2 exports and original v2 preview bytes while retaining API-only v1", async () => {
+it("accepts service-native v2 exports and original v2 preview bytes", async () => {
   const value = fixture();
   const body = { version: 2, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt", alias: "Native account" } }], machines: [] };
   const preview = encode({ token: "server-preview", plan: { version: 2, changes: [{ source_id: body.entries[0].id, id: newRequestId(), kind: "account", action: "create", after: body.entries[0].document }], machines: [] } });
@@ -194,13 +194,13 @@ it("accepts service-native v2 exports and original v2 preview bytes while retain
 
 it("refuses a service-native v1 graph before requesting an import preview", () => {
   const value = fixture(); render(value.view());
-  load({ ...value.bundle, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt" } }] });
-  expect(screen.getByText(/Service-native subscription configuration requires a version 2 export/)).toBeTruthy(); expect(value.preview).not.toHaveBeenCalled();
+  load({ ...value.bundle, version: 1, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt" } }] });
+  expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull(); expect(value.preview).not.toHaveBeenCalled();
 });
 
 it("separates capability-read failure from unsupported repository imports and offers retry", async () => {
   const value = fixture();
-  const repositoryBundle = { version: 1, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Remote", remote_url: "https://example.com/remote.git", checkouts: [], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
+  const repositoryBundle = { version: 2, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Remote", remote_url: "https://example.com/remote.git", checkouts: [], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
   value.status.mockRejectedValueOnce(new ConnectError("status unavailable", Code.Unavailable));
   render(value.view()); load(repositoryBundle);
   await screen.findByRole("button", { name: "Retry server capability check" });
@@ -213,12 +213,9 @@ it("separates capability-read failure from unsupported repository imports and of
   expect(value.preview).toHaveBeenCalledTimes(1);
 });
 
-it("keeps legacy checkout-backed repository imports available without capability 37", async () => {
-  const value = fixture();
-  const repositoryBundle = { version: 1, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Legacy", remote_url: "", checkouts: [{ machine_id: newRequestId(), path: "/owned/legacy" }], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
-  render(value.view()); load(repositoryBundle);
-  fireEvent.click(await screen.findByRole("button", { name: "Preview configuration changes" }));
-  await screen.findByRole("button", { name: "Apply reviewed configuration" });
-  expect(value.status).not.toHaveBeenCalled();
-  expect(value.preview).toHaveBeenCalledTimes(1);
+it("rejects checkout-only repositories before an import preview", () => {
+ const value = fixture(); render(value.view());
+ load({ version: 2, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Old checkout", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }] } }], machines: [] });
+ expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
+ expect(value.preview).not.toHaveBeenCalled();
 });

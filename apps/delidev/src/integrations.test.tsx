@@ -25,20 +25,10 @@ function fixture() {
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Integrations active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { save, replace, validate, remove, list, form, client, view, profile, update: (value: Resource) => { profile = value; } };
 }
-it("creates a fine-grained profile without token or fabricated identity fields", async () => {
-  const f = fixture(); render(f.view());
-  fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
-  const initialName = await screen.findByRole("textbox", { name: "Profile name" });
-  expect(document.activeElement).toBe(initialName);
-  expect((screen.getByRole("textbox", { name: "Resource owner" }) as HTMLInputElement).required).toBe(true);
-  expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
-  fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Team" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "team-owner" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
-  const request = f.save.mock.calls[0][0] as { documentJson: Uint8Array; mutation: { expectedRevision: bigint } };
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name: "Team", provider: "github.com", token_kind: "fine-grained", resource_owner: "team-owner" });
-  expect(request.mutation.expectedRevision).toBe(0n);
+it("blocks profile creation when token onboarding is unsupported", async () => {
+ const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+ expect(await screen.findByText("Update the selected server to verify a token before creating a profile.")).toBeTruthy();
+ expect(screen.queryByRole("textbox", { name: "Profile name" })).toBeNull(); expect(f.save).not.toHaveBeenCalled();
 });
 it("clears PAT input and mutation cache after uncertain transmission and reuses only the original request identity", async () => {
   const f = fixture();
@@ -235,9 +225,8 @@ it("keeps declining deletion free of side effects", async () => {
 
 it("retains an uncertain profile save exactly through category inactivity without automatic replay", async () => {
   const f = fixture(); f.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
-  const view = render(f.view()); fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+  const view = render(f.view()); fireEvent.click(await screen.findByRole("button", { name: "Rename Work" }));
   fireEvent.change(await screen.findByRole("textbox", { name: "Profile name" }), { target: { value: "Team" } });
-  fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "team-owner" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   await screen.findByRole("button", { name: "Retry the same profile save" });
   const original = f.save.mock.calls[0][0];

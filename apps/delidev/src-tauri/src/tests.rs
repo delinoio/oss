@@ -784,7 +784,7 @@ if [ "$3" = server ]; then
   if [ -f "$2/stopped" ]; then
     printf '%s' '{{"version":1,"result":{{"state":"stopped"}}}}'
   else
-    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"0.1.0","protocol_version":1,"listener":"http://127.0.0.1:46310"}}}}}}'
+    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"0.1.0","protocol_version":2,"listener":"http://127.0.0.1:46310"}}}}}}'
   fi
 else
   printf '%s' '{{"version":1,"result":{body}}}'

@@ -653,7 +653,7 @@ impl Connector {
         }
         .ok_or(NativeFailure::InvalidEvidence)?;
         if status.get("version").and_then(|v| v.as_str()) != Some("0.1.0")
-            || status.get("protocol_version").and_then(|v| v.as_u64()) != Some(1)
+            || status.get("protocol_version").and_then(|v| v.as_u64()) != Some(2)
             || (self.listen != "127.0.0.1:0"
                 && status.get("listener").and_then(|v| v.as_str())
                     != Some(format!("http://{}", self.listen).as_str()))

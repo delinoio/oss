@@ -20,7 +20,7 @@ Establish these issue #964 reservations on main before dependent implementation:
   approval code is available only from the live Start response, never Status.
 - `CompleteAccountOAuthRequest.authorization_state = 3`; new PKCE profiles bind
   completion to the original state. Preserve the historical OpenRouter input.
-- Private migration 31 follows the real migrations 26–30. It owns authentication
+- Historical allocation 31 owns authentication
   profiles, protected token-generation references, durable refresh claims and
   cleanup metadata. Existing OpenRouter records and vault references survive.
 
@@ -58,7 +58,7 @@ API key only after cancellation is confirmed; success never auto-validates.
 
 ## Common lifecycle and Hugging Face
 
-The common implementation activates migration 31 after real 26–30. The private
+Schema 32 initializes the common OAuth storage directly. The private
 `account_oauth_credentials` table retains exact account, immutable connection,
 provider/preset, client-profile digest, expiry, token-generation reference,
 refresh claim and cleanup references. No account foreign key can erase an orphan
@@ -127,7 +127,7 @@ Fixture checks, desktop builds and public registration are distinct evidence.
 attempt lifecycle, protected credential coordination, native browser/callback
 infrastructure and desktop waiting/completion flow below. Reservations alone
 grant no RPC/exchange or callback authority. The complete Go/CLI/native/desktop
-lifecycle implements real migration 29 after real 26–28. Shared reservations
+lifecycle storage is incorporated directly in schema 32 under original allocation 29. Shared reservations
 reached main first; independent feature PRs merge in dependency order. Scripted
 fixtures and builds remain separate from real-provider and platform acceptance.
 The direct-action picker prerequisite #1145 is already on main. Compose the
@@ -142,7 +142,7 @@ use authenticated Connect for selected local and remote servers.
 
 Establish all reservations on main before dependent implementation. The owning
 issue remains 1146 after an implementation PR exists. Existing numbers and the
-migration order retain their current meanings.
+allocation ownership retains its original meaning.
 
 - `ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1`: 5, independent of the
   four existing account-flow gates.
@@ -151,8 +151,8 @@ migration order retain their current meanings.
 - New `AccountOAuthState`: UNSPECIFIED 0, AWAITING_AUTHORIZATION 1, EXCHANGING 2,
   SAVING 3, CONNECTED 4, CANCELED 5, EXPIRED 6, FAILED 7, INTERRUPTED 8,
   RECOVERY_REQUIRED 9.
-- Private SQLite migration 29 follows the real Claude accounting 26, request
-  diagnostics 27 and subscription identity/retirement 28 implementations.
+- Historical allocation 29 retains OpenRouter OAuth ownership; schema 32 includes
+  current accounting, request diagnostics, service-native identity and OAuth together.
   Do not implement placeholder predecessors or activate 29 before that complete
   sequence exists. Changing
   product order requires a separately reconciled reservation sequence on main.
@@ -178,8 +178,8 @@ Advertise capability 5 only together with the implemented product lifecycle.
 
 - Go generates a cryptographic PKCE verifier/challenge with S256 and builds only `https://openrouter.ai/auth`. Desktop uses the owned callback_url; headless omits it. Exchange only through `POST https://openrouter.ai/api/v1/auth/keys` with code/verifier/S256. Resolve one immutable explicit server route under the existing network contract; route or TLS failure never grants direct fallback. No registration/client secret, inference, management key, ambient cookies/proxies, redirects, automatic HTTP retry or alternate provider.
 - Keep verifier and canonical callback/authorization URL in memory in their original server process. Cap application attempts at ten minutes and 32 nonterminal or unresolved-cleanup server attempts; distinguish this application deadline from the provider's code lifetime after issuance. Clear transient buffers and bound HTTP with the existing 20-second deadline/32KiB response-header conventions and a deliberately tighter new OAuth response ceiling of 64KiB (ordinary provider inspection permits 4MiB). Validate the returned key with the existing 1–8192-byte API-key validator.
-- Add private `account_oauth_attempts` metadata storage in reserved schema 29 after the implemented schema 25 baseline and real migrations 26–28. Preserve the reservation's meaning; reconcile any required order change on main before implementation. Include actor/server/provider UUID+revision, original start/completion IDs, reserved account/create/connect UUIDs, process generation, state/revision/times, comparison HMAC/digests, protected-reference identity and cleanup status. No raw verifier, code, key, callback URL or approval URL in SQLite/receipts. No foreign key requiring an existing account and no cascading deletion of recovery evidence.
-- Fresh stores include the table; use the existing verified backup-first transactional migration, preserving accounts/providers/settings/claims/default deletions. Exclude attempt rows from public resources/snapshots/events/portable export. Database images contain metadata, never credentials. Existing managed restore eligibility refuses unresolved OAuth attempts or cleanup. Historical images cannot replace current once-only attempt metadata; restore copies the current private attempt table and quarantines historical receipts. This adds no restore operation.
+- Initialize private `account_oauth_attempts` metadata storage directly in schema 32, preserving original allocation 29 ownership. Include actor/server/provider UUID+revision, original start/completion IDs, reserved account/create/connect UUIDs, process generation, state/revision/times, comparison HMAC/digests, protected-reference identity and cleanup status. No raw verifier, code, key, callback URL or approval URL in SQLite/receipts. No foreign key requiring an existing account and no cascading deletion of recovery evidence.
+- Fresh schema-32 stores include the table; earlier databases are rejected without migration or source changes. Preserve current accounts/providers/settings/claims/default deletions. Exclude attempt rows from public resources/snapshots/events/portable export. Database images contain metadata, never credentials. Existing managed restore eligibility refuses unresolved OAuth attempts or cleanup. Historical images cannot replace current once-only attempt metadata; restore copies the current private attempt table and quarantines historical receipts. This adds no restore operation.
 - Before HTTP, commit one durable exchange-dispatch claim, following the existing once-only HTTP-claim pattern. HTTP runs outside SQLite/account locks. No timeout, cancellation, duplicate callback, RPC retry or process restart may send that exchange again.
 - Seal a successfully received key in the existing vault under `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}`. Then create disconnected default metadata once and connect once using shared existing lifecycle helpers, exact creation revision and original identities. Factor locked helpers to avoid recursive account-gate acquisition. Recheck actor, provider and attempt authority before staging and at final commit.
 - Defaults: alias OpenRouter, type api, enabled=true, exclude_automatic=false, recovery_notifications=true. This intentionally follows the approved/current API-creation default; document its scoped override of the broader requirements' default-off wording without changing saved accounts or subscription defaults. Connection sets unverified and clears prior observations under existing rules. Never auto-validate/discover.
@@ -223,7 +223,7 @@ Advertise capability 5 only together with the implemented product lifecycle.
 6. **Authority/eligibility:** use wrong actor, Worker credential, revoked paired client, stale/off provider, custom copy named OpenRouter and official-looking URL without managed provenance. Assert denial before side effects/publication. Change selected server/window generation during pending callback; reject old completion.
 7. **Native/lifetime/UI:** exercise owned localhost callback over both loopback families, wrong Host/path/method, oversized/duplicate callback and malicious authorization destination. Assert no wildcard listener/generic opener and cleanup on cancel/expiry/close/exit. Reopen browser explicitly using same attempt. Close/reopen Settings under #1138/Strict Mode; late callbacks do not start new completion, update/focus old state or reopen browser. Already accepted server saves remain observable. Test open failure, expiry, manual fallback and old-server manual behavior.
 8. **CLI/remote:** start headless with no callback, read code via stdin, complete/status/cancel through the same service; assert no secret argv/output and no implicit server start. Run desktop callback forwarding against a remote fixture server and verify native callback is local to the client while vault is server-owned.
-9. **Storage:** test fresh schema 29 and backup-first 25-to-29 success/rollback after real migrations 26–28, copied awaiting/claimed database images opened in a new process, preserved old state/receipts/default deletions, orphan staging/cleanup restart. Inspect DB/backup/receipt/status/log/native event fixtures for absence of verifier/code/key/URLs. No copied backup can reacquire exchange authority.
+9. **Storage:** test fresh schema 32, earlier-schema refusal without source writes, copied awaiting/claimed database images opened in a new process, preserved old state/receipts/default deletions, orphan staging/cleanup restart. Inspect DB/backup/receipt/status/log/native event fixtures for absence of verifier/code/key/URLs. No copied backup can reacquire exchange authority.
 10. **Required checks:** run `go test ./...`, race tests and vet in `cmds/delidev-cli`; protobuf lint/breaking/generated freshness and typed-client checks; `pnpm test` in `apps/delidev`; root `cargo test` after native Rust changes. Prepare required generated dist/assets and LFS hydration first, remove generated dist afterward. Validate approved viewports/keyboard and actual browser callback on supported native hosts; record fixture versus real provider/platform evidence separately without using user credentials in automation.
 
 

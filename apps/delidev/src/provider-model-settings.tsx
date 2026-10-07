@@ -216,7 +216,7 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
             <div className="models-identifiers"><p><LocalizedText id="provider-model-settings.nativeId_3dd1ba" components={{ s0: <>{text(data.native_id) || copy("provider-model-settings.extra.ca1844969742")}</> }} /></p><p><LocalizedText id="provider-model-settings.cliAlias_275567" components={{ s0: <>{text(data.alias) || copy("provider-model-settings.extra.dc937b598926")}</> }} /></p></div>
             <p><LocalizedText id="provider-model-settings.configuredHarnesses_94210e" components={{ s0: <>{items(data.harnesses).map(text).join(", ") || copy("provider-model-settings.extra.dc937b598926")}</> }} /></p>
           </div>
-          <div className="models-row-actions"><button type="button" disabled={!supportsResourceSchema(model) || document(model).retired === true} onClick={() => editModel(model)}>{copy("provider-model-settings.editModel_1733ca")}</button><button type="button" disabled={!supportsResourceSchema(model) || document(model).retired === true} onClick={() => priceModel(model)}>{copy("provider-model-settings.tokenPricing_56b24f")}</button></div>
+          <div className="models-row-actions"><button type="button" disabled={!supportsResourceSchema(model)} onClick={() => editModel(model)}>{copy("provider-model-settings.editModel_1733ca")}</button><button type="button" disabled={!supportsResourceSchema(model)} onClick={() => priceModel(model)}>{copy("provider-model-settings.tokenPricing_56b24f")}</button></div>
         </article>;
       })}</div>
     </section>)}

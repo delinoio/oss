@@ -28,7 +28,7 @@ function fixture(rows = [repository()]) {
   });
   const preferences = create(NotificationPreferencesSchema, { revision: 1n });
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2 }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
     router.service(ResourceService, { listResources: list, getResource: get });
     router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences }) });

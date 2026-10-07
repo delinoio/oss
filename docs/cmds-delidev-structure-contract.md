@@ -160,43 +160,28 @@ family; shared output framing still observes each command's generated request ID
 Settings integration files call the common `settings-test-fixture.ts` factory,
 which owns independent temporary directories and child lifetimes per file.
 
-## Migration sequence and replacement dependencies
+## Historical migration sequence and replacement dependencies
 
-`cmds/delidev-cli/internal/store/migration-reservations.json` reserves 25 for the
-replacement of #1108, 26 for #1115, and 27 for #1117. Each originally used 25.
-The Grok replacement for issue #1100 implements reserved version 25 with the
-independent `grok-closed-input-v1` layout marker. Complete feature PRs implement real version 26 for original Claude/OpenCode
-accounting and version 27 for metadata-only request diagnostics, followed by real
-version 28 for service-native subscription identity and its account-scoped recovery notification constraint, preserving all original delivery claims with an independent layout marker. The executable registry ends
-at 30 in the coordinated implementation: real OAuth 29 follows 28, and the
-26 added hosted Provider defaults use real migration 30. Each has its own exact
-private layout marker; no reservation itself activates support. Unmarked historical
-version-25 files still require recovery without modification.
-Claude accounting must compose with the Grok accounting schema and shared usage
-meaning established by the preceding change. Request diagnostics follows both
-implemented versions. If that product order changes, revise the ledger on main
-before branching; do not insert empty migrations to skip unfinished work.
+`cmds/delidev-cli/internal/store/migration-reservations.json` retains the immutable
+allocation history through 31. Versions 25, 26 and 27 originally collided;
+the main-established ledger separated Grok accounting (#1100, replacing #1108),
+Claude/OpenCode accounting (#1115) and request diagnostics (#1117). Version 28
+belonged to service-native subscription identity and configuration retirement
+(#1235), 29 to private OpenRouter OAuth attempts (#1146), 30 to additional hosted
+Provider defaults (#1148), and 31 to general API OAuth (#964).
 
-Issue #1235 reserves migration 28 for service-native subscription identity and
-legacy configuration retirement, after the real implementations of 26 and 27.
-Its independent `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1` allocation is
-17. Both reservations reached main before dependent implementation. The real
-retirement migration follows accounting and diagnostics; reservations alone never
-activate runtime support. Migration provenance uses one original PR or owning
-issue when no implementation PR exists yet, preserving that identity thereafter.
-The [storage contract](cmds-delidev-storage-contract.md#subscription-retirement-issue-1235)
-owns the reset boundary. Compose later account/native ownership and restore
-changes with the subscription lifecycle work for issue #1095 rather than
-replacing its unsettled-ownership and cleanup gates.
+Those implementations originally followed the consecutive migration order.
+Schema 32 now creates their current functional structures directly, including
+account-scoped recovery notifications and all current hosted Provider defaults.
+Retirement-only storage and executable migrations are removed. Earlier and
+unmarked historical layouts are preserved and rejected without upgrade.
+Existing capability/field numbers, layout markers and original allocation owners
+remain reserved; no number can be reused.
 
-Issue #1146 reserves migration 29 for private OpenRouter OAuth attempt metadata,
-after real migrations 26–28, together with inventory capability 5, inventory-entry
-field 9 and the exclusively owned connection-method/attempt-state enums. The
-[OAuth contract](cmds-delidev-account-oauth-contract.md) owns the complete
-implemented lifecycle and outstanding real-provider/platform acceptance. Establish these allocations on main before
-dependent implementation; no placeholder migration, active protobuf declaration,
-generated binding or OAuth capability is introduced by this prerequisite. Keep
-the existing sequence and issue open until full implementation is accepted.
+Main-first reservation still precedes dependent implementation. A reservation
+alone grants no capability or runtime authority. Preserve the complete current
+OAuth, subscription, accounting and native cleanup boundaries, and keep outstanding
+real-provider/platform acceptance visible under their owning contracts.
 
 The storage suite creates and restarts current databases, preserves current
 backup/recovery and native cleanup regressions, and rejects frozen historical
@@ -249,21 +234,15 @@ ListSessionDeletionWorkRequest declarations verified from main. Planned
 declarations remain outside that baseline. Shared consumers are explicit and
 new declaration provenance is independent of later field/member provenance.
 
-Migration 30 belongs to issue #1148's 26 additional fixed hosted provider presets
-and follows the real private OAuth migration 29. Versions 26–29 keep their original
-accounting, request-diagnostics, subscription-retirement and OAuth ownership and
-order. No executable migration, schema declaration, generated binding or runtime
-advertisement is added by this prerequisite.
+Historical migration allocations 26–31 retain their original accounting,
+diagnostic, subscription, Provider and OAuth owners under the schema-32 reset.
+They provide no executable upgrade path.
 
-Delivery uses independent PRs merged in dependency order. A coherent feature PR
-may compose related complete contracts and consecutive real migrations after all
-shared reservations have reached main; the delivery boundary is not one PR per
-issue or migration. Retain every original migration owner and execution order. Establish these shared
-reservations on main before composing their dependent branches; each feature PR
-must include its complete business, authenticated RPC, CLI, client and desktop
-boundary plus applicable validation. Preserve implementation branches and record
-source-bound validation and unresolved native/account/platform acceptance in PRs
-and CI. Reservation completion cannot close a feature issue.
+Delivery uses independent complete PRs merged in dependency order after shared
+reservations reach main. A feature PR includes its complete business,
+authenticated RPC, CLI, client and desktop boundary plus applicable validation.
+Record source-bound validation and unresolved native/account/platform acceptance
+in PRs and CI. Reservation completion cannot close a feature issue.
 
 Sidechat reference preparation privately owns sidechat-preparations/ under the workspace Manager. Original Fork job/parent/child and native metadata identities bind each bounded claim before manifest publication. Permanent deletion composes that ownership only after original process cleanup; the server receives IDs and digests, never filesystem authority.
 ## Pre-release compatibility reset

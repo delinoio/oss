@@ -38,7 +38,7 @@ export function selectedInspectionRemote(output: Document, preferred: string): s
   const remotes = items(output.remotes).map(text);
   return preferred || (remotes.includes("origin") ? "origin" : remotes.length === 1 ? remotes[0] : "");
 }
-// Validate the whole observation before deriving configuration, including legacy
+// Validate the whole observation before deriving configuration, including
 // omission. This presentation check grants no filesystem or GitHub authority.
 export function validRepositoryInspection(output: Document): boolean {
   if (Object.keys(output).some(key => !["root", "name", "remotes", "default_refs", "github_repositories"].includes(key))) return false;
@@ -48,7 +48,7 @@ export function validRepositoryInspection(output: Document): boolean {
   if (new Set(remotes).size !== remotes.length) return false;
   if (!output.default_refs || typeof output.default_refs !== "object" || Array.isArray(output.default_refs)) return false;
   if (Object.entries(object(output.default_refs)).some(([remote, ref]) => !remotes.includes(remote) || !text(ref) || text(ref).length > 4096)) return false;
-  if (output.github_repositories !== undefined && (!output.github_repositories || typeof output.github_repositories !== "object" || Array.isArray(output.github_repositories))) return false;
+  if ((!output.github_repositories || typeof output.github_repositories !== "object" || Array.isArray(output.github_repositories))) return false;
   return Object.entries(object(output.github_repositories)).length <= 128 && Object.entries(object(output.github_repositories)).every(([remote, raw]) => {
     const value = object(raw);
     return remotes.includes(remote) && Object.keys(value).length === 2 && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,98}[A-Za-z0-9])?$/.test(text(value.owner)) && /^[A-Za-z0-9_.-]{1,100}$/.test(text(value.name)) && ![".", ".."].includes(text(value.name));
@@ -63,14 +63,7 @@ function SaveCompletion({ state, saved }: { state: string; saved: () => void }) 
   useEffect(() => { if (state === JobState.Succeeded) saved(); }, [state, saved]);
   return null;
 }
-function repositoryRegistrationDocument(data: Document, legacy: boolean): Document {
-  if (!legacy) return data;
-  // Servers before capability 37 reject the URL-only field as an unknown
-  // property. Their inspected-folder registration contract already accepts
-  // the remaining repository document, so omit only the newly allocated field.
-  const { remote_url: _remoteURL, ...legacyData } = data;
-  return legacyData;
-}
+
 
 export function RepositoryRegistration({ active, readLocalWorker, controlLocalWorker, chooseFolder, saved, cancel }: {
   active: boolean; readLocalWorker?: ReadLocalWorkerProof; controlLocalWorker?: ControlLocalWorker; chooseFolder?: ChooseRepositoryFolder; saved: () => void; cancel: () => void;
@@ -238,8 +231,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   // Capability 37 is a URL-first admission gate. A successful status response
   // without it retains the older inspected-folder registration path; a failed
   // status read leaves both paths disabled until the user retries the read.
-  const legacyReady = Boolean(!cloneLocally && remoteUnsupported && checkoutConfirmed && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256);
-  const ready = Boolean(!cloneLocally && ((remoteSupported && parsedClone && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256 && (!primaryCheckout || checkoutConfirmed)) || legacyReady));
+  const ready = Boolean(!cloneLocally && remoteSupported && parsedClone && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256 && (!primaryCheckout || checkoutConfirmed));
   const cloneModeBlocked = options || draftEdited.current;
   return <section className="repository-registration" aria-label="Add repository">
     <button type="button" disabled={blocked} onClick={cancelTask}>Back to repositories</button>
@@ -278,7 +270,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {ready && !cloneLocally ? <><button type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>Optional settings</button><div id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} registration requiredCheckout={primaryCheckout} /></fieldset></div></> : null}
       {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error || clone.error} />
       {inspect.uncertain ? <button type="button" disabled={inspect.busy} onClick={inspect.retry}>Retry the same inspection</button> : null}
-      <SettingsTaskActions className="repository-add-footer"><button type="button" data-settings-task-cancel onClick={cancelTask}>Cancel</button><button type="button" className="primary" disabled={blocked || !ready} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(repositoryRegistrationDocument(data, legacyReady)) })}>Add repository</button>{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
+      <SettingsTaskActions className="repository-add-footer"><button type="button" data-settings-task-cancel onClick={cancelTask}>Cancel</button><button type="button" className="primary" disabled={blocked || !ready} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(data) })}>Add repository</button>{clone.uncertain ? <button type="button" disabled={clone.busy} onClick={clone.retry}>Retry the same clone request</button> : null}{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>Retry the same repository save</button> : null}</SettingsTaskActions>
     </>}
   </section>;
 }

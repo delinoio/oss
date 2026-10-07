@@ -145,7 +145,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - DeliDev remediation history/resumption are owner/client IntegrationService operations under the integration contract. Lists bind stable remote numeric identities, normalized page size and every original attempt revision in their signed cursor. Resume targets the exact retained set mutation, advances only explicit allowance provenance and returns current state on replay; no execution or remote-evidence payload is accepted. Regenerate Go and TypeScript/Connect Query outputs together.
 
-- DeliDev `RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose typed durable creation observations without changing legacy synchronous `CreateBackup`. Reserved image IDs are not publication proof; retain pending/succeeded/failed enum states, exact request IDs and revisions, bounded actor-bound cursors, and decimal-safe uint64 values. Follow `docs/cmds-delidev-storage-contract.md`.
+- DeliDev `RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose typed durable creation observations with synchronous `CreateBackup` and its dedicated messages removed. Reserved image IDs are not publication proof; retain pending/succeeded/failed enum states, exact request IDs and revisions, bounded actor-bound cursors, and decimal-safe uint64 values. Follow `docs/cmds-delidev-storage-contract.md`.
 
 - DeliDev provider activation follows `docs/cmds-delidev-provider-activation-contract.md`: provider inventory is owner/client-only and capability-bearing; provider ID scopes only account list pages; the optional enabled-provider model filter remains additive and cursor-bound. Generate all Go and TypeScript bindings from the canonical proto.
 

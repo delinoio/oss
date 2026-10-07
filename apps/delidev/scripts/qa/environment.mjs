@@ -52,7 +52,7 @@ export class Environment {
     this.ownerTransport = this.api.createDeliDevTransport({ origin: this.endpoint, getToken: () => owner.token });
     this.server.done.then(() => { if (!this.closing) { this.phase = "server-stopped"; this.changed(); } });
     const status = await createClient(this.api.SystemService, this.ownerTransport).getStatus({}, { timeoutMs: 5000 });
-    if (status.serverId !== this.serverId || status.version !== "0.1.0" || status.protocolVersion !== 1 || status.stopping) throw new QaError("server-verification-failed");
+    if (status.serverId !== this.serverId || status.version !== "0.1.0" || status.protocolVersion !== 2 || status.stopping) throw new QaError("server-verification-failed");
   }
   async registerWorker() {
     // Registration is idempotent only for this run's existing credential. Never
@@ -97,7 +97,7 @@ export class Environment {
   async verify() {
     const transport = this.api.createDeliDevTransport({ origin: this.endpoint, getToken: () => this.clientCredential.token });
     const status = await createClient(this.api.SystemService, transport).getStatus({}, { timeoutMs: 5000 });
-    if (status.serverId !== this.serverId || status.protocolVersion !== 1 || status.version !== "0.1.0" || status.stopping) throw new QaError("paired-verification-failed");
+    if (status.serverId !== this.serverId || status.protocolVersion !== 2 || status.version !== "0.1.0" || status.stopping) throw new QaError("paired-verification-failed");
     await this.verifyWorker();
   }
   async bootstrap() {
@@ -111,7 +111,7 @@ export class Environment {
     try {
       const transport = this.api.createDeliDevTransport({ origin: this.endpoint, getToken: () => this.clientCredential.token });
       const value = await createClient(this.api.SystemService, transport).getStatus({}, { timeoutMs: 2000 });
-      if (value.serverId !== this.serverId || value.version !== "0.1.0" || value.protocolVersion !== 1 || value.stopping) throw new QaError("paired-verification-failed");
+      if (value.serverId !== this.serverId || value.version !== "0.1.0" || value.protocolVersion !== 2 || value.stopping) throw new QaError("paired-verification-failed");
       return { state: "ready", attempts: 0, retry_ms: 0 };
     } catch { return { state: this.server?.child.exitCode !== null || this.server?.child.signalCode !== null ? "stopped" : "blocked", attempts: 0, retry_ms: 0, failure: "qa-connection-unavailable" }; }
   }

@@ -60,7 +60,7 @@ export async function main(args) {
    if(selected.platform==='linux'){run(desktop,['--appimage-extract'],false,scratch);const payload=join(scratch,'squashfs-root');verifyAppImagePayload(payload,selected);verifyNotices(join(payload,'lib/DeliDev'),packageResources(app,root,credits));}
  }
  const artifacts=[];for(const [component,path] of [['desktop',desktop],['worker',worker]]){const stat=lstatSync(path);if(!stat.isFile()||stat.size<1||stat.size>2*1024**3)throw new Error('Invalid updater artifact.');const hash=createHash('sha256');for await(const bytes of createReadStream(path))hash.update(bytes);artifacts.push({component,target,name:basename(path),size:stat.size,sha256:hash.digest('hex')});}
- writeFileSync(join(stage,'input.json'),JSON.stringify({schemaVersion:1,version,sourceRevision:revision,protocolVersion:1,artifacts,platformSigning:'keyless-dry-run',nativeAcceptance:'unverified',publication:'not-requested'},null,2)+'\n',{flag:'wx',mode:0o600});
+ writeFileSync(join(stage,'input.json'),JSON.stringify({schemaVersion:1,version,sourceRevision:revision,protocolVersion:2,artifacts,platformSigning:'keyless-dry-run',nativeAcceptance:'unverified',publication:'not-requested'},null,2)+'\n',{flag:'wx',mode:0o600});
  verifyPackageRevision(revision,run('git',['rev-parse','HEAD']),run('git',['status','--porcelain','--untracked-files=normal']));
  renameSync(stage,output);
  }finally{try{if(stage)rmSync(stage,{recursive:true,force:true});if(scratch)rmSync(scratch,{recursive:true,force:true});}finally{try{verifiedAppImage?.close();}finally{release();}}}

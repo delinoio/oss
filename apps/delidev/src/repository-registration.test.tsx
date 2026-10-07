@@ -69,19 +69,11 @@ it("retries a transient capability read without losing the registration draft", 
   expect(url.value).toBe("https://github.com/delinoio/oss.git");
 });
 
-it("keeps inspected-folder registration available on older servers", async () => {
-  const f = fixture(metadata, false, false); f.mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "" } });
-  fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
-  fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
-  await screen.findByRole("region", { name: "Repository detected" });
-  const add = within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement;
-  await waitFor(() => expect(add.disabled).toBe(false));
-  fireEvent.click(add); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
-  const saved = JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson));
-  expect(saved).toMatchObject({ name: "oss", checkouts: [{ machine_id: f.machine.id, path: "/canonical/oss" }] });
-  expect(saved.remote_url).toBeUndefined();
+it("blocks registration on servers without current repository support", async () => {
+ const f = fixture(metadata, false, false); f.mount(); await f.add();
+ expect(await screen.findByText("Update the selected server to add repositories by URL.")).toBeTruthy();
+ const add = within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement;
+ expect(add.disabled).toBe(true); fireEvent.click(add); expect(f.save).not.toHaveBeenCalled();
 });
 
 it("registers the canonical checkout using folder selection and Add repository only", async () => {
@@ -182,10 +174,10 @@ it("does not replace the remote identity when a connected folder remote changes"
 });
 
 it.each([
-  { root: "/unborn", name: "unborn", remotes: [], default_refs: {} },
-  { root: "/legacy", name: "legacy", remotes: ["solo"], default_refs: {} },
-  { root: "/ambiguous", name: "ambiguous", remotes: ["one", "two"], default_refs: {} },
-])("allows missing defaults and legacy metadata for $name", async output => {
+  { root: "/unborn", name: "unborn", remotes: [], default_refs: {}, github_repositories: {} },
+  { root: "/non-github", name: "non-github", remotes: ["solo"], default_refs: {}, github_repositories: {} },
+  { root: "/ambiguous", name: "ambiguous", remotes: ["one", "two"], default_refs: {}, github_repositories: {} },
+])("allows missing defaults with explicit current metadata for $name", async output => {
   const f = fixture(output); f.mount(); await f.chooseAndReview();
   expect(screen.getByText("Unavailable locally")).toBeTruthy();
   fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));

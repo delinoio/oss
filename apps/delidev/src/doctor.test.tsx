@@ -13,7 +13,7 @@ import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 
 function report(): Document {
-  return { schema_version: 2, server_id: newRequestId(), version: "0.1.0", listener: "http://127.0.0.1:46310", observed_at: "2026-09-25T12:34:56Z", os: "linux", architecture: "amd64", protocol_version: 1, database_schema_version: 13, database: "ready", credential_store: "owner-credential-ready", inference_probes: false,
+  return { schema_version: 2, server_id: newRequestId(), version: "0.1.0", listener: "http://127.0.0.1:46310", observed_at: "2026-09-25T12:34:56Z", os: "linux", architecture: "amd64", protocol_version: 2, database_schema_version: 13, database: "ready", credential_store: "owner-credential-ready", inference_probes: false,
     storage: { result: { state: "observed" }, database_bytes: "0", wal_bytes: "9007199254740993", logical_database_bytes: "18446744073709551615", volume_capacity_bytes: "4096", volume_available_bytes: "1024", resources: [{ kind: "session", count: "42" }] },
     machines: [{ machine_id: newRequestId(), name: "First Worker", version: "0.1.0", os: "darwin", architecture: "arm64", active_stream: true, disabled: false, last_seen: "2026-09-25T01:00:00Z", installations: ["codex", "claude-code", "opencode", "grok-build"].map((harness) => ({ harness, state: "detected", version: "1.2.3", protocol_verified: false, observed_at: "2026-09-25T00:00:00Z", capabilities: ["fixture-read"] })) }], more_machines: false,
     credentials: [{ account_id: newRequestId(), connection_id: newRequestId(), result: { state: "observed" } }], more_credentials: false };
@@ -209,9 +209,9 @@ for (const inventory of [undefined, [], Array.from({ length: 51 }, (_, i) => ({ 
   for (const region of [workers, accounts]) { expect(within(region).queryByText("Inventory completeness is unknown.") !== null).toBe(more === undefined); expect(within(region).queryByText(/Only the first 50/) !== null).toBe(more === true); }
 });
 
-it("preserves legacy fields and field-level unknown classifications without inventing health or executing HTML", async () => {
+it("rejects omitted report schema and keeps field-level unknown classifications inert", async () => {
   const data = report(), value = fixture({ version: "0.1.0", server_id: data.server_id, listener: data.listener, database: "ready", credential_store: "owner-credential-ready", inference_probes: false });
-  const view = render(value.view(<Doctor active />)); await screen.findByText(/legacy report/);
+  const view = render(value.view(<Doctor active />)); await screen.findByText(/diagnostic report version is unsupported/i);
   expect(screen.queryByRole("region", { name: "Storage diagnostics" })).toBeNull();
   const markup = '<img src="x" onerror="alert(1)">';
   (data.storage as Document).result = { state: "future", guidance: markup };

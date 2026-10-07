@@ -232,34 +232,6 @@ it("uses service identity without Provider reads when editing native account pre
 });
 
 
-it("keeps model-search cursors out of provider inventory requests", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "API provider", enabled: true });
-  const firstModel = resource(EntityKind.MODEL, { name: "First model", provider_id: provider.id });
-  const secondModel = resource(EntityKind.MODEL, { name: "Second model", provider_id: provider.id });
-  const providerEntry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.UNSPECIFIED, providerId: provider.id, displayName: "API provider", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true, provider });
-  const inventoryTokens: string[] = [];
-  const searchTokens: string[] = [];
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
-  const value = fixture([provider], {
-    providerEntries: [providerEntry],
-    readProviderInventory: (pageToken) => {
-      inventoryTokens.push(pageToken);
-      if (pageToken) throw new ConnectError("Provider inventory received another query's cursor", Code.InvalidArgument);
-      return { entries: [providerEntry], capabilities };
-    },
-    readModelSearch: (pageToken) => {
-      searchTokens.push(pageToken);
-      return pageToken ? { models: [secondModel], providers: [provider] } : { models: [firstModel], providers: [provider], nextPageToken: "model-page-2" };
-    },
-  });
-  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
-  await screen.findByRole("option", { name: "First model" });
-  fireEvent.click(screen.getByRole("button", { name: "More choices" }));
-  await screen.findByRole("option", { name: "Second model" });
-  expect(searchTokens).toEqual(["", "model-page-2"]);
-  expect(inventoryTokens.every((pageToken) => pageToken === "")).toBe(true);
-});
-
 it("shows the complete grouped navigation once and keeps its selected category in sync", async () => {
   const value = fixture([]);
   render(value.view(<Settings visible />));
@@ -540,16 +512,14 @@ it("keeps repository saving blocked and offers a retry when the capability check
   expect(value.save).not.toHaveBeenCalled();
 });
 
-it("keeps legacy checkout repository editing available without remote capability", async () => {
+it("blocks checkout-only repository editing when current remote registration is unsupported", async () => {
   const repository = resource(EntityKind.REPOSITORY, { name: "Legacy repository", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
   const value = fixture([repository], { systemCapabilities: [] });
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed legacy repository" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
-  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
-  const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
-  expect(saved).toEqual({ name: "Renamed legacy repository", checkouts: [{ machine_id: expect.any(String), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
-  expect(saved).not.toHaveProperty("remote_url");
+  expect(await screen.findByText("Update the selected server before saving a repository.")).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(value.save).not.toHaveBeenCalled();
 });
 
 it("retries an original checkout inspection and uses only its owning Worker's canonical root", async () => {
@@ -616,43 +586,6 @@ it("edits global routing preferences without rewriting unrelated policy or creat
   const request = input(value.save.mock.calls[0][0]);
   expect(request.mutation.expectedRevision).toBe(8n);
   expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority" });
-});
-
-it("retains incompatible permission selections across harness changes until explicit clearing", async () => {
-  const model = resource(EntityKind.MODEL, { name: "Fixture model" });
-  const original = { name: "Original agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "workspace-write", approval_policy: "on-request", future_option: "retained" } };
-  const agent = resource(EntityKind.AGENT, original, 3n);
-  const value = fixture([agent, model]);
-  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />));
-  fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "claude-code" } });
-  expect(screen.getByRole("alert").textContent).toContain("workspace-write · on-request");
-  expect(screen.queryByRole("combobox", { name: "Permission mode" })).toBeNull();
-  expect(screen.queryByRole("textbox", { name: "Approval policy" })).toBeNull();
-  fireEvent.change(screen.getByRole("combobox", { name: "Claude permission mode" }), { target: { value: "acceptEdits" } });
-  fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "codex" } });
-  expect((screen.getByRole("combobox", { name: "Permission mode" }) as HTMLSelectElement).value).toBe("workspace-write");
-  expect((screen.getByRole("textbox", { name: "Approval policy" }) as HTMLInputElement).value).toBe("on-request");
-  expect(screen.getByRole("alert").textContent).toContain("acceptEdits");
-  fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "claude-code" } });
-  fireEvent.click(screen.getByRole("button", { name: "Clear incompatible permission settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
-  const request = input(value.save.mock.calls[0][0]);
-  expect(request.mutation.expectedRevision).toBe(3n);
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, harness: "claude-code", options: { permission: "default", claude_permission: "acceptEdits", future_option: "retained" } });
-});
-
-it("shows unsupported stored Claude modes without replacing the retained draft", async () => {
-  const model = resource(EntityKind.MODEL, { name: "Fixture model" });
-  const agent = resource(EntityKind.AGENT, { name: "Future agent", harness: "claude-code", model_id: model.id, options: { permission: "default", claude_permission: "future-mode" } });
-  const value = fixture([agent, model]);
-  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />));
-  const selector = screen.getByRole("combobox", { name: "Claude permission mode" }) as HTMLSelectElement;
-  expect(selector.value).toBe("future-mode");
-  expect(screen.getByRole("option", { name: "Unsupported selection · future-mode" })).toBeTruthy();
-  fireEvent.change(selector, { target: { value: "bypassPermissions" } });
-  expect(screen.getByText(/Bypass skips native permission prompts/)).toBeTruthy();
-  expect(value.save).not.toHaveBeenCalled();
 });
 
 it("saves remediation switches, exact reviewer IDs and explicit execution choices through configuration", async () => {

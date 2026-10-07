@@ -44,7 +44,7 @@ type ExecutionCompletion struct {
 	Outcome         ExecutionOutcome `json:"outcome"`
 	CleanupVerified bool             `json:"cleanup_verified"`
 	// Version 2 binds the exact immutable Worker-private continuation file.
-	// Version 1 remains readable historical evidence but cannot prove this file.
+	// Version 1 is the current terminal-only profile before checkpoint retention.
 	NativeCheckpointDigest string       `json:"native_checkpoint_digest,omitempty"`
 	PRPush                 *PRPushProof `json:"pr_push,omitempty"`
 }

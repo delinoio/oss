@@ -15,8 +15,8 @@ import { CodexSubagentConfiguration } from "./codex-subagent-configuration";
 import { ReasoningEffortField, claudeEffortSuggestions, codexEffortSuggestions } from "./reasoning-effort-field";
 
 export enum Harness { Codex = "codex", Claude = "claude-code", OpenCode = "opencode", Grok = "grok-build" }
-export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Anthropic = "anthropic-messages", Subscription = "native-subscription" }
-export enum Authentication { Bearer = "bearer", Key = "api-key", Keyless = "keyless", Subscription = "subscription" }
+export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Anthropic = "anthropic-messages" }
+export enum Authentication { Bearer = "bearer", Key = "api-key", Keyless = "keyless" }
 export enum Routing { Fixed = "fixed", Priority = "priority", RoundRobin = "round-robin", Quota = "remaining-quota", Reset = "reset-window", Sequential = "sequential-exhaustion" }
 enum Permission { Default = "default", Read = "read-only", Workspace = "workspace-write", Full = "full-access" }
 enum ClaudePermission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions" }
@@ -85,7 +85,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const selected = useQuery(ResourceQuery.getResource, { kind, id: value }, { enabled: active && Boolean(value) && needsProviderCapability });
   const selectedData = document(selected.data?.resource);
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: kind === EntityKind.MODEL ? text(selectedData.provider_id) : value }, { enabled: active && kind === EntityKind.MODEL && Boolean(text(selectedData.provider_id)) });
-  const selectedProviderOff = kind === EntityKind.PROVIDER ? selectedData.protocol !== Protocol.Subscription && selectedData.enabled === false : selectedProvider.data?.resource ? document(selectedProvider.data.resource).enabled === false : false;
+  const selectedProviderOff = kind === EntityKind.PROVIDER ? selectedData.enabled === false : selectedProvider.data?.resource ? document(selectedProvider.data.resource).enabled === false : false;
   const activeProviders = (inventory.data?.entries ?? []).flatMap((entry) => entry.provider ? [entry.provider] : []);
   let rows = kind === EntityKind.MODEL && needsProviderCapability ? (modelSearch.data?.models ?? []) : kind === EntityKind.PROVIDER && needsProviderCapability ? activeProviders : (result.data?.resources ?? []);
   rows = rows.filter((row) => !allowed || allowed.includes(row.id));
@@ -145,16 +145,15 @@ function OrderedLinks({ label, kind, links, change, active, weighted = false, ex
   </fieldset>;
 }
 
-function ProviderFields({ data, change, subscriptionOnly = false }: FieldsProps) {
+function ProviderFields({ data, change }: FieldsProps) {
   useLocale();
-  if (subscriptionOnly) return <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={(name) => change({ ...data, name })} required /><p>{copy("configuration-fields.subscriptionProvidersUseNativeSubscriptionProtocol_8f0299")}</p></>;
   return <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={(name) => change({ ...data, name })} required />
     <Choice label={copy("configuration-fields.apiProtocol_a341ad")} value={data.protocol} choices={[Protocol.Responses, Protocol.Chat, Protocol.Anthropic]} change={(protocol) => change({ ...data, protocol })} />
     <TextField label={copy("configuration-fields.apiBaseUrl_a45474")} value={data.endpoint} max={4096} change={(endpoint) => change({ ...data, endpoint })} required /><p>{copy("configuration-fields.localhostRefersToTheServerComputer_cfc90a")}</p><Choice label={copy("configuration-fields.authentication_66880d")} value={data.authentication} choices={[Authentication.Bearer, Authentication.Key, Authentication.Keyless]} change={(authentication) => change({ ...data, authentication })} /><Check label={copy("configuration-fields.discoverModelsAutomaticallyForConnectedEntries_6f1cb4")} value={data.discovery} change={(discovery) => change({ ...data, discovery })} />
   </>;
 }
 export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow" }
-interface FieldsProps { data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
+interface FieldsProps { data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; serverPreferenceSection?: ServerPreferenceSection }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All } = props;
@@ -178,11 +177,10 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   if (kind === EntityKind.AGENT) {
     const options = object(data.options);
     const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
-    return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
-      core={<>{!props.workerWizard ? <AgentReconfiguration data={data} change={change} active={active} /> : null}<TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label={copy("configuration-fields.model_5e2c61")} kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required markRequired /></div> : null}</>}
+    return <AgentConfiguration data={data}
+      core={<TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />}
       permissions={<AgentPermissions harness={data.harness} options={options} change={field("options")} />}
       reasoning={<ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />}
-      accounts={props.workerWizard ? undefined : <><Choice label={copy("configuration-fields.accountRouting_0c3707")} value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label={copy("configuration-fields.accounts_8a7c8b")} kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
       instructions={<OrderedLinks label={copy("configuration-fields.instructionTemplates_6b009f")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}
       native={<>{data.harness === Harness.Codex ? <CodexSubagentConfiguration options={options} active={active} change={(key, value) => option(key)(value)} /> : <><TextField label={copy("configuration-fields.subagentModel_28463c")} value={options.subagent_model} change={option("subagent_model")} /><ReasoningEffortField label={copy("configuration-fields.subagentEffort_eea2b1")} value={options.subagent_effort} change={option("subagent_effort")} /><label>{copy("configuration-fields.maximumConcurrency0UsesNativeDefault_451d39")}<input type="number" min={0} max={64} value={Number(options.max_concurrency ?? 0)} onChange={(event) => option("max_concurrency")(Number(event.target.value))} /></label></>}{data.harness !== Harness.Claude ? <TextField label={copy("configuration-fields.approvalPolicy_89d24f")} value={options.approval_policy} change={option("approval_policy")} /> : null}<TextField label={copy("configuration-fields.approvalReviewModel_ef091f")} value={options.approval_review_model} change={option("approval_review_model")} /><TextField label={copy("configuration-fields.serviceTier_e9cf60")} value={options.service_tier} change={option("service_tier")} /><p>{copy("configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d")}</p></>}
     />;
@@ -271,12 +269,4 @@ function ModelFields({ data, change, active, existing }: FieldsProps) {
     <fieldset><legend>{copy("configuration-fields.configuredHarnessCompatibility_0115e8")}</legend>{native ? <p>{service ? subscriptionServiceHarnesses[service] : copy("configuration-fields.unsupportedService_724094")}</p> : Object.values(Harness).map((harness) => <Check key={harness} label={harness} value={items(data.harnesses).includes(harness)} change={(selected) => field("harnesses")(selected ? [...items(data.harnesses), harness] : items(data.harnesses).filter((value) => value !== harness))} />)}<p>{copy("configuration-fields.configuredCompatibilityIsCheckedAgainstThe_80980f")}</p></fieldset>
     <Check label={copy("configuration-fields.hideFromDefaultModelLists_e0398b")} value={data.hidden} change={field("hidden")} /><label>{copy("configuration-fields.displayOrder_540fc6")}<input type="number" min={-2147483648} max={2147483647} value={Number(data.order)} onChange={(event) => field("order")(Number(event.target.value))} /></label>{data.new === true ? <Check label={copy("configuration-fields.keepNewMarkerUntilReviewed_52aeec")} value={data.new} change={field("new")} /> : null}<p><LocalizedText id="configuration-fields.metadataContextLimit_91b325" components={{ s0: <>{text(data.metadata_source)}</>, s1: <>{data.context_limit == null ? copy("configuration-fields.unknown_b764cd") : String(data.context_limit)}</> }} /></p>
   </>;
-}
-
-function AgentReconfiguration({ data, change, active }: { data: Document; change: (value: Document) => void; active: boolean }) {
-  useLocale();
-  const model = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: text(data.model_id) }, { enabled: active && data.reconfiguration_required === true && Boolean(text(data.model_id)), retry: false });
-  if (data.reconfiguration_required !== true) return null;
-  const valid = model.data?.resource && supportsResourceSchema(model.data.resource) && document(model.data.resource).retired !== true && model.data.resource.id === data.model_id;
-  return <section role="status"><p>{copy("configuration-fields.legacySubscriptionConfigurationWasRetiredChoose_bb6be6")}</p><Problem error={model.error} /><button type="button" disabled={!valid || Boolean(model.error || model.isFetching)} onClick={() => change({ ...data, reconfiguration_required: false })}>{copy("configuration-fields.confirmReconfiguredModelAndAccounts_021890")}</button></section>;
 }

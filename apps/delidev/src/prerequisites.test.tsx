@@ -19,7 +19,7 @@ function accountResource(subscriptionService?: SubscriptionServiceId): Resource 
 
 function fixture() {
   const serverId = newRequestId();
-  const report = { schema_version: 2, server_id: serverId, version: "0.1.0", protocol_version: 1, database_schema_version: 24, os: "darwin", architecture: "arm64", listener: "http://127.0.0.1:46310", credential_store: "owner-credential-ready", credentials: [], more_credentials: false, inference_probes: false, observed_at: new Date().toISOString(), database: "ready", storage: { result: { state: "observed" }, database_bytes: "4096", wal_bytes: "0", logical_database_bytes: "4096", volume_capacity_bytes: "8192", volume_available_bytes: "4096", resources: [] }, more_machines: false, machines: [{ machine_id: newRequestId(), name: "Worker", os: "darwin", architecture: "arm64", version: "0.1.0", last_seen: new Date().toISOString(), active_stream: true, disabled: false, installations: [{ harness: "codex", state: "detected", version: "0.151.0", protocol_verified: true, protocol_state: "verified", capabilities: [] as string[], observed_at: new Date().toISOString() }, ...["claude-code", "opencode", "grok-build"].map(harness => ({ harness, state: "unchecked", protocol_verified: false, capabilities: [] as string[] }))] }] };
+  const report = { schema_version: 2, server_id: serverId, version: "0.1.0", protocol_version: 2, database_schema_version: 24, os: "darwin", architecture: "arm64", listener: "http://127.0.0.1:46310", credential_store: "owner-credential-ready", credentials: [], more_credentials: false, inference_probes: false, observed_at: new Date().toISOString(), database: "ready", storage: { result: { state: "observed" }, database_bytes: "4096", wal_bytes: "0", logical_database_bytes: "4096", volume_capacity_bytes: "8192", volume_available_bytes: "4096", resources: [] }, more_machines: false, machines: [{ machine_id: newRequestId(), name: "Worker", os: "darwin", architecture: "arm64", version: "0.1.0", last_seen: new Date().toISOString(), active_stream: true, disabled: false, installations: [{ harness: "codex", state: "detected", version: "0.151.0", protocol_verified: true, protocol_state: "verified", capabilities: [] as string[], observed_at: new Date().toISOString() }, ...["claude-code", "opencode", "grok-build"].map(harness => ({ harness, state: "unchecked", protocol_verified: false, capabilities: [] as string[] }))] }] };
   const account = accountResource();
   const agent = create(ResourceSchema, { id: newRequestId(), revision: 1n, kind: EntityKind.AGENT, schemaVersion: 1, documentJson: encode({ harness: "codex", model_id: newRequestId(), accounts: [] }) });
   const doctor = vi.fn(async () => ({ reportJson: encode(report) }));
@@ -29,7 +29,7 @@ function fixture() {
   const settings = vi.fn();
   const status = vi.fn(async () => ({ serverId, version: "0.1.0", stopping: false }));
   const transport = createRouterTransport(router => {
-    router.service(SystemService, { getStatus: status, getDoctor: doctor, createBackup: mutation });
+    router.service(SystemService, { getStatus: status, getDoctor: doctor, requestBackup: mutation });
     router.service(ResourceService, { listResources: list });
   });
   const rpc = vi.spyOn(transport, "unary");

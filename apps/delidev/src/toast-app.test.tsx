@@ -11,7 +11,7 @@ it("retains App notifications across authenticated reconnect and clears them on 
   const transport = () => createRouterTransport(router => {
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
     router.service(ResourceService, { listResources: () => ({ resources: [] }) });
-    router.service(SystemService, { getStatus: () => ({ serverId, protocolVersion: 1 }) });
+    router.service(SystemService, { getStatus: () => ({ serverId, protocolVersion: 2 }) });
   });
   const target = document.createElement("div"); document.body.append(target);
   let controller!: NotificationController;

@@ -27,7 +27,7 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
   const transport: Transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2 }) });
     router.service(ResourceService, { listResources: (request) => {
       if (request.filter?.kind !== EntityKind.PROJECT) return { resources: [] };
       const token = request.filter.pageToken;

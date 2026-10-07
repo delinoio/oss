@@ -33,7 +33,7 @@ function fixture() {
     router.service(ScheduleService, { listSchedules: list, getSchedule: (request) => ({ schedule: schedules.find((schedule) => schedule.id === request.id) }), listScheduleOccurrences: history, runScheduleNow: run });
     router.service(ResourceService, { listResources: choices });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2 }) });
     router.service(InboxService, { listInbox: () => ({ entries: [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });

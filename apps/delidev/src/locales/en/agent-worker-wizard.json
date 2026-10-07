@@ -20,7 +20,6 @@
   "agent-worker-wizard.workerConfigurationSteps": "Worker configuration steps",
   "agent-worker-wizard.checkingServerSupport": "Checking server support…",
   "agent-worker-wizard.updateServerWizard": "Update the server to configure Agent Workers with this wizard.",
-  "agent-worker-wizard.reconfigurationRequired": "This Worker needs explicit account and model reconfiguration. Historical executions keep their original attribution.",
   "agent-worker-wizard.chooseTool": "Choose the tool that runs this Worker.",
   "agent-worker-wizard.chooseHarnessToContinueToAccounts": "Choose a harness to continue to Accounts.",
   "agent-worker-wizard.harness": "Harness",

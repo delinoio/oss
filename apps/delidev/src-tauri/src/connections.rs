@@ -378,7 +378,7 @@ impl Connector {
         .map_err(|_| NativeFailure::InvalidEvidence)?;
         if !value.profile.same_authority(expected)
             || value.server_version != "0.1.0"
-            || value.protocol_version != 1
+            || value.protocol_version != 2
             || value.observed_at.is_empty()
         {
             return Err(NativeFailure::Incompatible);

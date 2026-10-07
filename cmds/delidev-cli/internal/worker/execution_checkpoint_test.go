@@ -62,7 +62,7 @@ func newCheckpointFixture(t *testing.T) checkpointFixture {
 	completion := domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(id), NativeTurnID: domain.NativeIdentity(domain.NewID()), LastSequence: 10, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
 	raw, _ := json.Marshal(input)
 	jobID := domain.NewID()
-	ref := ExecutionCheckpointRef{JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(raw), ConfigurationDigest: digest, AccountID: accountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}
+	ref := ExecutionCheckpointRef{AcceptedInputs: []domain.ExecutionInputBinding{domain.BindExecutionInput(input.InputID, input.Input.Prompt)}, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(raw), ConfigurationDigest: digest, AccountID: accountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}
 	return checkpointFixture{root: root, jobID: jobID, job: domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobClaimed, MachineID: input.MachineID, Input: raw}, input: input, bound: bound, completion: completion, ref: ref}
 }
 
@@ -131,7 +131,7 @@ func TestExecutionCheckpointContinuationKeepsOriginalHistoryRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := domain.ExecutionProgress{JobID: f.jobID, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, LastSequence: f.completion.LastSequence, NativeThreadID: string(f.completion.NativeThreadID), NativeTurnID: string(f.completion.NativeTurnID), Observed: domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
+	previous := domain.ExecutionProgress{AcceptedInputs: append([]domain.ExecutionInputBinding{}, f.ref.AcceptedInputs...), JobID: f.jobID, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, LastSequence: f.completion.LastSequence, NativeThreadID: string(f.completion.NativeThreadID), NativeTurnID: string(f.completion.NativeTurnID), Observed: domain.ObservedExecutionSettings{Model: f.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "on-request"}, Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
 	next := f
 	next.jobID = domain.NewID()
 	next.input.Version, next.input.ExecutionID, next.input.InputID = 2, domain.NewID(), domain.NewID()
@@ -143,6 +143,7 @@ func TestExecutionCheckpointContinuationKeepsOriginalHistoryRoot(t *testing.T) {
 	next.completion.ExecutionID, next.completion.InputID, next.completion.NativeTurnID = next.input.ExecutionID, next.input.InputID, domain.NativeIdentity(domain.NewID())
 	next.ref.JobID, next.ref.AssignmentInputDigest = next.jobID, executionInputDigest(next.job.Input)
 	next.ref.InputMode, next.ref.PromptDigest = next.input.Input.Mode, sha256.Sum256([]byte(next.input.Input.Prompt))
+	next.ref.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(next.input.InputID, next.input.Input.Prompt)}
 	if _, err := harness.PrivateRuntimeEnvironment(filepath.Join(f.root, "runtimes", string(next.input.ExecutionID))); err != nil {
 		t.Fatal(err)
 	}

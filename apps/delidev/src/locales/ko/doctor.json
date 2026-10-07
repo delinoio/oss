@@ -62,7 +62,6 @@
   "doctor.databaseSchema_bf3efc": "데이터베이스 스키마",
   "doctor.boundEndpoint_5501d6": "연결된 엔드포인트",
   "doctor.serverIdentity_fa4fb0": "서버 식별 정보",
-  "doctor.thisServerReturnedALegacyReport_0a90d0": "이 서버가 이전 형식의 보고서를 반환했습니다. 용량 및 보호된 저장소 상태는 아직 보고되지 않았습니다.",
   "doctor.readOnlyObservationsFromTheSelected_9e6c27": "선택한 서버의 읽기 전용 관측입니다.",
   "doctor.refreshDiagnostics_7bce98": "진단 새로고침",
   "doctor.connection_639a40": "연결",

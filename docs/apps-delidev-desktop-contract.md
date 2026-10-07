@@ -436,9 +436,9 @@ locks for both the input and custom list actions. The component adds no query,
 RPC, discovery, persistence, public schema or native execution authority.
 
 Accounts & routing moves to Accounts, retaining ordered weighted links and all
-add/move/remove operations. The legacy configuration RPC and shared field seam
-still permit accountless Workers; existing records remain valid. The wizard
-requires at least one current same-source account before saving. A harness or
+add/move/remove operations. All CLI, RPC and desktop Agent writes use atomic SaveAgentWorker and
+require at least one current same-source account before saving. Generic
+SaveConfiguration has no Agent write path. A harness or
 source change clears incompatible model/account choices for explicit reselection;
 unrelated fields and unknown document/link/option fields survive save.
 
@@ -520,10 +520,9 @@ Multiple accounts must share that source. Keep their explicit order and relative
 weights (1–1,000), all six routing policies and the inherited server default.
 Fixed routing permits exactly one account. Source or harness changes clear
 incompatible account/model choices and require explicit selection; ordinary Back
-and disclosure changes retain values. Legacy accountless Workers remain readable
-through existing APIs, but need an account before wizard resaving. Retired models
-remain inert; affected Workers require explicit current account and model
-reconfiguration without rewriting historical executions.
+and disclosure changes retain values. Current account and model selections must
+be complete before saving; historical executions remain immutable. Retirement
+wrappers and reconfiguration-required flags are removed.
 
 The Model step uses source-scoped server catalog autocomplete and permits exact
 native ID input after loading, empty, failed or unsupported discovery results.

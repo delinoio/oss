@@ -23,7 +23,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const creates = vi.fn(async () => ({ change: { session } }));
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Agent One" }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
-  const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
+  const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
   const githubQuery = vi.fn(async (_request: { repositoryId: string; schemaVersion: number; queryJson: Uint8Array }) => ({ schemaVersion: 1, documentJson: encode({}) }));
   const saveConfiguration = vi.fn(async (request: { kind: EntityKind; documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
   const projectRequests: string[] = [];
@@ -538,6 +538,7 @@ it("discards an Instructions draft when navigating away and preserves targeted r
 
 it("discards a nested integration profile draft on close before targeted repository entry", async () => {
   const value = fixture();
+  value.status.mockResolvedValue({ version: "0.1.0", protocolVersion: 2, capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] });
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Git Profiles" }));
@@ -545,12 +546,12 @@ it("discards a nested integration profile draft on close before targeted reposit
   // Wait for that read so the test clicks the current button, not a detached node.
   await screen.findByRole("heading", { name: "Add your first GitHub profile" });
   fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
-  const name = await screen.findByRole("textbox", { name: "Profile name" });
-  fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
+  const name = await screen.findByRole("textbox", { name: "GitHub personal access token" });
+  fireEvent.change(name, { target: { value: "fixture-unsent-token" } });
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
-  expect(screen.queryByRole("textbox", { name: "Profile name" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "GitHub personal access token" })).toBeNull();
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
   expect(value.githubQuery).not.toHaveBeenCalled();
 });

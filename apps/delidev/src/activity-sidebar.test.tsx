@@ -24,7 +24,7 @@ function fixture() {
   const stop = vi.fn(() => ({}));
   const preferences = create(NotificationPreferencesSchema, { revision: 1n });
   const transport = () => createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }), stopServer: stop });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2 }), stopServer: stop });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
     router.service(InboxService, { getNotificationPreferences: () => ({ preferences }), listInbox: () => ({ entries: [] }) });
     router.service(ActivityService, { listActivity: activity });

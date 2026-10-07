@@ -36,7 +36,7 @@ function fixture() {
   const capabilities = vi.fn(async () => ({ profiles: [PullRequestFixProfile.CODEX_GIT_V1] }));
   const history = vi.fn(async () => ({ problemSet: set, problems: [problem] }));
   const transport = createRouterTransport(router => {
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2 }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
     router.service(ResourceService, { listResources: request => ({ resources: request.filter?.kind === EntityKind.REPOSITORY ? repositoryAvailable ? [repository] : [] : request.filter?.kind === EntityKind.PROJECT ? [project] : [] }), getResource: request => ({ resource: repositoryAvailable && request.id === repositoryId ? repository : undefined }) });
     router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences: create(NotificationPreferencesSchema, { revision: 1n }) }) });

@@ -24,7 +24,7 @@ function fixture() {
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Worker" }) });
   const listResources = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => request.filter?.kind === EntityKind.AGENT && !request.filter.pageToken ? { resources: [], nextPageToken: "later" } : { resources: [project, agent, machine].filter((row) => row.kind === request.filter?.kind), nextPageToken: "" });
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1] }) });
     router.service(SessionService, { createSession, recoverSessionWorkspace: workspace, recoverSessionExecution: recover, prepareSessionWorkspace: prepare, renameSession: rename, controlSession: control });
     router.service(ResourceService, { getResource: (request) => ({ resource: request.id === project.id ? project : undefined }), listResources });
   });

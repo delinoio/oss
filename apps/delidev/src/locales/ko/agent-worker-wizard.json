@@ -20,7 +20,6 @@
   "agent-worker-wizard.workerConfigurationSteps": "워커 구성 단계",
   "agent-worker-wizard.checkingServerSupport": "서버 지원을 확인하는 중…",
   "agent-worker-wizard.updateServerWizard": "이 마법사로 에이전트 워커를 구성하려면 서버를 업데이트하세요.",
-  "agent-worker-wizard.reconfigurationRequired": "이 워커에는 계정과 모델을 명시적으로 다시 구성해야 합니다. 과거 실행은 원래 귀속을 유지합니다.",
   "agent-worker-wizard.chooseTool": "이 워커를 실행할 도구를 선택하세요.",
   "agent-worker-wizard.chooseHarnessToContinueToAccounts": "계속하려면 하니스를 선택하세요: 계정.",
   "agent-worker-wizard.harness": "하네스",

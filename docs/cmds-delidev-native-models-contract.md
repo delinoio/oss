@@ -103,11 +103,10 @@ Accepted discovery uses the existing generic job, receipt and indexed parent/mac
 records. Immutable successful job output holds the complete observation; last-success
 lookup binds account, machine, installation generation/digest, connection and hidden
 selection. This adds no executable database migration or new migration version.
-The executable registry includes main-established schema 25 for Grok accounting;
-pending versions 26 and 27 retain their original order and every later reservation
-remains unchanged. If
-implementation needs a schema change, establish its version on main first and
-preserve the complete preceding sequence, backup-first atomic upgrades and historical records. A protocol
+Schema 32 initializes the current accounting and diagnostic structures directly.
+Historical allocations through 31 retain their owners and cannot be reused.
+Any future schema allocation must reach main before dependent implementation;
+no prerelease database upgrade or historical backfill is supported. A protocol
 reservation cannot authorize a database version or an empty migration.
 
 ## Security

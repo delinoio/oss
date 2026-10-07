@@ -81,17 +81,16 @@ function Report({ report }: { report: Document }) {
     if (!key) { key = `missing-${++nextKey.current}`; missingKeys.current.set(record, key); }
     return key;
   };
-  const expanded = report.schema_version === 2;
   return <>
-    {expanded ? <p className="diagnostics-observed"><LocalizedText id="doctor.observedAt_2044a6" components={{ s0: <span>{formatTimestamp(text(report.observed_at)) || copy("doctor.extra.b764cdc0eab7")}</span> }} /></p> : null}
+    {<p className="diagnostics-observed"><LocalizedText id="doctor.observedAt_2044a6" components={{ s0: <span>{formatTimestamp(text(report.observed_at)) || copy("doctor.extra.b764cdc0eab7")}</span> }} /></p>}
     <div className="diagnostics-observations">
       <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.databaseReadCheck_465f92")}</h2><p><span className={report.database === "ready" ? "diagnostics-success" : "diagnostics-symbol"} aria-hidden="true">{report.database === "ready" ? "✓" : "?"}</span>{report.database === "ready" ? copy("doctor.readSucceeded_14f977") : report.database === "failed" ? copy("doctor.readFailedInspectServerStorageAnd_06b368") : copy("doctor.unknown_b764cd")}</p></section>
       <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.ownerCredential_028058")}</h2><p><span className="diagnostics-symbol" aria-hidden="true">ⓘ</span>{report.credential_store === "owner-credential-ready" ? copy("doctor.serverOwnerCredentialLoaded_ed8968") : copy("doctor.unknown_b764cd")}</p></section>
       <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.inferenceProbes_3cbb76")}</h2><p><span className="diagnostics-neutral" aria-hidden="true">−</span>{report.inference_probes === false ? copy("doctor.notPerformed_c48729") : copy("doctor.unknown_b764cd")}</p></section>
     </div>
     <div className="diagnostics-sections">
-      <section className="diagnostics-panel" aria-label={copy("doctor.serverInformation_078792")}><h2>{copy("doctor.serverInformation_078792")}</h2><dl className="diagnostics-facts"><dt>{copy("doctor.serverVersion_3f34bb")}</dt><dd>{text(report.version) || copy("doctor.extra.b764cdc0eab7")}</dd>{expanded ? <><dt>{copy("doctor.serverPlatform_9d0c00")}</dt><dd>{text(report.os) || copy("doctor.extra.b764cdc0eab7")} / {text(report.architecture) || copy("doctor.extra.b764cdc0eab7")}</dd><dt>{copy("doctor.protocolVersion_cdd735")}</dt><dd>{Number.isSafeInteger(report.protocol_version) && Number(report.protocol_version) > 0 ? Number(report.protocol_version) : copy("doctor.unknown_b764cd")}</dd><dt>{copy("doctor.databaseSchema_bf3efc")}</dt><dd>{Number.isSafeInteger(report.database_schema_version) && Number(report.database_schema_version) > 0 ? Number(report.database_schema_version) : copy("doctor.unknown_b764cd")}</dd></> : null}<dt>{copy("doctor.boundEndpoint_5501d6")}</dt><dd>{text(report.listener) || copy("doctor.extra.b764cdc0eab7")}</dd></dl><p>{ownerCaveat()}</p><Disclosure title={copy("doctor.serverIdentity_fa4fb0")}><p>{text(report.server_id) || copy("doctor.extra.b764cdc0eab7")}</p></Disclosure></section>
-      {expanded ? <><Storage value={object(report.storage)} /><Workers report={report} recordKey={recordKey} /><Credentials report={report} recordKey={recordKey} /></> : <p>{copy("doctor.thisServerReturnedALegacyReport_0a90d0")}</p>}
+      <section className="diagnostics-panel" aria-label={copy("doctor.serverInformation_078792")}><h2>{copy("doctor.serverInformation_078792")}</h2><dl className="diagnostics-facts"><dt>{copy("doctor.serverVersion_3f34bb")}</dt><dd>{text(report.version) || copy("doctor.extra.b764cdc0eab7")}</dd>{<><dt>{copy("doctor.serverPlatform_9d0c00")}</dt><dd>{text(report.os) || copy("doctor.extra.b764cdc0eab7")} / {text(report.architecture) || copy("doctor.extra.b764cdc0eab7")}</dd><dt>{copy("doctor.protocolVersion_cdd735")}</dt><dd>{Number.isSafeInteger(report.protocol_version) && Number(report.protocol_version) > 0 ? Number(report.protocol_version) : copy("doctor.unknown_b764cd")}</dd><dt>{copy("doctor.databaseSchema_bf3efc")}</dt><dd>{Number.isSafeInteger(report.database_schema_version) && Number(report.database_schema_version) > 0 ? Number(report.database_schema_version) : copy("doctor.unknown_b764cd")}</dd></>}<dt>{copy("doctor.boundEndpoint_5501d6")}</dt><dd>{text(report.listener) || copy("doctor.extra.b764cdc0eab7")}</dd></dl><p>{ownerCaveat()}</p><Disclosure title={copy("doctor.serverIdentity_fa4fb0")}><p>{text(report.server_id) || copy("doctor.extra.b764cdc0eab7")}</p></Disclosure></section>
+      {<><Storage value={object(report.storage)} /><Workers report={report} recordKey={recordKey} /><Credentials report={report} recordKey={recordKey} /></>}
     </div>
   </>;
 }
@@ -110,7 +109,7 @@ export function Doctor({ active, visible = true, title = DoctorTitle.Diagnostics
     if (result.data && result.data.reportJson.byteLength <= 1 << 20) {
       try {
         const candidate = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.data.reportJson)));
-        unsupported = candidate.schema_version !== undefined && candidate.schema_version !== 2;
+        unsupported = candidate.schema_version !== 2;
         if (!unsupported && text(candidate.version)) report = candidate;
       } catch { /* Malformed reports cannot establish health. */ }
     }
