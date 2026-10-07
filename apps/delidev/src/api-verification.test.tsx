@@ -24,7 +24,7 @@ function fixture(extra: Document = {}, discovery = true) {
   });
   const discover = vi.fn(async (request: { mutation?: { expectedRevision: bigint; requestId: string } }) => {
     order.push("discover"); expect(request.mutation!.expectedRevision).toBe(2n);
-    return { account: row, requestId: request.mutation!.requestId };
+    return { account: row, requestId: request.mutation!.requestId, observationJson: encode({ request_id: request.mutation!.requestId, connection_id: connection, state: "observed" }) };
   });
   const transport = createRouterTransport(router => { router.service(AccountService, { validateAccount: validate }); router.service(ProviderService, { discoverModels: discover }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -68,6 +68,29 @@ it("reconciles an old validation replay without discovering the replacement conn
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original authentication check" })).toBeNull());
   expect(f.validate.mock.calls[1][0]).toEqual(original);
   expect(f.discover).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false);
+  expect(screen.queryByText("API authentication verified")).toBeNull();
+});
+
+it.each(["request", "connection"])("settles original discovery replay after reconnect and rejects a wrong %s receipt", async mismatch => {
+  const f = fixture();
+  f.discover.mockRejectedValueOnce(new ConnectError("lost acknowledgment", Code.Unavailable));
+  const view = render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByRole("button", { name: "Retry original model refresh" });
+  const original = f.discover.mock.calls[0][0];
+  const replacement = create(ResourceSchema, { ...f.row, revision: 5n, documentJson: encode({ ...document(f.row), connection: { id: newRequestId() } }) });
+  view.rerender(f.view(replacement));
+  f.discover.mockResolvedValueOnce({ account: replacement, requestId: original.mutation!.requestId, observationJson: encode({ request_id: mismatch === "request" ? newRequestId() : original.mutation!.requestId, connection_id: mismatch === "connection" ? newRequestId() : f.connection, state: "observed" }) });
+  fireEvent.click(screen.getByRole("button", { name: "Retry original model refresh" }));
+  await waitFor(() => expect(f.discover).toHaveBeenCalledTimes(2));
+  await screen.findByRole("button", { name: "Retry original model refresh" });
+  f.discover.mockResolvedValueOnce({ account: replacement, requestId: original.mutation!.requestId, observationJson: encode({ request_id: original.mutation!.requestId, connection_id: f.connection, state: "observed" }) });
+  fireEvent.click(screen.getByRole("button", { name: "Retry original model refresh" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original model refresh" })).toBeNull());
+  expect(f.discover.mock.calls[1][0]).toEqual(original);
+  expect(f.discover.mock.calls[2][0]).toEqual(original);
+  expect(f.validate).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false);
   expect(screen.queryByText("API authentication verified")).toBeNull();
 });

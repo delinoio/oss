@@ -35,7 +35,12 @@ export function ApiVerification({ row, provider, active, changed }: { row: Resou
     if (text(object(nextData.connection).id) !== text(object(document(now.row).connection).id) || nextData.provider_id !== document(now.row).provider_id || nextData.removal || nextData.enabled !== true) return;
     const input = { mutation: { id: next.id, expectedRevision: next.revision, requestId: newRequestId() } };
     const connectionId = text(object(nextData.connection).id);
-    void discover.send(input, response => Boolean(response.requestId === input.mutation.requestId && response.account?.id === next.id && response.account.kind === EntityKind.ACCOUNT && document(response.account).type === "api" && document(response.account).provider_id === nextData.provider_id && supportsResourceSchema(response.account) && response.account.revision >= next.revision && text(object(document(response.account).connection).id) === connectionId));
+    void discover.send(input, response => {
+      const observed = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(response.observationJson)));
+      // A replay can return the current account after reconnect or format change.
+      // Reconcile only the immutable original discovery receipt, without chaining work.
+      return Boolean(response.requestId === input.mutation.requestId && response.account?.id === next.id && response.account.kind === EntityKind.ACCOUNT && document(response.account).type === "api" && supportsResourceSchema(response.account) && response.account.revision >= next.revision && observed.request_id === input.mutation.requestId && observed.connection_id === connectionId);
+    });
   });
   const busy = validate.busy || discover.busy, uncertain = validate.uncertain || discover.uncertain;
   const authority = current.kind === EntityKind.ACCOUNT && data.type === "api" && supportsResourceSchema(current) && Boolean(provider && provider.kind === EntityKind.PROVIDER && provider.id === data.provider_id && supportsResourceSchema(provider));
