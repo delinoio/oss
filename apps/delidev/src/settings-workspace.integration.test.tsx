@@ -94,7 +94,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(await screen.findByRole("button", { name: "Finish inspection" }, { timeout: 15000 }));
   await waitFor(() => {
     for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) {
-      const article = screen.getByRole("heading", { name: harness, exact: true }).closest("article")!;
+      const article = screen.getByRole("heading", { name: harness }).closest("article")!;
       expect(within(article).getByText(copy(harness === "claude-code" ? "claude-subscription.excluded.missing" : "machine-settings.excluded.missing"))).toBeTruthy();
     }
   });
