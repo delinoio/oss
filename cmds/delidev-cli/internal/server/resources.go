@@ -542,6 +542,10 @@ var protectedAccountDeletion = domain.Fail(domain.Conflict, "The account retains
 
 // Called under accountGate by ordinary and failed-login batch deletion.
 func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id string, revision uint64, input any, observe func(configurationDeletePhase)) error {
+	return s.checkAccountDeletionLockedForFailedLoginCleanup(ctx, request, id, revision, input, "", observe)
+}
+
+func (s *Service) checkAccountDeletionLockedForFailedLoginCleanup(ctx context.Context, request, id string, revision uint64, input any, operation domain.ID, observe func(configurationDeletePhase)) error {
 	phase := func(next configurationDeletePhase) {
 		if observe != nil {
 			observe(next)
@@ -560,7 +564,7 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 				return err
 			}
 			phase(configurationDeleteReferences)
-			if err := validateDeletion(tx, kind, domain.ID(id)); err != nil {
+			if err := validateDeletionForFailedLoginCleanup(tx, kind, domain.ID(id), operation); err != nil {
 				return err
 			}
 			phase(configurationDeleteAccount)
@@ -592,7 +596,11 @@ func (s *Service) checkAccountDeletionLocked(ctx context.Context, request, id st
 	return nil
 }
 func deleteConfigurationTx(tx *store.Tx, kind domain.Kind, id domain.ID, revision uint64) error {
-	if err := validateDeletion(tx, kind, id); err != nil {
+	return deleteConfigurationTxForFailedLoginCleanup(tx, kind, id, revision, "")
+}
+
+func deleteConfigurationTxForFailedLoginCleanup(tx *store.Tx, kind domain.Kind, id domain.ID, revision uint64, operation domain.ID) error {
+	if err := validateDeletionForFailedLoginCleanup(tx, kind, id, operation); err != nil {
 		return err
 	}
 	if err := disableReferencedSchedules(tx, kind, id); err != nil {
@@ -601,6 +609,14 @@ func deleteConfigurationTx(tx *store.Tx, kind domain.Kind, id domain.ID, revisio
 	return tx.Delete(kind, id, revision)
 }
 func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
+	return validateDeletionForFailedLoginCleanup(tx, kind, id, "")
+}
+
+// The server-owned failed-login cleanup receipt may remove an account after its
+// scoped vault references are gone even if native cleanup remains unknown. The
+// original operation and recovery metadata stay fenced until this explicit
+// deletion commits. Ordinary configuration deletion cannot use this exception.
+func validateDeletionForFailedLoginCleanup(tx *store.Tx, kind domain.Kind, id, operation domain.ID) error {
 	existing, err := tx.Get(kind, id)
 	if err != nil {
 		return err
@@ -613,7 +629,11 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		if err != nil {
 			return err
 		}
-		if account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil || account.Subscription != nil && (account.Subscription.Pending != nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != "" || account.Subscription.NativeProfileID != "" || account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.OwnerMachineID != "") {
+		if account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil {
+			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
+		}
+		stateBlocksDeletion := account.Subscription != nil && (account.Subscription.Pending != nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != "" || account.Subscription.NativeProfileID != "" || account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.OwnerMachineID != "")
+		if stateBlocksDeletion && !failedLoginCleanupMayDeleteUnknownNative(account, operation) {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
 	}
@@ -740,6 +760,23 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 		}
 	}
 	return nil
+}
+
+func failedLoginCleanupMayDeleteUnknownNative(account domain.Account, operation domain.ID) bool {
+	if operation.Validate() != nil || account.Type != domain.SubscriptionAccount || account.SubscriptionService != domain.SubscriptionChatGPT || account.Health != domain.AccountDisconnected || account.Connection != nil || account.Removal != nil || account.Subscription == nil {
+		return false
+	}
+	state := account.Subscription
+	native := state.ServerOperation
+	if !state.RecoveryRequired || state.Pending != nil || state.Lease != nil || state.Generation != "" || state.IdentityCommitment != "" || state.NativeProfileID != "" || state.OwnerMachineID != "" || state.Observation != nil || state.ResetCredits != nil || native == nil || native.ID != operation || native.Action != domain.SubscriptionLogin || native.Generation != "" || !native.NativeStarted || native.CleanupPhase != "" || native.Active() || state.Validate(account) != nil {
+		return false
+	}
+	switch native.State {
+	case domain.SubscriptionFailed, domain.SubscriptionCanceled, domain.SubscriptionExpired, domain.SubscriptionUnsupported:
+		return true
+	default:
+		return false
+	}
 }
 
 func executionReferencesModel(execution domain.InitialExecution, id domain.ID) bool {

@@ -493,6 +493,10 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 	}
 	if err == nil {
 		reason = pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_REFERENCED
+		cleanupOperation := domain.ID("")
+		if in.Target == subscriptionCleanupFailedLogin {
+			cleanupOperation = in.OperationID
+		}
 		input := struct {
 			ID       string      `json:"id"`
 			Revision uint64      `json:"revision"`
@@ -501,10 +505,10 @@ func (s *Service) runFailedSubscriptionCleanupAccount(parentCtx context.Context,
 		if in.DeleteRevision != 0 {
 			input.Revision = in.DeleteRevision
 		}
-		err = s.checkAccountDeletionLocked(ctx, string(in.DeleteRequestID), string(in.AccountID), out.Revision, input, nil)
+		err = s.checkAccountDeletionLockedForFailedLoginCleanup(ctx, string(in.DeleteRequestID), string(in.AccountID), out.Revision, input, cleanupOperation, nil)
 		if err == nil {
 			_, err = s.Store.Mutate(ctx, in.DeleteRequestID, "configuration.delete", input, func(tx *store.Tx) (any, error) {
-				if err := deleteConfigurationTx(tx, domain.AccountKind, in.AccountID, out.Revision); err != nil {
+				if err := deleteConfigurationTxForFailedLoginCleanup(tx, domain.AccountKind, in.AccountID, out.Revision, cleanupOperation); err != nil {
 					return nil, err
 				}
 				if err := finishFailedCleanupAccount(tx, parent, child, pb.FailedSubscriptionCleanupOutcome_FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_DELETED, pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_UNSPECIFIED, ""); err != nil {

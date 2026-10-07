@@ -71,18 +71,20 @@ func TestDeleteFailedSubscriptionTerminalVaultFailureSurvivesRestart(t *testing.
 	}
 }
 
-func TestDeleteFailedSubscriptionRetainsUnconfirmedNative(t *testing.T) {
+func TestDeleteFailedSubscriptionCompletesScopedCleanupWithUnknownNative(t *testing.T) {
 	f, _ := legacyFailedServerLogin(t, true)
 	request := f.failedLoginDeletion()
-	if err := f.deleteFailedLogin(request); err == nil {
-		t.Fatal("unproven native ownership deleted")
+	if err := f.deleteFailedLogin(request); err != nil {
+		t.Fatal("scoped cleanup retained deletion for an unknown native observation", err)
 	}
-	r, a := f.record()
-	if r.Revision != request.Mutation.ExpectedRevision || !a.Subscription.RecoveryRequired {
-		t.Fatal("uncertainty lost original ownership")
+	if _, err := f.service.Store.Get(failedLoginContext(), domain.AccountKind, f.input.AccountID); domain.SafeError(err).Code != domain.NotFound {
+		t.Fatal("completed scoped cleanup retained the account", err)
 	}
-	if err := f.deleteFailedLogin(request); err == nil {
-		t.Fatal("terminal uncertain cleanup retried")
+	if f.secrets.enumerations == 0 {
+		t.Fatal("scoped cleanup skipped protected-reference inspection")
+	}
+	if err := f.deleteFailedLogin(request); err != nil {
+		t.Fatal("original deletion receipt did not replay", err)
 	}
 }
 
