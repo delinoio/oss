@@ -1,10 +1,11 @@
+import { PRListHeader, PRListCards } from "./pr-list-cards";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { useStablePageRevisions, paginationError, invalidGitHubPage, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { IntegrationQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text, type Document } from "./documents";
@@ -58,7 +59,7 @@ function QueryResultPage({ selected, query, change, back, result, validated }: {
   </section>;
 }
 
-type QueryProps = { selected: Resource; query: GitHubQuery; change: (query: GitHubQuery) => void; back?: () => void; active?: boolean };
+type QueryProps = { selected: Resource; query: GitHubQuery; change: (query: GitHubQuery) => void; back?: () => void; active?: boolean; standaloneCards?: boolean; pending?: ReactNode };
 function QueryResult(props: QueryProps) { return props.query.page ? <PaginatedQueryResult {...props} /> : <SingleQueryResult {...props} />; }
 function SingleQueryResult({ active = true, ...props }: QueryProps) {
   const result = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: props.selected.id, schemaVersion: 1, queryJson: encode(props.query) }, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0, staleTime: 0 });
@@ -75,6 +76,7 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
     const query = { ...props.query, page: token ? Number(token) : props.query.page };
     const data = reply.schemaVersion === 1 ? githubResult(reply.documentJson, props.selected, query) : undefined;
     if (!data) invalidGitHubPage();
+    if (props.standaloneCards && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(text(data.observed_at)) || items(data.items).some(raw => !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(text(object(raw).updated_at))))) invalidGitHubPage();
     // Checks and statuses page their observations, while the PR envelope is
     // repeated. Retain the original head and deduplicate the observed rows.
     const item = object(items(data.items)[0]);
@@ -88,14 +90,15 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
     const rows = source.map(raw => { const row = object(raw); return { id: observation ? observation + ":" + text(row.id) : text(row.identity_source) + ":" + text(row.id), revision: BigInt(Date.parse(text(row.updated_at) || text(item.updated_at))) }; });
     validateBoundary(token, rows);
     return { rows, nextPageToken: data.next_page ? String(data.next_page) : "", payload: [{ data, query }] };
-  }, [props.selected, props.query, validateBoundary, binding]);
+  }, [props.selected, props.query, props.standaloneCards, validateBoundary, binding]);
   const reader = useConnectPaginationReader(IntegrationQuery.queryRepositoryIntegration, request, project);
   const chain = usePaginationChain(scope, active, reader);
   usePaginationRefresh(IntegrationQuery.queryRepositoryIntegration, request(""), active, chain.refresh);
   return <div ref={bindRoot}>
+    {props.standaloneCards ? <PRListHeader selected={props.selected} pending={props.pending} reading={Boolean(chain.loading)} refresh={chain.refreshExplicit} /> : null}
     <Problem error={paginationError(chain.error?.failure)} />
     <ScrollPayloadWindow query={chain} root={root} active={active}>{(payload, projections) => payload.map(({ data, query }) => { const ids = visiblePageIds(chain.pages, projections); const observation = query.operation === QueryOperation.Checks ? "checks" : query.operation === QueryOperation.Statuses ? "statuses" : undefined; const field = observation === "checks" ? "runs" : "contexts";
-      const visible = observation ? { ...data, [observation]: { ...object(data[observation]), [field]: items(object(data[observation])[field]).filter(raw => ids.has(observation + ":" + text(object(raw).id))) } } : { ...data, items: items(data.items).filter(raw => { const item = object(raw); return ids.has(text(item.identity_source) + ":" + text(item.id)); }) }; return <QueryResultPage key={query.page} {...props} query={query} validated={visible} result={{ data, error: paginationError(chain.error?.failure), isFetching: Boolean(chain.loading), refetch: chain.refresh }} />; })}</ScrollPayloadWindow>
+      const visible = observation ? { ...data, [observation]: { ...object(data[observation]), [field]: items(object(data[observation])[field]).filter(raw => ids.has(observation + ":" + text(object(raw).id))) } } : { ...data, items: items(data.items).filter(raw => { const item = object(raw); return ids.has(text(item.identity_source) + ":" + text(item.id)); }) }; return props.standaloneCards ? <PRListCards key={query.page} data={visible} query={query} reading={Boolean(chain.loading)} previous={Boolean(chain.error)} emptyPage={!items(data.items).length} change={props.change} /> : <QueryResultPage key={query.page} {...props} query={query} validated={visible} result={{ data, error: paginationError(chain.error?.failure), isFetching: Boolean(chain.loading), refetch: chain.refresh }} />; })}</ScrollPayloadWindow>
     <ScrollContinuation query={chain} root={root} active={active} label={copy("github-items.githubQueryResults_66fac2")} />
   </div>;
 }
@@ -106,13 +109,13 @@ export interface PullRequestNavigation {
   previous: GitHubQuery[];
 }
 
-export function StandalonePullRequestResults({ selected, navigation, active, changeNavigation }: { selected: Resource; navigation: PullRequestNavigation; active: boolean; changeNavigation: (navigation: PullRequestNavigation) => void }) {
+export function StandalonePullRequestResults({ selected, navigation, active, changeNavigation, pending }: { selected: Resource; navigation: PullRequestNavigation; active: boolean; pending?: ReactNode; changeNavigation: (navigation: PullRequestNavigation) => void }) {
   useLocale();
   function change(next: GitHubQuery) {
     const previous = next.operation !== navigation.query.operation ? [...navigation.previous.slice(-7), navigation.query] : navigation.previous;
     changeNavigation({ ...navigation, query: next, previous });
   }
-  return <QueryResult key={JSON.stringify(navigation.query)} selected={selected} query={navigation.query} active={active} change={change} back={navigation.previous.length ? () => changeNavigation({ ...navigation, query: navigation.previous[navigation.previous.length - 1]!, previous: navigation.previous.slice(0, -1) }) : undefined} />;
+  return <QueryResult key={JSON.stringify(navigation.query)} selected={selected} query={navigation.query} active={active} standaloneCards={navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search} pending={pending} change={change} back={navigation.previous.length ? () => changeNavigation({ ...navigation, query: navigation.previous[navigation.previous.length - 1]!, previous: navigation.previous.slice(0, -1) }) : undefined} />;
 }
 function ItemBrowser({ selected }: { selected: Resource }) {
   useLocale();

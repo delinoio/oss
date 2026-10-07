@@ -99,7 +99,7 @@ function PendingPRActions() {
     return [];
   });
   const confirmations = [...workflow.confirmations.values()].map((confirmation) => <article className="pending-pr-action" key={confirmation.key}><strong><LocalizedText id="pull-requests.allowanceConfirmationPr_3184de" components={{ s0: <>{confirmation.selection.number}</> }} /></strong><p>{copy("pull-requests.confirmationRetainedOpenThisPrAnd_15ba22")}</p><button type="button" onClick={() => workflow.cancelAllowance(confirmation.key)}>{copy("pull-requests.cancelAllowanceConfirmation_111886")}</button></article>);
-  return <section className="pending-pr-actions" aria-label={copy("pull-requests.pendingPrActions_7f3945")}><h3>{copy("pull-requests.pendingPrActions_7f3945")}</h3>{rows.length || confirmations.length ? <>{rows}{confirmations}</> : <p>{copy("pull-requests.noPendingPrActions_d8073e")}</p>}</section>;
+  return <section className="pending-pr-actions" data-empty={!rows.length && !confirmations.length} aria-label={copy("pull-requests.pendingPrActions_7f3945")}><h3>{copy("pull-requests.pendingPrActions_7f3945")}</h3>{rows.length || confirmations.length ? <>{rows}{confirmations}</> : <p>{copy("pull-requests.noPendingPrActions_d8073e")}</p>}</section>;
 }
 
 export function PullRequests({ active, openSettings }: { active: boolean; openSettings: (destination?: SettingsEntryDestination) => void }) {
@@ -148,6 +148,8 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   };
 
   const resultsCurrent = Boolean(active && loaded && selected && loaded.repositoryId === selected.id && loaded.revision === selected.revision);
+  const listLayout = !navigation || navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search;
+  const cardsCurrent = resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey && (navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search);
   const filtersChanged = Boolean(loaded && (loaded.state !== state || loaded.search !== search.trim() || loaded.pageSize !== pageSize));
   return <>
     <SidebarSurface active={active} title={copy("pull-requests.pullRequests_d9e3f2")}>
@@ -178,15 +180,14 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
       </> : <p className="sidebar-help pr-repository-guidance">{copy("pull-requests.selectARepositoryNoGithubRequest_b499d2")}</p>}
       <div className="pr-repository-settings"><button type="button" className="sidebar-action" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.Repositories); }}><Icon name="settings" />{copy("pull-requests.repositorySettings_b00980")}</button></div>
     </SidebarSurface>
-    <section hidden={!active} className="page pull-requests-page">
-      <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>
-      <PendingPRActions />
+    <section hidden={!active} className="page pull-requests-page" data-list-layout={listLayout}>
+      {!cardsCurrent ? <>{listLayout ? <header className="pr-list-header"><div><h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>{selected ? <p>{resourceName(selected)}</p> : null}</div></header> : <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>}<PendingPRActions /></> : null}
       <Problem error={selectedQuery.error} />
       {!repositoryId ? <p>{copy("pull-requests.selectOneConfiguredRepositoryInThe_6c065a")}</p> : null}
       {repositoryId && !selectedQuery.isPending && !selected ? <p role="alert">{copy("pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad")}</p> : null}
       {selected && !configured ? <p>{copy("pull-requests.configureThisRepositorySGithubProfile_86db03")}</p> : null}
       {selected && configured && !loaded ? <p>{copy("pull-requests.chooseTheStateAndOptionalTitle_5fb280")}</p> : null}
-      {resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey ? <StandalonePullRequestResults key={loaded.scopeKey} selected={selected!} navigation={navigation} active={active} changeNavigation={setNavigation} /> : null}
+      {resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey ? <StandalonePullRequestResults key={loaded.scopeKey} selected={selected!} navigation={navigation} active={active} changeNavigation={setNavigation} pending={<PendingPRActions />} /> : null}
     </section>
   </>;
 }

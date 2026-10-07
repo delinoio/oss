@@ -1,0 +1,9 @@
+{
+  "pr-cards.pageLabel": "Pull request results · Page {{page}}",
+  "pr-cards.applied": "{{state}} · Page {{page}} · {{pageSize}} per page",
+  "pr-cards.search": "Search: {{terms}}",
+  "pr-cards.updated": "Updated (UTC)",
+  "pr-cards.emptyPage": "No pull requests were returned on page {{page}}.",
+  "pr-cards.draft": "Draft",
+  "pr-cards.unverifiedAuthor": "Unverified author type"
+}

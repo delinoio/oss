@@ -243,3 +243,50 @@ it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unco
   expect(pane.getByRole("alert").textContent).toMatch(/Use plain words/);
   expect(value.query).not.toHaveBeenCalled();
 });
+
+
+it("uses standalone cards with exact UTC precision, Draft and unknown author evidence across language changes", async () => {
+  const value = fixture(), original = value.query.getMockImplementation()!;
+  const updated = "2026-10-07T08:07:22.123456789Z", observed = "2026-10-07T08:11:52.759123456Z", title = "Long title ".repeat(80);
+  value.query.mockImplementation(async request => {
+    const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson));
+    data.observed_at = observed; data.items[0] = { ...data.items[0], title, draft: true, updated_at: updated, author: { id: "19", node_id: "U_19", login: "long-author-name-".repeat(5), kind: "unknown", provider_type: "FutureActor" } };
+    return { ...reply, documentJson: encode(data) };
+  });
+  const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
+  expect(value.query).not.toHaveBeenCalled(); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  const heading = await screen.findByRole("heading", { name: title.trim() });
+  const card = heading.closest("article")!; expect(card.className).toBe("pr-list-card");
+  expect(within(card).getByText("Open")).toBeTruthy(); expect(within(card).getByText("Draft")).toBeTruthy(); expect(within(card).getByText(/Unverified author type/)).toBeTruthy();
+  expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
+  expect(screen.getByText("Open · Page 1 · 20 per page")).toBeTruthy();
+  expect(view.container.querySelector(".pending-pr-actions")?.getAttribute("data-empty")).toBe("true");
+  expect(screen.getAllByRole("button", { name: "Refresh GitHub results" })).toHaveLength(1);
+  await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
+  expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).textContent).toBe(observed); expect(value.query).toHaveBeenCalledTimes(1);
+});
+
+it.each([Code.PermissionDenied, Code.Unavailable])("keeps the card observation after failed explicit refresh %s and explicitly retries it", async code => {
+  const value = fixture(); render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByRole("heading", { name: "Original fixture title" }); value.query.mockRejectedValueOnce(new ConnectError("Synthetic read failed", code));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub results" })); await screen.findByRole("alert");
+  expect(screen.getByRole("heading", { name: "Original fixture title" })).toBeTruthy(); expect(screen.getByText(/Previous observation/)).toBeTruthy();
+  expect(value.query).toHaveBeenCalledTimes(2); fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub results" }));
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3)); await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(value.query.mock.calls[2][0]).toEqual(value.query.mock.calls[1][0]);
+});
+
+it("keeps successful empty query pages distinct from initial errors", async () => {
+  const value = fixture(), original = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async request => { const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson)); data.items = []; return { ...reply, documentJson: encode(data) }; });
+  render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByText("No pull requests were returned on page 1."); expect(screen.queryByRole("alert")).toBeNull();
+});
+
+
+it("does not label an unverified non-UTC timestamp as a UTC card observation", async () => {
+  const value = fixture(), original = value.query.getMockImplementation()!;
+  value.query.mockImplementation(async request => { const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson)); data.observed_at = "2026-10-07T17:11:52+09:00"; return { ...reply, documentJson: encode(data) }; });
+  const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  await screen.findByRole("alert"); expect(view.container.querySelector(".pr-list-card")).toBeNull(); expect(screen.queryByText("No pull requests were returned on page 1.")).toBeNull();
+});
