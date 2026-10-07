@@ -289,8 +289,8 @@ try {
       await checkWizard();
       await page.getByRole("radio", { name: "Codex", exact: true }).click();
       await page.getByRole("combobox", { name: language === "ko" ? "계정 소스 1" : "Account source 1", exact: true }).selectOption({ label: "Fixture provider" });
-      await page.getByRole("checkbox", { name: /^Personal API/ }).check();
-      await page.getByRole("checkbox", { name: /^Team API/ }).check();
+      await page.getByRole("checkbox", { name: /^(Select )?Personal API/ }).check();
+      await page.getByRole("checkbox", { name: /^(Select )?Team API/ }).check();
       await checkWizard();
       await page.getByRole("button", { name: l("Next"), exact: true }).click();
       const input = page.getByRole("combobox", { name: language === "ko" ? /^.* 모델$/ : /^Model for / });
@@ -305,8 +305,8 @@ try {
       await page.getByRole("button", { name: l("Back"), exact: true }).click();
       assert.equal((await input.inputValue()).startsWith("example-model-native-"), true, "Model selection survives Back");
       await page.getByRole("button", { name: l("Back"), exact: true }).click();
-      assert(await page.getByRole("checkbox", { name: /^Personal API/ }).isChecked());
-      assert(await page.getByRole("checkbox", { name: /^Team API/ }).isChecked());
+      assert(await page.getByRole("checkbox", { name: /^(Select )?Personal API/ }).isChecked());
+      assert(await page.getByRole("checkbox", { name: /^(Select )?Team API/ }).isChecked());
       await page.getByRole("button", { name: l("Cancel"), exact: true }).click();
       formsChecked += 4;
       if (language === "en") {
@@ -329,8 +329,10 @@ try {
           continue;
         }
         if (category === "Repositories") {
-          // Registration first inspects a folder before exposing saved fields.
-          // Exercise its manual entry without inventing native folder authority.
+          // Current remote registration accepts a URL. Local folder authority
+          // remains an explicitly opened, independently inspected connection.
+          await page.getByRole("textbox", { name: "Git URL", exact: true }).waitFor();
+          await page.getByRole("button", { name: l("Connect a Local folder (optional)"), exact: true }).click();
           await page.getByRole("button", { name: l("Enter a path…"), exact: true }).click();
           await page.getByRole("textbox", { name: l("Absolute checkout path"), exact: true }).waitFor();
           assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), "Repository registration overflow");
