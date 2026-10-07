@@ -30,3 +30,11 @@ it("does not accept malformed flags or unbounded observations as current Runner 
   expect(validRunnerObservation(observed({ worker_capabilities: Array(257).fill("unknown") }))).toBe(false);
   expect(validRunnerObservation(observed({ disabled: undefined }))).toBe(true);
 });
+
+it("retains a newly paired Go Runner owner with null unobserved installations without granting Claude readiness", () => {
+  const row = observed({ installations: null });
+  expect(validRunnerObservation(row)).toBe(true);
+  expect(claudeRunnerObservation(row)).toEqual({ cause: "unavailable" });
+  expect(validRunnerObservation(observed({ installations: {} }))).toBe(false);
+  expect(validRunnerObservation(observed({ installations: [null] }))).toBe(false);
+});

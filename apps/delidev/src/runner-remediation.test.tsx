@@ -76,3 +76,24 @@ it("uses one presenter and preserves the original draft after its calling task d
   await waitFor(() => expect((screen.getByLabelText("claude-code executable path") as HTMLInputElement).value).toBe("/original/draft"));
   rendered.unmount(); client.clear();
 });
+
+it("inspects a newly paired Go Runner with null installation evidence using its exact original revision", async () => {
+  const row = create(ResourceSchema, { ...machine("Unobserved Runner"), documentJson: encode({ name: "Unobserved Runner", disabled: false, installations: null }) });
+  const discover = vi.fn((_request: unknown) => { throw new ConnectError("unavailable", Code.Unavailable); });
+  const transport = createRouterTransport(router => {
+    router.service(ResourceService, { getResource: () => ({ resource: row }) });
+    router.service(WorkerService, { discoverHarnesses: discover });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>Inspect unobserved Runner</button>{open?.body}</>; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByText("Inspect unobserved Runner"));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit executable paths" }));
+  expect(discover).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("claude-code executable path"), { target: { value: "/explicit/claude" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
+  await screen.findByRole("button", { name: "Retry the same harness check" });
+  expect(discover).toHaveBeenCalledOnce();
+  expect(discover.mock.calls[0][0]).toMatchObject({ mutation: { id: row.id, expectedRevision: 9007199254740993n } });
+  client.clear();
+});

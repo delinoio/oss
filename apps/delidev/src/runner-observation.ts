@@ -8,9 +8,11 @@ export interface RunnerObservation { cause?: RunnerExclusion; detectedVersion?: 
 export function validRunnerObservation(resource?: Resource): resource is Resource {
   if (!resource || resource.kind !== EntityKind.MACHINE || !isEntityId(resource.id) || resource.revision < 1n || !supportsResourceSchema(resource) || resource.documentJson.byteLength > 1 << 20) return false;
   const data = document(resource);
+  // Go serializes a newly paired Runner's nil installation slice as null.
+  // This retains its original inspection owner; it supplies no eligibility.
   return Boolean(Object.keys(data).length && (data.disabled === undefined || typeof data.disabled === "boolean")
     && (data.worker_capabilities === undefined || Array.isArray(data.worker_capabilities) && data.worker_capabilities.length <= 256 && data.worker_capabilities.every(value => typeof value === "string" && value.length <= 256))
-    && (data.installations === undefined || Array.isArray(data.installations) && data.installations.length <= 4 && data.installations.every(value => value !== null && typeof value === "object" && !Array.isArray(value))));
+    && (data.installations == null || Array.isArray(data.installations) && data.installations.length <= 4 && data.installations.every(value => value !== null && typeof value === "object" && !Array.isArray(value))));
 }
 const version = (value: unknown): value is string => typeof value === "string" && value.length <= 256 && /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]{1,64})?(?:\+[a-zA-Z0-9.-]{1,64})?$/.test(value);
 export function claudeRunnerObservation(resource?: Resource): RunnerObservation {
