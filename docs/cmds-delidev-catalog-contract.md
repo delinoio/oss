@@ -17,7 +17,10 @@ main before implementation. Reservations advertise no runtime capability.
 
 Compose the complete feature with the already main-reserved current-only DB
 baseline 32 and protocol 2 reset. Initialize a complete Model-free current
-layout; never upgrade, overwrite or delete earlier DBs, backups or sidecars.
+layout with no conversion of earlier DBs or history. The 2026-10-07 owner
+amendment waives earlier DB retention and permits an explicit DB/sidecar reset.
+Earlier backups remain unsupported; this waiver grants no native cleanup or
+protected-credential deletion authority.
 Worker schema 4 embeds each route's exact native model and required non-secret
 execution metadata, with its source derived and checked against all selected
 Accounts atomically. There is no separate Model UUID/revision or registry write.

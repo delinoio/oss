@@ -51,8 +51,8 @@ func TestSubscriptionConfigurationRPCV2HasNoProviderDependency(t *testing.T) {
 		t.Fatal(err)
 	}
 	var bundle domain.ConfigurationBundle
-	if domain.Decode(export.Msg.DocumentJson, &bundle) != nil || bundle.Version != 2 {
-		t.Fatal("export did not negotiate v2")
+	if domain.Decode(export.Msg.DocumentJson, &bundle) != nil || bundle.Version != 3 {
+		t.Fatal("export did not use the current v3 format")
 	}
 }
 
