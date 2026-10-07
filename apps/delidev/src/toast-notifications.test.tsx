@@ -3,6 +3,7 @@ import { StrictMode, useEffect } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { NotificationProvider, ToastKind, useNotifications, type NotificationController } from "./toast-notifications";
+import { i18n, ownedMessage } from "./localization";
 
 afterEach(() => vi.useRealTimers());
 function fixture() {
@@ -14,6 +15,32 @@ function fixture() {
   return { mounted, view, get controller() { return controller; }, get renders() { return renders; } };
 }
 function tick(ms: number) { act(() => vi.advanceTimersByTime(ms)); }
+
+it("language updates an existing toast without republishing or restarting its expiry", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  const value = fixture();
+  const notify = vi.spyOn(value.controller, "notify");
+  act(() => { value.controller.notify({ id: "original-request", kind: ToastKind.Success, message: ownedMessage("notification-settings.savedToast") }); });
+  tick(1000);
+  const toast = document.querySelector(".toast-notification");
+  await act(() => i18n.changeLanguage("ko"));
+  expect(document.querySelector(".toast-notification")).toBe(toast);
+  expect(screen.getByText("알림 환경 설정을 저장했습니다.")).toBeTruthy();
+  expect(notify).toHaveBeenCalledTimes(1);
+  tick(3999); expect(document.querySelector(".toast-notification")).toBe(toast);
+  tick(1); expect(document.querySelector(".toast-notification")).toBeNull();
+});
+
+it("language preserves a focused toast close button and original text", async () => {
+  const value = fixture();
+  act(() => { value.controller.notify({ id: "original", kind: ToastKind.Warning, message: "Untranslated original user text <b>inert</b>", durationMs: 0 }); });
+  const close = screen.getByRole("button", { name: "Dismiss notification: Untranslated original user text <b>inert</b>" });
+  act(() => close.focus());
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("button", { name: "알림 닫기: Untranslated original user text <b>inert</b>" })).toBe(close);
+  expect(document.activeElement).toBe(close);
+  expect(screen.getByText("Untranslated original user text <b>inert</b>")).toBeTruthy();
+});
 
 it("renders inert text with distinct accessible kinds and does not rerender consumers", () => {
   const value = fixture();

@@ -260,6 +260,13 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 			return rpc.Error(err, correlation)
 		}
 		for _, event := range events {
+			kind := rpc.WireKind(event.Kind)
+			if kind == pb.EntityKind_ENTITY_KIND_UNSPECIFIED {
+				// Private store kinds, including routing, have no public resource.
+				// Advance over their durable rows so a full private page cannot loop.
+				cursor.Sequence = event.Cursor
+				continue
+			}
 			token, err := s.Identity.EncodeCursor(security.Cursor{Scope: cursor.Scope, Sequence: event.Cursor})
 			if err != nil {
 				return rpc.Error(err, correlation)
@@ -278,7 +285,7 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 			if err := controller.SetWriteDeadline(time.Now().Add(15 * time.Second)); err != nil {
 				return rpc.Error(err, correlation)
 			}
-			if err := stream.Send(&pb.WatchEventsResponse{Cursor: token, Id: string(event.ID), EntityId: string(event.EntityID), Kind: rpc.WireKind(event.Kind), SessionId: string(event.SessionID), Revision: event.Revision, Action: action, Time: event.Time.Format(time.RFC3339Nano)}); err != nil {
+			if err := stream.Send(&pb.WatchEventsResponse{Cursor: token, Id: string(event.ID), EntityId: string(event.EntityID), Kind: kind, SessionId: string(event.SessionID), Revision: event.Revision, Action: action, Time: event.Time.Format(time.RFC3339Nano)}); err != nil {
 				return rpc.Error(err, correlation)
 			}
 			if err := controller.SetWriteDeadline(time.Time{}); err != nil {

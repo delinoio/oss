@@ -38,6 +38,8 @@ The package must not log by default. Integrators provide redacted structured log
 
 CI regenerates from `protos/devhud/v1`, fails on stale output, runs TypeScript lint/build/tests, verifies the exact 18-RPC and Connect Query export inventory, executes generated query and mutation descriptors through the React Query adapter, exercises binary/ProtoJSON serialization and error mapping, and proves forbidden fields, settings bodies, and asset locators are absent from administrator message graphs.
 
+The `devhud-frontend` client step runs the package `typecheck` and `test` tasks through `scripts/ci/run-affected.mjs` with `FORCE_RUN=true`. The semantic check uses `tsc -p tsconfig.json --noEmit` and includes package test sources. Runtime tests and the source-only client build remain required; consumer builds do not type check the package tests.
+
 ## Dependencies and Integrations
 
 Generated from `protos/devhud/v1`; consumed by the DevHud and admin apps; targets `servers/devhud-api`. The generated client covers the complete v1 wire contract, and the current server registers Bootstrap, Settings, Upload, Account, Admin, and Diagnostics. It must remain independent of Tauri, Chrome Native Messaging, GitHub, and R2 SDKs.

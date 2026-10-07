@@ -12,8 +12,53 @@
       "env": []
     },
     "build:embedded": {
+      "cache": false
+    },
+    "test:unit": {
+      "cache": true,
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum"
+      ],
+      "outputs": [],
+      "env": [
+        "CI_CACHE_CONTEXT"
+      ]
+    },
+    "ci:contracts": {
       "cache": false,
-      "env": []
+      "dependsOn": [
+        "build:frontend"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.nvmrc",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/rust-toolchain",
+        "$TURBO_ROOT$/go.mod",
+        "$TURBO_ROOT$/go.sum",
+        "$TURBO_ROOT$/scripts/spawn-dev-server.mjs",
+        "$TURBO_ROOT$/scripts/dev-environment/process.mjs"
+      ],
+      "outputs": []
+    },
+    "ci:check": {
+      "cache": false,
+      "dependsOn": [
+        "typecheck",
+        "test:unit",
+        "build:frontend",
+        "ci:contracts"
+      ]
     }
   }
 }

@@ -57,6 +57,19 @@ and fences claimed exchanges for explicit original local recovery. The
 protected reference and cancellation/publication gates.
 
 
+## API OAuth token generations
+
+Real migration 31 follows real 26–30 and the main-established reservation. It
+adds private `account_oauth_credentials` metadata and the exact
+`account_oauth_credentials_layout=token-generations-v1` marker. Rows bind current
+account/connection/provider identity, accepted public profile, token references,
+expiry, refresh claim and cleanup. Access/refresh tokens remain only in Vault.
+No foreign key or deletion cascade may remove uncertain ownership. Retire metadata
+only after ordinary account cleanup confirms all protected references removed.
+Restore copies current metadata with the current attempt table; historical images
+cannot replace token generations or acquire a refresh claim. Unsettled refresh or
+cleanup blocks restore. Follow the account OAuth contract for HTTP and publication.
+
 ## Managed backup observation
 
 `SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are available only
@@ -323,6 +336,20 @@ paths remain absent. Dependent Sidechats join this ownership graph through their
 original child plans and unpublished Fork metadata claims before parent removal.
 Future session-owned native services must join the same acknowledgement boundary
 before exposure.
+
+Permanent deletion reconciles each present original `workspace-removals/<job>`
+namespace under the session, observation and snapshot namespace gates before
+ordinary copy cleanup. The immutable job/session/snapshot references must match
+its original synchronized intent and version-2 claim. The claim binds the exact
+intent digest and native root identity; its immutable inventory and existing
+partial-removal journal authorize only the original pinned entries. This step
+runs no native execution or input replay and cannot create a missing claim.
+Missing, malformed, legacy or mismatched proof, replaced roots and changed/new
+entries remain protected with `recovery_required`; completion remains pending.
+Retain the intent, claim and journal through validated removal and the normal
+acknowledgement boundary. The generic Worker callback checks removal namespace
+absence only, as for staging, and never traverses a later reappearance.
+
 The current forwarding lifetimes participate through their existing original
 client and Worker cleanup receipts. Deletion atomically requests Stop for every
 forward; offline or uncertain peers keep both forwarding records and database
@@ -832,7 +859,7 @@ verified native cleanup. Exact decimal byte counts retain integer precision;
 logical source, retained snapshot and removed bytes remain separate from nullable
 filesystem free measurements. Cleanup confirmation pins the exact successful
 preview job and current session revision. Snapshot removal has separate irreversible confirmation. Restoration
-and recovery disclose paused outcomes and preserve original uncertainty. 
+and recovery disclose paused outcomes and preserve original uncertainty.
 
 Permanent deletion requires its own explicit confirmation of managed native,
 workspace, backup removal. In-flight native work is stopped
@@ -876,6 +903,14 @@ Worker dispatch, cancellation, report/receipt reconciliation and permanent
 deletion use the same ownership-specific rule. This finite exception can be
 removed only after immutable original evidence is stored by reference; it grants
 no new filesystem, execution, replay or inferred cleanup authority.
+
+Primary WatchWork inspects storage inputs through the owning typed decoder both
+before and inside claim admission. Its strict claim-receipt decoder reserves
+1 KiB for Record metadata separately from the unchanged job bound, then selects
+the recovery, compaction or ordinary job decoder. Unknown fields, duplicate keys,
+trailing documents, malformed exceptions and oversized ordinary jobs remain
+rejected. Same-instance reconnect delivers the original claimed ID, revision and
+input bytes without another claim mutation or native effect.
 
 Storage observations preserve the exact accepted snapshot ID, session, machine,
 digest, byte size, creation instant and repository count. Successful original

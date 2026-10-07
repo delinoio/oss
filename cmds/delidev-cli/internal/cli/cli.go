@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -386,6 +387,22 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		body, err := readDocument(*input, streams.In)
 		if err != nil {
 			return emit(nil, err)
+		}
+		if kind == domain.RepositoryKind {
+			var repository domain.Repository
+			if err := domain.Decode(body, &repository); err != nil {
+				return emit(nil, err)
+			}
+			if _, err := domain.ParseRepositoryCloneURL(repository.RemoteURL); err != nil {
+				return emit(nil, err)
+			}
+			status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+			if err != nil {
+				return emit(nil, rpc.ClientError(err))
+			}
+			if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1) {
+				return emit(nil, domain.Fail(domain.Unsupported, "This server does not support remote repositories.", "Update the server before saving a repository."))
+			}
 		}
 		ensureRequest(&o)
 		response, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, Kind: rpc.WireKind(kind), SchemaVersion: rpc.ResourceSchemaVersion(kind, body), DocumentJson: body}))

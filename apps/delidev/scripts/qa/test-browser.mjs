@@ -36,13 +36,16 @@ try {
     await mkdir(path);
     await run.processes.run("git", ["init", "--initial-branch=main", path]);
     await run.processes.run("git", ["-C", path, "-c", "user.name=QA", "-c", "user.email=qa@example.invalid", "commit", "--allow-empty", "-m", "Browser QA fixture"]);
+    await run.processes.run("git", ["-C", path, "remote", "add", "origin", "https://github.com/fixture/browser-git-fixture.git"]);
     await category(page, "Repositories"); await page.getByRole("button", { name: "Add repository", exact: true }).click();
+    await page.getByRole("textbox", { name: "Git URL", exact: true }).fill("https://github.com/fixture/browser-git-fixture.git");
+    await page.getByRole("button", { name: "Connect a Local folder (optional)", exact: true }).click();
     assert(await page.getByRole("button", { name: "Choose folder", exact: true }).isDisabled());
     await page.getByRole("button", { name: "Enter a path…", exact: true }).click();
     await page.getByLabel("Absolute checkout path", { exact: true }).fill(path);
     await page.getByRole("button", { name: "Inspect folder", exact: true }).click();
     await page.getByRole("region", { name: "Repository detected" }).waitFor({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Add repository", exact: true }).click();
+    await page.getByRole("dialog", { name: "Add repository", exact: true }).getByRole("button", { name: "Add repository", exact: true }).click();
     await until(async () => (await list(environment, run.api.EntityKind.REPOSITORY)).length === 1);
     await page.getByRole("button", { name: "Edit browser-git-fixture", exact: true }).waitFor({ timeout: 30_000 });
   }));

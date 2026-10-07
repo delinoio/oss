@@ -9,7 +9,7 @@ import { expect, it, vi } from "vitest";
 import {
   BrowserService, ConfigurationService, EntityKind, ErrorDetailSchema, GetSubscriptionProgressResponseSchema,
   ResourceSchema, ResourceService, SubscriptionAction, SubscriptionLoginState, SubscriptionService, SystemCapability, SystemService,
-  newRequestId, type DeleteConfigurationRequest, type GetSubscriptionProgressRequest, type RequestSubscriptionRequest,
+  newRequestId, type DeleteConfigurationRequest, type GetAccountBrowserCleanupRequest, type GetSubscriptionProgressRequest, type RequestSubscriptionRequest,
 } from "@delinoio/delidev-api-client";
 import { ConfigurationDeletion } from "./configuration-actions";
 import { document, encode, object } from "./documents";
@@ -25,16 +25,18 @@ function fixture(connected = true) {
   let current = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 9007199254740993n,
     documentJson: encode({ ...preferences, health: connected ? "ready" : "disconnected", quota: [], ...(connected ? { connection: { id: connection }, subscription: { generation } } : {}) }) });
   const initial = current;
+  let removed = false;
   const patch = (change: Record<string, unknown>) => { current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), ...change }) }); return current; };
   const accept = (request: RequestSubscriptionRequest) => patch({ health: "revoked", subscription: { ...object(document(current).subscription), pending: { id: request.mutation!.requestId, action: "logout", phase: "queued" }, server_operation: { id: request.mutation!.requestId, action: "logout", state: "preparing", native_started: false } } });
   const read = vi.fn(async () => ({ resource: current }));
   const status = vi.fn(async () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1] }));
   const logout = vi.fn(async (request: RequestSubscriptionRequest) => ({ operationId: request.mutation!.requestId, account: accept(request) }));
   const progress = vi.fn(async (_request: GetSubscriptionProgressRequest) => create(GetSubscriptionProgressResponseSchema, { state: SubscriptionLoginState.PREPARING }));
-  const remove = vi.fn(async (request: DeleteConfigurationRequest) => ({ id: request.mutation!.id, requestId: request.mutation!.requestId }));
-  const cleanup = vi.fn(async () => ({ pending: 2, removed: 1 }));
+  const remove = vi.fn(async (request: DeleteConfigurationRequest) => { removed = true; return { id: request.mutation!.id, requestId: request.mutation!.requestId }; });
+  const cleanup = vi.fn(async (_request: GetAccountBrowserCleanupRequest) => ({ pending: 2, removed: 1 }));
+  const list = vi.fn(async () => ({ resources: removed ? [] : [current] }));
   const transport = createRouterTransport((router) => {
-    router.service(ResourceService, { getResource: read, listResources: () => ({ resources: [current] }) });
+    router.service(ResourceService, { getResource: read, listResources: list });
     router.service(SystemService, { getStatus: status });
     router.service(SubscriptionService, { requestSubscription: logout, getSubscriptionProgress: progress });
     router.service(ConfigurationService, { deleteConfiguration: remove });
@@ -46,7 +48,7 @@ function fixture(connected = true) {
     const [visible, setVisible] = useState(true);
     return <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}>
       <button onClick={() => setVisible(false)}>Leave fixture</button><button onClick={() => setVisible(true)}>Reopen fixture</button>
-      {settings ? <Settings visible={visible && active} /> : visible ? <SettingsLifetime>{() => <MutationIntents><ConfigurationDeletion initial={initial} active={active} deleted={deleted} close={() => { closed(); setVisible(false); }} /></MutationIntents>}</SettingsLifetime> : null}
+      {settings ? <Settings visible={visible && active} /> : visible ? <SettingsLifetime>{() => <MutationIntents><ConfigurationDeletion initial={initial} active={active} deleted={() => { deleted(); setVisible(false); }} close={() => { closed(); setVisible(false); }} /></MutationIntents>}</SettingsLifetime> : null}
     </QueryClientProvider></TransportProvider></StrictMode>;
   }
   const complete = () => {
@@ -54,7 +56,7 @@ function fixture(connected = true) {
     patch({ health: "disconnected", connection: undefined, subscription: { server_operation: { ...operation, state: "succeeded", native_started: false } } });
     progress.mockResolvedValue(create(GetSubscriptionProgressResponseSchema, { state: SubscriptionLoginState.SUCCEEDED }));
   };
-  return { Harness, client, initial, read, status, logout, progress, remove, cleanup, closed, deleted, patch, accept, complete, get current() { return current; } };
+  return { Harness, client, initial, read, list, status, logout, progress, remove, cleanup, closed, deleted, patch, accept, complete, get current() { return current; } };
 }
 async function start(value: ReturnType<typeof fixture>) {
   render(<value.Harness />);
@@ -65,8 +67,191 @@ async function start(value: ReturnType<typeof fixture>) {
 async function tick() {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2100)); });
 }
+async function openSettingsDeletion(value: ReturnType<typeof fixture>) {
+  render(<value.Harness settings />);
+  await screen.findByRole("article", { name: alias });
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${alias}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+}
+function dismissTask(method: "X" | "Escape") {
+  if (method === "X") fireEvent.click(screen.getByRole("button", { name: "Close Delete configuration" }));
+  else fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+}
 
-it("logs out once and deletes only after the original cleanup succeeds, preserving bigint revisions and offline cleanup", async () => {
+it.each(["X", "Escape"] as const)("retains deferred logout and its exact explicit retry across %s dismissal", async (method) => {
+  const value = fixture(); let release!: () => void;
+  value.logout.mockImplementationOnce(async (request) => {
+    value.accept(request);
+    await new Promise<void>(resolve => { release = resolve; });
+    throw new ConnectError("lost logout acknowledgment", Code.Unavailable);
+  });
+  value.logout.mockImplementationOnce(async request => ({ operationId: request.mutation!.requestId, account: value.current }));
+  await openSettingsDeletion(value);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await waitFor(() => expect(value.logout).toHaveBeenCalledTimes(1));
+  const original = value.logout.mock.calls[0][0];
+  dismissTask(method);
+  expect(screen.getByText("Delete configuration: The original operation is in progress.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
+  expect(screen.getByText("Logging out and cleaning up credentials...")).toBeTruthy();
+  expect(value.logout).toHaveBeenCalledTimes(1);
+  dismissTask(method);
+  await act(async () => release());
+  expect(await screen.findByText("Delete configuration: The original result is unconfirmed.")).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(value.logout).toHaveBeenCalledTimes(1);
+  value.complete();
+  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry original logout request" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  expect(value.logout.mock.calls[1][0]).toEqual(original);
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  expect(value.remove.mock.calls[0][0].mutation!.expectedRevision).toBe(value.current.revision);
+});
+
+it.each(["X", "Escape"] as const)("retains an accepted deletion after response loss and %s dismissal", async (method) => {
+  const value = fixture(false); let release!: () => void;
+  value.remove.mockImplementationOnce(async () => {
+    await new Promise<void>(resolve => { release = resolve; });
+    throw new ConnectError("lost deletion acknowledgment", Code.Unavailable);
+  });
+  await openSettingsDeletion(value);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1));
+  const original = value.remove.mock.calls[0][0];
+  dismissTask(method);
+  await act(async () => release());
+  expect(await screen.findByText("Delete configuration: The original result is unconfirmed.")).toBeTruthy();
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
+  dismissTask(method);
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same deletion" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  expect(value.remove.mock.calls[1][0]).toEqual(original);
+  expect(value.logout).not.toHaveBeenCalled();
+});
+
+it.each(["X", "Escape"] as const)("completes hidden deletion after %s without cleanup reads or taking focus", async method => {
+  const value = fixture(false); let release!: () => void;
+  value.remove.mockImplementationOnce(async request => {
+    await new Promise<void>(resolve => { release = resolve; });
+    return { id: request.mutation!.id, requestId: request.mutation!.requestId };
+  });
+  await openSettingsDeletion(value);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1));
+  dismissTask(method);
+  const destination = screen.getByRole("button", { name: "Reopen fixture" });
+  destination.focus();
+  await act(async () => release());
+  await waitFor(() => expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull());
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(globalThis.document.activeElement).toBe(destination);
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  expect(value.cleanup).not.toHaveBeenCalled();
+  expect(screen.getByRole("heading", { name: "AI Subscription" })).toBeTruthy();
+});
+
+it("closes confirmed deletion, refreshes the inventory and restores category focus", async () => {
+  const value = fixture(false);
+  await openSettingsDeletion(value);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await screen.findByRole("heading", { name: "No subscriptions yet" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("article", { name: alias })).toBeNull();
+  await waitFor(() => expect(globalThis.document.activeElement).toBe(screen.getByRole("heading", { name: "AI Subscription" })));
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  expect(value.cleanup).not.toHaveBeenCalled();
+});
+
+it("closes before a delayed inventory refresh and never reopens or repeats deletion when that read fails", async () => {
+  const value = fixture(false); let release!: () => void;
+  await openSettingsDeletion(value);
+  value.list.mockImplementationOnce(async () => {
+    await new Promise<void>(resolve => { release = resolve; });
+    throw new ConnectError("Inventory refresh unavailable", Code.Unavailable);
+  });
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await waitFor(() => expect(release).toBeTypeOf("function"));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => expect(globalThis.document.activeElement).toBe(screen.getByRole("heading", { name: "AI Subscription" })));
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  await act(async () => release());
+  await screen.findByText("Unable to read subscriptions or server capabilities. Try again.");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(value.remove).toHaveBeenCalledTimes(1);
+  expect(value.cleanup).not.toHaveBeenCalled();
+});
+
+it.each(["category", "Settings"])("ignores a late deletion acknowledgment after %s departure", async departure => {
+  const value = fixture(false); let release!: () => void;
+  value.remove.mockImplementationOnce(async request => {
+    await new Promise<void>(resolve => { release = resolve; });
+    return { id: request.mutation!.id, requestId: request.mutation!.requestId };
+  });
+  await openSettingsDeletion(value);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(1));
+  dismissTask("Escape");
+  const destination = screen.getByRole("button", { name: departure === "category" ? "Appearance" : "Leave fixture" });
+  fireEvent.click(destination); destination.focus();
+  await act(async () => release());
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  expect(globalThis.document.activeElement).toBe(destination);
+  expect(value.cleanup).not.toHaveBeenCalled();
+  expect(value.remove).toHaveBeenCalledTimes(1);
+});
+
+it.each(["X", "Escape"] as const)("discards an idle deletion confirmation on %s", async method => {
+  const value = fixture(); await openSettingsDeletion(value);
+  dismissTask(method);
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${alias}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+  expect(screen.getByRole("button", { name: confirmLabel })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Keep account" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("preserves explicit Back abandonment after a definite idle failure", async () => {
+  const value = fixture(false); value.remove.mockRejectedValue(new ConnectError("referenced", Code.Aborted));
+  await openSettingsDeletion(value);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  fireEvent.click(await screen.findByRole("button", { name: "Back to subscriptions" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  expect(value.remove).toHaveBeenCalledTimes(1);
+});
+
+it.each(["category", "Settings"])("disposes hidden deletion follow-up authority on %s departure", async departure => {
+  const value = fixture(); let release!: () => void;
+  value.logout.mockImplementationOnce(async request => {
+    value.accept(request);
+    await new Promise<void>(resolve => { release = resolve; });
+    return { operationId: request.mutation!.requestId, account: value.current };
+  });
+  await openSettingsDeletion(value);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  await waitFor(() => expect(value.logout).toHaveBeenCalledTimes(1));
+  dismissTask("Escape");
+  fireEvent.click(screen.getByRole("button", { name: departure === "category" ? "Appearance" : "Leave fixture" }));
+  value.complete(); await act(async () => release());
+  expect(value.progress).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: departure === "category" ? "AI Subscription" : "Reopen fixture" }));
+  await screen.findByRole("article", { name: alias });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  expect(value.logout).toHaveBeenCalledTimes(1);
+});
+
+it("logs out once and deletes only after the original cleanup succeeds, preserving bigint revisions and independent browser cleanup", async () => {
   const value = fixture(); render(<value.Harness />);
   expect(value.read).not.toHaveBeenCalled(); expect(value.logout).not.toHaveBeenCalled();
   const confirmation = screen.getByRole("button", { name: confirmLabel });
@@ -76,20 +261,18 @@ it("logs out once and deletes only after the original cleanup succeeds, preservi
   expect(value.logout).toHaveBeenCalledTimes(1);
   expect(value.logout.mock.calls[0][0]).toMatchObject({ machineId: "", action: SubscriptionAction.LOGOUT, mutation: { id: value.initial.id, expectedRevision: 9007199254740993n } });
   value.complete(); await tick();
-  await screen.findByRole("heading", { name: "Account configuration deleted" });
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
   expect(value.remove).toHaveBeenCalledTimes(1);
   expect(value.remove.mock.calls[0][0]).toMatchObject({ mutation: { id: value.initial.id, expectedRevision: value.current.revision } });
   expect(value.remove.mock.calls[0][0].mutation!.requestId).not.toBe(value.logout.mock.calls[0][0].mutation!.requestId);
-  expect(await screen.findByText("2 profile cleanup obligations pending · 1 confirmed removed")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh cleanup status" }));
-  await waitFor(() => expect(value.cleanup).toHaveBeenCalledTimes(2));
-  expect(value.remove).toHaveBeenCalledTimes(1);
+  expect(value.cleanup).not.toHaveBeenCalled();
+  expect(screen.queryByRole("heading", { name: "Account configuration deleted" })).toBeNull();
 });
 
 it("deletes a confirmed disconnected account without native capability or logout", async () => {
   const value = fixture(false); value.status.mockResolvedValue({ capabilities: [] }); render(<value.Harness />);
   fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
-  await screen.findByRole("heading", { name: "Account configuration deleted" });
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
   expect(value.logout).not.toHaveBeenCalled(); expect(value.progress).not.toHaveBeenCalled(); expect(value.status).not.toHaveBeenCalled();
 });
 
@@ -97,13 +280,13 @@ it("observes an existing server logout without submitting another request", asyn
   const value = fixture(), operation = newRequestId();
   value.initial.documentJson = encode({ ...document(value.initial), subscription: { generation: newRequestId(), pending: { id: operation, action: "logout" }, server_operation: { id: operation, action: "logout", state: "preparing" } } });
   await start(value); expect(value.logout).not.toHaveBeenCalled(); expect(value.progress.mock.calls[0][0].operationId).toBe(operation);
-  value.complete(); await tick(); await screen.findByRole("heading", { name: "Account configuration deleted" });
+  value.complete(); await tick(); await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
 });
 
 it("waits for the original execution lease before deleting", async () => {
   const value = fixture(); value.initial.documentJson = encode({ ...document(value.initial), subscription: { ...object(document(value.initial).subscription), lease: { action: "execute", id: newRequestId() } } });
   await start(value); expect(value.remove).not.toHaveBeenCalled(); expect(value.logout).toHaveBeenCalledTimes(1);
-  value.complete(); await tick(); await screen.findByRole("heading", { name: "Account configuration deleted" });
+  value.complete(); await tick(); await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
 });
 
 it.each([SubscriptionLoginState.FAILED, SubscriptionLoginState.RECOVERY_REQUIRED, SubscriptionLoginState.UNSUPPORTED, SubscriptionLoginState.EXPIRED, SubscriptionLoginState.CANCELED, SubscriptionLoginState.UNSPECIFIED])("keeps the account after terminal logout state %s", async (state) => {
@@ -135,14 +318,14 @@ it("retries an accepted logout with the original request after response loss", a
   fireEvent.click(await screen.findByRole("button", { name: "Retry original logout request" }));
   await waitFor(() => expect(value.progress).toHaveBeenCalledTimes(1));
   expect(value.logout.mock.calls[0][0]).toEqual(value.logout.mock.calls[1][0]);
-  value.complete(); await tick(); await screen.findByRole("heading", { name: "Account configuration deleted" });
+  value.complete(); await tick(); await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
 });
 
 it("retries only the original deletion after its response is lost", async () => {
   const value = fixture(); value.remove.mockRejectedValueOnce(new ConnectError("lost deletion", Code.Unavailable));
   await start(value); value.complete(); await tick();
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same deletion" }));
-  await screen.findByRole("heading", { name: "Account configuration deleted" });
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
   expect(value.remove.mock.calls[0][0]).toEqual(value.remove.mock.calls[1][0]); expect(value.logout).toHaveBeenCalledTimes(1);
 });
 
@@ -150,7 +333,7 @@ it("retries a failed progress read without resubmitting logout", async () => {
   const value = fixture(); value.progress.mockRejectedValueOnce(new ConnectError("lost status", Code.Unavailable));
   await start(value); value.complete();
   fireEvent.click(await screen.findByRole("button", { name: "Retry original status check" }));
-  await screen.findByRole("heading", { name: "Account configuration deleted" }); expect(value.logout).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1)); expect(value.logout).toHaveBeenCalledTimes(1);
 });
 
 it.each([Code.PermissionDenied, Code.Unauthenticated])("does not delete or retry effects after authorization failure %s", async (code) => {
@@ -181,7 +364,7 @@ it("fresh inspection requires an explicit new confirmation", async () => {
   fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
   fireEvent.click(await screen.findByRole("button", { name: "Refresh account for confirmation" }));
   await screen.findByRole("heading", { name: "Delete New alias?" }); expect(value.remove).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: confirmLabel })); await screen.findByRole("heading", { name: "Account configuration deleted" });
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel })); await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
 });
 
 it("ignores a late accepted logout after the screen is left and reopened", async () => {
@@ -208,7 +391,7 @@ it("never overlaps original progress reads while a server response is delayed", 
   value.progress.mockImplementationOnce(async () => { await new Promise<void>((resolve) => { release = resolve; }); return create(GetSubscriptionProgressResponseSchema, { state: SubscriptionLoginState.PREPARING }); });
   await start(value); await tick(); expect(value.progress).toHaveBeenCalledTimes(1);
   await act(async () => release()); value.complete(); await tick();
-  await screen.findByRole("heading", { name: "Account configuration deleted" });
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
   expect(value.progress).toHaveBeenCalledTimes(2); expect(value.remove).toHaveBeenCalledTimes(1);
 });
 
@@ -234,7 +417,7 @@ it("retains the original logout request when its acknowledgment names another op
   const retry = await screen.findByRole("button", { name: "Retry original logout request" });
   expect(value.progress).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
   value.complete(); fireEvent.click(retry);
-  await screen.findByRole("heading", { name: "Account configuration deleted" });
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
   expect(value.logout.mock.calls[0][0]).toEqual(value.logout.mock.calls[1][0]);
 });
 
@@ -242,7 +425,7 @@ it("retains the original deletion request when its acknowledgment has another re
   const value = fixture(false); value.remove.mockImplementationOnce(async (request) => ({ id: request.mutation!.id, requestId: newRequestId() }));
   render(<value.Harness />); fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same deletion" }));
-  await screen.findByRole("heading", { name: "Account configuration deleted" });
+  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
   expect(value.remove.mock.calls[0][0]).toEqual(value.remove.mock.calls[1][0]);
 });
 

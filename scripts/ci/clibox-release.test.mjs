@@ -109,7 +109,7 @@ test("clibox input changes select its aggregated consumer checks and force exter
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
   assert.ok(ci.jobs["ci-result"].needs.includes(id));
   assert.deepEqual(ci.jobs[id].strategy.matrix.os, ["ubuntu-22.04", "macos-14", "windows-latest"]);
-  assert.equal(ci.jobs[id].steps.filter(({ run }) => run === "cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait").length, 1);
+  assert.equal(ci.jobs[id].steps.filter(({ run }) => run === "node scripts/ci/run-affected.mjs @delinoio/ci ci:clibox:native").length, 1);
   const smoke = source("packages/clibox/scripts/smoke.mjs");
   for (const command of ["text", "time", "base64", "hash"]) assert.ok(smoke.includes('invoke(["' + command + '"'));
   for (const event of [Event.Push, Event.PullRequest]) {
@@ -167,4 +167,9 @@ test("clibox workspace crates cannot be published and publishers have no crates.
     assert.match(publisher, /GITHUB_SHA/u);
     assert.match(publisher, /ACTIONS_ID_TOKEN_REQUEST_TOKEN/u);
   }
+});
+
+test("clibox Turbo native task retains all six crate suites", () => {
+  const ci = JSON.parse(source("scripts/ci/package.json"));
+  assert.equal(ci.scripts["ci:clibox:native"], "node from-root.mjs cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait");
 });

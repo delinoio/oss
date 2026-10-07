@@ -1,6 +1,7 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import type { Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
+import type { OwnedMessage } from "./localization";
 
 export enum InteractionDraftKind {
   CodexQuestion = "codex-question",
@@ -77,14 +78,18 @@ export function isEmptyInteractionDraft(state: InteractionDraftState): boolean {
   }
 }
 
-export function useEditableInteractionDraft<T extends InteractionDraftState>(kind: T["kind"], initial: () => T, stored?: InteractionDraftState, save?: (value: T) => void): [T, Dispatch<SetStateAction<T>>] {
+export function useEditableInteractionDraft<T extends InteractionDraftState>(kind: T["kind"], initial: () => T, stored?: InteractionDraftState, save?: (value: T) => void, overflow?: (value: T) => OwnedMessage | undefined): [T, Dispatch<SetStateAction<T>>, OwnedMessage | undefined] {
   const [local, setLocal] = useState<T>(initial);
+  const [problem, setProblem] = useState<OwnedMessage>();
   const value = stored?.kind === kind ? stored as T : local;
   const setValue: Dispatch<SetStateAction<T>> = (next) => {
     const updated = typeof next === "function" ? (next as (previous: T) => T)(value) : next;
+    const error = overflow?.(updated);
+    setProblem(error);
+    if (error) return;
     if (save) save(updated); else setLocal(updated);
   };
-  return [value, setValue];
+  return [value, setValue, problem];
 }
 
 export function draftByteLength(draft: InboxInteractionDraft): number {

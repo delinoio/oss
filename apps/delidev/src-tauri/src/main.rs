@@ -9,6 +9,7 @@ mod oauth_host;
 mod tray_host;
 mod updater_host;
 mod widget_host;
+mod window_host;
 use std::{
     collections::{BTreeMap, HashMap},
     path::PathBuf,
@@ -40,6 +41,7 @@ impl Drop for DesktopLifetime {
 }
 
 use appearance_host::{read_appearance, update_appearance};
+mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
     Connection, Connector, DesktopRegistration, LocalServerStatus, LocalWorkerAction,
@@ -47,15 +49,15 @@ use delidev_desktop::{
     SavedConnectionState, Supervision, WorkerNetworkAction, browser_storage::BrowserStorageMode,
     bundled_sidecar, canonical_id, connection_origin, default_data_root,
 };
+use language_host::{read_language, update_language};
 use notification_host::{
     NotificationHost, begin_notifications, end_notifications, notification_permission,
     present_notification, request_notification_permission,
 };
 use oauth_host::account_oauth_native;
 use tauri::{
-    AppHandle, Emitter, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent,
-    utils::config::{Csp, CspDirectiveSources, WebviewUrl},
-    webview::NewWindowResponse,
+    AppHandle, Emitter, Manager, WebviewWindow, WindowEvent,
+    utils::config::{Csp, CspDirectiveSources},
 };
 use tray_host::{TrayHost, acknowledge_tray_action, begin_tray, publish_tray, read_tray_action};
 use updater_host::{UpdateHost, desktop_update_context, desktop_update_native};
@@ -91,70 +93,86 @@ impl Drop for FolderPickerGuard {
 #[tauri::command]
 async fn choose_repository_folder(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
 ) -> Result<Option<String>, NativeFailure> {
-    let binding = if window.label() == "main" {
-        trusted_main(&window)?;
-        None
-    } else {
-        Some(saved_binding(&window, &windows)?)
-    };
-    if FOLDER_PICKER_BUSY
-        .compare_exchange(
-            false,
-            true,
-            std::sync::atomic::Ordering::AcqRel,
-            std::sync::atomic::Ordering::Acquire,
-        )
-        .is_err()
-    {
-        return Err(NativeFailure::Busy);
-    }
-    let _guard = FolderPickerGuard;
-    tracing::info!(operation = "repository_folder", phase = "choosing");
-    let selected = rfd::AsyncFileDialog::new()
-        .set_title("Choose your repository folder")
-        .set_parent(&window)
-        .pick_folder()
-        .await;
-    if let Some(original) = binding {
-        let current = saved_binding(&window, &windows)?;
-        if current.instance != original.instance || current.profile != original.profile {
-            return Err(NativeFailure::PermissionDenied);
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let binding = if is_local(&window) {
+            trusted_local(&window)?;
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?)
+        };
+        if FOLDER_PICKER_BUSY
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_err()
+        {
+            return Err(NativeFailure::Busy);
         }
-    } else {
-        trusted_main(&window)?;
+        let _guard = FolderPickerGuard;
+        tracing::info!(operation = "repository_folder", phase = "choosing");
+        let selected = rfd::AsyncFileDialog::new()
+            .set_title(delidev_desktop::localization::text(
+                delidev_desktop::localization::Message::ChooseRepository,
+            ))
+            .set_parent(&window)
+            .pick_folder()
+            .await;
+        if let Some(original) = binding {
+            let current = saved_binding(&window, &windows)?;
+            if current.instance != original.instance || current.profile != original.profile {
+                return Err(NativeFailure::PermissionDenied);
+            }
+        } else {
+            trusted_local(&window)?;
+        }
+        let result = selected
+            .map(|handle| delidev_desktop::repository_folder_path(handle.path()))
+            .transpose();
+        match &result {
+            Ok(Some(_)) => tracing::info!(operation = "repository_folder", phase = "selected"),
+            Ok(None) => tracing::info!(operation = "repository_folder", phase = "canceled"),
+            Err(code) => tracing::warn!(operation = "repository_folder", phase = "failed", ?code),
+        }
+        result
     }
-    let result = selected
-        .map(|handle| delidev_desktop::repository_folder_path(handle.path()))
-        .transpose();
-    match &result {
-        Ok(Some(_)) => tracing::info!(operation = "repository_folder", phase = "selected"),
-        Ok(None) => tracing::info!(operation = "repository_folder", phase = "canceled"),
-        Err(code) => tracing::warn!(operation = "repository_folder", phase = "failed", ?code),
-    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
     result
 }
 
 #[tauri::command]
 async fn open_github(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
     url: String,
 ) -> Result<(), NativeFailure> {
-    if window.label() == "main" {
-        trusted_main(&window)?;
-    } else {
-        saved_binding(&window, &windows)?;
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        if is_local(&window) {
+            trusted_local(&window)?;
+        } else {
+            saved_binding(&window, &windows)?;
+        }
+        let connector = Arc::clone(connector.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || connector.open_github(&url))
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        if let Err(code) = result {
+            tracing::warn!(operation = "github_open", ?code);
+        }
+        result
     }
-    let connector = Arc::clone(connector.inner());
-    let result = tauri::async_runtime::spawn_blocking(move || connector.open_github(&url))
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?;
-    if let Err(code) = result {
-        tracing::warn!(operation = "github_open", ?code);
-    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
     result
 }
 
@@ -162,32 +180,40 @@ async fn open_github(
 #[tauri::command]
 async fn open_provider_guidance(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
     preset: String,
     action: delidev_desktop::provider_guidance::GuidanceAction,
 ) -> Result<(), NativeFailure> {
-    let original = if window.label() == "main" {
-        trusted_main(&window)?;
-        None
-    } else {
-        Some(saved_binding(&window, &windows)?)
-    };
-    // Capture authority on the native loop; dispatch runs on a bounded worker.
-    let connector = Arc::clone(connector.inner());
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        connector.open_provider_guidance(&preset, action)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)?;
-    if let Some(original) = original {
-        let current = saved_binding(&window, &windows)?;
-        if current.instance != original.instance {
-            return Err(NativeFailure::InvalidEvidence);
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let original = if is_local(&window) {
+            trusted_local(&window)?;
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?)
+        };
+        // Capture authority on the native loop; dispatch runs on a bounded
+        // worker.
+        let connector = Arc::clone(connector.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            connector.open_provider_guidance(&preset, action)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+        if let Some(original) = original {
+            let current = saved_binding(&window, &windows)?;
+            if current.instance != original.instance {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        } else {
+            trusted_local(&window)?;
         }
-    } else {
-        trusted_main(&window)?;
+        result
     }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
     result
 }
 
@@ -197,11 +223,22 @@ async fn launch_local(
     window: WebviewWindow<CefRuntime>,
     supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<Option<Connection>, NativeFailure> {
-    trusted_main(&window)?;
-    let supervision = Arc::clone(supervision.inner());
-    tauri::async_runtime::spawn_blocking(move || supervision.launch_connection())
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?
+    let response_window = window.clone();
+    let mut original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let supervision = Arc::clone(supervision.inner());
+        tauri::async_runtime::spawn_blocking(move || supervision.launch_connection())
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?
+    }
+    .await;
+    if let Ok(Some(connection)) = &result {
+        original_authority.local_revision =
+            adopt_local(&response_window, &original_authority, connection)?;
+    }
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 #[tauri::command]
@@ -209,11 +246,22 @@ async fn retry_local(
     window: WebviewWindow<CefRuntime>,
     supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<Connection, NativeFailure> {
-    trusted_main(&window)?;
-    let supervision = Arc::clone(supervision.inner());
-    tauri::async_runtime::spawn_blocking(move || supervision.retry_launch())
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?
+    let response_window = window.clone();
+    let mut original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let supervision = Arc::clone(supervision.inner());
+        tauri::async_runtime::spawn_blocking(move || supervision.retry_launch())
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?
+    }
+    .await;
+    if let Ok(connection) = &result {
+        original_authority.local_revision =
+            adopt_local(&response_window, &original_authority, connection)?;
+    }
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 #[tauri::command]
@@ -222,22 +270,33 @@ async fn connect_local(
     connector: tauri::State<'_, Arc<Connector>>,
     supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<Connection, NativeFailure> {
-    if window.label() != "main"
-        || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
-    {
-        return Err(NativeFailure::PermissionDenied);
+    let response_window = window.clone();
+    let mut original_authority = capture_authority(&response_window)?;
+    let result = async {
+        if !is_local(&window)
+            || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
+        {
+            return Err(NativeFailure::PermissionDenied);
+        }
+        let connector = Arc::clone(connector.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || connector.connect())
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        supervision.refresh();
+        let connection = result?;
+        if connection.endpoint != "http://127.0.0.1:46310" {
+            return Err(NativeFailure::Incompatible);
+        }
+        supervision.adopt(&connection);
+        Ok(connection)
     }
-    let connector = Arc::clone(connector.inner());
-    let result = tauri::async_runtime::spawn_blocking(move || connector.connect())
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?;
-    supervision.refresh();
-    let connection = result?;
-    if connection.endpoint != "http://127.0.0.1:46310" {
-        return Err(NativeFailure::Incompatible);
+    .await;
+    if let Ok(connection) = &result {
+        original_authority.local_revision =
+            adopt_local(&response_window, &original_authority, connection)?;
     }
-    supervision.adopt(&connection);
-    Ok(connection)
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 #[tauri::command]
@@ -245,11 +304,18 @@ async fn inspect_local_registration(
     window: WebviewWindow<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
 ) -> Result<DesktopRegistration, NativeFailure> {
-    trusted_main(&window)?;
-    let connector = Arc::clone(connector.inner());
-    tauri::async_runtime::spawn_blocking(move || connector.inspect_desktop_registration())
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let connector = Arc::clone(connector.inner());
+        tauri::async_runtime::spawn_blocking(move || connector.inspect_desktop_registration())
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 #[tauri::command]
@@ -261,18 +327,29 @@ async fn recover_local_registration(
     revision: String,
     request_id: String,
 ) -> Result<Connection, NativeFailure> {
-    trusted_main(&window)?;
-    let connector = Arc::clone(connector.inner());
-    let connection = tauri::async_runtime::spawn_blocking(move || {
-        connector.recover_desktop_registration(&device_id, &revision, &request_id)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
-    if connection.endpoint != "http://127.0.0.1:46310" {
-        return Err(NativeFailure::Incompatible);
+    let response_window = window.clone();
+    let mut original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let connector = Arc::clone(connector.inner());
+        let connection = tauri::async_runtime::spawn_blocking(move || {
+            connector.recover_desktop_registration(&device_id, &revision, &request_id)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+        if connection.endpoint != "http://127.0.0.1:46310" {
+            return Err(NativeFailure::Incompatible);
+        }
+        supervision.adopt(&connection);
+        Ok(connection)
     }
-    supervision.adopt(&connection);
-    Ok(connection)
+    .await;
+    if let Ok(connection) = &result {
+        original_authority.local_revision =
+            adopt_local(&response_window, &original_authority, connection)?;
+    }
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 #[tauri::command]
@@ -280,12 +357,19 @@ async fn local_server_status(
     window: WebviewWindow<CefRuntime>,
     supervision: tauri::State<'_, Arc<Supervision>>,
 ) -> Result<LocalServerStatus, NativeFailure> {
-    if window.label() != "main"
-        || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
-    {
-        return Err(NativeFailure::PermissionDenied);
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        if !is_local(&window)
+            || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
+        {
+            return Err(NativeFailure::PermissionDenied);
+        }
+        Ok(supervision.status())
     }
-    Ok(supervision.status())
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 #[tauri::command]
@@ -293,19 +377,26 @@ async fn local_worker_proof(
     window: WebviewWindow<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
 ) -> Result<LocalWorkerProof, NativeFailure> {
-    if window.label() != "main"
-        || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
-    {
-        return Err(NativeFailure::PermissionDenied);
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        if !is_local(&window)
+            || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
+        {
+            return Err(NativeFailure::PermissionDenied);
+        }
+        let connector = Arc::clone(connector.inner());
+        let proof = tauri::async_runtime::spawn_blocking(move || connector.local_worker_proof())
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)??;
+        if proof.endpoint != "http://127.0.0.1:46310" {
+            return Err(NativeFailure::Incompatible);
+        }
+        Ok(proof)
     }
-    let connector = Arc::clone(connector.inner());
-    let proof = tauri::async_runtime::spawn_blocking(move || connector.local_worker_proof())
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)??;
-    if proof.endpoint != "http://127.0.0.1:46310" {
-        return Err(NativeFailure::Incompatible);
-    }
-    Ok(proof)
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 #[tauri::command]
@@ -315,17 +406,24 @@ async fn local_worker_control(
     action: LocalWorkerAction,
     generation: Option<String>,
 ) -> Result<LocalWorkerStatus, NativeFailure> {
-    if window.label() != "main"
-        || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
-    {
-        return Err(NativeFailure::PermissionDenied);
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        if !is_local(&window)
+            || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
+        {
+            return Err(NativeFailure::PermissionDenied);
+        }
+        let connector = Arc::clone(connector.inner());
+        tauri::async_runtime::spawn_blocking(move || {
+            connector.local_worker(action, generation.as_deref())
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?
     }
-    let connector = Arc::clone(connector.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        connector.local_worker(action, generation.as_deref())
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)?
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 #[derive(Clone)]
@@ -335,23 +433,175 @@ struct SavedBinding {
     closing: bool,
 }
 #[derive(Default)]
-struct SavedWindows(Mutex<BTreeMap<String, SavedBinding>>);
+struct ProductWindows {
+    bindings: Mutex<BTreeMap<String, SavedBinding>>,
+    registry: Mutex<delidev_desktop::window_registry::Registry>,
+    removals: Mutex<BTreeMap<String, SavedBinding>>,
+}
 
 // CEF URL getters enqueue work on its UI loop and wait for a response. Every
 // command reaching this check must execute asynchronously off that loop; a
 // synchronous IPC handler can deadlock both the window and application quit.
 // Keep this boundary while the pinned runtime uses blocking URL getters.
-fn trusted_main(window: &WebviewWindow<CefRuntime>) -> Result<(), NativeFailure> {
-    if window.label() != "main"
+fn is_local(window: &WebviewWindow<CefRuntime>) -> bool {
+    window
+        .state::<Arc<ProductWindows>>()
+        .registry
+        .lock()
+        .is_ok_and(|registry| {
+            registry
+                .admitted(window.label())
+                .is_ok_and(|entry| entry.role == delidev_desktop::window_registry::Role::Local)
+        })
+}
+fn trusted_local(window: &WebviewWindow<CefRuntime>) -> Result<(), NativeFailure> {
+    if !is_local(window)
         || !trusted_url(&window.url().map_err(|_| NativeFailure::PermissionDenied)?)
     {
         return Err(NativeFailure::PermissionDenied);
     }
     Ok(())
 }
+#[derive(Clone)]
+struct WindowAuthority {
+    entry: delidev_desktop::window_registry::Entry,
+    local_revision: u64,
+    saved: Option<SavedConnection>,
+}
+fn capture_authority(window: &WebviewWindow<CefRuntime>) -> Result<WindowAuthority, NativeFailure> {
+    let windows = window.state::<Arc<ProductWindows>>();
+    let saved = if is_local(window) {
+        trusted_local(window)?;
+        None
+    } else {
+        Some(saved_binding(window, &windows)?.profile)
+    };
+    let registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
+    Ok(WindowAuthority {
+        entry: registry.admitted(window.label())?,
+        local_revision: registry.local_revision,
+        saved,
+    })
+}
+fn recheck_authority(
+    window: &WebviewWindow<CefRuntime>,
+    original: &WindowAuthority,
+) -> Result<(), NativeFailure> {
+    let current = capture_authority(window)?;
+    if current.entry.instance != original.entry.instance
+        || current.entry.role != original.entry.role
+        || (original.saved.is_none() && current.local_revision != original.local_revision)
+        || !match (&current.saved, &original.saved) {
+            (None, None) => true,
+            (Some(current), Some(original)) => current.same_authority(original),
+            _ => false,
+        }
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    Ok(())
+}
+// The source document was authenticated off the CEF loop. Recheck its
+// process-local lifetime immediately before native creation without calling
+// CEF's blocking URL getter from the UI thread.
+fn recheck_registered(
+    app: &AppHandle<CefRuntime>,
+    original: &WindowAuthority,
+) -> Result<(), NativeFailure> {
+    recheck_record(&app.state::<Arc<ProductWindows>>(), original)
+}
+fn recheck_record(
+    windows: &ProductWindows,
+    original: &WindowAuthority,
+) -> Result<(), NativeFailure> {
+    let registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
+    let current = registry.admitted(&original.entry.label)?;
+    if current.instance != original.entry.instance
+        || current.role != original.entry.role
+        || (original.saved.is_none() && registry.local_revision != original.local_revision)
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    drop(registry);
+    if let Some(expected) = &original.saved {
+        let barriers = windows.removals.lock().map_err(|_| NativeFailure::Busy)?;
+        if barriers.contains_key(&expected.id) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let bindings = windows.bindings.lock().map_err(|_| NativeFailure::Busy)?;
+        if !bindings.get(&current.label).is_some_and(|binding| {
+            !binding.closing
+                && binding.instance == current.instance
+                && binding.profile.same_authority(expected)
+        }) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    }
+    Ok(())
+}
+fn adopt_local(
+    window: &WebviewWindow<CefRuntime>,
+    original: &WindowAuthority,
+    connection: &Connection,
+) -> Result<u64, NativeFailure> {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    for value in [
+        &connection.endpoint,
+        &connection.server_id,
+        &connection.device_id,
+        &connection.token,
+    ] {
+        digest.update(value.len().to_le_bytes());
+        digest.update(value.as_bytes());
+    }
+    recheck_authority(window, original)?;
+    let windows = window.state::<Arc<ProductWindows>>();
+    let changed = {
+        let mut registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
+        let current = registry.admitted(window.label())?;
+        if current.instance != original.entry.instance || current.role != original.entry.role {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        registry.adopt_local_at(digest.finalize().into(), original.local_revision)?
+    };
+    if changed {
+        // The event carries no identity or credential. Each sibling re-reads
+        // the native-owned observation and authenticates its own transport.
+        for sibling in window.app_handle().webview_windows().into_values() {
+            if is_local(&sibling) {
+                sibling
+                    .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
+                    .close_window(sibling.label());
+                sibling
+                    .state::<Arc<NotificationHost>>()
+                    .remove(sibling.label());
+                tray_host::remove(sibling.app_handle(), sibling.label());
+                let app = sibling.app_handle().clone();
+                let label = sibling.label().to_owned();
+                let browser = Arc::clone(app.state::<Arc<browser_host::BrowserHost>>().inner());
+                app.run_on_main_thread(move || {
+                    if let Err(code) = browser.close_window(&label) {
+                        tracing::warn!(operation = "connection_browser_cleanup", ?code);
+                    }
+                })
+                .map_err(|_| NativeFailure::SidecarFailed)?;
+                if sibling.label() != window.label() {
+                    let _ = sibling.emit("local-connection-changed", ());
+                }
+            }
+        }
+    }
+    let revision = windows
+        .registry
+        .lock()
+        .map_err(|_| NativeFailure::Busy)?
+        .local_revision;
+    Ok(revision)
+}
 fn saved_binding(
     window: &WebviewWindow<CefRuntime>,
-    windows: &SavedWindows,
+    windows: &ProductWindows,
 ) -> Result<SavedBinding, NativeFailure> {
     let url = window.url().map_err(|_| NativeFailure::PermissionDenied)?;
     // Saved credentials never reach an external development-server document.
@@ -359,38 +609,68 @@ fn saved_binding(
     {
         return Err(NativeFailure::PermissionDenied);
     }
-    // Native commands may run on the event loop while label publication owns
-    // this map and waits for that loop. Return Busy instead of deadlocking it.
+    let entry = windows
+        .registry
+        .lock()
+        .map_err(|_| NativeFailure::Busy)?
+        .admitted(window.label())?;
+    let delidev_desktop::window_registry::Role::Saved(id) = entry.role else {
+        return Err(NativeFailure::PermissionDenied);
+    };
+    if windows
+        .removals
+        .try_lock()
+        .map_err(|_| NativeFailure::Busy)?
+        .contains_key(&id)
+    {
+        return Err(NativeFailure::PermissionDenied);
+    }
     windows
-        .0
+        .bindings
         .try_lock()
         .map_err(|_| NativeFailure::Busy)?
         .get(window.label())
-        .filter(|binding| !binding.closing)
+        .filter(|binding| {
+            !binding.closing && binding.instance == entry.instance && binding.profile.id == id
+        })
         .cloned()
         .ok_or(NativeFailure::PermissionDenied)
 }
 #[tauri::command]
 async fn connection_context(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
 ) -> Result<Option<SavedConnection>, NativeFailure> {
-    if window.label() == "main" {
-        trusted_main(&window)?;
-        return Ok(None);
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        if is_local(&window) {
+            trusted_local(&window)?;
+            return Ok(None);
+        }
+        Ok(Some(saved_binding(&window, &windows)?.profile))
     }
-    Ok(Some(saved_binding(&window, &windows)?.profile))
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 async fn saved_connections(
     window: WebviewWindow<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
 ) -> Result<Vec<SavedConnection>, NativeFailure> {
-    trusted_main(&window)?;
-    let connector = Arc::clone(connector.inner());
-    tauri::async_runtime::spawn_blocking(move || connector.saved_connections())
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let connector = Arc::clone(connector.inner());
+        tauri::async_runtime::spawn_blocking(move || connector.saved_connections())
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 async fn removed_connections(
@@ -398,11 +678,18 @@ async fn removed_connections(
     connector: tauri::State<'_, Arc<Connector>>,
     after: String,
 ) -> Result<RemovedConnections, NativeFailure> {
-    trusted_main(&window)?;
-    let connector = Arc::clone(connector.inner());
-    tauri::async_runtime::spawn_blocking(move || connector.removed_connections(&after))
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let connector = Arc::clone(connector.inner());
+        tauri::async_runtime::spawn_blocking(move || connector.removed_connections(&after))
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 async fn retained_worker_control(
@@ -412,13 +699,20 @@ async fn retained_worker_control(
     action: LocalWorkerAction,
     generation: Option<String>,
 ) -> Result<LocalWorkerStatus, NativeFailure> {
-    trusted_main(&window)?;
-    let connector = Arc::clone(connector.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        connector.retained_worker(&id, action, generation.as_deref())
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)?
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let connector = Arc::clone(connector.inner());
+        tauri::async_runtime::spawn_blocking(move || {
+            connector.retained_worker(&id, action, generation.as_deref())
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 // Tauri injects trusted framework state separately from the closed IPC fields.
 // Keep this exception on the command; remove it if those injected states are
@@ -433,169 +727,224 @@ async fn remove_connection(
     app: AppHandle<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
     browser: tauri::State<'_, Arc<browser_host::BrowserHost>>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     id: String,
     request_id: String,
     revision: u64,
 ) -> Result<SavedConnection, NativeFailure> {
-    trusted_main(&window)?;
-    canonical_id(&id)?;
-    canonical_id(&request_id)?;
-    let connector = Arc::clone(connector.inner());
-    let lookup = Arc::clone(&connector);
-    let profile_id = id.clone();
-    let profile = tauri::async_runtime::spawn_blocking(move || lookup.inspect_saved(&profile_id))
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)??;
-    // Avoid closing a window from a stale confirmation. Go independently
-    // validates and claims the exact mutation at its durable commit boundary.
-    if let Some(removal) = &profile.removal {
-        if removal.request_id != request_id || removal.expected_revision != revision {
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        canonical_id(&id)?;
+        canonical_id(&request_id)?;
+        let connector = Arc::clone(connector.inner());
+        let lookup = Arc::clone(&connector);
+        let profile_id = id.clone();
+        let profile =
+            tauri::async_runtime::spawn_blocking(move || lookup.inspect_saved(&profile_id))
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??;
+        // Avoid closing a window from a stale confirmation. Go independently
+        // validates and claims the exact mutation at its durable commit
+        // boundary.
+        if let Some(removal) = &profile.removal {
+            if removal.request_id != request_id || removal.expected_revision != revision {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        } else if profile.revision != revision {
             return Err(NativeFailure::InvalidEvidence);
         }
-    } else if profile.revision != revision {
-        return Err(NativeFailure::InvalidEvidence);
-    }
-    let label = format!("server-{id}");
-    let instance = uuid::Uuid::now_v7().to_string();
-    let original_profile = profile.clone();
-    let original = {
-        let mut values = windows.0.lock().map_err(|_| NativeFailure::Busy)?;
-        if let Some(binding) = values.get(&label).filter(|binding| binding.closing) {
-            let retry = profile.state == SavedConnectionState::Removing
-                && binding.profile.state == SavedConnectionState::Removing
-                && binding.profile.removal == profile.removal;
-            if profile.state != SavedConnectionState::Removed && !retry {
-                return Err(NativeFailure::Busy);
+        let instance = uuid::Uuid::now_v7().to_string();
+        let original_profile = profile.clone();
+        let original = {
+            // One profile-level barrier covers every current and pending
+            // window. Creation takes this gate through native
+            // binding reservation.
+            let mut barriers = windows.removals.lock().map_err(|_| NativeFailure::Busy)?;
+            if let Some(binding) = barriers.get(&id) {
+                let retry = profile.state == SavedConnectionState::Removing
+                    && binding.profile.state == SavedConnectionState::Removing
+                    && binding.profile.removal == profile.removal;
+                if profile.state != SavedConnectionState::Removed && !retry {
+                    return Err(NativeFailure::Busy);
+                }
             }
-        }
-        values.insert(
-            label.clone(),
-            SavedBinding {
-                profile,
-                instance: instance.clone(),
-                closing: true,
-            },
-        )
-    };
-    // The explicit UI confirmation includes losing this window's unsent drafts.
-    // Block reopen and late token delivery before beginning private cleanup.
-    let destroyed = if let Some(saved) = app.get_webview_window(&label) {
+            let original = barriers.insert(
+                id.clone(),
+                SavedBinding {
+                    profile,
+                    instance: instance.clone(),
+                    closing: true,
+                },
+            );
+            let mut registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
+            for entry in registry.entries().into_iter().filter(|entry| {
+                entry.role == delidev_desktop::window_registry::Role::Saved(id.clone())
+            }) {
+                registry.begin_close(&entry.label, false)?;
+            }
+            original
+        };
+        let affected = windows
+            .bindings
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?
+            .iter()
+            .filter(|(_, binding)| binding.profile.id == id)
+            .map(|(label, _)| label.clone())
+            .collect::<Vec<_>>();
         let host = Arc::clone(browser.inner());
+        let close_app = app.clone();
         let (send, receive) = tokio::sync::oneshot::channel();
-        match app.run_on_main_thread(move || {
-            let result = host
-                .close_window(saved.label())
-                .and_then(|()| saved.destroy().map_err(|_| NativeFailure::SidecarFailed));
+        let destroyed = match app.run_on_main_thread(move || {
+            let mut result = Ok(());
+            for label in affected {
+                if let Some(saved) = close_app.get_webview_window(&label) {
+                    let closed = host
+                        .close_window(&label)
+                        .and_then(|()| saved.destroy().map_err(|_| NativeFailure::SidecarFailed));
+                    if closed.is_err() {
+                        result = closed;
+                    }
+                }
+            }
             let _ = send.send(result);
         }) {
             Ok(()) => receive
                 .await
                 .map_err(|_| NativeFailure::SidecarFailed)
-                .and_then(|result| result),
+                .and_then(|v| v),
             Err(_) => Err(NativeFailure::SidecarFailed),
+        };
+        if destroyed.is_err() {
+            let mut barriers = windows
+                .removals
+                .lock()
+                .map_err(|_| NativeFailure::SidecarFailed)?;
+            if let Some(original) = original {
+                barriers.insert(id.clone(), original);
+            } else {
+                barriers.remove(&id);
+            }
+            let mut registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
+            for entry in registry.entries().into_iter().filter(|entry| {
+                entry.role == delidev_desktop::window_registry::Role::Saved(id.clone())
+            }) {
+                registry.cancel_close(&entry.label);
+            }
+            return Err(NativeFailure::SidecarFailed);
         }
-    } else {
-        Ok(())
-    };
-    if destroyed.is_err() {
-        let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
-        if let Some(original) = original {
-            values.insert(label, original);
-        } else {
-            values.remove(&label);
+        // All fallible window setup precedes durable browser staging. A staged
+        // marker alone cannot authorize purge: Go's exact retained removal
+        // receipt is independently checked after CEF shutdown.
+        let mut planned = original_profile.clone();
+        if planned.removal.is_none() {
+            planned.state = SavedConnectionState::Removing;
+            planned.revision = revision
+                .checked_add(1)
+                .ok_or(NativeFailure::InvalidEvidence)?;
+            planned.removal = Some(delidev_desktop::RemovalMetadata {
+                request_id: request_id.clone(),
+                expected_revision: revision,
+            });
         }
-        return Err(NativeFailure::SidecarFailed);
-    }
-    // All fallible window setup precedes durable browser staging. A staged
-    // marker alone cannot authorize purge: Go's exact retained removal receipt
-    // is independently checked after CEF shutdown.
-    let mut planned = original_profile.clone();
-    if planned.removal.is_none() {
-        planned.state = SavedConnectionState::Removing;
-        planned.revision = revision
-            .checked_add(1)
-            .ok_or(NativeFailure::InvalidEvidence)?;
-        planned.removal = Some(delidev_desktop::RemovalMetadata {
-            request_id: request_id.clone(),
-            expected_revision: revision,
-        });
-    }
-    let retry_lookup = Arc::clone(&connector);
-    let retry_id = id.clone();
-    let retry_request = request_id.clone();
-    let host = Arc::clone(browser.inner());
-    let staged = planned.clone();
-    let close_app = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        host.prepare_forget(&staged)?;
-        let close_host = Arc::clone(&host);
-        if close_app
-            .run_on_main_thread(move || close_host.close_scope(&staged))
-            .is_err()
+        let retry_lookup = Arc::clone(&connector);
+        let retry_id = id.clone();
+        let retry_request = request_id.clone();
+        let host = Arc::clone(browser.inner());
+        let staged = planned.clone();
+        let close_app = app.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            host.prepare_forget(&staged)?;
+            let close_host = Arc::clone(&host);
+            if close_app
+                .run_on_main_thread(move || close_host.close_scope(&staged))
+                .is_err()
+            {
+                tracing::warn!(
+                    operation = "browser_scope_close",
+                    code = "window-unavailable"
+                );
+            }
+            connector.remove_saved(&id, &request_id, revision)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)
+        .and_then(|value| value);
+        // Keep the barrier even when cleanup fails: Go may already have
+        // committed the removal marker, and an in-flight open can hold
+        // older paired metadata. Re-inspect an uncertain failure so its
+        // exact durable cleanup retry can replace this barrier without
+        // admitting a stale open.
+        if result.is_err()
+            && let Ok(Ok(observed)) =
+                tauri::async_runtime::spawn_blocking(move || retry_lookup.inspect_saved(&retry_id))
+                    .await
         {
-            tracing::warn!(
-                operation = "browser_scope_close",
-                code = "window-unavailable"
-            );
-        }
-        connector.remove_saved(&id, &request_id, revision)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)
-    .and_then(|value| value);
-    // Keep the barrier even when cleanup fails: Go may already have committed
-    // the removal marker, and an in-flight open can hold older paired metadata.
-    // Re-inspect an uncertain failure so its exact durable cleanup retry can
-    // replace this barrier without admitting a stale open.
-    if result.is_err()
-        && let Ok(Ok(observed)) =
-            tauri::async_runtime::spawn_blocking(move || retry_lookup.inspect_saved(&retry_id))
-                .await
-    {
-        if observed.state == SavedConnectionState::Paired
-            && observed.same_authority(&original_profile)
-        {
-            let host = Arc::clone(browser.inner());
-            tauri::async_runtime::spawn_blocking(move || host.cancel_unaccepted_forget(&planned))
+            if observed.state == SavedConnectionState::Paired
+                && observed.same_authority(&original_profile)
+            {
+                let host = Arc::clone(browser.inner());
+                tauri::async_runtime::spawn_blocking(move || {
+                    host.cancel_unaccepted_forget(&planned)
+                })
                 .await
                 .map_err(|_| NativeFailure::SidecarFailed)??;
-            let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
-            if values
-                .get(&label)
-                .is_some_and(|binding| binding.instance == instance)
+                let mut values = windows
+                    .removals
+                    .lock()
+                    .map_err(|_| NativeFailure::SidecarFailed)?;
+                if values
+                    .get(&original_profile.id)
+                    .is_some_and(|binding| binding.instance == instance)
+                {
+                    values.remove(&original_profile.id);
+                }
+            } else if observed.state == SavedConnectionState::Removing
+                && observed.removal.as_ref().is_some_and(|removal| {
+                    removal.request_id == retry_request && removal.expected_revision == revision
+                })
             {
-                values.remove(&label);
+                let mut values = windows
+                    .removals
+                    .lock()
+                    .map_err(|_| NativeFailure::SidecarFailed)?;
+                if let Some(binding) = values.get_mut(&original_profile.id)
+                    && binding.instance == instance
+                {
+                    binding.profile = observed;
+                }
             }
-        } else if observed.state == SavedConnectionState::Removing
-            && observed.removal.as_ref().is_some_and(|removal| {
-                removal.request_id == retry_request && removal.expected_revision == revision
-            })
-        {
-            let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
-            if let Some(binding) = values.get_mut(&label)
+        }
+        if let Ok(observed) = &result {
+            let mut barriers = windows.removals.lock().map_err(|_| NativeFailure::Busy)?;
+            if let Some(binding) = barriers.get_mut(&observed.id)
                 && binding.instance == instance
             {
-                binding.profile = observed;
+                binding.profile = observed.clone();
             }
         }
-    }
-    if result
-        .as_ref()
-        .is_ok_and(|profile| profile.state == SavedConnectionState::Removed)
-    {
-        // Credential removal remains authoritative even if presentation cleanup
-        // fails. The stale metadata grants no connection or execution
-        // authority.
-        let id = result.as_ref().unwrap().id.clone();
-        let cleanup = tauri::async_runtime::spawn_blocking(move || {
-            tray_host::remove_widget(&app, &id);
-        })
-        .await;
-        if cleanup.is_err() {
-            tracing::warn!(operation = "widget_snapshot", code = "storage-unavailable");
+        if result
+            .as_ref()
+            .is_ok_and(|profile| profile.state == SavedConnectionState::Removed)
+        {
+            // Credential removal remains authoritative even if presentation
+            // cleanup fails. The stale metadata grants no
+            // connection or execution authority.
+            let id = result.as_ref().unwrap().id.clone();
+            let cleanup = tauri::async_runtime::spawn_blocking(move || {
+                tray_host::remove_widget(&app, &id);
+            })
+            .await;
+            if cleanup.is_err() {
+                tracing::warn!(operation = "widget_snapshot", code = "storage-unavailable");
+            }
         }
+        result
     }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
     result
 }
 #[tauri::command]
@@ -606,12 +955,19 @@ async fn pair_connection(
     name: String,
     grant: String,
 ) -> Result<SavedConnection, NativeFailure> {
-    let grant = zeroize::Zeroizing::new(grant.into_bytes());
-    trusted_main(&window)?;
-    let connector = Arc::clone(connector.inner());
-    tauri::async_runtime::spawn_blocking(move || connector.pair_saved(&id, &name, grant))
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let grant = zeroize::Zeroizing::new(grant.into_bytes());
+        trusted_local(&window)?;
+        let connector = Arc::clone(connector.inner());
+        tauri::async_runtime::spawn_blocking(move || connector.pair_saved(&id, &name, grant))
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 async fn retry_connection(
@@ -619,11 +975,18 @@ async fn retry_connection(
     connector: tauri::State<'_, Arc<Connector>>,
     id: String,
 ) -> Result<SavedConnection, NativeFailure> {
-    trusted_main(&window)?;
-    let connector = Arc::clone(connector.inner());
-    tauri::async_runtime::spawn_blocking(move || connector.retry_saved(&id))
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)?
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let connector = Arc::clone(connector.inner());
+        tauri::async_runtime::spawn_blocking(move || connector.retry_saved(&id))
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)?
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 // Tauri maps these separate argument names into the renderer IPC contract.
 // Remove this exception when the command and callers use a validated request
@@ -634,50 +997,99 @@ async fn rename_connection(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     id: String,
     request_id: String,
     revision: u64,
     name: String,
 ) -> Result<SavedConnection, NativeFailure> {
-    trusted_main(&window)?;
-    let connector = Arc::clone(connector.inner());
-    let profile = tauri::async_runtime::spawn_blocking(move || {
-        connector.rename_saved(&id, &request_id, revision, &name)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
-    update_saved_label(&app, &windows, profile)
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let connector = Arc::clone(connector.inner());
+        let profile = tauri::async_runtime::spawn_blocking(move || {
+            connector.rename_saved(&id, &request_id, revision, &name)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+        update_saved_label(&app, &windows, profile)
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
-fn update_saved_label(
-    app: &AppHandle<CefRuntime>,
-    windows: &SavedWindows,
+fn reconcile_saved_label(
+    values: &BTreeMap<String, SavedBinding>,
     mut profile: SavedConnection,
 ) -> Result<SavedConnection, NativeFailure> {
-    let label = format!("server-{}", profile.id);
-    // Serialize presentation with the binding, including title publication.
-    // Out-of-order accepted edits cannot roll back a newer window label.
-    let mut values = windows.0.lock().map_err(|_| NativeFailure::SidecarFailed)?;
-    if let Some(binding) = values.get_mut(&label) {
+    let id = profile.id.clone();
+    for binding in values.values().filter(|v| v.profile.id == id) {
         if binding.closing || !binding.profile.same_authority(&profile) {
             return Err(NativeFailure::InvalidEvidence);
         }
-        if profile.revision >= binding.profile.revision {
-            binding.profile = profile.clone();
-        } else {
+        if binding.profile.revision > profile.revision {
             profile = binding.profile.clone();
         }
-        if let Some(saved) = app.get_webview_window(&label) {
-            saved
-                .set_title(&format!("DeliDev · {}", profile.name))
-                .map_err(|_| NativeFailure::SidecarFailed)?;
-            // No selectable identity or credential crosses this notification.
-            saved
-                .emit("saved-connection-label", ())
-                .map_err(|_| NativeFailure::SidecarFailed)?;
-        }
     }
+    Ok(profile)
+}
+
+fn apply_saved_label(
+    windows: &ProductWindows,
+    profile: SavedConnection,
+) -> Result<SavedConnection, NativeFailure> {
+    let mut values = windows
+        .bindings
+        .lock()
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+    let profile = reconcile_saved_label(&values, profile)?;
+    for binding in values.values_mut().filter(|v| v.profile.id == profile.id) {
+        binding.profile = profile.clone();
+    }
+    Ok(profile)
+}
+fn update_saved_label(
+    app: &AppHandle<CefRuntime>,
+    windows: &ProductWindows,
+    mut profile: SavedConnection,
+) -> Result<SavedConnection, NativeFailure> {
+    profile = apply_saved_label(windows, profile)?;
+    // Never hold a binding mutex while waiting for native title publication.
+    // The UI callback reads the newest committed name, so reordered callbacks
+    // cannot roll a later accepted rename backward.
+    let target = app.clone();
+    let id = profile.id.clone();
+    app.run_on_main_thread(move || {
+        let windows = target.state::<Arc<ProductWindows>>();
+        let entries = match windows.registry.lock() {
+            Ok(r) => r.entries(),
+            Err(_) => return,
+        };
+        let bindings = match windows.bindings.lock() {
+            Ok(v) => v.clone(),
+            Err(_) => return,
+        };
+        for entry in entries {
+            if let Some(binding) = bindings
+                .get(&entry.label)
+                .filter(|v| !v.closing && v.profile.id == id && v.instance == entry.instance)
+                && let Some(window) = target.get_webview_window(&entry.label)
+                && (window
+                    .set_title(&window_host::title(&entry, Some(&binding.profile.name)))
+                    .is_err()
+                    || window.emit("saved-connection-label", ()).is_err())
+            {
+                tracing::warn!(
+                    operation = "saved_window_label",
+                    code = "window-unavailable"
+                );
+            }
+        }
+        tray_host::schedule(&target);
+    })
+    .map_err(|_| NativeFailure::SidecarFailed)?;
     Ok(profile)
 }
 
@@ -685,94 +1097,18 @@ fn update_saved_label(
 async fn connect_saved(
     window: WebviewWindow<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
 ) -> Result<Connection, NativeFailure> {
-    let binding = saved_binding(&window, &windows)?;
-    let connector = Arc::clone(connector.inner());
-    let expected = binding.profile.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || connector.connect_saved(&expected))
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)??;
-    let current = saved_binding(&window, &windows)?;
-    if current.closing
-        || current.instance != binding.instance
-        || !current.profile.same_authority(&binding.profile)
-    {
-        return Err(NativeFailure::InvalidEvidence);
-    }
-    Ok(result)
-}
-#[tauri::command]
-async fn saved_worker_proof(
-    window: WebviewWindow<CefRuntime>,
-    connector: tauri::State<'_, Arc<Connector>>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
-) -> Result<LocalWorkerProof, NativeFailure> {
-    let binding = saved_binding(&window, &windows)?;
-    let connector = Arc::clone(connector.inner());
-    let expected = binding.profile.clone();
-    let proof =
-        tauri::async_runtime::spawn_blocking(move || connector.saved_worker_proof(&expected))
-            .await
-            .map_err(|_| NativeFailure::SidecarFailed)??;
-    let current = saved_binding(&window, &windows)?;
-    if current.closing
-        || current.instance != binding.instance
-        || !current.profile.same_authority(&binding.profile)
-    {
-        return Err(NativeFailure::InvalidEvidence);
-    }
-    Ok(proof)
-}
-#[tauri::command]
-async fn saved_worker_control(
-    window: WebviewWindow<CefRuntime>,
-    connector: tauri::State<'_, Arc<Connector>>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
-    action: LocalWorkerAction,
-    generation: Option<String>,
-) -> Result<LocalWorkerStatus, NativeFailure> {
-    let binding = saved_binding(&window, &windows)?;
-    let connector = Arc::clone(connector.inner());
-    let expected = binding.profile.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        connector.saved_worker(&expected, action, generation.as_deref())
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
-    let current = saved_binding(&window, &windows)?;
-    if current.closing
-        || current.instance != binding.instance
-        || !current.profile.same_authority(&binding.profile)
-    {
-        return Err(NativeFailure::InvalidEvidence);
-    }
-    Ok(result)
-}
-#[tauri::command]
-async fn worker_network_control(
-    window: WebviewWindow<CefRuntime>,
-    connector: tauri::State<'_, Arc<Connector>>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
-    machine: String,
-    action: WorkerNetworkAction,
-    ciphertext: Vec<u8>,
-    digest: String,
-) -> Result<serde_json::Value, NativeFailure> {
-    let binding = if window.label() == "main" {
-        trusted_main(&window)?;
-        None
-    } else {
-        Some(saved_binding(&window, &windows)?)
-    };
-    let expected = binding.as_ref().map(|value| value.profile.clone());
-    let connector = Arc::clone(connector.inner());
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        connector.worker_network(expected.as_ref(), &machine, action, ciphertext, &digest)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
-    if let Some(binding) = binding {
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let binding = saved_binding(&window, &windows)?;
+        let connector = Arc::clone(connector.inner());
+        let expected = binding.profile.clone();
+        let result =
+            tauri::async_runtime::spawn_blocking(move || connector.connect_saved(&expected))
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??;
         let current = saved_binding(&window, &windows)?;
         if current.closing
             || current.instance != binding.instance
@@ -780,10 +1116,115 @@ async fn worker_network_control(
         {
             return Err(NativeFailure::InvalidEvidence);
         }
-    } else {
-        trusted_main(&window)?;
+        Ok(result)
     }
-    Ok(result)
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
+}
+#[tauri::command]
+async fn saved_worker_proof(
+    window: WebviewWindow<CefRuntime>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+) -> Result<LocalWorkerProof, NativeFailure> {
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let binding = saved_binding(&window, &windows)?;
+        let connector = Arc::clone(connector.inner());
+        let expected = binding.profile.clone();
+        let proof =
+            tauri::async_runtime::spawn_blocking(move || connector.saved_worker_proof(&expected))
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??;
+        let current = saved_binding(&window, &windows)?;
+        if current.closing
+            || current.instance != binding.instance
+            || !current.profile.same_authority(&binding.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(proof)
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
+}
+#[tauri::command]
+async fn saved_worker_control(
+    window: WebviewWindow<CefRuntime>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    action: LocalWorkerAction,
+    generation: Option<String>,
+) -> Result<LocalWorkerStatus, NativeFailure> {
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let binding = saved_binding(&window, &windows)?;
+        let connector = Arc::clone(connector.inner());
+        let expected = binding.profile.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            connector.saved_worker(&expected, action, generation.as_deref())
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+        let current = saved_binding(&window, &windows)?;
+        if current.closing
+            || current.instance != binding.instance
+            || !current.profile.same_authority(&binding.profile)
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(result)
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
+}
+#[tauri::command]
+async fn worker_network_control(
+    window: WebviewWindow<CefRuntime>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    machine: String,
+    action: WorkerNetworkAction,
+    ciphertext: Vec<u8>,
+    digest: String,
+) -> Result<serde_json::Value, NativeFailure> {
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let binding = if is_local(&window) {
+            trusted_local(&window)?;
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?)
+        };
+        let expected = binding.as_ref().map(|value| value.profile.clone());
+        let connector = Arc::clone(connector.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            connector.worker_network(expected.as_ref(), &machine, action, ciphertext, &digest)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+        if let Some(binding) = binding {
+            let current = saved_binding(&window, &windows)?;
+            if current.closing
+                || current.instance != binding.instance
+                || !current.profile.same_authority(&binding.profile)
+            {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        } else {
+            trusted_local(&window)?;
+        }
+        Ok(result)
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 fn show(window: &WebviewWindow<CefRuntime>) -> Result<(), NativeFailure> {
@@ -834,154 +1275,71 @@ fn enable_document_accessibility(window: &WebviewWindow<CefRuntime>) {
         );
     }
 }
-fn create_main(app: &AppHandle<CefRuntime>) -> tauri::Result<WebviewWindow<CefRuntime>> {
-    let config = &app.config().app.windows[0];
-    WebviewWindowBuilder::from_config(app, config)?
-        .incognito(true)
-        .on_navigation(|url| {
-            let allowed = trusted_url(url);
-            tracing::info!(operation = "main_navigation", allowed);
-            allowed
-        })
-        .on_page_load(|window, payload| {
-            tracing::info!(operation="main_page",phase=?payload.event());
-            if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                enable_document_accessibility(&window);
-            }
-        })
-        .on_new_window(|_, _| NewWindowResponse::Deny)
-        .build()
-}
 #[tauri::command]
 async fn show_connection_manager(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
 ) -> Result<(), NativeFailure> {
-    if window.label() == "main" {
-        trusted_main(&window)?;
-    } else {
-        saved_binding(&window, &windows)?;
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let original = capture_authority(&window)?;
+        recheck_authority(&window, &original)?;
+        window_host::show_local(&app, original).await
     }
-    if let Some(main) = app.get_webview_window("main") {
-        show(&main)
-    } else {
-        create_main(&app)
-            .map(|_| ())
-            .map_err(|_| NativeFailure::SidecarFailed)
-    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 async fn open_connection(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
     connector: tauri::State<'_, Arc<Connector>>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     id: String,
 ) -> Result<(), NativeFailure> {
-    trusted_main(&window)?;
-    canonical_id(&id)?;
-    // Tauri's resource callback does not run for an external development URL.
-    // Require bundled assets before creating a credential-bearing saved window.
-    if !cfg!(feature = "custom-protocol") {
-        return Err(NativeFailure::Incompatible);
-    }
-    let connector = Arc::clone(connector.inner());
-    let lookup = id.clone();
-    let profile = tauri::async_runtime::spawn_blocking(move || connector.inspect_saved(&lookup))
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)??;
-    if profile.state != SavedConnectionState::Paired {
-        return Err(NativeFailure::InvalidEvidence);
-    }
-    let label = format!("server-{id}");
-    if let Some(existing) = app.get_webview_window(&label) {
-        let binding = saved_binding(&existing, &windows)?;
-        if !binding.profile.same_authority(&profile) {
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        trusted_local(&window)?;
+        let original = capture_authority(&window)?;
+        canonical_id(&id)?;
+        if !cfg!(feature = "custom-protocol") {
+            return Err(NativeFailure::Incompatible);
+        }
+        let connector = Arc::clone(connector.inner());
+        let profile = tauri::async_runtime::spawn_blocking(move || connector.inspect_saved(&id))
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)??;
+        recheck_authority(&window, &original)?;
+        if profile.state != SavedConnectionState::Paired {
             return Err(NativeFailure::InvalidEvidence);
         }
-        update_saved_label(&app, &windows, profile)?;
-        return show(&existing);
-    }
-    let title = format!("DeliDev · {}", profile.name);
-    let origin = connection_origin(&profile.endpoint)?;
-    let instance = uuid::Uuid::now_v7().to_string();
-    {
-        let mut values = windows.0.lock().map_err(|_| NativeFailure::Busy)?;
-        if values.contains_key(&label) {
-            return Err(NativeFailure::Busy);
-        }
-        values.insert(
-            label.clone(),
-            SavedBinding {
-                profile,
-                instance: instance.clone(),
-                closing: false,
-            },
-        );
-    }
-    let created = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html".into()))
-        .title(title)
-        .inner_size(1280.0, 820.0)
-        .min_inner_size(960.0, 640.0)
-        .decorations(true)
-        .maximized(true)
-        .incognito(true)
-        .on_navigation(|url| {
-            trusted_url(url)
-                && (url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost"))
-        })
-        .on_new_window(|_, _| NewWindowResponse::Deny)
-        .on_page_load(|window, payload| {
-            if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                enable_document_accessibility(&window);
+        let entry = windows
+            .registry
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?
+            .recent(Some(&delidev_desktop::window_registry::Role::Saved(
+                profile.id.clone(),
+            )));
+        if let Some(entry) = entry
+            && let Some(existing) = app.get_webview_window(&entry.label)
+        {
+            let binding = saved_binding(&existing, &windows)?;
+            if !binding.profile.same_authority(&profile) {
+                return Err(NativeFailure::InvalidEvidence);
             }
-        })
-        .on_web_resource_request(move |_, response| {
-            if let Some(header) = response.headers_mut().get_mut("Content-Security-Policy") {
-                let policy = header
-                    .to_str()
-                    .ok()
-                    .and_then(|value| saved_csp(value, &origin).ok());
-                let value = policy.as_deref().unwrap_or("default-src 'none'");
-                *header = tauri::http::HeaderValue::from_str(value).unwrap_or_else(|_| {
-                    tauri::http::HeaderValue::from_static("default-src 'none'")
-                });
-            }
-        })
-        .build();
-    match created {
-        Ok(window) => {
-            let windows = Arc::clone(windows.inner());
-            let browser = Arc::clone(app.state::<Arc<browser_host::BrowserHost>>().inner());
-            window.on_window_event(move |event| {
-                if matches!(event, WindowEvent::Destroyed)
-                    && let Ok(mut values) = windows.0.lock()
-                    && values
-                        .get(&label)
-                        .is_some_and(|binding| binding.instance == instance && !binding.closing)
-                {
-                    // Instance ownership is checked before invalidating the raw
-                    // child; an old window event cannot close its replacement.
-                    match browser.close_window(&label) {
-                        Ok(()) => {
-                            values.remove(&label);
-                        }
-                        Err(code) => tracing::warn!(operation = "browser_window_close", ?code),
-                    }
-                }
-            });
-            tracing::info!(operation = "saved_window", state = "opened");
-            tray_host::schedule(&app);
-            Ok(())
+            update_saved_label(&app, &windows, profile)?;
+            return show(&existing);
         }
-        Err(_) => {
-            if let Ok(mut values) = windows.0.lock() {
-                values.remove(&label);
-            }
-            Err(NativeFailure::SidecarFailed)
-        }
+        window_host::create_on_loop(&app, Some(profile), Some(original))
+            .await
+            .map(|_| ())
     }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 // Tauri injects trusted framework state separately from the closed IPC fields.
@@ -995,7 +1353,7 @@ async fn open_connection(
 async fn open_browser(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
     host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
     profile_id: String,
@@ -1003,67 +1361,77 @@ async fn open_browser(
     url: String,
     bounds: browser_host::Bounds,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
-    let binding = if window.label() == "main" {
-        trusted_main(&window)?;
-        None
-    } else {
-        Some(saved_binding(&window, &windows)?)
-    };
-    let scope = binding.as_ref().map(|b| b.profile.clone());
-    let reservation_host = Arc::clone(host.inner());
-    let label = window.label().to_string();
-    let reservation_view = view_id.clone();
-    let reservation_app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        reservation_host.reserve_on_worker(reservation_app, label, reservation_view)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
-    let connector = Arc::clone(connector.inner());
-    let scope_copy = scope.clone();
-    let record = tauri::async_runtime::spawn_blocking(move || {
-        connector.browser_profile(scope_copy.as_ref(), &profile_id)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
-    if let Some(original) = &binding {
-        let current = saved_binding(&window, &windows)?;
-        if current.instance != original.instance
-            || !current.profile.same_authority(&original.profile)
-        {
-            return Err(NativeFailure::InvalidEvidence);
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let binding = if is_local(&window) {
+            trusted_local(&window)?;
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?)
+        };
+        let scope = binding.as_ref().map(|b| b.profile.clone());
+        let reservation_host = Arc::clone(host.inner());
+        let label = window.label().to_string();
+        let reservation_view = view_id.clone();
+        let reservation_app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            reservation_host.reserve_on_worker(reservation_app, label, reservation_view)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+        let connector = Arc::clone(connector.inner());
+        let scope_copy = scope.clone();
+        let record = tauri::async_runtime::spawn_blocking(move || {
+            connector.browser_profile(scope_copy.as_ref(), &profile_id)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+        if let Some(original) = &binding {
+            let current = saved_binding(&window, &windows)?;
+            if current.instance != original.instance
+                || !current.profile.same_authority(&original.profile)
+            {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        } else {
+            trusted_local(&window)?;
         }
-    } else {
-        trusted_main(&window)?;
-    }
-    let storage_host = Arc::clone(host.inner());
-    let storage_scope = scope.clone();
-    let storage_record = record.clone();
-    let label = window.label().to_string();
-    let storage_view = view_id.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        storage_host.prepare_open(&label, &storage_view, storage_scope, storage_record, &url)
-    })
-    .await
-    .map_err(|_| NativeFailure::SidecarFailed)??;
-    if let Some(original) = &binding {
-        let current = saved_binding(&window, &windows)?;
-        if current.instance != original.instance
-            || !current.profile.same_authority(&original.profile)
-        {
-            return Err(NativeFailure::InvalidEvidence);
+        let storage_host = Arc::clone(host.inner());
+        let storage_scope = scope.clone();
+        let storage_record = record.clone();
+        let label = window.label().to_string();
+        let storage_view = view_id.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            storage_host.prepare_open(&label, &storage_view, storage_scope, storage_record, &url)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+        if let Some(original) = &binding {
+            let current = saved_binding(&window, &windows)?;
+            if current.instance != original.instance
+                || !current.profile.same_authority(&original.profile)
+            {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        } else {
+            trusted_local(&window)?;
         }
-    } else {
-        trusted_main(&window)?;
+        let host = Arc::clone(host.inner());
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let copy = app.clone();
+        let source = original_authority.clone();
+        app.run_on_main_thread(move || {
+            let result = recheck_registered(&copy, &source)
+                .and_then(|()| host.open(&copy, &window, scope, record, bounds, view_id));
+            let _ = send.send(result);
+        })
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+        receive.await.map_err(|_| NativeFailure::SidecarFailed)?
     }
-    let host = Arc::clone(host.inner());
-    let (send, receive) = tokio::sync::oneshot::channel();
-    let copy = app.clone();
-    app.run_on_main_thread(move || {
-        let _ = send.send(host.open(&copy, &window, scope, record, bounds, view_id));
-    })
-    .map_err(|_| NativeFailure::SidecarFailed)?;
-    receive.await.map_err(|_| NativeFailure::SidecarFailed)?
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 // Tauri injects trusted framework state separately from the closed IPC fields.
 // Keep this exception on the command; remove it if those injected states are
@@ -1076,7 +1444,7 @@ async fn open_browser(
 async fn control_browser(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     connector: tauri::State<'_, Arc<Connector>>,
     host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
     profile_id: String,
@@ -1086,108 +1454,127 @@ async fn control_browser(
     tab_id: Option<String>,
     bounds: Option<browser_host::Bounds>,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
-    let binding = if window.label() == "main" {
-        trusted_main(&window)?;
-        None
-    } else {
-        Some(saved_binding(&window, &windows)?)
-    };
-    let scope = binding.as_ref().map(|b| b.profile.clone());
-    // Hide closes an existing owned view even while its server is offline.
-    if !matches!(
-        action,
-        browser_host::Action::Hide | browser_host::Action::Resize
-    ) {
-        let c = Arc::clone(connector.inner());
-        let id = profile_id.clone();
-        let record =
-            tauri::async_runtime::spawn_blocking(move || c.browser_profile(scope.as_ref(), &id))
-                .await
-                .map_err(|_| NativeFailure::SidecarFailed)??;
-        if record.data.state != delidev_desktop::browser::ProfileState::Active {
-            return Err(NativeFailure::Stopped);
-        }
-    }
-    if let Some(original) = &binding {
-        let current = saved_binding(&window, &windows)?;
-        if current.instance != original.instance
-            || !current.profile.same_authority(&original.profile)
-        {
-            return Err(NativeFailure::InvalidEvidence);
-        }
-    } else {
-        trusted_main(&window)?;
-    }
-    let prepared_revision = if matches!(
-        action,
-        browser_host::Action::Hide | browser_host::Action::Resize
-    ) {
-        None
-    } else {
-        let storage_host = Arc::clone(host.inner());
-        let label = window.label().to_string();
-        let storage_profile = profile_id.clone();
-        let storage_view = view_id.clone();
-        let storage_url = url.clone();
-        Some(
-            tauri::async_runtime::spawn_blocking(move || {
-                storage_host.prepare_control(
-                    &label,
-                    &storage_profile,
-                    &storage_view,
-                    action,
-                    storage_url.as_deref(),
-                    tab_id.as_deref(),
-                )
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let binding = if is_local(&window) {
+            trusted_local(&window)?;
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?)
+        };
+        let scope = binding.as_ref().map(|b| b.profile.clone());
+        // Hide closes an existing owned view even while its server is offline.
+        if !matches!(
+            action,
+            browser_host::Action::Hide | browser_host::Action::Resize
+        ) {
+            let c = Arc::clone(connector.inner());
+            let id = profile_id.clone();
+            let record = tauri::async_runtime::spawn_blocking(move || {
+                c.browser_profile(scope.as_ref(), &id)
             })
             .await
-            .map_err(|_| NativeFailure::SidecarFailed)??,
-        )
-    };
-    if let Some(original) = &binding {
-        let current = saved_binding(&window, &windows)?;
-        if current.instance != original.instance
-            || !current.profile.same_authority(&original.profile)
-        {
-            return Err(NativeFailure::InvalidEvidence);
+            .map_err(|_| NativeFailure::SidecarFailed)??;
+            if record.data.state != delidev_desktop::browser::ProfileState::Active {
+                return Err(NativeFailure::Stopped);
+            }
         }
-    } else {
-        trusted_main(&window)?;
+        if let Some(original) = &binding {
+            let current = saved_binding(&window, &windows)?;
+            if current.instance != original.instance
+                || !current.profile.same_authority(&original.profile)
+            {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        } else {
+            trusted_local(&window)?;
+        }
+        let prepared_revision = if matches!(
+            action,
+            browser_host::Action::Hide | browser_host::Action::Resize
+        ) {
+            None
+        } else {
+            let storage_host = Arc::clone(host.inner());
+            let label = window.label().to_string();
+            let storage_profile = profile_id.clone();
+            let storage_view = view_id.clone();
+            let storage_url = url.clone();
+            Some(
+                tauri::async_runtime::spawn_blocking(move || {
+                    storage_host.prepare_control(
+                        &label,
+                        &storage_profile,
+                        &storage_view,
+                        action,
+                        storage_url.as_deref(),
+                        tab_id.as_deref(),
+                    )
+                })
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??,
+            )
+        };
+        if let Some(original) = &binding {
+            let current = saved_binding(&window, &windows)?;
+            if current.instance != original.instance
+                || !current.profile.same_authority(&original.profile)
+            {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        } else {
+            trusted_local(&window)?;
+        }
+        let host = Arc::clone(host.inner());
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let copy = app.clone();
+        let source = original_authority.clone();
+        app.run_on_main_thread(move || {
+            let result = recheck_registered(&copy, &source).and_then(|()| {
+                host.control(
+                    &copy,
+                    &window,
+                    browser_host::Control {
+                        profile: profile_id,
+                        view_id,
+                        action,
+                        url,
+                        prepared_revision,
+                        bounds,
+                    },
+                )
+            });
+            let _ = send.send(result);
+        })
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+        receive.await.map_err(|_| NativeFailure::SidecarFailed)?
     }
-    let host = Arc::clone(host.inner());
-    let (send, receive) = tokio::sync::oneshot::channel();
-    let copy = app.clone();
-    app.run_on_main_thread(move || {
-        let _ = send.send(host.control(
-            &copy,
-            &window,
-            browser_host::Control {
-                profile: profile_id,
-                view_id,
-                action,
-                url,
-                prepared_revision,
-                bounds,
-            },
-        ));
-    })
-    .map_err(|_| NativeFailure::SidecarFailed)?;
-    receive.await.map_err(|_| NativeFailure::SidecarFailed)?
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 #[tauri::command]
 async fn browser_state(
     window: WebviewWindow<CefRuntime>,
-    windows: tauri::State<'_, Arc<SavedWindows>>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
     profile_id: String,
     view_id: String,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
-    if window.label() == "main" {
-        trusted_main(&window)?
-    } else {
-        saved_binding(&window, &windows)?;
-    };
-    host.status(window.label(), &profile_id, &view_id)
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        if is_local(&window) {
+            trusted_local(&window)?
+        } else {
+            saved_binding(&window, &windows)?;
+        };
+        host.status(window.label(), &profile_id, &view_id)
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
 }
 
 fn run() -> Result<(), NativeFailure> {
@@ -1250,7 +1637,8 @@ fn run() -> Result<(), NativeFailure> {
         )
         .manage(Arc::new(UpdateHost::default()))
         .manage(Arc::clone(&browser))
-        .manage(Arc::new(SavedWindows::default()))
+        .manage(Arc::new(ProductWindows::default()))
+        .manage(Arc::new(window_host::WindowActions::default()))
         .manage(Arc::clone(&tray))
         .manage(Arc::clone(&notifications))
         .manage(Arc::clone(&oauth))
@@ -1261,6 +1649,8 @@ fn run() -> Result<(), NativeFailure> {
             choose_repository_folder,
             read_appearance,
             update_appearance,
+            read_language,
+            update_language,
             open_browser,
             control_browser,
             browser_state,
@@ -1301,44 +1691,61 @@ fn run() -> Result<(), NativeFailure> {
             present_notification
         ])
         .on_window_event(|window, event| {
-            if matches!(event, WindowEvent::Destroyed) {
-                window
-                    .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
-                    .close_window(window.label());
+            let windows = window.state::<Arc<ProductWindows>>();
+            if matches!(event, WindowEvent::Focused(true))
+                && let Ok(mut registry) = windows.registry.lock()
+            {
+                registry.focus(window.label());
             }
             if let WindowEvent::CloseRequested { api, .. } = event {
+                let tray = window
+                    .state::<Arc<TrayHost>>()
+                    .available
+                    .load(std::sync::atomic::Ordering::Acquire);
+                let decision = windows
+                    .registry
+                    .lock()
+                    .map_err(|_| NativeFailure::Busy)
+                    .and_then(|mut registry| registry.begin_close(window.label(), tray));
+                if matches!(decision, Ok(delidev_desktop::window_registry::Close::Hide))
+                    && window.hide().is_ok()
+                {
+                    api.prevent_close();
+                    return;
+                }
+                if decision.is_err() {
+                    api.prevent_close();
+                    return;
+                }
+                if matches!(decision, Ok(delidev_desktop::window_registry::Close::Hide)) {
+                    tracing::warn!(operation = "window_hide", code = "window-unavailable");
+                    if let Ok(mut registry) = windows.registry.lock() {
+                        let _ = registry.begin_close(window.label(), false);
+                    }
+                }
                 window
                     .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
                     .close_window(window.label());
-                if window
-                    .state::<Arc<TrayHost>>()
-                    .available
-                    .load(std::sync::atomic::Ordering::Acquire)
-                {
-                    if window.hide().is_ok() {
-                        api.prevent_close();
-                        return;
-                    } else {
-                        tracing::warn!(operation = "window_hide", code = "window-unavailable");
-                    }
-                }
-                // A real native close must release external children before the
-                // pinned runtime destroys their parent. Tray hiding preserves
-                // them.
                 if let Err(code) = window
                     .state::<Arc<browser_host::BrowserHost>>()
                     .close_window(window.label())
                 {
                     api.prevent_close();
+                    if let Ok(mut registry) = windows.registry.lock() {
+                        registry.cancel_close(window.label());
+                    }
                     tracing::warn!(operation = "browser_window_close", ?code);
-                } else if let Ok(mut values) = window.state::<Arc<SavedWindows>>().0.lock()
-                    && values
-                        .get(window.label())
-                        .is_some_and(|binding| !binding.closing)
-                {
-                    values.remove(window.label());
                 }
             } else if matches!(event, WindowEvent::Destroyed) {
+                window
+                    .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
+                    .close_window(window.label());
+                if let Err(code) = window
+                    .state::<Arc<browser_host::BrowserHost>>()
+                    .close_window(window.label())
+                {
+                    tracing::warn!(operation = "browser_window_close", ?code);
+                }
                 window
                     .state::<Arc<NotificationHost>>()
                     .remove(window.label());
@@ -1354,10 +1761,22 @@ fn run() -> Result<(), NativeFailure> {
                 );
             }
             app.manage(Arc::new(delidev_desktop::appearance::AppearanceStore::new(
-                config_dir,
+                config_dir.clone(),
             )));
-            let result = (|| -> tauri::Result<()> {
-                create_main(app.handle())?;
+            let language = Arc::new(delidev_desktop::language::LanguageStore::new(config_dir));
+            let initial = language.read();
+            delidev_desktop::language::activate(initial.resolved_language);
+            if widget_host::set_language(initial.language).is_err() {
+                tracing::warn!(
+                    operation = "language_initialize",
+                    code = "widget-unavailable"
+                );
+            }
+            app.manage(language);
+            let result = (|| -> Result<(), NativeFailure> {
+                window_host::install_menu(app.handle())
+                    .map_err(|_| NativeFailure::SidecarFailed)?;
+                window_host::create(app.handle(), None, true)?;
                 if app.state::<Arc<TrayHost>>().install(app.handle()).is_err() {
                     tracing::warn!(
                         operation = "tray_install",
@@ -1379,24 +1798,38 @@ fn run() -> Result<(), NativeFailure> {
     let exiting_notifications = Arc::clone(&notifications);
     browser.start(app.handle().clone());
     let exiting_browser = Arc::clone(&browser);
+    let window_actions = Arc::clone(app.state::<Arc<window_host::WindowActions>>().inner());
     let quit_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let quit_task = Arc::new(Mutex::new(None));
     let joining_quit = Arc::clone(&quit_task);
+    let exiting_window_actions = Arc::clone(&window_actions);
+    let returning_oauth = Arc::clone(&oauth);
     app.run(move |_app, event| {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+            _app.state::<Arc<window_host::WindowActions>>().stop();
+            if let Ok(mut registry) = _app.state::<Arc<ProductWindows>>().registry.lock() {
+                registry.stop();
+            }
             let exit_code = code.unwrap_or(0);
             let browser_pending = exiting_browser.begin_exit(exit_code);
             if !quit_started.swap(true, std::sync::atomic::Ordering::AcqRel) {
                 // Fence fresh starts synchronously. Browser discovery keeps its
                 // separate observer until its final bounded read pass joins.
                 exiting_supervision.request_stop();
+                exiting.request_stop();
                 let host = Arc::clone(&exiting_supervision);
                 let sidecar = Arc::clone(&connector);
                 let browser = Arc::clone(&exiting_browser);
+                let tray = Arc::clone(&exiting);
+                let notifications = Arc::clone(&exiting_notifications);
+                let oauth = Arc::clone(&oauth);
+                let windows = Arc::clone(&exiting_window_actions);
                 let complete = Arc::clone(&quit_done);
                 let app = _app.clone();
                 *quit_task.lock().unwrap_or_else(|e| e.into_inner()) =
                     Some(std::thread::spawn(move || {
+                        oauth.stop();
+                        windows.join();
                         host.stop();
                         browser.stop();
                         if let Err(code) = sidecar.shutdown_owned() {
@@ -1406,6 +1839,10 @@ fn run() -> Result<(), NativeFailure> {
                                 ?code
                             );
                         }
+                        notifications.stop();
+                        tracing::info!(operation = "desktop_exit", state = "notifications-joined");
+                        tray.stop();
+                        tracing::info!(operation = "desktop_exit", state = "tray-joined");
                         complete.store(true, std::sync::atomic::Ordering::Release);
                         app.exit(exit_code);
                     }));
@@ -1417,32 +1854,19 @@ fn run() -> Result<(), NativeFailure> {
         }
         #[cfg(target_os = "macos")]
         if matches!(event, tauri::RunEvent::Reopen { .. }) {
-            // macOS app/Dock reopening must reveal the retained main window
-            // after close-to-tray. Reuse the same restoration as tray actions;
-            // creating a replacement would discard the renderer's drafts.
-            if _app
-                .get_webview_window("main")
-                .is_none_or(|window| show(&window).is_err())
-            {
-                tracing::warn!(operation = "window_reopen", code = "window-unavailable");
-            }
+            window_host::restore_recent(_app);
         }
         if matches!(event, tauri::RunEvent::Exit) {
-            oauth.stop();
             // This event precedes CEF shutdown. Keep host task joins and the
             // return from app.run separate so an exit event cannot imply that
             // the native runtime has actually finished.
-            exiting_browser.stop();
             exiting_browser.close_all();
             tracing::info!(operation = "desktop_exit", state = "runtime-exit-event");
-            exiting_supervision.stop();
-            exiting_notifications.stop();
-            tracing::info!(operation = "desktop_exit", state = "notifications-joined");
-            exiting.stop();
-            tracing::info!(operation = "desktop_exit", state = "tray-joined");
         }
     });
     tracing::info!(operation = "desktop_exit", state = "runtime-returned");
+    window_actions.stop();
+    window_actions.join();
     if let Some(task) = joining_quit
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -1451,6 +1875,8 @@ fn run() -> Result<(), NativeFailure> {
         let _ = task.join();
     }
     supervision.stop();
+    returning_oauth.stop();
+    browser.stop();
     notifications.stop();
     tray.stop();
     browser.finish_removals()?;
@@ -1601,5 +2027,126 @@ mod tests {
         ] {
             assert!(!trusted_url(&value.parse().unwrap()), "{value}");
         }
+    }
+}
+
+#[cfg(test)]
+mod product_window_tests {
+    use delidev_desktop::window_registry::Role;
+
+    use super::*;
+
+    fn saved(windows: &ProductWindows, id: &str) -> WindowAuthority {
+        let mut registry = windows.registry.lock().unwrap();
+        let entry = registry.reserve(Role::Saved(id.into()), false).unwrap();
+        registry.ready(&entry).unwrap();
+        let profile = SavedConnection {
+            version: 1,
+            revision: 1,
+            id: id.into(),
+            name: "Original".into(),
+            endpoint: "https://fixture.test".into(),
+            server_id: "server".into(),
+            pairing_id: "pairing".into(),
+            device_id: "device".into(),
+            state: SavedConnectionState::Paired,
+            created_at: "fixture".into(),
+            removal: None,
+        };
+        windows.bindings.lock().unwrap().insert(
+            entry.label.clone(),
+            SavedBinding {
+                profile: profile.clone(),
+                instance: entry.instance.clone(),
+                closing: false,
+            },
+        );
+        WindowAuthority {
+            entry,
+            local_revision: registry.local_revision,
+            saved: Some(profile),
+        }
+    }
+
+    #[test]
+    fn profile_barrier_denies_all_siblings_but_preserves_other_connections() {
+        let windows = ProductWindows::default();
+        let first = saved(&windows, "profile");
+        let second = saved(&windows, "profile");
+        let other = saved(&windows, "other");
+        assert!(recheck_record(&windows, &first).is_ok());
+        windows.removals.lock().unwrap().insert(
+            "profile".into(),
+            SavedBinding {
+                profile: first.saved.clone().unwrap(),
+                instance: "removal".into(),
+                closing: true,
+            },
+        );
+        assert!(recheck_record(&windows, &first).is_err());
+        assert!(recheck_record(&windows, &second).is_err());
+        assert!(recheck_record(&windows, &other).is_ok());
+    }
+
+    #[test]
+    fn response_fences_reject_closing_instances_and_changed_authority() {
+        let windows = ProductWindows::default();
+        let first = saved(&windows, "profile");
+        let second = saved(&windows, "profile");
+        windows
+            .registry
+            .lock()
+            .unwrap()
+            .begin_close(&first.entry.label, true)
+            .unwrap();
+        assert!(recheck_record(&windows, &first).is_err());
+        assert!(recheck_record(&windows, &second).is_ok());
+        windows
+            .bindings
+            .lock()
+            .unwrap()
+            .get_mut(&second.entry.label)
+            .unwrap()
+            .profile
+            .device_id = "replacement".into();
+        assert!(recheck_record(&windows, &second).is_err());
+        let mut forged = second;
+        forged.entry.role = Role::Local;
+        forged.saved = None;
+        assert!(recheck_record(&windows, &forged).is_err());
+    }
+
+    #[test]
+    fn rename_updates_every_sibling_without_rolling_back_newer_names() {
+        let windows = ProductWindows::default();
+        let first = saved(&windows, "profile");
+        let second = saved(&windows, "profile");
+        let other = saved(&windows, "other");
+        let mut renamed = first.saved.clone().unwrap();
+        renamed.revision = 3;
+        renamed.name = "Renamed".into();
+        apply_saved_label(&windows, renamed).unwrap();
+        let original = first.saved.unwrap();
+        let stale = apply_saved_label(&windows, original.clone()).unwrap();
+        assert_eq!(stale.revision, 3);
+        let values = windows.bindings.lock().unwrap();
+        let queued = reconcile_saved_label(&values, original).unwrap();
+        assert_eq!(queued.name, "Renamed");
+        assert_eq!(queued.revision, 3);
+        assert_eq!(values[&second.entry.label].profile.name, "Renamed");
+        assert_eq!(values[&other.entry.label].profile.name, "Original");
+    }
+
+    #[test]
+    fn saved_csp_retains_script_limits_and_only_exact_connection_origin() {
+        let policy = saved_csp(
+            "default-src 'self'; script-src 'self'; connect-src http://127.0.0.1:46310",
+            "https://fixture.test",
+        )
+        .unwrap();
+        assert!(policy.contains("script-src 'self'"));
+        assert!(policy.contains("https://fixture.test"));
+        assert!(!policy.contains("46310"));
+        assert!(saved_csp("default-src 'self'", "https://fixture.test/path").is_err());
     }
 }

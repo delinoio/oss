@@ -228,3 +228,87 @@ it("retains the original Stop and confirmation across diagnostics hiding and Set
   // sibling connection controller. Allow slow test hosts without relaxing RPC or
   // native deadlines or the identical-request assertions above.
 }, 60_000);
+
+it("keeps same-server windows on independent Home and new-session drafts", async () => {
+  savedFixture();
+  const first = render(<Desktop />);
+  const second = render(<Desktop />);
+  const a = within(first.container), b = within(second.container);
+  await a.findByText("Your sessions, in one place");
+  await b.findByText("Your sessions, in one place");
+  fireEvent.click(a.getByRole("button", { name: "New session" }));
+  fireEvent.change(a.getByRole("textbox", { name: "First message" }), { target: { value: "First window draft" } });
+  expect(b.getByText("Your sessions, in one place")).toBeTruthy();
+  fireEvent.click(b.getByRole("button", { name: "New session" }));
+  expect((b.getByRole("textbox", { name: "First message" }) as HTMLTextAreaElement).value).toBe("");
+  fireEvent.change(b.getByRole("textbox", { name: "First message" }), { target: { value: "Second window draft" } });
+  expect((a.getByRole("textbox", { name: "First message" }) as HTMLTextAreaElement).value).toBe("First window draft");
+  expect(bridge.invoke.mock.calls.some(([command]) => ["connect_local", "retry_local", "pair_connection"].includes(command))).toBe(false);
+});
+
+it("rechecks an adopted local identity without startup and resets only changed-device state", async () => {
+  const server = newRequestId();
+  let device = newRequestId();
+  let changed: (() => void) | undefined;
+  const unlisten = vi.fn();
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1, serverId: server }) });
+    router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
+  });
+  bridge.createTransport.mockReturnValue(transport);
+  bridge.listen.mockImplementation(async (event, callback) => {
+    if (event === "local-connection-changed") changed = callback;
+    return unlisten;
+  });
+  bridge.invoke.mockImplementation(async (command: string) => {
+    if (command === "connection_context") return null;
+    if (command === "local_server_status") return { state: LocalServerState.Ready, attempts: 0, retry_ms: 0 };
+    if (command === "launch_local") return { endpoint: "http://127.0.0.1:46310", server_id: server, device_id: device, token: "private-test-client-token" };
+    if (command === "notification_permission") return { permission: "unavailable", problem: "os-unavailable" };
+    if (command === "begin_tray") return "fixture-presentation";
+    if (command === "publish_tray" || command === "read_tray_action") return;
+    throw new Error("Unexpected native action");
+  });
+  const view = render(<Desktop />);
+  await screen.findByText("Your sessions, in one place");
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value: "Retained draft" } });
+  await act(async () => changed?.());
+  await waitFor(() => expect(bridge.invoke.mock.calls.filter(([command]) => command === "launch_local")).toHaveLength(2));
+  expect((screen.getByRole("textbox", { name: "First message" }) as HTMLTextAreaElement).value).toBe("Retained draft");
+  device = newRequestId();
+  await act(async () => changed?.());
+  await screen.findByText("Your sessions, in one place");
+  expect(bridge.invoke.mock.calls.some(([command]) => ["connect_local", "retry_local", "pair_connection"].includes(command))).toBe(false);
+  view.unmount();
+  await waitFor(() => expect(unlisten).toHaveBeenCalled());
+});
+
+it("leaves startup after a failed authority reread and ignores the old observation error", async () => {
+  localFixture();
+  const original = bridge.invoke.getMockImplementation()!;
+  let changed!: () => void;
+  let rejectOld!: (reason: string) => void;
+  const pending = new Promise((_, reject) => { rejectOld = reject; });
+  let observations = 0;
+  bridge.listen.mockImplementation(async (event, callback) => {
+    if (event === "local-connection-changed") changed = callback;
+    return () => {};
+  });
+  bridge.invoke.mockImplementation(async (command: string, args?: unknown) => {
+    if (command === "launch_local") {
+      if (++observations === 1) return pending;
+      throw "credential-unavailable";
+    }
+    return original(command, args);
+  });
+  render(<Desktop />);
+  await screen.findByText("Starting DeliDev…");
+  await act(async () => changed());
+  await screen.findByText(/This desktop credential is unavailable or revoked/);
+  expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+  await act(async () => rejectOld("sidecar-missing"));
+  expect(screen.queryByText(/The bundled DeliDev executable is missing/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("Your sessions, in one place");
+});

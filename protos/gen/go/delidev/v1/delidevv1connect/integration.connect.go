@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// IntegrationServiceInspectGitHubTokenProcedure is the fully-qualified name of the
+	// IntegrationService's InspectGitHubToken RPC.
+	IntegrationServiceInspectGitHubTokenProcedure = "/delidev.v1.IntegrationService/InspectGitHubToken"
+	// IntegrationServicePrepareGitHubTokenFormProcedure is the fully-qualified name of the
+	// IntegrationService's PrepareGitHubTokenForm RPC.
+	IntegrationServicePrepareGitHubTokenFormProcedure = "/delidev.v1.IntegrationService/PrepareGitHubTokenForm"
 	// IntegrationServiceSaveIntegrationProfileProcedure is the fully-qualified name of the
 	// IntegrationService's SaveIntegrationProfile RPC.
 	IntegrationServiceSaveIntegrationProfileProcedure = "/delidev.v1.IntegrationService/SaveIntegrationProfile"
@@ -51,6 +57,9 @@ const (
 	// IntegrationServiceQueryRepositoryIntegrationProcedure is the fully-qualified name of the
 	// IntegrationService's QueryRepositoryIntegration RPC.
 	IntegrationServiceQueryRepositoryIntegrationProcedure = "/delidev.v1.IntegrationService/QueryRepositoryIntegration"
+	// IntegrationServiceListGitHubRepositoriesProcedure is the fully-qualified name of the
+	// IntegrationService's ListGitHubRepositories RPC.
+	IntegrationServiceListGitHubRepositoriesProcedure = "/delidev.v1.IntegrationService/ListGitHubRepositories"
 	// IntegrationServiceGetGitHubTokenFormProcedure is the fully-qualified name of the
 	// IntegrationService's GetGitHubTokenForm RPC.
 	IntegrationServiceGetGitHubTokenFormProcedure = "/delidev.v1.IntegrationService/GetGitHubTokenForm"
@@ -73,12 +82,15 @@ const (
 
 // IntegrationServiceClient is a client for the delidev.v1.IntegrationService service.
 type IntegrationServiceClient interface {
+	InspectGitHubToken(context.Context, *connect.Request[v1.InspectGitHubTokenRequest]) (*connect.Response[v1.InspectGitHubTokenResponse], error)
+	PrepareGitHubTokenForm(context.Context, *connect.Request[v1.PrepareGitHubTokenFormRequest]) (*connect.Response[v1.PrepareGitHubTokenFormResponse], error)
 	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
 	ReplaceIntegrationToken(context.Context, *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error)
 	ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error)
 	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
 	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
 	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
+	ListGitHubRepositories(context.Context, *connect.Request[v1.ListGitHubRepositoriesRequest]) (*connect.Response[v1.ListGitHubRepositoriesResponse], error)
 	GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error)
 	RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error)
 	ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error)
@@ -98,6 +110,18 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 	baseURL = strings.TrimRight(baseURL, "/")
 	integrationServiceMethods := v1.File_delidev_v1_integration_proto.Services().ByName("IntegrationService").Methods()
 	return &integrationServiceClient{
+		inspectGitHubToken: connect.NewClient[v1.InspectGitHubTokenRequest, v1.InspectGitHubTokenResponse](
+			httpClient,
+			baseURL+IntegrationServiceInspectGitHubTokenProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("InspectGitHubToken")),
+			connect.WithClientOptions(opts...),
+		),
+		prepareGitHubTokenForm: connect.NewClient[v1.PrepareGitHubTokenFormRequest, v1.PrepareGitHubTokenFormResponse](
+			httpClient,
+			baseURL+IntegrationServicePrepareGitHubTokenFormProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("PrepareGitHubTokenForm")),
+			connect.WithClientOptions(opts...),
+		),
 		saveIntegrationProfile: connect.NewClient[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse](
 			httpClient,
 			baseURL+IntegrationServiceSaveIntegrationProfileProcedure,
@@ -132,6 +156,12 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			httpClient,
 			baseURL+IntegrationServiceQueryRepositoryIntegrationProcedure,
 			connect.WithSchema(integrationServiceMethods.ByName("QueryRepositoryIntegration")),
+			connect.WithClientOptions(opts...),
+		),
+		listGitHubRepositories: connect.NewClient[v1.ListGitHubRepositoriesRequest, v1.ListGitHubRepositoriesResponse](
+			httpClient,
+			baseURL+IntegrationServiceListGitHubRepositoriesProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ListGitHubRepositories")),
 			connect.WithClientOptions(opts...),
 		),
 		getGitHubTokenForm: connect.NewClient[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse](
@@ -175,18 +205,31 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // integrationServiceClient implements IntegrationServiceClient.
 type integrationServiceClient struct {
+	inspectGitHubToken                 *connect.Client[v1.InspectGitHubTokenRequest, v1.InspectGitHubTokenResponse]
+	prepareGitHubTokenForm             *connect.Client[v1.PrepareGitHubTokenFormRequest, v1.PrepareGitHubTokenFormResponse]
 	saveIntegrationProfile             *connect.Client[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse]
 	replaceIntegrationToken            *connect.Client[v1.ReplaceIntegrationTokenRequest, v1.ReplaceIntegrationTokenResponse]
 	validateIntegrationProfile         *connect.Client[v1.ValidateIntegrationProfileRequest, v1.ValidateIntegrationProfileResponse]
 	deleteIntegrationProfile           *connect.Client[v1.DeleteIntegrationProfileRequest, v1.DeleteIntegrationProfileResponse]
 	inspectRepositoryIntegration       *connect.Client[v1.InspectRepositoryIntegrationRequest, v1.InspectRepositoryIntegrationResponse]
 	queryRepositoryIntegration         *connect.Client[v1.QueryRepositoryIntegrationRequest, v1.QueryRepositoryIntegrationResponse]
+	listGitHubRepositories             *connect.Client[v1.ListGitHubRepositoriesRequest, v1.ListGitHubRepositoriesResponse]
 	getGitHubTokenForm                 *connect.Client[v1.GetGitHubTokenFormRequest, v1.GetGitHubTokenFormResponse]
 	refreshPullRequestProblems         *connect.Client[v1.RefreshPullRequestProblemsRequest, v1.RefreshPullRequestProblemsResponse]
 	listPullRequestProblems            *connect.Client[v1.ListPullRequestProblemsRequest, v1.ListPullRequestProblemsResponse]
 	dismissPullRequestProblem          *connect.Client[v1.DismissPullRequestProblemRequest, v1.DismissPullRequestProblemResponse]
 	listPullRequestRemediationAttempts *connect.Client[v1.ListPullRequestRemediationAttemptsRequest, v1.ListPullRequestRemediationAttemptsResponse]
 	resumePullRequestRemediation       *connect.Client[v1.ResumePullRequestRemediationRequest, v1.ResumePullRequestRemediationResponse]
+}
+
+// InspectGitHubToken calls delidev.v1.IntegrationService.InspectGitHubToken.
+func (c *integrationServiceClient) InspectGitHubToken(ctx context.Context, req *connect.Request[v1.InspectGitHubTokenRequest]) (*connect.Response[v1.InspectGitHubTokenResponse], error) {
+	return c.inspectGitHubToken.CallUnary(ctx, req)
+}
+
+// PrepareGitHubTokenForm calls delidev.v1.IntegrationService.PrepareGitHubTokenForm.
+func (c *integrationServiceClient) PrepareGitHubTokenForm(ctx context.Context, req *connect.Request[v1.PrepareGitHubTokenFormRequest]) (*connect.Response[v1.PrepareGitHubTokenFormResponse], error) {
+	return c.prepareGitHubTokenForm.CallUnary(ctx, req)
 }
 
 // SaveIntegrationProfile calls delidev.v1.IntegrationService.SaveIntegrationProfile.
@@ -217,6 +260,11 @@ func (c *integrationServiceClient) InspectRepositoryIntegration(ctx context.Cont
 // QueryRepositoryIntegration calls delidev.v1.IntegrationService.QueryRepositoryIntegration.
 func (c *integrationServiceClient) QueryRepositoryIntegration(ctx context.Context, req *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error) {
 	return c.queryRepositoryIntegration.CallUnary(ctx, req)
+}
+
+// ListGitHubRepositories calls delidev.v1.IntegrationService.ListGitHubRepositories.
+func (c *integrationServiceClient) ListGitHubRepositories(ctx context.Context, req *connect.Request[v1.ListGitHubRepositoriesRequest]) (*connect.Response[v1.ListGitHubRepositoriesResponse], error) {
+	return c.listGitHubRepositories.CallUnary(ctx, req)
 }
 
 // GetGitHubTokenForm calls delidev.v1.IntegrationService.GetGitHubTokenForm.
@@ -252,12 +300,15 @@ func (c *integrationServiceClient) ResumePullRequestRemediation(ctx context.Cont
 
 // IntegrationServiceHandler is an implementation of the delidev.v1.IntegrationService service.
 type IntegrationServiceHandler interface {
+	InspectGitHubToken(context.Context, *connect.Request[v1.InspectGitHubTokenRequest]) (*connect.Response[v1.InspectGitHubTokenResponse], error)
+	PrepareGitHubTokenForm(context.Context, *connect.Request[v1.PrepareGitHubTokenFormRequest]) (*connect.Response[v1.PrepareGitHubTokenFormResponse], error)
 	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
 	ReplaceIntegrationToken(context.Context, *connect.Request[v1.ReplaceIntegrationTokenRequest]) (*connect.Response[v1.ReplaceIntegrationTokenResponse], error)
 	ValidateIntegrationProfile(context.Context, *connect.Request[v1.ValidateIntegrationProfileRequest]) (*connect.Response[v1.ValidateIntegrationProfileResponse], error)
 	DeleteIntegrationProfile(context.Context, *connect.Request[v1.DeleteIntegrationProfileRequest]) (*connect.Response[v1.DeleteIntegrationProfileResponse], error)
 	InspectRepositoryIntegration(context.Context, *connect.Request[v1.InspectRepositoryIntegrationRequest]) (*connect.Response[v1.InspectRepositoryIntegrationResponse], error)
 	QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error)
+	ListGitHubRepositories(context.Context, *connect.Request[v1.ListGitHubRepositoriesRequest]) (*connect.Response[v1.ListGitHubRepositoriesResponse], error)
 	GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error)
 	RefreshPullRequestProblems(context.Context, *connect.Request[v1.RefreshPullRequestProblemsRequest]) (*connect.Response[v1.RefreshPullRequestProblemsResponse], error)
 	ListPullRequestProblems(context.Context, *connect.Request[v1.ListPullRequestProblemsRequest]) (*connect.Response[v1.ListPullRequestProblemsResponse], error)
@@ -273,6 +324,18 @@ type IntegrationServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	integrationServiceMethods := v1.File_delidev_v1_integration_proto.Services().ByName("IntegrationService").Methods()
+	integrationServiceInspectGitHubTokenHandler := connect.NewUnaryHandler(
+		IntegrationServiceInspectGitHubTokenProcedure,
+		svc.InspectGitHubToken,
+		connect.WithSchema(integrationServiceMethods.ByName("InspectGitHubToken")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServicePrepareGitHubTokenFormHandler := connect.NewUnaryHandler(
+		IntegrationServicePrepareGitHubTokenFormProcedure,
+		svc.PrepareGitHubTokenForm,
+		connect.WithSchema(integrationServiceMethods.ByName("PrepareGitHubTokenForm")),
+		connect.WithHandlerOptions(opts...),
+	)
 	integrationServiceSaveIntegrationProfileHandler := connect.NewUnaryHandler(
 		IntegrationServiceSaveIntegrationProfileProcedure,
 		svc.SaveIntegrationProfile,
@@ -307,6 +370,12 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 		IntegrationServiceQueryRepositoryIntegrationProcedure,
 		svc.QueryRepositoryIntegration,
 		connect.WithSchema(integrationServiceMethods.ByName("QueryRepositoryIntegration")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceListGitHubRepositoriesHandler := connect.NewUnaryHandler(
+		IntegrationServiceListGitHubRepositoriesProcedure,
+		svc.ListGitHubRepositories,
+		connect.WithSchema(integrationServiceMethods.ByName("ListGitHubRepositories")),
 		connect.WithHandlerOptions(opts...),
 	)
 	integrationServiceGetGitHubTokenFormHandler := connect.NewUnaryHandler(
@@ -347,6 +416,10 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 	)
 	return "/delidev.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case IntegrationServiceInspectGitHubTokenProcedure:
+			integrationServiceInspectGitHubTokenHandler.ServeHTTP(w, r)
+		case IntegrationServicePrepareGitHubTokenFormProcedure:
+			integrationServicePrepareGitHubTokenFormHandler.ServeHTTP(w, r)
 		case IntegrationServiceSaveIntegrationProfileProcedure:
 			integrationServiceSaveIntegrationProfileHandler.ServeHTTP(w, r)
 		case IntegrationServiceReplaceIntegrationTokenProcedure:
@@ -359,6 +432,8 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 			integrationServiceInspectRepositoryIntegrationHandler.ServeHTTP(w, r)
 		case IntegrationServiceQueryRepositoryIntegrationProcedure:
 			integrationServiceQueryRepositoryIntegrationHandler.ServeHTTP(w, r)
+		case IntegrationServiceListGitHubRepositoriesProcedure:
+			integrationServiceListGitHubRepositoriesHandler.ServeHTTP(w, r)
 		case IntegrationServiceGetGitHubTokenFormProcedure:
 			integrationServiceGetGitHubTokenFormHandler.ServeHTTP(w, r)
 		case IntegrationServiceRefreshPullRequestProblemsProcedure:
@@ -379,6 +454,14 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 
 // UnimplementedIntegrationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedIntegrationServiceHandler struct{}
+
+func (UnimplementedIntegrationServiceHandler) InspectGitHubToken(context.Context, *connect.Request[v1.InspectGitHubTokenRequest]) (*connect.Response[v1.InspectGitHubTokenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.InspectGitHubToken is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) PrepareGitHubTokenForm(context.Context, *connect.Request[v1.PrepareGitHubTokenFormRequest]) (*connect.Response[v1.PrepareGitHubTokenFormResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.PrepareGitHubTokenForm is not implemented"))
+}
 
 func (UnimplementedIntegrationServiceHandler) SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.SaveIntegrationProfile is not implemented"))
@@ -402,6 +485,10 @@ func (UnimplementedIntegrationServiceHandler) InspectRepositoryIntegration(conte
 
 func (UnimplementedIntegrationServiceHandler) QueryRepositoryIntegration(context.Context, *connect.Request[v1.QueryRepositoryIntegrationRequest]) (*connect.Response[v1.QueryRepositoryIntegrationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.QueryRepositoryIntegration is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ListGitHubRepositories(context.Context, *connect.Request[v1.ListGitHubRepositoriesRequest]) (*connect.Response[v1.ListGitHubRepositoriesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ListGitHubRepositories is not implemented"))
 }
 
 func (UnimplementedIntegrationServiceHandler) GetGitHubTokenForm(context.Context, *connect.Request[v1.GetGitHubTokenFormRequest]) (*connect.Response[v1.GetGitHubTokenFormResponse], error) {

@@ -1,12 +1,13 @@
+import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, GitHubTokenAccess, IntegrationService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, GitHubTokenAccess, GitHubTokenKind, IntegrationService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { GitHubTokenForm, OpenGitHub } from "./github-opening";
+import { GitHubDraftTokenForm, GitHubTokenForm, OpenGitHub, githubTokenFormURL } from "./github-opening";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(async (_command: string, _args: unknown) => undefined), isTauri: () => true }));
 vi.mock("@tauri-apps/api/core", () => native);
@@ -69,4 +70,51 @@ it("does not automatically repeat an uncertain native open", async () => {
   await screen.findByText(/Browser opening was not confirmed/);
   expect(native.invoke).toHaveBeenCalledTimes(1);
   expect(screen.queryByText("private diagnostic")).toBeNull();
+});
+
+function draftFixture() {
+  native.invoke.mockClear();
+  const form = vi.fn(async (r: { requestId: string; tokenKind: GitHubTokenKind; resourceOwner: string; access: GitHubTokenAccess }) => ({ ...r, url: githubTokenFormURL(r.tokenKind === GitHubTokenKind.FINE_GRAINED ? "fine-grained" : "classic", r.resourceOwner, r.access as 1 | 2 | 3)! }));
+  const transport = createRouterTransport(router => router.service(IntegrationService, { prepareGitHubTokenForm: form }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Draft({ active }: { active: boolean }) {
+    const [kind, setKind] = useState(GitHubTokenKind.FINE_GRAINED), [owner, setOwner] = useState("");
+    return <GitHubDraftTokenForm kind={kind} owner={owner} changeKind={setKind} changeOwner={setOwner} active={active} disabled={false} />;
+  }
+  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Draft active={active} /></QueryClientProvider></TransportProvider>;
+  return { form, client, view };
+}
+it("prepares a draft official form only after explicit owner input and click", async () => {
+  const f = draftFixture(); render(f.view());
+  expect((screen.getByLabelText("Resource owner") as HTMLInputElement).value).toBe("");
+  expect((screen.getByRole("button", { name: "Open official GitHub token form" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Resource owner"), { target: { value: "example-org" } }); expect(f.form).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Open official GitHub token form" })); await waitFor(() => expect(native.invoke).toHaveBeenCalledTimes(1));
+  const url = new URL((native.invoke.mock.calls[0][1] as { url: string }).url);
+  expect(url.searchParams.get("target_name")).toBe("example-org"); expect(url.searchParams.get("expires_in")).toBe("30");
+  for (const key of ["metadata", "contents", "pull_requests", "issues", "statuses"]) expect(url.searchParams.get(key)).toBe("read");
+  expect(url.searchParams.has("checks")).toBe(false); expect(url.searchParams.has("repositories")).toBe(false);
+});
+it("keeps draft classic forms public by default and requires a deliberate broad repo selection", async () => {
+  const f = draftFixture(); render(f.view()); fireEvent.change(screen.getByLabelText("Token type"), { target: { value: GitHubTokenKind.CLASSIC } });
+  fireEvent.click(screen.getByRole("button", { name: "Open official GitHub token form" })); await waitFor(() => expect(native.invoke).toHaveBeenCalledTimes(1));
+  expect((native.invoke.mock.calls[0][1] as { url: string }).url).not.toContain("scopes=");
+  fireEvent.change(screen.getByLabelText("Classic token access"), { target: { value: GitHubTokenAccess.PRIVATE_REPOSITORIES } });
+  expect(screen.getByText(/broad read\/write access/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open official GitHub token form" })); await waitFor(() => expect(native.invoke).toHaveBeenCalledTimes(2));
+  expect((native.invoke.mock.calls[1][1] as { url: string }).url).toContain("scopes=repo");
+});
+it.each(["url", "requestId", "resourceOwner", "tokenKind", "access"])("rejects a mismatched draft form %s before browser dispatch", async key => {
+  const f = draftFixture(), original = f.form.getMockImplementation()!;
+  f.form.mockImplementationOnce(async r => { const result = await original(r); return { ...result, [key]: key === "url" ? result.url + "&checks=write" : key === "access" || key === "tokenKind" ? 99 : "wrong" }; });
+  render(f.view()); fireEvent.change(screen.getByLabelText("Resource owner"), { target: { value: "example-org" } });
+  fireEvent.click(screen.getByRole("button", { name: "Open official GitHub token form" })); await screen.findByText(/official form could not be confirmed/); expect(native.invoke).not.toHaveBeenCalled();
+});
+it.each(["owner", "departure"])("discards a delayed draft form after %s", async change => {
+  const f = draftFixture(), original = f.form.getMockImplementation()!; let release!: () => void;
+  f.form.mockImplementationOnce(async r => { await new Promise<void>(resolve => { release = resolve; }); return original(r); });
+  const view = render(f.view()); fireEvent.change(screen.getByLabelText("Resource owner"), { target: { value: "example-org" } });
+  fireEvent.click(screen.getByRole("button", { name: "Open official GitHub token form" })); await waitFor(() => expect(f.form).toHaveBeenCalledTimes(1));
+  if (change === "owner") fireEvent.change(screen.getByLabelText("Resource owner"), { target: { value: "different-org" } }); else view.rerender(f.view(false));
+  release(); await waitFor(() => expect(f.client.isFetching()).toBe(0)); expect(native.invoke).not.toHaveBeenCalled();
 });

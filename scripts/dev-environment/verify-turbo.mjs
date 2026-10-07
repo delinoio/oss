@@ -50,6 +50,14 @@ assert.deepEqual(
   ["@delinoio/devhud-api", "devhud", "devhud-admin"],
 );
 for (const task of devTasks) {
+  // The locked Turbo summary uses <NONEXISTENT> for graph nodes without a
+  // matching package script. Those nodes cannot satisfy the required inventory.
+  assert.ok(
+    typeof task.command === "string" &&
+      task.command.trim().length > 0 &&
+      task.command !== "<NONEXISTENT>",
+    `${task.taskId} must define a dev script`,
+  );
   assert.deepEqual(task.resolvedTaskDefinition.env, expectedTaskEnvironment);
   assert.equal(task.resolvedTaskDefinition.passThroughEnv, null);
   assert.deepEqual(task.environmentVariables.specified.env, expectedTaskEnvironment);

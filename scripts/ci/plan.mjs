@@ -1,14 +1,29 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { matchesGlob, resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
 
 export const jobPaths = JSON.parse(readFileSync(new URL("./job-paths.json", import.meta.url), "utf8"));
 export const nativeMatrices = JSON.parse(readFileSync(new URL("./native-matrices.json", import.meta.url), "utf8"));
 export const Event = Object.freeze({ PullRequest: "pull_request", Push: "push", Manual: "workflow_dispatch" });
-const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/plan.mjs", "scripts/ci/result.mjs", "scripts/ci/run-affected.mjs", "scripts/ci/native-matrices.json"];
-const matches = (path, patterns) => patterns.some((pattern) => matchesGlob(path, pattern));
+const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/plan.mjs", "scripts/ci/result.mjs", "scripts/ci/run-affected.mjs", "scripts/ci/native-matrices.json", "scripts/ci/package.json", "scripts/ci/turbo.json", "scripts/ci/from-root.mjs", "scripts/ci/cache-context.mjs", "scripts/ci/protocol-fresh.mjs", "scripts/ci/rust-affected*.mjs", "scripts/ci/cargo-mono-prebuilt*.mjs", "scripts/ci/run-rust.mjs"];
+const rustfmtConfiguration = new Set([".rustfmt.toml", "rustfmt.toml"]);
+// Git reports POSIX paths. Filename ownership also covers hidden directories,
+// which node:path's recursive globs do not match.
+const isRustfmtConfiguration = (path) => rustfmtConfiguration.has(path.slice(path.lastIndexOf("/") + 1));
+export function matchesPath(path, pattern) {
+  // Node's matcher excludes leading dots at every wildcard boundary and has no
+  // dot option. Prefix each segment on both sides without removing filename
+  // characters; keep pattern globstars bare for zero-or-more-directory matching.
+  // Git paths use POSIX separators on every host. Remove this adapter when Node
+  // supports dot-aware matching that passes the same path fixtures.
+  const visiblePath = path.split("/").map((segment) => `x${segment}`).join("/");
+  const visiblePattern = pattern.split("/").map((segment) => segment === "**" ? segment : `x${segment}`).join("/");
+  return posix.matchesGlob(visiblePath, visiblePattern);
+}
+
+const matches = (path, patterns) => patterns.some((pattern) => matchesPath(path, pattern));
 
 function ruleSignature(rule) {
   if (!rule) return null;
@@ -24,6 +39,7 @@ export function matricesForEvent(event) {
   if (!Object.values(Event).includes(event)) throw new Error(`Unsupported CI event: ${event}`);
   const full = event === Event.Manual;
   return {
+    delidevFrontendMatrix: { include: [{ phase: "checks" }, { phase: "tests-1" }, { phase: "tests-2" }] },
     desktopMatrix: { include: nativeMatrices["devhud-desktop"].filter((row) => full || row.os !== "macos") },
     reactForgeMatrix: { include: nativeMatrices["react-forge"].filter((row) => full || row.platform !== "darwin") },
     pnportMatrix,
@@ -32,12 +48,16 @@ export function matricesForEvent(event) {
 
 export function planJobs(event, paths, previousRules = jobPaths) {
   if (!Object.values(Event).includes(event)) throw new Error(`Unsupported CI event: ${event}`);
-  const force = event === Event.Manual || paths.some((path) => matches(path, configuration));
+  // Broad source/configuration-directory rules also match rustfmt overrides.
+  // Only rust-fmt owns these files, even inside a native package or action.
+  const nonFormattingPaths = paths.filter((path) => !isRustfmtConfiguration(path));
+  const force = event === Event.Manual || nonFormattingPaths.some((path) => matches(path, configuration));
   const rulesChanged = paths.includes("scripts/ci/job-paths.json");
   const jobs = {};
   const forced = {};
   for (const [id, rule] of Object.entries(jobPaths)) {
-    const relevant = paths.filter((path) => matches(path, rule.paths));
+    const relevant = (id === "rust-fmt" ? paths : nonFormattingPaths).filter((path) =>
+      (id === "rust-fmt" && isRustfmtConfiguration(path)) || matches(path, rule.paths));
     const ruleChanged = rulesChanged && ruleSignature(rule) !== ruleSignature(previousRules[id]);
     const eligible = (!rule.native || event !== Event.PullRequest) && (id !== "devhud-ios-simulator" || event === Event.Manual);
     jobs[id] = eligible && (force || ruleChanged || relevant.length > 0);
@@ -96,7 +116,7 @@ export function main(env = process.env) {
   const oldRules = range.paths.includes("scripts/ci/job-paths.json") ? previousJobPaths(range.base) : jobPaths;
   const plan = planJobs(env.GITHUB_EVENT_NAME, range.paths, oldRules);
   const matrices = matricesForEvent(env.GITHUB_EVENT_NAME);
-  const outputs = { base: range.base, head: range.head, event: env.GITHUB_EVENT_NAME, jobs: JSON.stringify(plan.jobs), forced: JSON.stringify(plan.forced), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), pnport_matrix: JSON.stringify(matrices.pnportMatrix) };
+  const outputs = { base: range.base, head: range.head, event: env.GITHUB_EVENT_NAME, jobs: JSON.stringify(plan.jobs), forced: JSON.stringify(plan.forced), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), pnport_matrix: JSON.stringify(matrices.pnportMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) };
   appendFileSync(env.GITHUB_OUTPUT, Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(""));
   console.log(JSON.stringify({ event: "ci_plan", mode: env.GITHUB_EVENT_NAME, base: range.base, head: range.head, changedFiles: range.paths.length, ...plan, ...matrices }));
   if (env.GITHUB_STEP_SUMMARY) {

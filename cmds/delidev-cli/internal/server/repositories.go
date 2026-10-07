@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -65,7 +66,21 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 			}
 		}
 		for _, checkout := range repository.Checkouts {
-			raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required})
+			identity := ""
+			_, machine, machineErr := activeMachine(tx, checkout.MachineID)
+			if machineErr != nil {
+				return nil, machineErr
+			}
+			// The identity field was added after the original inspection input.
+			// Keep it omitted for older Workers so their strict decoder retains the
+			// legacy inspection path; newer Workers enforce the source binding.
+			if repository.RemoteURL != "" && slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
+				identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
+				if err != nil {
+					return nil, err
+				}
+			}
+			raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required, ExpectedRemoteIdentity: identity})
 			if err != nil {
 				return nil, err
 			}
@@ -73,6 +88,12 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 			if err != nil {
 				return nil, err
 			}
+		}
+		if len(repository.Checkouts) == 0 {
+			if err := finishRepositorySave(tx, parent.ID); err != nil {
+				return nil, err
+			}
+			return tx.Get(domain.JobKind, parent.ID)
 		}
 		return parent, nil
 	})

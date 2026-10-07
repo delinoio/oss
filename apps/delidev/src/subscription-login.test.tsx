@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode } from "react";
-import { create } from "@bufbuild/protobuf";
+import { create, toBinary } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, ResourceService, SubscriptionService, EntityKind, ResourceSchema, SubscriptionLoginState as State, SubscriptionServiceId, newRequestId } from "@delinoio/delidev-api-client";
+import { ConfigurationService, ResourceService, SubscriptionService, EntityKind, ErrorDetailSchema, FailureCode, RequestSubscriptionRequestSchema, ResourceSchema, SaveConfigurationRequestSchema, SubscriptionLoginState as State, SubscriptionServiceId, newRequestId } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
 import { useSubscriptionLogin } from "./subscription-login";
 import { SettingsLifetime } from "./settings-lifetime";
 import { document, encode } from "./documents";
 import { subscriptionAliasDocument } from "./subscription-resource";
 const url = "https://auth.openai.com/oauth/authorize?state=fixture-original-state-123456&redirect_uri=http%3A%2F%2Flocalhost%3A1457%2Fauth%2Fcallback&response_type=code&code_challenge_method=S256";
+function typedFailure(code: Code, failure: FailureCode) {
+  return new ConnectError("Fixture request failure", code, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: failure }) }]);
+}
 function fixture(loginURL = url) {
   let current = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: "ChatGPT", type: "subscription", subscription_service: "chatgpt" }) });
   let state = State.WAITING, suggested = "fixture@example.invalid", operation = "";
@@ -26,13 +29,14 @@ function fixture(loginURL = url) {
     current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), subscription: { server_operation: { id: operation }, pending: { id: operation } } }) });
     return { account: current, operationId: operation };
   });
-  const progress = vi.fn(() => ({ state, url: state === State.WAITING ? loginURL : "", suggestedName: suggested, generation }));
+  const progress = vi.fn((_request) => ({ state, url: state === State.WAITING ? loginURL : "", suggestedName: suggested, generation }));
   const cancel = vi.fn(() => { state = State.CANCELED; return { account: current }; });
   const forward = vi.fn(() => ({ accepted: true }));
+  const read = vi.fn(() => ({ resource: current }));
   const native = vi.fn(async (_scope: string, _action: OAuthNativeAction, _generation: string, _attempt: string, _url: string) => ({ generation: nativeGeneration } as { generation: string; code?: number[] }));
   const transport = createRouterTransport(router => {
     router.service(ConfigurationService, { saveConfiguration: save });
-    router.service(ResourceService, { getResource: () => ({ resource: current }) });
+    router.service(ResourceService, { getResource: read });
     router.service(SubscriptionService, { requestSubscription: login, getSubscriptionProgress: progress, cancelSubscription: cancel, forwardSubscriptionCallback: forward });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -42,7 +46,7 @@ function fixture(loginURL = url) {
     return <>{flow.body ?? <button onClick={() => flow.begin(SubscriptionServiceId.ChatGPT)}>Add account</button>}</>;
   }
   const view = () => <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><SettingsLifetime>{() => <Body />}</SettingsLifetime></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>;
-  return { authorization: (value: string) => { loginURL = value; }, view, save, login, progress, cancel, forward, native, client, generation, current: () => current, success: () => { state = State.SUCCEEDED; current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), connection: { id: newRequestId() }, subscription: { generation, server_operation: { id: operation }, lease: { revision: "preserved" } } }) }); }, suggestion: (name: string) => { suggested = name; } };
+  return { authorization: (value: string) => { loginURL = value; }, view, save, login, progress, cancel, forward, read, native, client, generation, current: () => current, success: () => { state = State.SUCCEEDED; current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ ...document(current), connection: { id: newRequestId() }, subscription: { generation, server_operation: { id: operation }, lease: { revision: "preserved" } } }) }); }, suggestion: (name: string) => { suggested = name; } };
 }
 async function start(f: ReturnType<typeof fixture>) {
   const rendered = render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
@@ -85,11 +89,94 @@ it("Later retains the default account name and accepted login", async () => {
 it("keeps the edited name after a revision conflict and obtains a fresh revision on the next Save", async () => {
   const f = fixture(); await start(f); f.success();
   const input = await screen.findByLabelText("Account name", {}, { timeout: 3000 }); fireEvent.change(input, { target: { value: "Conflict edit" } });
-  f.save.mockImplementationOnce(() => { throw new ConnectError("fixture revision conflict", Code.Aborted); });
+  f.save.mockImplementationOnce(() => { throw typedFailure(Code.Aborted, FailureCode.Conflict); });
   fireEvent.click(screen.getByRole("button", { name: "Save account name" })); await screen.findByRole("alert");
+  expect(screen.queryByRole("button", { name: "Retry original request" })).toBeNull();
   expect((input as HTMLInputElement).value).toBe("Conflict edit"); f.success();
   fireEvent.click(screen.getByRole("button", { name: "Save account name" })); await screen.findByRole("button", { name: "Add account" });
   expect(f.save.mock.calls[2][0].mutation.expectedRevision).toBeGreaterThan(f.save.mock.calls[1][0].mutation.expectedRevision);
+});
+it("retains a durably accepted login after typed Internal until exact explicit replay resumes polling", async () => {
+  const f = fixture(), admit = f.login.getMockImplementation()!;
+  let receipt: ReturnType<typeof admit>;
+  f.login.mockImplementationOnce(request => {
+    receipt = admit(request);
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  f.login.mockImplementationOnce(() => receipt);
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  const retry = await screen.findByRole("button", { name: "Retry original request" });
+  expect((retry as HTMLButtonElement).disabled).toBe(false);
+  const original = f.login.mock.calls[0][0], bytes = toBinary(RequestSubscriptionRequestSchema, original);
+  expect(document(f.current()).subscription).toMatchObject({ pending: { id: original.mutation.requestId } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+  expect(f.login).toHaveBeenCalledTimes(1); expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.progress).not.toHaveBeenCalled(); expect(f.native).not.toHaveBeenCalled();
+  fireEvent.click(retry);
+  await screen.findByRole("button", { name: "Open browser again" }, { timeout: 3000 });
+  expect(f.login).toHaveBeenCalledTimes(2); expect(f.save).toHaveBeenCalledTimes(1);
+  expect(toBinary(RequestSubscriptionRequestSchema, f.login.mock.calls[1][0])).toEqual(bytes);
+  expect(f.progress.mock.calls[0][0]).toMatchObject({ accountId: original.mutation.id, operationId: original.mutation.requestId });
+  expect(f.native.mock.calls.filter(c => c[1] === OAuthNativeAction.SubscriptionOpen)).toHaveLength(1);
+  expect(f.native.mock.calls.find(c => c[1] === OAuthNativeAction.SubscriptionOpen)![3]).toBe(original.mutation.requestId);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+  expect(f.progress.mock.calls.length).toBeGreaterThan(1);
+  expect(f.login).toHaveBeenCalledTimes(2); expect(screen.queryByRole("button", { name: "Retry original request" })).toBeNull();
+});
+it("replays the exact account creation after typed Internal before starting login", async () => {
+  const f = fixture(), admit = f.save.getMockImplementation()!;
+  let receipt: Awaited<ReturnType<typeof admit>>;
+  f.save.mockImplementationOnce(async request => {
+    receipt = await admit(request);
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  f.save.mockImplementationOnce(async () => receipt);
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  const retry = await screen.findByRole("button", { name: "Retry original request" });
+  const bytes = toBinary(SaveConfigurationRequestSchema, f.save.mock.calls[0][0]);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+  expect(f.save).toHaveBeenCalledTimes(1); expect(f.login).not.toHaveBeenCalled(); expect(f.progress).not.toHaveBeenCalled();
+  fireEvent.click(retry);
+  await screen.findByRole("button", { name: "Open browser again" }, { timeout: 3000 });
+  expect(f.save).toHaveBeenCalledTimes(2); expect(f.login).toHaveBeenCalledTimes(1);
+  expect(toBinary(SaveConfigurationRequestSchema, f.save.mock.calls[1][0])).toEqual(bytes);
+  expect(f.login.mock.calls[0][0].mutation.id).toBe(receipt!.resource.id);
+  expect(f.login.mock.calls[0][0].mutation.expectedRevision).toBe(receipt!.resource.revision);
+});
+it("retains the original alias save through typed Internal without adopting later edits or revisions", async () => {
+  const f = fixture(); await start(f); f.success();
+  const input = await screen.findByLabelText("Account name", {}, { timeout: 3000 });
+  fireEvent.change(input, { target: { value: "Original edit" } });
+  const admit = f.save.getMockImplementation()!;
+  let receipt: Awaited<ReturnType<typeof admit>>;
+  f.save.mockImplementationOnce(async request => {
+    receipt = await admit(request);
+    throw typedFailure(Code.Internal, FailureCode.Internal);
+  });
+  f.save.mockImplementationOnce(async () => receipt);
+  fireEvent.click(screen.getByRole("button", { name: "Save account name" }));
+  const retry = await screen.findByRole("button", { name: "Retry original request" });
+  const bytes = toBinary(SaveConfigurationRequestSchema, f.save.mock.calls[1][0]), reads = f.read.mock.calls.length;
+  fireEvent.change(input, { target: { value: "Later edit" } }); f.success();
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+  expect(f.save).toHaveBeenCalledTimes(2); expect(f.read).toHaveBeenCalledTimes(reads);
+  expect((input as HTMLInputElement).value).toBe("Later edit");
+  fireEvent.click(retry); await screen.findByRole("button", { name: "Add account" });
+  expect(f.save).toHaveBeenCalledTimes(3); expect(f.read).toHaveBeenCalledTimes(reads);
+  expect(toBinary(SaveConfigurationRequestSchema, f.save.mock.calls[2][0])).toEqual(bytes);
+  expect(document(f.current()).alias).toBe("Original edit"); expect(f.login).toHaveBeenCalledTimes(1);
+});
+it.each([
+  [Code.InvalidArgument, FailureCode.InvalidArgument],
+  [Code.PermissionDenied, FailureCode.PermissionDenied],
+  [Code.Aborted, FailureCode.Conflict],
+])("does not offer original login replay for a typed pre-admission rejection (%s)", async (code, failure) => {
+  const f = fixture(); f.login.mockImplementation(() => { throw typedFailure(code, failure); });
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  await screen.findByRole("alert");
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
+  expect(screen.queryByRole("button", { name: "Retry original request" })).toBeNull();
+  expect(f.login).toHaveBeenCalledTimes(1); expect(f.progress).not.toHaveBeenCalled(); expect(f.native).not.toHaveBeenCalled();
 });
 it("forwards an original native callback once even when its result is uncertain", async () => {
   const f = fixture(); const code = Array.from(new TextEncoder().encode("code=fixture&state=fixture-original-state-123456"));

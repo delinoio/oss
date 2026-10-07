@@ -238,6 +238,21 @@ Independent server subscription login exports capability 30, the closed Subscrip
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
 
+## Repository addition
+
+System capability 37 permits repository saves/imports with a required credential-free `remote_url` and empty `checkouts`. Clients must verify this gate before sending URL registration or importing the new URL-only repository shape. Legacy checkout-backed repository saves/imports omit `remote_url` and retain the pre-capability contract. The existing save RPC and durable job also cover registration without Worker proof or inspection children. Repository and Project export/import need no machine or path binding when checkouts are empty. Worker capability 19 separately permits managed workspace and independent Fork clones; 31/32 and Worker 18 keep their existing immediate Local Clone and metadata contracts.
+
+Generated `IntegrationQuery.listGitHubRepositories` and
+`WorkerQuery.cloneRepository` retain the main-established declarations and
+independent System 31/32 / Worker 18 capabilities. Listing is an explicit
+revision-bound profile/page read; preserve exact remote IDs, current generation,
+constructed URLs and page-local filtering. The client never receives a saved PAT.
+Clone sends fresh transient local Worker proof and optional selected GitHub
+metadata; its original durable job completes registration server-side. Keep proof
+outside read keys, drafts and persistence. Retain identical uncertain mutation
+bytes only in the disposable dialog registry; close/departure drops that registry
+and guards all late callbacks without canceling accepted business work.
+
 ## Agent Worker wizard bindings
 
 Generate ConfigurationQuery.saveAgentWorker, typed model-selection oneof and

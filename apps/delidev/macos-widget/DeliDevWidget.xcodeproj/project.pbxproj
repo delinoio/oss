@@ -107,6 +107,7 @@
 				<string>000000000000000000000009</string>
 				<string>00000000000000000000AB01</string>
 				<string>00000000000000000000AB02</string>
+				<string>00000000000000000000AC10</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -243,6 +244,7 @@
 			<key>buildPhases</key>
 			<array>
 				<string>00000000000000000000000A</string>
+				<string>00000000000000000000AE00</string>
 			</array>
 			<key>buildRules</key>
 			<array/>
@@ -297,6 +299,7 @@
 				<string>000000000000000000000011</string>
 				<string>000000000000000000000012</string>
 				<string>000000000000000000000013</string>
+				<string>00000000000000000000AC11</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -433,6 +436,7 @@
 			<key>buildPhases</key>
 			<array>
 				<string>000000000000000000000014</string>
+				<string>00000000000000000000AE01</string>
 			</array>
 			<key>buildRules</key>
 			<array/>
@@ -475,6 +479,9 @@
 				<string>00000000000000000000001A</string>
 				<string>00000000000000000000AA01</string>
 				<string>00000000000000000000AA02</string>
+				<string>00000000000000000000AC00</string>
+				<string>00000000000000000000AD00</string>
+				<string>00000000000000000000AD01</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -549,6 +556,7 @@
 			<key>knownRegions</key>
 			<array>
 				<string>en</string>
+				<string>ko</string>
 				<string>Base</string>
 			</array>
 			<key>mainGroup</key>
@@ -600,6 +608,167 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>00000000000000000000AA02</string>
+		</dict>
+		<key>00000000000000000000AC00</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Shared/Localization.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>00000000000000000000AC10</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>00000000000000000000AC00</string>
+		</dict>
+		<key>00000000000000000000AC11</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>00000000000000000000AC00</string>
+		</dict>
+		<key>00000000000000000000AD10</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.strings</string>
+			<key>name</key>
+			<string>en</string>
+			<key>path</key>
+			<string>Resources/en.lproj/Localizable.strings</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>00000000000000000000AD11</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.strings</string>
+			<key>name</key>
+			<string>ko</string>
+			<key>path</key>
+			<string>Resources/ko.lproj/Localizable.strings</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>00000000000000000000AD00</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXVariantGroup</string>
+			<key>children</key>
+			<array>
+				<string>00000000000000000000AD10</string>
+				<string>00000000000000000000AD11</string>
+			</array>
+			<key>name</key>
+			<string>Localizable.strings</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>00000000000000000000AD20</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.strings</string>
+			<key>name</key>
+			<string>en</string>
+			<key>path</key>
+			<string>Resources/en.lproj/SelectServer.strings</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>00000000000000000000AD21</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.strings</string>
+			<key>name</key>
+			<string>ko</string>
+			<key>path</key>
+			<string>Resources/ko.lproj/SelectServer.strings</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>00000000000000000000AD01</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXVariantGroup</string>
+			<key>children</key>
+			<array>
+				<string>00000000000000000000AD20</string>
+				<string>00000000000000000000AD21</string>
+			</array>
+			<key>name</key>
+			<string>SelectServer.strings</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>00000000000000000000AE10</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>00000000000000000000AD00</string>
+		</dict>
+		<key>00000000000000000000AE11</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>00000000000000000000AD01</string>
+		</dict>
+		<key>00000000000000000000AE00</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXResourcesBuildPhase</string>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>00000000000000000000AE10</string>
+				<string>00000000000000000000AE11</string>
+			</array>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
+		</dict>
+		<key>00000000000000000000AE20</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>00000000000000000000AD00</string>
+		</dict>
+		<key>00000000000000000000AE21</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>00000000000000000000AD01</string>
+		</dict>
+		<key>00000000000000000000AE01</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXResourcesBuildPhase</string>
+			<key>buildActionMask</key>
+			<integer>2147483647</integer>
+			<key>files</key>
+			<array>
+				<string>00000000000000000000AE20</string>
+				<string>00000000000000000000AE21</string>
+			</array>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<integer>0</integer>
 		</dict>
 	</dict>
 	<key>rootObject</key>

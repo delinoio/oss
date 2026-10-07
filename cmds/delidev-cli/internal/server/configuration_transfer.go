@@ -41,7 +41,7 @@ func transferLimit() error {
 // Observed readiness/provenance cannot cross a server boundary. In particular,
 // even keyless accounts require a fresh explicit connection and validation.
 func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, error) {
-	value, err := configurationValue(kind, raw)
+	value, err := configurationValue(kind, raw, incoming)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func exportConfiguration(tx *store.Tx) (domain.ConfigurationBundle, error) {
 				return bundle, err
 			}
 			size += len(raw)
-			if size > domain.MaxConfigurationBundleBytes || checkouts > domain.MaxConfigurationCheckouts {
+			if size > domain.MaxConfigurationBundleBytes || checkouts > domain.MaxConfigurationCheckouts || len(machineIDs) > domain.MaxConfigurationCheckouts {
 				return bundle, transferLimit()
 			}
 			bundle.Entries = append(bundle.Entries, domain.ConfigurationEntry{ID: row.ID, Kind: kind, Document: raw})
