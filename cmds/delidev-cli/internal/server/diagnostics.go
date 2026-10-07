@@ -194,9 +194,10 @@ func (s *Service) doctorCredential(ctx context.Context, id domain.ID) (domain.Di
 		defer vault.Close()
 		reader = vault
 	}
-	tokenID := account.Connection.ID
+	referenceID := account.Connection.CredentialReferenceID()
+	tokenID := referenceID
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
-		v, ok, e := tx.AccountOAuthCredential(id, account.Connection.ID)
+		v, ok, e := tx.AccountOAuthCredential(id, referenceID)
 		if ok {
 			tokenID = v.TokenID
 		}

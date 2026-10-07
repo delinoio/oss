@@ -8,6 +8,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 
 // Write-only account credentials. Workers cannot invoke this owner/client API.
 service AccountService {
+  rpc ChangeAccountApiFormat(ChangeAccountApiFormatRequest) returns (ChangeAccountApiFormatResponse);
   rpc ConnectAccount(ConnectAccountRequest) returns (ConnectAccountResponse);
   rpc DisconnectAccount(DisconnectAccountRequest) returns (DisconnectAccountResponse);
   rpc GetAccountStatus(GetAccountStatusRequest) returns (GetAccountStatusResponse);
@@ -74,12 +75,16 @@ message AccountOAuthAttempt {
   string expires_at = 4;
   string provider_id = 5;
   ErrorDetail problem = 6;
+  // Original explicit inference format; omitted legacy attempts retain defaults.
+  ApiProtocol api_protocol = 7;
 }
 message StartAccountOAuthRequest {
   Mutation provider = 1;
   // Transient native-owned callback; empty selects documented headless mode.
   string callback_url = 2;
   AccountOAuthGoogleOptions google = 3;
+  // Explicit inference format; UNSPECIFIED preserves the original default.
+  ApiProtocol api_protocol = 4;
 }
 message StartAccountOAuthResponse {
   AccountOAuthAttempt attempt = 1;
@@ -156,4 +161,20 @@ enum AccountOAuthState {
   ACCOUNT_OAUTH_STATE_INTERRUPTED = 8;
   // buf:lint:ignore ENUM_VALUE_PREFIX
   ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED = 9;
+}
+
+// Changes future execution format without replacing the protected credential.
+message ChangeAccountApiFormatRequest {
+  Mutation mutation = 1;
+  ApiProtocol api_protocol = 2;
+  string alias = 3;
+  bool enabled = 4;
+  bool exclude_automatic = 5;
+  bool recovery_notifications = 6;
+}
+
+message ChangeAccountApiFormatResponse {
+  Resource account = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }

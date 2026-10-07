@@ -34,6 +34,31 @@ Existing local Start/Stop, Worker supervision, diagnostics, saved authority and
 35-second joined shutdown ownership remain independent. Deterministic fixtures
 and builds do not establish installed-app interactive Keychain acceptance.
 
+## Key-preserving API format editing
+
+With ProviderInventory capability 9, Edit AI account enables supported formats for
+connected API accounts and saves the format plus existing editable preferences
+through `ChangeAccountApiFormat`. The saved key stays in place; the help states that
+future executions use the new format, current executions retain their original
+format, and separate Validate connection is required. Saving sends no provider
+request. Provider identity and keyless/key ownership stay fixed. Without capability
+9, the original capability-7 disconnect/cleanup/re-entry behavior remains.
+
+Retain the existing 768px dialog, field order, checkbox controls, Provider lock,
+small-screen scrolling/fixed footer, Settings lifetime, labeled native select,
+keyboard selection, Escape/X/Cancel closure and opener focus restoration. The
+capability-9 action reads Save changes. Capability/profile loading errors, pending
+cleanup, an active save and an uncertain result retain existing protection. Exact
+uncertain retries reuse the original request. Late responses after disposal cannot
+close or refresh a replacement editor.
+
+Observation-only account updates adopt the latest protected fields and bigint
+revision while retaining editable draft values. Changes to editable preferences or
+format elsewhere show a conflict and retain the draft. Provider cards remain locked
+for current and retained account generations; reference-read failures block saves.
+Incompatible Workers show the existing explicit reconfiguration notice. Native
+window/provider acceptance is separate from component/browser fixtures.
+
 ## Modal background visibility
 
 All app-owned dialogs and compact modal navigation drawers use a transparent
@@ -58,9 +83,13 @@ their existing modal visibility and security boundaries.
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
-own the main-first capability 8 and Start/attempt format fields. Preserve manual
-format profiles, original defaults and independent OAuth eligibility. Reservations
-alone activate no support and add no database migration.
+own the main-first capability 8 and Start/attempt format fields established
+by reservation PR #1657. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. The common
+manual/OAuth connection UI requires selection for multiple profiles and displays
+a sole profile read-only; server-owned Start pins explicit OAuth selections through
+completion/recovery. Provider registration remains independently gated. No
+database migration is added.
 
 ## API key format selection
 
@@ -1101,7 +1130,7 @@ Read the original pairing resource before allowing disclosure, poll only while t
 
 Diagnostics uses the direct read-only doctor RPC, only while selected or after explicit refresh. Decode at most 1 MiB of strict UTF-8 and display known fields as inert text. The version-2 [diagnostics contract](cmds-delidev-diagnostics-contract.md) distinguishes running server/platform/protocol/schema, separately sampled database/WAL/logical/filesystem sizes, retained resource counts, Worker connection and installation observations, and exact account credential read classifications. Preserve decimal-string integer precision with BigInt. Show missing measurements as unavailable, explicit 50-record partial inventory notices, and superseded connections independently of successful reads. A failed refresh labels retained observations; unsupported/malformed reports establish no health. Legacy reports retain only their original bounded fields and an explicit missing-capacity/protected-store notice. Owner credential availability, store decryptability, provider readiness, protocol handshake and cleanup are separate facts. No repair, login, harness probe or inference starts from this screen.
 
-The approved issue #1144 Diagnostics hierarchy, record-local disclosures and responsive presentation are owned by the [Diagnostics presentation contract](apps-delidev-diagnostics-contract.md). Its state is local to the active Settings category; page-level Escape and reflow retain disclosures, while category departure or leaving Settings disposes them.
+The approved issue #1144 Diagnostics hierarchy, record-local disclosures and responsive presentation are owned by the [Diagnostics presentation contract](apps-delidev-diagnostics-contract.md). Account storage results now appear below each owning AI Subscription / AI API Keys row, with failed reads announced as alerts and ordinary/unavailable states distinguished. Connection & diagnostics retains only navigation guidance for those account results. Each category shares the original bounded read-only Doctor RPC, fences account/revision/connection generations, and preserves explicit native/account operations independently. Its state is local to the active Settings category; page-level Escape and reflow retain disclosures, while category departure or leaving Settings disposes them.
 
 ### Local execution proof
 The main-only `local_worker_proof` command is read-only infrastructure. It invokes Go inspection for the fixed `desktop-client` and CLI-owned `worker` subdirectories, checks exact server/endpoint parity, validates the private credential's canonical Worker/machine/token shape and returns only the proof needed by a Local product mutation. It accepts no renderer path, command or chosen machine. Missing, foreign or malformed registration fails without pairing, starting or replacing a Worker; Worker bootstrap/lifecycle uses its separate explicit native control boundary.

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useAccountStorage } from "./account-storage";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
 import { useCloseSettingsTask, useInSettingsTask, useSettingsTaskDismiss, useSettingsTaskVisible } from "./settings-task-context";
 import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
 import { ProviderGuidance } from "./provider-guidance";
+import { APIFormatChoice } from "./api-format-choice";
 import { AccountOAuth, useAccountOAuth, type AccountOAuthFlow } from "./account-oauth";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useMemo, useRef, useState, type ReactNode, useId } from "react";
@@ -22,6 +24,7 @@ import {
   ResourceQuery,
   UsageQuery,
   newRequestId,
+  type APIFormatProfile,
   type Resource,
 } from "@delinoio/delidev-api-client";
 import "./api-account.css";
@@ -47,6 +50,8 @@ export interface AccountProviderSummary {
   presetId?: string;
   keyCreationUrl?: string;
   oauthAvailable?: boolean;
+  oauthFormatSelectingAvailable?: boolean;
+  apiFormats?: APIFormatProfile[];
 }
 
 export interface AccountProviderPicker {
@@ -116,24 +121,32 @@ function validAccountObservation(resource: Resource | undefined, id: string, pro
   return data.type === "api" && data.provider_id === providerId;
 }
 
-function providerContract(provider: AccountProviderSummary, protocol?: APIFormatId | ""): { id: string; authentication: string; protocol: string; endpoint: string; enabled: boolean; formats: string } {
+function providerFormats(provider: AccountProviderSummary): APIFormatProfile[] {
+  return provider.apiFormats ?? providerAPIFormats(document(provider.provider));
+}
+
+function providerContract(provider: AccountProviderSummary, protocol?: APIFormatId | ""): { id: string; authentication: string; protocol: string; endpoint: string; enabled: boolean; formats: string; rawAuthentication: string; rawProtocol: string; rawEndpoint: string; rawFormats: string } {
   const data = document(provider.provider);
-  const selected = protocol ? providerAPIFormats(data).find(profile => profile.protocol === protocol) : undefined;
-  return { id: provider.providerId, authentication: selected?.authentication ?? text(data.authentication), protocol: selected?.protocol ?? text(data.protocol), endpoint: selected?.endpoint ?? text(data.endpoint), enabled: provider.enabled, formats: JSON.stringify(providerAPIFormats(data)) };
+  const formats = providerFormats(provider);
+  const selected = protocol ? formats.find(profile => profile.protocol === protocol) : undefined;
+  return { id: provider.providerId, authentication: selected?.authentication ?? text(data.authentication), protocol: selected?.protocol ?? text(data.protocol), endpoint: selected?.endpoint ?? text(data.endpoint), enabled: provider.enabled, formats: JSON.stringify(formats), rawAuthentication: text(data.authentication), rawProtocol: text(data.protocol), rawEndpoint: text(data.endpoint), rawFormats: JSON.stringify(providerAPIFormats(data)) };
 }
 
 function providerContractMatches(expected: ReturnType<typeof providerContract>, resource: Resource | undefined): boolean {
   if (!resource || resource.kind !== EntityKind.PROVIDER || !supportsResourceSchema(resource) || resource.id !== expected.id) return false;
   const data = document(resource);
   const enabled = data.enabled !== false;
-  const profile = providerAPIFormats(data).find(profile => profile.protocol === expected.protocol);
-  return profile?.authentication === expected.authentication && profile.endpoint === expected.endpoint &&
-    JSON.stringify(providerAPIFormats(data)) === expected.formats && enabled === expected.enabled && expected.enabled;
+  const selected = (JSON.parse(expected.formats) as APIFormatProfile[]).find(profile => profile.protocol === expected.protocol);
+  return Boolean(selected && selected.authentication === expected.authentication && selected.endpoint === expected.endpoint &&
+    text(data.authentication) === expected.rawAuthentication && text(data.protocol) === expected.rawProtocol &&
+    text(data.endpoint) === expected.rawEndpoint && JSON.stringify(providerAPIFormats(data)) === expected.rawFormats &&
+    enabled === expected.enabled && expected.enabled);
 }
 
 function sameProviderContract(left: ReturnType<typeof providerContract> | undefined, right: ReturnType<typeof providerContract>): boolean {
   return Boolean(left && left.id === right.id && left.authentication === right.authentication && left.protocol === right.protocol &&
-    left.endpoint === right.endpoint && left.enabled === right.enabled && left.formats === right.formats);
+    left.endpoint === right.endpoint && left.enabled === right.enabled && left.formats === right.formats &&
+    left.rawAuthentication === right.rawAuthentication && left.rawProtocol === right.rawProtocol && left.rawEndpoint === right.rawEndpoint && left.rawFormats === right.rawFormats);
 }
 
 function AccountCreationWizard({
@@ -188,7 +201,7 @@ function AccountCreationWizard({
   const providerButtons = useRef(new Map<string, HTMLButtonElement>());
   const [focusTarget, setFocusTarget] = useState(initialProvider ? WizardFocus.Account : WizardFocus.Picker);
   const [alias, setAlias] = useState("");
-  const [protocol, setProtocol] = useState<APIFormatId | "">("");
+  const [protocolChoice, setProtocol] = useState<APIFormatId | "">("");
   const [apiKey, setApiKey] = useState("");
   const [providerChecking, setProviderChecking] = useState(false);
   const [providerMismatch, setProviderMismatch] = useState(false);
@@ -227,7 +240,8 @@ function AccountCreationWizard({
     setFocusTarget(WizardFocus.None);
   }, [active, focusTarget, providerId, step, taskVisible]);
   const selectedProviderDocument = document(selectedProvider?.provider);
-  const formats = providerAPIFormats(selectedProviderDocument).sort((a, b) => Object.values(APIFormatId).indexOf(a.protocol) - Object.values(APIFormatId).indexOf(b.protocol));
+  const formats = (selectedProvider ? providerFormats(selectedProvider) : providerAPIFormats(selectedProviderDocument)).sort((a, b) => Object.values(APIFormatId).indexOf(a.protocol) - Object.values(APIFormatId).indexOf(b.protocol));
+  const protocol = protocolChoice || (formats.length === 1 ? formats[0].protocol : "");
   const selectedProfile = formats.find(profile => profile.protocol === protocol);
   const selectedAuthentication = selectedProfile?.authentication ?? "";
   const selectedProviderContract = selectedProvider ? providerContract(selectedProvider, protocol) : undefined;
@@ -537,7 +551,16 @@ function AccountCreationWizard({
     </section>;
   }
 
-  if (oauth.view) return <AccountOAuth flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} done={resource => { saved(resource); close(); }} />;
+  if (oauth.view) {
+    const original = oauth.view.provider;
+    const metadataMatches = providerRead.isSuccess && providerRead.data?.resource?.revision === original.provider.revision &&
+      providerContractMatches(providerContract(original), providerRead.data?.resource);
+    return <AccountOAuth metadataReady={!metadataUnavailable && picker.ready && metadataMatches && accountTypeFilteringReady && (!original.oauthFormatSelectingAvailable || apiFormatSelectingReady)} metadataProblem={<>
+      <Problem error={providerRead.error ?? picker.error} />
+      {providerRead.isSuccess && !metadataMatches ? <p role="alert">{copy("account-settings.thisProviderChangedOrIsNo_c94fdd")}</p> : null}
+      {!accountTypeFilteringReady ? <p role="status">{copy("account-settings.connectionIsPausedUntilThisServer_0528c4")}</p> : null}
+    </>} flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} done={resource => { saved(resource); close(); }} />;
+  }
 
   return <section className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
     <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</button>
@@ -570,7 +593,7 @@ function AccountCreationWizard({
         <fieldset disabled={!manualReady || metadataUnavailable || providerChecking || create.busy || create.uncertain}>
           <label>{copy("account-settings.entryName_978463")}<input autoComplete="off" maxLength={256} value={alias} aria-invalid={(attempted || alias.length > 0) && !aliasValid} onChange={(event) => setAlias(event.target.value)} /></label>
           {(attempted || alias.length > 0) && !aliasValid ? <p role="alert">{copy("account-settings.enterANonEmptyEntryName_24d18d")}</p> : null}
-          <label>{copy("account-settings.apiFormat")}<select required value={protocol} aria-invalid={attempted && !selectedProfile} onChange={(event) => { generation.current += 1; clearHandoff(); setApiKey(""); setConnectionKey(""); setProtocol(apiFormat(event.target.value) ?? ""); setProviderMismatch(false); }}><option value="">{copy("account-settings.chooseApiFormat")}</option>{formats.map(profile => <option key={profile.protocol} value={profile.protocol}>{apiFormatLabels[profile.protocol]}</option>)}</select></label>
+          <APIFormatChoice profiles={formats} value={protocol} invalid={attempted && !selectedProfile} onChange={value => { generation.current += 1; clearHandoff(); setApiKey(""); setConnectionKey(""); setProtocol(value); setProviderMismatch(false); }} />
           <p>{protocol === APIFormatId.Responses ? copy("account-settings.responsesHelp") : copy("account-settings.formatHelp")}</p>
           {keyless ? <p>{copy("account-settings.connectToThisLocalEndpointOn_70be8a")}</p> : <>
             <label>{copy("account-settings.apiKey_16f0ee")}<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={apiKey} aria-invalid={(attempted || apiKey.length > 0) && !apiKeyValid} onChange={(event) => setApiKey(event.target.value)} /></label>
@@ -669,6 +692,7 @@ function ApiAccountSettings({
     return values;
   }, [providerSummaries]);
   const workflowActive = (wizard && !pauseWorkflowLock) || Boolean(selectedAccount);
+  const storage = useAccountStorage(rows.data?.resources ?? [], active && accountTypeFilteringReady && Boolean(rows.data) && !rows.error && !workflowActive, Boolean(rows.error));
   useEffect(() => {
     onWorkflowReadyChange?.(workflowActive);
     return () => onWorkflowReadyChange?.(false);
@@ -709,12 +733,13 @@ function ApiAccountSettings({
     {readDenied ? <p role="status">{copy("account-settings.entryAccessIsDeniedCheckThis_755d6f")}</p> : null}
     {!accountTypeFilteringReady && !accountTypeFilteringLoading && !inventoryProblem ? <p role="status">{copy("account-settings.entryListsRequireAServerThat_d168c9")}</p> : null}
     {accountTypeFilteringReady ? <>
+      {rows.data?.resources.length ? storage.header : null}
       <Problem error={rows.error} />
       {rows.error ? <button type="button" disabled={rows.isFetching} onClick={() => { void rows.refetch(); }}>{copy("account-settings.retryEntries_038902")}</button> : null}
       {readProblem && rows.data ? <p className="notice" role="status">{copy("account-settings.refreshFailedShowingTheLastSuccessfully_09833b")}</p> : null}
       {rows.isFetching && !rows.data ? <SettingsLoading label={copy("account-settings.loadingEntries_49f7f3")} /> : null}
       <div className="api-usage-list-heading"><div><h2>{copy("account-settings.yourApiKeys_e9bf62")}</h2><p>{copy("account-settings.delidevUsageLast30Days_6c267c")}</p></div><button type="button" disabled={!active || rows.isFetching || usageFetching > 0} onClick={() => { void rows.refetch(); void client.refetchQueries({ queryKey: usageKey, type: "active" }); }}><LocalizedText id="account-settings.refreshUsage_831ddd" components={{ s0: <span aria-hidden="true">↻</span> }} /></button></div>
-      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map(row => <ApiEntryRow key={row.id} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div> : null}
+      {rows.data?.resources.length ? <div className="api-entry-rows">{rows.data.resources.map(row => <ApiEntryRow key={row.id} storage={storage.forAccount(row)} row={row} provider={providersById.get(text(document(row).provider_id))} active={active && accountTypeFilteringReady && !readDenied} manage={() => { onWorkflowReadyChange?.(true); setSelectedAccount(row); }} edit={() => editAccount(row)} remove={() => deleteAccount(row)} openUsage={openUsage} />)}</div> : null}
       {successfulEmpty ? finalFirstPage && !providerIdFilter ? <SettingsEmpty title={copy("account-settings.noAiApiKeyEntries_319a32")}><p>{copy("account-settings.addAnEntryForAnEnabled_309062")}</p><p>{copy("account-settings.keylessLocalProvidersDoNotRequire_8313c6")}</p></SettingsEmpty> : <p className="api-entry-page-empty">{finalFirstPage && providerIdFilter ? copy("account-settings.noEntriesForThisProvider_86ca40") : copy("account-settings.noEntriesOnThisPage_c02ff6")}</p> : null}
       {pageToken || rows.data?.nextPageToken ? <nav className="settings-pages" aria-label={copy("account-settings.entryPages_b4e028")}>{pageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: "" })}>{copy("account-settings.firstPage_0bdbb7")}</button> : null}{rows.data?.nextPageToken ? <button type="button" disabled={rows.isFetching} onClick={() => setPage({ section, providerId: providerIdFilter, token: rows.data!.nextPageToken })}>{copy("account-settings.nextPage_c08ac7")}</button> : null}</nav> : null}
     </> : null}

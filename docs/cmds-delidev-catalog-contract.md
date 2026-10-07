@@ -2,14 +2,15 @@
 
 ## Key-preserving API format change reservations
 
-Issue #964 reserves ProviderInventory capability
+PR #1666 established the complete reservations on main before activation.
+Issue #964 owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
 reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
-reserves request fields mutation 1, api_protocol 2, alias 3, enabled 4,
-exclude_automatic 5 and recovery_notifications 6; its response reserves account 1,
+uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
 request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
-Establish these complete allocations on main before implementation. Reservations
-alone grant no format change, key access or execution authority.
+Capability 9 now activates this dedicated operation. The reservation-only PR
+granted no format change, key access or execution authority.
 
 The approved extension permits changing a connected API account's format while
 keeping its protected key. Go owns atomic preference/profile publication and
@@ -28,9 +29,13 @@ unchanged; capability 9 owns the dedicated extension.
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
-own the main-first capability 8 and Start/attempt format fields. Preserve manual
-format profiles, original defaults and independent OAuth eligibility. Reservations
-alone activate no support and add no database migration.
+own the main-first capability 8 and Start/attempt format fields established
+by reservation PR #1657. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. The common
+manual/OAuth connection UI requires selection for multiple profiles and displays
+a sole profile read-only; server-owned Start pins explicit OAuth selections through
+completion/recovery. Provider registration remains independently gated. No
+database migration is added.
 
 ## API account format selection
 
@@ -64,9 +69,10 @@ rejected. The CLI negotiates capability 7 before `account list --api-protocol`.
 Model identity and Usage attribution remain provider/model scoped; a format does
 not create another model identity or duplicate history.
 
-Connect fixes the selected tuple in the original connection generation. Explicit
-Disconnect and confirmed protected cleanup must finish before changing an account
-format. A change starts disconnected and requires key re-entry and validation.
+Connect fixes the selected tuple in the original connection generation. Capability
+9 permits the dedicated key-preserving change described above. Capability 7 alone
+retains the original configuration operation: explicit Disconnect and confirmed
+protected cleanup precede a format edit, key re-entry and validation.
 Accounts cannot change between keyless and credential-owning profiles; create a
 new account for that transition. Existing keyless cleanup proofs remain valid.
 Every referenced provider tuple is immutable, even for disconnected accounts and
@@ -84,7 +90,7 @@ configuration writes. The typed atomic Worker save resolves every account throug
 the same profile and compatibility checks within its model/account transaction.
 
 The desktop requires an explicit manual format selection between Entry name and
-API key. Lists, connection details and Worker compatibility use that account's
+API key when multiple formats are supported, or displays the sole format read-only. Lists, connection details and Worker compatibility use that account's
 format. Custom Provider forms use one card per supported format, with URL and
 authentication inputs, and require at least one. Account-referenced cards are
 locked; the server independently verifies every reference. Capability reads,
@@ -97,8 +103,10 @@ an already accepted exact connection handoff.
 Portable configuration version 4 preserves profiles and explicit selections;
 versions 1–3 retain their historical import semantics and cannot carry the new
 fields. Connections, protected credentials, observations and history remain
-excluded. Imported accounts start disconnected. OAuth, native subscription
-profiles and service-specific API protocols are outside this extension.
+excluded. Imported accounts start disconnected. The separate capability-8 OAuth
+extension preserves authentication ownership while selecting inference formats.
+Native subscription profiles and service-specific API protocols are outside this
+extension.
 
 ### Official REST profile registry
 
@@ -174,7 +182,7 @@ on their ordinary preset endpoints.
 
 
 A disconnected SQL record alone does not prove cleanup: a failed native Connect
-may retain protected staging intents. Format-change admission holds the account
+may retain protected staging intents. Disconnected format-change admission holds the account
 gate, checks the original revision and credential class, then verifies no remaining
 native references outside SQLite before publication. Failed enumeration rejects
 the edit. Exact accepted receipt replays do not reopen the vault. Keyless proof
@@ -228,8 +236,9 @@ Schedules use the ordinary first-execution boundary.
 
 Codex requires the selected API account's Responses profile. OpenRouter's original
 Chat default and existing connections are not rewritten. A new manual OpenRouter
-account may explicitly choose Responses; an existing account must disconnect,
-finish protected cleanup and reconnect before changing its format. Retain
+account may explicitly choose Responses; an existing account may use capability
+9 to keep its key while changing format for new sessions. Capability 7 alone
+requires disconnect, confirmed cleanup and reconnection. Retain
 execution-time validation. OpenRouter
 [documents Responses](https://openrouter.ai/docs/api/api-reference/responses/create-responses).
 No automatic harness switch, active-session retry/account switch or new subscription

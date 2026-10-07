@@ -1,5 +1,17 @@
 # DeliDev storage operations
 
+## API format generation storage
+
+Capability 9 keeps bounded server-owned generations in account JSON, with no
+SQLite migration. Exact receipts and current preferences are committed atomically.
+Backup restoration preserves a live OAuth account only while its current connection
+points to the original OAuth credential reference; a retained historical connection
+alone cannot restore live ownership. Historical disconnected accounts clear all
+connection generations and observations. Portable configuration excludes every
+generation and key reference. See the
+[account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
 ## Startup metadata without migration
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) stores the current bounded startup record in existing session JSON and mirrors it into the original terminal job JSON. Readiness and first failure remain separate immutable observations. Report receipts use existing durable mutations without changing the claimed assignment revision or its input bytes. Explicit retry retains the failed job/input and creates distinct IDs. Original private executable identity, process and outbox journals remain Worker-owned. No table or SQLite migration is added.

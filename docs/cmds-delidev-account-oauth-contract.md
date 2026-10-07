@@ -2,17 +2,18 @@
 
 ## OAuth API format selection reservations
 
-Issue #964 reserves ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
+Reservation PR #1657 established the issue #964 allocations on main before
+implementation: ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
 `StartAccountOAuthRequest.api_protocol = 4` and
-`AccountOAuthAttempt.api_protocol = 7` before dependent implementation.
+`AccountOAuthAttempt.api_protocol = 7`.
 The fields reuse the existing closed `ApiProtocol` enum. Capability 8 extends
 account format selection to accepted provider OAuth profiles; it does not replace
 capabilities 5, 6 or 7 or grant OAuth registration, credential, model or native
 execution authority. Reservation-only changes activate no schemas or runtime
 support and require no database migration.
 
-The implementation must bind an explicit selected profile to the original Start
-receipt and private attempt JSON, and preserve it through account creation,
+An explicit selected profile is bound to the original Start receipt and private
+attempt JSON, and preserved through account creation,
 connection, status, completion and original-result recovery. Omitted legacy
 requests and attempts retain their original default and exact receipt behavior.
 OAuth authentication ownership remains independent of the selected inference
@@ -23,8 +24,29 @@ actor/login/credential ownership, once-only exchange and cleanup stay intact.
 The desktop uses one provider-metadata-driven format presentation for manual and
 OAuth connections: explicitly choose among multiple formats, or display the sole
 format. Preserve Google project binding and device approval. Existing accounts
-require Disconnect and confirmed cleanup before format changes. No historical
+may use capability 9 for the key-preserving change without a new OAuth exchange;
+capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
 account/execution rewrite, protocol conversion or native change is authorized.
+
+Capability 8 is advertised independently of provider registration/acceptance.
+Start accepts the existing ApiProtocol enum; UNSPECIFIED retains legacy receipt
+bytes by omitting the new comparison member. Explicit selections pin the complete
+Bearer protocol/endpoint/authentication tuple in private attempt JSON and create
+schema-3 API accounts. Replays compare the original selection before admission;
+provider revision and original tuple are checked before exchange or protected
+local recovery. Status and completion project the original explicit protocol.
+No verifier, key or OAuth token enters that projection. Credential refresh keeps
+its original authentication adapter, independently of inference format.
+
+The common CLI accepts `account oauth start --api-protocol` with the existing
+`openai-responses`, `openai-chat` and `anthropic-messages` identifiers and requires
+capability 8 before sending an explicit selection. Omission preserves default
+behavior. The desktop opens a configuration step without native preparation or
+server Start; only explicit Continue begins the original authentication flow.
+Multiple profiles require selection; a single profile is displayed read-only.
+Metadata loading/failures block Continue. Older servers show their default format
+and retain an explicit API-key alternative. Google project binding and Baseten
+server-owned device authorization remain independent and unchanged.
 
 
 ## General API OAuth reservations (issue #964)
