@@ -1,3 +1,4 @@
+import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -151,7 +152,7 @@ it("retains a same-project result on refresh failure but removes it when a diffe
   fireEvent.click(screen.getByRole("button", { name: "Refresh routing preview" }));
   await screen.findByText("Refresh failed. Showing the previous result for this project.");
   expect(screen.getByText("ChatGPT Personal")).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Project"), { target: { value: project.id } });
+  await chooseScrollOption(screen.getByLabelText("Project"), project.id);
   await waitFor(() => expect(value.preview).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: project.id }), expect.anything()));
   await screen.findByRole("alert");
   expect(screen.queryByText("ChatGPT Personal")).toBeNull();

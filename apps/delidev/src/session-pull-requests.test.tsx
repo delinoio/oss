@@ -1,3 +1,4 @@
+import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -124,7 +125,7 @@ it("retains a late unverifiable unlink acknowledgment after the panel closes", a
 
 it("links an explicitly selected project repository and preserves the exact PR number", async () => {
   const f = fixture(); render(f.view); fireEvent.click(screen.getByRole("button", { name: "Show PR associations" }));
-  await screen.findByRole("option", { name: "Fixture repository" }); fireEvent.change(screen.getByLabelText("PR project repository"), { target: { value: f.repositoryId } });
+  await chooseScrollOption(screen.getByLabelText("PR project repository"), f.repositoryId);
   await screen.findByText(/Fixture repository · fixture-owner/);
   fireEvent.change(screen.getByLabelText("PR number"), { target: { value: "9007199254740993" } });
   fireEvent.click(screen.getByRole("button", { name: "Link PR" }));
@@ -134,7 +135,7 @@ it("links an explicitly selected project repository and preserves the exact PR n
 
 it("retries an uncertain original link after closing without replacing its input", async () => {
   const f = fixture(); f.link.mockRejectedValueOnce(new ConnectError("Response lost", Code.Unavailable)); render(f.view); fireEvent.click(screen.getByRole("button", { name: "Show PR associations" }));
-  await screen.findByRole("option", { name: "Fixture repository" }); fireEvent.change(screen.getByLabelText("PR project repository"), { target: { value: f.repositoryId } }); await screen.findByText(/Fixture repository · fixture-owner/);
+  await chooseScrollOption(screen.getByLabelText("PR project repository"), f.repositoryId); await screen.findByText(/Fixture repository · fixture-owner/);
   fireEvent.change(screen.getByLabelText("PR number"), { target: { value: "18" } }); fireEvent.click(screen.getByRole("button", { name: "Link PR" }));
   await screen.findByRole("button", { name: "Retry original PR link" }); const original = f.link.mock.calls[0][0];
   fireEvent.click(screen.getByRole("button", { name: "Close PR associations" })); fireEvent.click(screen.getByRole("button", { name: "Show PR associations" }));

@@ -1,3 +1,4 @@
+import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -16,7 +17,7 @@ function fixture() {
   const read = vi.fn(async (_request: GetUsageSummaryRequest) => data);
   const transport = createRouterTransport((router) => {
     router.service(UsageService, { getUsageSummary: read });
-    router.service(ResourceService, { listResources: (request) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? [create(ResourceSchema, { id: ids.account, kind: EntityKind.ACCOUNT, revision: 1n, documentJson: encode({ alias: "Original account" }) })] : [] }) });
+    router.service(ResourceService, { getResource: request => ({ resource: create(ResourceSchema, { id: request.id, kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Original account" }) }) }), listResources: (request) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? [create(ResourceSchema, { id: ids.account, kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Original account" }) })] : [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const open = vi.fn();
@@ -46,12 +47,12 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
 it("applies filters explicitly and preserves a draft across navigation", async () => {
   const f = fixture(); const view = render(f.view());
   await screen.findByText("Incomplete coverage");
-  fireEvent.change(screen.getByRole("combobox", { name: "Account" }), { target: { value: f.ids.account } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Account" }), f.ids.account);
   fireEvent.click(screen.getByRole("checkbox", { name: "General Chat only" }));
   expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).disabled).toBe(true);
   expect(f.read).toHaveBeenCalledTimes(1);
   view.rerender(f.view(false)); view.rerender(f.view());
-  expect((screen.getByRole("combobox", { name: "Account" }) as HTMLSelectElement).value).toBe(f.ids.account);
+  expect((screen.getByRole("combobox", { name: "Account" }) as HTMLSelectElement).dataset.value).toBe(f.ids.account);
   fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
   expect(f.read.mock.calls[1][0]).toMatchObject({ accountId: f.ids.account, generalChat: true, projectId: "" });

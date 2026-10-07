@@ -1,3 +1,4 @@
+import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -137,8 +138,7 @@ it.each([false, true])("retains the confirmed primary checkout when additional c
   const other = row(EntityKind.MACHINE, { name: "Other runner", last_seen: new Date().toISOString() });
   f.resources.set(other.id, other); f.mount(); await f.chooseAndReview();
   fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
-  await screen.findByRole("option", { name: "Other runner" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: other.id } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runner Device" }), other.id);
   fireEvent.change(screen.getByRole("textbox", { name: "Absolute checkout path on this Worker" }), { target: { value: "/alias/B" } });
   f.inspected.mockImplementationOnce(async request => {
     const job = row(EntityKind.JOB, { state: "succeeded", machine_id: request.machineId, output: { ...metadata, root: "/canonical/B", name: "B", github_repositories: { origin: { owner: "different", name: "B" } } } });
@@ -198,8 +198,7 @@ it.each([
 it("supports explicitly selected remote paths without native proof or normalization", async () => {
   const f = fixture(); f.mount(); await f.add(); fireEvent.click(screen.getByRole("button", { name: "Enter a path…" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Computer" }), { target: { value: "remote" } });
-  await screen.findByRole("option", { name: "Runner" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: f.machine.id } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runner Device" }), f.machine.id);
   const path = "C:\\Work Space\\repo";
   fireEvent.change(screen.getByRole("textbox", { name: "Absolute checkout path" }), { target: { value: path } });
   fireEvent.click(screen.getByRole("button", { name: "Inspect folder" }));
