@@ -1,3 +1,5 @@
+- Per-key API formats follow the catalog/protocol contracts and main-first PR #1646 allocations. Negotiate ProviderInventory capability 7, retain closed API format/authentication enums and schema-3 API family checks independently of ordered-source Agents, and preserve original request bytes. Portable v4 accepts existing v1–3 semantics; no Worker wire change or client-side format conversion is authorized.
+
 - Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history and legacy accountless APIs; capability 33 is configuration support, never native readiness.
 # DeliDev delidev-api-client ownership
 

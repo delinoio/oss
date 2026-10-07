@@ -1,5 +1,20 @@
 # DeliDev provider inspection
 
+## Inference profiles and inspection profiles
+
+The [REST registry](cmds-delidev-catalog-contract.md#official-rest-profile-registry)
+declares each offered API format separately. The common server resolver first
+selects the account's declared format or original legacy tuple and checks its
+connection-generation pin. The inspector then matches that complete official
+tuple to the fixed canonical catalog/authentication routes already owned here.
+Inference suffixes never become model-list or key-inspection paths. OpenRouter
+Messages and Responses both use `GET /api/v1/key` and `GET /api/v1/models` with
+Bearer and the OpenAI catalog parser; neither sends Messages or Responses during
+validation. Custom URLs remain advisory. Credential state, late-publication
+revision/connection checks, bounded GET inspection, outbound routing and secret
+clearing retain their existing ownership.
+
+
 ## Ownership and scope
 
 The server owns non-inference API checks in `cmds/delidev-cli/internal/providers`, exposed through `AccountService.ValidateAccount` and `account validate --id ID --revision N`. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This inspector implements bounded model-list inspection and credential evidence. Automatic catalog publication and provider presets are integrated through the separate [catalog contract](cmds-delidev-catalog-contract.md). Quota refresh, subscription authentication, API proxy execution and selected-model/harness validation remain required work and must preserve the same explicit authority and secret boundaries.

@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { configurationSchemaVersion, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { apiFormatToWire, configurationSchemaVersion, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type APIFormatId, type Resource } from "@delinoio/delidev-api-client";
 import { AccountAPIFormatField, ProviderAPIFormatFields } from "./api-format-fields";
 import { document, encode, type Document } from "./documents";
 
@@ -18,7 +18,10 @@ function fixture(initial?: Resource, accounts: Resource[] = [], supported = true
   const blocked = vi.fn();
   const transport = createRouterTransport(router => {
     router.service(ProviderService, { listProviderInventory: () => ({ capabilities: supported ? [ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1] : [] }) });
-    router.service(ResourceService, { getResource: () => ({ resource: provider }), listResources: () => ({ resources: accounts }) });
+    router.service(ResourceService, { getResource: () => ({ resource: provider }), listResources: request => {
+      const filtered = accounts.filter(account => apiFormatToWire((document(account).api_protocol || document(provider).protocol) as APIFormatId) === request.apiProtocol);
+      return { resources: filtered.slice(0, request.filter?.pageSize || 200), nextPageToken: filtered.length > (request.filter?.pageSize || 200) ? "fixture-next" : "" };
+    } });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   function Draft() {
@@ -51,6 +54,16 @@ it("locks an account-referenced URL and authentication even while disconnected",
   expect(screen.getByRole("checkbox", { name: "OpenAI Responses" }).matches(":disabled")).toBe(true);
   expect(screen.getAllByRole("textbox", { name: "API base URL" })[0].matches(":disabled")).toBe(true);
   expect(screen.getAllByRole("textbox", { name: "API base URL" })[1].matches(":disabled")).toBe(false);
+});
+
+it("checks references in each format before pagination without blocking providers with many accounts", async () => {
+  const accounts = Array.from({ length: 201 }, () => row(EntityKind.ACCOUNT, { type: "api", provider_id: provider.id, api_protocol: "openai-chat", health: "disconnected" }));
+  accounts.push(row(EntityKind.ACCOUNT, { type: "api", provider_id: provider.id, health: "disconnected" }));
+  const value = fixture(provider, accounts, true, true);
+  await waitFor(() => expect(value.blocked).toHaveBeenLastCalledWith(false));
+  expect(screen.getByRole("checkbox", { name: "OpenAI Responses" }).matches(":disabled")).toBe(true);
+  expect(screen.getByRole("checkbox", { name: "OpenAI Chat Completions" }).matches(":disabled")).toBe(true);
+  expect(screen.getByRole("checkbox", { name: "Anthropic Messages" }).matches(":disabled")).toBe(false);
 });
 
 it.each(["connected", "cleanup", "unsupported"])("blocks account format selection during %s", async state => {

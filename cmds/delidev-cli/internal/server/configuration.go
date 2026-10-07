@@ -472,7 +472,10 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 					if err != nil {
 						return err
 					}
-					if !providers.HarnessMatches(v.Harness, provider.Protocol) {
+					// Legacy documents remain writable/importable with their original
+					// configuration semantics; execution still enforces the resolved
+					// protocol. Explicit selections reject incompatible Worker saves.
+					if account.APIProtocol != "" && !providers.HarnessMatches(v.Harness, provider.Protocol) {
 						return domain.Fail(domain.Unsupported, "The account API format does not match the Agent Worker.", "Choose Responses for Codex, Messages for Claude Code or Chat Completions for OpenCode and Grok.")
 					}
 				}

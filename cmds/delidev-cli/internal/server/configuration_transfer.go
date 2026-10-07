@@ -107,6 +107,9 @@ func portableDocument(kind domain.Kind, raw []byte) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	if provider, ok := value.(*domain.Provider); ok {
+		*provider = providers.WithAPIFormats(*provider)
+	}
 	return json.Marshal(value)
 }
 func configurationSnapshot(tx *store.Tx) (map[domain.ID]store.Record, error) {
@@ -527,6 +530,15 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			change.Before, err = portableDocument(old.Kind, old.Data)
 			if err != nil {
 				return plan, err
+			}
+			if change.Action == domain.ConfigurationReuse && change.Kind == domain.ProviderKind {
+				// Managed presets expose current profiles without rewriting legacy
+				// rows. Compare both reused documents through that same projection,
+				// including old portable bundles; reuse never updates the stored row.
+				change.After, err = portableDocument(change.Kind, change.After)
+				if err != nil {
+					return plan, err
+				}
 			}
 			if change.Action == domain.ConfigurationReuse && !bytes.Equal(change.Before, change.After) {
 				return plan, domain.Fail(domain.Conflict, "Explicitly reused configuration does not match the imported values.", "Preserve both configurations as separate entries, or edit the import before requesting another preview.")

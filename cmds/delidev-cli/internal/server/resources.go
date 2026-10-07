@@ -331,7 +331,22 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		}
 		defer unlock()
 	}
-	result, err := SaveConfiguration(ctx, s.Store, ConfigurationMutation{RequestID: domain.ID(req.Msg.Mutation.RequestId), ID: domain.ID(req.Msg.Mutation.Id), ExpectedRevision: req.Msg.Mutation.ExpectedRevision, Kind: kind, Document: req.Msg.DocumentJson})
+	input := ConfigurationMutation{RequestID: domain.ID(req.Msg.Mutation.RequestId), ID: domain.ID(req.Msg.Mutation.Id), ExpectedRevision: req.Msg.Mutation.ExpectedRevision, Kind: kind, Document: req.Msg.DocumentJson}
+	if kind == domain.AccountKind && input.ExpectedRevision > 0 {
+		// A failed native Connect can leave protected intents while the account
+		// still appears disconnected. SQL state alone is not cleanup evidence.
+		// Exact accepted replays remain observational and do not reopen the vault.
+		_, replayed, err := s.Store.Replay(ctx, input.RequestID, "configuration.save", input)
+		if err != nil {
+			return nil, rpc.Error(err, correlation)
+		}
+		if !replayed {
+			if err := s.verifyAccountFormatCleanup(ctx, input); err != nil {
+				return nil, rpc.Error(err, correlation)
+			}
+		}
+	}
+	result, err := SaveConfiguration(ctx, s.Store, input)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}

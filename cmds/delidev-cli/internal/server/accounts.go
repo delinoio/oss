@@ -168,9 +168,9 @@ func accountConnectPreflight(tx *store.Tx, input connectAccountInput) (domain.Ac
 	return account, provider, nil
 }
 
-// Account provider/type and a referenced provider's authentication are immutable.
-// A validated keyless API provider therefore proves this account could never
-// stage a credential, even after connection metadata was cleared or on retry.
+// Account provider/type and its credential-owning class are immutable. Referenced
+// profiles cannot change authentication, so a keyless account never stages a
+// credential, even after connection metadata was cleared or on exact retry.
 func accountWithoutCredentials(tx *store.Tx, account domain.Account) (bool, error) {
 	if account.Type != domain.APIAccount {
 		return false, nil
@@ -191,6 +191,52 @@ func accountWithoutCredentials(tx *store.Tx, account domain.Account) (bool, erro
 		return false, err
 	}
 	return provider.Authentication == domain.KeylessAuth, nil
+}
+
+// The account gate is held across this read, native proof and configuration
+// publication. Native enumeration never runs inside a SQLite transaction.
+func (s *Service) verifyAccountFormatCleanup(ctx context.Context, input ConfigurationMutation) error {
+	var proposed domain.Account
+	if err := domain.Decode(input.Document, &proposed); err != nil {
+		return err
+	}
+	changed, keyless := false, false
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		r, old, err := accountFromTx(tx, input.ID, 0)
+		if err != nil {
+			return err
+		}
+		changed = old.APIProtocol != proposed.APIProtocol
+		if !changed {
+			return nil
+		}
+		if r.Revision != input.ExpectedRevision {
+			return domain.Fail(domain.Conflict, "The account revision changed.", "Read the current account before changing its format.")
+		}
+		if err := proposed.Validate(); err != nil {
+			return err
+		}
+		if err := validateRelationships(tx, domain.AccountKind, input.ID, input.ExpectedRevision, &proposed); err != nil {
+			return err
+		}
+		keyless, err = accountWithoutCredentials(tx, old)
+		return err
+	})
+	if err != nil || !changed || keyless {
+		return err
+	}
+	vault, err := s.secrets()
+	if err != nil {
+		return err
+	}
+	refs, err := vault.UnremovedReferences(ctx, input.ID)
+	if err != nil {
+		return err
+	}
+	if len(refs) != 0 {
+		return domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect and finish credential cleanup before changing its format.")
+	}
+	return nil
 }
 
 func (s *Service) accountRecord(ctx context.Context, id domain.ID) (store.Record, error) {

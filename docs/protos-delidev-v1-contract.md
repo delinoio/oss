@@ -1,26 +1,17 @@
 # DeliDev v1 Connect contract
 
-## API account protocol reservations
+## API account format selection
 
-Issue #964 reserves ProviderInventory capability `ACCOUNT_API_PROTOCOL_V1 = 7`,
-`ProviderInventoryEntry.api_formats = 10` and the account-list-only
-`ListResourcesRequest.api_protocol = 5`. `ApiProtocol` reserves UNSPECIFIED 0,
-OPENAI_RESPONSES 1, OPENAI_CHAT 2 and ANTHROPIC_MESSAGES 3.
-`ApiAuthentication` reserves UNSPECIFIED 0, BEARER 1, API_KEY 2 and KEYLESS 3.
-`ProviderApiFormat` reserves protocol/endpoint/authentication fields 1–3.
-The complete declaration closure must reach main before dependent implementation.
-Reservations add no active schemas, bindings, capability advertisement, credential
-use, inference authority or database migration.
-
-The planned feature selects one explicit protocol when adding an API key. Custom
-providers declare bounded per-protocol endpoint/authentication profiles. Existing
-accounts retain their original defaults; connected accounts cannot change protocol.
-Disconnect and confirmed protected cleanup precede a changed selection and a new
-connection. Preserve immutable original execution/account ownership, keyless
-cleanup proofs and native uncertainty. API-specific resource schema 3 and portable
-configuration version 4 protect explicit selections from older-client writes while
-retaining legacy reads. Follow the catalog, account and proxy contracts.
-
+Reservation PR #1646 established the complete issue #964 allocation closure on
+main before implementation: ProviderInventory capability 7, profile field 10,
+account-list protocol field 5 and the closed API protocol/authentication/profile
+declarations. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection)
+owns their activated scope, schema-3 API families and portable version 4.
+Preserve legacy default tuples, disconnect and confirmed protected cleanup before
+format changes, connection-generation pinning, immutable original executions and
+keyless cleanup proofs. The common server resolver owns every consuming flow;
+regenerate bindings from the reconciled declarations. No SQLite migration or
+Worker assignment extension is introduced.
 
 
 ## Direct execution startup reservation
@@ -105,7 +96,7 @@ mutation/revision/receipt response remains unchanged. Capability 36 advertises
 this complete configuration extension; capability 35 retains its separate known
 subscription catalog reservation. Schema 1/2 APIs and accountless CLI writes
 remain compatible; current clients retain schema 3 even with one remaining source.
-Resource reads expose schema 3 only for ordered-source Agents. Older clients must
+Resource reads expose schema 3 for ordered-source Agents, explicit-format API Accounts and profile-declaring API Providers. Older clients must
 treat that family as unsupported and cannot overwrite it through legacy saves.
 No Worker protocol shape or database migration changes. The selected-source native
 configuration remains unchanged; complete source decisions are additive server-owned

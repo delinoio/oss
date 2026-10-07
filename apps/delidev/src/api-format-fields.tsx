@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { APIFormatId, APIAuthenticationId, apiFormat, apiFormatLabels, providerAPIFormats, accountAPIProfile, EntityKind, ProviderInventoryCapability, ProviderQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
+import { APIFormatId, APIAuthenticationId, apiFormat, apiFormatLabels, apiFormatToWire, providerAPIFormats, accountAPIProfile, AccountTypeFilter, EntityKind, ProviderInventoryCapability, ProviderQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
 import { document, object, text, type Document } from "./documents";
 import { Problem } from "./ui";
@@ -13,16 +13,23 @@ function useFormatCapability(active: boolean) {
   return { inventory, ready: Boolean(inventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && !inventory.error && !inventory.isFetching) };
 }
 
+function useFormatReferences(protocol: APIFormatId, providerId: string, active: boolean) {
+  // The server filters before pagination, including legacy account defaults.
+  // One row proves a reference without loading an entire provider's accounts.
+  const query = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.ACCOUNT, pageSize: 1 }, providerId, accountType: AccountTypeFilter.API, apiProtocol: apiFormatToWire(protocol) }, { enabled: active && Boolean(providerId), retry: false });
+  return { protocol, query };
+}
+
 export function ProviderAPIFormatFields({ data, change, active, initial, saveBlocked }: Props) {
   useLocale();
   const { inventory, ready } = useFormatCapability(active);
-  const accounts = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.ACCOUNT, pageSize: 200 }, providerId: initial?.id ?? "" }, { enabled: active && Boolean(initial), retry: false });
-  const referencesReady = !initial || Boolean(accounts.data && !accounts.error && !accounts.isFetching && !accounts.data.nextPageToken);
+  const references = [useFormatReferences(APIFormatId.Responses, initial?.id ?? "", active && ready), useFormatReferences(APIFormatId.ChatCompletions, initial?.id ?? "", active && ready), useFormatReferences(APIFormatId.Messages, initial?.id ?? "", active && ready)];
+  const referencesReady = !initial || references.every(({ query }) => query.data && !query.error && !query.isFetching);
   const profiles = Array.isArray(data.api_formats) ? data.api_formats.map(object) : providerAPIFormats(data).map(profile => ({ ...profile }));
   const blocked = !ready || !referencesReady || profiles.length === 0;
   useEffect(() => { saveBlocked?.(blocked); return () => saveBlocked?.(false); }, [blocked, saveBlocked]);
-  const original = initial ? document(initial) : undefined;
-  const protectedFormats = new Set((accounts.data?.resources ?? []).map(row => text(document(row).api_protocol) || text(original?.protocol)));
+  const protectedFormats = new Set(references.filter(({ query }) => Boolean(query.data?.resources.length)).map(({ protocol }) => protocol));
+  const referencesError = references.find(({ query }) => query.error)?.query.error;
   const update = (next: Document[]) => {
     const legacy = !initial && next[0] ? { protocol: next[0].protocol, endpoint: next[0].endpoint, authentication: next[0].authentication } : {};
     change({ ...data, ...legacy, api_formats: next });
@@ -38,8 +45,8 @@ export function ProviderAPIFormatFields({ data, change, active, initial, saveBlo
     {profiles.length === 0 ? <p role="status">{copy("configuration-fields.atLeastOneApiFormat")}</p> : null}
     {!ready ? <p role="status">{inventory.isFetching ? copy("configuration-fields.loadingApiFormats") : copy("configuration-fields.apiFormatsUnavailable")}</p> : null}
     {initial && !referencesReady ? <p role="status">{copy("configuration-fields.apiProfileReferencesUnavailable")}</p> : null}
-    <Problem error={inventory.error || accounts.error} />
-    {inventory.error || accounts.error ? <button type="button" onClick={() => { void inventory.refetch(); if (initial) void accounts.refetch(); }}>{copy("configuration-fields.retryApiFormats")}</button> : null}
+    <Problem error={inventory.error || referencesError} />
+    {inventory.error || referencesError ? <button type="button" onClick={() => { void inventory.refetch(); if (initial) references.forEach(({ query }) => { void query.refetch(); }); }}>{copy("configuration-fields.retryApiFormats")}</button> : null}
   </section>;
 }
 

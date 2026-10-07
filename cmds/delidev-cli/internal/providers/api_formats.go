@@ -36,6 +36,8 @@ func presetAPIFormats(id domain.ProviderPresetID, legacy domain.ProviderAPIForma
 	case domain.PresetDeepSeek:
 		responses()
 		add(domain.AnthropicMessages, "https://api.deepseek.com/anthropic/v1", domain.APIKeyAuth)
+	case domain.PresetNovita:
+		add(domain.AnthropicMessages, "https://api.novita.ai/anthropic/v1", domain.BearerAuth)
 	case domain.PresetDeepInfra:
 		add(domain.OpenAIResponses, "https://api.deepinfra.com/v1", domain.BearerAuth)
 		add(domain.AnthropicMessages, "https://api.deepinfra.com/anthropic/v1", domain.BearerAuth)

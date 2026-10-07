@@ -1,5 +1,20 @@
 # DeliDev native API relay contract
 
+## Account-selected API profile authority
+
+Every API execution admission and proxy scope uses the common server account
+profile resolver from the [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection).
+The original account and connection generation determine protocol, URL and
+upstream authentication, independently of the provider's legacy default. Codex
+Responses can therefore use an OpenRouter account selected as Responses; a Chat
+Completions account remains incompatible. Operation allowlists, tool enforcement,
+stream parsing and sanitized provider errors retain their existing protocol
+ownership. Unknown operations fail locally without another format or endpoint
+attempt. Title generation uses the original account's Responses profile. Resume,
+Fork and Sidechat never infer another account or connection from newly available
+profiles. Worker assignment and credential wire formats stay unchanged.
+
+
 ## Metadata-only request publication
 
 Issue #1103 adds an original-lease diagnostic projection around each single authorized HTTP invocation. Before transmission, persist one generated correlation/record identity and its send claim; exact publication receipts do not make another HTTP attempt. After response/cancellation, publish only closed status/error, observed elapsed latency, allowlisted settings and protected-value-checked opaque request/response IDs. Completion is bounded and joined before lease/storage release; failed or interrupted settlement retains uncertainty. This table is not a usage source and does not modify native retry, authorization, request/response byte forwarding or credential lifetime. Native input/effective settings remain a separate exact-identity publication. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for limits and reads.
