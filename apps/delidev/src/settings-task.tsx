@@ -152,9 +152,9 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
       // A category departure or replacement dialog cannot restore a stale opener.
       if (anotherModal(node)) return;
       const restoreFocus = () => {
-        if (anotherModal(node)) return;
+        if (anotherModal(node)) return null;
         const focused = document.activeElement;
-        if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return;
+        if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return null;
         const openerDialog = opener.current?.closest("dialog");
         const openerTarget = !openerRetired.current && opener.current?.isConnected && !opener.current.hasAttribute("disabled") && !opener.current.matches("[hidden], [aria-hidden=true]") && !opener.current.closest("[hidden]") && (!openerDialog || openerDialog.open) && (!returnFocus.current || available(opener.current)) ? opener.current : null;
         const fallback = returnFocus.current?.() ?? (categoryContent.current?.isConnected ? categoryContent.current.querySelector<HTMLElement>(".settings-toolbar button:not(:disabled), .settings-heading button:not(:disabled)") ?? categoryContent.current.querySelector<HTMLElement>("h1") : null);
