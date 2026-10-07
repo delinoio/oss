@@ -58,7 +58,7 @@ it("retries an uncertain creation with its original request after hiding setting
   fireEvent.click(screen.getByRole("button", { name: "Retry the same backup creation" }));
   await waitFor(() => expect(f.create).toHaveBeenCalledTimes(2));
   expect(toBinary(RequestBackupRequestSchema, f.create.mock.calls[0]![0] as RequestBackupRequest)).toEqual(toBinary(RequestBackupRequestSchema, f.create.mock.calls[1]![0] as RequestBackupRequest));
-  await screen.findByRole("article", { name: `Backup ${f.creation.backupId}` });
+  await screen.findByRole("article", { name: `Backup ${f.creation.backupId} creation` });
 });
 
 
@@ -136,14 +136,14 @@ it("polls each accepted operation beyond the first history page and refreshes in
   f.deletions.mockResolvedValue({ jobs: [] });
   const view = render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
-  const created = await screen.findByRole("article", { name: `Backup ${f.creation.backupId}` });
+  const created = await screen.findByRole("article", { name: `Backup ${f.creation.backupId} creation` });
   await within(created).findByText("pending");
   expect(f.getCreation.mock.calls[0]![0].id).toBe(f.creation.id);
   fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
   fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: `I confirm permanent deletion of backup ${f.id}` }));
   fireEvent.click(screen.getByRole("button", { name: "Permanently delete selected backup" }));
-  const removed = await screen.findByRole("article", { name: `Backup ${f.deletion.backupId}` });
+  const removed = await screen.findByRole("article", { name: `Backup ${f.deletion.backupId} deletion` });
   await within(removed).findByText("pending");
   expect(f.getDeletion.mock.calls[0]![0].id).toBe(f.deletion.id);
   // Pause still-pending direct reads without discarding either accepted identity.
@@ -155,11 +155,11 @@ it("polls each accepted operation beyond the first history page and refreshes in
   const reads = f.list.mock.calls.length;
   f.getCreation.mockResolvedValue({ job: { ...f.creation, revision: 2n, state: BackupCreationState.SUCCEEDED } });
   view.rerender(f.view());
-  await within(created).findByRole("button", { name: `Dismiss backup ${f.creation.backupId} tracking` });
+  await within(created).findByRole("button", { name: `Dismiss backup ${f.creation.backupId} creation tracking` });
   await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(reads));
   const afterCreation = f.list.mock.calls.length;
   f.getDeletion.mockResolvedValue({ job: { ...f.deletion, revision: 2n, state: BackupDeletionState.SUCCEEDED } });
-  await within(removed).findByRole("button", { name: `Dismiss backup ${f.deletion.backupId} tracking` }, { timeout: 4000 });
+  await within(removed).findByRole("button", { name: `Dismiss backup ${f.deletion.backupId} deletion tracking` }, { timeout: 4000 });
   await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(afterCreation), { timeout: 4000 });
 }, 15000);
 
@@ -172,8 +172,8 @@ it("retains multiple accepted creations and marks a failed direct refresh stale"
   f.create.mockResolvedValueOnce({ job: next, requestId: newRequestId(), replayed: false });
   f.getCreation.mockImplementation(async input => ({ job: input.id === next.id ? next : f.creation }));
   fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
-  await screen.findByRole("article", { name: `Backup ${next.backupId}` });
-  const first = screen.getByRole("article", { name: `Backup ${f.creation.backupId}` });
+  await screen.findByRole("article", { name: `Backup ${next.backupId} creation` });
+  const first = screen.getByRole("article", { name: `Backup ${f.creation.backupId} creation` });
   f.getCreation.mockRejectedValueOnce(new ConnectError("read failed", Code.Unavailable));
   await f.client.invalidateQueries();
   await within(first).findByText("The last observation is stale; current job status is unavailable.");
@@ -420,7 +420,7 @@ it("disposes tab, inspection and uncertain-write presentation on a Strict Mode o
   expect(screen.queryByRole("button", { name: "Retry the same backup creation" })).toBeNull();
   expect(screen.queryByRole("region", { name: "Backup integrity inspection" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
-  await screen.findByRole("article", { name: `Backup ${f.creation.backupId}` });
+  await screen.findByRole("article", { name: `Backup ${f.creation.backupId} creation` });
   expect(f.create).toHaveBeenCalledTimes(2);
   expect(f.create.mock.calls[0]![0]).not.toEqual(f.create.mock.calls[1]![0]);
 });
