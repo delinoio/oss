@@ -151,5 +151,6 @@
   "agent-worker-wizard.healthSuffix": " · 상태: {{v0}}",
   "agent-worker-wizard.changeSource": "소스 변경",
   "agent-worker-wizard.usedInOrder": "이 순서대로 사용",
-  "agent-worker-wizard.apiProvider": "API 제공자"
+  "agent-worker-wizard.apiProvider": "API 제공자",
+  "agent-worker-wizard.retrySourceDetails": "소스 세부 정보 다시 읽기"
 }
