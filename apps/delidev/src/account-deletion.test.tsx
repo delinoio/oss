@@ -4,7 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   BrowserService, ConfigurationService, EntityKind, ErrorDetailSchema, GetSubscriptionProgressResponseSchema,
@@ -78,6 +78,46 @@ function dismissTask(method: "X" | "Escape") {
   else fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
   expect(screen.queryByRole("dialog")).toBeNull();
 }
+
+it.each([
+  ["Delete account", "X"], ["Delete account", "Escape"], ["Delete account", "Cancel"],
+  ["Edit preferences", "X"], ["Edit preferences", "Escape"], ["Edit preferences", "Cancel"],
+] as const)("keeps subscription content and disclosures visible beneath %s through %s dismissal", async (action, dismissal) => {
+  const value = fixture();
+  render(<value.Harness settings />);
+  const inventory = await screen.findByRole("article", { name: alias });
+  const opener = within(inventory).getByRole("button", { name: `More actions for ${alias}` });
+  fireEvent.click(opener);
+  fireEvent.click(screen.getByRole("button", { name: "Account details" }));
+  const details = within(inventory).getByRole("heading", { name: "Account details" });
+  const advanced = screen.getByText("Advanced settings").closest("details")!;
+  fireEvent.click(advanced.querySelector("summary")!);
+  expect(advanced.open).toBe(true);
+  fireEvent.click(opener);
+  fireEvent.click(screen.getByRole("button", { name: action }));
+  const dialog = screen.getByRole("dialog");
+  const background = inventory.closest("fieldset")!;
+  expect(inventory.isConnected).toBe(true);
+  expect(inventory.closest("[hidden]")).toBeNull();
+  expect(details.isConnected).toBe(true);
+  expect(advanced.open).toBe(true);
+  expect(background.disabled).toBe(true);
+  expect(background.hasAttribute("inert")).toBe(true);
+  expect(background.getAttribute("aria-hidden")).toBe("true");
+  expect(dialog.closest("fieldset")).toBeNull();
+  if (dismissal === "X") fireEvent.click(within(dialog).getByRole("button", { name: /^Close / }));
+  else if (dismissal === "Escape") fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  else fireEvent.click(within(dialog).getByRole("button", { name: action === "Delete account" ? "Keep account" : "Cancel edit" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("article", { name: alias })).toBe(inventory);
+  expect(within(inventory).getByRole("heading", { name: "Account details" })).toBe(details);
+  expect(advanced.open).toBe(true);
+  await waitFor(() => expect(globalThis.document.activeElement).toBe(opener));
+  expect(background.disabled).toBe(false);
+  expect(background.hasAttribute("inert")).toBe(false);
+  expect(value.logout).not.toHaveBeenCalled();
+  expect(value.remove).not.toHaveBeenCalled();
+});
 
 it.each(["X", "Escape"] as const)("retains deferred logout and its exact explicit retry across %s dismissal", async (method) => {
   const value = fixture(); let release!: () => void;

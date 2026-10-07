@@ -23,10 +23,10 @@ private runtime. Separate accounts can run independently.
 
 Establish these issue #964 allocations on main before dependent implementation:
 
-- System `GROK_SUBSCRIPTION_LOGIN_V1 = 38`.
-- System `GROK_SUBSCRIPTION_EXECUTION_V1 = 39`.
-- Worker `MANAGED_GROK_SUBSCRIPTIONS_V1 = 20`.
-- `GetSubscriptionProgressResponse.grok_diagnostic = 8`, preserving Codex field 7.
+- System `GROK_SUBSCRIPTION_LOGIN_V1 = 39`.
+- System `GROK_SUBSCRIPTION_EXECUTION_V1 = 40`.
+- Worker `MANAGED_GROK_SUBSCRIPTIONS_V1 = 21`.
+- `GetSubscriptionProgressResponse.grok_diagnostic = 10`, preserving Codex field 7.
 - `GrokDiagnostic` fields detected version 1, supported version 2, phase 3,
   stable code 4, safe message 5, guidance 6 and correlation ID 7.
 - Closed `GrokDiagnosticPhase` members UNSPECIFIED 0, DISCOVERY 1, VERSION 2,

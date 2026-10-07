@@ -330,7 +330,7 @@ it.each(["Cancel", "Close Add repository", "Escape"])("dismisses with %s, restor
   opener.focus(); await f.add();
   const dialog = screen.getByRole("dialog", { name: "Add repository" });
   expect(window.document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Git URL" }));
-  expect(screen.getByText("No saved entries.")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "No repositories yet", hidden: true })).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Enter a path…" }));
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Absolute checkout path" }), { target: { value: "/discard" } });
   if (action === "Escape") fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));

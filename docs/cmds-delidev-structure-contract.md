@@ -3,8 +3,8 @@
 ## Grok Build subscription reservations
 
 The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
-reserves System login 38, System execution 39, Worker managed execution 20 and
-progress diagnostic field 8 under issue #964. The ledger also owns the new
+reserves System login 39, System execution 40, Worker managed execution 21 and
+progress diagnostic field 10 under issue #964. The ledger also owns the new
 GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Establish
 the complete closure on main before active schemas, generated bindings or runtime
 support. Codex field 7 and existing System 30/35/36/37 and Worker 19 ownership
@@ -332,3 +332,15 @@ implemented. Retain main-first allocation ownership and tool-generated outputs.
 DeliDev pre-release breaking changes do not suppress other projects' Buf
 breaking checks, numeric allocation validation, lint or freshness. Record source
 revision, commands, results and unresolved limits in PRs and CI artifacts.
+
+## Native Claude subscription reservations
+
+Issue #964 reserves System capability 38, Worker capability 20 and the complete
+Claude login-code/progress/native-identity closure in the protocol allocation
+ledger. Establish these reservations on main before dependent feature branches
+activate the declarations. Existing Codex bundles, independent capabilities and
+real migrations through 31 retain their meanings. Reservations alone grant no
+native login, execution, browser dispatch or cleanup authority and add no
+migration. The complete feature owns selected-Runner native authentication,
+metadata-only server ownership, single-use original login input and joined
+native lifecycle/execution cleanup under the subscription and desktop contracts.
