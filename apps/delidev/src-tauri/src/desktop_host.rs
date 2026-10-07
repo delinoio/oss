@@ -587,7 +587,12 @@ impl Owned {
 enum Control {
     #[cfg(test)]
     Crash(mpsc::SyncSender<Result<()>>),
-    Get(Command, Duration, bool, mpsc::SyncSender<Result<Arc<Pipe>>>),
+    Get(
+        Box<Command>,
+        Duration,
+        bool,
+        mpsc::SyncSender<Result<Arc<Pipe>>>,
+    ),
     Shutdown(Duration, mpsc::SyncSender<Result<()>>),
 }
 // The original spawn thread remains alive for every owned child. Linux's
@@ -651,7 +656,7 @@ impl Session {
                             let _ = send.send(Err(NativeFailure::Stopped));
                             continue;
                         }
-                        let result = spawn(command, timeout, &chosen, &lifetime_fence);
+                        let result = spawn(*command, timeout, &chosen, &lifetime_fence);
                         match result {
                             Ok(child) => {
                                 let pipe = child.pipe.clone().ok_or(NativeFailure::SidecarFailed);
@@ -711,7 +716,7 @@ impl Session {
         let (send, receive) = mpsc::sync_channel(1);
         self.control
             .send(Control::Get(
-                command,
+                Box::new(command),
                 connector.command_timeout,
                 !self.fenced.load(Ordering::Acquire),
                 send,
