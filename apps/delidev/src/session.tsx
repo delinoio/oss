@@ -371,6 +371,7 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
     <aside ref={information} id={`info-${id}`} className="session-app-panel session-information" hidden={panel !== SessionPanel.Info} aria-labelledby={`info-title-${id}`}>
       <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2><button type="button" onClick={closePanel} aria-label={copy("session.closeInformation")}>×</button></header>
       <div className="session-information-body">
+        {session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen /> : null}
         <div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
           <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
           {recovering ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
@@ -380,7 +381,6 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
           <Problem error={send.error} />
         </div>
         {session ? <>
-          <SessionTools resource={session} changed={setAcknowledged} initiallyOpen />
           <details className="session-information-section"><summary>{copy("session.pullRequests")}</summary><SessionPullRequests key={id} session={session} /></details>
           <details className="session-information-section"><summary>{copy("session.executionSettings")}</summary><ExecutionConfiguration resource={session} /></details>
           <details className="session-information-section"><summary>{copy("session.context")}</summary><SessionContext key={id} session={session} /></details>
