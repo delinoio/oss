@@ -521,6 +521,7 @@ it("disposes late failed-login deletion completion when its task closes", async 
  render(<value.Harness />);
  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
  await screen.findByText("Cleaning up credentials and deleting the account...");
+ expect(screen.getByText("Closing this screen does not cancel accepted server cleanup or deletion.")).toBeTruthy();
  fireEvent.click(screen.getByRole("button", { name: "Back to subscriptions" }));
  await act(async () => release());
  expect(value.deleted).not.toHaveBeenCalled();

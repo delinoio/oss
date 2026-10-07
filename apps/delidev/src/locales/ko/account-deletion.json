@@ -50,5 +50,6 @@
   "account-deletion.api.retryCleanupGuidance": "원래 자격 증명 정리 요청만 재시도하세요.",
   "account-deletion.api.departure": "이 카테고리를 벗어나면 자동 삭제가 중단됩니다. 승인된 연결 해제와 정리는 계속됩니다.",
   "account-deletion.api.refresh": "항목을 새로고침하여 다시 확인",
-  "account-deletion.cleaningUpAndDeleting": "인증 정보를 정리하고 계정을 삭제하는 중..."
+  "account-deletion.cleaningUpAndDeleting": "인증 정보를 정리하고 계정을 삭제하는 중...",
+  "account-deletion.acceptedServerDeletionContinues": "이 화면을 닫아도 서버에서 접수한 정리 및 삭제 작업은 취소되지 않습니다."
 }

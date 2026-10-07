@@ -251,7 +251,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       {view.stage === Stage.Logout ? <p>{copy("account-deletion.theAccountWillBeDeletedAfter_6b177a")}</p> : null}
       <Failure failure={view.failure} />
       <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <button disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? copy("account-deletion.retryOriginalLogoutRequest_ce84e9") : pending.current.retry === Retry.Delete ? copy("account-deletion.retryTheSameDeletion_b32bf6") : copy("account-deletion.retryOriginalStatusCheck_88bd61")}</button> : <button disabled={!active || pending.current?.busy} onClick={() => void refresh()}>{copy("account-deletion.refreshAccountForConfirmation_deba05")}</button> : null}<button disabled={!active} onClick={leave}>{copy("account-deletion.backToSubscriptions_257d53")}</button></div>
-      <p className="settings-scope">{copy("account-deletion.leavingThisScreenStopsAutomaticDeletion_7a5a3c")}</p>
+      <p className="settings-scope">{copy(pending.current?.deletion && !cleared(pending.current.confirmed) && failedInitialLogin(pending.current.confirmed) ? "account-deletion.acceptedServerDeletionContinues" : "account-deletion.leavingThisScreenStopsAutomaticDeletion_7a5a3c")}</p>
     </>}
   </section>;
 }
