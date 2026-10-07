@@ -1,5 +1,9 @@
 # DeliDev Diagnostics Presentation
 
+## Direct startup presentation
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, original correlation, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.
+
 ## Scope
 
 Issue #1144's approved v2 layout reorganizes Settings Diagnostics for the single server owner and authorized paired clients. `apps/delidev/src/doctor.tsx` and `doctor.css` own presentation of the existing read-only report. The [desktop contract](apps-delidev-desktop-contract.md) retains Settings page and visit ownership; the [diagnostics contract](cmds-delidev-diagnostics-contract.md) retains observations, authorization and report bounds.

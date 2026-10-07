@@ -1,5 +1,13 @@
 # Project: DeliDev
 
+Direct execution startup owns System 43 / Worker 23 after PR #1645's main-first
+closure. The [startup contract](cmds-delidev-execution-startup-contract.md) replaces
+manual inspection and numeric execution gates with actual original-process
+initialization, bounded failure metadata and explicit proven no-send retry.
+Account/Worker/history, credentials, revisions and independent cleanup remain
+cross-domain invariants; existing supported feature/platform limits remain and
+no SQLite migration is added.
+
 API account protocol selection reserves ProviderInventory capability 7 and its complete profile/filter declarations under issue #964 before implementation. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-protocol-reservations) owns this prerequisite; it adds no runtime or database authority.
 
 Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
@@ -57,7 +65,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
-- [Direct execution startup (planned)](cmds-delidev-execution-startup-contract.md)
+- [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Diagnostics presentation](apps-delidev-diagnostics-contract.md)

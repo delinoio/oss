@@ -116,7 +116,7 @@ type OpenCodeInteractionRequest struct {
 }
 
 func (r OpenCodeInteractionRequest) Validate(kind InteractionType, native InteractionRequestID) error {
-	if r.Version != OpenCodeProtocolVersion || NativeIdentity(r.NativeEventID).Validate(OpenCode, NativeEventIdentity) != nil || NativeIdentity(r.NativeMessageID).Validate(OpenCode, NativeMessageIdentity) != nil || Text(r.CallID, "native interaction tool call", 1024, true) != nil || native.Kind != InteractionTextID || native.Number != nil {
+	if (r.Version != "" && !ValidNativeVersionMetadata(r.Version)) || NativeIdentity(r.NativeEventID).Validate(OpenCode, NativeEventIdentity) != nil || NativeIdentity(r.NativeMessageID).Validate(OpenCode, NativeMessageIdentity) != nil || Text(r.CallID, "native interaction tool call", 1024, true) != nil || native.Kind != InteractionTextID || native.Number != nil {
 		return invalidInteraction()
 	}
 	switch kind {

@@ -1,5 +1,9 @@
 # DeliDev session acceptance and input queue contract
 
+## Direct execution startup
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) replaces mandatory installation/protocol inspection for negotiated v4 execution jobs. First, continued and scheduled execution retain the same atomic input, configuration, account routing, leases, budget and Worker authority. The actual process must publish readiness before its API relay can infer. A failed attempt with positive no-send and original cleanup proof keeps its rejected input and immutable assignment; explicit revision-checked Resume creates a distinct same-selection attempt. Uncertain input or cleanup retains original recovery. A retried first execution has a separate native root ID without rewriting the initial selection; continuation and title attribution use that successful original lineage.
+
 ## Scope
 `cmds/delidev-cli/internal/domain/session.go`, `internal/store/sessions.go`, `internal/server/sessions.go`, `internal/server/session_workspace.go`, `internal/server/session_workspace_recovery.go`, `internal/server/session_dispatch.go` and `internal/cli/sessions.go` own durable session acceptance, ordered input, revision-checked edits, visibility and workspace preparation controls. `internal/domain/execution.go` and `internal/store/execution.go` provide the private first-execution configuration/selection transaction primitive. `internal/domain/execution_events.go`, `internal/server/execution_events.go` and the Worker publication components implement the private core native-event path. Authenticated `SessionService` acceptance and workspace controls are implemented end to end through the CLI/server and real SQLite.
 

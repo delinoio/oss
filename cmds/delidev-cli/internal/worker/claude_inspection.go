@@ -44,6 +44,14 @@ func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref Comp
 		return executionCheckpointUncertain()
 	}
 	history := filepath.Join(root, "runtimes", string(c.HistoryExecutionID))
-	config := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: c.JobID, Executable: native.Executable, Cwd: history}, Version: native.Version, Home: filepath.Join(history, "claude"), Workspace: cwd, WorkspaceRoots: c.WorkspaceRoots, SessionID: c.SessionID, Model: native.Model, Permission: claude.NativePermission(native.Permission), Effort: claude.NativeEffort(native.Effort), API: claude.APIConfig{ServerOrigin: credential.Endpoint}}
+	executable := native.Executable
+	if native.Startup != nil {
+		installation, err := resolveOriginalStartup(ctx, Config{Root: root}, c.JobID, domain.ExecutionJobInput{Version: 4, Startup: native.Startup, Configuration: domain.ExecutionConfiguration{Harness: domain.ClaudeCode}})
+		if err != nil {
+			return err
+		}
+		executable = installation.ResolvedPath
+	}
+	config := claude.APIStreamConfig{Process: process.Config{Directory: filepath.Join(root, "processes"), OwnerID: c.JobID, Executable: executable, Cwd: history}, Version: native.Version, Home: filepath.Join(history, "claude"), Workspace: cwd, WorkspaceRoots: c.WorkspaceRoots, SessionID: c.SessionID, Model: native.Model, Permission: claude.NativePermission(native.Permission), Effort: claude.NativeEffort(native.Effort), API: claude.APIConfig{ServerOrigin: credential.Endpoint}}
 	return claude.InspectCheckpoint(ctx, config, native.InstructionsDigest, saved.Native, saved.NativeReference)
 }

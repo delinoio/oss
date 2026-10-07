@@ -7,7 +7,7 @@ import (
 
 func publishClaudeCallbackSettlement(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, actor domain.ID, progress *domain.ExecutionProgress, event domain.ExecutionEvent) error {
 	u := event.ClaudeSettlement
-	if u == nil || input.Configuration.Harness != domain.ClaudeCode || input.Installation.Version != domain.ClaudeProtocolVersion || progress.UnconfirmedResponses == 0 {
+	if u == nil || input.Configuration.Harness != domain.ClaudeCode || input.Version != 4 && !domain.ValidNativeVersionMetadata(input.Installation.Version) || progress.UnconfirmedResponses == 0 {
 		return executionEventConflict()
 	}
 	r, err := tx.Get(domain.InteractionKind, u.InteractionID)

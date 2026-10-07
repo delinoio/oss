@@ -23,16 +23,18 @@ retaining legacy reads. Follow the catalog, account and proxy contracts.
 
 
 
-## Direct execution startup reservation
+## Direct execution startup allocation and activation
 
-The [startup contract](cmds-delidev-execution-startup-contract.md) reserves System
-43, Worker 23, `ReportExecutionStartupRequest`, `ReportExecutionStartupResponse`,
-`ExecutionStartupObservation` and the four closed startup enums under issue #964.
-The allocation ledger owns every field and enum member of these new declarations.
-Establish the complete closure on main before dependent implementation. Preserve
-System 42 and Worker 22 for the separate inline-model reservation in PR #1642.
-These reservations activate no schema, execution or credential authority and add
-no migration.
+PR #1645 established the complete [startup allocation](cmds-delidev-execution-startup-contract.md)
+on main at `03429673f2976ab52b98c613f9d3cc1ff4c41d84` before implementation.
+Runtime activation uses System 43, Worker 23, ReportExecutionStartup request/response,
+ExecutionStartupObservation and the four closed startup enums with their original
+ledger field/member numbers. Preserve separate System 42 and Worker 22 ownership
+for PR #1642. Negotiation permits private v4 direct assignments without inspection;
+the original process still proves protocol/settings and fresh account authority.
+Reports bind claimed revision, original machine/device/instance/server epoch and
+durable exact receipts. Ready/failure metadata uses existing session/terminal job
+JSON; no assignment rewrite, credential grant or SQLite migration is added.
 
 ## Failed subscription cleanup reservations
 

@@ -158,7 +158,7 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
   </>;
 }
 
-export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project" }
+export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance }
 enum SettingsCategory {
   Appearance = "appearance",
@@ -260,7 +260,7 @@ interface SettingsSelection { category: SettingsCategory; key: string; entry?: S
 type NavigateSettings = (category: SettingsCategory, entry?: SettingsCategoryEntry) => void;
 
 function entrySelection(destination?: SettingsEntryDestination): SettingsSelection {
-  return { category: destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
+  return { category: destination === SettingsEntryDestination.RunnerDevices ? SettingsCategory.ExecutionWorkers : destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
 }
 
 export function Settings({ visible = true, ...props }: SettingsProps) {

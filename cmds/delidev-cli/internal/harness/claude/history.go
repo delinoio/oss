@@ -283,7 +283,7 @@ func verifyResumedTranscript(ctx context.Context, raw []byte, session domain.ID,
 		var id, version, cwd string
 		var parent *string
 		var sidechain *bool
-		if json.Unmarshal(fields["uuid"], &id) != nil || !nativeUUID(id) || json.Unmarshal(fields["parentUuid"], &parent) != nil || fields["parentUuid"] == nil || json.Unmarshal(fields["isSidechain"], &sidechain) != nil || sidechain == nil || *sidechain != (child != nil) || json.Unmarshal(fields["version"], &version) != nil || version != SupportedVersion || json.Unmarshal(fields["cwd"], &cwd) != nil || cwd != workspace {
+		if json.Unmarshal(fields["uuid"], &id) != nil || !nativeUUID(id) || json.Unmarshal(fields["parentUuid"], &parent) != nil || fields["parentUuid"] == nil || json.Unmarshal(fields["isSidechain"], &sidechain) != nil || sidechain == nil || *sidechain != (child != nil) || json.Unmarshal(fields["version"], &version) != nil || !domain.ValidNativeVersionMetadata(version) || json.Unmarshal(fields["cwd"], &cwd) != nil || cwd != workspace {
 			return TranscriptObservation{}, historyUncertain()
 		}
 		if child != nil {

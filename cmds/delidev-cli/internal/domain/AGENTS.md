@@ -1,4 +1,5 @@
 - Failed subscription cleanup follows `docs/cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations` after main reservation PR #1614 (System 41). Preserve server-owned complete batches, original actor/login/revision, shared vault/reference deletion checks, atomic result/tombstone receipts, joined shutdown and restore quarantine. Terminal failures require a new explicit batch; status/restart never relaunches login or callbacks. No database migration or Rust/native change.
+- Direct startup follows `docs/cmds-delidev-execution-startup-contract.md`. Validate negotiated v4 immutable selections, bounded closed observations and explicit source-bound retry references. Read historical v1/v2/v3 without rewriting attribution. Optional version metadata grants no numeric admission authority; retain native root lineage independently of the initial selection and separate no-send proof from cleanup uncertainty.
 
 # DeliDev domain ownership
 

@@ -51,7 +51,7 @@ type SessionCompactionInput struct {
 
 func (i SessionCompactionInput) Validate() error {
 	a, done := i.Assignment, i.Completion
-	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && a.Installation.Version == ClaudeProtocolVersion || i.Version == 2 && a.Configuration.Harness == Codex && CodexVersionAllowed(a.Installation.Version) || i.Version == 3 && a.Configuration.Harness == OpenCode && a.Installation.Version == OpenCodeProtocolVersion
+	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && (a.Version == 4 || ValidNativeVersionMetadata(a.Installation.Version)) || i.Version == 2 && a.Configuration.Harness == Codex && (a.Version == 4 || CodexVersionAllowed(a.Installation.Version)) || i.Version == 3 && a.Configuration.Harness == OpenCode && (a.Version == 4 || ValidNativeVersionMetadata(a.Installation.Version))
 	if !profile || UniqueIDs([]ID{i.ActionID, i.SourceJobID, a.ExecutionID, a.InputID, a.SessionID}) != nil || a.Validate() != nil || done.ValidateForHarness(a.Configuration.Harness) != nil || done.Version != 2 || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || done.Outcome != ExecutionSucceeded {
 		return CompactionUncertain()
 	}
@@ -72,6 +72,10 @@ func (i SessionCompactionInput) Validate() error {
 	c := i.Restore.Continuation
 	want := a
 	want.Version, want.ExecutionID, want.InputID = 2, i.ActionID, i.Restore.InputID
+	if a.Version == 4 {
+		want.Version = 4
+	}
+	want.Retry = nil
 	want.ThreadRequestID, want.TurnRequestID, want.Continuation = i.Restore.ThreadRequestID, i.Restore.TurnRequestID, c
 	expected, err := json.Marshal(want)
 	actual, actualErr := json.Marshal(i.Restore)

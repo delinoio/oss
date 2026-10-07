@@ -1,5 +1,9 @@
 # DeliDev TypeScript client
 
+## Execution startup bindings
+
+The [direct startup contract](cmds-delidev-execution-startup-contract.md) activates the main-reserved System 43, Worker 23 and closed ReportExecutionStartup declarations. Generate Go, TypeScript and Connect Query outputs from the reconciled service schemas. The original Worker reports exact claimed revision/instance metadata; desktop presentation reads existing authenticated session resources. Additive observations do not grant client Worker authority, inference or credential access.
+
 Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAccountOAuth, CancelAccountOAuth and GetAccountOAuthStatus, with exact bigint revisions and closed OAuth state/connection-method enums. Authorization URL exists only in original live Start; status carries metadata only. Completion code is a write-only bounded byte array: use a direct authenticated RPC without query/mutation-cache retention, clear transient buffers, and recover only the original completion identity without code. No client-side retry may repeat an exchange. Preserve all four existing account-flow gates independently of capability 5 under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Request diagnostic client

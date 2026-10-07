@@ -56,5 +56,6 @@
   "subscription-onboarding.sentence.360691dcfaa7": "Codex {{v0}} did not complete {{v1}}. The native operation timed out.",
   "subscription-onboarding.sentence.01720d6af7dc": "Codex requires valid SemVer at or above {{v0}}.",
   "subscription-onboarding.sentence.758270754713": "Codex {{v0}} did not complete {{v1}}. {{v2}}",
-  "subscription-onboarding.notDetected": "not detected"
+  "subscription-onboarding.notDetected": "not detected",
+  "subscription-onboarding.nativeVersionMetadataInvalid": "The native version metadata is invalid."
 }

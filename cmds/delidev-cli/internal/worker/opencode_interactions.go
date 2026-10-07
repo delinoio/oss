@@ -23,7 +23,7 @@ func (c *OpenCodeEventPublisher) publishInteractionRequest(ctx context.Context, 
 	if part == nil || part.update.NativeParentID != n.Tool.MessageID || message == nil || message.role != domain.AssistantMessage || message.finalized || part.latest.Status != domain.ToolPending && part.latest.Status != domain.ToolRunning {
 		return publicationUncertain()
 	}
-	r := &domain.OpenCodeInteractionRequest{Version: opencode.SupportedVersion, NativeEventID: o.EventID, NativeMessageID: n.Tool.MessageID, CallID: n.Tool.CallID}
+	r := &domain.OpenCodeInteractionRequest{Version: b.publisher.NativeVersion(), NativeEventID: o.EventID, NativeMessageID: n.Tool.MessageID, CallID: n.Tool.CallID}
 	u := domain.ExecutionInteractionUpdate{ID: domain.NewID(), NativeItemID: part.update.NativeID, NativeRequestID: domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: n.ID}, OpenCode: r}
 	switch n.Kind {
 	case opencode.PermissionInteraction:

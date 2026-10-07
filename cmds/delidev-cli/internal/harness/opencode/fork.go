@@ -290,7 +290,7 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	}
 	proof := &nativeCheckpointFork{Version: 1, RequestID: requests.Fork, SourceReference: sourceRef, SourceWorkspace: source.Workspace, SourceHistories: checkpointHistories(source), ClonedHistories: histories, Identities: identities, SelectionPending: true}
 	ref = CheckpointReference{OwnerID: s.owner, CreationRequestID: requests.Fork, InputRequestID: last.RequestID, SessionID: identity.id, InputID: last.InputID, PartID: last.Messages[0].Parts[0].ID, InputSHA256: sourceRef.InputSHA256, HistorySHA256: last.Digest}
-	value := nativeCheckpoint{Version: 1, NativeVersion: SupportedVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: target, NativeRoot: "/", Project: "global", Slug: identity.slug, Created: identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(config.Token)), History: last, Files: files, Fork: proof}
+	value := nativeCheckpoint{Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: target, NativeRoot: "/", Project: "global", Slug: identity.slug, Created: identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(config.Token)), History: last, Files: files, Fork: proof}
 	if len(histories) > 1 {
 		value.Previous = slices.Clone(histories[:len(histories)-1])
 		value.PredecessorSHA256 = sourceRef.SHA256
