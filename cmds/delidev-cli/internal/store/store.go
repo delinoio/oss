@@ -771,6 +771,7 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 }
 
 type Filter struct {
+	APIProtocol         domain.APIProtocol         `json:"api_protocol,omitempty"`
 	SubscriptionService domain.SubscriptionService `json:"subscription_service,omitempty"`
 	Kind                domain.Kind                `json:"kind"`
 	SessionID           domain.ID                  `json:"session_id,omitempty"`
@@ -795,13 +796,16 @@ func (f Filter) validate() error {
 			}
 		}
 	}
-	if f.ProviderID != "" || f.AccountType != "" || f.SubscriptionService != "" {
+	if f.ProviderID != "" || f.AccountType != "" || f.SubscriptionService != "" || f.APIProtocol != "" {
 		if f.Kind != domain.AccountKind {
 			return domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind.")
 		}
 	}
 	if f.AccountType != "" && f.AccountType != domain.APIAccount && f.AccountType != domain.SubscriptionAccount {
 		return domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription.")
+	}
+	if f.APIProtocol != "" && (!f.APIProtocol.API() || f.AccountType == domain.SubscriptionAccount || f.SubscriptionService != "") {
+		return domain.Fail(domain.InvalidArgument, "Invalid API format filter.", "Select one API format without a subscription source.")
 	}
 	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || f.AccountType == domain.APIAccount) {
 		return domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
@@ -829,6 +833,10 @@ func listRows(ctx context.Context, q queryer, f Filter, limit int) ([]Record, er
 	if f.SubscriptionService != "" {
 		query += " AND json_extract(body,'$.type')='subscription' AND json_extract(body,'$.subscription_service')=?"
 		args = append(args, f.SubscriptionService)
+	}
+	if f.APIProtocol != "" {
+		query += " AND json_extract(CAST(body AS TEXT),'$.type')='api' AND COALESCE(json_extract(CAST(body AS TEXT),'$.api_protocol'),(SELECT json_extract(CAST(p.body AS TEXT),'$.protocol') FROM entities p WHERE p.kind='provider' AND p.id=json_extract(CAST(entities.body AS TEXT),'$.provider_id')))=?"
+		args = append(args, f.APIProtocol)
 	}
 	if f.SessionID != "" {
 		query += " AND session_id=?"

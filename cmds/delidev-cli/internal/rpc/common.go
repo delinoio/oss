@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -39,6 +40,13 @@ func WireKind(kind domain.Kind) pb.EntityKind {
 }
 func Resource(record store.Record) *pb.Resource {
 	document := record.Data
+	if record.Kind == domain.ProviderKind {
+		if p, err := store.Decode[domain.Provider](record); err == nil {
+			if raw, err := json.Marshal(providers.WithAPIFormats(p)); err == nil {
+				document = raw
+			}
+		}
+	}
 	if record.Kind == domain.TerminalKind {
 		document = terminalResourceDocument(document)
 	}
@@ -109,11 +117,16 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
 	var identity struct {
-		Routes                  []json.RawMessage      `json:"routes"`
-		Type                    domain.AccountType     `json:"type"`
-		SourceKind              domain.ModelSourceKind `json:"source_kind"`
-		ReconfigurationRequired bool                   `json:"reconfiguration_required"`
-		Retired                 bool                   `json:"retired"`
+		APIProtocol             domain.APIProtocol         `json:"api_protocol"`
+		APIFormats              []domain.ProviderAPIFormat `json:"api_formats"`
+		Routes                  []json.RawMessage          `json:"routes"`
+		Type                    domain.AccountType         `json:"type"`
+		SourceKind              domain.ModelSourceKind     `json:"source_kind"`
+		ReconfigurationRequired bool                       `json:"reconfiguration_required"`
+		Retired                 bool                       `json:"retired"`
+	}
+	if json.Unmarshal(raw, &identity) == nil && (kind == domain.AccountKind && identity.Type == domain.APIAccount && identity.APIProtocol.API() || kind == domain.ProviderKind && len(identity.APIFormats) > 0) {
+		return 3
 	}
 	if json.Unmarshal(raw, &identity) == nil && kind == domain.AgentKind && len(identity.Routes) > 0 {
 		return 3
@@ -122,6 +135,27 @@ func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
 		return 2
 	}
 	return 1
+}
+
+func APIProtocol(v pb.ApiProtocol) domain.APIProtocol {
+	switch v {
+	case pb.ApiProtocol_API_PROTOCOL_UNSPECIFIED:
+		return ""
+	case pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES:
+		return domain.OpenAIResponses
+	case pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT:
+		return domain.OpenAIChat
+	case pb.ApiProtocol_API_PROTOCOL_ANTHROPIC_MESSAGES:
+		return domain.AnthropicMessages
+	default:
+		return "unsupported"
+	}
+}
+
+func WireAPIFormat(f domain.ProviderAPIFormat) *pb.ProviderApiFormat {
+	protocol := map[domain.APIProtocol]pb.ApiProtocol{domain.OpenAIResponses: pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES, domain.OpenAIChat: pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT, domain.AnthropicMessages: pb.ApiProtocol_API_PROTOCOL_ANTHROPIC_MESSAGES}[f.Protocol]
+	auth := map[domain.Authentication]pb.ApiAuthentication{domain.BearerAuth: pb.ApiAuthentication_API_AUTHENTICATION_BEARER, domain.APIKeyAuth: pb.ApiAuthentication_API_AUTHENTICATION_API_KEY, domain.KeylessAuth: pb.ApiAuthentication_API_AUTHENTICATION_KEYLESS}[f.Authentication]
+	return &pb.ProviderApiFormat{Protocol: protocol, Endpoint: f.Endpoint, Authentication: auth}
 }
 
 func SubscriptionService(v pb.SubscriptionServiceIdentity) domain.SubscriptionService {

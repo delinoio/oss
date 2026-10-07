@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -156,6 +157,8 @@ func exportConfiguration(tx *store.Tx) (domain.ConfigurationBundle, error) {
 				if v.Remediation.MachineID != "" {
 					machineIDs[v.Remediation.MachineID] = true
 				}
+			case *domain.Provider:
+				*v = providers.WithAPIFormats(*v)
 			}
 			raw, err := json.Marshal(value)
 			if err != nil {
@@ -299,7 +302,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if (bundle.Version != 1 && bundle.Version != 2 && bundle.Version != domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
+	if (bundle.Version < 1 || bundle.Version > domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {
@@ -311,6 +314,18 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	for _, entry := range bundle.Entries {
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
+		}
+		if bundle.Version < 4 && (entry.Kind == domain.ProviderKind || entry.Kind == domain.AccountKind) {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(entry.Document, &fields) != nil {
+				return plan, transferInvalid()
+			}
+			if _, present := fields["api_formats"]; present {
+				return plan, domain.Fail(domain.Unsupported, "API profiles require portable version 4.", "Export the complete current configuration.")
+			}
+			if _, present := fields["api_protocol"]; present {
+				return plan, domain.Fail(domain.Unsupported, "Account API formats require portable version 4.", "Export the complete current configuration.")
+			}
 		}
 		if bundle.Version == 1 {
 			var legacy struct {

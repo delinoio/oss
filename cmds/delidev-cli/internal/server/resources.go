@@ -100,6 +100,10 @@ func (s *Service) listFilter(input *pb.ListResourcesRequest) (store.Filter, erro
 		}
 	}
 	f.SubscriptionService = rpc.SubscriptionService(input.SubscriptionService)
+	f.APIProtocol = rpc.APIProtocol(input.ApiProtocol)
+	if f.APIProtocol != "" && (!f.APIProtocol.API() || f.Kind != domain.AccountKind || f.SubscriptionService != "" || input.AccountType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION) {
+		return f, domain.Fail(domain.InvalidArgument, "Invalid account API format filter.", "Select one supported API format for API accounts.")
+	}
 	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || input.AccountType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_API) {
 		return f, domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
 	}

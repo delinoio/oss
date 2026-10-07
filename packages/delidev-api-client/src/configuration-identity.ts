@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { EntityKind, SubscriptionServiceIdentity, type Resource } from "./gen/delidev/v1/delidev_pb.js";
+import { apiFormat, apiFormatProfile } from "./api-formats.js";
 
 export enum SubscriptionServiceId { ChatGPT = "chatgpt", Claude = "claude", Grok = "grok" }
 export enum NativeModelSourceKind { Subscription = "subscription" }
@@ -24,6 +25,8 @@ export function supportsResourceSchema(resource: Resource): boolean {
     const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson));
     if (!object(value)) return false;
     if (resource.schemaVersion === 3) {
+      if (resource.kind === EntityKind.ACCOUNT) return value.type === "api" && Boolean(apiFormat(value.api_protocol)) && typeof value.provider_id === "string" && !Object.hasOwn(value, "subscription_service") && !Object.hasOwn(value, "subscription");
+      if (resource.kind === EntityKind.PROVIDER) return Array.isArray(value.api_formats) && value.api_formats.length > 0 && value.api_formats.length <= 3 && value.api_formats.every(profile => Boolean(apiFormatProfile(profile))) && new Set(value.api_formats.map(profile => (profile as Record<string, unknown>).protocol)).size === value.api_formats.length;
       return resource.kind === EntityKind.AGENT && Array.isArray(value.routes) && value.routes.length > 0 && value.routes.length <= 1000 &&
         !value.model_id && !value.routing && (!Array.isArray(value.accounts) || value.accounts.length === 0) && value.reconfiguration_required !== true &&
         value.routes.every(route => object(route) && typeof route.model_id === "string" && Array.isArray(route.accounts) && route.accounts.length > 0);
@@ -40,6 +43,7 @@ export function supportsResourceSchema(resource: Resource): boolean {
   } catch { return false; }
 }
 export function configurationSchemaVersion(kind: EntityKind, value: Record<string, unknown>): number {
+  if (kind === EntityKind.ACCOUNT && value.type === "api" && apiFormat(value.api_protocol) || kind === EntityKind.PROVIDER && Array.isArray(value.api_formats) && value.api_formats.length > 0) return 3;
   if (kind === EntityKind.AGENT && Array.isArray(value.routes) && value.routes.length > 0) return 3;
   return kind === EntityKind.ACCOUNT && value.type === "subscription" ||
     kind === EntityKind.MODEL && value.source_kind === NativeModelSourceKind.Subscription ||

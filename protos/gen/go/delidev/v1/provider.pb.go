@@ -179,6 +179,7 @@ const (
 	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER      ProviderInventoryCapability = 4
 	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1 ProviderInventoryCapability = 5
 	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1         ProviderInventoryCapability = 6
+	ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1  ProviderInventoryCapability = 7
 )
 
 // Enum value maps for ProviderInventoryCapability.
@@ -191,6 +192,7 @@ var (
 		4: "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER",
 		5: "PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1",
 		6: "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1",
+		7: "PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1",
 	}
 	ProviderInventoryCapability_value = map[string]int32{
 		"PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED":              0,
@@ -200,6 +202,7 @@ var (
 		"PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER":      4,
 		"PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1": 5,
 		"PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1":         6,
+		"PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1":  7,
 	}
 )
 
@@ -418,6 +421,7 @@ type ProviderInventoryEntry struct {
 	Provider               *Resource                `protobuf:"bytes,7,opt,name=provider,proto3" json:"provider,omitempty"`
 	AccountCountsAvailable bool                     `protobuf:"varint,8,opt,name=account_counts_available,json=accountCountsAvailable,proto3" json:"account_counts_available,omitempty"`
 	ConnectionMethod       ProviderConnectionMethod `protobuf:"varint,9,opt,name=connection_method,json=connectionMethod,proto3,enum=delidev.v1.ProviderConnectionMethod" json:"connection_method,omitempty"`
+	ApiFormats             []*ProviderApiFormat     `protobuf:"bytes,10,rep,name=api_formats,json=apiFormats,proto3" json:"api_formats,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -513,6 +517,13 @@ func (x *ProviderInventoryEntry) GetConnectionMethod() ProviderConnectionMethod 
 		return x.ConnectionMethod
 	}
 	return ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_UNSPECIFIED
+}
+
+func (x *ProviderInventoryEntry) GetApiFormats() []*ProviderApiFormat {
+	if x != nil {
+		return x.ApiFormats
+	}
+	return nil
 }
 
 type ListProviderInventoryResponse struct {
@@ -1225,7 +1236,7 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\fenabled_only\x18\x02 \x01(\bR\venabledOnly\x12\x1b\n" +
 	"\tpage_size\x18\x03 \x01(\rR\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\"\xc6\x03\n" +
+	"page_token\x18\x04 \x01(\tR\tpageToken\"\x86\x04\n" +
 	"\x16ProviderInventoryEntry\x129\n" +
 	"\tpreset_id\x18\x01 \x01(\x0e2\x1c.delidev.v1.ProviderPresetIdR\bpresetId\x12\x1f\n" +
 	"\vprovider_id\x18\x02 \x01(\tR\n" +
@@ -1236,7 +1247,10 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\x12connected_accounts\x18\x06 \x01(\x04R\x11connectedAccounts\x120\n" +
 	"\bprovider\x18\a \x01(\v2\x14.delidev.v1.ResourceR\bprovider\x128\n" +
 	"\x18account_counts_available\x18\b \x01(\bR\x16accountCountsAvailable\x12Q\n" +
-	"\x11connection_method\x18\t \x01(\x0e2$.delidev.v1.ProviderConnectionMethodR\x10connectionMethod\"\xd2\x01\n" +
+	"\x11connection_method\x18\t \x01(\x0e2$.delidev.v1.ProviderConnectionMethodR\x10connectionMethod\x12>\n" +
+	"\vapi_formats\x18\n" +
+	" \x03(\v2\x1d.delidev.v1.ProviderApiFormatR\n" +
+	"apiFormats\"\xd2\x01\n" +
 	"\x1dListProviderInventoryResponse\x12<\n" +
 	"\aentries\x18\x01 \x03(\v2\".delidev.v1.ProviderInventoryEntryR\aentries\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12K\n" +
@@ -1325,7 +1339,7 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"#PROVIDER_PRESET_ID_TENCENT_TOKENHUB\x10 \x125\n" +
 	"1PROVIDER_PRESET_ID_TENCENT_TOKENHUB_INTERNATIONAL\x10!\x129\n" +
 	"5PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_INTERNATIONAL\x10\"\x125\n" +
-	"1PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG\x10#*\xa0\x03\n" +
+	"1PROVIDER_PRESET_ID_ALIBABA_MODEL_STUDIO_HONG_KONG\x10#*\xdb\x03\n" +
 	"\x1bProviderInventoryCapability\x12-\n" +
 	")PROVIDER_INVENTORY_CAPABILITY_UNSPECIFIED\x10\x00\x125\n" +
 	"1PROVIDER_INVENTORY_CAPABILITY_PROVIDER_ACTIVATION\x10\x01\x129\n" +
@@ -1333,7 +1347,8 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"5PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER\x10\x03\x125\n" +
 	"1PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER\x10\x04\x12:\n" +
 	"6PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1\x10\x05\x122\n" +
-	".PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1\x10\x06*\xee\x01\n" +
+	".PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1\x10\x06\x129\n" +
+	"5PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1\x10\a*\xee\x01\n" +
 	"\x18ProviderConnectionMethod\x12*\n" +
 	"&PROVIDER_CONNECTION_METHOD_UNSPECIFIED\x10\x00\x12&\n" +
 	"\"PROVIDER_CONNECTION_METHOD_API_KEY\x10\x01\x12)\n" +
@@ -1387,42 +1402,44 @@ var file_delidev_v1_provider_proto_goTypes = []any{
 	(*ListKnownSubscriptionModelsRequest)(nil),  // 16: delidev.v1.ListKnownSubscriptionModelsRequest
 	(*ListKnownSubscriptionModelsResponse)(nil), // 17: delidev.v1.ListKnownSubscriptionModelsResponse
 	(*Resource)(nil),                            // 18: delidev.v1.Resource
-	(*Mutation)(nil),                            // 19: delidev.v1.Mutation
-	(SubscriptionServiceIdentity)(0),            // 20: delidev.v1.SubscriptionServiceIdentity
+	(*ProviderApiFormat)(nil),                   // 19: delidev.v1.ProviderApiFormat
+	(*Mutation)(nil),                            // 20: delidev.v1.Mutation
+	(SubscriptionServiceIdentity)(0),            // 21: delidev.v1.SubscriptionServiceIdentity
 }
 var file_delidev_v1_provider_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.ProviderInventoryEntry.preset_id:type_name -> delidev.v1.ProviderPresetId
 	18, // 1: delidev.v1.ProviderInventoryEntry.provider:type_name -> delidev.v1.Resource
 	2,  // 2: delidev.v1.ProviderInventoryEntry.connection_method:type_name -> delidev.v1.ProviderConnectionMethod
-	5,  // 3: delidev.v1.ListProviderInventoryResponse.entries:type_name -> delidev.v1.ProviderInventoryEntry
-	1,  // 4: delidev.v1.ListProviderInventoryResponse.capabilities:type_name -> delidev.v1.ProviderInventoryCapability
-	19, // 5: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
-	18, // 6: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
-	20, // 7: delidev.v1.SearchModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	18, // 8: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
-	18, // 9: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
-	18, // 10: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
-	20, // 11: delidev.v1.ListKnownSubscriptionModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	20, // 12: delidev.v1.ListKnownSubscriptionModelsResponse.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	15, // 13: delidev.v1.ListKnownSubscriptionModelsResponse.models:type_name -> delidev.v1.KnownSubscriptionModel
-	3,  // 14: delidev.v1.ListKnownSubscriptionModelsResponse.source:type_name -> delidev.v1.KnownSubscriptionModelCatalogSource
-	7,  // 15: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
-	4,  // 16: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
-	9,  // 17: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
-	16, // 18: delidev.v1.ProviderService.ListKnownSubscriptionModels:input_type -> delidev.v1.ListKnownSubscriptionModelsRequest
-	11, // 19: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
-	13, // 20: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
-	8,  // 21: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
-	6,  // 22: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
-	10, // 23: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
-	17, // 24: delidev.v1.ProviderService.ListKnownSubscriptionModels:output_type -> delidev.v1.ListKnownSubscriptionModelsResponse
-	12, // 25: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
-	14, // 26: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
-	21, // [21:27] is the sub-list for method output_type
-	15, // [15:21] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	19, // 3: delidev.v1.ProviderInventoryEntry.api_formats:type_name -> delidev.v1.ProviderApiFormat
+	5,  // 4: delidev.v1.ListProviderInventoryResponse.entries:type_name -> delidev.v1.ProviderInventoryEntry
+	1,  // 5: delidev.v1.ListProviderInventoryResponse.capabilities:type_name -> delidev.v1.ProviderInventoryCapability
+	20, // 6: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
+	18, // 7: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
+	21, // 8: delidev.v1.SearchModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	18, // 9: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
+	18, // 10: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
+	18, // 11: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
+	21, // 12: delidev.v1.ListKnownSubscriptionModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	21, // 13: delidev.v1.ListKnownSubscriptionModelsResponse.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	15, // 14: delidev.v1.ListKnownSubscriptionModelsResponse.models:type_name -> delidev.v1.KnownSubscriptionModel
+	3,  // 15: delidev.v1.ListKnownSubscriptionModelsResponse.source:type_name -> delidev.v1.KnownSubscriptionModelCatalogSource
+	7,  // 16: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
+	4,  // 17: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
+	9,  // 18: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
+	16, // 19: delidev.v1.ProviderService.ListKnownSubscriptionModels:input_type -> delidev.v1.ListKnownSubscriptionModelsRequest
+	11, // 20: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
+	13, // 21: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
+	8,  // 22: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
+	6,  // 23: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
+	10, // 24: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
+	17, // 25: delidev.v1.ProviderService.ListKnownSubscriptionModels:output_type -> delidev.v1.ListKnownSubscriptionModelsResponse
+	12, // 26: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
+	14, // 27: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
+	22, // [22:28] is the sub-list for method output_type
+	16, // [16:22] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_provider_proto_init() }

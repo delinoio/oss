@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -51,6 +52,13 @@ func titleProfileAvailable(tx *store.Tx, input domain.ExecutionJobInput) (domain
 		return domain.Provider{}, false, nil
 	}
 	provider, err := store.Decode[domain.Provider](record)
+	if err == nil {
+		_, account, e := accountFromTx(tx, input.AccountID, 0)
+		if e != nil {
+			return domain.Provider{}, false, nil
+		}
+		provider, err = providers.ResolveAccountProfile(provider, account)
+	}
 	if err != nil || provider.Protocol != domain.OpenAIResponses {
 		return domain.Provider{}, false, nil
 	}

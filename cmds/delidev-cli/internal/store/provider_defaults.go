@@ -39,6 +39,9 @@ func seedProviderSet(ctx context.Context, sqlTx *sql.Tx, ids []domain.ProviderPr
 			return storageError(err)
 		}
 		provider := preset.Provider
+		// Historical seed migrations retain their original document shape.
+		// Current inventory projects profiles from the canonical registry.
+		provider.APIFormats = nil
 		provider.SetEnabled(true)
 		if err := provider.Validate(); err != nil {
 			return err

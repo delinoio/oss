@@ -334,6 +334,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	project := fs.String("project-id", "", "project scope")
 	session := fs.String("session-id", "", "session scope")
 	accountType := fs.String("account-type", "", "account type: api or subscription")
+	apiProtocol := fs.String("api-protocol", "", "account API format: openai-responses, openai-chat or anthropic-messages")
 	providerID := fs.String("provider-id", "", "account provider ID")
 	if err := parse(fs, rest); err != nil {
 		return emit(nil, err)
@@ -343,10 +344,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		if *limit > 200 || *limit == 0 {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Invalid page size.", "Use 1 through 200."))
 		}
-		if (*accountType != "" || *providerID != "") && kind != domain.AccountKind {
+		if (*accountType != "" || *providerID != "" || *apiProtocol != "") && kind != domain.AccountKind {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind."))
 		}
-		if action == "snapshot" && (*accountType != "" || *providerID != "") {
+		if action == "snapshot" && (*accountType != "" || *providerID != "" || *apiProtocol != "") {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Account filters apply only to paginated account lists.", "Use account list instead of account snapshot."))
 		}
 		f := &pb.Filter{Kind: rpc.WireKind(kind), PageSize: uint32(*limit), PageToken: *page, ProjectId: *project, SessionId: *session}
@@ -367,7 +368,15 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		default:
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription."))
 		}
-		response, err := listWithProviderFilter(ctx, c, f, *providerID, selectedType)
+		protocol := pb.ApiProtocol_API_PROTOCOL_UNSPECIFIED
+		if *apiProtocol != "" {
+			format := domain.APIProtocol(*apiProtocol)
+			if !format.API() || selectedType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION {
+				return emit(nil, domain.Fail(domain.InvalidArgument, "Invalid account API format filter.", "Select one supported API format for API accounts."))
+			}
+			protocol = rpc.WireAPIFormat(domain.ProviderAPIFormat{Protocol: format}).Protocol
+		}
+		response, err := listWithAPIFormatFilter(ctx, c, f, *providerID, selectedType, protocol)
 		if err != nil {
 			return emit(nil, err)
 		}

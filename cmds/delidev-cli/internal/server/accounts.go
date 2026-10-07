@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -157,6 +158,10 @@ func accountConnectPreflight(tx *store.Tx, input connectAccountInput) (domain.Ac
 	if err = provider.Validate(); err != nil {
 		return account, provider, err
 	}
+	provider, err = providers.ResolveAccountProfile(provider, account)
+	if err != nil {
+		return account, provider, err
+	}
 	if input.Keyless != (provider.Authentication == domain.KeylessAuth) || provider.Protocol == domain.NativeSubscription {
 		return account, provider, domain.Fail(domain.InvalidArgument, "The connection input does not match the provider's authentication.", "Use explicit keyless input for a keyless local provider, or supply its API key.")
 	}
@@ -181,8 +186,9 @@ func accountWithoutCredentials(tx *store.Tx, account domain.Account) (bool, erro
 	if err := provider.Validate(); err != nil {
 		return false, err
 	}
-	if account.Connection != nil && account.Connection.Authentication != provider.Authentication {
-		return false, domain.Fail(domain.RecoveryRequired, "Account authentication ownership is inconsistent.", "Preserve the account and reconcile its provider and connection metadata.")
+	provider, err = providers.ResolveAccountProfile(provider, account)
+	if err != nil {
+		return false, err
 	}
 	return provider.Authentication == domain.KeylessAuth, nil
 }
@@ -201,6 +207,8 @@ func commitAccountConnection(tx *store.Tx, input connectAccountInput, requestID 
 		return nil, err
 	}
 	account.Connection = &domain.AccountConnection{ID: requestID, Authentication: provider.Authentication, ConnectedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	profile := provider.LegacyAPIFormat()
+	account.Connection.APIFormat = &profile
 	account.Health = domain.AccountUnverified
 	account.Validation = nil
 	account.Catalog = nil
