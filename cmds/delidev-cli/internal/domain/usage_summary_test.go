@@ -16,7 +16,7 @@ func usageDaySelection(t *testing.T, from, until, zone string) UsageSelection {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return UsageSelection{From: start, Until: end, Granularity: UsageTimeGranularityDay, TimeZone: zone}
+	return UsageSelection{From: start, Until: end, Granularity: UsageTimeGranularityDay, TimeZone: zone, AccountingProfile: NativeUnitsV1Accounting}
 }
 
 func TestUsageDayBucketsResolveMissingAndRepeatedMidnight(t *testing.T) {
@@ -146,7 +146,7 @@ func TestUsageDayBucketsSkipSkippedCivilDateAndClipRange(t *testing.T) {
 	}
 	from := time.Date(2011, time.December, 29, 0, 0, 0, 0, zone)
 	until := time.Date(2012, time.January, 1, 0, 0, 0, 0, zone)
-	buckets, err := (UsageSelection{From: from, Until: until, Granularity: UsageTimeGranularityDay, TimeZone: "Pacific/Apia"}).UsageDayBuckets()
+	buckets, err := (UsageSelection{From: from, Until: until, Granularity: UsageTimeGranularityDay, TimeZone: "Pacific/Apia", AccountingProfile: NativeUnitsV1Accounting}).UsageDayBuckets()
 	if err != nil || len(buckets) != 2 {
 		t.Fatalf("skipped civil date created a zero-duration bucket: %+v %v", buckets, err)
 	}

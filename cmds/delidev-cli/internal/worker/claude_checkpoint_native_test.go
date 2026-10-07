@@ -136,7 +136,7 @@ func TestManualNativeClaudeWorkerCheckpoint(t *testing.T) {
 		}
 	}))
 	defer provider.Close()
-	authority := &claudeCheckpointAuthority{ctx: ctx, token: claudeCheckpointToken(41), scope: apiproxy.Scope{ExecutionID: f.input.ExecutionID, SessionID: f.input.SessionID, AccountID: f.input.AccountID, ConnectionID: f.input.ConnectionID, ProviderID: f.input.Configuration.ProviderID, ModelID: f.input.Configuration.ModelID, NativeModel: cfg.Model, Provider: domain.Provider{Name: "Private checkpoint fixture", Endpoint: provider.URL + "/provider", Protocol: domain.AnthropicMessages, Authentication: domain.APIKeyAuth}, Operations: []apiproxy.Operation{apiproxy.MessageCreate}}}
+	authority := &claudeCheckpointAuthority{ctx: ctx, token: claudeCheckpointToken(41), scope: apiproxy.Scope{ExecutionID: f.input.ExecutionID, SessionID: f.input.SessionID, AccountID: f.input.AccountID, ConnectionID: f.input.ConnectionID, ProviderID: f.input.Configuration.ProviderID, ModelID: f.input.Configuration.ModelID, NativeModel: cfg.Model, Provider: domain.Provider{Name: "Private checkpoint fixture", Endpoint: provider.URL + "/provider", Protocol: domain.AnthropicMessages, Authentication: domain.APIKeyAuth, Enabled: new(true)}, Operations: []apiproxy.Operation{apiproxy.MessageCreate}}}
 	relay := httptest.NewServer(apiproxy.New(authority, logger))
 	defer relay.Close()
 	cfg.API = claude.APIConfig{ServerOrigin: relay.URL, Token: authority.token}

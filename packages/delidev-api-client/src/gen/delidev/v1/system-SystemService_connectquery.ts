@@ -35,11 +35,6 @@ export const stopServer = SystemService.method.stopServer;
 export const getDoctor = SystemService.method.getDoctor;
 
 /**
- * @generated from rpc delidev.v1.SystemService.CreateBackup
- */
-export const createBackup = SystemService.method.createBackup;
-
-/**
  * @generated from rpc delidev.v1.SystemService.ListBackups
  */
 export const listBackups = SystemService.method.listBackups;

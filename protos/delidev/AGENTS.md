@@ -11,7 +11,7 @@
 - Agent Worker wizard allocations reached main in PR #1351 before activation.
   Capability 33 owns list-only source filters and typed atomic SaveAgentWorker.
   Keep source filters out of shared snapshots/events, bind them into cursors,
-  reuse the existing save acknowledgement and preserve legacy APIs/storage.
+  reuse the existing save acknowledgement and require current atomic Agent saving and schema 32.
   Configured compatibility grants no native/account readiness; no migration is added.
 
 - Repository addition under issue #964 reserves System capabilities 31/32 and Worker capability 18 plus the five new listing/clone messages in `allocations.json`. Establish reservations on main before active declarations or generated code. Reservations grant no GitHub read or filesystem write; preserve server-only PATs, Worker-owned Git authentication and existing Local checkout deletion ownership. Follow the structure and protocol contracts.

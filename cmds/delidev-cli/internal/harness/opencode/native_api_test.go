@@ -360,7 +360,7 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 	if realRelay {
 		authority = &nativeAPIProxyAuthority{token: config.Token, key: upstreamKey, scope: apiproxy.Scope{
 			ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(),
-			NativeModel: config.Settings.Model, Provider: domain.Provider{Name: "Private native relay fixture", Endpoint: relay.URL + "/provider", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}, Operations: []apiproxy.Operation{apiproxy.ChatCompletion},
+			NativeModel: config.Settings.Model, Provider: domain.Provider{Name: "Private native relay fixture", Endpoint: relay.URL + "/provider", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)}, Operations: []apiproxy.Operation{apiproxy.ChatCompletion},
 		}}
 		proxy := httptest.NewServer(apiproxy.New(authority, config.Probe.Process.Logger))
 		defer proxy.Close()

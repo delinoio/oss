@@ -114,7 +114,7 @@ func TestManualNativeAPIChildEnvironment(t *testing.T) {
 	defer cancel()
 	// The lease is a fixture; production Worker registration/dispatch is a
 	// separate boundary. Forwarding itself uses the real scoped server relay.
-	authority := nativeAPIAuthority{ctx: ctx, scope: apiproxy.Scope{ExecutionID: domain.NewID(), SessionID: session, AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), NativeModel: "fixture-model", Provider: domain.Provider{Name: "Private fixture", Endpoint: provider.URL + "/provider", Protocol: domain.AnthropicMessages, Authentication: domain.APIKeyAuth}, Operations: []apiproxy.Operation{apiproxy.MessageCreate}}}
+	authority := nativeAPIAuthority{ctx: ctx, scope: apiproxy.Scope{ExecutionID: domain.NewID(), SessionID: session, AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), NativeModel: "fixture-model", Provider: domain.Provider{Name: "Private fixture", Endpoint: provider.URL + "/provider", Protocol: domain.AnthropicMessages, Authentication: domain.APIKeyAuth, Enabled: new(true)}, Operations: []apiproxy.Operation{apiproxy.MessageCreate}}}
 	relay := httptest.NewServer(apiproxy.New(authority, slog.New(slog.NewJSONHandler(io.Discard, nil))))
 	defer relay.Close()
 	config := APIStreamConfig{Process: cfg.Process, Version: SupportedVersion, Home: cfg.Home, Workspace: workspace, SessionID: session, Model: "fixture-model", Effort: "high", Permission: DefaultPermission, Instructions: "Private fixture instructions.", API: APIConfig{ServerOrigin: relay.URL, Token: nativeAPIFixtureToken}}

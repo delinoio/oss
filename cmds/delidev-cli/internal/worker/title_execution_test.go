@@ -210,7 +210,7 @@ func TestOptInInstalledCodexTitleInference(t *testing.T) {
 	sessionID, executionID, projectID := domain.NewID(), domain.NewID(), domain.NewID()
 	parentJobID, jobID, machineID, instanceID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
 	operationID := domain.NewID()
-	provider := domain.Provider{Name: "Private installed title fixture", Endpoint: upstream.URL + "/v1", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth}
+	provider := domain.Provider{Name: "Private installed title fixture", Endpoint: upstream.URL + "/v1", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth, Enabled: new(true)}
 	authority := &installedTitleAuthority{scope: apiproxy.Scope{
 		ExecutionID: executionID, SessionID: sessionID, AccountID: accountID, ConnectionID: connectionID,
 		ProviderID: providerID, ModelID: modelID, NativeModel: "fixture-title-model", Purpose: domain.SessionTitleUsage,

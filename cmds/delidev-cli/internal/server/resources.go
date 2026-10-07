@@ -379,36 +379,6 @@ func (s *Service) PreviewRouting(ctx context.Context, req *connect.Request[pb.Pr
 	return response, nil
 }
 
-func (s *Service) CreateBackup(ctx context.Context, req *connect.Request[pb.CreateBackupRequest]) (*connect.Response[pb.CreateBackupResponse], error) {
-	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if err := s.authorizeBackups(ctx); err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	// Persist the operation identity before filesystem work. Retries reuse the
-	// same backup path and validate a completed file instead of creating another.
-	receipt, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "backup.create", struct{}{}, func(*store.Tx) (any, error) {
-		return struct {
-			ID domain.ID `json:"id"`
-		}{domain.NewID()}, nil
-	})
-	if err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	var accepted struct {
-		ID domain.ID `json:"id"`
-	}
-	if err := domain.Decode(receipt.Data, &accepted); err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	id, err := s.Store.BackupID(ctx, accepted.ID)
-	if err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	response := connect.NewResponse(&pb.CreateBackupResponse{Id: string(id), RequestId: req.Msg.RequestId, Replayed: receipt.Replayed})
-	rpc.CopyCorrelation(response, req.Header())
-	return response, nil
-}
-
 func (s *Service) DeleteConfiguration(ctx context.Context, req *connect.Request[pb.DeleteConfigurationRequest]) (*connect.Response[pb.DeleteConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	meta := req.Msg.Mutation

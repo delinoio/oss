@@ -88,7 +88,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - ClaudeMainLoopInput and OpenCodeStep accounting follow the usage contract. Keep original source identities and immutable prices, nullable Claude primitives, unavailable OpenCode normalized zeros, independent native totals and disjoint OpenCode reasoning pricing. Never add assistant/cumulative/inherited observations or reinterpret units as responses.
 
-- Keep independent service-native subscription identity closed to ChatGPT/Claude/Grok and its exact harness. API Provider identity remains separate. Match complete account/model identity in routing and immutable snapshots; retired Agents require explicit reconfiguration before resolution.
+- Keep independent service-native subscription identity closed to ChatGPT/Claude/Grok and its exact harness. API Provider identity remains separate. Match complete account/model identity in routing and immutable snapshots; every Agent write requires current same-source accounts and a model.
 
 - Native subscription observations preserve sparse quota fields, authoritative credit counts and original generation-bound operation keys under the subscription contract. Only fresh positive native evidence may clear exhaustion; typed failure/reset outcomes cannot grant recovery.
 
@@ -124,8 +124,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - EntityKind update and ssh_setup are installation metadata owned by Go InstallationService. Worker version admission requires the original compiled-authority release and exact registration; reservations alone never advertise installation support.
 
-- Subscription server_operation is optional server-owned closed metadata. A machine-less pending claim is valid only for its exact server operation/actor; native_started requires no Worker lease and the original generation. Active/recovery ownership retains pending authority. Terminal metadata grants no credential use. Keep APIs, immutable historical service attribution and real migrations unchanged.
+- Subscription server_operation is optional server-owned closed metadata. A machine-less pending claim is valid only for its exact server operation/actor; native_started requires no Worker lease and the original generation. Active/recovery ownership retains pending authority. Terminal metadata grants no credential use. Keep current APIs and immutable historical service attribution; schema 32 initializes current storage directly.
 
 - Codex diagnostics are optional bounded existing-document metadata with closed phases/codes and locally reconstructed safe text. Validate actual version attribution and original operation correlation; no diagnostic grants native/account authority or requires a SQLite migration.
 
-- Repository remote_url is required on explicit save/import and accepts credential-free HTTPS, SSH or SCP syntax. Empty checkouts are valid. Keep historical omitted URLs readable without migration, extraction or rewriting; pinned preparation source kinds remain closed enums.
+- Repository remote_url is required on explicit save/import and accepts credential-free HTTPS, SSH or SCP syntax. Empty checkouts are valid. Reject checkout-only historical configuration; pinned preparation source kinds remain closed enums.

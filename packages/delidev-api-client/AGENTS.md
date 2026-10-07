@@ -1,4 +1,4 @@
-- Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history and legacy accountless APIs; capability 33 is configuration support, never native readiness.
+- Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history; reject accountless Agent writes and generic Agent SaveConfiguration; capability 33 is configuration support, never native readiness.
 # DeliDev delidev-api-client ownership
 
 - Repository listing/Clone use generated IntegrationQuery/WorkerQuery under the protocol/client contracts, with independent System 31/32 / Worker 18 negotiation. Preserve explicit profile revision/generation/page, transient fresh local proof and identical uncertain request bytes. No PAT read model, client-side Git, persistent draft or frontend registration follow-up is permitted.
@@ -71,7 +71,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Generated SessionQuery request diagnostics keeps optional metadata, original identity and exact bigint revision/latency under the diagnostics contract. Never infer requests from time proximity or resend a request from a diagnostic receipt.
 
-- `configuration-identity.ts` owns bounded schema-family read negotiation and closed JSON/wire service identity mappings. Preserve API-only v1, recognize only owning v2 families and keep retired original documents inert. It grants no mutation, native support or credential authority; synchronization preserves exact revisions and full snapshot/event atomicity under the client contract.
+- `configuration-identity.ts` owns bounded schema-family read negotiation and closed JSON/wire service identity mappings. Preserve API-only v1, recognize only owning v2 families and reject removed retirement wrappers. It grants no mutation, native support or credential authority; synchronization preserves exact revisions and full snapshot/event atomicity under the client contract.
 
 - Worker network bootstrap/status uses canonical generated NetworkQuery/WorkerQuery declarations. Preserve exact uint64 generations and original request identity. Ciphertext export is a mutation result, never persistent query state; credentials/private keys/decrypted derivatives cannot enter query keys or read projections. Public desired/effective/native states remain independent and grant no execution or observed route use.
 

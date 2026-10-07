@@ -59,7 +59,14 @@ test('current wire numbers match immutable assignments and future reservations',
       }
     }
   }
+  const retired = new Set(ledger.retiredDeclarations ?? []);
+  assert.equal(retired.size, (ledger.retiredDeclarations ?? []).length);
+  for (const name of retired) {
+    assert.ok(Object.hasOwn(ledger.baseline, name), 'retirement preserves an original allocation');
+    assert.ok(!found.has(name), `retired declaration ${name} cannot be reused`);
+  }
   for (const [name, declaration] of Object.entries(ledger.baseline)) {
+    if (retired.has(name)) continue;
     assert.ok(found.has(name), `missing original declaration ${name}`);
     const actual = Object.fromEntries((found.get(name)[declaration.kind === 'enum' ? 'value' : 'field'] ?? []).map(field => [field.name, field.number]));
     for (const [member, number] of Object.entries(declaration.members)) assert.equal(actual[member], number, `${name}.${member}`);

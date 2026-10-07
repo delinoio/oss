@@ -41,7 +41,7 @@ func transferLimit() error {
 // Observed readiness/provenance cannot cross a server boundary. In particular,
 // even keyless accounts require a fresh explicit connection and validation.
 func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, error) {
-	value, err := configurationValue(kind, raw, incoming)
+	value, err := configurationValue(kind, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,9 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		if err := json.Unmarshal(raw, &fields); err != nil {
 			return nil, err
 		}
-		if field, present := fields["enabled"]; present {
+		if field, present := fields["enabled"]; !present {
+			return nil, domain.Fail(domain.InvalidArgument, "Provider availability is required.", "Set enabled explicitly to true or false.")
+		} else {
 			var enabled bool
 			if bytes.Equal(bytes.TrimSpace(field), []byte("null")) || json.Unmarshal(field, &enabled) != nil {
 				return nil, domain.Fail(domain.InvalidArgument, "Provider availability must be a boolean.", "Set enabled to true or false.")
@@ -68,13 +70,9 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		return nil, err
 	}
 	switch v := value.(type) {
-	case *domain.Agent:
-		if v.ReconfigurationRequired {
-			return nil, domain.SubscriptionReconfigurationRequired()
-		}
 	case *domain.Provider:
 		if v.Protocol == domain.NativeSubscription {
-			return nil, domain.SubscriptionReconfigurationRequired()
+			return nil, domain.Fail(domain.Unsupported, "Provider-bound subscription configuration is unsupported.", "Use a service-native subscription account and model.")
 		}
 	case *domain.Account:
 		v.Subscription = nil
@@ -299,7 +297,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if (bundle.Version != 1 && bundle.Version != domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
+	if (bundle.Version != domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {
@@ -311,17 +309,6 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	for _, entry := range bundle.Entries {
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
-		}
-		if bundle.Version == 1 {
-			var legacy struct {
-				Type       domain.AccountType         `json:"type"`
-				SourceKind domain.ModelSourceKind     `json:"source_kind"`
-				Protocol   domain.APIProtocol         `json:"protocol"`
-				Service    domain.SubscriptionService `json:"subscription_service"`
-			}
-			if json.Unmarshal(entry.Document, &legacy) != nil || legacy.Type == domain.SubscriptionAccount || legacy.SourceKind != "" || legacy.Protocol == domain.NativeSubscription || legacy.Service != "" {
-				return plan, domain.Fail(domain.Unsupported, "Version-1 imports support API configuration only.", "Reconfigure native subscriptions explicitly and use a version-2 export; the entire import was rejected.")
-			}
 		}
 		if _, err := portableValue(entry.Kind, entry.Document, true); err != nil {
 			return plan, err

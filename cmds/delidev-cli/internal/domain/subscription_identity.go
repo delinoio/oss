@@ -46,8 +46,3 @@ func (m Model) SameIdentity(other Model) bool {
 	return m.ProviderID == other.ProviderID && m.SourceKind == other.SourceKind &&
 		m.SubscriptionService == other.SubscriptionService && m.NativeID == other.NativeID
 }
-
-func SubscriptionReconfigurationRequired() *Error {
-	return Fail(RecoveryRequired, "Legacy subscription configuration was retired.",
-		"Create a service account and native model, then explicitly reconfigure the affected Agent and Schedule. Historical sessions remain read-only.")
-}

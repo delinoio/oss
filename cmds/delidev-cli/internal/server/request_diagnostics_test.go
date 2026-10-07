@@ -124,7 +124,7 @@ func TestRequestDiagnosticsConcurrentSameModelUsesExactIDs(t *testing.T) {
 	}
 	// Diagnostics never populate or reconstruct the exact native usage ledger.
 	owner := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
-	usage, err := f.service.GetUsageSummary(owner, connect.NewRequest(&pb.GetUsageSummaryRequest{SessionId: string(f.input.SessionID)}))
+	usage, err := f.service.GetUsageSummary(owner, connect.NewRequest(&pb.GetUsageSummaryRequest{SessionId: string(f.input.SessionID), AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1}))
 	if err != nil || usage.Msg.Totals.Responses != 0 {
 		t.Fatal("proxy traffic became usage", err)
 	}

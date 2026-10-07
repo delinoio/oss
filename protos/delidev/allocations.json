@@ -6842,5 +6842,9 @@
       "member": "protocol_version",
       "number": 10
     }
+  ],
+  "retiredDeclarations": [
+    "CreateBackupRequest",
+    "CreateBackupResponse"
   ]
 }

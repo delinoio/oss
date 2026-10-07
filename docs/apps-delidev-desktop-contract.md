@@ -1428,7 +1428,7 @@ and CI logs/artifacts, never repository evidence documents.
 
 ### Durable backup creation
 
-`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path; the synchronous `CreateBackup` remains compatible. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
+`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path; the synchronous `CreateBackup` RPC is removed. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
 
 ### Keyless macOS packaging dry run
 
@@ -1653,7 +1653,7 @@ establish native desktop or other-platform acceptance.
 
 ## Independent subscription identity composition
 
-AI Subscription uses System capability 17 and schema-v2 service-native accounts without searches or Provider-dependent requests. `subscription-accounts.tsx` owns explicit service-only creation, default-off recovery notifications and existing managed Codex login/cancel/authentication-refresh/logout; original request/revision, native owner and Settings lifetime remain authoritative. Native Models retain a closed service/matching harness independently of API Providers. Reconfiguration-required Agents need explicit current-model/account reset before routing; retired original documents are read-only historical attribution. Portable UI accepts v2 and API-only v1 without reserializing original bytes. Price, usage and request diagnostics preserve independent service attribution. Follow [AI Subscription settings](apps-delidev-subscription-settings-contract.md) and [managed subscriptions](cmds-delidev-subscription-contract.md); these interfaces do not establish real-account or platform acceptance.
+AI Subscription uses System capability 17 and schema-v2 service-native accounts without searches or Provider-dependent requests. `subscription-accounts.tsx` owns explicit service-only creation, default-off recovery notifications and existing managed Codex login/cancel/authentication-refresh/logout; original request/revision, native owner and Settings lifetime remain authoritative. Native Models retain a closed service/matching harness independently of API Providers. Agents require current same-source accounts and a model through atomic SaveAgentWorker. Portable UI accepts only v2 without reserializing original bytes. Price, usage and request diagnostics preserve independent service attribution. Follow [AI Subscription settings](apps-delidev-subscription-settings-contract.md) and [managed subscriptions](cmds-delidev-subscription-contract.md); these interfaces do not establish real-account or platform acceptance.
 
 ### Network routing settings
 

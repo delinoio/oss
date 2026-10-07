@@ -185,10 +185,9 @@ func TestNativeAccountingAtomicRetentionReplayRestartPriceAndBudget(t *testing.T
 		t.Fatal("budget failed to gate exact native subtotal", err)
 	}
 	legacy := nativeSelection()
-	legacy.AccountingProfile = domain.ResponseOnlyAccounting
-	old, err := readUsage(s, legacy)
-	if err != nil || old.NativeAccounting != nil || old.Totals.Responses != 0 || len(old.Estimates.Currencies) != 0 {
-		t.Fatal("legacy response-only shape changed", old, err)
+	legacy.AccountingProfile = domain.AccountingProfileUnspecified
+	if _, err := readUsage(s, legacy); domain.SafeError(err).Code != domain.InvalidArgument {
+		t.Fatal("response-only profile was accepted", err)
 	}
 	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.native-reprice", nil, func(tx *Tx) (any, error) {
 		active, err := tx.ActivePricing(r.ModelID)

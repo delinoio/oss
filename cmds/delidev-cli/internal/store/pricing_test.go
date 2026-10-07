@@ -17,7 +17,7 @@ func preparePrice(t *testing.T, s *Store, record domain.ResponseUsageRecord) Pri
 	t.Helper()
 	var price PricingVersion
 	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.price", nil, func(tx *Tx) (any, error) {
-		if _, err := tx.Put(domain.ProviderKind, record.ProviderID, 0, "", "", domain.Provider{Name: "Fixture"}); err != nil {
+		if _, err := tx.Put(domain.ProviderKind, record.ProviderID, 0, "", "", domain.Provider{Name: "Fixture", Enabled: new(true)}); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Put(domain.ModelKind, record.ModelID, 0, "", "", domain.Model{Name: "Fixture", ProviderID: record.ProviderID, NativeID: "fixture", Manual: true}); err != nil {

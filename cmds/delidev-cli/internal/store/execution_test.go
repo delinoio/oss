@@ -32,7 +32,7 @@ func newExecutionFixture(t *testing.T, s *Store) executionFixture {
 				t.Fatal(err)
 			}
 		}
-		put(domain.ProviderKind, f.provider, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+		put(domain.ProviderKind, f.provider, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth, Enabled: new(true)})
 		put(domain.ModelKind, f.model, domain.Model{Name: "Fixture", NativeID: "native-fixture", ProviderID: f.provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})
 		put(domain.MachineKind, f.machine, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"})
 		put(domain.TemplateKind, f.template, domain.Template{Name: "Fixture", Contents: "Initial additive text."})

@@ -137,9 +137,7 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 	if mode == startupDesktopRetry && intent.State == server.DesiredStopped {
 		return map[string]any{"state": "stopped"}, nil
 	}
-	// Absent legacy intent is not explicit Stop. Read-only desktop observation
-	// may authenticate that live listener without inventing restart configuration;
-	// ensure still requires original running intent and cannot adopt this case.
+	// Missing intent never grants ownership or restart authority over a live server.
 	if mode == startupEnsure || (mode == startupObservation && intent.Version != 0) {
 		if intent.State != server.DesiredRunning {
 			return map[string]any{"state": "stopped"}, nil
@@ -172,16 +170,8 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 		return map[string]any{"reused": true, "status": status.Msg}, nil
 	}
 	if status, err := probe(); err == nil {
-		// Desktop status cannot prove legacy TLS paths or allowed origins. Reuse
-		// an authenticated compatible listener without inventing restart intent.
-		// Ordinary explicit startup retains its existing legacy adoption behavior.
 		if intent.Version == 0 && mode != startupObservation && mode != startupDesktopLaunch && mode != startupDesktopRetry && !serviceManaged {
-			if err := ctx.Err(); err != nil {
-				return nil, domain.SafeError(err)
-			}
-			if _, err := server.WriteRunning(o.dataDir, config); err != nil {
-				return nil, err
-			}
+			return nil, domain.Fail(domain.RecoveryRequired, "The running server has no original startup intent.", "Preserve its state and inspect connection diagnostics before explicitly stopping it.")
 		}
 		return status, nil
 	} else if code := domain.SafeError(err).Code; code != domain.ServerUnavailable && code != domain.Unavailable {

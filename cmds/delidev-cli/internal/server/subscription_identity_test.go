@@ -34,7 +34,10 @@ func TestSubscriptionConfigurationRPCV2HasNoProviderDependency(t *testing.T) {
 	if account.ProviderID != "" || account.Subscription != nil || account.Connection != nil {
 		t.Fatal("metadata manufacture granted authentication")
 	}
-	save(domain.AgentKind, domain.Agent{Name: "Native Agent", Harness: domain.Codex, ModelID: domain.ID(m.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(a.Id), Weight: 1}}, Templates: []domain.ID{}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}, 1)
+	agentJSON, _ := json.Marshal(domain.Agent{Name: "Native Agent", Harness: domain.Codex, ModelID: domain.ID(m.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(a.Id), Weight: 1}}, Templates: []domain.ID{}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}})
+	if _, err := s.SaveAgentWorker(ctx, connect.NewRequest(&pb.SaveAgentWorkerRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, SchemaVersion: 1, DocumentJson: agentJSON, Model: &pb.AgentWorkerModelSelection{Selection: &pb.AgentWorkerModelSelection_ModelId{ModelId: m.Id}, ExpectedModelRevision: m.Revision}})); err != nil {
+		t.Fatal(err)
+	}
 	list, err := s.ListResources(ctx, connect.NewRequest(&pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT}, AccountType: pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION}))
 	if err != nil || len(list.Msg.Resources) != 1 || list.Msg.Resources[0].Id != a.Id {
 		t.Fatal("service list required Provider inventory", err)

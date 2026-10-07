@@ -147,7 +147,7 @@ func TestHostedPrivateVerificationCannotBeBypassedByPublicModels(t *testing.T) {
 					}
 					return w.Result(), nil
 				})}
-				provider := domain.Provider{Authentication: domain.BearerAuth, Protocol: domain.OpenAIChat}
+				provider := domain.Provider{Authentication: domain.BearerAuth, Protocol: domain.OpenAIChat, Enabled: new(true)}
 				u, _ := url.Parse("https://unused.invalid/v1")
 				o := inspectHosted(context.Background(), client, provider, []byte(hostedSentinel), p, *u)
 				want := InvalidResponse
@@ -231,7 +231,7 @@ func TestHostedCursorPaginationAndFailurePublication(t *testing.T) {
 					fmt.Fprint(w, raw)
 					return w.Result(), nil
 				})}
-				provider := domain.Provider{Authentication: domain.BearerAuth, Protocol: domain.OpenAIChat}
+				provider := domain.Provider{Authentication: domain.BearerAuth, Protocol: domain.OpenAIChat, Enabled: new(true)}
 				o := inspectHosted(context.Background(), client, provider, []byte(hostedSentinel), p, *base)
 				if mode == "complete" {
 					if o.Failure != NoFailure || len(o.Models) != 2 || calls != 2 {
@@ -316,7 +316,7 @@ func TestAlibabaTotalPaginationIsCompleteAndStable(t *testing.T) {
 				json.NewEncoder(w).Encode(map[string]any{"success": success, "output": map[string]any{"models": models, "total": total, "page_no": number, "page_size": 100}})
 				return w.Result(), nil
 			})}
-			p := domain.Provider{Endpoint: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}
+			p := domain.Provider{Endpoint: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)}
 			o := inspect(context.Background(), client, p, []byte(hostedSentinel))
 			if mode == "complete" {
 				if o.Failure != NoFailure || len(o.Models) != 101 || calls != 2 {
@@ -369,7 +369,7 @@ func TestHostedFilteredIdentitiesAndAggregateBudgets(t *testing.T) {
 				return w.Result(), nil
 			})}
 			base, _ := url.Parse("https://fixed.example/v1")
-			o := inspectHosted(context.Background(), client, domain.Provider{Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}, []byte(hostedSentinel), p, *base)
+			o := inspectHosted(context.Background(), client, domain.Provider{Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)}, []byte(hostedSentinel), p, *base)
 			want, wantCalls := ResponseTooLarge, 5
 			switch mode {
 			case "filtered-duplicate":

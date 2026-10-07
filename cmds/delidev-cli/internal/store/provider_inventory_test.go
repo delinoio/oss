@@ -23,11 +23,11 @@ func TestProviderInventoryCountsAvailabilityOrderAndCursorEpoch(t *testing.T) {
 			return nil, err
 		}
 		legacyProvider = domain.NewID()
-		if _, err := tx.Put(domain.ProviderKind, legacyProvider, 0, "", "", domain.Provider{Name: "Zulu Legacy"}); err != nil {
+		if _, err := tx.Put(domain.ProviderKind, legacyProvider, 0, "", "", domain.Provider{Name: "Zulu Legacy", Enabled: new(true)}); err != nil {
 			return nil, err
 		}
 		disabledProvider = domain.NewID()
-		disabled := domain.Provider{Name: "Alpha Disabled"}
+		disabled := domain.Provider{Name: "Alpha Disabled", Enabled: new(true)}
 		disabled.SetEnabled(false)
 		if _, err := tx.Put(domain.ProviderKind, disabledProvider, 0, "", "", disabled); err != nil {
 			return nil, err
@@ -97,7 +97,7 @@ func TestProviderInventoryCountsAvailabilityOrderAndCursorEpoch(t *testing.T) {
 		t.Fatalf("valid inventory continuation failed: %v", err)
 	}
 	_, err = s.Mutate(ctx, domain.NewID(), "provider-inventory.change", nil, func(tx *Tx) (any, error) {
-		return tx.Put(domain.ProviderKind, domain.NewID(), 0, "", "", domain.Provider{Name: "Later"})
+		return tx.Put(domain.ProviderKind, domain.NewID(), 0, "", "", domain.Provider{Name: "Later", Enabled: new(true)})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestProviderInventoryCursorUsesExactUnicodeNameOrder(t *testing.T) {
 	want := []string{"Zulu", "Älfred", "Ångström"}
 	_, err := s.Mutate(ctx, domain.NewID(), "provider-inventory.unicode-fixture", nil, func(tx *Tx) (any, error) {
 		for _, name := range want {
-			if _, err := tx.Put(domain.ProviderKind, domain.NewID(), 0, "", "", domain.Provider{Name: name}); err != nil {
+			if _, err := tx.Put(domain.ProviderKind, domain.NewID(), 0, "", "", domain.Provider{Name: name, Enabled: new(true)}); err != nil {
 				return nil, err
 			}
 		}
@@ -194,7 +194,7 @@ func TestProviderAccountListHonorsSessionAndProjectFilters(t *testing.T) {
 	projectA, projectB := domain.NewID(), domain.NewID()
 	ids := []domain.ID{domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()}
 	_, err := s.Mutate(ctx, domain.NewID(), "provider-account-list.scoped-fixture", nil, func(tx *Tx) (any, error) {
-		if _, err := tx.Put(domain.ProviderKind, provider, 0, "", "", domain.Provider{Name: "Scoped provider"}); err != nil {
+		if _, err := tx.Put(domain.ProviderKind, provider, 0, "", "", domain.Provider{Name: "Scoped provider", Enabled: new(true)}); err != nil {
 			return nil, err
 		}
 		accounts := []struct {

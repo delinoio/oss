@@ -74,9 +74,10 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		t.Fatal(paired)
 	}
 	machine := paired["result"].(map[string]any)["machine_id"].(string)
-	p := run([]string{"provider", "create"}, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth})["resource"].(map[string]any)
+	p := run([]string{"provider", "create"}, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Enabled: new(true)})["resource"].(map[string]any)
 	m := run([]string{"model", "create"}, domain.Model{Name: "Fixture model", NativeID: "fixture", ProviderID: domain.ID(p["id"].(string)), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})["resource"].(map[string]any)
-	a := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(m["id"].(string)), Options: domain.AgentOptions{Permission: domain.PermissionDefault}})["resource"].(map[string]any)
+	account := run([]string{"account", "create"}, domain.Account{Alias: "Fixture account", Type: domain.APIAccount, ProviderID: domain.ID(p["id"].(string)), Enabled: true, Health: domain.AccountDisconnected})["resource"].(map[string]any)
+	a := run([]string{"agent", "create", "--model-revision", "1"}, domain.Agent{Name: "Fixture", Accounts: []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}, Harness: domain.Codex, ModelID: domain.ID(m["id"].(string)), Options: domain.AgentOptions{Permission: domain.PermissionDefault}})["resource"].(map[string]any)
 	request := string(domain.NewID())
 	args := []string{"session", "create", "--request-id", request}
 	input := domain.CreateSession{Name: "CLI session", AgentID: domain.ID(a["id"].(string)), MachineID: domain.ID(machine), Workspace: domain.GeneralChat, Prompt: "CLI private fixture"}

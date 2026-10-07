@@ -209,7 +209,7 @@ export type UsageTotals = Message<"delidev.v1.UsageTotals"> & {
 
   /**
    * Present only for explicitly negotiated native accounting; never summed
-   * across unit kinds or added to the legacy response counters above.
+   * across unit kinds or added to the current API response counters above.
    *
    * @generated from field: repeated delidev.v1.AccountingTotals accounting = 8;
    */
@@ -1275,7 +1275,7 @@ export const UsageTimeGranularitySchema: GenEnum<UsageTimeGranularity> = /*@__PU
  */
 export enum UsageAccountingProfile {
   /**
-   * Preserve legacy response-only fields and counts.
+   * Unspecified is invalid; every summary requires NATIVE_UNITS_V1.
    *
    * @generated from enum value: USAGE_ACCOUNTING_PROFILE_UNSPECIFIED = 0;
    */

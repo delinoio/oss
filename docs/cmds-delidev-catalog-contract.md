@@ -199,7 +199,7 @@ Update this contract, provider/account and protocol contracts, the project index
 
 ### Provider activation and filtering
 
-Follow [API provider activation](cmds-delidev-provider-activation-contract.md) for stable preset identity, effective legacy defaults, bounded ProviderService inventory, exact account counts, provider-scoped account pages and the additive `SearchModels.enabled_providers_only` filter. The active-provider condition is applied before SQL pagination and included in signed cursor scope. Disabled providers retain canonical model records and remain resolvable for historical references; catalog visibility never grants execution.
+Follow [API provider activation](cmds-delidev-provider-activation-contract.md) for stable preset identity, explicit activation state, bounded ProviderService inventory, exact account counts, provider-scoped account pages and the additive `SearchModels.enabled_providers_only` filter. The active-provider condition is applied before SQL pagination and included in signed cursor scope. Disabled providers retain canonical model records and remain resolvable for historical references; catalog visibility never grants execution.
 
 ## Agent Worker model selection
 
@@ -207,7 +207,7 @@ System capability 33 and ConfigurationService.SaveAgentWorker follow the main
 reservations established in PR #1351. Source-scoped account and model list
 selectors are applied in SQL before LIMIT and bound into signed cursors. Unknown
 services, mixed API/service filters and non-account account selectors fail.
-Unspecified fields keep legacy behavior; coherent snapshots/events are unchanged.
+Coherent snapshots/events and current optional filter semantics remain unchanged.
 
 Go derives one common source from at least one current selected account inside
 the receipt transaction. Native subscription services require their matching
@@ -221,5 +221,6 @@ native or account acceptance. New internal models use manual provenance and
 unknown advisory metadata. Failed Worker validation/revision/template writes
 roll back every model write and receipt. Concurrent saves share the existing
 SQLite transaction and model-identity checks; exact replay cannot recreate a
-deleted Worker. Existing model/configuration CLI and RPC paths retain their
-accountless behavior. No migration or historical snapshot rewrite is introduced.
+deleted Worker. CLI agent create/edit/save and desktop writes use SaveAgentWorker. Canonical
+model selection requires the model revision; exact native IDs use the same atomic
+path. Generic SaveConfiguration rejects Agents. No snapshot rewrite is introduced.

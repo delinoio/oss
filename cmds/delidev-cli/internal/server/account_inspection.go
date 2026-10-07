@@ -69,17 +69,17 @@ func (s *Service) startAccountCheck(ctx context.Context, id, requestID, provider
 func inspectionPreflight(tx *store.Tx, input disconnectAccountInput, operation inspectionOperation) (domain.Account, domain.Provider, error) {
 	_, account, err := accountFromTx(tx, input.ID, input.Revision)
 	if err != nil {
-		return account, domain.Provider{}, err
+		return account, domain.Provider{Enabled: new(true)}, err
 	}
 	if account.Type != domain.APIAccount {
-		return account, domain.Provider{}, domain.Fail(domain.Unsupported, "Subscription accounts require their native account interface.", "Use the isolated official subscription lifecycle.")
+		return account, domain.Provider{Enabled: new(true)}, domain.Fail(domain.Unsupported, "Subscription accounts require their native account interface.", "Use the isolated official subscription lifecycle.")
 	}
 	if account.Connection == nil || account.Removal != nil {
-		return account, domain.Provider{}, domain.Fail(domain.Conflict, "The account has no active connection to inspect.", "Connect it and complete any pending cleanup first.")
+		return account, domain.Provider{Enabled: new(true)}, domain.Fail(domain.Conflict, "The account has no active connection to inspect.", "Connect it and complete any pending cleanup first.")
 	}
 	record, err := tx.Get(domain.ProviderKind, account.ProviderID)
 	if err != nil {
-		return account, domain.Provider{}, err
+		return account, domain.Provider{Enabled: new(true)}, err
 	}
 	provider, err := store.Decode[domain.Provider](record)
 	if err == nil {

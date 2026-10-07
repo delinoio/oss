@@ -16,7 +16,7 @@ import (
 
 func connectValidationAccount(t *testing.T, f *accountFixture, endpoint string, auth domain.Authentication) *pb.Resource {
 	t.Helper()
-	p := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Validation fixture", Endpoint: endpoint + "/v1", Protocol: domain.OpenAIChat, Authentication: auth})
+	p := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Validation fixture", Endpoint: endpoint + "/v1", Protocol: domain.OpenAIChat, Authentication: auth, Enabled: new(true)})
 	a := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Validation", ProviderID: domain.ID(p.Id), Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})
 	req := &pb.ConnectAccountRequest{Mutation: &pb.Mutation{Id: a.Id, ExpectedRevision: a.Revision, RequestId: string(domain.NewID())}, Keyless: auth == domain.KeylessAuth}
 	if !req.Keyless {

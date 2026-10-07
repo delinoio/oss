@@ -20,10 +20,10 @@ describe("explicit server connection", () => {
       expect(init?.method).toBe("POST");
       expect(init).toMatchObject({ credentials: "omit", redirect: "error", cache: "no-store" });
       expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${token}`);
-      return new Response(toBinary(GetStatusResponseSchema, create(GetStatusResponseSchema, { version: "0.1.0", protocolVersion: 1 })), { headers: { "Content-Type": "application/proto" } });
+      return new Response(toBinary(GetStatusResponseSchema, create(GetStatusResponseSchema, { version: "0.1.0", protocolVersion: 2 })), { headers: { "Content-Type": "application/proto" } });
     });
     const client = createClient(SystemService, createDeliDevTransport({ origin: "http://127.0.0.1:4567", getToken: () => token, fetch: fetcher }));
-    expect((await client.getStatus({})).protocolVersion).toBe(1);
+    expect((await client.getStatus({})).protocolVersion).toBe(2);
     token = "b".repeat(43);
     await client.getStatus({});
     expect(fetcher).toHaveBeenCalledTimes(2);

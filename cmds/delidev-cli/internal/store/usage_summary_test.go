@@ -73,7 +73,7 @@ func TestUsageSummaryDailyAttributionAcrossMissingMidnight(t *testing.T) {
 				record.Usage.Counts = observation.counts
 				writeUsageAt(t, s, record, observation.at)
 			}
-			selection := domain.UsageSelection{From: from, Until: until, Granularity: domain.UsageTimeGranularityDay, TimeZone: scenario.zone}
+			selection := domain.UsageSelection{From: from, Until: until, Granularity: domain.UsageTimeGranularityDay, TimeZone: scenario.zone, AccountingProfile: domain.NativeUnitsV1Accounting}
 			summary, err := readUsage(s, selection)
 			if err != nil {
 				t.Fatal(err)
@@ -95,7 +95,7 @@ func TestUsageSummaryDailyAttributionAcrossMissingMidnight(t *testing.T) {
 			if !reflect.DeepEqual(combined, summary.Totals) || summary.Totals.Responses != 3 || summary.Totals.Total.KnownTotal != "9223372036854775824" || summary.Totals.Total.MeasuredResponses != 2 || summary.Totals.Total.UnavailableResponses != 1 {
 				t.Fatalf("daily and overall totals differ: %+v %+v", combined, summary.Totals)
 			}
-			legacy, err := readUsage(s, domain.UsageSelection{From: from, Until: until})
+			legacy, err := readUsage(s, domain.UsageSelection{From: from, Until: until, AccountingProfile: domain.NativeUnitsV1Accounting})
 			if err != nil || !reflect.DeepEqual(legacy.Totals, summary.Totals) {
 				t.Fatalf("daily attribution changed overall totals: %+v %v", legacy.Totals, err)
 			}
@@ -150,7 +150,7 @@ func TestUsageSummaryDailyAndModelAnalyticsShareRetentionSnapshot(t *testing.T) 
 	if retained, replayed, err := writeResponse(s, domain.NewID(), duplicate); err != nil || !replayed {
 		t.Fatalf("duplicate response was not deduplicated: %s %t %v", retained, replayed, err)
 	}
-	selection := domain.UsageSelection{From: from, Until: until, Granularity: domain.UsageTimeGranularityDay, TimeZone: "Asia/Seoul"}
+	selection := domain.UsageSelection{From: from, Until: until, Granularity: domain.UsageTimeGranularityDay, TimeZone: "Asia/Seoul", AccountingProfile: domain.NativeUnitsV1Accounting}
 	summary, err := readUsage(s, selection)
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestUsageSummaryDailyAndModelAnalyticsShareRetentionSnapshot(t *testing.T) 
 	if models[0].Totals.Total.KnownTotal != "150" || summary.Totals.Total.KnownTotal != "165" {
 		t.Fatal("daily/model/overall totals do not reconcile")
 	}
-	legacy, err := readUsage(s, domain.UsageSelection{From: from, Until: until})
+	legacy, err := readUsage(s, domain.UsageSelection{From: from, Until: until, AccountingProfile: domain.NativeUnitsV1Accounting})
 	if err != nil || legacy.Analytics != nil {
 		t.Fatalf("unspecified granularity changed the original summary shape: %+v %v", legacy, err)
 	}
@@ -217,7 +217,7 @@ func TestUsageSummaryModelRankingAndOtherModels(t *testing.T) {
 				}
 				writeUsageAt(t, s, record, time.Date(2026, 9, 1, index, 0, 0, 0, time.UTC))
 			}
-			selection := domain.UsageSelection{From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Until: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC), Granularity: domain.UsageTimeGranularityDay, TimeZone: "UTC"}
+			selection := domain.UsageSelection{From: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Until: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC), Granularity: domain.UsageTimeGranularityDay, TimeZone: "UTC", AccountingProfile: domain.NativeUnitsV1Accounting}
 			summary, err := readUsage(s, selection)
 			if err != nil || summary.Analytics == nil || len(summary.Analytics.Models) != len(scenario.values) {
 				t.Fatalf("missing complete model analytics: %+v %v", summary.Analytics, err)
@@ -249,7 +249,7 @@ func TestSortUsageAnalyticsModelsUsesExactIntegerAndOriginalIdTuple(t *testing.T
 	}
 }
 func usageWindow() domain.UsageSelection {
-	return domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour)}
+	return domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour), AccountingProfile: domain.NativeUnitsV1Accounting}
 }
 func TestUsageSummaryExactNullableCountersAndHistoricalFilters(t *testing.T) {
 	s, _ := openTest(t)
@@ -339,7 +339,7 @@ func TestUsageSummaryHalfOpenTimeZeroAndGroupBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filter := domain.UsageSelection{From: retained.CreatedAt, Until: retained.CreatedAt.Add(time.Millisecond)}
+	filter := domain.UsageSelection{From: retained.CreatedAt, Until: retained.CreatedAt.Add(time.Millisecond), AccountingProfile: domain.NativeUnitsV1Accounting}
 	summary, err := readUsage(s, filter)
 	if err != nil || summary.Totals.Total.KnownTotal != "0" {
 		t.Fatal("measured zero was lost", err)

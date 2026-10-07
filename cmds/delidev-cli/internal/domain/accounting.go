@@ -9,8 +9,8 @@ import (
 type AccountingProfile int32
 
 const (
-	ResponseOnlyAccounting  AccountingProfile = 0
-	NativeUnitsV1Accounting AccountingProfile = 1
+	AccountingProfileUnspecified AccountingProfile = 0
+	NativeUnitsV1Accounting      AccountingProfile = 1
 )
 
 type AccountingUnitKind int32

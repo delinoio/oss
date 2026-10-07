@@ -15,7 +15,7 @@ export function subscriptionService(value: unknown): SubscriptionServiceId | und
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
 // Version 2 is accepted only for its owning identity family. This does not grant
-// mutation, native readiness or interpretation of a retired original document.
+// mutation or native readiness.
 export function supportsResourceSchema(resource: Resource): boolean {
   if (resource.documentJson.byteLength > 1 << 20) return false;
   if (resource.schemaVersion === 1) return true;
@@ -23,10 +23,6 @@ export function supportsResourceSchema(resource: Resource): boolean {
   try {
     const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson));
     if (!object(value)) return false;
-    if ([EntityKind.ACCOUNT, EntityKind.PROVIDER, EntityKind.MODEL].includes(resource.kind) && value.retired === true) {
-      return value.original_schema_version === 1 && object(value.original_document);
-    }
-    if (resource.kind === EntityKind.AGENT) return value.reconfiguration_required === true;
     const service = subscriptionService(value.subscription_service);
     if (!service || Object.hasOwn(value, "provider_id")) return false;
     if (resource.kind === EntityKind.ACCOUNT) return value.type === "subscription";
@@ -36,8 +32,7 @@ export function supportsResourceSchema(resource: Resource): boolean {
 }
 export function configurationSchemaVersion(kind: EntityKind, value: Record<string, unknown>): number {
   return kind === EntityKind.ACCOUNT && value.type === "subscription" ||
-    kind === EntityKind.MODEL && value.source_kind === NativeModelSourceKind.Subscription ||
-    kind === EntityKind.AGENT && value.reconfiguration_required === true ? 2 : 1;
+    kind === EntityKind.MODEL && value.source_kind === NativeModelSourceKind.Subscription ? 2 : 1;
 }
 
 export function subscriptionServiceFromWire(value: SubscriptionServiceIdentity): SubscriptionServiceId | undefined {

@@ -46,9 +46,6 @@ type Route struct {
 // RouteAccount is pure. Preview discards next; dispatch must atomically persist
 // next together with the session snapshot/account and actual selection record.
 func RouteAccount(agentID ID, agent Agent, model Model, project *Project, accounts map[ID]Account, defaultPolicy RoutingPolicy, state RoutingState, now time.Time) (Route, RoutingState, error) {
-	if agent.ReconfigurationRequired {
-		return Route{}, state, SubscriptionReconfigurationRequired()
-	}
 	policy := defaultPolicy
 	if agent.Routing != nil {
 		policy = *agent.Routing

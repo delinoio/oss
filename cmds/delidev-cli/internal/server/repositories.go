@@ -46,11 +46,6 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 		if err := validateRelationships(tx, domain.RepositoryKind, id, input.ExpectedRevision, &repository); err != nil {
 			return nil, err
 		}
-		for _, checkout := range repository.Checkouts {
-			if _, _, err := activeMachine(tx, checkout.MachineID); err != nil {
-				return nil, err
-			}
-		}
 		document, err := json.Marshal(repositorySaveInput{ID: id, ExpectedRevision: input.ExpectedRevision, Repository: repository})
 		if err != nil {
 			return nil, err
@@ -66,19 +61,16 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 			}
 		}
 		for _, checkout := range repository.Checkouts {
-			identity := ""
 			_, machine, machineErr := activeMachine(tx, checkout.MachineID)
 			if machineErr != nil {
 				return nil, machineErr
 			}
-			// The identity field was added after the original inspection input.
-			// Keep it omitted for older Workers so their strict decoder retains the
-			// legacy inspection path; newer Workers enforce the source binding.
-			if repository.RemoteURL != "" && slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
-				identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
-				if err != nil {
-					return nil, err
-				}
+			if !slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
+				return nil, domain.Fail(domain.Unsupported, "This Worker does not support repository source inspection.", "Update and reconnect the selected Worker before saving a checkout.")
+			}
+			identity, err := domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
+			if err != nil {
+				return nil, err
 			}
 			raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required, ExpectedRemoteIdentity: identity})
 			if err != nil {

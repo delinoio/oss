@@ -22,7 +22,7 @@ type ConfigurationMutation struct {
 
 type validatable interface{ Validate() error }
 
-func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool) (validatable, error) {
+func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
 	var value validatable
 	switch kind {
 	case domain.ProjectKind:
@@ -34,7 +34,7 @@ func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool)
 	case domain.AccountKind:
 		value = &domain.Account{}
 	case domain.ProviderKind:
-		value = &domain.Provider{}
+		value = &domain.Provider{Enabled: new(true)}
 	case domain.ModelKind:
 		value = &domain.Model{}
 	case domain.TemplateKind:
@@ -48,19 +48,17 @@ func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool)
 		return nil, err
 	}
 	if repository, ok := value.(*domain.Repository); ok {
-		if repository.RemoteURL == "" {
-			if requireRepositoryURL {
-				return nil, domain.Fail(domain.InvalidArgument, "Enter a credential-free HTTPS or SSH Git URL.", "Use HTTPS, ssh:// or SCP-style SSH. Local paths, passwords, tokens and helper transports are unsupported.")
-			}
-		} else {
-			parsed, err := domain.ParseRepositoryCloneURL(repository.RemoteURL)
-			if err != nil {
-				return nil, err
-			}
-			if repository.Name == "" {
-				repository.Name = parsed.DirectoryName
-			}
+		parsed, err := domain.ParseRepositoryCloneURL(repository.RemoteURL)
+		if err != nil {
+			return nil, err
 		}
+		if repository.Name == "" {
+			repository.Name = parsed.DirectoryName
+		}
+
+	}
+	if agent, ok := value.(*domain.Agent); ok && len(agent.Accounts) == 0 {
+		return nil, domain.Fail(domain.MissingInput, "Select at least one account.", "Choose accounts from the selected model source.")
 	}
 	if err := value.Validate(); err != nil {
 		return nil, err
@@ -68,7 +66,10 @@ func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool)
 	return value, nil
 }
 func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationMutation) (store.Result, error) {
-	value, err := configurationValue(input.Kind, input.Document, true)
+	if input.Kind == domain.AgentKind {
+		return store.Result{}, domain.Fail(domain.Unsupported, "Agent Workers require atomic account and model selection.", "Use SaveAgentWorker with a canonical model revision or an exact native model ID.")
+	}
+	value, err := configurationValue(input.Kind, input.Document)
 	if err != nil {
 		return store.Result{}, err
 	}
@@ -302,11 +303,10 @@ func preserveProviderActivation(tx *store.Tx, input ConfigurationMutation, id do
 			return domain.Fail(domain.InvalidArgument, "Provider availability must be a boolean.", "Set enabled to true or false.")
 		}
 		provider.SetEnabled(enabled)
-	} else if previous != nil {
-		provider.Enabled = previous.Enabled
 	} else {
-		provider.SetEnabled(true)
+		return domain.Fail(domain.InvalidArgument, "Provider availability is required.", "Set enabled explicitly to true or false.")
 	}
+
 	if raw, present := fields["preset_id"]; present {
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			return domain.Fail(domain.InvalidArgument, "Managed preset identity cannot be cleared.", "Create a custom copy as a new provider instead.")
@@ -329,7 +329,7 @@ func providerPresetDefaults(id domain.ProviderPresetID) (domain.Provider, bool) 
 			return preset.Provider, true
 		}
 	}
-	return domain.Provider{}, false
+	return domain.Provider{Enabled: new(true)}, false
 }
 
 func sameProviderPresetDefaults(provider, canonical domain.Provider) bool {
@@ -399,9 +399,6 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		return nil
 	case *domain.Agent:
-		if v.ReconfigurationRequired {
-			return domain.SubscriptionReconfigurationRequired()
-		}
 		record, err := tx.Get(domain.ModelKind, v.ModelID)
 		if err != nil {
 			return err
@@ -449,11 +446,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if previous.PresetID != nil && (v.PresetID == nil || *v.PresetID != *previous.PresetID) || previous.PresetID == nil && v.PresetID != nil {
 				return domain.Fail(domain.Conflict, "Provider preset identity is immutable.", "Keep the managed provider identity or create a new custom copy.")
 			}
-			harnessChanged := (previous.SubscriptionHarness == nil) != (v.SubscriptionHarness == nil)
-			if previous.SubscriptionHarness != nil && v.SubscriptionHarness != nil {
-				harnessChanged = *previous.SubscriptionHarness != *v.SubscriptionHarness
-			}
-			if previous.Endpoint != v.Endpoint || previous.Protocol != v.Protocol || previous.Authentication != v.Authentication || harnessChanged {
+			if previous.Endpoint != v.Endpoint || previous.Protocol != v.Protocol || previous.Authentication != v.Authentication {
 				accounts, err := all(tx, domain.AccountKind)
 				if err != nil {
 					return err

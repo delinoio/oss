@@ -147,11 +147,11 @@ func TestRestoreRefusesConcurrentUserServiceControl(t *testing.T) {
 	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
 		t.Fatal(err)
 	}
-	backup, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())}))
+	backup, err := requestBackupImageForTest(t, s, ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	inspection, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: backup.Msg.Id}))
+	inspection, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: backup.Msg.Job.BackupId}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,11 +193,11 @@ func TestRestoreRPCRequiresOriginalInspectionAndCurrentAuthority(t *testing.T) {
 	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
 		t.Fatal(err)
 	}
-	backup, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())}))
+	backup, err := requestBackupImageForTest(t, s, ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	inspection, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: backup.Msg.Id}))
+	inspection, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: backup.Msg.Job.BackupId}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,11 +272,11 @@ func TestRestoreStoppedIntentFailurePreservesOriginalDatabase(t *testing.T) {
 	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
 		t.Fatal(err)
 	}
-	backup, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())}))
+	backup, err := requestBackupImageForTest(t, s, ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	inspection, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: backup.Msg.Id}))
+	inspection, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: backup.Msg.Job.BackupId}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestRestoreStoppedIntentFailurePreservesOriginalDatabase(t *testing.T) {
 	if err != nil || current != revision {
 		t.Fatal("stopped-intent failure changed the live revision", current, err)
 	}
-	observed, err := reopened.InspectBackup(ctx, domain.ID(backup.Msg.Id), s.Identity.ServerID)
+	observed, err := reopened.InspectBackup(ctx, domain.ID(backup.Msg.Job.BackupId), s.Identity.ServerID)
 	if err != nil || observed.SHA256 != inspection.Msg.Sha256 {
 		t.Fatal("stopped-intent failure changed the source backup", observed, err)
 	}

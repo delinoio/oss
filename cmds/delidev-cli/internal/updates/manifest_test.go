@@ -29,7 +29,7 @@ func fixture(t *testing.T) (Verifier, ed25519.PrivateKey, Payload) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	p := Payload{SchemaVersion: 1, Version: "0.2.0", SourceRevision: strings.Repeat("a", 40), ProtocolVersion: 1, PublishedAt: "2026-10-01T00:00:00Z"}
+	p := Payload{SchemaVersion: 1, Version: "0.2.0", SourceRevision: strings.Repeat("a", 40), ProtocolVersion: 2, PublishedAt: "2026-10-01T00:00:00Z"}
 	data := []byte("signed-worker-fixture")
 	sum := sha256.Sum256(data)
 	for _, c := range []Component{Desktop, Worker} {
@@ -69,7 +69,7 @@ func TestSignedCompleteInventoryAndRejections(t *testing.T) {
 	if e != nil || len(good.Payload.Artifacts) != 12 {
 		t.Fatal(e)
 	}
-	cases := map[string]func(*Payload){"missing": func(p *Payload) { p.Artifacts = p.Artifacts[:11] }, "duplicate": func(p *Payload) { p.Artifacts[1] = p.Artifacts[0] }, "foreign-project": func(p *Payload) { p.Artifacts[0].URL = strings.Replace(p.Artifacts[0].URL, "delidev-v", "devhud-v", 1) }, "unknown-target": func(p *Payload) { p.Artifacts[0].Target = "linux-386" }, "uppercase-hash": func(p *Payload) { p.Artifacts[0].SHA256 = strings.ToUpper(p.Artifacts[0].SHA256) }, "oversized": func(p *Payload) { p.Artifacts[0].Size = ArtifactLimit + 1 }, "wrong-protocol": func(p *Payload) { p.ProtocolVersion = 2 }, "future": func(p *Payload) { p.PublishedAt = "2027-01-01T00:00:00Z" }, "bad-source": func(p *Payload) { p.SourceRevision = "main" }, "downgrade": func(p *Payload) { p.Version = "0.0.1" }, "suffix": func(p *Payload) { p.Version = "0.2.0-beta" }}
+	cases := map[string]func(*Payload){"missing": func(p *Payload) { p.Artifacts = p.Artifacts[:11] }, "duplicate": func(p *Payload) { p.Artifacts[1] = p.Artifacts[0] }, "foreign-project": func(p *Payload) { p.Artifacts[0].URL = strings.Replace(p.Artifacts[0].URL, "delidev-v", "devhud-v", 1) }, "unknown-target": func(p *Payload) { p.Artifacts[0].Target = "linux-386" }, "uppercase-hash": func(p *Payload) { p.Artifacts[0].SHA256 = strings.ToUpper(p.Artifacts[0].SHA256) }, "oversized": func(p *Payload) { p.Artifacts[0].Size = ArtifactLimit + 1 }, "wrong-protocol": func(p *Payload) { p.ProtocolVersion = 1 }, "future": func(p *Payload) { p.PublishedAt = "2027-01-01T00:00:00Z" }, "bad-source": func(p *Payload) { p.SourceRevision = "main" }, "downgrade": func(p *Payload) { p.Version = "0.0.1" }, "suffix": func(p *Payload) { p.Version = "0.2.0-beta" }}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, _, p := fixture(t)

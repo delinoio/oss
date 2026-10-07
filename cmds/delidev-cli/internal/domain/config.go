@@ -268,15 +268,14 @@ type WeightedAccount struct {
 	Weight uint32 `json:"weight"`
 }
 type Agent struct {
-	ReconfigurationRequired bool              `json:"reconfiguration_required,omitempty"`
-	Name                    string            `json:"name"`
-	Harness                 Harness           `json:"harness"`
-	ModelID                 ID                `json:"model_id"`
-	Effort                  string            `json:"effort,omitempty"`
-	Accounts                []WeightedAccount `json:"accounts"`
-	Routing                 *RoutingPolicy    `json:"routing,omitempty"`
-	Templates               []ID              `json:"templates"`
-	Options                 AgentOptions      `json:"options"`
+	Name      string            `json:"name"`
+	Harness   Harness           `json:"harness"`
+	ModelID   ID                `json:"model_id"`
+	Effort    string            `json:"effort,omitempty"`
+	Accounts  []WeightedAccount `json:"accounts"`
+	Routing   *RoutingPolicy    `json:"routing,omitempty"`
+	Templates []ID              `json:"templates"`
+	Options   AgentOptions      `json:"options"`
 }
 
 func (a Agent) Validate() error {
@@ -365,24 +364,23 @@ const (
 )
 
 type Provider struct {
-	Name                string            `json:"name"`
-	Endpoint            string            `json:"endpoint"`
-	Protocol            APIProtocol       `json:"protocol"`
-	Authentication      Authentication    `json:"authentication"`
-	Discovery           bool              `json:"discovery"`
-	Enabled             *bool             `json:"enabled,omitempty"`
-	PresetID            *ProviderPresetID `json:"preset_id,omitempty"`
-	SubscriptionHarness *Harness          `json:"subscription_harness,omitempty"`
+	Name           string            `json:"name"`
+	Endpoint       string            `json:"endpoint"`
+	Protocol       APIProtocol       `json:"protocol"`
+	Authentication Authentication    `json:"authentication"`
+	Discovery      bool              `json:"discovery"`
+	Enabled        *bool             `json:"enabled"`
+	PresetID       *ProviderPresetID `json:"preset_id,omitempty"`
 }
 
-// EnabledValue keeps pre-activation provider documents available by default.
-func (p Provider) EnabledValue() bool { return p.Enabled == nil || *p.Enabled }
+// Availability is explicit in every current saved Provider document.
+func (p Provider) EnabledValue() bool { return p.Enabled != nil && *p.Enabled }
 
 func (p *Provider) SetEnabled(enabled bool) { p.Enabled = &enabled }
 
 func (p Provider) Validate() error {
-	if p.SubscriptionHarness != nil && (p.Protocol != NativeSubscription || *p.SubscriptionHarness != Codex) {
-		return Fail(InvalidArgument, "Unsupported managed subscription harness.", "Use codex only on a native subscription provider.")
+	if p.Enabled == nil {
+		return Fail(InvalidArgument, "Provider availability is required.", "Set enabled explicitly to true or false.")
 	}
 	if err := Text(p.Name, "provider name", 256, true); err != nil {
 		return err
@@ -394,10 +392,7 @@ func (p Provider) Validate() error {
 		return Fail(InvalidArgument, "Unknown managed provider preset.", "Use one of the supported API provider preset identifiers.")
 	}
 	if p.Protocol == NativeSubscription {
-		if p.Authentication != SubscriptionAuth || p.Endpoint != "" || p.PresetID != nil {
-			return Fail(InvalidArgument, "Native subscription providers cannot configure an API endpoint.", "Use an isolated official account login.")
-		}
-		return nil
+		return Fail(InvalidArgument, "Subscription accounts have no API Provider.", "Create a service-native subscription account and model.")
 	}
 	if p.Authentication != BearerAuth && p.Authentication != APIKeyAuth && p.Authentication != KeylessAuth {
 		return Fail(InvalidArgument, "Unsupported API authentication.", "Use bearer, api-key, or a keyless local endpoint.")

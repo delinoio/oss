@@ -269,9 +269,10 @@ Sidechat reference preparation privately owns sidechat-preparations/ under the w
 ## Pre-release compatibility reset
 
 The owner-approved pre-release cleanup establishes database baseline 32 and
-DeliDev protocol 2 before implementation. Reserve
-`AttachWorkerRequest.protocol_version = 10` on main before declaring the field.
-Reservations do not activate a database layout, RPC, Worker admission or reset.
+DeliDev protocol 2 before implementation. PR #1609 established
+`AttachWorkerRequest.protocol_version = 10` on main before implementation.
+The field now requires protocol 2 before Worker connection mutation. Reservations
+alone never grant a database layout, RPC, Worker admission or reset.
 
 The complete reset replaces migrations 1–31 with one current initialization
 schema. Earlier databases and backups are unsupported and must be rejected

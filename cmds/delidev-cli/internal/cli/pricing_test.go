@@ -40,7 +40,7 @@ func TestCLIPricingRevisionMissingRatesAndHistoricalRetry(t *testing.T) {
 		}
 		return result["result"].(map[string]any)
 	}
-	provider := run([]string{"provider", "create"}, `{"name":"Fixture","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":false}`)["resource"].(map[string]any)["id"].(string)
+	provider := run([]string{"provider", "create"}, `{"name":"Fixture","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":false,"enabled":true}`)["resource"].(map[string]any)["id"].(string)
 	raw, _ := json.Marshal(domain.Model{Name: "Fixture", ProviderID: domain.ID(provider), NativeID: "fixture", Manual: true, MetadataSource: domain.UserDeclared, Harnesses: []domain.Harness{domain.Codex}})
 	model := run([]string{"model", "create"}, string(raw))["resource"].(map[string]any)["id"].(string)
 	if run([]string{"usage", "pricing", "get", "--model-id", model}, "")["pricing"] != nil {

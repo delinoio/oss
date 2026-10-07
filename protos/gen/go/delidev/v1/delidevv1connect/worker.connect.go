@@ -118,7 +118,7 @@ type WorkerServiceClient interface {
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest]) (*connect.ServerStreamForClient[v1.WatchWorkResponse], error)
-	// An independent lane. Older Workers remain primary-only.
+	// An independent capability-gated lane.
 	WatchAuxiliaryWork(context.Context, *connect.Request[v1.WatchAuxiliaryWorkRequest]) (*connect.ServerStreamForClient[v1.WatchAuxiliaryWorkResponse], error)
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
@@ -440,7 +440,7 @@ type WorkerServiceHandler interface {
 	ReportWorkspaceRead(context.Context, *connect.Request[v1.ReportWorkspaceReadRequest]) (*connect.Response[v1.ReportWorkspaceReadResponse], error)
 	AttachWorker(context.Context, *connect.Request[v1.AttachWorkerRequest]) (*connect.Response[v1.AttachWorkerResponse], error)
 	WatchWork(context.Context, *connect.Request[v1.WatchWorkRequest], *connect.ServerStream[v1.WatchWorkResponse]) error
-	// An independent lane. Older Workers remain primary-only.
+	// An independent capability-gated lane.
 	WatchAuxiliaryWork(context.Context, *connect.Request[v1.WatchAuxiliaryWorkRequest], *connect.ServerStream[v1.WatchAuxiliaryWorkResponse]) error
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)

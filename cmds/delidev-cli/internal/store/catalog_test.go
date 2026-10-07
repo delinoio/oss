@@ -30,7 +30,7 @@ func TestCatalogCandidatesPersistDueTimeAndRetryDelay(t *testing.T) {
 	provider := domain.NewID()
 	var records []Record
 	_, err := s.Mutate(ctx, domain.NewID(), "catalog.fixture", nil, func(tx *Tx) (any, error) {
-		if _, err := tx.Put(domain.ProviderKind, provider, 0, "", "", domain.Provider{Discovery: true}); err != nil {
+		if _, err := tx.Put(domain.ProviderKind, provider, 0, "", "", domain.Provider{Discovery: true, Enabled: new(true)}); err != nil {
 			return nil, err
 		}
 		for _, state := range []string{"new", "recent", "due", "retry", "disabled", "disconnected", "removing"} {

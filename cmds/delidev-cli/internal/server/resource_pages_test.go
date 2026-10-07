@@ -18,8 +18,8 @@ import (
 
 func TestAccountListFiltersAreAppliedBeforePaginationAndBoundToCursor(t *testing.T) {
 	f := newAccountFixture(t)
-	apiProviderA := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "API A", Endpoint: "https://a.example.test/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth})
-	apiProviderB := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "API B", Endpoint: "https://b.example.test/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth})
+	apiProviderA := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "API A", Endpoint: "https://a.example.test/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)})
+	apiProviderB := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "API B", Endpoint: "https://b.example.test/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)})
 	providers := []*pb.Resource{apiProviderA, apiProviderB}
 	for i := 0; i < 102; i++ {
 		kind, providerID := domain.APIAccount, providers[(i/2)%len(providers)].Id

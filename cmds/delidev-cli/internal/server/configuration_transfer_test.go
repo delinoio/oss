@@ -26,12 +26,12 @@ func transferEntry(kind domain.Kind, value any) domain.ConfigurationEntry {
 	return domain.ConfigurationEntry{ID: domain.NewID(), Kind: kind, Document: raw}
 }
 func transferSelection() domain.ConfigurationImportSelection {
-	provider := transferEntry(domain.ProviderKind, domain.Provider{Name: "API", Endpoint: "https://api.example.test/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth})
+	provider := transferEntry(domain.ProviderKind, domain.Provider{Name: "API", Endpoint: "https://api.example.test/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)})
 	model := transferEntry(domain.ModelKind, domain.Model{ProviderID: provider.ID, NativeID: "fixture", Name: "Model", Harnesses: []domain.Harness{domain.Codex}, Manual: true, MetadataSource: domain.UserDeclared})
 	account := transferEntry(domain.AccountKind, domain.Account{Alias: "Fresh account", ProviderID: provider.ID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}})
 	template := transferEntry(domain.TemplateKind, domain.Template{Name: "Exact instructions", Contents: "Keep every line.\n한국어 <script>inert</script>\n"})
 	agent := transferEntry(domain.AgentKind, domain.Agent{Name: "Agent", Harness: domain.Codex, ModelID: model.ID, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 3}}, Templates: []domain.ID{template.ID}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
-	return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{agent, template, account, model, provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
+	return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 2, Entries: []domain.ConfigurationEntry{agent, template, account, model, provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
 }
 func transferOwner() context.Context {
 	return domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
@@ -62,7 +62,7 @@ func TestConfigurationTransferExportExcludesRuntimeAndKeepsExactInstructions(t *
 	selection := transferSelection()
 	var accountID domain.ID
 	for _, entry := range selection.Bundle.Entries {
-		value, err := configurationValue(entry.Kind, entry.Document, true)
+		value, err := configurationValue(entry.Kind, entry.Document)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -385,9 +385,8 @@ func TestPortableProviderActivationFieldsRejectExplicitMalformedValues(t *testin
 		}
 	}
 	legacy := []byte(`{"name":"Legacy","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":true}`)
-	value, err := portableValue(domain.ProviderKind, legacy, true)
-	if err != nil || !value.(*domain.Provider).EnabledValue() || value.(*domain.Provider).PresetID != nil {
-		t.Fatal("legacy provider semantics changed", err)
+	if _, err := portableValue(domain.ProviderKind, legacy, true); err == nil {
+		t.Fatal("provider without explicit enabled was accepted")
 	}
 }
 
@@ -396,7 +395,7 @@ func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *t
 	managed := presets[len(presets)-3].Provider // Ollama remains virtual until explicitly saved.
 	single := func() domain.ConfigurationImportSelection {
 		provider := transferEntry(domain.ProviderKind, managed)
-		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
+		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 2, Entries: []domain.ConfigurationEntry{provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
 	}
 	t.Run("duplicate bundle", func(t *testing.T) {
 		s, _ := newDoctorFixture(t)
@@ -493,8 +492,8 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 					if err := domain.Decode(job.Input, &input); err != nil {
 						t.Fatal(err)
 					}
-					if input.ExpectedRemoteIdentity != "" {
-						t.Fatal("legacy Worker received the post-capability source identity")
+					if input.ExpectedRemoteIdentity == "" {
+						t.Fatal("current Worker omitted the source identity")
 					}
 				}
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
@@ -650,7 +649,7 @@ func TestConfigurationImportExplicitReuseAndDeletedReceiptCannotRecreate(t *test
 		}
 	}
 	// A single newly created instruction can be removed without dependency links.
-	single := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{transferEntry(domain.TemplateKind, domain.Template{Name: "Disposable", Contents: "no retained copy"})}}}
+	single := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 2, Entries: []domain.ConfigurationEntry{transferEntry(domain.TemplateKind, domain.Template{Name: "Disposable", Contents: "no retained copy"})}}}
 	preview := transferPreview(t, s, single)
 	request := domain.NewID()
 	created := transferApply(t, s, preview, request)

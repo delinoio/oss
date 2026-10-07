@@ -45,7 +45,7 @@ func newScheduleDispatchFixture(t *testing.T, overlap domain.ScheduleOverlap, lo
 			id    domain.ID
 			value any
 		}{
-			{domain.ProviderKind, provider, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth}},
+			{domain.ProviderKind, provider, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth, Enabled: new(true)}},
 			{domain.ModelKind, model, domain.Model{Name: "Fixture", NativeID: "fixture", ProviderID: provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}},
 			{domain.AgentKind, f.agent, domain.Agent{Name: "Fixture", ModelID: model, Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}},
 			{domain.MachineKind, f.machine, domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1}, Name: "Fixture", OS: "linux", Architecture: "arm64"}},

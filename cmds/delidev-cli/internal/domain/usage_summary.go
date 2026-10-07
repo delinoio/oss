@@ -38,7 +38,7 @@ func (f UsageSelection) Validate() error {
 	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "") {
 		return Fail(InvalidArgument, "Invalid usage identity filter.", "Select an API provider or a subscription service.")
 	}
-	if f.AccountingProfile != ResponseOnlyAccounting && f.AccountingProfile != NativeUnitsV1Accounting {
+	if f.AccountingProfile != NativeUnitsV1Accounting {
 		return Fail(InvalidArgument, "Unsupported usage accounting profile.", "Choose a supported accounting profile.")
 	}
 	if f.From.UnixMilli() <= 0 || f.Until.UnixMilli() > 253402300799999 || !f.Until.After(f.From) || f.Until.Sub(f.From) > UsageWindowLimit || (f.GeneralChat && f.ProjectID != "") {

@@ -78,7 +78,7 @@ Schema 16 adds per-session/per-currency lifetime estimate totals. Original respo
 
 Schema 23 adds a closed `response_usage.purpose` with existing rows defaulted to `conversation`, plus durable once-only title-send and title-HTTP claims. It does not backfill title responses or reprice history. Only `conversation` rows feed dashboard response counts and missing-response coverage; both purposes continue through the same immutable estimate and lifetime-budget ledger when exact usage and a matching price basis exist.
 
-Migration from schemas 1–15 first publishes a validated, synchronized original backup, then changes schema atomically. Schema-13 migration does not rerun search or earlier ownership migrations; schema-14 migration adds pricing and budget totals, while schema-15 migration adds only budget totals. No legacy cumulative usage is converted into exact response records. Schema conflicts retain the original database and backup without resetting history.
+Schema 32 directly creates the exact usage, pricing and budget storage. Earlier databases and backups are rejected without conversion, backfill or source changes. Current response and native accounting publication retains immutable evidence and never reprices history.
 
 ## Security
 Publication retains all existing session/input/job/account/connection/Worker and terminal checks. Counter or identity conflicts cannot consume an event sequence. Raw provider response IDs, Codex native metadata amounts, instructions and content never enter normalized usage, journals or logs. The separately typed OpenCode observation below retains its original native estimate spelling without currency or billing authority; it remains excluded from logs. This path needs no additional reporting credential and never authorizes inference or changes account health, pause, outcome or queue capacity.
@@ -138,21 +138,20 @@ The closed first-text Grok terminal additionally retains the original input aggr
 ### Negotiated native accounting (issue #1100)
 
 `NATIVE_UNITS_V1` is an explicit `GetUsageSummary` accounting profile, advertised
-by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed in the response. Omission
-preserves response-only fields, counts, groups and coverage. CLI callers select
-`usage summary --accounting-profile native-units-v1`, optionally with the existing
+by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed in the response. It is
+required for every summary; unspecified and unknown profiles are rejected. CLI
+`usage summary` defaults to this profile, optionally with the existing
 DAY/timezone and attribution filters, and reject an unnegotiated response. The
 additive `UsageTotals.accounting` inventory preserves `CodexResponse` and
 `GrokClosedInput` as distinct unit kinds in overall, daily, model and session /
 account / provider / model totals. Codex entries project the already retained
-exact response ledger; no legacy raw observations are reinterpreted. Legacy
+exact response ledger; no legacy raw observations are reinterpreted. Current
 response charts, ranking, Other, estimated-cost breakdown and
 `accepted_executions_without_response` retain their response-only meanings. The
 complete model inventory also includes Grok-only groups; Grok totals are exposed
 separately and never added to a Codex response subtotal.
 
-Schema 25 adds `native_accounting` without historical backfill, after the same
-synchronized pre-migration backup. A Grok unit is inserted only in the original
+Schema 32 initializes `native_accounting` directly without historical backfill. A Grok unit is inserted only in the original
 verified `ReportWork` transaction, together with session/job/event/receipt state,
 after its acknowledged successful first-text terminal and independent owned
 workspace cleanup. It requires original closed user-input digest / native turn,

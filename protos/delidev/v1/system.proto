@@ -11,7 +11,6 @@ service SystemService {
   rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse);
   rpc StopServer(StopServerRequest) returns (StopServerResponse);
   rpc GetDoctor(GetDoctorRequest) returns (GetDoctorResponse);
-  rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse);
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
   rpc InspectBackup(InspectBackupRequest) returns (InspectBackupResponse);
   rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse);
@@ -107,16 +106,6 @@ message GetDoctorRequest {}
 
 message GetDoctorResponse {
   bytes report_json = 1;
-}
-
-message CreateBackupRequest {
-  string request_id = 1;
-}
-
-message CreateBackupResponse {
-  string id = 1;
-  string request_id = 2;
-  bool replayed = 3;
 }
 
 // Metadata does not establish integrity or restoration eligibility.

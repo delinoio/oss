@@ -137,7 +137,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		Method  string           `json:"method"`
 		Params  initializeParams `json:"params"`
 	}{JSONRPC: "2.0", ID: requestID, Method: "initialize", Params: initializeParams{
-		ProtocolVersion: 1, ClientCapabilities: struct{}{}, ClientInfo: clientInfo{Name: "delidev", Title: "DeliDev", Version: "0.1.0"},
+		ProtocolVersion: 2, ClientCapabilities: struct{}{}, ClientInfo: clientInfo{Name: "delidev", Title: "DeliDev", Version: "0.1.0"},
 	}})
 	writeDone = make(chan struct{})
 	var writeError error

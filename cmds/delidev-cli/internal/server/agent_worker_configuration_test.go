@@ -24,7 +24,7 @@ func wizardRequest(accounts []*pb.Resource, native string) *pb.SaveAgentWorkerRe
 }
 func TestAgentWorkerWizardAtomicSaveAndReplay(t *testing.T) {
 	f := newAccountFixture(t)
-	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Wizard API", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Wizard API", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth, Enabled: new(true)})
 	accounts := []*pb.Resource{wizardAccount(f, provider, "First"), wizardAccount(f, provider, "Second")}
 	request := wizardRequest(accounts, "exact-native-model")
 	ctx := context.Background()
@@ -113,10 +113,10 @@ func TestAgentWorkerWizardAtomicSaveAndReplay(t *testing.T) {
 
 func TestAgentWorkerWizardSourceAndMinimumAccounts(t *testing.T) {
 	f := newAccountFixture(t)
-	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Wizard API", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Wizard API", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth, Enabled: new(true)})
 	api := wizardAccount(f, provider, "API")
 	sub := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Subscription", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
-	otherProvider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Other Wizard API", Endpoint: "http://127.0.0.1:12346/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	otherProvider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Other Wizard API", Endpoint: "http://127.0.0.1:12346/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth, Enabled: new(true)})
 	otherAPI := wizardAccount(f, otherProvider, "Other API")
 	otherSubscription := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Other subscription", SubscriptionService: domain.SubscriptionClaude, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
 	for _, tc := range []struct {
@@ -201,7 +201,7 @@ func TestWizardSourceFiltersPrecedePaginationAndBindCursors(t *testing.T) {
 func TestAgentWorkerWizardPreservesModelMetadataAndConcurrentCreation(t *testing.T) {
 	f := newAccountFixture(t)
 	ctx := context.Background()
-	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Wizard API", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Wizard API", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth, Enabled: new(true)})
 	account := wizardAccount(f, provider, "API")
 	limit := uint64(8192)
 	model := f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Original display", ProviderID: domain.ID(provider.Id), NativeID: "retained-native", Alias: "retained-alias", Harnesses: []domain.Harness{domain.OpenCode}, Hidden: true, Order: 42, MetadataSource: domain.UserDeclared, ContextLimit: &limit})

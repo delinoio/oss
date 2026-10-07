@@ -80,7 +80,7 @@ func TestCodexChildModelRequiresSameAccountAndWorkerCapabilityBeforeClaim(t *tes
 		account := accountBody(t, f.account)
 		provider := account.ProviderID
 		if foreign {
-			value := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Foreign", Endpoint: "https://example.invalid", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth})
+			value := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Foreign", Endpoint: "https://example.invalid", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth, Enabled: new(true)})
 			provider = domain.ID(value.Id)
 		}
 		f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Child", NativeID: "child-model", ProviderID: provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})

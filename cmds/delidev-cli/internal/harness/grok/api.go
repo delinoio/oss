@@ -266,7 +266,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 		}
 	}()
 	phase = initializePhase
-	response, err := connection.Call(ready, domain.NewID(), "initialize", initializeParams{ProtocolVersion: 1, ClientInfo: clientInfo{Name: "delidev", Title: "DeliDev", Version: "0.1.0"}})
+	response, err := connection.Call(ready, domain.NewID(), "initialize", initializeParams{ProtocolVersion: 2, ClientInfo: clientInfo{Name: "delidev", Title: "DeliDev", Version: "0.1.0"}})
 	if err != nil {
 		return nil, err
 	}

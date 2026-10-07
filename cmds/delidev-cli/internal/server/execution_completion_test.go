@@ -42,7 +42,7 @@ func TestNativeWorkerLossRetainsInputAndTerminalFacts(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					_, err = f.client.AttachWorker(ctx, ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(domain.NewID()), Version: rpc.Version}))
+					_, err = f.client.AttachWorker(ctx, ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(domain.NewID()), Version: rpc.Version}))
 					if err != nil {
 						t.Fatal(err)
 					}

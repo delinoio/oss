@@ -9,7 +9,7 @@ import (
 func TestExecutionInputBindingsPreserveExactOrderedEvidence(t *testing.T) {
 	first := BindExecutionInput(NewID(), "Primary 한글 🐦")
 	later := BindExecutionInput(NewID(), "Same-turn follow-up")
-	for _, inputs := range [][]ExecutionInputBinding{nil, {first}, {first, later}} {
+	for _, inputs := range [][]ExecutionInputBinding{{first}, {first, later}} {
 		got, err := CheckedExecutionInputs(first.InputID, first.PromptDigest, inputs)
 		if err != nil || got[0] != first || (inputs != nil && !slices.Equal(got, inputs)) {
 			t.Fatal("valid input evidence changed", err)
@@ -20,7 +20,7 @@ func TestExecutionInputBindingsPreserveExactOrderedEvidence(t *testing.T) {
 		}
 	}
 	for _, inputs := range [][]ExecutionInputBinding{
-		{}, {later, first}, {first, first},
+		nil, {}, {later, first}, {first, first},
 		{first, {InputID: "invalid", PromptDigest: later.PromptDigest}},
 		{first, {InputID: later.InputID, PromptDigest: strings.ToUpper(later.PromptDigest)}},
 		{first, {InputID: later.InputID, PromptDigest: "ab"}},

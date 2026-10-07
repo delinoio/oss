@@ -137,7 +137,7 @@ func TestNativeAccountCLISecretService(t *testing.T) {
 	}
 	defer shutdown()
 	start()
-	providerJSON, _ := json.Marshal(domain.Provider{Name: "native test", Endpoint: providerServer.URL + "/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Discovery: false})
+	providerJSON, _ := json.Marshal(domain.Provider{Name: "native test", Endpoint: providerServer.URL + "/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Discovery: false, Enabled: new(true)})
 	code, value := run(string(providerJSON), "provider", "create", "--input", "-")
 	if code != 0 {
 		t.Fatalf("provider creation: %+v", value)

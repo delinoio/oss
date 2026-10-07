@@ -36,7 +36,7 @@ function validPublishedAt(value) {
 }
 export function buildManifest(input,key,root) {
   if(key.asymmetricKeyType!=='ed25519' || createPublicKey(key).export({format:'der',type:'spki'}).subarray(-32).toString('base64')!==root.publicKey) throw new Error('Signing key does not match the declared public root.');
-  if(!/^\d+\.\d+\.\d+$/.test(input.version) || input.version.split('.').some(part=>String(Number(part))!==part||Number(part)>0xffffffff) || !/^[a-f0-9]{40}$/.test(input.sourceRevision) || input.protocolVersion!==1 || !validPublishedAt(input.publishedAt) || !Array.isArray(input.artifacts) || input.artifacts.length!==12) throw new Error('Invalid release input.');
+  if(!/^\d+\.\d+\.\d+$/.test(input.version) || input.version.split('.').some(part=>String(Number(part))!==part||Number(part)>0xffffffff) || !/^[a-f0-9]{40}$/.test(input.sourceRevision) || input.protocolVersion!==2 || !validPublishedAt(input.publishedAt) || !Array.isArray(input.artifacts) || input.artifacts.length!==12) throw new Error('Invalid release input.');
   const seen=new Set();const artifacts=input.artifacts.map(item=> {
     const identity=`${item.component}/${item.target}`;if(!['desktop','worker'].includes(item.component)||!targets.includes(item.target)||seen.has(identity)) throw new Error('The full unique desktop/Worker target inventory is required.');seen.add(identity);
     const path=resolve(item.path);const before=lstatSync(path);if(!before.isFile()||before.isSymbolicLink()||before.size<1||before.size>maxSize) throw new Error('Invalid artifact file.');
@@ -44,7 +44,7 @@ export function buildManifest(input,key,root) {
     const name=artifactName(item.component,item.target);
     return {component:item.component,target:item.target,name,size:before.size,sha256,url:`https://github.com/delinoio/oss/releases/download/delidev-v${input.version}/${name}`};
   });
-  const payload={schemaVersion:1,version:input.version,sourceRevision:input.sourceRevision,protocolVersion:1,publishedAt:input.publishedAt,artifacts};
+  const payload={schemaVersion:1,version:input.version,sourceRevision:input.sourceRevision,protocolVersion:2,publishedAt:input.publishedAt,artifacts};
   const bytes=canonical(payload);const signature=sign(null,Buffer.concat([Buffer.from('delidev-update-manifest-v1\0'),Buffer.from(bytes)]),key).toString('base64');
   return `{"keyId":${JSON.stringify(root.keyId)},"payload":${bytes},"signature":${JSON.stringify(signature)}}\n`;
 }

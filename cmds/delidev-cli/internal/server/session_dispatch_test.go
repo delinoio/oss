@@ -104,7 +104,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 		t.Cleanup(upstream.Close)
 		upstreamURL = upstream.URL
 	}
-	provider := base.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Fixture", Endpoint: upstreamURL, Protocol: protocol, Authentication: domain.KeylessAuth})
+	provider := base.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Fixture", Endpoint: upstreamURL, Protocol: protocol, Authentication: domain.KeylessAuth, Enabled: new(true)})
 	account := base.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Fixture", ProviderID: domain.ID(provider.Id), Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})
 	connected, err := connectAccount(base, account, domain.NewID(), "", true)
 	if err != nil {
@@ -131,7 +131,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	if harness == domain.OpenCode {
-		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})); err != nil {
+		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -240,7 +240,11 @@ func (f *firstDispatchFixture) mutateAgent(t *testing.T, edit func(*domain.Agent
 	}
 	edit(&value)
 	raw, _ := json.Marshal(value)
-	response, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(f.agent, domain.NewID()), Kind: pb.EntityKind_ENTITY_KIND_AGENT, SchemaVersion: 1, DocumentJson: raw}))
+	model, err := f.resources.GetResource(context.Background(), ownerRequest(f.identity, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_MODEL, Id: string(value.ModelID)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, &pb.SaveAgentWorkerRequest{Mutation: acctMutation(f.agent, domain.NewID()), SchemaVersion: 1, DocumentJson: raw, Model: &pb.AgentWorkerModelSelection{Selection: &pb.AgentWorkerModelSelection_ModelId{ModelId: string(value.ModelID)}, ExpectedModelRevision: model.Msg.Resource.Revision}}))
 	if err != nil {
 		t.Fatal(err)
 	}

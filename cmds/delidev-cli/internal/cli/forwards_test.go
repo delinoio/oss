@@ -80,9 +80,10 @@ func TestCLISessionForward(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Worker startup timeout")
 	}
-	provider := run([]string{"provider", "create"}, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth})["resource"].(map[string]any)
+	provider := run([]string{"provider", "create"}, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Enabled: new(true)})["resource"].(map[string]any)
 	model := run([]string{"model", "create"}, domain.Model{Name: "Fixture model", NativeID: "fixture", ProviderID: domain.ID(provider["id"].(string)), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})["resource"].(map[string]any)
-	agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Options: domain.AgentOptions{Permission: domain.PermissionDefault}})["resource"].(map[string]any)
+	account := run([]string{"account", "create"}, domain.Account{Alias: "Fixture account", Type: domain.APIAccount, ProviderID: domain.ID(provider["id"].(string)), Enabled: true, Health: domain.AccountDisconnected})["resource"].(map[string]any)
+	agent := run([]string{"agent", "create", "--model-revision", "1"}, domain.Agent{Name: "Fixture", Accounts: []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}}, Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Options: domain.AgentOptions{Permission: domain.PermissionDefault}})["resource"].(map[string]any)
 	session := run([]string{"session", "create"}, domain.CreateSession{Name: "Forward fixture", AgentID: domain.ID(agent["id"].(string)), MachineID: domain.ID(machine), Workspace: domain.GeneralChat, Prompt: "Unused fixture prompt"})["session"].(map[string]any)
 	verifyCLIForward(t, ctx, root, machine, session)
 }

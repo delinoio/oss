@@ -54,7 +54,7 @@ func TestVersionedCLIMutationRevisionAndMissingInput(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("server timeout")
 	}
-	input := `{"name":"Ollama","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":false}`
+	input := `{"name":"Ollama","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":false,"enabled":true}`
 	request := string(domain.NewID())
 	args := []string{"provider", "create", "--input", "-", "--request-id", request}
 	code, value := cliRun(t, root, args, input)

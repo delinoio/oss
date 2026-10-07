@@ -28,7 +28,7 @@ type Inspection struct {
 	Name               string                      `json:"name"`
 	Remotes            []string                    `json:"remotes"`
 	DefaultRefs        map[string]string           `json:"default_refs"`
-	GitHubRepositories map[string]GitHubRepository `json:"github_repositories,omitempty"`
+	GitHubRepositories map[string]GitHubRepository `json:"github_repositories"`
 }
 type Git struct {
 	Executable          string

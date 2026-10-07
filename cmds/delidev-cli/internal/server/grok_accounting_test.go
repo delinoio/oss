@@ -71,9 +71,8 @@ func TestGrokAccountingRequiresCleanupAndKeepsOriginalUnitOnce(t *testing.T) {
 			if got := grokAccountingSummary(t, f, profile); got.Totals.Accounting[0].Units != 1 {
 				t.Fatal("source replay duplicated unit")
 			}
-			legacy := grokAccountingSummary(t, f, pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_UNSPECIFIED)
-			if len(legacy.Totals.Accounting) != 0 || len(legacy.Groups) != 0 || legacy.Totals.Responses != 0 {
-				t.Fatal("negotiated data changed legacy shape")
+			if _, err := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL).GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{})); err == nil {
+				t.Fatal("response-only profile was accepted")
 			}
 			raw, _ := protojson.Marshal(first)
 			for _, private := range []string{f.input.Input.Prompt, string(f.thread), string(f.turn), terminal.GrokTerminal.HistoryDigest, string(terminal.GrokTerminal.ClosureID), report.Mutation.RequestId} {

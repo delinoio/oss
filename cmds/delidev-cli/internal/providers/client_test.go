@@ -16,7 +16,7 @@ import (
 )
 
 func localProvider(endpoint string) domain.Provider {
-	return domain.Provider{Name: "Local fixture", Endpoint: endpoint + "/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Discovery: true}
+	return domain.Provider{Name: "Local fixture", Endpoint: endpoint + "/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Discovery: true, Enabled: new(true)}
 }
 func TestInspectRealHTTPHeadersAndIsolation(t *testing.T) {
 	const key = "private-fixture-key-not-a-user-secret"
@@ -143,7 +143,7 @@ func TestInspectMalformedAndBoundedModels(t *testing.T) {
 		}
 	})
 	t.Run("reflected-key", func(t *testing.T) {
-		p := domain.Provider{Protocol: domain.OpenAIChat}
+		p := domain.Provider{Protocol: domain.OpenAIChat, Enabled: new(true)}
 		for _, id := range []string{"secret-fixture-key", "prefix-secret-fixture-key", "c2VjcmV0LWZpeHR1cmUta2V5"} {
 			raw, _ := json.Marshal(map[string]any{"data": []map[string]string{{"id": id}}})
 			if _, _, err := parseModels(raw, p.Protocol, []byte("secret-fixture-key")); err == nil {
@@ -206,7 +206,7 @@ func TestGatewayCredentialCheckBeforePublicCatalog(t *testing.T) {
 				}
 				return w.Result(), nil
 			})}
-			p := domain.Provider{Name: "Gateway", Endpoint: tc.endpoint, Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}
+			p := domain.Provider{Name: "Gateway", Endpoint: tc.endpoint, Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)}
 			o := inspect(context.Background(), client, p, []byte("fixture-key"))
 			if o.Problem() != nil || o.Authentication != CredentialAccepted || len(paths) != 2 || len(o.Models) != 1 {
 				t.Fatalf("gateway: %+v %v", o, paths)
@@ -221,7 +221,7 @@ func TestGatewayCredentialCheckBeforePublicCatalog(t *testing.T) {
 func TestProfilesDoNotTrustNamesOrSimilarAuthorities(t *testing.T) {
 	for _, endpoint := range []string{"https://api.openai.com.evil.test/v1", "https://api.openai.com:444/v1", "http://api.openai.com/v1", "https://api.openai.com/v1/other", "https://api.openai.com./v1"} {
 		u, _ := url.Parse(endpoint)
-		if endpointProfile(*u, domain.Provider{Name: "OpenAI", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}) != custom {
+		if endpointProfile(*u, domain.Provider{Name: "OpenAI", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)}) != custom {
 			t.Fatal("trusted lookalike", endpoint)
 		}
 	}

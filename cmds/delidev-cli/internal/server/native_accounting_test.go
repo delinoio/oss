@@ -56,9 +56,8 @@ func TestClaudeNativeAccountingRPCProfilesFailureBudgetAndPrivacy(t *testing.T) 
 			terminal.Outcome = domain.ExecutionFailed
 			terminal.ClaudeTerminal = &domain.ClaudeTerminalObservation{InputID: f.input.InputID, ResultNativeID: resultID, CommandNativeID: string(domain.NewID()), IdleNativeID: string(domain.NewID()), Kind: domain.ClaudeResultExecutionError, Reason: domain.ClaudeAPIError, Error: true, Command: domain.ClaudeCommandCancelled}
 			f.publish(t, terminal)
-			legacy, err := c.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{}))
-			if err != nil || legacy.Msg.NativeAccounting != nil || legacy.Msg.Totals.Responses != 0 {
-				t.Fatal("legacy response-only result changed", err)
+			if _, err := c.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{})); err == nil {
+				t.Fatal("response-only profile was accepted")
 			}
 			query := &pb.GetUsageSummaryRequest{AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1, Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY, TimeZone: "Asia/Seoul", SessionId: string(f.input.SessionID)}
 			response, err := c.GetUsageSummary(ctx, ownerRequest(f.service.Identity, query))

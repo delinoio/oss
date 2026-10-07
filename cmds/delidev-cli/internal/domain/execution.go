@@ -44,9 +44,6 @@ type ExecutionConfiguration struct {
 
 func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent, modelRevision uint64, model Model, defaultPolicy RoutingPolicy, templates []AppliedTemplate) (ExecutionConfiguration, error) {
 	var result ExecutionConfiguration
-	if agent.ReconfigurationRequired {
-		return result, SubscriptionReconfigurationRequired()
-	}
 	if err := agentID.Validate(); err != nil {
 		return result, err
 	}

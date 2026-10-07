@@ -34,7 +34,7 @@ enum UsageTimeGranularity {
 }
 
 enum UsageAccountingProfile {
-  // Preserve legacy response-only fields and counts.
+  // Unspecified is invalid; every summary requires NATIVE_UNITS_V1.
   USAGE_ACCOUNTING_PROFILE_UNSPECIFIED = 0;
   USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1 = 1;
 }
@@ -72,7 +72,7 @@ message UsageTotals {
   UsageMeasure reasoning_output = 6;
   UsageMeasure total = 7;
   // Present only for explicitly negotiated native accounting; never summed
-  // across unit kinds or added to the legacy response counters above.
+  // across unit kinds or added to the current API response counters above.
   repeated AccountingTotals accounting = 8;
 }
 

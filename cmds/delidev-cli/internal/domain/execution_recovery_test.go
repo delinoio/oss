@@ -15,6 +15,7 @@ func TestRecoveryHarnessSelectionPreservesHistoricalCodexWire(t *testing.T) {
 		Preparation: json.RawMessage(`{}`), Manifest: json.RawMessage(`{}`),
 		Completion: ExecutionCompletion{Version: 1, ExecutionID: NewID(), InputID: NewID(), NativeThreadID: NativeIdentity(NewID()), NativeTurnID: NativeIdentity(NewID()), LastSequence: 3, Outcome: ExecutionSucceeded, CleanupVerified: true},
 	}
+	r.AcceptedInputs = []ExecutionInputBinding{{InputID: r.Completion.InputID, PromptDigest: r.PromptDigest}}
 	raw, _ := json.Marshal(r)
 	if r.Validate() != nil || r.NativeHarness() != Codex || strings.Contains(string(raw), "harness") || strings.Contains(string(raw), "opencode") || strings.Contains(string(raw), "claude") {
 		t.Fatal("historical Codex recovery wire changed")
@@ -82,6 +83,7 @@ func TestClaudeRecoveryRequiresExplicitOriginalComparison(t *testing.T) {
 		Completion: ExecutionCompletion{Version: 1, ExecutionID: NewID(), InputID: NewID(), NativeTurnID: NativeIdentity(NewID()), LastSequence: 3, Outcome: ExecutionSucceeded, CleanupVerified: true},
 		Claude:     &ClaudeRecoveryReference{ClaimVersion: 1, Version: ClaudeProtocolVersion, Executable: "/fixture/claude", Model: "fixture-model", Permission: ClaudePermissionDefault, InstructionsDigest: strings.Repeat("12", 32), BindingRequestID: NewID(), InputRequestID: NewID()},
 	}
+	r.AcceptedInputs = []ExecutionInputBinding{{InputID: r.Completion.InputID, PromptDigest: r.PromptDigest}}
 	r.Completion.NativeThreadID, r.HistoryExecutionID = NativeIdentity(r.SessionID), r.Completion.ExecutionID
 	if err := r.Validate(); err != nil {
 		t.Fatal("original first comparison rejected", err)

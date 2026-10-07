@@ -49,10 +49,7 @@ func TestSubscriptionServiceIdentityIsIndependentAndClosed(t *testing.T) {
 		if service == SubscriptionChatGPT && c.Validate() != nil {
 			t.Fatal("managed snapshot invalid")
 		}
-		agent.ReconfigurationRequired = true
-		if _, err := ResolveExecutionConfiguration(NewID(), 1, agent, 1, m, Priority, nil); SafeError(err).Code != RecoveryRequired {
-			t.Fatal("retired Agent obtained snapshot")
-		}
+
 	}
 	api := Account{Alias: "API", ProviderID: NewID(), Type: APIAccount, Health: AccountDisconnected}
 	m := Model{ProviderID: api.ProviderID, NativeID: "api-model", Name: "API", MetadataSource: Unknown}

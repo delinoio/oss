@@ -35,7 +35,7 @@ func TestCLIAccountKeylessLifecycleAndReplay(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("server readiness timeout")
 	}
-	code, value := cliRun(t, root, []string{"provider", "create", "--input", "-"}, `{"name":"local","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":false}`)
+	code, value := cliRun(t, root, []string{"provider", "create", "--input", "-"}, `{"name":"local","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":false,"enabled":true}`)
 	if code != 0 {
 		t.Fatalf("provider: %+v", value)
 	}

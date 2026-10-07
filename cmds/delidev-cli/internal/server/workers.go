@@ -61,6 +61,9 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	if req.Msg.ProtocolVersion != rpc.ProtocolVersion {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "This Worker uses an unsupported DeliDev protocol.", "Update the Worker to the server's protocol version before connecting."), correlation)
+	}
 	if req.Msg.Version != rpc.Version {
 		actor, _ := domain.PrincipalFrom(ctx)
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
@@ -127,12 +130,13 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	}
 	input := struct {
 		Machine, Instance            domain.ID
+		ProtocolVersion              uint32
 		Version                      string
 		Capabilities                 []domain.WorkerCapability
 		NetworkGeneration            uint64
 		NetworkRouteID, NetworkKeyID string
 		NetworkRecipient             string
-	}{machine, instance, req.Msg.Version, capabilities, req.Msg.NetworkGeneration, req.Msg.NetworkRouteId, req.Msg.NetworkKeyId, req.Msg.NetworkRecipient}
+	}{machine, instance, req.Msg.ProtocolVersion, req.Msg.Version, capabilities, req.Msg.NetworkGeneration, req.Msg.NetworkRouteId, req.Msg.NetworkKeyId, req.Msg.NetworkRecipient}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "worker.attach", input, func(tx *store.Tx) (any, error) {
 		r, m, err := activeMachine(tx, machine)
 		if err != nil {
@@ -793,14 +797,13 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 				if err != nil {
 					return nil, err
 				}
-				// Presence, including a null field, requires negotiation. A null value
-				// cannot masquerade as legacy omission or a validated metadata map.
+				// Every current inspection must carry an explicit, negotiated metadata map.
 				var fields map[string]json.RawMessage
 				if err := json.Unmarshal(outputJSON, &fields); err != nil {
 					return nil, domain.Fail(domain.InvalidArgument, "Repository inspection is unreadable.", "Reinspect the repository.")
 				}
 				_, enriched := fields["github_repositories"]
-				if enriched && (output.GitHubRepositories == nil || !slices.Contains(machineValue.WorkerCapabilities, domain.RepositoryInspectionMetadataV1)) {
+				if !enriched || output.GitHubRepositories == nil || !slices.Contains(machineValue.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
 					return nil, domain.Fail(domain.InvalidArgument, "Repository metadata was not negotiated.", "Reattach a compatible Worker before reporting enrichment.")
 				}
 				if err := output.ValidateGitHubRepositories(); err != nil {

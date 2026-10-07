@@ -24,7 +24,7 @@ func terminalFixture(t *testing.T) (*accountFixture, *pb.Resource, security.Iden
 	f := newAccountFixture(t)
 	selection, identity := sessionSelection(t, f)
 	ctx, client, instance, stream := workspaceStream(t, f, identity, selection.MachineID)
-	_, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(selection.MachineID), InstanceId: instance, Version: "0.1.0", Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}))
+	_, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(selection.MachineID), InstanceId: instance, Version: "0.1.0", Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}))
 	if err != nil {
 		t.Fatal(err)
 	}

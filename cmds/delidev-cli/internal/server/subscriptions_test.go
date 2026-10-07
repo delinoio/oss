@@ -500,7 +500,7 @@ func TestSubscriptionCapabilityNegotiatesWithExistingWorkerCapabilities(t *testi
 	f := newSubscriptionFixture(t)
 	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.http.URL)
 	capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1}
-	request := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: capabilities}
+	request := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: capabilities}
 	response, err := client.AttachWorker(context.Background(), subscriptionRequest(f.workerToken, request))
 	if err != nil {
 		t.Fatal(err)

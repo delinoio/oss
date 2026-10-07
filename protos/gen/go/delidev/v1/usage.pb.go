@@ -70,7 +70,7 @@ func (UsageTimeGranularity) EnumDescriptor() ([]byte, []int) {
 type UsageAccountingProfile int32
 
 const (
-	// Preserve legacy response-only fields and counts.
+	// Unspecified is invalid; every summary requires NATIVE_UNITS_V1.
 	UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_UNSPECIFIED     UsageAccountingProfile = 0
 	UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1 UsageAccountingProfile = 1
 )
@@ -566,7 +566,7 @@ type UsageTotals struct {
 	ReasoningOutput *UsageMeasure          `protobuf:"bytes,6,opt,name=reasoning_output,json=reasoningOutput,proto3" json:"reasoning_output,omitempty"`
 	Total           *UsageMeasure          `protobuf:"bytes,7,opt,name=total,proto3" json:"total,omitempty"`
 	// Present only for explicitly negotiated native accounting; never summed
-	// across unit kinds or added to the legacy response counters above.
+	// across unit kinds or added to the current API response counters above.
 	Accounting    []*AccountingTotals `protobuf:"bytes,8,rep,name=accounting,proto3" json:"accounting,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

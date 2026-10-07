@@ -232,7 +232,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
-	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -405,7 +405,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			}
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
-			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}, config)))
+			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}, config)))
 			stopNegotiation()
 			err = negotiateErr
 			if err == nil && negotiated.Msg.ServerId != string(credential.ServerID) {
@@ -1160,10 +1160,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if err := git.ValidateRemoteIdentity(ctx, inspection, input.PreferredRemote, input.ExpectedRemoteIdentity); err != nil {
 			return nil, err
 		}
-		if config.inspectionMetadata {
-			if err := git.EnrichInspection(ctx, &inspection); err != nil {
-				return nil, err
-			}
+		if !config.inspectionMetadata {
+			return nil, domain.Fail(domain.Unsupported, "Repository inspection metadata is unavailable.", "Reconnect to a server that supports current repository inspection.")
+		}
+		if err := git.EnrichInspection(ctx, &inspection); err != nil {
+			return nil, err
 		}
 		return json.Marshal(inspection)
 	default:

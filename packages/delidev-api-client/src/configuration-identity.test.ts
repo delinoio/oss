@@ -23,19 +23,19 @@ describe("service-native configuration schema negotiation", () => {
     expect(supportsResourceSchema(resource(EntityKind.MODEL, { source_kind: "subscription", subscription_service: "chatgpt", harnesses: ["claude-code"] }))).toBe(false);
     expect(supportsResourceSchema(resource(EntityKind.ACCOUNT, {}, 3))).toBe(false);
   });
-  it("keeps retired original documents readable only in their owning wrapper", () => {
+  it("rejects removed retirement wrappers and Agent repair flags", () => {
     const body = { retired: true, original_schema_version: 1, original_document: { provider_id: "historical" } };
-    expect(supportsResourceSchema(resource(EntityKind.ACCOUNT, body))).toBe(true);
+    expect(supportsResourceSchema(resource(EntityKind.ACCOUNT, body))).toBe(false);
     expect(supportsResourceSchema(resource(EntityKind.AGENT, body))).toBe(false);
     expect(supportsResourceSchema(resource(EntityKind.PROVIDER, { ...body, original_schema_version: 2 }))).toBe(false);
-    expect(supportsResourceSchema(resource(EntityKind.AGENT, { reconfiguration_required: true }))).toBe(true);
+    expect(supportsResourceSchema(resource(EntityKind.AGENT, { reconfiguration_required: true }))).toBe(false);
     expect(supportsResourceSchema(resource(EntityKind.AGENT, { reconfiguration_required: false }))).toBe(false);
   });
   it("preserves API v1 and selects v2 without granting native readiness", () => {
     expect(supportsResourceSchema(resource(EntityKind.ACCOUNT, { type: "api", provider_id: "provider" }, 1))).toBe(true);
     expect(configurationSchemaVersion(EntityKind.ACCOUNT, { type: "subscription" })).toBe(2);
     expect(configurationSchemaVersion(EntityKind.MODEL, { source_kind: "subscription" })).toBe(2);
-    expect(configurationSchemaVersion(EntityKind.AGENT, { reconfiguration_required: true })).toBe(2);
+    expect(configurationSchemaVersion(EntityKind.AGENT, {})).toBe(1);
     expect(configurationSchemaVersion(EntityKind.ACCOUNT, { type: "api" })).toBe(1);
     expect(supportsResourceSchema(create(ResourceSchema, { kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson: Uint8Array.of(255) }))).toBe(false);
   });

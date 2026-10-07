@@ -90,7 +90,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, endpoint.URL)
 	resources := delidevv1connect.NewResourceServiceClient(http.DefaultClient, endpoint.URL)
 	instance := string(domain.NewID())
-	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version}
+	attach := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version}
 	attached, err := client.AttachWorker(ctx, ownerRequest(worker, attach))
 	if err != nil {
 		t.Fatal(err)

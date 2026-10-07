@@ -320,7 +320,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			}))
 			defer upstream.Close()
 			defer upstream.CloseClientConnections()
-			provider := run([]string{"provider", "create"}, domain.Provider{Name: "Private fixture", Endpoint: upstream.URL, Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})["resource"].(map[string]any)
+			provider := run([]string{"provider", "create"}, domain.Provider{Name: "Private fixture", Endpoint: upstream.URL, Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth, Enabled: new(true)})["resource"].(map[string]any)
 			account := run([]string{"account", "create"}, domain.Account{Alias: "Private fixture", ProviderID: domain.ID(provider["id"].(string)), Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})["resource"].(map[string]any)
 			account = run([]string{"account", "connect", "--id", account["id"].(string), "--revision", revision(account), "--keyless"}, nil)["account"].(map[string]any)
 			account = run([]string{"account", "validate", "--id", account["id"].(string), "--revision", revision(account)}, nil)["account"].(map[string]any)
@@ -339,7 +339,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				switchAccount = run([]string{"account", "connect", "--id", switchAccount["id"].(string), "--revision", revision(switchAccount), "--keyless"}, nil)["account"].(map[string]any)
 				candidates = append(candidates, domain.WeightedAccount{ID: domain.ID(switchAccount["id"].(string)), Weight: 1})
 			}
-			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: candidates, Options: options})["resource"].(map[string]any)
+			agent := run([]string{"agent", "create", "--model-revision", "1"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: candidates, Options: options})["resource"].(map[string]any)
 			create := []string{"session", "create", "--request-id", string(domain.NewID())}
 			if profile != nativeForkWorkspaces && profile != nativeSidechatWorkspaces {
 				create = append(create, "--wait")

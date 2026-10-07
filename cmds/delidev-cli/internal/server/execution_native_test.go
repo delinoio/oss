@@ -199,7 +199,7 @@ func TestManualNativeCodexUsesRegisteredServerRelay(t *testing.T) {
 	if err != nil || responseUsage.Record.AccountID != f.input.AccountID || responseUsage.Record.ConnectionID != f.input.ConnectionID || responseUsage.Record.ModelID != configuration.ModelID || responseUsage.Record.ThreadID != string(bound.Thread.ID) || responseUsage.Record.TurnID != string(turn.TurnID) || responseUsage.Record.Usage.Counts == nil || *responseUsage.Record.Usage.Counts.Input != 1 || *responseUsage.Record.Usage.Counts.Output != 1 || *responseUsage.Record.Usage.Counts.Total != 2 || responseUsage.Record.Usage.CostEvidence != domain.UsageCostMissing {
 		t.Fatal("native exact response usage lost its counters or original attribution", err)
 	}
-	summary, err := usageClient.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{SessionId: string(f.input.SessionID)}))
+	summary, err := usageClient.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{SessionId: string(f.input.SessionID), AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1}))
 	if err != nil || summary.Msg.ActualCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || len(summary.Msg.Estimates.Currencies) != 1 || summary.Msg.Estimates.Currencies[0].KnownAmount != "0.0000125" || len(summary.Msg.Pricing) != 1 || summary.Msg.Pricing[0].Pricing.Id != selectedPrice.Msg.Pricing.Id {
 		t.Fatal("native usage lost its immutable separate estimate", err)
 	}

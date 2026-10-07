@@ -130,7 +130,7 @@ func nativeOpenCodeWorkerFixture(t *testing.T, publishBindings, changedInput boo
 				_, _ = io.WriteString(w, "data: [DONE]\n\n")
 			}))
 			defer provider.Close()
-			authority.scope = apiproxy.Scope{ExecutionID: p.input.ExecutionID, SessionID: p.input.SessionID, AccountID: p.input.AccountID, ConnectionID: p.input.ConnectionID, ProviderID: p.input.Configuration.ProviderID, ModelID: p.input.Configuration.ModelID, NativeModel: p.input.Configuration.NativeModel, Provider: domain.Provider{Name: "Private Worker fixture", Endpoint: provider.URL + "/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}, Operations: []apiproxy.Operation{apiproxy.ChatCompletion}}
+			authority.scope = apiproxy.Scope{ExecutionID: p.input.ExecutionID, SessionID: p.input.SessionID, AccountID: p.input.AccountID, ConnectionID: p.input.ConnectionID, ProviderID: p.input.Configuration.ProviderID, ModelID: p.input.Configuration.ModelID, NativeModel: p.input.Configuration.NativeModel, Provider: domain.Provider{Name: "Private Worker fixture", Endpoint: provider.URL + "/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)}, Operations: []apiproxy.Operation{apiproxy.ChatCompletion}}
 			relay := httptest.NewServer(apiproxy.New(authority, logger))
 			defer relay.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)

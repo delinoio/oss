@@ -155,7 +155,7 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 
 func (s *Service) SaveAgentWorker(ctx context.Context, req *connect.Request[pb.SaveAgentWorkerRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.Model == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 {
+	if req.Msg.Mutation == nil || req.Msg.Model == nil || req.Msg.SchemaVersion != 1 {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported Worker document, mutation and typed model selection are required.", "Use the current Worker revision and one model selection."), correlation)
 	}
 	input := agentWorkerMutation{ConfigurationMutation: ConfigurationMutation{RequestID: domain.ID(req.Msg.Mutation.RequestId), ID: domain.ID(req.Msg.Mutation.Id), ExpectedRevision: req.Msg.Mutation.ExpectedRevision, Kind: domain.AgentKind, Document: req.Msg.DocumentJson}, ModelRevision: req.Msg.Model.ExpectedModelRevision}

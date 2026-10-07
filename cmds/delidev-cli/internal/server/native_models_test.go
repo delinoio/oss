@@ -44,7 +44,7 @@ func newNativeModelsFixture(t *testing.T) *nativeModelsFixture {
 		}
 	})
 	_, err = db.Mutate(f.ctx, domain.NewID(), "fixture.seed", nil, func(tx *store.Tx) (any, error) {
-		if _, err := tx.Put(domain.ProviderKind, f.provider, 0, "", "", domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth}); err != nil {
+		if _, err := tx.Put(domain.ProviderKind, f.provider, 0, "", "", domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth, Enabled: new(true)}); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Put(domain.AccountKind, f.account, 0, "", "", domain.Account{Alias: "Fixture", ProviderID: f.provider, Type: domain.APIAccount, Enabled: true, Health: domain.AccountUnverified, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.KeylessAuth, ConnectedAt: time.Now().UTC()}}); err != nil {

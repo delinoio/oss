@@ -207,7 +207,7 @@ func TestManualNativeSSHWorkerSetup(t *testing.T) {
 	sum := sha256.Sum256(raw)
 	size := int64(len(raw))
 	clear(raw)
-	payload := updates.Payload{SchemaVersion: 1, ProtocolVersion: 1, Version: "0.1.0", SourceRevision: revision, PublishedAt: time.Now().UTC().Format(time.RFC3339)}
+	payload := updates.Payload{SchemaVersion: 1, ProtocolVersion: 2, Version: "0.1.0", SourceRevision: revision, PublishedAt: time.Now().UTC().Format(time.RFC3339)}
 	for _, c := range []updates.Component{updates.Desktop, updates.Worker} {
 		for _, target := range updates.Targets {
 			name := updates.ArtifactName(c, target)

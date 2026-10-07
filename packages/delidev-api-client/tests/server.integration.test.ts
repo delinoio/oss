@@ -41,7 +41,7 @@ beforeAll(async () => {
       token = JSON.parse(await readFile(join(data, "owner.json"), "utf8")).token;
       transport = createDeliDevTransport({ origin, getToken: () => token });
       const status = await createClient(SystemService, transport).getStatus({}, { timeoutMs: 1000 });
-      expect(status.protocolVersion).toBe(1);
+      expect(status.protocolVersion).toBe(2);
       return;
     } catch { await pause(); }
   }

@@ -41,7 +41,7 @@ func TestSubscriptionResponseAccountingPinsIndependentServiceAndPrice(t *testing
 	var summary domain.UsageSummary
 	err = s.Read(ctx, func(tx *Tx) error {
 		var err error
-		summary, err = tx.UsageSummary(domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour), SubscriptionService: domain.SubscriptionChatGPT})
+		summary, err = tx.UsageSummary(domain.UsageSelection{From: time.Now().Add(-time.Hour), Until: time.Now().Add(time.Hour), SubscriptionService: domain.SubscriptionChatGPT, AccountingProfile: domain.NativeUnitsV1Accounting})
 		return err
 	})
 	if err != nil || summary.Totals.Responses != 1 || len(summary.Groups) != 1 || summary.Groups[0].ProviderID != "" || summary.Groups[0].SubscriptionService != domain.SubscriptionChatGPT {

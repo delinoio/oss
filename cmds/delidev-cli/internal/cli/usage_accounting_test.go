@@ -45,8 +45,8 @@ func TestCLIUsageAccountingNegotiation(t *testing.T) {
 		}
 	}
 	code, legacy := cliRun(t, root, []string{"usage", "summary"}, "")
-	if code != 0 || legacy["result"].(map[string]any)["accounting_profile"] != "USAGE_ACCOUNTING_PROFILE_UNSPECIFIED" {
-		t.Fatal("legacy profile changed", legacy)
+	if code != 0 || legacy["result"].(map[string]any)["accounting_profile"] != "USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1" {
+		t.Fatal("default profile did not require native accounting", legacy)
 	}
 	if code, _ := cliRun(t, root, []string{"usage", "summary", "--accounting-profile", "unknown"}, ""); code == 0 {
 		t.Fatal("unknown profile accepted")

@@ -70,7 +70,7 @@ func (g Git) EnrichInspection(ctx context.Context, inspection *Inspection) (err 
 			}
 		}()
 	}
-	inspection.GitHubRepositories = nil
+	inspection.GitHubRepositories = map[string]GitHubRepository{}
 	for _, remote := range inspection.Remotes {
 		raw, err := g.run(ctx, inspection.Root, "remote", "get-url", "--all", "--", remote)
 		if err != nil {
@@ -82,9 +82,6 @@ func (g Git) EnrichInspection(ctx context.Context, inspection *Inspection) (err 
 		identity, ok := parseInspectionGitHub(value)
 		if !ok {
 			continue
-		}
-		if inspection.GitHubRepositories == nil {
-			inspection.GitHubRepositories = map[string]GitHubRepository{}
 		}
 		inspection.GitHubRepositories[remote] = identity
 	}

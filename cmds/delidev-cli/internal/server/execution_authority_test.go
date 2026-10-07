@@ -114,7 +114,7 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 			id    domain.ID
 			value any
 		}{
-			{domain.ProviderKind, providerID, domain.Provider{Name: "Fixture", Endpoint: upstream, Protocol: protocol, Authentication: domain.BearerAuth}},
+			{domain.ProviderKind, providerID, domain.Provider{Name: "Fixture", Endpoint: upstream, Protocol: protocol, Authentication: domain.BearerAuth, Enabled: new(true)}},
 			{domain.ModelKind, modelID, model}, {domain.AgentKind, agentID, agent},
 			{domain.AccountKind, accountID, domain.Account{Alias: "Fixture", ProviderID: providerID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: connectionID, Authentication: domain.BearerAuth, ConnectedAt: time.Now().UTC()}}},
 			{domain.MachineKind, f.input.MachineID, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"}},

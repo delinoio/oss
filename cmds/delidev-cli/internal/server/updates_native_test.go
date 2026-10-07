@@ -125,7 +125,7 @@ func testNativeWorkerReplacement(t *testing.T, mode string) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	payload := updates.Payload{SchemaVersion: 1, ProtocolVersion: 1, Version: "0.2.0", SourceRevision: strings.Repeat("a", 40), PublishedAt: time.Now().UTC().Format(time.RFC3339)}
+	payload := updates.Payload{SchemaVersion: 1, ProtocolVersion: 2, Version: "0.2.0", SourceRevision: strings.Repeat("a", 40), PublishedAt: time.Now().UTC().Format(time.RFC3339)}
 	for _, c := range []updates.Component{updates.Desktop, updates.Worker} {
 		for _, target := range updates.Targets {
 			name := updates.ArtifactName(c, target)

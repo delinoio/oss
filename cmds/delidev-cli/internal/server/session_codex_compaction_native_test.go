@@ -210,7 +210,7 @@ func TestManualNativePublicCodexRepeatedCompaction(t *testing.T) {
 	}
 	// The resumed native API has no raw-response events; the original Go relay
 	// independently retains exact manual response counters with unavailable splits.
-	summary, err := delidevv1connect.NewUsageServiceClient(http.DefaultClient, f.endpoint.URL).GetUsageSummary(ctx, ownerRequest(f.identity, &pb.GetUsageSummaryRequest{SessionId: string(originalRow.ID)}))
+	summary, err := delidevv1connect.NewUsageServiceClient(http.DefaultClient, f.endpoint.URL).GetUsageSummary(ctx, ownerRequest(f.identity, &pb.GetUsageSummaryRequest{SessionId: string(originalRow.ID), AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1}))
 	if err != nil || summary.Msg.Totals.Responses != 4 || summary.Msg.Totals.Total.KnownTotal != "20" || summary.Msg.AcceptedCompactionsWithoutResponse != 0 {
 		t.Fatal("manual inference lost original accounting or borrowed cumulative counts", err)
 	}

@@ -65,7 +65,7 @@ func TestOpenRouterCatalogPaginatesOnlyFixedAuthority(t *testing.T) {
 				}
 				return w.Result(), nil
 			})}
-			p := domain.Provider{Name: "Router", Endpoint: "https://openrouter.ai/api/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}
+			p := domain.Provider{Name: "Router", Endpoint: "https://openrouter.ai/api/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Enabled: new(true)}
 			o := inspect(context.Background(), client, p, []byte("fixture-router-key"))
 			switch mode {
 			case "current", "legacy":

@@ -187,7 +187,7 @@ func (v Verifier) Verify(raw []byte, current string, now time.Time) (Verified, e
 	if !ed25519.Verify(key, append([]byte(SignatureDomain), canonical...), sig) {
 		return Verified{}, failure(domain.PermissionDenied)
 	}
-	if domain.DecodeWithLimit(canonical, &p, ManifestLimit) != nil || p.SchemaVersion != 1 || p.ProtocolVersion != 1 || !digestValidSource(p.SourceRevision) || len(p.Artifacts) != 12 {
+	if domain.DecodeWithLimit(canonical, &p, ManifestLimit) != nil || p.SchemaVersion != 1 || p.ProtocolVersion != 2 || !digestValidSource(p.SourceRevision) || len(p.Artifacts) != 12 {
 		return Verified{}, failure(domain.Unsupported)
 	}
 	newer, err := Newer(p.Version, current)

@@ -26,7 +26,7 @@ func TestUsageRPCDeduplicatedSnapshotDefaultsFiltersAndPrivacy(t *testing.T) {
 	e.ObservationID = domain.NewID()
 	f.publish(t, e)
 	c := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL)
-	request := &pb.GetUsageSummaryRequest{AccountId: string(f.input.AccountID), ModelId: string(f.input.Configuration.ModelID)}
+	request := &pb.GetUsageSummaryRequest{AccountId: string(f.input.AccountID), ModelId: string(f.input.Configuration.ModelID), AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1}
 	response, err := c.GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, request))
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestUsageRPCDeduplicatedSnapshotDefaultsFiltersAndPrivacy(t *testing.T) {
 	if result.Totals.Responses != 1 || result.Totals.Total.KnownTotal != "20" || len(result.Groups) != 1 || result.Analytics != nil || result.ActualCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || result.Coverage != pb.UsageCoverage_USAGE_COVERAGE_OBSERVED_ROOT_RESPONSES || result.UntilUnixMs-result.FromUnixMs != (30*24*time.Hour).Milliseconds() || result.AcceptedExecutionsWithoutResponse != 0 || response.Header().Get(rpc.CorrelationHeader) == "" {
 		t.Fatalf("wrong usage summary: %+v", result)
 	}
-	dailyRequest := &pb.GetUsageSummaryRequest{Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY, TimeZone: "Asia/Seoul"}
+	dailyRequest := &pb.GetUsageSummaryRequest{Granularity: pb.UsageTimeGranularity_USAGE_TIME_GRANULARITY_DAY, TimeZone: "Asia/Seoul", AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1}
 	daily, err := c.GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, dailyRequest))
 	if err != nil || daily.Msg.Analytics == nil || daily.Msg.Analytics.Granularity != dailyRequest.Granularity || daily.Msg.Analytics.TimeZone != dailyRequest.TimeZone || len(daily.Msg.Analytics.Days) == 0 {
 		t.Fatalf("valid daily analytics request lost explicit zone or empty-day support: %+v %v", daily, err)
@@ -56,16 +56,16 @@ func TestUsageRPCDeduplicatedSnapshotDefaultsFiltersAndPrivacy(t *testing.T) {
 			t.Fatal("invalid filter accepted", err)
 		}
 	}
-	worker := connect.NewRequest(&pb.GetUsageSummaryRequest{})
+	worker := connect.NewRequest(&pb.GetUsageSummaryRequest{AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1})
 	worker.Header().Set("Authorization", "Bearer "+f.workerToken)
 	if _, err := c.GetUsageSummary(context.Background(), worker); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatal("Worker read usage", err)
 	}
-	if _, err := c.GetUsageSummary(context.Background(), connect.NewRequest(&pb.GetUsageSummaryRequest{})); err == nil {
+	if _, err := c.GetUsageSummary(context.Background(), connect.NewRequest(&pb.GetUsageSummaryRequest{AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1})); err == nil {
 		t.Fatal("unauthenticated usage")
 	}
 	paired, device := pairedQuestionClient(t, f)
-	if _, err := c.GetUsageSummary(context.Background(), ownerRequest(paired, &pb.GetUsageSummaryRequest{})); err != nil {
+	if _, err := c.GetUsageSummary(context.Background(), ownerRequest(paired, &pb.GetUsageSummaryRequest{AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1})); err != nil {
 		t.Fatal("paired reader rejected", err)
 	}
 	devices := delidevv1connect.NewDeviceServiceClient(f.http.Client(), f.http.URL)
@@ -73,7 +73,7 @@ func TestUsageRPCDeduplicatedSnapshotDefaultsFiltersAndPrivacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: domain.ID(device.Id)})
-	if _, err := f.service.GetUsageSummary(stale, connect.NewRequest(&pb.GetUsageSummaryRequest{})); err == nil {
+	if _, err := f.service.GetUsageSummary(stale, connect.NewRequest(&pb.GetUsageSummaryRequest{AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1})); err == nil {
 		t.Fatal("stale authority bypassed transactional revocation")
 	}
 

@@ -56,7 +56,7 @@ func newStorageFixture(t *testing.T) *storageFixture {
 	f := &storageFixture{t: t, service: service, server: server, workerIdentity: identity, machine: domain.ID(paired.Machine.Id), instance: domain.NewID(), session: domain.NewID(), ownerContext: domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})}
 	f.client = delidevv1connect.NewWorkspaceStorageServiceClient(http.DefaultClient, server.URL)
 	f.worker = delidevv1connect.NewWorkerServiceClient(http.DefaultClient, server.URL)
-	if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
+	if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
 		t.Fatal(err)
 	}
 	f.manager = &workspace.Manager{Root: filepath.Join(t.TempDir(), "worker"), Logger: service.logger}
@@ -537,7 +537,7 @@ func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
 						t.Fatal(err)
 					}
 					f.instance = domain.NewID()
-					if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
+					if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
 						t.Fatal(err)
 					}
 					recovery, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_RECOVER, "", "", assigned.Id)))

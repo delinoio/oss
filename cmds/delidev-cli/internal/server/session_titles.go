@@ -41,18 +41,18 @@ func cancelSessionTitleJob(tx *store.Tx, jobID domain.ID) (bool, error) {
 func titleProfileAvailable(tx *store.Tx, input domain.ExecutionJobInput) (domain.Provider, bool, error) {
 	_, machine, err := activeMachine(tx, input.MachineID)
 	if err != nil {
-		return domain.Provider{}, false, err
+		return domain.Provider{Enabled: new(true)}, false, err
 	}
 	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || !input.Installation.ProtocolVerified || input.Installation.Protocol == nil || input.Installation.Protocol.State != domain.ProtocolVerified || input.Installation.Protocol.Protocol != domain.CodexAppServer || !hasTitleCapability(machine.WorkerCapabilities) {
-		return domain.Provider{}, false, nil
+		return domain.Provider{Enabled: new(true)}, false, nil
 	}
 	record, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
 	if err != nil {
-		return domain.Provider{}, false, nil
+		return domain.Provider{Enabled: new(true)}, false, nil
 	}
 	provider, err := store.Decode[domain.Provider](record)
 	if err != nil || provider.Protocol != domain.OpenAIResponses {
-		return domain.Provider{}, false, nil
+		return domain.Provider{Enabled: new(true)}, false, nil
 	}
 	return provider, true, nil
 }

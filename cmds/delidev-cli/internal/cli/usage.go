@@ -21,7 +21,7 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	granularity := f.String("granularity", "", "analytics granularity (day)")
 	timezone := f.String("timezone", "", "explicit IANA timezone for daily analytics")
 	service := f.String("subscription-service", "", "event-time native service: chatgpt, claude or grok")
-	profile := f.String("accounting-profile", "", "native-units-v1 for distinct Codex responses, Grok closed inputs, Claude main-loop inputs and OpenCode steps")
+	profile := f.String("accounting-profile", "native-units-v1", "native-units-v1 for distinct Codex responses, Grok closed inputs, Claude main-loop inputs and OpenCode steps")
 	requestBody := &pb.GetUsageSummaryRequest{}
 	f.StringVar(&requestBody.SessionId, "session-id", "", "original session filter")
 	f.StringVar(&requestBody.ProjectId, "project-id", "", "original project filter")
@@ -52,12 +52,12 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 		}
 		requestBody.SubscriptionService = rpc.WireSubscriptionService(identity)
 	}
-	if *profile != "" {
-		if *profile != "native-units-v1" {
-			return nil, domain.Fail(domain.InvalidArgument, "Invalid usage accounting profile.", "Supported value: native-units-v1.")
-		}
-		requestBody.AccountingProfile = pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1
+
+	if *profile != "native-units-v1" {
+		return nil, domain.Fail(domain.InvalidArgument, "Invalid usage accounting profile.", "Supported value: native-units-v1.")
 	}
+	requestBody.AccountingProfile = pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1
+
 	if *granularity == "" {
 		if *timezone != "" {
 			return nil, domain.Fail(domain.InvalidArgument, "A timezone requires a usage granularity.", "Set --granularity day with --timezone, or omit both flags.")
@@ -89,20 +89,20 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 		return nil, rpc.ClientError(err)
 	}
 	if requestBody.AccountingProfile != response.Msg.AccountingProfile {
-		return nil, domain.Fail(domain.Unsupported, "The server did not negotiate native accounting.", "Update the server or omit the accounting profile for response-only reads.")
+		return nil, domain.Fail(domain.Unsupported, "The server did not negotiate native accounting.", "Update the server to support native accounting.")
 	}
-	if requestBody.AccountingProfile == pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1 {
-		seen := make(map[pb.AccountingUnitKind]bool, 2)
-		for _, summary := range response.Msg.NativeAccounting {
-			if summary == nil || summary.Totals == nil || seen[summary.Totals.Kind] || (summary.Totals.Kind != pb.AccountingUnitKind_ACCOUNTING_UNIT_KIND_CLAUDE_MAIN_LOOP_INPUT && summary.Totals.Kind != pb.AccountingUnitKind_ACCOUNTING_UNIT_KIND_OPENCODE_STEP) {
-				return nil, nativeAccountingUnavailable()
-			}
-			seen[summary.Totals.Kind] = true
-		}
-		if len(seen) != 2 {
+
+	seen := make(map[pb.AccountingUnitKind]bool, 2)
+	for _, summary := range response.Msg.NativeAccounting {
+		if summary == nil || summary.Totals == nil || seen[summary.Totals.Kind] || (summary.Totals.Kind != pb.AccountingUnitKind_ACCOUNTING_UNIT_KIND_CLAUDE_MAIN_LOOP_INPUT && summary.Totals.Kind != pb.AccountingUnitKind_ACCOUNTING_UNIT_KIND_OPENCODE_STEP) {
 			return nil, nativeAccountingUnavailable()
 		}
+		seen[summary.Totals.Kind] = true
 	}
+	if len(seen) != 2 {
+		return nil, nativeAccountingUnavailable()
+	}
+
 	raw, err := (protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: true}).Marshal(response.Msg)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -111,5 +111,5 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 }
 
 func nativeAccountingUnavailable() error {
-	return domain.Fail(domain.Unsupported, "The server did not return complete native input accounting support.", "Update the server to support Claude and OpenCode input accounting, or omit the accounting profile for response-only reads.")
+	return domain.Fail(domain.Unsupported, "The server did not return complete native input accounting support.", "Update the server to support Claude and OpenCode input accounting.")
 }

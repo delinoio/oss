@@ -17,7 +17,7 @@ import (
 var Version = "0.1.0"
 var SourceRevision = ""
 
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 const CorrelationHeader = "X-Delidev-Correlation-Id"
 
 func Kind(kind pb.EntityKind) (domain.Kind, error) {
@@ -109,12 +109,10 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
 	var identity struct {
-		Type                    domain.AccountType     `json:"type"`
-		SourceKind              domain.ModelSourceKind `json:"source_kind"`
-		ReconfigurationRequired bool                   `json:"reconfiguration_required"`
-		Retired                 bool                   `json:"retired"`
+		Type       domain.AccountType     `json:"type"`
+		SourceKind domain.ModelSourceKind `json:"source_kind"`
 	}
-	if json.Unmarshal(raw, &identity) == nil && ((kind == domain.AccountKind && identity.Type == domain.SubscriptionAccount) || (kind == domain.ModelKind && identity.SourceKind == domain.SubscriptionModel) || identity.ReconfigurationRequired || identity.Retired) {
+	if json.Unmarshal(raw, &identity) == nil && ((kind == domain.AccountKind && identity.Type == domain.SubscriptionAccount) || (kind == domain.ModelKind && identity.SourceKind == domain.SubscriptionModel)) {
 		return 2
 	}
 	return 1

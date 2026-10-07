@@ -27,7 +27,7 @@ service WorkerService {
   rpc ReportWorkspaceRead(ReportWorkspaceReadRequest) returns (ReportWorkspaceReadResponse);
   rpc AttachWorker(AttachWorkerRequest) returns (AttachWorkerResponse);
   rpc WatchWork(WatchWorkRequest) returns (stream WatchWorkResponse);
-  // An independent lane. Older Workers remain primary-only.
+  // An independent capability-gated lane.
   rpc WatchAuxiliaryWork(WatchAuxiliaryWorkRequest) returns (stream WatchAuxiliaryWorkResponse);
   rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
@@ -122,6 +122,7 @@ message AttachWorkerRequest {
   string network_route_id = 7;
   string network_key_id = 8;
   string network_recipient = 9;
+  uint32 protocol_version = 10;
 }
 
 enum WorkerCapability {

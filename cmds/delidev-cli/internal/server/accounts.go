@@ -138,17 +138,17 @@ func accountFromTx(tx *store.Tx, id domain.ID, revision uint64) (store.Record, d
 func accountConnectPreflight(tx *store.Tx, input connectAccountInput) (domain.Account, domain.Provider, error) {
 	_, account, err := accountFromTx(tx, input.ID, input.Revision)
 	if err != nil {
-		return account, domain.Provider{}, err
+		return account, domain.Provider{Enabled: new(true)}, err
 	}
 	if account.Type != domain.APIAccount {
-		return account, domain.Provider{}, domain.Fail(domain.Unsupported, "Subscription accounts require their official login flow.", "Use the provider's isolated subscription authentication operation.")
+		return account, domain.Provider{Enabled: new(true)}, domain.Fail(domain.Unsupported, "Subscription accounts require their official login flow.", "Use the provider's isolated subscription authentication operation.")
 	}
 	if account.Connection != nil || account.Removal != nil || account.Health != domain.AccountDisconnected {
-		return account, domain.Provider{}, domain.Fail(domain.Conflict, "The account already has a connection or pending cleanup.", "Disconnect it and complete credential removal before connecting a replacement.")
+		return account, domain.Provider{Enabled: new(true)}, domain.Fail(domain.Conflict, "The account already has a connection or pending cleanup.", "Disconnect it and complete credential removal before connecting a replacement.")
 	}
 	record, err := tx.Get(domain.ProviderKind, account.ProviderID)
 	if err != nil {
-		return account, domain.Provider{}, err
+		return account, domain.Provider{Enabled: new(true)}, err
 	}
 	provider, err := store.Decode[domain.Provider](record)
 	if err != nil {

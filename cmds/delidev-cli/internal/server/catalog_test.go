@@ -96,8 +96,8 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 		}
 	}
 	for _, preset := range presets {
-		if preset.Provider.PresetID != nil {
-			t.Fatalf("legacy editable preset payload included activation provenance: %+v", preset.Provider.PresetID)
+		if preset.Provider.PresetID == nil || *preset.Provider.PresetID != preset.ID || preset.Provider.Enabled == nil {
+			t.Fatalf("current preset payload omitted activation provenance: %+v", preset.Provider.PresetID)
 		}
 		if preset.ID == domain.PresetOllama {
 			ollama = preset.Provider
@@ -170,7 +170,7 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 		t.Fatalf("preset activation created a model: models=%v err=%v", models, err)
 	}
 
-	// Legacy writes that omit enabled or preset_id retain both stored values.
+	// Provenance stays attached when an explicit activation edit omits preset_id.
 	legacyUpdate := []byte(`{"name":"Ollama","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":true,"enabled":false}`)
 	updated, err := f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(created, domain.NewID()), Kind: created.Kind, SchemaVersion: 1, DocumentJson: legacyUpdate}))
 	if err != nil {
@@ -191,7 +191,7 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 }
 func catalogAccount(t *testing.T, f *accountFixture, endpoint string) (*pb.Resource, *pb.Resource) {
 	t.Helper()
-	p := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Catalog fixture", Endpoint: endpoint + "/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Discovery: true})
+	p := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Catalog fixture", Endpoint: endpoint + "/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Discovery: true, Enabled: new(true)})
 	a := f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "Catalog account", ProviderID: domain.ID(p.Id), Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected})
 	r, err := connectAccount(f, a, domain.NewID(), "", true)
 	if err != nil {
@@ -368,8 +368,8 @@ func TestCatalogAtomicDiscoveryPreferencesFailureAndDeletion(t *testing.T) {
 
 func TestModelSearchResolveAndCursorScope(t *testing.T) {
 	f := newAccountFixture(t)
-	p := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "First", Endpoint: "http://127.0.0.1:11434/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth})
-	q := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Second", Endpoint: "http://127.0.0.1:1234/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth})
+	p := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "First", Endpoint: "http://127.0.0.1:11434/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Enabled: new(true)})
+	q := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Second", Endpoint: "http://127.0.0.1:1234/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Enabled: new(true)})
 	a := f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{ProviderID: domain.ID(p.Id), NativeID: "same", Name: "Zebra", Alias: "first", Order: -10, MetadataSource: domain.Unknown})
 	b := f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{ProviderID: domain.ID(p.Id), NativeID: "beta", Name: "Alpha", MetadataSource: domain.Unknown})
 	hidden := f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{ProviderID: domain.ID(q.Id), NativeID: "same", Name: "Hidden", Hidden: true, MetadataSource: domain.Unknown})

@@ -21,13 +21,9 @@ func BindExecutionInput(id ID, prompt string) ExecutionInputBinding {
 	return ExecutionInputBinding{InputID: id, PromptDigest: hex.EncodeToString(digest[:])}
 }
 
-// CheckedExecutionInputs preserves legacy single-input progress only when the
-// field was absent. A supplied list must retain the exact primary input first,
+// CheckedExecutionInputs requires durable evidence of the exact primary input,
 // every distinct later accepted input and canonical SHA-256 digests in order.
 func CheckedExecutionInputs(primary ID, digest string, inputs []ExecutionInputBinding) ([]ExecutionInputBinding, error) {
-	if inputs == nil {
-		inputs = []ExecutionInputBinding{{InputID: primary, PromptDigest: digest}}
-	}
 	invalid := func() ([]ExecutionInputBinding, error) {
 		return nil, Fail(RecoveryRequired, "Accepted execution inputs do not match their original turn.", "Preserve the primary input and every later accepted input identity and digest in delivery order before continuing.")
 	}

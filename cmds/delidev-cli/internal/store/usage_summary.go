@@ -118,14 +118,14 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 				return corrupt()
 			}
 			group.Totals.Add(record.Usage.Counts)
-			if f.AccountingProfile == domain.NativeUnitsV1Accounting {
-				group.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
-			}
+
+			group.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
+
 			group.Estimates.Add(estimate)
 			result.Totals.Add(record.Usage.Counts)
-			if f.AccountingProfile == domain.NativeUnitsV1Accounting {
-				result.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
-			}
+
+			result.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
+
 			if result.Analytics != nil {
 				created := time.UnixMilli(responseCreated).UTC()
 				day := sort.Search(len(dayBuckets), func(index int) bool { return created.Before(dayBuckets[index].Until) })
@@ -133,9 +133,9 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					return corrupt()
 				}
 				dayBuckets[day].Totals.Add(record.Usage.Counts)
-				if f.AccountingProfile == domain.NativeUnitsV1Accounting {
-					dayBuckets[day].Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
-				}
+
+				dayBuckets[day].Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
+
 				key := usageModelKey{Provider: record.ProviderID, Model: record.ModelID}
 				model := modelGroups[key]
 				if model == nil {
@@ -146,9 +146,9 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					modelGroups[key] = model
 				}
 				model.Totals.Add(record.Usage.Counts)
-				if f.AccountingProfile == domain.NativeUnitsV1Accounting {
-					model.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
-				}
+
+				model.Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
+
 			}
 		}
 		return storageError(rows.Err())
@@ -156,11 +156,11 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	if err != nil {
 		return domain.UsageSummary{}, err
 	}
-	if f.AccountingProfile == domain.NativeUnitsV1Accounting {
-		if err := t.grokAccountingSummary(f, &result, groups, modelGroups, dayBuckets); err != nil {
-			return domain.UsageSummary{}, err
-		}
+
+	if err := t.grokAccountingSummary(f, &result, groups, modelGroups, dayBuckets); err != nil {
+		return domain.UsageSummary{}, err
 	}
+
 	if result.Analytics != nil {
 		for _, model := range modelGroups {
 			result.Analytics.Models = append(result.Analytics.Models, *model)
@@ -208,36 +208,36 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	if err != nil {
 		return domain.UsageSummary{}, err
 	}
-	if f.AccountingProfile == domain.NativeUnitsV1Accounting {
-		units := result.Totals.Responses
-		for _, accounting := range result.Totals.Accounting {
-			if accounting.Kind == domain.GrokClosedInput {
-				units += accounting.Units
-			}
-		}
-		// Count the complete inventory, including unranked response/Grok models.
-		groupCount, modelCount := len(result.Groups), len(modelGroups)
-		pricingIDs := make(map[domain.ID]struct{}, len(result.Pricing))
-		for _, price := range result.Pricing {
-			pricingIDs[price.Pricing.ID] = struct{}{}
-		}
-		for _, kind := range []domain.AccountingUnitKind{domain.ClaudeMainLoopInput, domain.OpenCodeStep} {
-			summary, err := t.nativeAccountingSummary(f, kind)
-			if err != nil {
-				return domain.UsageSummary{}, err
-			}
-			units += summary.Totals.Units
-			groupCount += len(summary.Groups)
-			modelCount += len(summary.Models)
-			for _, price := range summary.Pricing {
-				pricingIDs[price.Pricing.ID] = struct{}{}
-			}
-			if units > maxUsageResponses || groupCount > maxUsageGroups || modelCount > domain.UsageModelGroupLimit || len(pricingIDs) > maxUsageGroups {
-				return domain.UsageSummary{}, usageReadLimit()
-			}
-			result.NativeAccounting = append(result.NativeAccounting, summary)
+
+	units := result.Totals.Responses
+	for _, accounting := range result.Totals.Accounting {
+		if accounting.Kind == domain.GrokClosedInput {
+			units += accounting.Units
 		}
 	}
+	// Count the complete inventory, including unranked response/Grok models.
+	groupCount, modelCount := len(result.Groups), len(modelGroups)
+	pricingIDs := make(map[domain.ID]struct{}, len(result.Pricing))
+	for _, price := range result.Pricing {
+		pricingIDs[price.Pricing.ID] = struct{}{}
+	}
+	for _, kind := range []domain.AccountingUnitKind{domain.ClaudeMainLoopInput, domain.OpenCodeStep} {
+		summary, err := t.nativeAccountingSummary(f, kind)
+		if err != nil {
+			return domain.UsageSummary{}, err
+		}
+		units += summary.Totals.Units
+		groupCount += len(summary.Groups)
+		modelCount += len(summary.Models)
+		for _, price := range summary.Pricing {
+			pricingIDs[price.Pricing.ID] = struct{}{}
+		}
+		if units > maxUsageResponses || groupCount > maxUsageGroups || modelCount > domain.UsageModelGroupLimit || len(pricingIDs) > maxUsageGroups {
+			return domain.UsageSummary{}, usageReadLimit()
+		}
+		result.NativeAccounting = append(result.NativeAccounting, summary)
+	}
+
 	return result, nil
 }
 

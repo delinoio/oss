@@ -50,7 +50,7 @@ func ownerRequest[T any](identity security.Identity, message *T) *connect.Reques
 }
 func saveProvider(t *testing.T, ctx context.Context, identity security.Identity, client delidevv1connect.ConfigurationServiceClient, requestID domain.ID) *pb.SaveConfigurationResponse {
 	t.Helper()
-	raw, _ := json.Marshal(domain.Provider{Name: "local", Endpoint: "http://127.0.0.1:11434/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth})
+	raw, _ := json.Marshal(domain.Provider{Name: "local", Endpoint: "http://127.0.0.1:11434/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth, Enabled: new(true)})
 	response, err := client.SaveConfiguration(ctx, ownerRequest(identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(requestID)}, Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, SchemaVersion: 1, DocumentJson: raw}))
 	if err != nil {
 		t.Fatal(err)
@@ -145,12 +145,12 @@ func TestConnectSnapshotReplayRestartAndBackupDeduplication(t *testing.T) {
 	}
 	system := delidevv1connect.NewSystemServiceClient(http.DefaultClient, endpoint.URL)
 	backupID := domain.NewID()
-	backup, err := system.CreateBackup(ctx, ownerRequest(identity, &pb.CreateBackupRequest{RequestId: string(backupID)}))
+	backup, err := system.RequestBackup(ctx, ownerRequest(identity, &pb.RequestBackupRequest{RequestId: string(backupID)}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := system.CreateBackup(ctx, ownerRequest(identity, &pb.CreateBackupRequest{RequestId: string(backupID)}))
-	if err != nil || again.Msg.Id != backup.Msg.Id || !again.Msg.Replayed {
+	again, err := system.RequestBackup(ctx, ownerRequest(identity, &pb.RequestBackupRequest{RequestId: string(backupID)}))
+	if err != nil || again.Msg.Job.BackupId != backup.Msg.Job.BackupId || !again.Msg.Replayed {
 		t.Fatalf("backup retry duplicated: %+v %v", again, err)
 	}
 	stop()

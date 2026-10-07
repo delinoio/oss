@@ -75,7 +75,7 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 	if _, err = c.SetModelPricing(ctx, ownerRequest(f.service.Identity, changed)); connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatal("request identity changed", err)
 	}
-	summary, err := c.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{}))
+	summary, err := c.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1}))
 	if err != nil {
 		t.Fatal(err)
 	}

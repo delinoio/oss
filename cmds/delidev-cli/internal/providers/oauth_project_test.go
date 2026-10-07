@@ -15,7 +15,7 @@ type oauthProjectTransport func(*http.Request) (*http.Response, error)
 func (f oauthProjectTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func TestOAuthQuotaProjectDestinationAndInspection(t *testing.T) {
 	preset := domain.PresetGemini
-	p := domain.Provider{PresetID: &preset, Endpoint: "https://generativelanguage.googleapis.com/v1beta/openai", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Name: "Google Gemini"}
+	p := domain.Provider{PresetID: &preset, Endpoint: "https://generativelanguage.googleapis.com/v1beta/openai", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth, Name: "Google Gemini", Enabled: new(true)}
 	req, _ := http.NewRequest(http.MethodGet, "https://generativelanguage.googleapis.com/v1beta/models", nil)
 	if ApplyOAuthProject(req, p, "my-ai-project") != nil || req.Header.Get("x-goog-user-project") != "my-ai-project" {
 		t.Fatal("missing quota header")

@@ -59,24 +59,19 @@ func (m *Manager) readExecutionClaim(session domain.ID) (executionClaim, error) 
 	if err != nil {
 		return claim, err
 	}
-	if domain.Decode(raw, &claim) != nil || (claim.Version != 1 && claim.Version != 2) || claim.SessionID != session || domain.UniqueIDs([]domain.ID{claim.SessionID, claim.JobID, claim.ExecutionID}) != nil || len(claim.ManifestDigest) != 64 || !canonicalCommit(claim.ManifestDigest) || (claim.State != executionClaimActive && claim.State != executionClaimClosed) {
+	if domain.Decode(raw, &claim) != nil || claim.Version != 2 || claim.SessionID != session || domain.UniqueIDs([]domain.ID{claim.SessionID, claim.JobID, claim.ExecutionID}) != nil || len(claim.ManifestDigest) != 64 || !canonicalCommit(claim.ManifestDigest) || (claim.State != executionClaimActive && claim.State != executionClaimClosed) {
 		return claim, ResultUncertain()
 	}
-	if claim.Version == 1 {
-		if claim.WorkspaceDigest != "" || claim.PreviousJobID != "" || claim.PreviousExecutionID != "" {
+
+	if len(claim.WorkspaceDigest) != 64 || !canonicalCommit(claim.WorkspaceDigest) {
+		return claim, ResultUncertain()
+	}
+	if (claim.PreviousJobID == "") != (claim.PreviousExecutionID == "") {
+		return claim, ResultUncertain()
+	}
+	if claim.PreviousJobID != "" {
+		if err := domain.UniqueIDs([]domain.ID{claim.SessionID, claim.JobID, claim.ExecutionID, claim.PreviousJobID, claim.PreviousExecutionID}); err != nil {
 			return claim, ResultUncertain()
-		}
-	} else {
-		if len(claim.WorkspaceDigest) != 64 || !canonicalCommit(claim.WorkspaceDigest) {
-			return claim, ResultUncertain()
-		}
-		if (claim.PreviousJobID == "") != (claim.PreviousExecutionID == "") {
-			return claim, ResultUncertain()
-		}
-		if claim.PreviousJobID != "" {
-			if err := domain.UniqueIDs([]domain.ID{claim.SessionID, claim.JobID, claim.ExecutionID, claim.PreviousJobID, claim.PreviousExecutionID}); err != nil {
-				return claim, ResultUncertain()
-			}
 		}
 	}
 	return claim, nil

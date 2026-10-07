@@ -59,7 +59,7 @@ cleanup blocks restore. Follow the account OAuth contract for HTTP and publicati
 
 ## Managed backup observation
 
-`SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are available only
+`SystemService.RequestBackup`, `ListBackups` and `InspectBackup` are available only
 to the owner and paired clients. Workers cannot invoke them. The existing
 actor-authenticated creation receipt reserves one backup UUID before filesystem
 work; the same request retries the original image instead of creating another.
@@ -68,7 +68,7 @@ work; the same request retries the original image instead of creating another.
 `backup inspect --id ID` use those same RPCs. Ordinary commands never start a
 server. Settings > Backups provides creation, pagination and explicit integrity
 inspection, retaining the exact creation request after an uncertain response.
-The legacy `CreateBackup` RPC retains its synchronous receipt behavior for existing clients; current CLI/desktop creation uses the durable path below. Backup sizes use decimal strings in CLI JSON and BigInt in the desktop.
+Backup creation uses only the durable request and job-status path below; the synchronous RPC and its messages are removed. Backup sizes use decimal strings in CLI JSON and BigInt in the desktop.
 
 Listing returns UUID, byte size and modification time only; it does not establish
 integrity, creation provenance or restoration eligibility. Default page size is

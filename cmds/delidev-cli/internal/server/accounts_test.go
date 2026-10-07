@@ -155,6 +155,18 @@ func (f *accountFixture) save(kind pb.EntityKind, value any) *pb.Resource {
 	if err != nil {
 		f.t.Fatal(err)
 	}
+	if kind == pb.EntityKind_ENTITY_KIND_AGENT {
+		agent := value.(domain.Agent)
+		model, err := f.resources.GetResource(context.Background(), ownerRequest(f.identity, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_MODEL, Id: string(agent.ModelID)}))
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		response, err := f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, &pb.SaveAgentWorkerRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, SchemaVersion: 1, DocumentJson: raw, Model: &pb.AgentWorkerModelSelection{Selection: &pb.AgentWorkerModelSelection_ModelId{ModelId: string(agent.ModelID)}, ExpectedModelRevision: model.Msg.Resource.Revision}}))
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		return response.Msg.Resource
+	}
 	response, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, Kind: kind, SchemaVersion: rpc.ResourceSchemaVersion(ownedKind, raw), DocumentJson: raw}))
 	if err != nil {
 		f.t.Fatal(err)
@@ -169,7 +181,7 @@ func (f *accountFixture) newAccount(auth domain.Authentication) *pb.Resource {
 	if auth == domain.SubscriptionAuth {
 		return f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "account", SubscriptionService: domain.SubscriptionChatGPT, Type: domain.SubscriptionAccount, Enabled: true, Health: domain.AccountDisconnected})
 	}
-	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "provider", Protocol: protocol, Endpoint: endpoint, Authentication: auth})
+	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "provider", Protocol: protocol, Endpoint: endpoint, Authentication: auth, Enabled: new(true)})
 	return f.save(pb.EntityKind_ENTITY_KIND_ACCOUNT, domain.Account{Alias: "account", ProviderID: domain.ID(provider.Id), Type: kind, Enabled: true, Health: domain.AccountDisconnected})
 }
 func accountBody(t *testing.T, record *pb.Resource) domain.Account {
