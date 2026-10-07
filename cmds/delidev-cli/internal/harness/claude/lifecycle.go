@@ -154,7 +154,7 @@ func BindExecution(config APIStreamConfig, input domain.ID, text string) (*Execu
 
 func validNativePermission(permission NativePermission) bool {
 	switch permission {
-	case DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission:
+	case DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission, AutoPermission:
 		return true
 	default:
 		return false

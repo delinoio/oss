@@ -511,3 +511,52 @@ func TestSourceRoutingFirstClaimRecoveryAndHistory(t *testing.T) {
 		t.Fatal("source chain leaked into execution configuration")
 	}
 }
+
+func TestSourceRoutingAdmitsEveryCodexSubscriptionPermission(t *testing.T) {
+	for _, permission := range []domain.PermissionMode{domain.PermissionDefault, domain.PermissionReadOnly, domain.PermissionWorkspaceWrite, domain.PermissionFullAccess} {
+		t.Run(string(permission), func(t *testing.T) {
+			s, _ := openTest(t)
+			f := newExecutionFixture(t, s)
+			subID, subModel := domain.NewID(), domain.NewID()
+			_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.source-worker-permission", f.agent, func(tx *Tx) (any, error) {
+				if _, err := tx.Put(domain.AccountKind, subID, 0, "", "", domain.Account{Alias: "Subscription", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Enabled: true, Health: domain.AccountReady, Subscription: &domain.SubscriptionState{Generation: domain.NewID(), IdentityCommitment: strings.Repeat("0", 64)}, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}}); err != nil {
+					return nil, err
+				}
+				if _, err := tx.Put(domain.ModelKind, subModel, 0, "", "", domain.Model{Name: "Subscription", NativeID: "subscription-native", SourceKind: domain.SubscriptionModel, SubscriptionService: domain.SubscriptionChatGPT, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.Unknown}); err != nil {
+					return nil, err
+				}
+				record, agent, err := decodeEntity[domain.Agent](tx, domain.AgentKind, f.agent)
+				if err != nil {
+					return nil, err
+				}
+				priority := domain.Priority
+				agent.Routes = []domain.AgentSourceRoute{{ModelID: subModel, Accounts: []domain.WeightedAccount{{ID: subID, Weight: 1}}, Routing: &priority}, {ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: agent.Routing}}
+				agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
+				agent.Options.Permission = permission
+				for _, id := range f.accounts {
+					accountRecord, account, err := decodeEntity[domain.Account](tx, domain.AccountKind, id)
+					if err != nil {
+						return nil, err
+					}
+					account.Validation = &domain.AccountValidation{RequestID: domain.NewID(), ConnectionID: account.Connection.ID, ObservedAt: time.Now().UTC(), State: domain.Observed, Authentication: domain.KeylessEndpoint}
+					if _, err := tx.Put(accountRecord.Kind, accountRecord.ID, accountRecord.Revision, "", "", account); err != nil {
+						return nil, err
+					}
+				}
+				return tx.Put(record.Kind, record.ID, record.Revision, "", "", agent)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			session, input := f.session(t, domain.DispatchReady)
+			if _, err := f.claim(domain.NewID(), session, input); err != nil {
+				t.Fatalf("ordered subscription source rejected %s: %v", permission, err)
+			}
+			accepted := readExecutionSession(t, s, session).InitialExecution
+			if accepted == nil || accepted.Configuration.ModelID != subModel || !accepted.Configuration.Subscription || accepted.Configuration.Options.Permission != permission {
+				t.Fatalf("ordered subscription route changed the selected profile: %+v", accepted)
+			}
+		})
+	}
+}

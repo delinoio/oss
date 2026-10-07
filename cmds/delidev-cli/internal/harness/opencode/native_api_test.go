@@ -416,7 +416,7 @@ func nativeOwnedAPISessionWithRequestCheck(t *testing.T, input, mismatch bool, r
 		if config.Settings.Agent == PlanAgent {
 			mode = domain.PlanMode
 		}
-		original := domain.ExecutionConfiguration{Harness: domain.OpenCode, NativeModel: config.Settings.Model, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}
+		original := domain.ExecutionConfiguration{Harness: domain.OpenCode, NativeModel: config.Settings.Model, Effort: config.Settings.Effort, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}
 		if observationErr != nil || observed.OpenCodeAgent != config.Settings.Agent || observed.ValidateForInput(original, mode) != nil {
 			t.Fatal("verified native initialization lost its exact primary-agent observation")
 		}
@@ -553,4 +553,20 @@ func mustNativeConfigRoot(t *testing.T, config apiSessionConfig) WorkspaceRoot {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func TestManualNativeOpenCodeExactEffort(t *testing.T) {
+	for _, effort := range []string{"high", "future-native-effort"} {
+		t.Run(effort, func(t *testing.T) {
+			nativeOwnedAPISessionWithRequestCheck(t, true, false, nativeServerRelay, func(c *apiSessionConfig) {
+				c.Settings.Permission = []PermissionRule{}
+				c.Settings.Effort = effort
+			}, func(body map[string]json.RawMessage) {
+				var actual string
+				if json.Unmarshal(body["reasoning_effort"], &actual) != nil || actual != effort {
+					t.Error("native provider request omitted or changed selected effort")
+				}
+			})
+		})
+	}
 }

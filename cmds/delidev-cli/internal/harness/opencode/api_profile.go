@@ -62,6 +62,11 @@ func (p nativeAPIProfile) config() (map[string]any, error) {
 			}},
 		}},
 	}
+	if p.Settings.Effort != "" {
+		provider := result["provider"].(map[string]any)[p.Settings.Provider].(map[string]any)
+		model := provider["models"].(map[string]any)[p.Settings.Model].(map[string]any)
+		model["options"] = p.modelOptions()
+	}
 	// New immutable context profiles explicitly own native pruning. Historical
 	// snapshots omit this policy and retain their original settings digest.
 	if p.Prune {
@@ -127,6 +132,16 @@ func (p nativeAPIProfile) validateConfig(raw []byte) error {
 	return exactPrivateJSON(raw, expected)
 }
 
+// Model options use OpenCode's native provider-model interface. The exact
+// loaded configuration and provider view are both compared before input.
+func (p nativeAPIProfile) modelOptions() map[string]any {
+	options := map[string]any{}
+	if p.Settings.Effort != "" {
+		options["reasoningEffort"] = p.Settings.Effort
+	}
+	return options
+}
+
 func (p nativeAPIProfile) provider() map[string]any {
 	modalities := map[string]any{"text": true, "audio": false, "image": false, "video": false, "pdf": false}
 	return map[string]any{
@@ -144,7 +159,7 @@ func (p nativeAPIProfile) provider() map[string]any {
 				// Native zero defaults are not prices, charges or free-use proof.
 				"cost":    map[string]any{"input": 0, "output": 0, "cache": map[string]any{"read": 0, "write": 0}},
 				"limit":   map[string]any{"context": p.ContextLimit, "output": p.OutputLimit},
-				"options": map[string]any{}, "headers": map[string]any{}, "variants": map[string]any{},
+				"options": p.modelOptions(), "headers": map[string]any{}, "variants": map[string]any{},
 			}},
 		}},
 		"default": map[string]any{p.Settings.Provider: p.Settings.Model}, "connected": []string{p.Settings.Provider},
@@ -156,7 +171,7 @@ func (p nativeAPIProfile) validateProvider(raw []byte) error {
 }
 
 func equalSessionSettings(a, b SessionSettings) bool {
-	return a.Title == b.Title && a.Agent == b.Agent && a.Provider == b.Provider && a.Model == b.Model && slices.Equal(a.Permission, b.Permission)
+	return a.Effort == b.Effort && a.Title == b.Title && a.Agent == b.Agent && a.Provider == b.Provider && a.Model == b.Model && slices.Equal(a.Permission, b.Permission)
 }
 
 func (s *sessionAPI) verifyAPIProfile(ctx context.Context) error {

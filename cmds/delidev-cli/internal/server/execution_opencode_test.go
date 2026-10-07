@@ -28,7 +28,11 @@ func TestOpenCodeRegistrationRestrictsNativeOperationAndModel(t *testing.T) {
 				_, _ = io.WriteString(w, `{"id":"chatcmpl-fixture","choices":[{"message":{"role":"assistant","content":"original result"},"finish_reason":"stop"}]}`)
 			}))
 			defer upstream.Close()
-			f := newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) { input.Input.Mode = mode }, false)
+			f := newProfileAuthorityFixture(t, upstream.URL, domain.OpenCode, domain.OpenAIChat, func(input *domain.ExecutionJobInput) {
+				input.Input.Mode = mode
+				input.Configuration.Effort = "high"
+				input.ConfigurationDigest, _ = input.Configuration.Digest()
+			}, false)
 			if response := f.registerGrant(t); response.Replayed || response.ProxyPath != apiproxy.Prefix || !f.registerGrant(t).Replayed {
 				t.Fatal("original OpenCode registration did not preserve its exact receipt")
 			}
@@ -78,7 +82,6 @@ func TestOpenCodeRegistrationRejectsUnimplementedProfiles(t *testing.T) {
 		{name: "messages", protocol: domain.AnthropicMessages},
 		{name: "version", configure: func(i *domain.ExecutionJobInput) { i.Installation.Version = "1.18.33" }},
 		{name: "protocol-discovery", configure: func(i *domain.ExecutionJobInput) { i.Installation.ProtocolVerified = false }},
-		{name: "effort", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Effort = "high" }},
 		{name: "subagent-model", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Options.SubagentModel = "other-model" }},
 		{name: "subagent-effort", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Options.SubagentEffort = "high" }},
 		{name: "concurrency", configure: func(i *domain.ExecutionJobInput) { i.Configuration.Options.MaxConcurrency = 2 }},
