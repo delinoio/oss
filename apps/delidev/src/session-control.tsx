@@ -36,7 +36,7 @@ export function useSessionControl(id: string, observed?: Resource) {
     if (!resource || control.busy || control.uncertain) return;
     void control.send({ mutation: { id, expectedRevision: resource.revision, requestId: newRequestId() }, action: value }, (result, request) => {
       const accepted = result.change?.session;
-      if (!accepted || accepted.kind !== EntityKind.SESSION || accepted.schemaVersion !== 1 || accepted.id !== request.mutation?.id || accepted.revision <= request.mutation.expectedRevision) return false;
+      if (!accepted || accepted.kind !== EntityKind.SESSION || accepted.schemaVersion !== 1 || accepted.id !== request.mutation?.id || accepted.revision < request.mutation.expectedRevision) return false;
       accept?.(accepted);
       void client.invalidateQueries({ refetchType: "active" });
       return true;

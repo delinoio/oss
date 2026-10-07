@@ -32,7 +32,7 @@ function setup(fail = false, hold?: Promise<void>) {
 }
 it("reads only on open, uses authoritative bigint revision and preserves another draft", async () => {
   const value = setup(); expect(value.get).not.toHaveBeenCalled(); expect(value.budget).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Session actions" }));
+  fireEvent.click(screen.getByRole("button", { name: "More session actions" }));
   const stop = await screen.findByRole("menuitem", { name: "Stop" });
   await waitFor(() => expect((stop as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(stop);
@@ -43,7 +43,7 @@ it("reads only on open, uses authoritative bigint revision and preserves another
 });
 it("retains uncertainty across close, shares the detail lock and retries exact original bytes", async () => {
   const value = setup(true);
-  const opener = screen.getByRole("button", { name: "Session actions" }); fireEvent.click(opener);
+  const opener = screen.getByRole("button", { name: "More session actions" }); fireEvent.click(opener);
   const stop = await screen.findByRole("menuitem", { name: "Stop" }); await waitFor(() => expect((stop as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(stop);
   await screen.findByRole("button", { name: "Retry the same control request" });
   expect((screen.getByRole("button", { name: `Detail revision ${source.revision}` }) as HTMLButtonElement).disabled).toBe(true);
@@ -64,7 +64,7 @@ it("keeps a late accepted acknowledgment after closing the menu", async () => {
   let accept!: () => void;
   const hold = new Promise<void>(resolve => { accept = resolve; });
   const value = setup(false, hold);
-  fireEvent.click(screen.getByRole("button", { name: "Session actions" }));
+  fireEvent.click(screen.getByRole("button", { name: "More session actions" }));
   const stop = await screen.findByRole("menuitem", { name: "Stop" });
   await waitFor(() => expect((stop as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(stop); await waitFor(() => expect(value.control).toHaveBeenCalledTimes(1));
@@ -75,7 +75,7 @@ it("keeps a late accepted acknowledgment after closing the menu", async () => {
 it("blocks all controls after a denied original read and retries only that read", async () => {
   const value = setup();
   value.get.mockImplementation(() => { throw new ConnectError("denied", Code.PermissionDenied); });
-  fireEvent.click(screen.getByRole("button", { name: "Session actions" }));
+  fireEvent.click(screen.getByRole("button", { name: "More session actions" }));
   const retry = await screen.findByRole("button", { name: "Retry session read" });
   for (const button of screen.getAllByRole("menuitem")) expect((button as HTMLButtonElement).disabled).toBe(true);
   const budgetReads = value.budget.mock.calls.length;
@@ -85,7 +85,7 @@ it("blocks all controls after a denied original read and retries only that read"
 it("refreshes after a revision conflict without replaying the action", async () => {
   const value = setup();
   value.control.mockImplementationOnce(async request => { value.requests.push(request); throw new ConnectError("revision conflict", Code.Aborted); });
-  fireEvent.click(screen.getByRole("button", { name: "Session actions" }));
+  fireEvent.click(screen.getByRole("button", { name: "More session actions" }));
   const stop = await screen.findByRole("menuitem", { name: "Stop" });
   await waitFor(() => expect((stop as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(stop);
   const refresh = await screen.findByRole("button", { name: "Refresh the current session before a new action" });
