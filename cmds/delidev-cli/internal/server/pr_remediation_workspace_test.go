@@ -119,7 +119,7 @@ func TestPRRemediationWorkspaceReadBindsOriginalCandidateAndExclusiveProof(t *te
 			}
 			if scenario == "matches" {
 				worker := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice})
-				if _, err := f.service.matchPRRemediationWorkspace(worker, current, target); domain.SafeError(err).Code != domain.PermissionDenied {
+				if _, err := f.service.matchPRRemediationWorkspace(worker, current, target); domain.SafeError(err).Code != domain.Unauthenticated {
 					t.Fatal("Worker selected its own remediation", err)
 				}
 			}

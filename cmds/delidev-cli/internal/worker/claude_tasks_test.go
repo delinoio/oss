@@ -22,6 +22,7 @@ func TestClaudeTaskReceiptReplayPreservesOwnershipAndCompletedToolProgress(t *te
 	c, rpc, start, result := claudeTaskFixture(t)
 	ctx := context.Background()
 	rpc.lose = true
+
 	if handled, err := c.PublishTaskObservation(ctx, start); !handled || err == nil || c.tasks != nil {
 		t.Fatal("uncertain receipt advanced task state")
 	}
@@ -111,6 +112,13 @@ func TestClaudeTaskRejectsForeignUnownedAndUnsupportedObservations(t *testing.T)
 				}
 			}
 			before := len(rpc.events)
+			if scenario == "session" {
+				_, err := c.PublishTaskObservation(context.Background(), o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if handled, err := c.PublishTaskObservation(context.Background(), o); !handled || err == nil || len(rpc.events) != before {
 				t.Fatal("invalid task published")
 			}

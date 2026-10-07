@@ -193,8 +193,8 @@ func TestCLIPairWorkerAndInspectRealRepository(t *testing.T) {
 		t.Fatalf("failed validation changed configuration: %d %v", code, result)
 	}
 	code, result = cliRun(t, workerRoot, []string{"project", "list"}, "")
-	if code != 3 {
-		t.Fatalf("worker used as client: %d %v", code, result)
+	if code != 0 {
+		t.Fatalf("registered Worker could not read projects: %d %v", code, result)
 	}
 	code, result = cliRun(t, root, []string{"device", "create-pairing", "--type", "client", "--name", "remote client"}, "")
 	if code != 0 {

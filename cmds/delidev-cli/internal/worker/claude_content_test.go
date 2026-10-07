@@ -153,6 +153,14 @@ func TestClaudeContentRejectsUnownedAndUnsupportedObservations(t *testing.T) {
 				o = claudeContentObservation(c, claude.ContentEvent{Kind: claude.ContentStarted, Index: &i, Block: block})
 			}
 			before := len(rpc.events)
+
+			if change == "session" {
+				_, err := c.PublishObservation(context.Background(), o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if _, err := c.PublishObservation(context.Background(), o); err == nil || len(rpc.events) != before {
 				t.Fatal("unhandled content entered an apparently complete transcript")
 			}

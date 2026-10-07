@@ -43,8 +43,8 @@ func TestDesktopWorkerOriginalAdmissionReuseEOFAndStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := desktopWorkerAuthority(context.Background(), o, endpoint.URL, domain.NewID()); err == nil {
-		t.Fatal("replacement client admitted")
+	if err := desktopWorkerAuthority(context.Background(), o, endpoint.URL, domain.NewID()); err != nil {
+		t.Fatal("client attribution blocked authenticated admission", err)
 	}
 	if err := desktopWorkerAuthority(context.Background(), o, "http://127.0.0.1:1", clientCredential.DeviceID); err == nil {
 		t.Fatal("foreign listener admitted")

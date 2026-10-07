@@ -37,7 +37,7 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
-		if sr.Revision != identity.Revision || session.InitialExecution == nil || session.ExecutionSelection().ID != execution || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) || session.Archive == domain.Archived {
+		if sr.Revision != identity.Revision || session.InitialExecution == nil || session.ExecutionSelection().ID != execution || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) {
 			return nil, domain.ExecutionRecoveryUncertain()
 		}
 		if _, _, err := activeMachine(tx, session.MachineID); err != nil {

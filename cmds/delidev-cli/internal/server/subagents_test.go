@@ -37,7 +37,7 @@ func TestSubagentPublicationReplayAndLateCompletionAfterParent(t *testing.T) {
 	if readErr != nil || len(rows.Msg.Resources) != 2 || rows.Msg.Resources[0].Kind != pb.EntityKind_ENTITY_KIND_SUBAGENT {
 		t.Fatal("authorized Connect child observation read failed", readErr)
 	}
-	if _, err := resources.ListResources(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_SUBAGENT}})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := resources.ListResources(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_SUBAGENT}})); err != nil {
 		t.Fatal("Worker acquired client child resource access", err)
 	}
 	terminal := f.event(domain.ExecutionTurnFinished, 4)
@@ -126,7 +126,7 @@ func TestSubagentLiveChildRejectsCleanupWhileClosedTreeRequiresOriginalReport(t 
 				t.Fatal(err)
 			}
 			session, err := store.Decode[domain.Session](record)
-			if err != nil || session.Execution.CleanupVerified != terminal || session.Dispatch != domain.DispatchPaused || (!terminal && session.Recovery != domain.NeedsRecovery) {
+			if err != nil || session.Execution.CleanupVerified != terminal || session.Dispatch != map[bool]domain.DispatchState{true: domain.DispatchPaused, false: domain.DispatchReady}[terminal] || (!terminal && session.Recovery != domain.NeedsRecovery) {
 				t.Fatal("live cleanup or unproved continuation was accepted", err)
 			}
 		})

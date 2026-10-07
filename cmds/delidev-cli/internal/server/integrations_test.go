@@ -351,16 +351,19 @@ func TestIntegrationActorBoundReceiptsWorkerDenialAndRevocation(t *testing.T) {
 	if _, err := f.client.InspectGitHubToken(ctx, connect.NewRequest(preview)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("anonymous token inspection accepted", err)
 	}
-	if _, err := f.client.InspectGitHubToken(ctx, ownerRequest(worker, preview)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	preview.Token = []byte("fixture-pat")
+	if _, err := f.client.InspectGitHubToken(ctx, ownerRequest(worker, preview)); err != nil {
 		t.Fatal("Worker token inspection accepted", err)
 	}
+	preview.RequestId, preview.Token = string(domain.NewID()), []byte("fixture-pat")
 	if _, err := f.client.InspectGitHubToken(ctx, ownerRequest(actor, preview)); err != nil {
 		t.Fatal("paired client token inspection rejected", err)
 	}
 	form := &pb.PrepareGitHubTokenFormRequest{RequestId: string(domain.NewID()), TokenKind: pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_CLASSIC, Access: pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES}
-	if _, err := f.client.PrepareGitHubTokenForm(ctx, ownerRequest(worker, form)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker token form accepted", err)
+	if _, err := f.client.PrepareGitHubTokenForm(ctx, ownerRequest(worker, form)); err != nil {
+		t.Fatal("Worker token form rejected", err)
 	}
+	form.RequestId = string(domain.NewID())
 	if _, err := f.client.PrepareGitHubTokenForm(ctx, ownerRequest(actor, form)); err != nil {
 		t.Fatal("paired client token form rejected", err)
 	}

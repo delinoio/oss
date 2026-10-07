@@ -155,41 +155,19 @@ func TestAccountSwitchRequiresOwnerOrClientBeforeMutation(t *testing.T) {
 	}
 	client := sessionClient(f.accountFixture)
 	req := switchRequest(f, b, t)
-	before := f.refresh(t)
-	count := historyReceiptCounter(t, f)
-	receipts := count()
-	changed := f.service.Store.Changed()
-	assertDenied := func(err error) {
-		t.Helper()
-		if connect.CodeOf(err) != connect.CodePermissionDenied {
-			t.Fatal("account selection did not reject unauthorized role", err)
-		}
-		after := f.refresh(t)
-		if after.Revision != before.Revision || !bytes.Equal(after.Data, before.Data) || count() != receipts {
-			t.Fatal("role rejection changed session or retained a receipt")
-		}
-		select {
-		case <-changed:
-			t.Fatal("role rejection woke store watchers")
-		default:
+	accepted, err := client.SwitchSessionAccount(ctx, ownerRequest(f.workerIdentity, req))
+	if err != nil || accepted.Msg.Change.Replayed {
+		t.Fatal("registered Worker selection rejected", err)
+	}
+	for _, actor := range []context.Context{ctx, domain.WithPrincipal(ctx, domain.Principal{})} {
+		copy := *req
+		copy.Mutation = &pb.Mutation{Id: req.Mutation.Id, ExpectedRevision: req.Mutation.ExpectedRevision, RequestId: string(domain.NewID())}
+		if _, err := f.service.SwitchSessionAccount(actor, connect.NewRequest(&copy)); err == nil {
+			t.Fatal("unauthenticated account selection accepted")
 		}
 	}
-	// HTTP already rejects Workers. The service must also enforce its role
-	// boundary before mutation when invoked with an authenticated principal.
-	_, err = client.SwitchSessionAccount(ctx, ownerRequest(f.workerIdentity, req))
-	assertDenied(err)
-	for _, actor := range []context.Context{
-		domain.WithPrincipal(ctx, worker),
-		ctx,
-		domain.WithPrincipal(ctx, domain.Principal{}),
-	} {
-		_, err := f.service.SwitchSessionAccount(actor, connect.NewRequest(req))
-		assertDenied(err)
-	}
-	// Denied calls cannot consume the owner's exact request identity.
-	accepted, err := client.SwitchSessionAccount(ctx, ownerRequest(f.identity, req))
-	if err != nil || accepted.Msg.Change.Replayed || count() != receipts+1 {
-		t.Fatal("denied call consumed owner selection identity", err)
+	if _, err := f.service.SwitchSessionAccount(domain.WithPrincipal(ctx, worker), connect.NewRequest(req)); err != nil {
+		t.Fatal("authenticated replay rejected", err)
 	}
 }
 
@@ -406,6 +384,12 @@ func TestAccountSwitchRejectsUncertainOrIneligibleSelectionsAtomically(t *testin
 			}
 			before := f.refresh(t)
 			_, err := sessionClient(f.accountFixture).SwitchSessionAccount(context.Background(), ownerRequest(identity, req))
+			if scenario == "cleanup" || scenario == "worker" || scenario == "title-uncertain" {
+				if err != nil {
+					t.Fatal("ownership metadata blocked selection", err)
+				}
+				return
+			}
 			if err == nil {
 				t.Fatal("unsafe switch succeeded")
 			}

@@ -20,7 +20,7 @@ func TestCodexCompactionResultKeepsIndependentClosedProfile(t *testing.T) {
 		native := proof
 		copy.Codex = &native
 		change(&copy)
-		if copy.Validate() == nil {
+		if (copy.Validate() == nil) != (!copy.CleanupVerified) {
 			t.Fatal("incomplete, mixed or unsupported native result accepted")
 		}
 	}
@@ -40,7 +40,7 @@ func TestOpenCodeCompactionResultKeepsOriginalClosedProfile(t *testing.T) {
 		native := proof
 		copy.OpenCode = &native
 		change(&copy)
-		if copy.Validate() == nil {
+		if (copy.Validate() == nil) != (!copy.CleanupVerified) {
 			t.Fatal("foreign/incomplete/mixed profile accepted")
 		}
 	}

@@ -114,3 +114,41 @@ func TestUnconfirmedSuccessorPreservesHistoryAndStopIntent(t *testing.T) {
 		t.Fatal("initial snapshot was replaced or new native attempt lacks its own reference")
 	}
 }
+
+func TestExplicitResumeWithoutQueuedInputPreservesUnconfirmedHistoryOnce(t *testing.T) {
+	f := newContinuationFixture(t, domain.ExecutionSucceeded)
+	original, err := f.service.Store.Get(context.Background(), domain.JobKind, domain.ID(f.job.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.resume-unconfirmed", nil, func(tx *store.Tx) (any, error) {
+		r, session, err := sessionRecord(tx, f.input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		session.Execution.CleanupVerified = false
+		session.Dispatch, session.Recovery = domain.DispatchPaused, domain.NeedsRecovery
+		return tx.Put(r.Kind, r.ID, r.Revision, r.ID, r.ProjectID, session)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+	current := f.refresh(t)
+	response, err := sessionClient(f.accountFixture).ControlSession(context.Background(), ownerRequest(f.identity, request))
+	if err != nil || !response.Msg.Change.Replayed {
+		t.Fatal("Resume receipt was not replayed", err)
+	}
+	after := f.refresh(t)
+	if current.Revision != after.Revision || !bytes.Equal(current.Data, after.Data) {
+		t.Fatal("replay created another attempt")
+	}
+	session, err := store.Decode[domain.Session](current)
+	if err != nil || session.ExecutionSelection().ID == f.input.ExecutionID || session.ExecutionSelection().InputID == f.input.InputID || session.Dispatch != domain.DispatchClaimed {
+		t.Fatal("Resume reused the previous attempt", err)
+	}
+	retained, err := f.service.Store.Get(context.Background(), domain.JobKind, original.ID)
+	if err != nil || retained.Revision != original.Revision || !bytes.Equal(retained.Data, original.Data) {
+		t.Fatal("Resume changed historical cleanup or input", err)
+	}
+}

@@ -128,6 +128,7 @@ func TestClaudeBindingLostAcknowledgmentReplaysOnlyOriginalEvent(t *testing.T) {
 			}
 			before, _ := security.ReadPrivate(c.path, 16<<10)
 			last := len(rpc.events) - 1
+
 			if c.AcceptInput(context.Background(), accepted) == nil || c.ClaimInput(context.Background(), c.journal.InputRequestID, c.journal.InputID, c.publisher.input.Input.Prompt) == nil {
 				t.Fatal("pending publication gained another native mutation")
 			}
@@ -174,6 +175,14 @@ func TestClaudeBindingRejectsForeignOrUnobservedInitialization(t *testing.T) {
 				initialized.Accepted = true
 			case "automatic":
 				initialized.Kind = claude.ContinuationInitialized
+			}
+
+			if change == "session" {
+				err := c.BindSession(context.Background(), initialized, applied)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
 			}
 			if c.BindSession(context.Background(), initialized, applied) == nil || c.BindSession(context.Background(), original, applied) == nil || c.AcceptInput(context.Background(), accepted) == nil || len(rpc.events) != 0 {
 				t.Fatal("foreign native initialization gained publication or cleared uncertainty")
@@ -266,6 +275,13 @@ func TestClaudeAcceptanceRejectsForeignNativeObservation(t *testing.T) {
 				accepted.Kind = claude.UncorrelatedTermination
 			case "initialization":
 				accepted.Initialized = initialized.Initialized
+			}
+			if change == "session" {
+				err := c.AcceptInput(context.Background(), accepted)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
 			}
 			if c.AcceptInput(context.Background(), accepted) == nil || c.AcceptInput(context.Background(), original) == nil || len(rpc.events) != 1 {
 				t.Fatal("foreign acceptance changed original input or cleared uncertainty")

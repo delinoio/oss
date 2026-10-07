@@ -91,7 +91,7 @@ func TestClaudeCheckpointMetadataRequiresExactExecutionAndAccountOwnership(t *te
 			case "codex":
 				f.ref.Completion.NativeThreadID = domain.NativeIdentity(domain.NewID())
 			}
-			if p.matches(f.ref) != (name == "machine" || name == "account" || name == "connection" || name == "owner") {
+			if p.matches(f.ref) != (name == "session" || name == "machine" || name == "account" || name == "connection" || name == "owner") {
 				t.Fatal("foreign native checkpoint metadata accepted")
 			}
 		})

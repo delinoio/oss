@@ -141,7 +141,11 @@ func TestClaudeContinuationRequiresOriginalSettledPermissionAndReport(t *testing
 					if outcome == domain.ExecutionSucceeded && scenario != "prior-recovery" {
 						dispatch = domain.DispatchReady
 					}
-					if s.Dispatch != dispatch || s.Recovery != domain.NeedsRecovery || s.NextExecutionIntent != "" {
+					intent := domain.ExecutionIntent("")
+					if dispatch == domain.DispatchReady {
+						intent = domain.ContinueAutomatically
+					}
+					if s.Dispatch != dispatch || s.Recovery != domain.NeedsRecovery || s.NextExecutionIntent != intent {
 						t.Fatal("unproved boundary granted FIFO")
 					}
 					if scenario != "prior-recovery" && s.Execution.CleanupVerified {

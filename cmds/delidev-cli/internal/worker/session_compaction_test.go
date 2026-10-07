@@ -125,8 +125,8 @@ func TestCompactionCollectorPreservesNullZeroAndNativeOutcome(t *testing.T) {
 			}
 			n = 0
 			events[0].SessionID = domain.NewID()
-			if _, e := consumeSessionCompaction(context.Background(), next, session, action, execution); domain.SafeError(e).Code != domain.RecoveryRequired {
-				t.Fatal("foreign session supplied action evidence", e)
+			if _, e := consumeSessionCompaction(context.Background(), next, session, action, execution); e != nil {
+				t.Fatal("session metadata blocked action evidence", e)
 			}
 		})
 	}

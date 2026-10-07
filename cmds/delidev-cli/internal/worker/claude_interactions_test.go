@@ -54,6 +54,7 @@ func TestClaudeInteractionPublicationRejectsChangedOriginalOwnership(t *testing.
 			c, rpc, _ := claudeToolFixture(t, "")
 			o := claudeInteractionObservation(c)
 			if change == "duplicate" || change == "overlap" {
+
 				if _, err := c.PublishInteractionObservation(context.Background(), o); err != nil {
 					t.Fatal(err)
 				}
@@ -85,6 +86,13 @@ func TestClaudeInteractionPublicationRejectsChangedOriginalOwnership(t *testing.
 				o.Interaction.Canceled = true
 			}
 			before := len(rpc.events)
+			if change == "session" {
+				_, err := c.PublishInteractionObservation(context.Background(), o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if _, err := c.PublishInteractionObservation(context.Background(), o); err == nil || len(rpc.events) != before {
 				t.Fatal("invalid callback acquired publication authority")
 			}

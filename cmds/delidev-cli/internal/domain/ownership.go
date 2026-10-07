@@ -16,10 +16,11 @@ const (
 )
 
 // ObserveOwnership records mismatched attribution without logging native values.
-// IDs are optional and must be validated before they can enter diagnostics.
+// Invalid or unavailable references receive a fresh diagnostic correlation ID;
+// native identifiers and protected values never enter diagnostics.
 func ObserveOwnership(check OwnershipCheck, id ID) {
 	if id.Validate() != nil {
-		id = ""
+		id = NewID()
 	}
 	slog.Warn("ownership_observation", "operation_id", id, "check", check,
 		"result", "unconfirmed", "next_action", "continue")

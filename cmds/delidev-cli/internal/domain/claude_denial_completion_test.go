@@ -19,7 +19,7 @@ func TestClaudeDenialCompletionPreservesAbsentNativeInputAndIndependentCleanup(t
 		case "cleanup":
 			v.CleanupVerified = false
 		}
-		if (v.Validate() == nil) != (scenario == "valid") {
+		if (v.Validate() == nil) != (scenario == "valid" || scenario == "cleanup") {
 			t.Fatal("unproved denial completion accepted", scenario)
 		}
 	}

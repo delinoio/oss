@@ -137,6 +137,12 @@ func TestOpenCodeStopClosureRejectsMissingOrConflictingAuthorityAtomically(t *te
 				requestOpenCodeStopFixture(t, f)
 			}
 			before, _ := readPublishedInteraction(t, f, closure.Interaction.ID)
+			if name == "unclean" {
+				if _, err := f.call(f.requestEvent(t, closure)); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
 			if _, err := f.call(f.requestEvent(t, closure)); err == nil {
 				t.Fatal("unproven Stop canceled an original request")
 			}

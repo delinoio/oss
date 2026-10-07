@@ -197,7 +197,7 @@ func TestOpenCodeBindingLostAcknowledgmentReplaysOnlyOriginalPublication(t *test
 }
 
 func TestOpenCodeBindingRequiresRecordedExactOriginalInput(t *testing.T) {
-	for _, change := range []func(*opencode.InputReceipt){
+	for index, change := range []func(*opencode.InputReceipt){
 		func(r *opencode.InputReceipt) { r.Recorded, r.HTTPAccepted = false, true },
 		func(r *opencode.InputReceipt) { r.RequestID = domain.NewID() },
 		func(r *opencode.InputReceipt) { r.SessionID = "ses_01960dcbe1fbabcdefghijklmn" },
@@ -216,6 +216,12 @@ func TestOpenCodeBindingRequiresRecordedExactOriginalInput(t *testing.T) {
 		}
 		receipt := openCodeBindingReceipt(claims[1])
 		change(&receipt)
+		if index == 2 {
+			if err := c.AcceptInput(ctx, receipt); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		if c.AcceptInput(ctx, receipt) == nil || c.stage != openCodeBindingBlocked || len(rpc.requests) != 1 || c.publisher.state.Pending != nil {
 			t.Fatal("foreign or unconfirmed native input gained acceptance")
 		}
@@ -277,6 +283,12 @@ func TestOpenCodeBindingRequiresOriginalClaimsAndMode(t *testing.T) {
 				session = "ses_01960dcbe1fbabcdefghijklmn"
 			case "mode":
 				observation.OpenCodeAgent = domain.OpenCodePlanAgent
+			}
+			if change == "session" {
+				if err := c.BindSession(context.Background(), request, session, observation); err != nil {
+					t.Fatal(err)
+				}
+				return
 			}
 			if c.BindSession(context.Background(), request, session, observation) == nil || c.stage != openCodeBindingBlocked || len(rpc.requests) != 0 || c.publisher.state.Pending != nil {
 				t.Fatal("unowned native binding gained publication")

@@ -38,16 +38,20 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 	// Resume has no queued input. Neither empty Resume nor fork advances routing.
 	input := domain.ExecutionJobInput{Version: 3, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: domain.NewID(), InputID: domain.NewID(), ThreadRequestID: domain.NewID(), TurnRequestID: domain.NewID(), Configuration: f.Snapshot.Configuration, ConfigurationDigest: f.Snapshot.ConfigurationDigest, AccountID: f.Snapshot.InitialAccountID, ConnectionID: f.Snapshot.ConnectionID, Fork: &domain.ForkExecution{JobID: f.JobID, RuntimeID: f.RuntimeID, NativeThreadID: f.NativeThreadID, NativeTurnID: f.ChildTurn(), CheckpointDigest: f.CheckpointDigest, HistoryRequestID: domain.NewID()}, Input: domain.SessionInput{Prompt: "Fork eligibility check", Mode: domain.ExecuteMode}}
 	creation, err := tx.Get(domain.JobKind, f.JobID)
-	if err != nil {
+	if err == nil {
+		creationJob, err := store.Decode[domain.Job](creation)
+		var seed domain.ForkJobInput
+		if err != nil || creationJob.Type != domain.ForkSessionJob || creationJob.State != domain.JobSucceeded || domain.Decode(creationJob.Input, &seed) != nil || seed.Validate() != nil || domain.OwnershipBlocks(domain.OwnershipResource, sr.ID, seed.ChildSessionID != sr.ID) || seed.RuntimeID != f.RuntimeID {
+			return store.Record{}, forkConflict()
+		}
+		input.Startup, input.Installation = seed.Startup, seed.SourceAssignment.Installation
+	} else if domain.SafeError(err).Code == domain.NotFound {
+		// The child retains its own checkpoint and immutable configuration. A
+		// purged parent's creation record cannot become ownership admission.
+		domain.ObserveOwnership(domain.OwnershipResource, sr.ID)
+	} else {
 		return store.Record{}, err
 	}
-	creationJob, err := store.Decode[domain.Job](creation)
-	var seed domain.ForkJobInput
-	if err != nil || creationJob.Type != domain.ForkSessionJob || creationJob.State != domain.JobSucceeded || domain.Decode(creationJob.Input, &seed) != nil || seed.Validate() != nil || seed.ChildSessionID != sr.ID || seed.RuntimeID != f.RuntimeID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(creationJob.MachineID), creationJob.MachineID != session.MachineID) {
-		return store.Record{}, forkConflict()
-	}
-	input.Startup, input.Installation = seed.Startup, seed.SourceAssignment.Installation
 	if _, err := checkedExecutionSelection(tx, session, machine, input); err != nil {
 		return store.Record{}, err
 	}

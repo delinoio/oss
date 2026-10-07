@@ -112,7 +112,7 @@ func TestRequestDiagnosticsConcurrentSameModelUsesExactIDs(t *testing.T) {
 	for _, token := range []string{"", f.workerToken} {
 		req := connect.NewRequest(&pb.ListRequestDiagnosticsRequest{SessionId: string(f.input.SessionID)})
 		req.Header().Set("Authorization", "Bearer "+token)
-		if _, err := client.ListRequestDiagnostics(context.Background(), req); err == nil {
+		if _, err := client.ListRequestDiagnostics(context.Background(), req); (err == nil) != (token != "") {
 			t.Fatal("unauthorized diagnostics read")
 		}
 	}

@@ -43,7 +43,7 @@ func TestSubagentClosedTreeCannotAcquireForkCheckpoint(t *testing.T) {
 			}
 			before := f.refresh(t)
 			session, err := store.Decode[domain.Session](before)
-			if err != nil || session.Execution == nil || len(session.Execution.Subagents) != 1 || !session.Execution.Subagents.Closed() || session.Execution.CleanupVerified != (version == 1) || session.Dispatch != domain.DispatchPaused || version == 2 && session.Recovery != domain.NeedsRecovery {
+			if err != nil || session.Execution == nil || len(session.Execution.Subagents) != 1 || !session.Execution.Subagents.Closed() || session.Execution.CleanupVerified != (version == 1) || session.Dispatch != map[bool]domain.DispatchState{true: domain.DispatchReady, false: domain.DispatchPaused}[version == 2] || version == 2 && session.Recovery != domain.NeedsRecovery {
 				t.Fatal("closed child acquired unproved completion authority", err)
 			}
 			request := &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(before.ID), ExpectedRevision: before.Revision}, ExpectedTurnId: string(f.turn), Name: "Unsupported observed-child fork"}

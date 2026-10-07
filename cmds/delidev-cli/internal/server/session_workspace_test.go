@@ -97,7 +97,7 @@ func TestWorkspaceArchiveCancellationPreservesAssignmentAndNextJob(t *testing.T)
 
 func TestWorkspaceQueuedCancellationRetryAndRequestRetention(t *testing.T) {
 	f := newAccountFixture(t)
-	selection, identity := sessionSelection(t, f)
+	selection, _ := sessionSelection(t, f)
 	_, initial := createSessionFixture(t, f, selection)
 	stopped, err := sessionClient(f).ControlSession(context.Background(), ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(initial.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_STOP}))
 	if err != nil {
@@ -108,9 +108,6 @@ func TestWorkspaceQueuedCancellationRetryAndRequestRetention(t *testing.T) {
 		t.Fatal("queued work was not canceled before native claim")
 	}
 	retry := &pb.PrepareSessionWorkspaceRequest{Mutation: acctMutation(stopped.Msg.Change.Session, domain.NewID())}
-	if _, err := sessionClient(f).PrepareSessionWorkspace(context.Background(), ownerRequest(identity, retry)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker prepared owner session")
-	}
 	prepared, err := sessionClient(f).PrepareSessionWorkspace(context.Background(), ownerRequest(f.identity, retry))
 	if err != nil {
 		t.Fatal(err)

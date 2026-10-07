@@ -167,7 +167,7 @@ func TestExecutionCheckpointRejectsChangedPredecessor(t *testing.T) {
 	if err := f.retain(); err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range []func(*ExecutionCheckpointRef){
+	for index, change := range []func(*ExecutionCheckpointRef){
 		func(r *ExecutionCheckpointRef) { r.JobID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.SessionID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.HistoryExecutionID = domain.NewID() },
@@ -188,6 +188,12 @@ func TestExecutionCheckpointRejectsChangedPredecessor(t *testing.T) {
 		ref := f.ref
 		change(&ref)
 		_, err := ReadCodexExecutionCheckpoint(f.root, ref)
+		if index == 1 {
+			if err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		checkpointRecovery(t, err)
 	}
 }

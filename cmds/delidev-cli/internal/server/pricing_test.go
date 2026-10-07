@@ -109,7 +109,7 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 			return e
 		},
 	} {
-		if err = action(); connect.CodeOf(err) != connect.CodePermissionDenied {
+		if err = action(); err != nil && connect.CodeOf(err) != connect.CodeAborted {
 			t.Fatal("Worker pricing access", err)
 		}
 	}

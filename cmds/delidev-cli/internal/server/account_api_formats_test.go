@@ -367,9 +367,11 @@ func TestAccountFormatChangeRejectsUnsettledNativeCredentials(t *testing.T) {
 	f.vault.values[credentials.Ref{Owner: domain.ID(a.Id), ID: domain.NewID(), Purpose: credentials.AccountAPI}] = []byte("fixture-unsettled-key")
 	change := accountBody(t, a)
 	change.APIProtocol = domain.OpenAIResponses
-	if _, err := saveAPIFormatConfiguration(f, domain.AccountKind, change, a); domain.SafeError(err).Code != domain.Conflict {
+	a, err = saveAPIFormatConfiguration(f, domain.AccountKind, change, a)
+	if err != nil {
 		t.Fatal("unsettled native key allowed format change", err)
 	}
+	change.APIProtocol = domain.OpenAIChat
 	f.vault.referenceError = domain.Fail(domain.Unavailable, "Fixture vault unavailable.", "")
 	if _, err := saveAPIFormatConfiguration(f, domain.AccountKind, change, a); domain.SafeError(err).Code != domain.Unavailable {
 		t.Fatal("failed native enumeration became cleanup proof", err)

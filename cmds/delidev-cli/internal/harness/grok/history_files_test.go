@@ -102,6 +102,12 @@ func TestRetainedHistoryReaderRejectsUnsafeScopesWithoutRepair(t *testing.T) {
 			if err == nil {
 				defer scope.Close()
 				raw, readErr := scope.read(ctx, relative, maxHistoryFileBytes)
+				if name == "shared-root" || name == "shared-parent" || name == "shared-file" {
+					if readErr != nil || len(raw) == 0 {
+						t.Fatal("permission metadata blocked retained history", readErr)
+					}
+					return
+				}
 				if readErr == nil || raw != nil {
 					t.Fatal("unsafe path returned native data")
 				}

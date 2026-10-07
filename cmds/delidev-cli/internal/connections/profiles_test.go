@@ -288,8 +288,8 @@ func TestSavedConnectionRetryRequiresRetainedWorkerPairOwnership(t *testing.T) {
 	if err := security.WriteAtomic(pendingPath, changed); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := connections.Retry(context.Background(), root, id); domain.SafeError(err).Code != domain.RecoveryRequired {
-		t.Fatal("inconsistent pending ownership reached network", err)
+	if _, err := connections.Retry(context.Background(), root, id); domain.SafeError(err).Code != domain.ServerUnavailable {
+		t.Fatal("metadata mismatch blocked actual connection attempt", err)
 	}
 	if err := os.Remove(pendingPath); err != nil {
 		t.Fatal(err)

@@ -188,6 +188,16 @@ func TestDesktopRecoveryRequiresOriginalCredentialCommitment(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if mutation == "foreign-server" {
+				if code, result := cliRun(t, root, []string{"device", "inspect-local"}, ""); code != 0 || result["result"].(map[string]any)["state"] != "revoked" {
+					t.Fatal("metadata blocked current authenticated inspection", result)
+				}
+				after, err := desktopHashes(clientRoot)
+				if err != nil || after != before {
+					t.Fatal("inspection rewrote original pairing", err)
+				}
+				return
+			}
 			for _, args := range [][]string{{"device", "inspect-local"}, recoveryArgs(original, domain.NewID())} {
 				if code, result := cliRun(t, root, args, ""); code == 0 || result["error"].(map[string]any)["code"] != "recovery_required" {
 					t.Fatal("unverified credential accepted", result)
@@ -254,6 +264,16 @@ func TestDesktopRecoveryRequiresOriginalLocalPairing(t *testing.T) {
 			before, err := desktopHashes(clientRoot)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if mutation == "foreign-server" {
+				if code, result := cliRun(t, root, []string{"device", "inspect-local"}, ""); code != 0 || result["result"].(map[string]any)["state"] != "revoked" {
+					t.Fatal("metadata blocked current authenticated inspection", result)
+				}
+				after, err := desktopHashes(clientRoot)
+				if err != nil || after != before {
+					t.Fatal("inspection rewrote original pairing", err)
+				}
+				return
 			}
 			for _, args := range [][]string{{"device", "inspect-local"}, recoveryArgs(original, domain.NewID())} {
 				if code, result := cliRun(t, root, args, ""); code == 0 || result["error"].(map[string]any)["code"] != "recovery_required" {

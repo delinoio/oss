@@ -99,6 +99,13 @@ func TestClaudeDenialCompletionRejectsForeignAndUnsettledBoundaries(t *testing.T
 					controller.fail = true
 				}
 			}
+			if scenario == "foreign-session" {
+				_, err := c.PublishBoundaryObservation(ctx, o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			before := len(rpc.events)
 			_, err := c.PublishBoundaryObservation(ctx, o)
 			if scenario == "cleanup" {

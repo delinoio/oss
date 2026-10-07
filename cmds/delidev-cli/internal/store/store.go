@@ -384,7 +384,13 @@ func (s *Store) Replay(ctx context.Context, id domain.ID, operation string, inpu
 			return storageError(err)
 		}
 		if savedHash != digest {
-			return domain.Fail(domain.Conflict, "The request ID was already used for different input.", "Retry the original command unchanged or use a new request ID.")
+			matches, err := tx.receiptMatches(id, operation, input, savedHash)
+			if err != nil {
+				return err
+			}
+			if !matches {
+				return domain.Fail(domain.Conflict, "The request ID was already used for different input.", "Retry the original command unchanged or use a new request ID.")
+			}
 		}
 		if string(saved) == quarantinedReceipt {
 			return restoreQuarantined()
@@ -427,7 +433,13 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	err = tx.QueryRowContext(ctx, "SELECT digest,result FROM receipts WHERE id=?", id).Scan(&savedHash, &saved)
 	if err == nil {
 		if digest != savedHash {
-			return Result{}, domain.Fail(domain.Conflict, "The request ID was already used for different input.", "Retry the original command unchanged or use a new request ID.")
+			matches, err := permission.receiptMatches(id, operation, input, savedHash)
+			if err != nil {
+				return Result{}, err
+			}
+			if !matches {
+				return Result{}, domain.Fail(domain.Conflict, "The request ID was already used for different input.", "Retry the original command unchanged or use a new request ID.")
+			}
 		}
 		if string(saved) == quarantinedReceipt {
 			return Result{}, restoreQuarantined()

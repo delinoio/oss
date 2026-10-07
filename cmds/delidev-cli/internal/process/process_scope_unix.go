@@ -218,19 +218,28 @@ func startProcess(c *exec.Cmd, dir string, owner domain.ID, terminal *TerminalSi
 				}
 			case processExit:
 				s, err := readScope(dir)
+				if err != nil && !errors.Is(err, os.ErrNotExist) && err != errCleanupUnconfirmed {
+					p.waitErr, p.reconcileErr = err, err
+					return
+				}
 				if err != nil || !s.Complete {
 					p.reconcileErr = scopeError()
-					p.waitErr = p.reconcileErr
-					return
-				}
-				if err = cleanup(); err != nil {
+					domain.ObserveOwnership(domain.OwnershipCleanup, owner)
+				} else if err = cleanup(); err != nil {
 					p.reconcileErr = err
-					p.waitErr = err
-					return
+					if err != errCleanupUnconfirmed {
+						p.waitErr = err
+						return
+					}
 				}
-				if f.Failure != "" {
+				// Root command output/exit and descendant cleanup are independent.
+				// Unknown cleanup remains available to Stop/Close and journal readers.
+				if f.Failure == domain.RecoveryRequired {
+					p.reconcileErr = scopeError()
+				} else if f.Failure != "" {
 					p.waitErr = launchFailure(f.Failure)
-				} else if f.Exit != 0 {
+				}
+				if p.waitErr == nil && f.Exit != 0 {
 					p.waitErr = commandExitError(f.Exit)
 				}
 				return
@@ -507,6 +516,7 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 	if !rootDone {
 		_ = cmd.Process.Kill()
 	}
+	unconfirmed := false
 	cleanupDeadline := time.Now().Add(10 * time.Second)
 	for {
 		if !rootDone {
@@ -518,6 +528,11 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 		}
 		empty, err := drainScope(scope, rootDone)
 		if err != nil {
+			if rootDone {
+				unconfirmed = true
+				domain.ObserveOwnership(domain.OwnershipCleanup, scope.OwnerID)
+				break
+			}
 			domain.ObserveOwnership(domain.OwnershipCleanup, scope.OwnerID)
 			_ = read.Close()
 			_ = stderrRead.Close()
@@ -529,6 +544,11 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 			break
 		}
 		if time.Now().After(cleanupDeadline) {
+			if rootDone {
+				unconfirmed = true
+				domain.ObserveOwnership(domain.OwnershipCleanup, scope.OwnerID)
+				break
+			}
 			domain.ObserveOwnership(domain.OwnershipCleanup, scope.OwnerID)
 			_ = read.Close()
 			_ = stderrRead.Close()
@@ -554,9 +574,11 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 			return 3
 		}
 	}
-	scope.Complete = true
-	if err = saveScope(dir, scope); err != nil {
-		return 3
+	if !unconfirmed {
+		scope.Complete = true
+		if err = saveScope(dir, scope); err != nil {
+			return 3
+		}
 	}
 	exit := 0
 	if waitErr != nil {
@@ -569,7 +591,11 @@ func superviseProcessWithPipe(dir, socket string, pipe func() (*os.File, *os.Fil
 			}
 		}
 	}
-	_ = writer.frame(processFrame{Kind: processExit, Exit: exit})
+	failure := domain.Code("")
+	if unconfirmed {
+		failure = domain.RecoveryRequired
+	}
+	_ = writer.frame(processFrame{Kind: processExit, Exit: exit, Failure: failure})
 	return 0
 }
 

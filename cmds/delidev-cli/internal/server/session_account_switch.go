@@ -45,8 +45,11 @@ func (s *Service) SwitchSessionAccount(ctx context.Context, req *connect.Request
 		if sr.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload the session before explicitly selecting another account.")
 		}
-		if session.Dispatch != domain.DispatchPaused || session.Archive != domain.NotArchived || session.NextExecutionIntent != "" || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.TitleState == domain.TitleQueued || session.TitleState == domain.TitleRunning || session.TitleState == domain.TitleUncertain {
+		if session.Dispatch != domain.DispatchPaused || session.Archive != domain.NotArchived || session.NextExecutionIntent != "" || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
 			return nil, continuationConflict()
+		}
+		if session.TitleState == domain.TitleQueued || session.TitleState == domain.TitleRunning || session.TitleState == domain.TitleUncertain {
+			domain.ObserveOwnership(domain.OwnershipCleanup, session.TitleJobID)
 		}
 		assignment, completion, digest, err := checkedContinuationPredecessor(tx, sr, session)
 		if err != nil {

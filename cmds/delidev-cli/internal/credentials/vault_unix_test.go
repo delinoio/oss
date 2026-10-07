@@ -46,6 +46,18 @@ func TestVaultRejectsForeignOwnerDirectoryAndFile(t *testing.T) {
 					}
 				}
 			}
+			if attack == "shared-owner" || attack == "shared-record" {
+				if _, err := v.Put(ctx, ref, []byte("protected")); err != nil {
+					t.Fatal(err)
+				}
+				if got, err := v.Get(ctx, ref); err != nil || string(got) != "protected" {
+					t.Fatal("permission metadata changed encrypted content", err)
+				}
+				if err := v.Delete(ctx, ref); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
 			size := len(n.values)
 			_, err := v.Put(ctx, ref, []byte("protected"))
 			wantCode(t, err, domain.PermissionDenied)

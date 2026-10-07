@@ -281,7 +281,7 @@ func (s grokClaimState) validateNextInput(c grokClaim) error {
 	}
 	if c.QuestionReply != nil || c.FileReply != nil || c.PlanReply != nil {
 		reply, err := grokReplyOwnerOf(c)
-		if len(s.Claims) < 4 || err != nil || reply.owner != s.Reference.JobID || reply.product != s.Reference.SessionID || reply.input != s.Reference.InputRequestID || reply.request == s.Reference.CreationRequestID || reply.native != s.Claims[3].Input.NativeSessionID || reply.prompt != s.Claims[3].Input.NativePromptID {
+		if len(s.Claims) < 4 || err != nil || domain.OwnershipBlocks(domain.OwnershipResource, s.Reference.JobID, reply.owner != s.Reference.JobID) || domain.OwnershipBlocks(domain.OwnershipResource, s.Reference.JobID, reply.product != s.Reference.SessionID) || reply.input != s.Reference.InputRequestID || reply.request == s.Reference.CreationRequestID || reply.native != s.Claims[3].Input.NativeSessionID || reply.prompt != s.Claims[3].Input.NativePromptID {
 			return grokClaimUncertain()
 		}
 		for _, record := range s.Claims[4:] {
@@ -358,6 +358,7 @@ func (s grokClaimState) validateNextInput(c grokClaim) error {
 		} else {
 			prior := *s.Claims[0].Creation
 			prior.Phase, prior.NativeSessionID = grok.BindCreation, c.Creation.NativeSessionID
+			prior.ProductSessionID = c.Creation.ProductSessionID
 			if *c.Creation != prior {
 				return grokClaimUncertain()
 			}
@@ -376,6 +377,7 @@ func (s grokClaimState) validateNextInput(c grokClaim) error {
 	} else {
 		prior := *s.Claims[2].Input
 		prior.Phase, prior.NativePromptID = grok.BindInput, c.Input.NativePromptID
+		prior.ProductSessionID = c.Input.ProductSessionID
 		if *c.Input != prior {
 			return grokClaimUncertain()
 		}
@@ -485,7 +487,7 @@ func readGrokClaims(root string, ref grokClaimReference) ([]grokClaim, error) {
 	}
 	raw, err := security.ReadPrivate(path, maxGrokClaimBytes)
 	var state grokClaimState
-	if err != nil || domain.Decode(raw, &state) != nil || state.Reference != ref || state.Claims == nil || len(state.Claims) > maxGrokPlanClaims {
+	if err != nil || domain.Decode(raw, &state) != nil || !sameGrokClaimReference(state.Reference, ref) || state.Claims == nil || len(state.Claims) > maxGrokPlanClaims {
 		return nil, grokClaimUncertain()
 	}
 	canonical, err := json.Marshal(state)
@@ -500,4 +502,17 @@ func readGrokClaims(root string, ref grokClaimReference) ([]grokClaim, error) {
 		checked.Claims = append(checked.Claims, claim)
 	}
 	return checked.Claims, nil
+}
+
+// Attribution changes do not rebind the journal; only operation identity and
+// immutable input/configuration digests determine receipt compatibility.
+func sameGrokClaimReference(original, selected grokClaimReference) bool {
+	if original == selected {
+		return true
+	}
+	domain.ObserveOwnership(domain.OwnershipResource, original.JobID)
+	selected.InstanceID, selected.ServerID = original.InstanceID, original.ServerID
+	selected.DeviceID, selected.MachineID = original.DeviceID, original.MachineID
+	selected.SessionID, selected.AccountID, selected.ConnectionID = original.SessionID, original.AccountID, original.ConnectionID
+	return original == selected
 }

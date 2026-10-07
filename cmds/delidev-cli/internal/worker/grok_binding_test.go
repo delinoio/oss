@@ -148,7 +148,7 @@ func TestGrokBindingRejectsUnconfirmedOrForeignNativeEvidence(t *testing.T) {
 				binding.ModeBinding = nil
 			}
 			err := c.BindSession(ctx, binding)
-			if mutation == "owner" {
+			if mutation == "owner" || mutation == "product" {
 				if err != nil || len(client.events) == 0 {
 					t.Fatal("owner metadata blocked binding", err)
 				}

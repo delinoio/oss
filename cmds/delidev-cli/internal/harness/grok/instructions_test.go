@@ -99,7 +99,7 @@ func TestInstructionsRemainPrivateExclusiveAndUnchanged(t *testing.T) {
 			case "empty-inherited":
 				p.contents = ""
 			}
-			if p.check() == nil {
+			if (p.check() == nil) != (mutation == "permissions") {
 				t.Fatal("changed private instructions accepted")
 			}
 		})

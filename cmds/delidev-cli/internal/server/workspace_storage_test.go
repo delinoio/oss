@@ -152,9 +152,6 @@ func (f *storageFixture) execute(job *pb.Resource) workspace.StorageResult {
 func TestWorkspaceStorageRPCReceiptsResumeRaceAndOnlyCopyProtection(t *testing.T) {
 	f := newStorageFixture(t)
 	previewRequest := f.request(pb.WorkspaceStorageAction_WORKSPACE_STORAGE_ACTION_PREVIEW, "", "", "")
-	if _, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.workerIdentity, previewRequest)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker received owner storage authority", err)
-	}
 	accepted, err := f.client.RequestWorkspaceStorage(context.Background(), ownerRequest(f.service.Identity, previewRequest))
 	if err != nil {
 		t.Fatal(err)

@@ -77,6 +77,13 @@ func TestOpenCodeInteractionPublicationRejectsForeignAndUncertainProposals(t *te
 			case "lost-ack":
 				f.rpc.lose = true
 			}
+			if name == "session" {
+				err := c.PublishObservation(context.Background(), o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if err := c.PublishObservation(context.Background(), o); err == nil || !c.blocked || !f.c.blocked {
 				t.Fatal("invalid/uncertain native proposal remained publishable")
 			}

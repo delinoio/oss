@@ -127,7 +127,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		}
 	}
 	_, account, err := accountFromTx(tx, input.AccountID, 0)
-	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
+	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || domain.OwnershipBlocks(domain.OwnershipResource, input.ExecutionID, account.Connection.ID != input.ConnectionID) || account.ProviderID != input.Configuration.ProviderID {
 		return empty, executionDenied()
 	}
 	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService == domain.SubscriptionChatGPT && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && input.Configuration.Harness == domain.Codex

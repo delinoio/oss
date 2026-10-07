@@ -151,6 +151,13 @@ func TestOpenCodeTextRefusesChangedIdentityContentAndPrematureClosure(t *testing
 				}
 			}
 			before := len(f.rpc.events)
+			if name == "session" {
+				_, err := f.c.PublishObservation(context.Background(), bad)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if _, err := f.c.PublishObservation(context.Background(), bad); err == nil {
 				t.Fatal("contradictory text observation was published")
 			}

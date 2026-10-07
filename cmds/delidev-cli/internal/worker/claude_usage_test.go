@@ -103,6 +103,14 @@ func TestClaudeUsageRejectsForeignOrUnpublishedSources(t *testing.T) {
 			case "counter":
 				n = -1
 			}
+
+			if name == "session" {
+				_, err := c.PublishUsageObservation(ctx, o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if _, err := c.PublishUsageObservation(ctx, o); err == nil || c.binding.stage != claudeBindingBlocked {
 				t.Fatal("invalid original usage accepted", err)
 			}

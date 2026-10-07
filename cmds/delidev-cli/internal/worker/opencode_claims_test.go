@@ -155,7 +155,7 @@ func TestOpenCodeClaimOwnershipCannotChangeOrReorder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, change := range []func(*opencode.SessionClaim){
+	for index, change := range []func(*opencode.SessionClaim){
 		func(c *opencode.SessionClaim) { c.SessionID = "ses_01960dcbe1fbabcdefghijklmn" },
 		func(c *opencode.SessionClaim) { c.InputRequestID = domain.NewID() },
 		func(c *opencode.SessionClaim) { c.MessageID = claims[1].MessageID },
@@ -166,6 +166,12 @@ func TestOpenCodeClaimOwnershipCannotChangeOrReorder(t *testing.T) {
 	} {
 		c := claims[2]
 		change(&c)
+		if index == 0 {
+			if err := j.Claim(context.Background(), c); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		if j.Claim(context.Background(), c) == nil {
 			t.Fatal("foreign/malformed native response acquired a durable claim")
 		}

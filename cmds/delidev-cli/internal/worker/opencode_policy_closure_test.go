@@ -89,6 +89,13 @@ func TestOpenCodePolicyClosureBlocksUnprovenContextAndUncertainPublication(t *te
 			case "capacity":
 				c.text.bytes = maxOpenCodeTextBytes
 			}
+			if name == "session" {
+				err := c.PublishObservation(context.Background(), o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if c.PublishObservation(context.Background(), o) == nil || !c.blocked || !c.text.blocked || len(c.interactions) != 1 {
 				t.Fatal("unproven or uncertain policy closure released pending ownership")
 			}

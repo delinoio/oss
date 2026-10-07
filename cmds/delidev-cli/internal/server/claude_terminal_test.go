@@ -79,7 +79,7 @@ func TestClaudeTerminalAndCleanupRemainSeparateWithoutUnprovedContinuation(t *te
 			f.reportCompletion(t, completion)
 			row, _ = f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
 			s, err = store.Decode[domain.Session](row)
-			if err != nil || s.Dispatch != map[bool]domain.DispatchState{true: domain.DispatchReady, false: domain.DispatchPaused}[scenario == "unproved-checkpoint"] || s.NextExecutionIntent != "" {
+			if err != nil || s.Dispatch != map[bool]domain.DispatchState{true: domain.DispatchReady, false: domain.DispatchPaused}[scenario == "unproved-checkpoint"] || s.NextExecutionIntent != map[bool]domain.ExecutionIntent{true: domain.ContinueAutomatically, false: ""}[scenario == "unproved-checkpoint"] {
 				t.Fatal("completion enabled unsupported continuation", err)
 			}
 			if scenario == "unproved-checkpoint" {

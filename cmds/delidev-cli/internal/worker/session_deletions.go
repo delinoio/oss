@@ -115,8 +115,6 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if proof.Complete {
-		// Completion is reusable only while its original copies remain absent.
-		// A replacement at a formerly owned path is never blindly removed.
 		paths, e := sessionDeletionCopyPaths(ctx, root, w)
 		if e != nil {
 			return proof, e
@@ -126,11 +124,21 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			paths = append(paths, workspace.SidechatForkClaimPath(root, w.Fork.JobID))
 		}
 		for _, path := range paths {
-			if _, e := os.Lstat(path); !errors.Is(e, os.ErrNotExist) {
-				return proof, domain.SessionDeletionPending()
+			if _, e := os.Lstat(path); e == nil {
+				domain.ObserveOwnership(domain.OwnershipCleanup, w.DeletionID)
+				proof.Complete = false
+			} else if !errors.Is(e, os.ErrNotExist) {
+				return proof, e
 			}
 		}
-		return proof, nil
+		if proof.Complete {
+			return proof, nil
+		}
+		// The earlier receipt remains historical; this current observation must
+		// not claim completion while new scoped remnants are visible.
+		if e := writeJSON(path, proof); e != nil {
+			return proof, e
+		}
 	}
 	// The publisher lock precedes the session lock throughout the Worker. A live
 	// owner must finish cancellation and release its handles before removal.

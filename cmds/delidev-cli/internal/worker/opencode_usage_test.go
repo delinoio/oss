@@ -119,6 +119,13 @@ func TestOpenCodeUsageRejectsMissingChangedOrUnownedEvidence(t *testing.T) {
 			if name != "duplicate-arrival" {
 				bad = f.observation(bad)
 			}
+			if name == "session" {
+				_, err := u.PublishObservation(context.Background(), bad)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if _, err := u.PublishObservation(context.Background(), bad); err == nil {
 				t.Fatal("invalid usage acquired publication authority")
 			}

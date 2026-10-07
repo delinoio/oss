@@ -151,6 +151,12 @@ func TestRetainedHistoryReaderRejectsUnsafeScopesWithoutRepair(t *testing.T) {
 				cancel()
 			}
 			observed, err := ReadMainTranscript(ctx, home, session, workspace, messages, nil, nil, nil)
+			if name == "shared-root" || name == "shared-parent" || name == "shared-file" {
+				if err != nil || observed == (TranscriptObservation{}) {
+					t.Fatal("permission metadata blocked retained history", err)
+				}
+				return
+			}
 			if err == nil || observed != (TranscriptObservation{}) {
 				t.Fatal("unsafe retained path granted partial history", observed)
 			}

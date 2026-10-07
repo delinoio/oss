@@ -12,7 +12,7 @@ import (
 func prStartupRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record, session domain.Session) (domain.ExecutionRecoveryRequest, error) {
 	var result domain.ExecutionRecoveryRequest
 	fail := domain.StartupRejectionUncertain
-	if session.InitialExecution == nil || session.CurrentExecution != nil || session.Execution != nil || session.StartupRejection != nil || session.Workspace != domain.Worktree || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.PendingSteerID != "" || session.Archive == domain.Archived || session.Outcome != domain.ExecutionFailed || session.Dispatch != domain.DispatchPaused || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) || session.ActiveExecutionID != session.InitialExecution.ID {
+	if session.InitialExecution == nil || session.CurrentExecution != nil || session.Execution != nil || session.StartupRejection != nil || session.Workspace != domain.Worktree || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.PendingSteerID != "" || session.Outcome != domain.ExecutionFailed || (session.Dispatch != domain.DispatchPaused && session.Dispatch != domain.DispatchReady) || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) || session.ActiveExecutionID != session.InitialExecution.ID {
 		return result, fail()
 	}
 	original, err := tx.SessionExecutionJob(sr.ID, session.InitialExecution.ID)

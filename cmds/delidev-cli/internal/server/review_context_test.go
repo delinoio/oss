@@ -15,7 +15,7 @@ func TestReviewContextRejectsWorkerAndNonDiffQueries(t *testing.T) {
 	query := domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: domain.NewID(), Path: ".", Comparison: domain.DiffWorkingTree}
 	raw, _ := json.Marshal(query)
 	request := &pb.ReadSessionReviewContextRequest{SessionId: f.change.Session.Id, QueryJson: raw}
-	if _, err := sessionClient(f.accountFixture).ReadSessionReviewContext(context.Background(), ownerRequest(f.workerIdentity, request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+	if _, err := sessionClient(f.accountFixture).ReadSessionReviewContext(context.Background(), ownerRequest(f.workerIdentity, request)); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatal("Worker accessed client review", err)
 	}
 	query.Operation, query.RepositoryID, query.Comparison, query.Path = domain.WorkspaceRoots, "", "", ""

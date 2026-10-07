@@ -108,6 +108,14 @@ func TestSubagentClaudeRootUsageRejectsChangedAcknowledgedChild(t *testing.T) {
 				changed := int64(2)
 				content.Content[0].Usage = &claude.ProviderUsage{Input: &changed}
 			}
+
+			if name == "session" {
+				_, err := c.PublishUsageObservation(context.Background(), content)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if _, err := c.PublishUsageObservation(context.Background(), content); err == nil || c.binding.stage != claudeBindingBlocked || len(rpc.events) != before {
 				t.Fatal("changed child report bypassed root ownership or published usage", err)
 			}

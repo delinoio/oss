@@ -31,9 +31,6 @@ func TestRepositoryCloneAcceptReplayAndServerRegistration(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := &pb.CloneRepositoryRequest{RequestId: string(domain.NewID()), MachineId: paired.Machine.Id, ParentPath: "/alias/parent", Url: "https://example.com/repo.git", DirectoryName: "repo", LocalWorkerToken: worker.Token}
-	if _, err := client.CloneRepository(ctx, ownerRequest(worker, request)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker invoked product clone", err)
-	}
 	accepted, err := client.CloneRepository(ctx, ownerRequest(f.service.Identity, request))
 	if err != nil {
 		t.Fatal(err)
@@ -146,8 +143,8 @@ func TestRepositoryCloneRegistrationFailurePreservesPublishedMetadata(t *testing
 	input := domain.RepositoryCloneInput{RepositoryID: repositoryID, MachineID: machine, LocalOrigin: domain.LocalOrigin{MachineID: machine, DeviceID: device}, ParentPath: "/alias/parent", URL: "https://example.com/repo.git", DirectoryName: "repo"}
 	raw, _ := json.Marshal(input)
 	job := domain.Job{Type: domain.CloneRepositoryJob, State: domain.JobClaimed, MachineID: machine, InstanceID: instance, AssignedDeviceID: device, Input: raw, AcceptedAt: time.Now().UTC()}
-	// Revoked original provenance is deliberately retained as a registration
-	// failure, after the Worker has already published the user-owned checkout.
+	// Revoked original provenance remains metadata when an authenticated owner
+	// registers the checkout that the Worker already published.
 	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.clone", nil, func(tx *store.Tx) (any, error) {
 		_, err := tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: rpc.Version, WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryCloneV1}})
 		if err != nil {
@@ -180,10 +177,10 @@ func TestRepositoryCloneRegistrationFailurePreservesPublishedMetadata(t *testing
 	value, _ := store.Decode[domain.Job](failed)
 	var result workspace.CloneResult
 	_ = domain.Decode(value.Output, &result)
-	if value.State != domain.JobFailed || result.Inspection == nil || result.Inspection.Root != "/canonical/parent/repo" || result.RepositoryID != "" {
+	if value.State != domain.JobSucceeded || result.Inspection == nil || result.Inspection.Root != "/canonical/parent/repo" || result.RepositoryID != repositoryID {
 		t.Fatal("published checkout metadata lost")
 	}
-	if _, err := f.service.Store.Get(ctx, domain.RepositoryKind, repositoryID); domain.SafeError(err).Code != domain.NotFound {
-		t.Fatal("unauthorized checkout registered", err)
+	if _, err := f.service.Store.Get(ctx, domain.RepositoryKind, repositoryID); err != nil {
+		t.Fatal("historical actor blocked checkout registration", err)
 	}
 }

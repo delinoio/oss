@@ -49,6 +49,7 @@ func TestClaudeTerminalRequiresSeparateOriginalIdleAndReplaysOnlyItsReceipt(t *t
 	if rpc.requests[before] != rpc.requests[before+1] || !bytes.Equal(rpc.events[before], rpc.events[before+1]) || c.terminal == nil || c.binding.stage != claudeTerminalPublished {
 		t.Fatal("original terminal receipt or stage changed")
 	}
+
 	if _, err := c.PublishBoundaryObservation(ctx, idle); err == nil {
 		t.Fatal("terminal published twice")
 	}
@@ -103,6 +104,13 @@ func TestClaudeTerminalRejectsUncorrelatedUnsettledAndForeignBoundaries(t *testi
 				c.interruption = &claudePublishedInterruption{}
 			}
 			before := len(rpc.events)
+			if scenario == "session" {
+				_, err := c.PublishBoundaryObservation(ctx, idle)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if _, err := c.PublishBoundaryObservation(ctx, idle); err == nil || len(rpc.events) != before || c.binding.stage != claudeBindingBlocked {
 				t.Fatal("unproved native boundary became terminal")
 			}

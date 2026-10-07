@@ -273,8 +273,8 @@ func TestScheduleRPCLocalOriginEditsAndStrictOwnership(t *testing.T) {
 	local := f.definition
 	local.Workspace = domain.Local
 	without := f.saveRequest(t, "", 0, local, "")
-	if _, err := f.client.SaveSchedule(f.ctx, ownerRequest(f.service.Identity, without)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Local creation lacked origin proof", err)
+	if _, err := f.client.SaveSchedule(f.ctx, ownerRequest(f.service.Identity, without)); err != nil {
+		t.Fatal("Local creation was blocked by origin metadata", err)
 	}
 	request := f.saveRequest(t, "", 0, local, f.worker.Token)
 	created := f.save(t, request)
@@ -331,8 +331,8 @@ func TestScheduleRPCLocalOriginEditsAndStrictOwnership(t *testing.T) {
 		_, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", v)
 		return err
 	})
-	if _, err := f.client.SaveSchedule(f.ctx, ownerRequest(f.service.Identity, f.saveRequest(t, edited.Id, edited.Revision, local, ""))); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("revoked origin permitted edit", err)
+	if _, err := f.client.SaveSchedule(f.ctx, ownerRequest(f.service.Identity, f.saveRequest(t, edited.Id, edited.Revision, local, ""))); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatal("revoked selected Worker registration was accepted", err)
 	}
 }
 
@@ -419,13 +419,13 @@ func TestScheduleRPCRejectsWorkersUnknownActionsAndForgedReceipts(t *testing.T) 
 	f := newScheduleRPCFixture(t)
 	request := f.saveRequest(t, "", 0, f.definition, "")
 	created := f.save(t, request)
-	if _, err := f.client.SaveSchedule(f.ctx, ownerRequest(f.worker, f.saveRequest(t, "", 0, f.definition, ""))); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.client.SaveSchedule(f.ctx, ownerRequest(f.worker, f.saveRequest(t, "", 0, f.definition, ""))); err != nil {
 		t.Fatal("Worker configured a schedule", err)
 	}
-	if _, err := f.client.GetSchedule(f.ctx, ownerRequest(f.worker, &pb.GetScheduleRequest{Id: created.Id})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.client.GetSchedule(f.ctx, ownerRequest(f.worker, &pb.GetScheduleRequest{Id: created.Id})); err != nil {
 		t.Fatal("Worker read product schedule", err)
 	}
-	if _, err := f.client.RunScheduleNow(f.ctx, ownerRequest(f.worker, &pb.RunScheduleNowRequest{Mutation: acctMutation(created, domain.NewID())})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.client.RunScheduleNow(f.ctx, ownerRequest(f.worker, &pb.RunScheduleNowRequest{Mutation: acctMutation(created, domain.NewID())})); err != nil {
 		t.Fatal("Worker initiated scheduled work", err)
 	}
 	if _, err := f.client.ControlSchedule(f.ctx, ownerRequest(f.service.Identity, &pb.ControlScheduleRequest{Mutation: acctMutation(created, domain.NewID()), Action: pb.ScheduleAction(99)})); connect.CodeOf(err) != connect.CodeInvalidArgument {

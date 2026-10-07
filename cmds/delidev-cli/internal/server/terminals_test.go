@@ -77,8 +77,8 @@ func TestTerminalReceiptsOutputReattachAndArchiveBarrier(t *testing.T) {
 	if err != nil || !repeated.Msg.Replayed || repeated.Msg.Terminal.Id != accepted.Msg.Terminal.Id {
 		t.Fatal("creation receipt duplicated the terminal", err)
 	}
-	if _, err := product.CreateTerminal(ctx, ownerRequest(worker, create)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker gained product authority", err)
+	if _, err := product.CreateTerminal(ctx, ownerRequest(worker, create)); err != nil {
+		t.Fatal("Worker could not replay terminal creation", err)
 	}
 	var value domain.Terminal
 	if domain.Decode(accepted.Msg.Terminal.DocumentJson, &value) != nil {

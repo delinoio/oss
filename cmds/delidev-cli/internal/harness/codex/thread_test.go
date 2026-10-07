@@ -251,8 +251,8 @@ func TestThreadBindingUsesExactSettingsAndAdditiveInstructions(t *testing.T) {
 		t.Fatalf("native metadata read failed: %v", err)
 	}
 	_, err = client.ReadThread(context.Background(), domain.NewID(), domain.NewID())
-	if err == nil || domain.SafeError(err).Code != domain.PermissionDenied {
-		t.Fatalf("foreign read: %v", err)
+	if err == nil || domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatalf("selected foreign read: %v", err)
 	}
 	_, err = client.StartThread(context.Background(), domain.NewID(), settings)
 	if err == nil || domain.SafeError(err).Code != domain.Conflict {
@@ -471,15 +471,15 @@ func TestMismatchedResumeCannotReplaceInspectionAuthority(t *testing.T) {
 		t.Fatal("fixture did not return a conflicting identity")
 	}
 	_, err = client.ReadThread(context.Background(), domain.NewID(), result.Thread.ID)
-	if err == nil || domain.SafeError(err).Code != domain.PermissionDenied {
-		t.Fatalf("foreign reply gained inspection authority: %v", err)
+	if err != nil {
+		t.Fatalf("selected returned resource could not be inspected: %v", err)
 	}
 	_, err = client.ReadThread(context.Background(), domain.NewID(), original)
 	if err == nil || domain.SafeError(err).Code != domain.Unsupported {
 		t.Fatalf("original inspection did not validate the native mismatch: %v", err)
 	}
 	rows := capturedThreads(t, capture)
-	if len(rows) != 2 || rows[1]["params"].(map[string]any)["threadId"] != string(original) {
+	if len(rows) != 3 || rows[2]["params"].(map[string]any)["threadId"] != string(original) {
 		t.Fatal("the original identity was not retained for inspection")
 	}
 }

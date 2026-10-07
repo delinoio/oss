@@ -69,8 +69,8 @@ func TestClaudeStopRejectsForgedInputAndCleanupOrNativeEvidence(t *testing.T) {
 			case "mixed":
 				v.ContentEvidence = ClaudeAbortedAssistant
 			}
-			if v.Validate() == nil {
-				t.Fatal("unproved Stop accepted")
+			if (v.Validate() == nil) != (name == "cleanup") {
+				t.Fatal("Stop validation changed an input boundary", name)
 			}
 		})
 	}

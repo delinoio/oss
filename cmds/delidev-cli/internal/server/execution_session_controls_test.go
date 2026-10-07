@@ -112,7 +112,7 @@ func TestNativeSessionControlsWaitForOwnedCleanupAndPreserveOutcome(t *testing.T
 					t.Fatal(err)
 				}
 				if phase == "unaccepted" {
-					if session.Recovery != domain.NeedsRecovery || session.ActiveExecutionID == "" || session.PendingInputs != 1 || session.Archive == domain.Archived {
+					if session.Recovery != domain.NeedsRecovery || session.ActiveExecutionID == "" || session.PendingInputs != 1 || (session.Archive == domain.Archived) != (action == pb.SessionAction_SESSION_ACTION_ARCHIVE) {
 						t.Fatal("missing native acceptance/cleanup was promoted to completed control")
 					}
 					return

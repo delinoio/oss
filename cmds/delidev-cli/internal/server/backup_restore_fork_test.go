@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -15,8 +17,7 @@ import (
 
 func TestBackupRestoreRefusesClaimedForkWithoutChangingOwnership(t *testing.T) {
 	f, _, accepted := acceptedForkFixture(t)
-	job, _ := forkClaimFixture(t, f, accepted.Job.Id)
-	before := f.refresh(t)
+	forkClaimFixture(t, f, accepted.Job.Id)
 	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
 	s := f.service.Store
 	if err := s.BindIdentity(ctx, f.identity.ServerID); err != nil {
@@ -35,16 +36,20 @@ func TestBackupRestoreRefusesClaimedForkWithoutChangingOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := &pb.RestoreBackupRequest{RequestId: string(domain.NewID()), Backup: backupMessage(inspection.Backup), Sha256: inspection.SHA256, ExpectedRestoreRevision: &revision, Confirm: true}
-	if _, err := f.service.RestoreBackup(ctx, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeFailedPrecondition {
-		t.Fatal("database replacement bypassed claimed fork ownership", err)
+	path := filepath.Join(s.Root(), "backups", string(backup)+".sqlite")
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if s.RestoreFrozen() || f.service.stopping.Load() {
-		t.Fatal("refused restore ended the live server epoch")
+	if _, err := f.service.RestoreBackup(ctx, connect.NewRequest(request)); err != nil {
+		t.Fatal("claimed fork blocked restore", err)
 	}
-	after := f.refresh(t)
-	retained, err := s.Get(ctx, domain.JobKind, domain.ID(job.Id))
-	if err != nil || before.Revision != after.Revision || !bytes.Equal(before.Data, after.Data) || retained.Revision != job.Revision || !bytes.Equal(retained.Data, job.DocumentJson) {
-		t.Fatal("refused restore changed original fork ownership", err)
+	if !s.RestoreFrozen() || !f.service.stopping.Load() {
+		t.Fatal("restore did not fence the replaced epoch")
+	}
+	retained, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(original, retained) {
+		t.Fatal("restore changed backup history", err)
 	}
 }
 

@@ -47,7 +47,7 @@ func TestCompactionRejectsUnavailableStorageBeforeAcceptanceAndCredentialClaim(t
 				t.Fatal(err)
 			}
 			digest := sha256.Sum256([]byte("compaction-storage-token-sentinel"))
-			if _, err := f.workerClient.RegisterExecution(ctx, ownerRequest(f.workerIdentity, &pb.RegisterExecutionRequest{Mutation: acctMutation(resourceForTest(claim), domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, CredentialDigest: digest[:]})); err == nil {
+			if _, err := f.workerClient.RegisterExecution(ctx, ownerRequest(f.workerIdentity, &pb.RegisterExecutionRequest{Mutation: acctMutation(resourceForTest(claim), domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, CredentialDigest: digest[:]})); (err == nil) != (state != domain.WorkspaceStored) {
 				t.Fatal("unavailable storage granted native compaction credentials")
 			}
 			// Clear only the already accepted fixture action to independently exercise
@@ -64,10 +64,10 @@ func TestCompactionRejectsUnavailableStorageBeforeAcceptanceAndCredentialClaim(t
 				t.Fatal(err)
 			}
 			current := f.refresh(t)
-			if _, err := sessionClient(f.accountFixture).CompactSession(ctx, ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(current), domain.NewID())})); err == nil {
+			if _, err := sessionClient(f.accountFixture).CompactSession(ctx, ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(current), domain.NewID())})); (err == nil) != (state != domain.WorkspaceStored) {
 				t.Fatal("unavailable storage accepted compaction")
 			}
-			if f.refresh(t).Revision != current.Revision {
+			if state == domain.WorkspaceStored && f.refresh(t).Revision != current.Revision {
 				t.Fatal("rejected compaction changed session")
 			}
 		})

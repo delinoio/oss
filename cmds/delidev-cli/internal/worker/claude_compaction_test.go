@@ -26,6 +26,7 @@ func TestClaudeCompactionOwnershipWaitsForOriginalReceipt(t *testing.T) {
 	for _, obs := range []claude.LifecycleObservation{o, s} {
 		closed := b.compaction.Closed()
 		rpc.lose = true
+
 		if handled, err := b.PublishCompactionObservation(ctx, obs); !handled || err == nil {
 			t.Fatal("lost compaction receipt accepted")
 		}
@@ -85,6 +86,13 @@ func TestClaudeCompactionRejectsForeignMixedAndReusedObservations(t *testing.T) 
 				o = s
 			}
 			before := len(rpc.events)
+			if change == "session" {
+				_, err := b.PublishCompactionObservation(context.Background(), o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if handled, err := b.PublishCompactionObservation(context.Background(), o); !handled || err == nil || len(rpc.events) != before {
 				t.Fatal("invalid context was published")
 			}

@@ -137,7 +137,7 @@ func TestGrokClaimsRejectChangedOrOutOfOrderOwnership(t *testing.T) {
 		if claim.Creation != nil {
 			for _, mutate := range []func(*grok.CreationClaim){
 				func(c *grok.CreationClaim) { c.RequestID = domain.NewID() },
-				func(c *grok.CreationClaim) { c.ProductSessionID = domain.NewID() },
+				func(c *grok.CreationClaim) { c.ProductSessionID = "" },
 				func(c *grok.CreationClaim) { c.Phase = grok.ClaimCreation; c.NativeSessionID = domain.NewID() },
 				func(c *grok.CreationClaim) { c.BodyDigest = strings.Repeat("AB", 32) },
 			} {
@@ -158,7 +158,7 @@ func TestGrokClaimsRejectChangedOrOutOfOrderOwnership(t *testing.T) {
 		} else {
 			for _, mutate := range []func(*grok.InputClaim){
 				func(c *grok.InputClaim) { c.RequestID = domain.NewID() },
-				func(c *grok.InputClaim) { c.ProductSessionID = domain.NewID() },
+				func(c *grok.InputClaim) { c.ProductSessionID = "" },
 				func(c *grok.InputClaim) { c.NativeSessionID = domain.NewID() },
 				func(c *grok.InputClaim) { c.NativePromptID = string(domain.NewID()) },
 				func(c *grok.InputClaim) { c.BodyDigest = strings.Repeat("AB", 32) },
@@ -184,8 +184,8 @@ func TestGrokClaimsRejectChangedOrOutOfOrderOwnership(t *testing.T) {
 	}
 	ref := journal.state.Reference
 	ref.ConnectionID = domain.NewID()
-	if _, err := readGrokClaims(p.config.Root, ref); err == nil {
-		t.Fatal("original evidence rebound to replacement account connection")
+	if _, err := readGrokClaims(p.config.Root, ref); err != nil {
+		t.Fatal("account attribution blocked journal observation", err)
 	}
 }
 
@@ -384,7 +384,7 @@ func TestGrokClaimsClosurePreservesOriginalInputAndNeverRepeats(t *testing.T) {
 	for _, change := range []func(*grok.ClosureClaim){
 		func(c *grok.ClosureClaim) { c.RequestID = p.input.ThreadRequestID },
 		func(c *grok.ClosureClaim) { c.RequestID = p.input.TurnRequestID },
-		func(c *grok.ClosureClaim) { c.ProductSessionID = domain.NewID() },
+		func(c *grok.ClosureClaim) { c.ProductSessionID = "" },
 		func(c *grok.ClosureClaim) { c.NativePromptID = "f5833c4a-d764-4428-8bd8-6c2968a34b1b" },
 		func(c *grok.ClosureClaim) {
 			c.NativeSessionID = domain.NewID()
@@ -444,7 +444,7 @@ func TestGrokStopClaimBindsOriginalWorkerAndExcludesClosureReplay(t *testing.T) 
 		}
 	}
 	for _, change := range []func(*grok.StopClaim){
-		func(c *grok.StopClaim) { c.ProductSessionID = domain.NewID() },
+		func(c *grok.StopClaim) { c.ProductSessionID = "" },
 		func(c *grok.StopClaim) { c.InputRequestID = p.input.InputID },
 		func(c *grok.StopClaim) { c.RequestID = p.input.ThreadRequestID },
 		func(c *grok.StopClaim) {
@@ -500,8 +500,8 @@ func TestGrokFileReplyClaimsRetainOriginalOwnershipAndBound(t *testing.T) {
 		}
 	}
 	for _, mutate := range []func(*grok.FilePermissionClaim){
-		func(c *grok.FilePermissionClaim) { c.OwnerID = domain.NewID() },
-		func(c *grok.FilePermissionClaim) { c.ProductSessionID = domain.NewID() },
+		func(c *grok.FilePermissionClaim) { c.OwnerID = "" },
+		func(c *grok.FilePermissionClaim) { c.ProductSessionID = "" },
 		func(c *grok.FilePermissionClaim) { c.InputRequestID = domain.NewID() },
 		func(c *grok.FilePermissionClaim) { c.RequestID = p.input.ThreadRequestID },
 		func(c *grok.FilePermissionClaim) { c.NativeSessionID = domain.NewID() },
@@ -627,5 +627,27 @@ func TestGrokRememberedEditsRetainExactOriginalReplyClaim(t *testing.T) {
 	}
 	if p.state.Pending != nil || p.state.LastSequence != 0 {
 		t.Fatal("remembered edits claimed public publication")
+	}
+}
+
+func TestGrokClaimsAllowDifferentProductSessionMetadataWithoutRebindingHistory(t *testing.T) {
+	p, journal, claims := newGrokClaimsFixture(t)
+	original := journal.state.Reference
+	for _, claim := range claims {
+		if claim.Creation != nil {
+			claim.Creation.ProductSessionID = domain.NewID()
+		}
+		if claim.Input != nil {
+			claim.Input.ProductSessionID = domain.NewID()
+		}
+		if err := recordGrokClaim(context.Background(), journal, claim); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if journal.state.Reference != original || original.SessionID != p.input.SessionID {
+		t.Fatal("accepted attribution rewrote selected references")
+	}
+	if retained, err := readGrokClaims(p.config.Root, original); err != nil || len(retained) != len(claims) {
+		t.Fatal("accepted metadata could not be read", err)
 	}
 }

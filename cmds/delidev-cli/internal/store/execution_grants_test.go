@@ -141,6 +141,10 @@ func TestExecutionGrantAndNativeReferenceIsolationSurviveRestart(t *testing.T) {
 			if err != nil || exists != (field == "same") {
 				t.Fatalf("native reference escaped %s isolation: %v", field, err)
 			}
+			exists, err = tx.HasNativeReference(candidate)
+			if err != nil || exists != (field != "kind" && field != "native") {
+				t.Fatalf("reference existence used %s attribution as admission: %v", field, err)
+			}
 		}
 		return nil
 	}); err != nil {

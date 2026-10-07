@@ -102,6 +102,13 @@ func TestTodoProgressPreservesIndependentEventsAndUncertainPublication(t *testin
 			case "lost-ack":
 				f.rpc.lose = true
 			}
+			if name == "foreign" {
+				err := c.PublishObservation(context.Background(), o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if err := c.PublishObservation(context.Background(), o); err == nil {
 				t.Fatal("invalid todo event was published")
 			}

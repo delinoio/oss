@@ -392,6 +392,12 @@ func TestScheduleCoordinatorSelectionFailureAndRevokedLocalOrigin(t *testing.T) 
 				return err
 			})
 			wait := f.reconcile(t, waitRecord.ID)
+			if local {
+				if wait.SessionID == "" {
+					t.Fatal("historical origin blocked selected-machine admission")
+				}
+				return
+			}
 			if wait.State != domain.OccurrenceFailed || wait.Problem == nil || wait.Reason != domain.SelectionFailedOccurrence || wait.SessionID != "" {
 				t.Fatal("invalid wait executed")
 			}

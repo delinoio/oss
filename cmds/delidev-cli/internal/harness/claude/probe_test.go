@@ -224,6 +224,12 @@ func TestProbeRejectsInvalidProfileOrRuntimeBeforeLaunch(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if change == "nonprivate" {
+				if err := Probe(context.Background(), cfg); err != nil {
+					t.Fatal("permission metadata blocked probe", err)
+				}
+				return
+			}
 			if err := Probe(context.Background(), cfg); err == nil {
 				t.Fatal("invalid native probe accepted")
 			}

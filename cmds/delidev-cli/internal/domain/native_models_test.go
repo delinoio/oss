@@ -37,8 +37,8 @@ func TestNativeObservationBoundsAndIdentity(t *testing.T) {
 			case "reasoning":
 				bad.Models[0].Reasoning = []NativeReasoningEffort{"unknown"}
 			}
-			if bad.Validate(false) == nil {
-				t.Fatal("unsafe observation accepted")
+			if (bad.Validate(false) == nil) != (test == "cleanup") {
+				t.Fatal("observation validation changed an input boundary", test)
 			}
 		})
 	}

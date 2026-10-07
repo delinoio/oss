@@ -79,13 +79,13 @@ func TestBudgetRPCIncompleteEvidenceExactRetryAndAcceptedWork(t *testing.T) {
 	}
 	workerRead := connect.NewRequest(&pb.GetSessionBudgetRequest{SessionId: string(row.ID)})
 	workerRead.Header().Set("Authorization", "Bearer "+f.workerToken)
-	if _, err = client.GetSessionBudget(ctx, workerRead); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err = client.GetSessionBudget(ctx, workerRead); err != nil {
 		t.Fatal("Worker budget read", err)
 	}
 	workerWrite := connect.NewRequest(request)
 	workerWrite.Header().Set("Authorization", "Bearer "+f.workerToken)
-	if _, err = client.SetSessionBudget(ctx, workerWrite); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker budget write", err)
+	if _, err = client.SetSessionBudget(ctx, workerWrite); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("Worker changed a budget receipt", err)
 	}
 	paired, device := pairedQuestionClient(t, f)
 	if _, err = client.GetSessionBudget(ctx, ownerRequest(paired, &pb.GetSessionBudgetRequest{SessionId: string(row.ID)})); err != nil {

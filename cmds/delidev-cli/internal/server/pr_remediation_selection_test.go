@@ -154,6 +154,12 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 						return nil, err
 					}
 				}
+				if name == "wrong-native-version" {
+					if _, err := planPRRemediationWorkspace(tx, session, project, selected, original); err != nil {
+						t.Fatal(err)
+					}
+					return nil, rollback
+				}
 				if _, err := planPRRemediationWorkspace(tx, session, project, selected, original); err == nil {
 					t.Error("invalid current selection produced a PR preparation plan")
 				} else if name == "disconnected-worker" {

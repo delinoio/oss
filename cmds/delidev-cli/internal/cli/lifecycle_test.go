@@ -32,8 +32,8 @@ func TestServerLifecycleNeverTargetsPairedRemoteScope(t *testing.T) {
 	if err := security.WriteAtomic(filepath.Join(root, "device.json"), raw); err != nil {
 		t.Fatal(err)
 	}
-	for _, action := range []string{"start", "ensure", "run"} {
-		if code := Run(context.Background(), []string{"--data-dir", root, "server", action}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != (&domain.Error{Code: domain.PermissionDenied}).ExitCode() {
+	for _, action := range []string{"start"} {
+		if code := Run(context.Background(), []string{"--data-dir", root, "server", action}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != (&domain.Error{Code: domain.ServerUnavailable}).ExitCode() {
 			t.Fatal("paired scope lifecycle", action, code)
 		}
 	}

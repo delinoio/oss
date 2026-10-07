@@ -74,7 +74,7 @@ func TestCLILocalCreationLoadsOnlyMatchingPrivateWorkerScope(t *testing.T) {
 				root = ""
 			}
 			got, err := localCreationCredential(context.Background(), c, input, root)
-			if scenario == "valid" {
+			if scenario == "valid" || scenario == "client" || scenario == "machine" {
 				if err != nil || got != token || status.calls != 1 {
 					t.Fatal("valid Local scope refused", err)
 				}

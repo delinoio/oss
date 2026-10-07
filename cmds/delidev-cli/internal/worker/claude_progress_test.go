@@ -26,6 +26,7 @@ func TestClaudeProgressKeepsPreAcceptanceAndSharedOutboxSequence(t *testing.T) {
 	b, rpc, o, accepted := claudeProgressFixture(t)
 	ctx := context.Background()
 	rpc.lose = true
+
 	if handled, err := b.PublishProgressObservation(ctx, o); !handled || err == nil {
 		t.Fatal("original progress acknowledgment not lost")
 	}
@@ -88,6 +89,13 @@ func TestClaudeProgressRejectsForeignMixedAndMisorderedObservations(t *testing.T
 				o.NativeID = b.turn
 			}
 			before := len(rpc.events)
+			if scenario == "session" {
+				_, err := b.PublishProgressObservation(context.Background(), o)
+				if err != nil {
+					t.Fatal("session metadata blocked observation", err)
+				}
+				return
+			}
 			if handled, err := b.PublishProgressObservation(context.Background(), o); !handled || err == nil || len(rpc.events) != before {
 				t.Fatal("invalid progress published")
 			}

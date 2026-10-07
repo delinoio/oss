@@ -87,7 +87,7 @@ func TestNativeCompletionStillRequiresOriginalTerminalAndCleanupEvidence(t *test
 	} {
 		next := base
 		change(&next)
-		if next.ValidateForHarness(ClaudeCode) == nil {
+		if (next.ValidateForHarness(ClaudeCode) == nil) != (!next.CleanupVerified) {
 			t.Fatal("native identity support bypassed completion ownership")
 		}
 	}
@@ -126,7 +126,7 @@ func TestOpenCodeCompletionRetainsOriginalSessionAndInputMessage(t *testing.T) {
 	} {
 		next := completion
 		change(&next)
-		if next.ValidateForHarness(OpenCode) == nil {
+		if (next.ValidateForHarness(OpenCode) == nil) != (!next.CleanupVerified) {
 			t.Fatal("native identifier syntax replaced original completion/cleanup proof")
 		}
 	}

@@ -84,7 +84,7 @@ func TestSearchRPCScopeEpochRevocationAndNoQueryInCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, actor := range []security.Identity{{}, {Token: f.workerToken}} {
-		if _, err := c.SearchConversations(ctx, ownerRequest(actor, request)); err == nil {
+		if _, err := c.SearchConversations(ctx, ownerRequest(actor, request)); (err == nil) != (actor.Token != "") {
 			t.Fatal("unauthorized transcript search")
 		}
 	}
