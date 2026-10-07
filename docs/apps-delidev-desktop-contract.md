@@ -1005,6 +1005,56 @@ Session creation uses paginated project/Agent/Worker selectors with no first-opt
 
 Session details expose revision-bound rename, retry of confirmed failed/canceled preparation, original-workspace inspection, separately confirmed incomplete-preparation cleanup, and original-execution reconciliation. A confirmation captures the original revision and execution identity; peer changes block new submission while preserving drafts and exact uncertain retries. Original preparation/recovery jobs remain inspectable independently. Recovery acknowledgment is not successful cleanup or renewed execution authority. Recovery never sends input or invokes Resume; successful reconciliation leaves the server's paused state intact.
 
+### Session workspace presentation
+
+Existing session detail uses a compact conversation-first workspace. Keep the
+shared sidebar and native title bar. The header retains the original name,
+automatic-title observation, connection and independent outcome/dispatch/Archive
+states. Stop and Resume retain their existing revision, uncertainty, budget and
+startup-rejection guards. Fork/Sidechat and Archive/Restore use a keyboard-operable
+Session actions popup; opening or closing it never creates or replaces authority.
+
+A full-width tool strip exposes Diff, Files, Terminals, Browser, Diagnostics and
+Info. Default to closed; activating the selected tool closes it. Preserve one
+visible panel and restore the original trigger focus on Close/Escape. At 900px
+available session width, an open panel occupies a 400px right column. Below that
+threshold it overlays only the transcript row, with a width capped at 400px;
+it cannot obscure the request tray or composer. CSS reflow uses the same DOM and
+controllers. Tool labels wrap at narrow widths and effective zoom.
+
+The transcript scrolls independently. Open interactions remain expanded, and
+request/queue contents have bounded scroll space near the composer. Preserve
+original page-scoped counts, pagination and live delivery ordering. The composer
+stays at the bottom, with a 120px textarea adjustable from 80px to 180px; short
+viewports start at 80px. Keep the existing Execute/Plan selection, Enter behavior,
+connection-owned prompt limits, send locks and exact uncertain retries. An empty
+conversation states that content appears after the harness accepts input, never
+that enqueueing resumes a blocked session.
+
+Info groups status/recovery, PR associations, execution settings, context,
+Subagents, usage/budget and workspace storage. Status/recovery starts expanded;
+other groups start collapsed. Information controllers stay mounted while their
+presentation is hidden, including budget observation and staged editors. Preserve
+existing internal disclosure/query lifetimes and original mutation receipts.
+Closing or switching Browser releases its native presentation; hiding Terminals
+cannot close the independently Worker-owned shell.
+
+Compact notices retain localized code-based summaries for connection/control/send
+failures, session problems, recovery, startup rejection and budget thresholds.
+Show details opens the corresponding Info section, reveals admitted original
+technical evidence and transfers focus without mutating the session. Keep stale,
+unsupported, denied, unavailable and measured-zero observations distinct. Original
+technical text and identifiers remain inert, wrapping inside the inspector.
+Successful retained jobs use neutral surfaces and success text within Info.
+
+Session-only static styles reuse semantic Light/Dark/System colors and system
+fonts: 20px title, 13px body/control text, 12px metadata, 36px actions, 8px ordinary
+corners and compact spacing. All owned labels and accessibility names support
+English/Korean. Preserve the shared form-control focus rule and visible focus on
+buttons/disclosures. This presentation changes no RPC, protocol allocation,
+migration, native permission or execution eligibility. Record component/browser
+verification separately from real CEF/platform acceptance.
+
 ### Retained execution configuration and instructions
 The session offers a read-only execution configuration view from its original `initial_execution.configuration`, with no current Agent/model/template lookup. Show retained harness/model/revisions, native option selections, routing/account order and weights, original account, and separately selected current execution/account. Later configuration edits or deletions cannot rewrite the displayed snapshot. Missing snapshots, unsupported document versions, additional unknown options and integer values outside exact JavaScript precision remain explicit rather than becoming defaults or reconstructed values.
 

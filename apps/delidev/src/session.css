@@ -1,0 +1,105 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.session-container { container: session-view / inline-size; }
+.app:has(.session-container:not([hidden]) .session-workspace) { min-height: 0; }
+.session-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.session-workspace button { min-height: 36px; padding: 6px 10px; border-radius: 8px; font-size: 13px; }
+.session-workspace .session-header {
+  grid-area: 1 / 1 / 2 / -1;
+  align-items: flex-start;
+  padding: 16px 20px 12px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--background);
+}
+.session-heading { min-width: 0; }
+.session-heading-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.session-workspace .session-header h2 { margin: 0; font-size: 20px; line-height: 26px; overflow-wrap: anywhere; }
+.session-workspace .session-header p { margin: 2px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.session-workspace .session-heading-line .connection { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.session-heading-line .connection::before { content: ""; width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--muted); }
+.session-heading-line .connection.is-live::before { background: var(--success-text); }
+.session-controls { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+.session-actions-popup { position: relative; }
+.session-actions-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; display: grid; min-width: 180px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 16px var(--shadow-soft); }
+.session-actions-list button { text-align: left; border-color: transparent; }
+.session-workspace .session-toolbar { grid-area: 2 / 1 / 3 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 12px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); }
+.session-toolbar > strong { align-self: stretch; display: flex; align-items: center; padding: 4px 4px 2px; border-bottom: 2px solid var(--accent); }
+.session-toolbar-actions { display: flex; flex-wrap: wrap; gap: 2px; }
+.session-toolbar-actions button { display: flex; align-items: center; gap: 6px; border-color: transparent; background: transparent; }
+.session-toolbar-actions button:hover { background: var(--surface-hover); }
+.session-toolbar-actions button[aria-expanded="true"] { background: var(--selected-background); color: var(--selected-text); }
+.session-icon { width: 18px; height: 18px; flex-shrink: 0; }
+/* Contents share the grid, so the compact drawer occupies only the transcript
+   row. It cannot cover the request tray or a resized composer. */
+.session-body { display: contents; }
+.session-notices { grid-area: 3 / 1; display: grid; gap: 6px; max-height: 20vh; overflow: auto; padding: 0 20px; }
+.session-notices:has(> *) { padding-top: 12px; padding-bottom: 4px; }
+.session-notice { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--warning-border); border-radius: 8px; color: var(--warning-text); background: var(--warning-background); }
+.session-notice > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.session-notice strong, .session-notice span { display: block; }
+.session-notice span { font-size: 12px; }
+.session-notice > button { flex-shrink: 0; }
+.session-workspace .transcript { grid-area: 4 / 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px; }
+.session-workspace .transcript > * { flex-shrink: 0; }
+.session-workspace .transcript > .session-empty { flex: 1; }
+.session-workspace .transcript pre { line-height: 1.65; }
+.session-workspace .message { margin: 0; max-width: none; }
+.session-workspace nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.session-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); gap: 12px; padding: 16px 0; }
+.session-empty .session-icon { width: 40px; height: 40px; margin-bottom: 8px; }
+.session-empty h3 { color: var(--text); font-size: 18px; margin: 0; }
+.session-empty p { margin: 0; font-size: 12px; }
+.session-input-tray { grid-area: 5 / 1; min-height: 0; max-height: 30vh; overflow: auto; overscroll-behavior: contain; padding: 0 20px 8px; }
+.session-workspace .session-input-tray > details { border: 0; padding: 0; margin: 0; background: transparent; }
+.session-input-tray summary { padding: 5px 0; color: var(--muted); font-size: 12px; cursor: pointer; }
+.session-tray-content { padding: 8px 0 12px; }
+.session-workspace .composer { grid-area: 6 / 1; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin: 0 20px 16px; background: var(--surface); }
+.session-workspace .composer textarea { display: block; height: 120px; min-height: 80px; max-height: 180px; resize: vertical; border: 0; border-radius: 0; padding: 4px 6px; font-size: 13px; }
+.composer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+.composer-actions > label { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size: 12px; }
+.composer-actions select { width: auto; min-height: 36px; padding: 4px 24px 4px 8px; }
+.session-workspace .session-app-panel { grid-area: 4 / 1; z-index: 2; justify-self: end; width: min(400px, calc(100% - 16px)); min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; border-left: 1px solid var(--border); background: var(--surface); box-shadow: -4px 0 12px var(--shadow-soft); }
+.session-workspace .session-app-panel > * { min-width: 0; }
+.session-workspace .session-app-panel header { flex-wrap: wrap; gap: 8px; }
+.session-workspace .session-app-panel h2 { font-size: 14px; }
+.session-workspace .session-information { display: flex; flex-direction: column; }
+.session-information > header { position: sticky; top: 0; z-index: 1; min-height: 48px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border-subtle); }
+.session-information > header h2 { margin: 0; }
+.session-information > header button { min-width: 36px; padding: 0; border-color: transparent; font-size: 20px; }
+.session-information-body { padding: 0 16px 16px; overflow-wrap: anywhere; }
+.session-information-evidence:has(> *) { padding-top: 12px; }
+.session-workspace .session-information .session-tools, .session-information-section { max-height: none; overflow: visible; margin: 0; padding: 12px 0; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 0; background: transparent; }
+.session-information summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.session-information .session-tools > p { margin: 8px 0; color: var(--muted); font-size: 12px; }
+.session-information h3, .session-information h4 { font-size: 13px; margin: 12px 0 8px; }
+.session-information table { display: block; max-width: 100%; overflow: auto; }
+.session-information .notice[data-job-state="succeeded"] { background: var(--surface-subtle); border-color: var(--border-subtle); }
+.session-information .notice[data-job-state="succeeded"] > p:first-child { color: var(--success-text); }
+.session-information-body > button { width: 100%; margin-top: 12px; }
+@container session-view (min-width: 900px) {
+  .session-workspace.panel-open { grid-template-columns: minmax(0, 1fr) 400px; }
+  .session-workspace .session-app-panel { grid-area: 3 / 2 / 7 / 3; width: 100%; box-shadow: none; }
+}
+@container session-view (max-width: 520px) {
+  .session-workspace .session-header { flex-wrap: wrap; padding: 12px; }
+  .session-workspace .session-toolbar { padding: 4px 8px; }
+  .session-notices { padding-left: 12px; padding-right: 12px; }
+  .session-workspace .transcript { padding: 12px; }
+  .session-input-tray { padding-left: 12px; padding-right: 12px; }
+  .session-workspace .composer { margin: 0 12px 12px; }
+}
+@media (max-height: 480px) {
+  .session-workspace .session-header { padding-top: 8px; padding-bottom: 8px; }
+  .session-workspace .composer textarea { height: 80px; }
+}
