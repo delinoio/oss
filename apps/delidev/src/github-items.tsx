@@ -94,7 +94,7 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
   const reader = useConnectPaginationReader(IntegrationQuery.queryRepositoryIntegration, request, project);
   const chain = usePaginationChain(scope, active, reader);
   usePaginationRefresh(IntegrationQuery.queryRepositoryIntegration, request(""), active, chain.refresh);
-  return <div ref={bindRoot}>
+  return <div ref={bindRoot} role={props.standaloneCards ? "region" : undefined} aria-label={props.standaloneCards ? copy("github-items.githubQueryResults_66fac2") : undefined}>
     {props.standaloneCards ? <PRListHeader selected={props.selected} pending={props.pending} reading={Boolean(chain.loading)} refresh={chain.refreshExplicit} /> : null}
     <Problem error={paginationError(chain.error?.failure)} />
     <ScrollPayloadWindow query={chain} root={root} active={active}>{(payload, projections) => payload.map(({ data, query }) => { const ids = visiblePageIds(chain.pages, projections); const observation = query.operation === QueryOperation.Checks ? "checks" : query.operation === QueryOperation.Statuses ? "statuses" : undefined; const field = observation === "checks" ? "runs" : "contexts";
