@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -26,6 +27,7 @@ type IO struct {
 }
 
 type options struct {
+	desktop         *desktopruntime.Target
 	dataDir, server string
 	requestID       domain.ID
 	tokenStdin      bool
@@ -42,6 +44,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		streams.Err = os.Stderr
 	}
 	o, remaining, err := globals(args)
+	o.desktop = desktopruntime.FromContext(ctx)
 	emit := func(value any, err error) int { return emitResult(streams, o, value, err) }
 	if err != nil {
 		return emit(nil, err)

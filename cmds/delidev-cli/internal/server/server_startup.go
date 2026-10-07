@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -71,6 +72,13 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	}
 	if err := security.PrivateDir(config.DataDir); err != nil {
 		return domain.SafeError(err)
+	}
+	if config.Desktop == nil {
+		lease, err := security.TryLock(filepath.Join(config.DataDir, "desktop-host.lock"))
+		if err != nil {
+			return err
+		}
+		defer lease.Close()
 	}
 	lifecycleLock, err := LockLifecycle(config.DataDir)
 	if err != nil {
@@ -129,7 +137,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	if err := state.RestoreSessionDeletionIntents(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), identity.ServerID); err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", config.Listen)
+	listener := config.Listener
+	if listener == nil {
+		listener, err = net.Listen("tcp", config.Listen)
+	}
 	if err != nil {
 		return domain.Fail(domain.Unavailable, "The requested listener could not be bound.", "Free the configured port or explicitly select another listener; DeliDev never remaps it automatically.")
 	}
@@ -154,16 +165,28 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	defer service.closeAccountSecrets()
 	defer service.closeIntegrationSecrets()
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
+	if config.Desktop != nil {
+		target := *config.Desktop
+		target.ServerID = identity.ServerID
+		target.Root = config.DataDir
+		if err := desktopruntime.Publish(target); err != nil {
+			return err
+		}
+		defer desktopruntime.Retire(target)
+		handler = desktopruntime.Handler(target, handler, config.AllowedOrigins)
+	}
 	defer service.executionAuthority.close()
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return child }, ErrorLog: slog.NewLogLogger(config.Logger.Handler(), slog.LevelWarn)}
 	raw, err := json.Marshal(service.Endpoint)
 	if err != nil {
 		return err
 	}
-	if err := security.WriteAtomic(filepath.Join(state.Root(), "server.json"), raw); err != nil {
-		return domain.SafeError(err)
+	if config.Desktop == nil {
+		if err := security.WriteAtomic(filepath.Join(state.Root(), "server.json"), raw); err != nil {
+			return domain.SafeError(err)
+		}
+		defer os.Remove(filepath.Join(state.Root(), "server.json"))
 	}
-	defer os.Remove(filepath.Join(state.Root(), "server.json"))
 	// Authenticated HTTP readiness permits immediate controller reuse or Stop.
 	// Release the completed native startup barrier before serving any request;
 	// logging and maintenance startup must not keep a ready server locked.

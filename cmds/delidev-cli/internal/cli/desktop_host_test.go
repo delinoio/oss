@@ -2,335 +2,257 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 )
 
-type lostDesktopOutput struct{}
-
-func (lostDesktopOutput) Write([]byte) (int, error) { return 0, errors.New("closed desktop output") }
-
-type desktopHostFixture struct {
-	cmd   *exec.Cmd
-	input io.WriteCloser
-	done  chan struct{}
-	err   error
-	first chan map[string]any
+type residentFixture struct {
+	cmd    *exec.Cmd
+	input  io.WriteCloser
+	frames chan desktopReply
+	done   chan error
+	root   string
+	target desktopruntime.Target
 }
 
-func launchDesktopFixture(t *testing.T, root, mode string) *desktopHostFixture {
+func startResidentFixture(t *testing.T, root, listen string) *residentFixture {
 	t.Helper()
 	binary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &desktopHostFixture{cmd: exec.Command(binary, "--data-dir", root, "server", "desktop-host", "--mode", mode, "--listen", "127.0.0.1:0"), done: make(chan struct{}), first: make(chan map[string]any, 1)}
+	f := &residentFixture{cmd: exec.Command(binary, "--data-dir", root, "server", "desktop-host", "--control-version", "2", "--listen", listen), frames: make(chan desktopReply, 64), done: make(chan error, 1), root: root}
 	f.input, err = f.cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader, writer := io.Pipe()
-	f.cmd.Stdout, f.cmd.Stderr = writer, io.Discard
+	output, err := f.cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.cmd.Stderr = io.Discard
 	if err := f.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	go func() {
-		var value map[string]any
-		_ = json.NewDecoder(reader).Decode(&value)
-		f.first <- value
-		_, _ = io.Copy(io.Discard, reader)
-		reader.Close()
+		defer close(f.frames)
+		reader := bufio.NewReader(output)
+		for {
+			line, err := readDesktopFrame(reader)
+			if err != nil {
+				return
+			}
+			var frame desktopReply
+			if json.Unmarshal(line, &frame) != nil {
+				return
+			}
+			f.frames <- frame
+		}
 	}()
-	go func() { f.err = f.cmd.Wait(); writer.Close(); close(f.done) }()
-	t.Cleanup(func() {
-		select {
-		case <-f.done:
-			return
-		default:
-		}
-		_, _ = io.WriteString(f.input, "{\"version\":1,\"action\":\"stop\"}\n")
-		select {
-		case <-f.done:
-		case <-time.After(5 * time.Second):
-			_ = f.cmd.Process.Kill()
-			<-f.done
-		}
-		f.input.Close()
-	})
+	go func() { f.done <- f.cmd.Wait() }()
+	t.Cleanup(func() { f.input.Close(); f.cmd.Process.Kill() })
+	hello := f.next(t)
+	if hello.Error != nil {
+		t.Fatalf("host failed: %s", hello.Error.Code)
+	}
+	raw, _ := json.Marshal(hello.Result)
+	var value struct {
+		Endpoint   string
+		Generation domain.ID
+		Key        string
+	}
+	json.Unmarshal(raw, &value)
+	if hello.Version != 2 || hello.ID != "" || value.Generation.Validate() != nil || value.Endpoint == "" {
+		t.Fatal("invalid hello")
+	}
+	f.target = desktopruntime.Target{Version: 2, Root: root, Endpoint: value.Endpoint, Generation: value.Generation, Key: value.Key}
 	return f
 }
-
-func (f *desktopHostFixture) result(t *testing.T) map[string]any {
+func (f *residentFixture) next(t *testing.T) desktopReply {
 	t.Helper()
 	select {
-	case value := <-f.first:
-		result, ok := value["result"].(map[string]any)
+	case r, ok := <-f.frames:
 		if !ok {
-			t.Fatal("desktop host did not return a result")
+			t.Fatal("host output closed")
 		}
-		return result
+		return r
 	case <-time.After(40 * time.Second):
-		t.Fatal("desktop startup did not settle")
+		t.Fatal("host reply timeout")
 	}
-	return nil
+	return desktopReply{}
 }
-
-func (f *desktopHostFixture) wait(t *testing.T) {
+func (f *residentFixture) request(t *testing.T, op desktopOperation, args ...string) desktopReply {
 	t.Helper()
+	id := domain.NewID()
+	if err := json.NewEncoder(f.input).Encode(desktopRequest{Version: 2, ID: id, Operation: op, Arguments: args}); err != nil {
+		t.Fatal(err)
+	}
+	r := f.next(t)
+	if r.ID != id {
+		t.Fatal("uncorrelated reply")
+	}
+	return r
+}
+func (f *residentFixture) launch(t *testing.T) {
+	t.Helper()
+	r := f.request(t, desktopLaunch)
+	if r.Error != nil {
+		t.Fatalf("launch: %s", r.Error.Code)
+	}
+	target, err := desktopruntime.Load(f.root, domain.ID(r.Result.(map[string]any)["server"].(map[string]any)["status"].(map[string]any)["server_id"].(string)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.target = target
+}
+func (f *residentFixture) quit(t *testing.T) {
+	t.Helper()
+	json.NewEncoder(f.input).Encode(desktopRequest{Version: 2, ID: domain.NewID(), Operation: desktopShutdown})
 	select {
-	case <-f.done:
-		if f.err != nil {
-			t.Fatal("desktop host failed to exit successfully")
+	case err := <-f.done:
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("desktop server exit did not join")
+	case <-time.After(40 * time.Second):
+		t.Fatal("host did not join")
 	}
 }
 
-func TestDesktopHostOwnsOriginalProcessAndPreservesReuse(t *testing.T) {
+func TestDesktopResidentCommandsRandomPortAndEOF(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "private")
-	first := launchDesktopFixture(t, root, "launch")
-	result := first.result(t)
-	if result["started"] != true {
-		t.Fatal("desktop did not start its original process")
+	f := startResidentFixture(t, root, "127.0.0.1:0")
+	f.launch(t)
+	if f.target.Endpoint == "http://127.0.0.1:46310" {
+		t.Fatal("fixed desktop listener")
 	}
-	generation := domain.ID(result["generation"].(string))
-	if generation.Validate() != nil {
-		t.Fatal("invalid original generation")
+	if _, err := server.LoadEndpoint(root); err == nil {
+		t.Fatal("desktop leaked into ordinary discovery")
 	}
-	identity, err := security.LoadIdentity(root)
-	if err != nil {
-		t.Fatal(err)
+	for i := 0; i < 5; i++ {
+		r := f.request(t, desktopEnsure)
+		if r.Error != nil {
+			t.Fatalf("ensure: %s", r.Error.Code)
+		}
+		r = f.request(t, "server.desktop-status")
+		if r.Error != nil {
+			t.Fatalf("status: %s", r.Error.Code)
+		}
 	}
-	second := launchDesktopFixture(t, root, "launch")
-	if second.result(t)["reused"] != true {
-		t.Fatal("concurrent desktop did not reuse original server")
+	r := f.request(t, "device.pair-local")
+	if r.Error != nil {
+		t.Fatalf("pair: %s", r.Error.Code)
 	}
-	second.wait(t)
-	if current, err := server.ReadLifecycle(root); err != nil || current.State != server.DesiredRunning || current.Generation != generation {
-		t.Fatal("reuse changed original intent")
+	r = f.request(t, "device.inspect")
+	if r.Error != nil {
+		t.Fatalf("inspect: %s", r.Error.Code)
 	}
-	_, err = io.WriteString(first.input, "{\"version\":1,\"action\":\"stop\"}\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	first.wait(t)
-	if current, err := server.ReadLifecycle(root); err != nil || current.State != server.DesiredStopped {
-		t.Fatal("desktop quit lost Stop suppression")
-	}
-	lock, err := security.TryLock(filepath.Join(root, "server.lock"))
-	if err != nil {
-		t.Fatal("desktop process exited without releasing store ownership")
-	}
-	lock.Close()
-	if _, err := os.Stat(filepath.Join(root, "server.json")); !os.IsNotExist(err) {
-		t.Fatal("joined server retained endpoint")
-	}
-	retry := launchDesktopFixture(t, root, "retry")
-	if retry.result(t)["state"] != "stopped" {
-		t.Fatal("retry reopened stopped intent")
-	}
-	retry.wait(t)
-	fresh := launchDesktopFixture(t, root, "launch")
-	if fresh.result(t)["started"] != true {
-		t.Fatal("fresh desktop did not reopen original scope")
-	}
-	retained, err := security.LoadIdentity(root)
-	if err != nil || retained.ServerID != identity.ServerID || retained.Token != identity.Token {
-		t.Fatal("fresh launch replaced owner identity")
-	}
-}
-
-func TestDesktopHostEOFDoesNotStopServer(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "private")
-	f := launchDesktopFixture(t, root, "launch")
-	f.result(t)
 	f.input.Close()
 	select {
-	case <-f.done:
-		t.Fatal("EOF stopped the original server")
-	case <-time.After(250 * time.Millisecond):
+	case err := <-f.done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(40 * time.Second):
+		t.Fatal("EOF left host alive")
 	}
-	probe := launchDesktopFixture(t, root, "ensure")
-	if probe.result(t)["reused"] != true {
-		t.Fatal("server was unavailable after control EOF")
+	if _, err := desktopruntime.Load(root, f.target.ServerID); err == nil {
+		t.Fatal("retired endpoint remains published")
 	}
-	probe.wait(t)
-	if code := Run(context.Background(), []string{"--data-dir", root, "server", "stop"}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != 0 {
-		t.Fatal("original owner Stop failed")
+	intent, err := server.ReadLifecycle(root)
+	if err != nil || intent.State != server.DesiredStopped {
+		t.Fatal("EOF lost restart suppression")
 	}
-	f.wait(t)
+}
+func TestDesktopRestartPreservesOriginalPairing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "private")
+	f := startResidentFixture(t, root, "127.0.0.1:0")
+	f.launch(t)
+	if r := f.request(t, "device.pair-local"); r.Error != nil {
+		t.Fatal(r.Error.Code)
+	}
+	before, err := os.ReadFile(filepath.Join(root, "desktop-client", "device.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.quit(t)
+	g := startResidentFixture(t, root, "127.0.0.1:0")
+	g.launch(t)
+	if r := g.request(t, "device.pair-local"); r.Error != nil {
+		t.Fatal(r.Error.Code)
+	}
+	after, err := os.ReadFile(filepath.Join(root, "desktop-client", "device.json"))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("port change rewrote credential")
+	}
+	if r := g.request(t, "device.inspect-local", "--expected-endpoint", g.target.Endpoint); r.Error != nil {
+		t.Fatal(r.Error.Code)
+	}
+	g.quit(t)
+}
+func TestDesktopRejectsGenericCommandsAndOverrides(t *testing.T) {
+	f := startResidentFixture(t, filepath.Join(t.TempDir(), "private"), "127.0.0.1:0")
+	for _, r := range []struct {
+		op   desktopOperation
+		args []string
+	}{{"server.run", nil}, {"worker.start", []string{"--worker-dir", "/foreign"}}, {"device.inspect", []string{"--server", "http://127.0.0.1:1"}}} {
+		if f.request(t, r.op, r.args...).Error == nil {
+			t.Fatal("unclosed operation admitted")
+		}
+	}
+	f.quit(t)
+}
+func TestDesktopFrameBoundsAndBufferedRequests(t *testing.T) {
+	r := bufio.NewReader(bytes.NewBufferString("one\ntwo\n"))
+	for _, want := range []string{"one\n", "two\n"} {
+		got, err := readDesktopFrame(r)
+		if err != nil || string(got) != want {
+			t.Fatal("buffered frame lost")
+		}
+	}
+	if _, err := readDesktopFrame(bufio.NewReader(bytes.NewReader(bytes.Repeat([]byte{'x'}, desktopFrameLimit+1)))); err == nil {
+		t.Fatal("oversized frame accepted")
+	}
 }
 
-func TestDesktopHostLostReadyDeliveryPreservesAdmittedServer(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "private")
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		_, err := desktopHost(ctx, options{dataDir: root}, []string{"--mode", "launch", "--listen", "127.0.0.1:0"}, IO{In: strings.NewReader(""), Out: lostDesktopOutput{}, Err: io.Discard})
-		done <- err
-	}()
-	defer cancel()
-	deadline := time.Now().Add(10 * time.Second)
+// Verify actual graceful product Stop keeps the same CLI available. It never
+// converts Stop into another detached server or reopens the retained intent.
+func TestDesktopStopKeepsHostAndEnsureCannotReopen(t *testing.T) {
+	f := startResidentFixture(t, filepath.Join(t.TempDir(), "private"), "127.0.0.1:0")
+	f.launch(t)
+	c, err := connectClient(options{dataDir: f.root, desktop: &f.target}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.transport.CloseIdleConnections()
+	var out bytes.Buffer
+	if code := Run(desktopruntime.WithTarget(context.Background(), &f.target), []string{"--data-dir", f.root, "server", "stop"}, IO{Out: &out, In: bytes.NewReader(nil), Err: io.Discard}); code != 0 {
+		t.Fatalf("stop failed: %d", code)
+	}
+	deadline := time.Now().Add(15 * time.Second)
 	for {
-		if _, err := os.Stat(filepath.Join(root, "server.json")); err == nil {
+		r := f.request(t, desktopEnsure)
+		if r.Error == nil && r.Result.(map[string]any)["state"] == "stopped" {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("admitted server never published endpoint")
+			t.Fatal("ensure reopened Stop")
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	select {
-	case <-done:
-		t.Fatal("lost readiness pipe stopped the admitted server")
-	case <-time.After(250 * time.Millisecond):
+	if r := f.request(t, "browser-storage.prepare"); r.Error != nil {
+		t.Fatal("stopped server killed host")
 	}
-	for _, action := range []string{"status", "stop"} {
-		if code := Run(context.Background(), []string{"--data-dir", root, "server", action}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != 0 {
-			t.Fatal("admitted server was unavailable after lost ready delivery")
-		}
-	}
-	select {
-	case err := <-done:
-		if domain.SafeError(err).Code != domain.Unavailable {
-			t.Fatal("lost delivery outcome was erased")
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("server did not join after explicit Stop")
-	}
-}
-
-func TestDesktopHostBrokenStandardPipesPreserveAdmittedServer(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "private")
-	if err := security.PrivateDir(root); err != nil {
-		t.Fatal(err)
-	}
-	admission, err := userservice.AdmitLaunch(context.Background(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admission.Close()
-	binary, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(binary, "--data-dir", root, "server", "desktop-host", "--mode", "launch", "--listen", "127.0.0.1:0")
-	input, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	diagnostic, err := cmd.StderrPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(done) }()
-	t.Cleanup(func() {
-		select {
-		case <-done:
-		default:
-			_ = cmd.Process.Kill()
-			<-done
-		}
-	})
-	// Release startup only after all desktop pipe ends are gone. This tests
-	// real fd 1/2 SIGPIPE behavior, which an injected failing writer cannot.
-	input.Close()
-	output.Close()
-	diagnostic.Close()
-	admission.Close()
-	deadline := time.Now().Add(40 * time.Second)
-	for {
-		select {
-		case <-done:
-			t.Fatal("lost desktop pipes terminated the admitted server")
-		default:
-		}
-		if _, err := os.Stat(filepath.Join(root, "server.json")); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("admitted server never published endpoint")
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	select {
-	case <-done:
-		t.Fatal("lost desktop pipes terminated the admitted server")
-	case <-time.After(250 * time.Millisecond):
-	}
-	for _, action := range []string{"status", "stop"} {
-		if code := Run(context.Background(), []string{"--data-dir", root, "server", action}, IO{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard}); code != 0 {
-			t.Fatal("admitted server was unavailable after losing desktop pipes")
-		}
-	}
-	select {
-	case <-done:
-	case <-time.After(15 * time.Second):
-		t.Fatal("server did not join after explicit Stop")
-	}
-}
-
-func TestDesktopHostStopDuringAdmissionCannotStartServer(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "private")
-	if err := security.PrivateDir(root); err != nil {
-		t.Fatal(err)
-	}
-	admission, err := userservice.AdmitLaunch(context.Background(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admission.Close()
-	f := launchDesktopFixture(t, root, "launch")
-	_, _ = io.WriteString(f.input, "{\"version\":1,\"action\":\"stop\"}\n")
-	select {
-	case <-f.done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Stop did not cancel held admission")
-	}
-	if intent, err := server.ReadLifecycle(root); err != nil || intent.Version != 0 {
-		t.Fatal("canceled desktop wrote running intent")
-	}
-	if _, err := os.Stat(filepath.Join(root, "server.json")); !os.IsNotExist(err) {
-		t.Fatal("canceled desktop initialized server")
-	}
-}
-
-func TestDesktopHostEnsureCannotInitializeAndInvalidControlCannotStop(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "private")
-	f := launchDesktopFixture(t, root, "ensure")
-	if f.result(t)["state"] != "stopped" {
-		t.Fatal("ensure initialized an unconfigured scope")
-	}
-	f.wait(t)
-	for _, input := range []string{"", "{\"version\":1,\"action\":\"stop\"}", "{\"version\":2,\"action\":\"stop\"}\n", "{\"version\":1,\"action\":\"start\"}\n", "{\"version\":1,\"action\":\"stop\",\"path\":\"foreign\"}\n", strings.Repeat("x", 258) + "\n"} {
-		stop := make(chan struct{})
-		readDesktopStop(strings.NewReader(input), stop)
-		select {
-		case <-stop:
-			t.Fatal("malformed control granted Stop")
-		default:
-		}
-	}
+	f.quit(t)
 }

@@ -3,186 +3,390 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 )
 
-type desktopControlAction string
+const desktopFrameLimit = 256 << 10
+const desktopReplyLimit = 128 << 10
+const desktopShutdownTimeout = 35 * time.Second
 
-const desktopControlStop desktopControlAction = "stop"
+type desktopOperation string
+
+const (
+	desktopLaunch   desktopOperation = "runtime.launch"
+	desktopRetry    desktopOperation = "runtime.retry"
+	desktopEnsure   desktopOperation = "runtime.ensure"
+	desktopCancel   desktopOperation = "runtime.cancel"
+	desktopShutdown desktopOperation = "runtime.shutdown"
+)
+
+type desktopRequest struct {
+	Version   int              `json:"version"`
+	ID        domain.ID        `json:"id"`
+	Operation desktopOperation `json:"operation"`
+	Arguments []string         `json:"arguments,omitempty"`
+	Input     []byte           `json:"input,omitempty"`
+	Scope     string           `json:"scope,omitempty"`
+	RequestID domain.ID        `json:"request_id,omitempty"`
+	CancelID  domain.ID        `json:"cancel_id,omitempty"`
+	TimeoutMS uint64           `json:"timeout_ms,omitempty"`
+}
+type desktopReply struct {
+	Version int           `json:"version"`
+	ID      domain.ID     `json:"id,omitempty"`
+	Result  any           `json:"result,omitempty"`
+	Error   *domain.Error `json:"error,omitempty"`
+}
+type desktopHostState struct {
+	mu       sync.Mutex
+	target   desktopruntime.Target
+	config   server.Config
+	options  options
+	listener net.Listener
+	done     chan struct{}
+	stop     context.CancelFunc
+	startup  domain.ID
+	closed   bool
+	log      *slog.Logger
+}
 
 func runDesktopHostCommand(ctx context.Context, o options, args []string, streams IO) int {
-	// Go otherwise exits on SIGPIPE when the desktop closes stdout/stderr.
-	// Only this host command must survive that loss; ordinary CLI commands
-	// retain their standard pipe behavior. Keep the protection through the
-	// final envelope so a lost desktop cannot terminate an admitted server.
-	pipeSignal := make(chan os.Signal, 1)
-	signal.Notify(pipeSignal, syscall.SIGPIPE)
-	defer signal.Stop(pipeSignal)
-	value, err := desktopHost(ctx, o, args, streams)
-	return emitResult(streams, o, value, err)
-}
-
-// This pipe controls its original process only. EOF is deliberately not Stop:
-// a crashed desktop must leave its server available to other clients.
-func readDesktopStop(input io.Reader, stop chan<- struct{}) {
-	line, err := bufio.NewReader(io.LimitReader(input, 257)).ReadBytes('\n')
-	var control struct {
-		Version int                  `json:"version"`
-		Action  desktopControlAction `json:"action"`
-	}
-	if err == nil && len(line) <= 256 && domain.Decode(line, &control) == nil && control.Version == 1 && control.Action == desktopControlStop {
-		close(stop)
-	}
-}
-
-func desktopHost(ctx context.Context, o options, args []string, streams IO) (any, error) {
-	if o.server != "" || o.tokenStdin {
-		return nil, usage()
-	}
+	// A closed parent output pipe cancels and joins the host rather than exiting
+	// immediately on SIGPIPE before owned native state is drained.
+	brokenPipe := make(chan os.Signal, 1)
+	signal.Notify(brokenPipe, syscall.SIGPIPE)
+	defer signal.Stop(brokenPipe)
 	fs := flags("server desktop-host")
-	modeName := fs.String("mode", "", "launch, retry or ensure")
-	listen := fs.String("listen", server.DefaultListen, "explicit listener")
-	origins := fs.String("allowed-origins", "", "comma-separated exact origins")
-	if err := parse(fs, args); err != nil {
-		return nil, err
+	version := fs.Int("control-version", 0, "private desktop control version")
+	listen := fs.String("listen", "127.0.0.1:0", "app-owned loopback listener")
+	origins := fs.String("allowed-origins", "", "exact trusted desktop origins")
+	parent := fs.Int("parent-pid", os.Getppid(), "original native parent")
+	if parse(fs, args) != nil || *version != 2 || o.server != "" || o.tokenStdin || *parent != os.Getppid() {
+		return emitDesktopFailure(streams, usage())
 	}
-	var mode startupMode
-	switch *modeName {
-	case "launch":
-		mode = startupDesktopLaunch
-	case "retry":
-		mode = startupDesktopRetry
-	case "ensure":
-		mode = startupEnsure
-	default:
-		return nil, usage()
+	hostname, _, err := net.SplitHostPort(*listen)
+	if err != nil || hostname != "127.0.0.1" {
+		return emitDesktopFailure(streams, usage())
 	}
-	config := server.Config{DataDir: o.dataDir, Listen: *listen, Logger: slog.New(slog.NewJSONHandler(streams.Err, nil))}
-	if *origins != "" {
-		config.AllowedOrigins = strings.Split(*origins, ",")
+	if err := security.PrivateDir(o.dataDir); err != nil {
+		return emitDesktopFailure(streams, err)
 	}
-	stop := make(chan struct{})
-	go readDesktopStop(streams.In, stop)
-	// Inherited stdin may use a synchronous OS read that Close cannot wake.
-	// Do not wait on that read after reuse/external Stop: the CLI process exit
-	// releases it, and native Child::wait independently joins the whole process.
-	// The reader owns no server operation except this process-local Stop signal.
-	defer func() {
-		if input, ok := streams.In.(io.Closer); ok {
-			input.Close()
-		}
-	}()
-	startup, cancelStartup := context.WithCancel(ctx)
-	defer cancelStartup()
-	finished := make(chan struct{})
-	watchDone := make(chan struct{})
-	go func() {
-		defer close(watchDone)
-		select {
-		case <-stop:
-			cancelStartup()
-		case <-finished:
-		}
-	}()
-	defer func() { close(finished); <-watchDone }()
-	return startupWithHost(startup, o, config, streams, mode, func(admission context.Context, config server.Config, intent server.Lifecycle, ready func() error) (any, error) {
-		return runDesktopHost(ctx, admission, config, intent, streams.Out, stop, ready)
-	})
-}
-
-func runDesktopHost(ctx, admission context.Context, config server.Config, intent server.Lifecycle, output io.Writer, stop <-chan struct{}, ready func() error) (any, error) {
-	path := filepath.Join(config.DataDir, "server.log")
+	lease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-host.lock"))
+	if err != nil {
+		return emitDesktopFailure(streams, err)
+	}
+	defer lease.Close()
+	sessionLease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-session.lock"))
+	if err != nil {
+		return emitDesktopFailure(streams, err)
+	}
+	defer sessionLease.Close()
+	listener, err := net.Listen("tcp4", *listen)
+	if err != nil {
+		return emitDesktopFailure(streams, domain.Fail(domain.Conflict, "The desktop listener is occupied.", "Preserve the existing process and inspect the original connection."))
+	}
+	key, err := randomDesktopKey()
+	if err != nil {
+		listener.Close()
+		return emitDesktopFailure(streams, err)
+	}
+	config := server.Config{DataDir: o.dataDir, Listen: listener.Addr().String(), AllowedOrigins: strings.Split(*origins, ",")}
+	if *origins == "" {
+		config.AllowedOrigins = nil
+	}
+	if err := server.ValidateConfig(config); err != nil {
+		listener.Close()
+		return emitDesktopFailure(streams, err)
+	}
+	path := filepath.Join(o.dataDir, "server.log")
 	if _, err := os.Lstat(path); err == nil {
 		if err := security.RegularPrivate(path); err != nil {
-			return nil, err
+			listener.Close()
+			return emitDesktopFailure(streams, err)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, domain.SafeError(err)
+		listener.Close()
+		return emitDesktopFailure(streams, domain.SafeError(err))
 	}
 	log, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
-		return nil, domain.SafeError(err)
+		listener.Close()
+		return emitDesktopFailure(streams, domain.SafeError(err))
 	}
 	defer log.Close()
-	config.Logger = slog.New(slog.NewJSONHandler(log, nil))
-	config.StartupID = intent.Generation
-	running, cancel := context.WithCancel(ctx)
+	h := &desktopHostState{target: desktopruntime.Target{Version: 2, Endpoint: "http://" + config.Listen, Generation: domain.NewID(), Key: key, Root: o.dataDir}, config: config, options: o, listener: listener, log: slog.New(slog.NewJSONHandler(log, nil))}
+	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// The aggregate startup deadline ends at readiness. An explicit Stop has
-	// its own suppression-before-cancellation path below.
-	abortStartup := context.AfterFunc(admission, func() {
-		select {
-		case <-stop:
-		default:
+	stopParent, err := watchDesktopParent(*parent, cancel)
+	if err != nil {
+		listener.Close()
+		return emitDesktopFailure(streams, domain.SafeError(err))
+	}
+	defer stopParent()
+	var writes sync.Mutex
+	send := func(id domain.ID, result any, err error) {
+		frame := desktopReply{Version: 2, ID: id, Result: result}
+		if err != nil {
+			frame.Result = nil
+			frame.Error = domain.SafeError(err)
+		}
+		raw, encodeErr := json.Marshal(frame)
+		if encodeErr != nil || len(raw) > desktopReplyLimit {
+			raw, _ = json.Marshal(desktopReply{Version: 2, ID: id, Error: domain.SafeError(domain.Fail(domain.ResourceExhausted, "The desktop reply exceeds its bound.", "Inspect the original operation before retrying."))})
+		}
+		writes.Lock()
+		_, err = streams.Out.Write(append(raw, '\n'))
+		writes.Unlock()
+		if err != nil {
 			cancel()
 		}
-	})
-	defer abortStartup()
-	exited := make(chan struct{})
-	controlDone := make(chan struct{})
+	}
+	send("", map[string]any{"endpoint": h.target.Endpoint, "generation": h.target.Generation, "key": key}, nil)
+	// Only this native parent owns the pipe. EOF, malformed control and failed
+	// delivery retire the host without authority over any discovered server.
+	requests := make(chan desktopRequest, 32)
 	go func() {
-		defer close(controlDone)
-		select {
-		case <-stop:
-		case <-exited:
+		defer cancel()
+		reader := bufio.NewReader(streams.In)
+		for {
+			line, err := readDesktopFrame(reader)
+			if err != nil {
+				return
+			}
+			var r desktopRequest
+			if domain.Decode(line, &r) != nil || r.Version != 2 || r.ID.Validate() != nil {
+				return
+			}
 			select {
-			case <-stop:
-			default:
+			case requests <- r:
+			case <-lifetime.Done():
 				return
 			}
 		}
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			err := server.SuppressDesktopRestart(config.DataDir, intent.Generation)
-			if err == nil {
-				config.Logger.Info("desktop_server_shutdown", "phase", "restart-suppressed")
-				break
-			}
-			if domain.SafeError(err).Code != domain.Conflict || time.Now().After(deadline) {
-				config.Logger.Warn("desktop_server_shutdown", "phase", "suppression-unconfirmed", "code", domain.SafeError(err).Code)
-				break
-			}
-			time.Sleep(25 * time.Millisecond)
-		}
-		cancel()
 	}()
-	var readyErr error
-	err = server.Serve(running, config, func(endpoint server.Endpoint) {
-		abortStartup()
-		if readyErr = ready(); readyErr != nil {
-			cancel()
-			return
+	var tasks sync.WaitGroup
+	var pendingMu sync.Mutex
+	pending := map[domain.ID]context.CancelFunc{}
+	mutations := make(chan struct{}, 1)
+	reads := make(chan struct{}, 4)
+loop:
+	for {
+		select {
+		case <-lifetime.Done():
+			break loop
+		case r := <-requests:
+			if (r.Operation == desktopShutdown || r.Operation == desktopCancel) && (len(r.Arguments) > 0 || len(r.Input) > 0 || r.Scope != "" || r.RequestID != "" || (r.Operation == desktopShutdown && r.CancelID != "") || (r.Operation == desktopCancel && r.CancelID.Validate() != nil)) {
+				cancel()
+				break loop
+			}
+			if r.Operation == desktopShutdown {
+				cancel()
+				break loop
+			}
+			if r.Operation == desktopCancel {
+				pendingMu.Lock()
+				stop := pending[r.CancelID]
+				pendingMu.Unlock()
+				if stop != nil {
+					stop()
+				}
+				continue
+			}
+			pendingMu.Lock()
+			if len(pending) >= 32 || pending[r.ID] != nil {
+				pendingMu.Unlock()
+				send(r.ID, nil, domain.Fail(domain.Conflict, "Desktop admission is busy.", "Retain the original request identity."))
+				continue
+			}
+			timeout := 40 * time.Second
+			if r.TimeoutMS > 0 && r.TimeoutMS <= 660000 {
+				timeout = time.Duration(r.TimeoutMS) * time.Millisecond
+			}
+			operation, stop := context.WithTimeout(lifetime, timeout)
+			pending[r.ID] = stop
+			pendingMu.Unlock()
+			tasks.Add(1)
+			go func() {
+				defer tasks.Done()
+				defer stop()
+				defer func() { pendingMu.Lock(); delete(pending, r.ID); pendingMu.Unlock(); clear(r.Input) }()
+				gate := mutations
+				if desktopReadOnly(r.Operation) {
+					gate = reads
+				}
+				select {
+				case gate <- struct{}{}:
+				case <-operation.Done():
+					send(r.ID, nil, operation.Err())
+					return
+				}
+				defer func() { <-gate }()
+				result, err := h.execute(operation, r)
+				send(r.ID, result, err)
+			}()
 		}
-		status := map[string]any{"version": endpoint.Version, "protocol_version": endpoint.ProtocolVersion, "listener": endpoint.URL, "server_id": endpoint.ServerID}
-		readyErr = json.NewEncoder(output).Encode(envelope{Version: 1, Result: map[string]any{"started": true, "generation": intent.Generation, "server": map[string]any{"status": status}}})
-		if readyErr != nil {
-			// Losing the desktop's output pipe is not an explicit Quit. Preserve
-			// the admitted server even when readiness publication races a crash.
-			config.Logger.Warn("desktop_server_control", "phase", "ready-delivery-lost")
-		}
-	})
-	close(exited)
-	<-controlDone
-	if readyErr != nil {
-		return nil, domain.Fail(domain.Unavailable, "Desktop startup could not be reported.", "Inspect the original server before retrying.")
 	}
-	if err != nil {
+	force := time.AfterFunc(desktopShutdownTimeout, func() { os.Exit(1) })
+	h.shutdown()
+	tasks.Wait()
+	force.Stop()
+	h.log.Info("desktop_host_shutdown", "phase", "host-joined")
+	return 0
+}
+func readDesktopFrame(reader *bufio.Reader) ([]byte, error) {
+	var line []byte
+	for {
+		part, err := reader.ReadSlice('\n')
+		if len(line)+len(part) > desktopFrameLimit {
+			return nil, io.ErrShortBuffer
+		}
+		line = append(line, part...)
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		return line, err
+	}
+}
+func (h *desktopHostState) start(ctx context.Context, op desktopOperation) (any, error) {
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return nil, context.Canceled
+	}
+	if h.done != nil {
+		select {
+		case <-h.done:
+			h.done = nil
+			h.stop = nil
+		default:
+			target, generation := h.target, h.startup
+			h.mu.Unlock()
+			intent, err := server.ReadLifecycle(h.options.dataDir)
+			if err != nil {
+				return nil, err
+			}
+			if intent.State == server.DesiredStopped {
+				return map[string]any{"state": "stopped"}, nil
+			}
+			return desktopStarted(target, generation), nil
+		}
+	}
+	config := h.config
+	config.Logger = h.log
+	config.Listener = h.listener
+	h.listener = nil
+	target := h.target
+	config.Desktop = &target
+	done := make(chan struct{})
+	run, stop := context.WithCancel(context.Background())
+	h.done = done
+	h.stop = stop
+	h.mu.Unlock()
+	ready := make(chan any, 1)
+	failed := make(chan error, 1)
+	mode := startupDesktopLaunch
+	if op == desktopRetry {
+		mode = startupDesktopRetry
+	}
+	if op == desktopEnsure {
+		mode = startupEnsure
+	}
+	go func() {
+		defer close(done)
+		defer stop()
+		defer func() {
+			if config.Listener != nil {
+				config.Listener.Close()
+			}
+		}()
+		admission, cancel := context.WithTimeout(run, joinedStartupTimeout)
+		defer cancel()
+		result, err := startupWithHost(admission, options{dataDir: h.options.dataDir, desktop: &target}, config, IO{In: bytes.NewReader(nil), Out: io.Discard, Err: io.Discard}, mode, func(admission context.Context, c server.Config, intent server.Lifecycle, release func() error) (any, error) {
+			c.StartupID = intent.Generation
+			h.mu.Lock()
+			h.startup = intent.Generation
+			h.mu.Unlock()
+			abort := context.AfterFunc(admission, stop)
+			defer abort()
+			err := server.Serve(run, c, func(endpoint server.Endpoint) {
+				abort()
+				if err := release(); err != nil {
+					stop()
+					failed <- err
+					return
+				}
+				target.ServerID = endpoint.ServerID
+				h.mu.Lock()
+				h.target = target
+				h.mu.Unlock()
+				ready <- desktopStarted(target, intent.Generation)
+			})
+			return nil, err
+		})
+		if result != nil {
+			ready <- result
+		} else {
+			failed <- err
+		}
+	}()
+	select {
+	case result := <-ready:
+		return result, nil
+	case err := <-failed:
 		return nil, err
+	case <-ctx.Done():
+		stop()
+		return nil, ctx.Err()
 	}
-	config.Logger.Info("desktop_server_shutdown", "phase", "server-joined")
-	return map[string]any{"state": "stopped", "generation": intent.Generation}, nil
+}
+func desktopStarted(t desktopruntime.Target, generation domain.ID) any {
+	return map[string]any{"started": true, "generation": generation, "server": map[string]any{"status": map[string]any{"version": "0.1.0", "protocol_version": 1, "listener": t.Endpoint, "server_id": t.ServerID}}}
+}
+func (h *desktopHostState) shutdown() {
+	h.mu.Lock()
+	h.closed = true
+	stop, done, listener, generation := h.stop, h.done, h.listener, h.startup
+	h.listener = nil
+	h.mu.Unlock()
+	if listener != nil {
+		listener.Close()
+	}
+	if stop != nil {
+		if generation != "" {
+			if err := server.SuppressDesktopRestart(h.options.dataDir, generation); err != nil {
+				h.log.Warn("desktop_host_shutdown", "phase", "suppression-unconfirmed", "code", domain.SafeError(err).Code)
+			}
+		}
+		stop()
+		<-done
+		h.mu.Lock()
+		finalGeneration := h.startup
+		h.mu.Unlock()
+		if finalGeneration != "" && finalGeneration != generation {
+			_ = server.SuppressDesktopRestart(h.options.dataDir, finalGeneration)
+		}
+	}
+}
+
+func emitDesktopFailure(streams IO, err error) int {
+	_ = json.NewEncoder(streams.Out).Encode(desktopReply{Version: 2, Error: domain.SafeError(err)})
+	return 1
 }

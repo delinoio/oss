@@ -14,7 +14,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -72,7 +71,7 @@ func pairLocalDeviceJoined(ctx context.Context, o options, root string, kind dom
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := server.LoadEndpoint(o.dataDir)
+	endpoint, err := localEndpoint(o)
 	if err != nil {
 		return nil, err
 	}
@@ -94,10 +93,10 @@ func pairLocalDeviceJoined(ctx context.Context, o options, root string, kind dom
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if saved, err := worker.LoadCredential(root); err == nil {
-		if saved.Type != kind || saved.ServerID != identity.ServerID || saved.Endpoint != endpoint.URL {
+		if saved.Type != kind || saved.ServerID != identity.ServerID || !localEndpointMatches(o, saved.ServerID, saved.Endpoint, endpoint.URL) {
 			return nil, domain.Fail(domain.Conflict, "The device is paired to a different authority.", "Use its original server or explicitly select another client scope.")
 		}
-		c, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true}, strings.NewReader(saved.Token))
+		c, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true, desktop: o.desktop}, strings.NewReader(saved.Token))
 		if err != nil {
 			return nil, err
 		}
@@ -134,11 +133,14 @@ func pairLocalDeviceJoined(ctx context.Context, o options, root string, kind dom
 		if err := attempt.RequestID.Validate(); err != nil {
 			return nil, err
 		}
-		if attempt.ServerID != identity.ServerID || attempt.Endpoint != endpoint.URL {
+		if attempt.ServerID != identity.ServerID || !localEndpointMatches(o, attempt.ServerID, attempt.Endpoint, endpoint.URL) {
 			return nil, domain.Fail(domain.Conflict, "A different local pairing attempt is retained.", "Restore its original authority or explicitly select a separate device scope.")
 		}
 	}
 	o.requestID = attempt.RequestID
+	if o.desktop != nil {
+		o.server = attempt.Endpoint
+	}
 	c, err := connectClient(o, nil)
 	if err != nil {
 		return nil, err

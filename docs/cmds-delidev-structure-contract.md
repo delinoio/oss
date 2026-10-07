@@ -288,3 +288,7 @@ source-bound validation and unresolved native/account/platform acceptance in PRs
 and CI. Reservation completion cannot close a feature issue.
 
 Sidechat reference preparation privately owns sidechat-preparations/ under the workspace Manager. Original Fork job/parent/child and native metadata identities bind each bounded claim before manifest publication. Permanent deletion composes that ownership only after original process cleanup; the server receives IDs and digests, never filesystem authority.
+
+## Desktop transport owner
+
+`internal/desktopruntime` owns the private same-server execution locator, challenge proof and fixed Local Worker relocation marker. CLI owns resident control framing/admission; server owns the directly bound listener and authenticated business shutdown; Rust owns the single original child and platform lifetime. Device/pairing/recovery files, Saved addresses, public Connect schemas and SQLite migration ownership remain unchanged.

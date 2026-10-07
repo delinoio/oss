@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/knownmodels"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
@@ -14,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -23,6 +25,10 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
+	// Desktop hosts supply their already-bound listener and keep discovery
+	// separate from ordinary CLI/service endpoints.
+	Desktop            *desktopruntime.Target
+	Listener           net.Listener
 	releaseVerifier    func([]byte, string, time.Time) (updates.Verified, error)
 	releaseFactory     func() (releaseClient, error)
 	userServiceBackend userservice.Backend

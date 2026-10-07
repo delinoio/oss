@@ -82,6 +82,15 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 	if err := privateDir(o.dataDir); err != nil {
 		return nil, domain.SafeError(err)
 	}
+	if config.Desktop == nil && mode != startupObservation {
+		lease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-session.lock"))
+		if err != nil {
+			return nil, err
+		}
+		if err := lease.Close(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+	}
 	// Lock order is service admission, startup controller, lifecycle, then store.
 	// Service control owns the same admission lock through its native write.
 	var admission *userservice.LaunchAdmission
@@ -131,7 +140,7 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 			return nil, err
 		}
 	}
-	if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && intent.Version != 0 && !intent.Matches(config) {
+	if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && config.Desktop == nil && intent.Version != 0 && !intent.Matches(config) {
 		return nil, domain.Fail(domain.Unsupported, "The retained server configuration is incompatible with desktop launch.", "Preserve the original server and inspect connection diagnostics.")
 	}
 	if mode == startupDesktopRetry && intent.State == server.DesiredStopped {

@@ -5,9 +5,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"connectrpc.com/connect"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -46,6 +48,20 @@ type client struct {
 	token         string
 }
 
+func localEndpoint(o options) (server.Endpoint, error) {
+	if o.desktop != nil && o.dataDir == o.desktop.Root {
+		if err := o.desktop.Validate(); err != nil {
+			return server.Endpoint{}, err
+		}
+		return server.Endpoint{URL: o.desktop.Endpoint, ServerID: o.desktop.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion}, nil
+	}
+	return server.LoadEndpoint(o.dataDir)
+}
+
+func localEndpointMatches(o options, serverID domain.ID, stored, live string) bool {
+	return stored == live || (o.desktop != nil && o.desktop.ServerID == serverID && o.dataDir == o.desktop.Root)
+}
+
 func request[T any](c client, message *T) *connect.Request[T] {
 	r := connect.NewRequest(message)
 	r.Header().Set("Authorization", "Bearer "+c.token)
@@ -65,11 +81,14 @@ func connectClient(o options, input io.Reader) (client, error) {
 		if endpoint == saved.Endpoint {
 			token = saved.Token
 		}
+		if o.desktop != nil && saved.ServerID == o.desktop.ServerID && (o.dataDir == filepath.Join(o.desktop.Root, "desktop-client")) {
+			endpoint, token = o.desktop.Endpoint, saved.Token
+		}
 	} else if !os.IsNotExist(err) {
 		return client{}, err
 	}
 	if endpoint == "" {
-		saved, err := server.LoadEndpoint(o.dataDir)
+		saved, err := localEndpoint(o)
 		if err != nil {
 			return client{}, err
 		}
@@ -84,6 +103,13 @@ func connectClient(o options, input io.Reader) (client, error) {
 			return client{}, domain.Fail(domain.RecoveryRequired, "The endpoint and owner identity disagree.", "Inspect the selected data scope without overwriting it.")
 		}
 		endpoint = saved.URL
+		token = identity.Token
+	}
+	if token == "" && !o.tokenStdin && o.desktop != nil && o.dataDir == o.desktop.Root {
+		identity, err := security.LoadIdentity(o.dataDir)
+		if err != nil || identity.ServerID != o.desktop.ServerID {
+			return client{}, domain.Fail(domain.Unauthenticated, "The desktop owner is unavailable.", "Preserve the original data scope.")
+		}
 		token = identity.Token
 	}
 	if err := rpc.ValidateEndpoint(endpoint); err != nil {
@@ -103,6 +129,14 @@ func connectClient(o options, input io.Reader) (client, error) {
 		return client{}, domain.Fail(domain.MissingInput, "The selected server requires a credential.", "Provide it through --token-stdin or pair this device; never put secrets in argv.")
 	}
 	httpClient, transport := rpc.HTTPClient()
+	if o.desktop != nil && o.desktop.ServerID != "" {
+		// Owner/local-client operations retain their original identity but use
+		// only this verified host transport. Saved scopes remain independent.
+		if o.dataDir == o.desktop.Root || o.dataDir == filepath.Join(o.desktop.Root, "desktop-client") {
+			target := *o.desktop
+			httpClient.Transport = &desktopruntime.Transport{Base: transport, Resolve: func() (desktopruntime.Target, error) { return target, nil }}
+		}
+	}
 	opts := []connect.ClientOption{connect.WithReadMaxBytes(5 << 20), connect.WithSendMaxBytes(2 << 20)}
 	return client{
 		storage:      delidevv1connect.NewWorkspaceStorageServiceClient(httpClient, endpoint, opts...),

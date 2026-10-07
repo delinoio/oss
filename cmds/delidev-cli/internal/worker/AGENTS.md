@@ -1,3 +1,5 @@
+- Explicit fixed Local Workers retain immutable pairing credentials while their transport follows the same server ID through the private desktop runtime locator. Probe each execution generation before bearer release; after opting in, missing runtime authority cannot fall back to an obsolete pairing address. Saved/remote Worker addresses and selected outbound route policy remain unchanged. Desktop shutdown never stops an independently executing Worker.
+
 # DeliDev worker ownership
 
 - Repository Clone requires separately negotiated Worker capability 18 and the original once-only job journal before owned staging/Git side effects. Report one bounded dedicated outcome that can preserve a published checkout plus closed failure; never rerun a started/finished clone on restart or replacement. PATs never reach jobs, Git environments or logs, and published checkout lifetime is user-owned Local. Follow the workspace and protocol contracts.
