@@ -54,6 +54,7 @@ func (s *Service) recoverFailedServerLogin(ctx context.Context, id, operation do
 	}
 	defer unlock()
 	_, err = s.cleanupFailedServerLoginLocked(bounded, id, operation, false, domain.SubscriptionFailed, nil)
+	logSubscriptionRuntimeCleanup(s.logger, operation, err)
 	return err
 }
 
