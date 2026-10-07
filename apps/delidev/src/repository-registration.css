@@ -39,10 +39,6 @@
   .settings-task-dialog:has(.repository-registration) .repository-add-footer { flex-direction: row; align-items: stretch; }
   .repository-add-footer > button { flex: 1 1 auto; }
 }
-.settings-task-dialog:has(.repository-registration) .repository-github-picker section { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
-.settings-task-dialog:has(.repository-registration) .repository-github-list { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; }
-.settings-task-dialog:has(.repository-registration) .repository-github-list button { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; width: 100%; height: auto; min-height: 40px; text-align: left; overflow-wrap: anywhere; }
-.settings-task-dialog:has(.repository-registration) .repository-github-list small { color: var(--muted); }
 
 .repository-remote-fields { display: grid; gap: 16px; margin-bottom: 24px; }
 .repository-remote-fields label { display: grid; gap: 8px; }

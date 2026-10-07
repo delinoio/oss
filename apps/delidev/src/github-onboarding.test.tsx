@@ -9,8 +9,13 @@ import { EntityKind, GitHubTokenIdentityState as State, GitHubTokenKind, Integra
 import { Integrations } from "./integrations";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
+import { githubDraftTokenFormURL } from "./github-opening";
+
+const native = vi.hoisted(() => ({ invoke: vi.fn(async (_command: string, _args: unknown) => undefined), isTauri: () => true }));
+vi.mock("@tauri-apps/api/core", () => native);
 
 function fixture() {
+  native.invoke.mockClear();
   const id = newRequestId();
   let profile = create(ResourceSchema, { id, kind: EntityKind.INTEGRATION, schemaVersion: 1, revision: 1n });
   let saved = false;
@@ -20,7 +25,10 @@ function fixture() {
   const router = createRouterTransport(r => {
     r.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] }) });
     r.service(ResourceService, { listResources: () => ({ resources: saved ? [profile] : [] }), getResource: () => ({ resource: profile }) });
-    r.service(IntegrationService, { inspectGitHubToken: inspect, saveIntegrationProfile: save, replaceIntegrationToken: replace });
+    r.service(IntegrationService, {
+      inspectGitHubToken: inspect, saveIntegrationProfile: save, replaceIntegrationToken: replace,
+      prepareGitHubTokenForm: request => ({ requestId: request.requestId, tokenKind: request.tokenKind, resourceOwner: request.resourceOwner, access: request.access, url: githubDraftTokenFormURL(request.tokenKind === GitHubTokenKind.FINE_GRAINED ? "fine-grained" : "classic", request.resourceOwner, request.access as 1 | 2 | 3)! }),
+    });
   });
   const buffers: Uint8Array[] = [];
   const transport: Transport = { ...router, unary(method, signal, timeout, header, input, values) {
@@ -40,10 +48,12 @@ function fixture() {
 it("focuses token first, verifies without an owner, then saves the explicit organization and editable name", async () => {
   const f = fixture(); render(f.view()); const token = await f.enter();
   expect(document.activeElement).toBe(token); expect(token.type).toBe("password"); expect(token.autocomplete).toBe("off");
-  expect((screen.getByLabelText("Resource owner") as HTMLInputElement).value).toBe("");
-  expect((screen.getByText("Create a token on GitHub").closest("details") as HTMLDetailsElement).open).toBe(true);
+  expect(screen.queryByLabelText("Resource owner")).toBeNull(); expect(screen.queryByLabelText("Token type")).toBeNull();
+  expect(screen.getByText("Create a token on GitHub").closest("details")).toBeNull();
+  expect(screen.getByRole("button", { name: "Classic" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Fine grained" })).toBeTruthy();
   expect(screen.queryByLabelText("Profile name")).toBeNull(); expect(f.inspect).not.toHaveBeenCalled();
-  const name = await f.verify(); expect(name.value).toBe("fixture-user"); expect(document.activeElement).toBe(name);
+  const name = await f.verify(); expect(name.value).toBe("fixture-user"); await waitFor(() => expect(document.activeElement).toBe(name));
   expect((screen.getByLabelText("Resource owner") as HTMLInputElement).value).toBe("");
   expect((screen.getByRole("button", { name: "Save and connect" }) as HTMLButtonElement).disabled).toBe(true);
   expect(f.save).not.toHaveBeenCalled(); f.erased();
@@ -58,16 +68,19 @@ it("focuses token first, verifies without an owner, then saves the explicit orga
   expect(JSON.stringify(f.client.getQueryCache().getAll().map(q => [q.queryKey, q.state.data]), (_, v) => typeof v === "bigint" ? String(v) : v)).not.toContain("fixture-pat");
 });
 it("carries declared type/owner and preserves a manually edited name through Back and another verification", async () => {
-  const f = fixture(); render(f.view()); await f.enter(); f.owner();
-  fireEvent.change(screen.getByLabelText("Token type"), { target: { value: GitHubTokenKind.CLASSIC } });
+  const f = fixture(); render(f.view()); await f.enter();
+  fireEvent.click(screen.getByRole("button", { name: "Classic" }));
+  await waitFor(() => expect(native.invoke).toHaveBeenCalledTimes(1));
   const name = await f.verify();
   expect((screen.getByLabelText("Token type") as HTMLSelectElement).value).toBe(String(GitHubTokenKind.CLASSIC));
+  expect((screen.getByLabelText("Resource owner") as HTMLInputElement).value).toBe(""); f.owner();
   expect((screen.getByLabelText("Resource owner") as HTMLInputElement).value).toBe("example-org");
   fireEvent.change(name, { target: { value: "My alias" } });
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   expect((screen.getByLabelText("GitHub personal access token") as HTMLInputElement).value).toBe(""); f.erased();
   f.inspect.mockImplementationOnce(async r => ({ requestId: r.requestId, state: State.VERIFIED, identity: { id: "18", nodeId: "U_18", login: "other-user" }, problemJson: new Uint8Array() }));
-  expect((await f.verify()).value).toBe("My alias"); expect(f.save).not.toHaveBeenCalled();
+  expect((await f.verify()).value).toBe("My alias");
+  expect((screen.getByLabelText("Resource owner") as HTMLInputElement).value).toBe("example-org"); expect(f.save).not.toHaveBeenCalled();
 });
 it.each([State.INVALID_TOKEN, State.ACCESS_RESTRICTED, State.SSO_REQUIRED, State.RATE_LIMITED, State.UNAVAILABLE])("clears rejected tokens and prevents progression for identity state %s", async state => {
   const f = fixture(); f.inspect.mockImplementationOnce(async r => ({ requestId: r.requestId, state, identity: undefined, problemJson: encode({ message: "Safe fixture failure" }) }));
