@@ -23,8 +23,22 @@ export function LocalConnectionPresentationProvider({ target, inline, children, 
 // mutation scope when diagnostics opens or closes, retaining confirmations.
 export function LocalConnectionPresentation({ children, diagnosticsOnly = false }: { children: ReactNode; diagnosticsOnly?: boolean }) {
   const { target, inline, helpTarget } = useContext(Presentation);
+  const [host] = useState(() => document.createElement("div"));
+  const fallback = useRef<HTMLDivElement>(null);
   const destination = diagnosticsOnly ? target : helpTarget ?? target;
-  return destination ? createPortal(children, destination) : <div hidden={!inline || diagnosticsOnly}>{children}</div>;
+  const hidden = !inline || diagnosticsOnly;
+  useLayoutEffect(() => {
+    const ownedFocus = host.contains(document.activeElement) ? document.activeElement as HTMLElement : undefined;
+    const outlet = destination?.isConnected ? destination : fallback.current;
+    if (outlet && host.parentElement !== outlet) outlet.append(host);
+    if (ownedFocus && outlet && !outlet.closest("[hidden], [inert], dialog:not([open])")) ownedFocus.focus({ preventScroll: true });
+    else if (ownedFocus && document.activeElement === ownedFocus) ownedFocus.blur();
+  }, [destination, hidden, host]);
+  useLayoutEffect(() => () => host.remove(), [host]);
+  // The portal identity never changes. Moving its owned host retains every
+  // original child controller, including updater drafts and native uncertainty.
+  return <><div ref={fallback} hidden={hidden} />{createPortal(children, host)}</>;
+
 }
 
 // The slot belongs to the invoking task, including an existing modal's top layer.
