@@ -1,5 +1,5 @@
 import { productError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
@@ -16,10 +16,12 @@ function sessionResource(resource?: Resource): resource is Resource {
   return Boolean(resource && resource.kind === EntityKind.SESSION && resource.schemaVersion === 1 && resource.revision > 0n && UUID_V7.test(resource.id));
 }
 
-export function NewSession({ active, ownsActivation, activation, readLocalWorker, back, openSettings, open, created }: {
+export function NewSession({ active, ownsActivation, activation, entryProjectId, projectSelectionBlockedChanged, readLocalWorker, back, openSettings, open, created }: {
   active: boolean;
   ownsActivation: boolean;
   activation: number;
+  entryProjectId?: string;
+  projectSelectionBlockedChanged?: (blocked: boolean) => void;
   readLocalWorker?: ReadLocalWorkerProof;
   back: () => void;
   openSettings: () => void;
@@ -74,6 +76,23 @@ export function NewSession({ active, ownsActivation, activation, readLocalWorker
   const mutation = useRetainedMutation("create-session", SessionQuery.createSession, accepted);
   const restrictions = object(document(selectedProject.data?.resource).agents);
   const blocked = mutation.busy || mutation.uncertain || local.busy || invalidAcknowledgment;
+  const projectChanged = useCallback((id: string) => {
+    setProject(id);
+    setAgent("");
+    setMachine("");
+    setStarting([]);
+    setWorkspace(id ? Workspace.Worktree : Workspace.GeneralChat);
+  }, []);
+  const consumedProjectActivation = useRef(-1);
+  useLayoutEffect(() => {
+    projectSelectionBlockedChanged?.(blocked);
+  }, [blocked, projectSelectionBlockedChanged]);
+  useLayoutEffect(() => {
+    if (!active || consumedProjectActivation.current === activation) return;
+    // Consume blocked entries too: settlement must never apply an old navigation intent.
+    consumedProjectActivation.current = activation;
+    if (entryProjectId && !blocked && entryProjectId !== project) projectChanged(entryProjectId);
+  }, [active, activation, entryProjectId, blocked, project, projectChanged]);
 
   const submit = async () => {
     if (blocked || !automaticTitles) return;
@@ -120,13 +139,6 @@ export function NewSession({ active, ownsActivation, activation, readLocalWorker
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
     void submit();
-  };
-  const projectChanged = (id: string) => {
-    setProject(id);
-    setAgent("");
-    setMachine("");
-    setStarting([]);
-    setWorkspace(id ? Workspace.Worktree : Workspace.GeneralChat);
   };
   const title = createdElsewhere ? text(document(createdElsewhere).name) || copy("new-session.extra.cffdba22adf2") : copy("new-session.extra.cffdba22adf2");
 

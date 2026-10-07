@@ -126,6 +126,34 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   expect(request.localWorkerToken).toBe("");
 });
 
+it("consumes a locked project entry without applying it after Local proof settles", async () => {
+  const value = fixture(), otherProjectId = newRequestId();
+  let release!: (proof: { machineId: string; token: string }) => void;
+  const readLocalWorker = () => new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; });
+  const blockedChanged = vi.fn();
+  const page = (activation: number, entryProjectId: string, active = true) => value.view(<NewSession active={active} ownsActivation={active} activation={activation} entryProjectId={entryProjectId} projectSelectionBlockedChanged={blockedChanged} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} readLocalWorker={readLocalWorker} />);
+  const rendered = render(page(1, value.project.id));
+  await screen.findByRole("option", { name: "Project" });
+  fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Retained task" } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  expect(blockedChanged).toHaveBeenLastCalledWith(true);
+  rendered.rerender(page(2, otherProjectId));
+  await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
+  expect(blockedChanged).toHaveBeenLastCalledWith(false);
+  expect(screen.getByLabelText("Project")).toHaveProperty("value", value.project.id);
+  expect(screen.getByRole("button", { name: "Use this computer's Local checkouts" }).getAttribute("aria-pressed")).toBe("true");
+  rendered.rerender(page(2, otherProjectId, false));
+  rendered.rerender(page(2, otherProjectId));
+  expect(screen.getByLabelText("Project")).toHaveProperty("value", value.project.id);
+  rendered.rerender(page(3, otherProjectId));
+  expect(screen.getByLabelText("Project")).toHaveProperty("value", otherProjectId);
+  expect(screen.getByRole("button", { name: "Use separate Worktrees" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByLabelText("Runs on")).toHaveProperty("value", "");
+  expect(screen.getByLabelText("First message")).toHaveProperty("value", "Retained task");
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
 it("reads fresh matching Local Worker proof for creation and retains that exact secret-bearing request on uncertainty", async () => {
   const value = fixture();
   const proof = vi.fn(async () => ({ machineId: value.machine.id, token: "A".repeat(43) }));

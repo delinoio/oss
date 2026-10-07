@@ -24,6 +24,8 @@
   "sidebar.search_49c266": "검색",
   "sidebar.closeNavigation_99904d": "탐색 닫기",
   "sidebar.newSession_cffdba": "새 세션",
+  "sidebar.newSessionInProject": "{{v0}} 프로젝트의 새 세션",
+  "sidebar.newSessionInProjectId": "{{v0}} 프로젝트의 새 세션. 프로젝트 ID: {{v1}}",
   "sidebar.projectAndSessionNavigation_ccbca5": "프로젝트 및 세션 탐색",
   "sidebar.menuNavigationAndFilters_b5a21d": "메뉴 탐색 및 필터",
   "sidebar.projects_04e2a9": "프로젝트",

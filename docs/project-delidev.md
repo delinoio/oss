@@ -24,6 +24,8 @@ New schedule creation adds frequency presets and a creation-only three-section l
 
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.
 
+Named Home projects provide a New session shortcut beside their collapse control under the [chat-first creation contract](apps-delidev-desktop-contract.md#chat-first-session-creation). It selects the original project once in the mounted creation draft, preserves message/mode/budget/Options and shares existing project-selection locks without creating a session on navigation.
+
 ## Domain Contract Documents
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)

@@ -20,7 +20,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   other.sessionId = other.id;
   const enqueues = vi.fn(async () => ({ change: { session } }));
   const controls = vi.fn(async () => ({ change: { session } }));
-  const creates = vi.fn(async () => ({ change: { session } }));
+  const creates = vi.fn(async (_request: { requestId: string; documentJson: Uint8Array }) => ({ change: { session } }));
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Agent One" }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
@@ -43,6 +43,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
       return request.pageToken ? { sessions: [] } : { sessions: [session, other], nextPageToken: "global-next" };
     }, listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls, createSession: creates });
     router.service(ResourceService, {
+      getResource: (request) => ({ resource: [...projects, ...repositories, agent, machine].find(row => row.kind === request.kind && row.id === request.id) }),
       getSnapshot: (request) => ({ resources: [request.filter?.sessionId === other.id ? other : session], cursor: "snapshot" }),
       listResources: async (request) => {
         if (request.filter?.kind === EntityKind.AGENT && selectorFailure) throw new ConnectError("Selector request failed", selectorFailure);
@@ -100,6 +101,120 @@ it("keeps first-message drafts when title support is absent and preserves valid 
   expect(screen.getByText(/exceeds 256 KiB/)).toBeTruthy();
   fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter", isComposing: true, keyCode: 229 });
   fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter", shiftKey: true });
+  expect(value.creates).not.toHaveBeenCalled();
+});
+
+function shortcutProject(name: string) {
+  return create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name, repositories: [], agents: { configured: false, ids: [] } }) });
+}
+
+it.each([false, true])("selects a project once, retains the draft, and focuses the composer (compact %s)", async compact => {
+  viewport(compact);
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  const currentDeviceId = newRequestId(), pairingAuthority = { endpoint: "http://127.0.0.1:46310", serverId: newRequestId() };
+  const rendered = render(<StrictMode><App transport={value.transport} currentDeviceId={currentDeviceId} pairingAuthority={pairingAuthority} /></StrictMode>);
+  const showHome = async () => {
+    if (compact) fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
+    await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` });
+  };
+  await showHome();
+  const fold = screen.getByRole("button", { name: `First project. Project ID: ${first.id}` });
+  fireEvent.click(screen.getByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  const prompt = screen.getByRole("textbox", { name: "First message" });
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  expect(fold.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(prompt);
+  if (compact) expect(screen.queryByRole("dialog", { name: "DeliDev navigation" })).toBeNull();
+  fireEvent.change(prompt, { target: { value: "Retain this task" } });
+  await screen.findByRole("option", { name: "Agent One" });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Mode"), { target: { value: "plan" } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold"), { target: { value: "1.25" } });
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Agent Worker")).toHaveProperty("value", value.agent.id);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Runs on")).toHaveProperty("value", value.machine.id);
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` }));
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", second.id);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Agent Worker")).toHaveProperty("value", "");
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Runs on")).toHaveProperty("value", "");
+  expect(screen.getByRole("button", { name: "Use separate Worktrees" }).getAttribute("aria-pressed")).toBe("true");
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Mode")).toHaveProperty("value", "plan");
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold")).toHaveProperty("value", "1.25");
+  expect(screen.getByRole("button", { name: "Options" }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("textbox", { name: "First message" })).toBe(prompt);
+  expect(prompt).toHaveProperty("value", "Retain this task");
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Project"), { target: { value: first.id } });
+  await act(() => i18n.changeLanguage("ko"));
+  expect(document.querySelector<HTMLSelectElement>(".new-session-content > .resource-choice select")!.value).toBe(first.id);
+  await act(() => i18n.changeLanguage("en"));
+  rendered.rerender(<StrictMode><App transport={{ ...value.transport }} currentDeviceId={currentDeviceId} pairingAuthority={pairingAuthority} /></StrictMode>);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  fireEvent.click(screen.getByRole("button", { name: "Back to sessions" }));
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  expect(prompt).toHaveProperty("value", "Retain this task");
+  expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+it("locks shortcuts for pending and uncertain creates and retries the unchanged request", async () => {
+  viewport();
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  let reject!: (reason: unknown) => void;
+  value.creates.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  await screen.findByRole("option", { name: "Agent One" });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("First message"), { target: { value: "Original request" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create session" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(shortcut);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  await act(async () => reject(new ConnectError("ack lost", Code.Unavailable)));
+  await screen.findByRole("button", { name: "Retry the same session creation" });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Back to sessions" }));
+  fireEvent.click(shortcut);
+  expect(screen.queryByRole("textbox", { name: "First message" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(2));
+  expect(value.creates.mock.calls[1][0]).toEqual(value.creates.mock.calls[0][0]);
+  await waitFor(() => expect(shortcut).toHaveProperty("disabled", false));
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+});
+
+it("locks shortcuts during Local proof and preserves the original project on completion", async () => {
+  viewport();
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  let release!: (proof: { machineId: string; token: string }) => void;
+  const readLocalWorker = vi.fn(() => new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; }));
+  render(<App transport={value.transport} readLocalWorker={readLocalWorker} />);
+  fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(shortcut);
+  await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
+  expect(shortcut).toHaveProperty("disabled", false);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Project")).toHaveProperty("value", first.id);
+  expect(screen.getByRole("button", { name: "Use this computer's Local checkouts" }).getAttribute("aria-pressed")).toBe("true");
   expect(value.creates).not.toHaveBeenCalled();
 });
 

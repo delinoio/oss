@@ -53,6 +53,12 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line
 .sidebar-archived-filter { display: flex; align-items: center; gap: 7px; min-height: 30px; margin: 1px 0 5px; color: var(--text-secondary); font-size: 12px; font-weight: 450; }
 .sidebar-archived-filter input { width: 14px; height: 14px; margin: 0; accent-color: var(--text-subtle); }
 .sidebar-project-group { min-width: 0; }
+.sidebar-project-group.has-new-session { position: relative; }
+.sidebar-project-group.has-new-session > .sidebar-project-row { padding-right: 64px; }
+.sidebar-project-group.has-new-session > .sidebar-project-row > .sidebar-disclosure { position: absolute; right: 7px; margin-left: 0; }
+.sidebar-project-new-session { position: absolute; top: 3px; right: 30px; display: grid; place-items: center; width: 28px; height: 28px; min-width: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); }
+.sidebar-project-new-session:hover:not(:disabled) { background: var(--surface-hover); }
+.sidebar-project-new-session .sidebar-icon { width: 16px; height: 16px; }
 .sidebar-project-row { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; min-height: 32px; margin: 0; padding: 0 6px; border: 0; border-radius: 5px; background: transparent; color: var(--text-secondary); text-align: left; font-size: 13px; line-height: 1.2; font-weight: 550; }
 button.sidebar-project-row:hover { background: var(--surface-hover); }
 .sidebar-folder-icon { width: 16px; height: 16px; color: var(--text-subtle); }
