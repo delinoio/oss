@@ -64,6 +64,19 @@ func startupRequest(f *authorityFixture, o domain.ExecutionStartupObservation) *
 
 func TestDirectStartupGatesRelayAndRetainsExactReplay(t *testing.T) {
 	f := directStartupFixture(t)
+	legacy := domain.SessionStartPreparation{Phase: domain.StartWaitingDispatch, DiscoveryJobID: domain.NewID()}
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.legacy-preparation", nil, func(tx *store.Tx) (any, error) {
+		r, session, err := sessionRecord(tx, f.input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		// A retained waiting observation cannot bypass actual process startup.
+		session.StartPreparation = &legacy
+		return tx.Put(domain.SessionKind, r.ID, r.Revision, r.SessionID, r.ProjectID, session)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.registerGrant(t)
 	if lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token); err == nil {
 		lease.Release()
@@ -110,6 +123,9 @@ func TestDirectStartupGatesRelayAndRetainsExactReplay(t *testing.T) {
 		}
 		if s.Startup.Ready.NativeVersion != "0.150.9" || s.Startup.Failure.ProblemCode != domain.Unsupported {
 			t.Fatal("ready evidence or first failure lost")
+		}
+		if s.StartPreparation == nil || *s.StartPreparation != legacy {
+			t.Fatal("startup publication changed historical observation metadata")
 		}
 		return nil
 	})

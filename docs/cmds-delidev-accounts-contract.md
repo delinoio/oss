@@ -1,5 +1,12 @@
 # DeliDev account lifecycle
 
+## OAuth format selection extension
+
+The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
+own the main-first capability 8 and Start/attempt format fields. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. Reservations
+alone activate no support and add no database migration.
+
 ## Per-account API formats
 
 API accounts may declare the closed `api_protocol` selection under the

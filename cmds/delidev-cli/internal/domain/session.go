@@ -277,6 +277,7 @@ type Session struct {
 	PendingInputs               uint32                     `json:"pending_inputs"`
 	PendingInputBytes           uint64                     `json:"pending_input_bytes"`
 	Preparation                 *SessionPreparation        `json:"preparation,omitempty"`
+	StartPreparation            *SessionStartPreparation   `json:"start_preparation,omitempty"`
 	InitialExecution            *InitialExecution          `json:"initial_execution,omitempty"`
 	CurrentExecution            *ExecutionSelection        `json:"current_execution,omitempty"`
 	NextExecutionIntent         ExecutionIntent            `json:"next_execution_intent,omitempty"`
@@ -304,6 +305,24 @@ type SessionPreparation struct {
 	JobID         ID               `json:"job_id"`
 	RecoveryJobID ID               `json:"recovery_job_id,omitempty"`
 	State         PreparationState `json:"state"`
+}
+
+// Historical development builds persisted these observations before direct
+// startup replaced prerequisite inspection. Keep their typed JSON readable and
+// preserve it on session saves; it grants no discovery, dispatch or retry
+// authority. Remove only when those retained sessions are no longer supported.
+type SessionStartPhase string
+
+const (
+	StartCheckingInstallation SessionStartPhase = "checking-installation"
+	StartCheckingSupport      SessionStartPhase = "checking-execution-support"
+	StartWaitingDispatch      SessionStartPhase = "waiting-dispatch"
+	StartPreparationFailed    SessionStartPhase = "failed"
+)
+
+type SessionStartPreparation struct {
+	Phase          SessionStartPhase `json:"phase"`
+	DiscoveryJobID ID                `json:"discovery_job_id,omitempty"`
 }
 
 type QueuedInput struct {

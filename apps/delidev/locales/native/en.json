@@ -88,5 +88,8 @@
   "month10": "October",
   "month11": "November",
   "month12": "December",
-  "widgetEstimateUnavailable": "{{currency}} unavailable · estimate"
+  "widgetEstimateUnavailable": "{{currency}} unavailable · estimate",
+  "startupConflict": "Another DeliDev app, server or service is using this data folder or port. Keep its data. Quit the other app or explicitly stop its server before retrying.",
+  "startupIncompatible": "DeliDev and its bundled CLI are incompatible. Reinstall the desktop app with its bundled CLI, then retry.",
+  "startupUnavailable": "DeliDev could not start on this computer. Check access to its data folder and bundled executable, then restart the app."
 }

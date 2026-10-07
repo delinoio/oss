@@ -390,6 +390,10 @@ migration. The complete feature owns selected-Runner native authentication,
 metadata-only server ownership, single-use original login input and joined
 native lifecycle/execution cleanup under the subscription and desktop contracts.
 
+## Desktop transport owner
+
+`internal/desktopruntime` owns the private same-server execution locator, challenge proof, private bearer transport protection and fixed Local Worker relocation marker. This transport layer restores the original bearer before existing server authentication and changes no public Connect schema or stable credential format. CLI owns resident control framing/admission; server owns the directly bound listener and authenticated business shutdown; Rust owns the single original child and platform lifetime. Device/pairing/recovery files, Saved addresses, public Connect schemas and SQLite migration ownership remain unchanged.
+
 ## Inline Worker models and endpoint-only completion reservation
 
 Main first reserves System 42, Worker 22 and the complete endpoint/model-identity/pricing closure in the allocation ledger. Compose full DB baseline 32 / protocol 2 reset with inline Worker schema 4 and current portable bundle 4. The prior atomic Model/Agent save and portable bundle 2 proposal are superseded only on complete activation. The 2026-10-07 owner amendment waives earlier DB retention and permits explicit DB/sidecar reset without conversion, retaining original native and protected-credential cleanup authority.
