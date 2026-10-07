@@ -129,7 +129,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const choiceFailure = result.error?.failure ?? (failure ? clientFailure(failure) : undefined);
   const reason = choiceFailure?.code === FailureCode.PermissionDenied || choiceFailure?.code === FailureCode.Unauthenticated
     ? copy("configuration-fields.choices.denied")
-    : choiceFailure?.code === FailureCode.Unavailable || choiceFailure?.code === FailureCode.DeadlineExceeded
+    : choiceFailure?.code === FailureCode.Unavailable || choiceFailure?.code === FailureCode.ServerUnavailable
       ? copy("configuration-fields.choices.connection") : copy("configuration-fields.choices.request");
   const readProblem = Boolean(failure || result.error || selectedProviderOff || active && needsProviderCapability && inventory.data && !ready);
   useEffect(() => { reportRead?.(readIdentity, readProblem); return () => reportRead?.(readIdentity, false); }, [readIdentity, readProblem, reportRead]);
@@ -155,10 +155,10 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const options = [{ id: "", label: emptyLabel ?? copy("configuration-fields.select_586618", { v0: resourceLabel.toLowerCase() }) }, ...result.rows.map(row => ({ id: row.id, label: (row.name || copy("documents.extra.e504e6152194")) + (kind === EntityKind.ACCOUNT ? copy("configuration-fields.message_2fa20b", { v0: statusLabel(row.health) }) : ""), disabled: row.id === value && selectedProviderOff }))];
   return <div className="resource-choice"><ScrollPicker label={label} options={options} value={value} selectedLabel={value ? selected.data?.resource ? resourceName(selected.data.resource) : copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel }) : undefined} placeholder={emptyLabel} change={id => void select(id)} query={result} active={active} disabled={disabled || selectionBusy} required={required} autoFocus={autoFocus} markRequired={markRequired} />
     {needsProviderCapability && active && !ready ? <p role="status">{copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}</p> : null}
-    {(showStatus || reportRead) && result.loading ? <p role="status">{copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel })}</p> : null}
-    {(showStatus || reportRead) && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy("configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}
-    {(showStatus || reportRead) && value && selected.data?.resource && !result.rows.some(row => row.id === value) ? <p role="status">{copy("configuration-fields.sentence.5398fd2fa5b0", { v0: resourceLabel })}</p> : null}
-    {(showStatus || reportRead) && choiceFailure ? <p role="status">{copy(result.loaded ? "configuration-fields.sentence.054bff468121" : "configuration-fields.sentence.1ad5938a045c", { v0: result.loaded ? resourceLabel : reason, v1: reason })}</p> : null}
+    {(showStatus || reportRead || markRequired) && result.loading ? <p role="status">{copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel })}</p> : null}
+    {(showStatus || reportRead || markRequired) && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy(result.nextPageToken ? "configuration-fields.sentence.244a41434b15" : "configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}
+    {(showStatus || reportRead || markRequired) && value && selected.data?.resource && !result.rows.some(row => row.id === value) ? <p role="status">{copy("configuration-fields.sentence.5398fd2fa5b0", { v0: resourceLabel })}</p> : null}
+    {(showStatus || reportRead || markRequired) && choiceFailure ? <p role="status">{copy(result.loaded ? "configuration-fields.sentence.054bff468121" : "configuration-fields.sentence.1ad5938a045c", { v0: result.loaded ? resourceLabel : reason, v1: reason })}</p> : null}
     {result.error ? <ServiceProblem code={result.error.failure.code}><p>{result.error.failure.message}</p><p>{result.error.failure.guidance}</p></ServiceProblem> : null}
     <Problem error={failure} />
   </div>;
