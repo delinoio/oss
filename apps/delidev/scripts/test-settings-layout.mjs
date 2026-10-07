@@ -296,7 +296,10 @@ try {
       const input = page.getByRole("combobox", { name: language === "ko" ? /^.* 모델$/ : /^Model for / });
       await input.fill("example-model");
       await page.getByRole("option", { name: /^Fixture model/ }).waitFor();
-      await input.press("ArrowDown"); await input.press("Enter");
+      await input.press("ArrowDown");
+      await page.getByRole("option", { name: /^Fixture model/, selected: true }).waitFor();
+      await input.press("Enter");
+      assert.equal((await input.inputValue()).startsWith("example-model-native-"), true, `Keyboard selected the saved model: ${await input.inputValue()}`);
       await checkWizard();
       await page.getByRole("button", { name: l("Next"), exact: true }).click();
       const heading = page.getByRole("heading", { name: l("Configure"), exact: true });
