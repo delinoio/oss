@@ -1,5 +1,7 @@
 # Project: DeliDev
 
+API account protocol selection reserves ProviderInventory capability 7 and its complete profile/filter declarations under issue #964 before implementation. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-protocol-reservations) owns this prerequisite; it adds no runtime or database authority.
+
 Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
 
 Failed-login subscription cleanup reserves System capability 41 and its closed batch/status/result declarations under issue #964. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) and [protocol contract](protos-delidev-v1-contract.md#failed-subscription-cleanup-reservations) require the complete main-first reservation before implementation. This prerequisite grants no cleanup or deletion authority and adds no migration.
