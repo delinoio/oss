@@ -49,6 +49,25 @@ const (
 	ProviderUnavailable    Failure = "provider-unavailable"
 )
 
+// InspectionStage and InspectionReason are closed, content-free log fields.
+// They are not persisted in account observations or exposed over RPC.
+type InspectionStage string
+type InspectionReason string
+
+const (
+	CredentialCheckStage     InspectionStage  = "credential-check"
+	ModelCatalogStage        InspectionStage  = "model-catalog"
+	RequestFailedReason      InspectionReason = "request-failed"
+	CredentialResponseReason InspectionReason = "credential-response"
+	ModelIdentityReason      InspectionReason = "model-identity"
+	ModelMetadataReason      InspectionReason = "model-metadata"
+	ModelResponseReason      InspectionReason = "model-response"
+	ResponseJSONReason       InspectionReason = "response-json"
+	CatalogPaginationReason  InspectionReason = "catalog-pagination"
+	CatalogLimitReason       InspectionReason = "catalog-limit"
+	DuplicateModelReason     InspectionReason = "duplicate-model"
+)
+
 // AuthenticationEvidence is deliberately separate from endpoint reachability.
 // A compatible custom/public model catalog cannot prove credential validity.
 type AuthenticationEvidence = domain.AuthenticationEvidence
@@ -69,6 +88,8 @@ type Model struct {
 	Reasoning        *bool    `json:"reasoning,omitempty"`
 }
 type Observation struct {
+	Stage             InspectionStage        `json:"-"`
+	Reason            InspectionReason       `json:"-"`
 	Failure           Failure                `json:"failure,omitempty"`
 	HTTPStatus        int                    `json:"http_status,omitempty"`
 	RetryAfterSeconds *uint32                `json:"retry_after_seconds,omitempty"`
@@ -179,14 +200,14 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 		}
 		raw, failure := get(ctx, client, provider, key, *base, path, nil)
 		if failure.Failure != NoFailure {
-			return failure.withTime(o.ObservedAt)
+			return failure.withTime(o.ObservedAt).withDiagnostic(CredentialCheckStage, RequestFailedReason)
 		}
 		valid := validGatewayCredential(raw, profile)
 		remaining -= len(raw)
 		clear(raw)
 		if !valid {
 			o.Failure = InvalidResponse
-			return o
+			return o.withDiagnostic(CredentialCheckStage, CredentialResponseReason)
 		}
 		o.Authentication = CredentialAccepted
 	}
@@ -210,33 +231,37 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 		}
 		raw, failure := get(ctx, client, provider, key, *base, "models", query)
 		if failure.Failure != NoFailure {
-			return failure.withTime(o.ObservedAt)
+			return failure.withTime(o.ObservedAt).withDiagnostic(ModelCatalogStage, RequestFailedReason)
 		}
 		remaining -= len(raw)
 		o.HTTPStatus = http.StatusOK
 		if remaining < 0 {
 			clear(raw)
 			o.Failure = ResponseTooLarge
-			return o
+			return o.withDiagnostic(ModelCatalogStage, CatalogLimitReason)
 		}
 		items, next, err := parseModels(raw, provider.Protocol, key)
+		reason := modelParseReason(err)
 		moreRouter := false
 		if err == nil && profile == openRouter {
 			moreRouter, err = routerPage(raw, page*500, len(items))
+			if err != nil {
+				reason = CatalogPaginationReason
+			}
 		}
 		clear(raw)
 		if err != nil {
 			o.Failure = InvalidResponse
-			return o
+			return o.withDiagnostic(ModelCatalogStage, reason)
 		}
 		if len(models)+len(items) > maxModels {
 			o.Failure = ResponseTooLarge
-			return o
+			return o.withDiagnostic(ModelCatalogStage, CatalogLimitReason)
 		}
 		for _, item := range items {
 			if seen[item.ID] {
 				o.Failure = InvalidResponse
-				return o
+				return o.withDiagnostic(ModelCatalogStage, DuplicateModelReason)
 			}
 			seen[item.ID] = true
 			models = append(models, item)
@@ -255,14 +280,40 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 		}
 		if next == after {
 			o.Failure = InvalidResponse
-			return o
+			return o.withDiagnostic(ModelCatalogStage, CatalogPaginationReason)
 		}
 		after = next
 	}
 	o.Failure = ResponseTooLarge
-	return o
+	return o.withDiagnostic(ModelCatalogStage, CatalogLimitReason)
 }
 func (o Observation) withTime(t time.Time) Observation { o.ObservedAt = t; return o }
+
+func (o Observation) withDiagnostic(stage InspectionStage, reason InspectionReason) Observation {
+	o.Stage, o.Reason = stage, reason
+	return o
+}
+
+// Never propagate parser error prose: JSON errors can contain response content.
+func modelParseReason(err error) InspectionReason {
+	if err == nil {
+		return ""
+	}
+	switch err.Error() {
+	case "invalid model identity":
+		return ModelIdentityReason
+	case "invalid model name", "invalid context limit", "invalid modalities", "invalid modality", "invalid supported parameters":
+		return ModelMetadataReason
+	case "invalid data":
+		return ModelResponseReason
+	case "invalid pagination":
+		return CatalogPaginationReason
+	case "too many models":
+		return CatalogLimitReason
+	default:
+		return ResponseJSONReason
+	}
+}
 
 // Only fixed, explicitly recognized authorities establish documented credential
 // evidence. A familiar display name or an equivalent-looking suffix does not.
@@ -532,7 +583,7 @@ func modelID(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && !strings.ContainsRune("-_.:/@+", r) {
+		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && !strings.ContainsRune("-_.:/@+~", r) {
 			return false
 		}
 	}

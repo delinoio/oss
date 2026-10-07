@@ -87,7 +87,7 @@ func TestOpenRouterFormatsUseOriginalInspectionRoutes(t *testing.T) {
 						t.Error("incorrect text-output catalog request")
 						fmt.Fprint(w, `{"data":[{"id":"provider/image-only","context_length":0}]}`)
 					} else {
-						fmt.Fprint(w, `{"data":[{"id":"provider/model","context_length":8192,"architecture":{"input_modalities":["text","image","audio"],"output_modalities":["text"]}}],"total_count":1}`)
+						fmt.Fprint(w, `{"data":[{"id":"~anthropic/claude-opus-latest","context_length":8192,"architecture":{"input_modalities":["text","image","audio"],"output_modalities":["text"]}}],"total_count":1}`)
 					}
 				} else {
 					t.Error("inference sent during inspection")
@@ -98,7 +98,7 @@ func TestOpenRouterFormatsUseOriginalInspectionRoutes(t *testing.T) {
 			if o.Problem() != nil || o.Authentication != CredentialAccepted || len(o.Models) != 1 || len(paths) != 2 {
 				t.Fatal("inspection failed", o, paths)
 			}
-			if o.Models[0].ContextLimit == nil || *o.Models[0].ContextLimit != 8192 || len(o.Models[0].InputModalities) != 3 || len(o.Models[0].OutputModalities) != 1 || o.Models[0].OutputModalities[0] != "text" {
+			if o.Models[0].ID != "~anthropic/claude-opus-latest" || o.Models[0].ContextLimit == nil || *o.Models[0].ContextLimit != 8192 || len(o.Models[0].InputModalities) != 3 || len(o.Models[0].OutputModalities) != 1 || o.Models[0].OutputModalities[0] != "text" {
 				t.Fatal("multimodal text-output metadata changed", o.Models)
 			}
 			if HarnessMatches(domain.Codex, selected.Protocol) != (profile.Protocol == domain.OpenAIResponses) {

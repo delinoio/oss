@@ -175,6 +175,91 @@ func TestHostedPrivateVerificationCannotBeBypassedByPublicModels(t *testing.T) {
 		}
 	}
 }
+
+func TestHostedInspectionFailuresHaveClosedDiagnostics(t *testing.T) {
+	cases := []struct {
+		name    string
+		profile profile
+		handle  func(call int) (int, string)
+		failure Failure
+		stage   InspectionStage
+		reason  InspectionReason
+		calls   int
+	}{
+		{
+			name:    "credential request",
+			profile: novitaModels,
+			handle:  func(int) (int, string) { return http.StatusForbidden, "private response" },
+			failure: AccessDenied, stage: CredentialCheckStage, reason: RequestFailedReason, calls: 1,
+		},
+		{
+			name:    "credential response",
+			profile: novitaModels,
+			handle:  func(int) (int, string) { return http.StatusOK, `{}` },
+			failure: InvalidResponse, stage: CredentialCheckStage, reason: CredentialResponseReason, calls: 1,
+		},
+		{
+			name:    "catalog request",
+			profile: geminiModels,
+			handle:  func(int) (int, string) { return http.StatusForbidden, "private response" },
+			failure: AccessDenied, stage: ModelCatalogStage, reason: RequestFailedReason, calls: 1,
+		},
+		{
+			name:    "model identity",
+			profile: togetherModels,
+			handle:  func(int) (int, string) { return http.StatusOK, `[{"id":"bad id","type":"chat"}]` },
+			failure: InvalidResponse, stage: ModelCatalogStage, reason: ModelIdentityReason, calls: 1,
+		},
+		{
+			name:    "duplicate identity",
+			profile: togetherModels,
+			handle: func(int) (int, string) {
+				return http.StatusOK, `[{"id":"model-a","type":"chat"},{"id":"model-a","type":"chat"}]`
+			},
+			failure: InvalidResponse, stage: ModelCatalogStage, reason: DuplicateModelReason, calls: 1,
+		},
+		{
+			name:    "pagination cycle",
+			profile: geminiModels,
+			handle: func(call int) (int, string) {
+				return http.StatusOK, fmt.Sprintf(`{"models":[{"name":"models/model-%d","supportedGenerationMethods":["generateContent"]}],"nextPageToken":"cursor"}`, call)
+			},
+			failure: InvalidResponse, stage: ModelCatalogStage, reason: CatalogPaginationReason, calls: 2,
+		},
+		{
+			name:    "page limit",
+			profile: geminiModels,
+			handle: func(call int) (int, string) {
+				return http.StatusOK, fmt.Sprintf(`{"models":[{"name":"models/model-%d","supportedGenerationMethods":["generateContent"]}],"nextPageToken":"cursor-%d"}`, call, call)
+			},
+			failure: ResponseTooLarge, stage: ModelCatalogStage, reason: CatalogLimitReason, calls: maxPages,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			client := &http.Client{Transport: testTransport(func(*http.Request) (*http.Response, error) {
+				calls++
+				status, body := tc.handle(calls)
+				w := httptest.NewRecorder()
+				w.WriteHeader(status)
+				fmt.Fprint(w, body)
+				return w.Result(), nil
+			})}
+			base, _ := url.Parse("https://unused.invalid/v1")
+			provider := domain.Provider{Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}
+			o := inspectHosted(context.Background(), client, provider, []byte(hostedSentinel), tc.profile, *base)
+			if o.Failure != tc.failure || o.Stage != tc.stage || o.Reason != tc.reason || len(o.Models) != 0 || calls != tc.calls {
+				t.Fatalf("unexpected hosted diagnostic: failure=%s stage=%s reason=%s models=%d calls=%d", o.Failure, o.Stage, o.Reason, len(o.Models), calls)
+			}
+			raw, err := json.Marshal(o)
+			if err != nil || strings.Contains(string(raw), string(tc.stage)) || strings.Contains(string(raw), string(tc.reason)) {
+				t.Fatal("log-only hosted diagnostics entered observation JSON")
+			}
+		})
+	}
+}
+
 func TestHostedCursorPaginationAndFailurePublication(t *testing.T) {
 	for _, p := range []profile{geminiModels, fireworksModels, cohereModels, basetenModels} {
 		for _, mode := range []string{"complete", "repeat", "cycle", "duplicate", "empty", "secret-token", "bad-second", "page-limit"} {
