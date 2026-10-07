@@ -96,3 +96,9 @@ the only supported transport and carries both current single-source and ordered
 source-route Agent documents. Earlier and unknown bundle versions are rejected.
 Current import previews use version 2 and preserve their exact bytes through
 acceptance/publication.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Current portable bundle 4 embeds exact route model IDs and required settings in Workers, with no independent Model entries or model UUID remapping. Keep atomic graph validation, explicit machine/source bindings and credential exclusion. Earlier portable formats are unsupported on complete current-only reset activation.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

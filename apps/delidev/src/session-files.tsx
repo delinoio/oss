@@ -1,3 +1,6 @@
+import { useShortcuts } from "./shortcut-provider";
+import { ShortcutId, ShortcutInput } from "./shortcuts";
+import { Surface } from "./surface";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -32,13 +35,15 @@ const readOptions = workspaceReadOptions;
 
 export function SessionFiles({ sessionId, close }: { sessionId: string; close: () => void }) {
   useLocale();
+  const panelRoot = useRef<HTMLElement>(null);
+  const shortcuts = useShortcuts([{ id: ShortcutId.FilesClose, scope: Surface.Sessions, label: "shortcuts.closeFiles", bindings: [{ key: "Escape" }], target: panelRoot, input: ShortcutInput.Target, run: close }]);
   const heading = useRef<HTMLHeadingElement>(null);
   const roots = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: FileOperation.Roots }) }, readOptions);
   const [repository, setRepository] = useState<string>();
   const selected = repository ?? roots.data?.roots.find((root) => root.primary)?.repository_id ?? roots.data?.roots[0]?.repository_id;
   useEffect(() => { heading.current?.focus(); }, []);
-  return <aside className="session-files" aria-label={copy("session-files.sessionFiles_206907")} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
-    <header><h2 ref={heading} tabIndex={-1}>{copy("session-files.files_abc7e9")}</h2><button onClick={close} aria-label={copy("session-files.closeSessionFiles_e86cdc")}>{copy("session-files.close_7d9eb7")}</button></header>
+  return <aside ref={panelRoot} aria-keyshortcuts={shortcuts.aria(ShortcutId.FilesClose)} className="session-files" aria-label={copy("session-files.sessionFiles_206907")} onKeyDown={shortcuts.onKeyDown}>
+    <header><h2 ref={heading} tabIndex={-1}>{copy("session-files.files_abc7e9")}</h2><button onClick={close} aria-keyshortcuts={shortcuts.aria(ShortcutId.FilesClose)} aria-label={copy("session-files.closeSessionFiles_e86cdc")}>{copy("session-files.close_7d9eb7")}</button></header>
     <p>{copy("session-files.filesOnThisSessionSExecution_3a04ee")}</p>
     <Problem error={roots.error} />
     {roots.isPending ? <p role="status">{copy("session-files.loadingWorkspaceRoots_0d8c0f")}</p> : null}

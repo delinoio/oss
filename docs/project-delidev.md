@@ -1,5 +1,7 @@
 # Project: DeliDev
 
+API account protocol selection reserves ProviderInventory capability 7 and its complete profile/filter declarations under issue #964 before implementation. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-protocol-reservations) owns this prerequisite; it adds no runtime or database authority.
+
 Main desktop local Workers now have automatic same-owner registration/start and native supervision, with durable same-process manual Stop and original-child-only normal Quit. Existing CLI/service and saved-connection Workers retain independent ownership. Server connection, controller presence, account/harness eligibility and session cleanup remain independent; no protocol allocation or migration is required. The desktop, CLI and current-user service contracts define this boundary.
 
 Failed-login subscription cleanup reserves System capability 41 and its closed batch/status/result declarations under issue #964. The [subscription contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) and [protocol contract](protos-delidev-v1-contract.md#failed-subscription-cleanup-reservations) require the complete main-first reservation before implementation. This prerequisite grants no cleanup or deletion authority and adds no migration.
@@ -54,6 +56,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
+- [Direct execution startup (planned)](cmds-delidev-execution-startup-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
@@ -104,3 +107,11 @@ owns the lifecycle, snapshot-copy deletion integration and remaining database-re
 - Settings is a regular `Surface.Settings` destination using the shared rail/category pane and compact drawer under issue #1236. The active category retains workflow state across reflow, same-category reselection and same-identity reconnect; category departure or leaving Settings disposes its local state and late continuations without changing saved effects or connection-owned conversation/New session workflows. Page-level Escape and active rail reselection preserve the visit. Settings-internal New Project and targeted Repositories entries and visible destination focus follow the [desktop contract](apps-delidev-desktop-contract.md#settings-screen-and-visit-lifetime-issue-1236). Home New project/Create a project opens an independent [project creation dialog](apps-delidev-desktop-contract.md#project-creation-outside-settings) over the current surface, with its own disposal and exact original retry ownership; it does not enter Settings or replace conversation/New session drafts.
 - Issue #1146 implements inventory capability 5, entry connection-method field 9, two closed enums and the current OpenRouter OAuth structures directly initialized in schema 32. Reservations reached main before dependent implementation. The [OAuth contract](cmds-delidev-account-oauth-contract.md) preserves the complete authenticated Go/CLI/native/desktop lifecycle, server-owned protected credentials, once-only exchange and original local recovery. Settings lifetime/window/server generations fence callbacks; uncertainty never authorizes another exchange. Keep the issue open until real-provider/platform acceptance is complete.
 - Issue #1235 implements independent subscription service identity with System capability 17 and historical storage allocation 28, now initialized directly in schema 32. Reservations reached main first; complete independent feature PRs merge in dependency order. The [subscription](cmds-delidev-subscription-contract.md), [protocol](protos-delidev-v1-contract.md) and [storage](cmds-delidev-storage-contract.md) contracts preserve historical attribution, configured-empty deny-all and original native ownership/cleanup while keeping accounts/models/snapshots independent of API Providers. Desktop AI Subscription now uses service-only account creation and the existing explicitly selected Codex login/cancel/authentication-refresh/logout RPC; Worker model selection, portable transfer, pricing, usage and diagnostics retain independent attribution. System capabilities 18/19 and Worker capability 8 add original-owner five-minute quota observations, explicit server-wide refresh, default-off account recovery notifications and confirmed reset-credit consumption using a durable official operation key. Sparse observations preserve last success; consumption outcomes never manufacture quota recovery. Metadata or fixture/build support does not establish native or real-account acceptance.
+
+The approved inline-Worker-model replacement composes the current-only DB 32 /
+protocol 2 reset. Its complete main-first declarations and ownership are defined
+in the catalog, structure, storage, desktop, protocol, usage, transfer and
+subagent contracts. Independent Models and persistent API catalogs are removed
+only with complete activation. Earlier DB retention is waived by the owner;
+explicit reset does not convert history or grant native/credential cleanup.
+Earlier backups remain unsupported.
