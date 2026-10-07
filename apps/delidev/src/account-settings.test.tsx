@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource, type GetUsageSummaryRequest, UsageService, GetUsageSummaryResponseSchema } from "@delinoio/delidev-api-client";
 import { AccountSettings, AccountSettingsSection, type AccountProviderSummary } from "./account-settings";
@@ -116,13 +116,17 @@ it("uses server-side account type and provider filters and keeps the split view 
   expect(value.list).not.toHaveBeenCalled();
 });
 
-it("locks settings navigation while the API account wizard is open", async () => {
+it("locks settings navigation and pauses inventory reads while the API account wizard is open", async () => {
   const value = fixture();
   const workflow = vi.fn();
   render(value.view(value.settings(AccountSettingsSection.Api, { onWorkflowReadyChange: workflow })));
+  await waitFor(() => expect(value.list).toHaveBeenCalled());
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(true));
-  fireEvent.click(screen.getByRole("button", { name: "Back to AI API Keys" }));
+  const originalReads = value.list.mock.calls.length;
+  await act(async () => { await value.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(value.list).toHaveBeenCalledTimes(originalReads);
+  fireEvent.click(screen.getByRole("button", { name: "Close Add AI API key" }));
   await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(false));
 });
 

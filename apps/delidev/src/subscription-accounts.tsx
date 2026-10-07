@@ -80,17 +80,21 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
   const [selected, setSelected] = useState<Resource>();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const capable = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
-  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && capable, "subscriptions", false, AccountTypeFilter.SUBSCRIPTION, "", serviceAccount, true);
+  const refreshInventory = useRef<() => void>(() => {});
+  // Login/status authority stays active while its own presentation pauses only
+  // the background inventory reader. The callback uses the current reader.
+  const flow = useSubscriptionLogin(active, () => refreshInventory.current());
+  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && capable && !selected && !flow.workflow, "subscriptions", false, AccountTypeFilter.SUBSCRIPTION, "", serviceAccount, true);
   // An inert parent beneath its original edit/delete dialog retains its three
   // resident pages and mounted disclosure owners. Reads remain suspended; the
   // Settings visit/category owns disposal when this component unmounts.
   const resident = inventory.payloadPages.flatMap(page => page.payload);
   const rows = { data: inventory.loaded ? { resources: resident, nextPageToken: inventory.nextPageToken } : undefined,
     error: inventory.error?.failure, isFetching: Boolean(inventory.loading), refetch: () => inventory.refreshExplicit() };
+  refreshInventory.current = rows.refetch;
   const quota = useRetainedMutation("subscription:quota:row",SubscriptionQuery.requestSubscriptionObservation,()=>{void rows.refetch();},(result,request)=>result.operationId===request.mutation?.requestId && serviceAccount(result.account,request.mutation?.id,undefined,request.mutation?.expectedRevision ?? 1n));
  const refreshAll = useRetainedMutation("subscription:quota:all",SubscriptionQuery.refreshAllSubscriptionQuotas,()=>{void rows.refetch();},(result,request)=>result.requestId===request.requestId && result.accounts.length<=10000 && new Set(result.accounts).size===result.accounts.length && result.accounts.every(isEntityId));
  const quotaSupported=status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1)===true;
- const flow = useSubscriptionLogin(active, () => { void rows.refetch(); });
  const loginCapable = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1) === true;
  const accountOperationsBlocked = Boolean(selected || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain);
  const cleanupCapable = status.data?.capabilities.includes(SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1) === true;
