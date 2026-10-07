@@ -1780,3 +1780,40 @@ remain unknown. Context transport gaps cannot manufacture completion. The
 private once-only summarize controller preserves original provider/model,
 independent HTTP/lifecycle/history/cleanup and repeated fresh-process lineage;
 manual product capability remains gated on its complete business integration.
+
+## Claude native subscription execution profile
+
+The native subscription adapter reuses the pinned Claude Code `2.1.236`
+stream-json execution, original-input binding, Stop, continuation, transcript,
+usage and applied permission/model/effort checks. It requires an independently
+claimed original subscription account/profile/generation on its owning Runner
+under Worker 20. `claude auth login --claudeai`, `auth status` and `auth logout`
+use one persistent private account-specific configuration/secure-storage
+directory; the installed original CLI owns OAuth and automatic renewal.
+
+Native subscription initialization requires first-party subscription account
+metadata and rejects API-key/token-source overrides. API/discovery initialization
+keeps its existing independent authentication checks. Execution reconstructs
+system lookup and fresh private runtime/instruction paths while selecting the
+owned persistent `CLAUDE_CONFIG_DIR`. It does not inject ANTHROPIC_API_KEY,
+ANTHROPIC_AUTH_TOKEN, imported OAuth tokens, host-managed authentication or the
+API relay base URL. The Go publication token remains publication authority only
+and never becomes CLI authentication. Native identity text is used only for a
+bounded Worker-local keyed commitment and is discarded. The original login
+pins that commitment in the private profile owner record. Reauthentication and
+execution compare fresh native status against the pin before sending input;
+a missing pin or changed account cannot gain execution authority.
+
+History reads select the owned persistent profile; checkpoints retain bounded
+native history and a digest-bound opaque profile reference without auth files,
+profile paths or tokens. A replacement requires the existing complete original
+history, process cleanup and current account/connection/lease proof. Logout
+retires continuation authority after official native logout/status and owned
+profile removal. Subscription authentication does not grant Fork, Sidechat,
+quota/credit support or any separately unverified native capability.
+
+Native process fixtures test original URL/code input, process exit/status,
+isolated profiles and logout without a real account. Installed CLI source
+inspection and empty-profile probes are separate evidence. Real original
+subscription login and first/follow-up/Stop/Resume acceptance must still be
+verified on each supported packaged platform before claiming completion.

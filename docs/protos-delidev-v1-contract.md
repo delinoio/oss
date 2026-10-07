@@ -124,11 +124,11 @@ remain unchanged. Reservations activate nothing and add no migration.
 
 
 
-## Native Claude subscription reservations
+## Native Claude subscription allocations
 
-Issue #964 reserves System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
-`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20`. Establish the complete closure in
-`allocations.json` on main before dependent implementation. Preserve every
+PR #1612 established System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20`, with the complete closure in
+`allocations.json`, on main before this activation. Preserve every
 existing field, Codex bundle assignment and independent capability.
 
 Progress reserves login method/native diagnostic fields 8/9. Worker progress
@@ -144,12 +144,19 @@ accepted response field 1. Original Worker code Take reserves account/lease/
 machine/instance/operation IDs 1–5 and code/submission ID response fields 1–2.
 Wholly new declarations retain one owner and explicit `newDeclaration: true`.
 
-The planned owner/client code submission and original Worker code Take are
-single-use transient input to the original installed Claude process, never
-OAuth exchange or credential distribution. Native credentials remain owned by
-the account's selected Runner Device. This prerequisite adds no active schemas,
-generated bindings, advertisement, login, execution or browser authority and no
-database migration. Follow the subscription and structure contracts.
+The existing SubscriptionService now exposes `SubmitSubscriptionLoginCode`
+for the initiating owner/client and `TakeSubscriptionLoginCode` only for the
+original authenticated Worker/device/instance/lease. Code is write-only bytes:
+a durable claim precedes memory-only retention and durable consumption precedes
+one delivery. No replay redistributes bytes. Take/Finish retain existing Codex
+bundle fields; Claude forbids bundle bytes and refresh-confirmed claims and
+uses only native profile/identity metadata. Progress has closed method and
+safe version/phase/code/correlation diagnostics, with no transcript or identity.
+Generate Go and TypeScript from the reconciled schemas. Capability 38 does not
+grant Worker readiness; capability 20 requires verified original native
+installation and empty-profile cleanup. Native credentials remain on the
+selected Runner. No database migration is added. Follow the subscription and
+structure contracts; the main reservation alone granted no support.
 
 ## Agent Worker account source routes
 

@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,11 +30,46 @@ import (
 // of one signature. Only temporary keychains and synthetic material are used.
 var fixtureBuild = "first"
 
+// Each automatic native fixture owns a separate process. File keychains can
+// ignore per-query UI suppression, so disable interaction once in that process,
+// never around calls in a production process or another concurrently running test.
+func runMacNoninteractiveFixture(t *testing.T) bool {
+	t.Helper()
+	if os.Getenv("DELIDEV_MAC_NONINTERACTIVE_FIXTURE") == "1" {
+		return false
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "-test.run=^"+t.Name()+"$", "-test.count=1", "-test.v")
+	cmd.Env = append(os.Environ(), "DELIDEV_MAC_NONINTERACTIVE_FIXTURE=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("noninteractive native fixture failed: %v\n%s", err, out)
+	}
+	t.Logf("%s", out)
+	return true
+}
+
+var fixtureMacAPI = sync.OnceValues(func() (*macAPI, error) {
+	a, err := loadMac()
+	if err != nil {
+		return nil, err
+	}
+	if status := a.setInteraction(0); status != 0 {
+		return nil, macError(status)
+	}
+	return a, nil
+})
+
 func TestMacCredentialProcessHelper(t *testing.T) {
 	if os.Getenv("DELIDEV_CREDENTIAL_PROCESS_FIXTURE") != "1" {
 		t.Skip("owned subprocess fixture only")
 	}
-	a, err := loadMac()
+	a, err := fixtureMacAPI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,9 +120,12 @@ func TestMacCredentialProcessHelper(t *testing.T) {
 }
 
 func TestMacCodeIdentityAcrossReplacementAndSignedBuilds(t *testing.T) {
+	if runMacNoninteractiveFixture(t) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	a, err := loadMac()
+	a, err := fixtureMacAPI()
 	if err != nil {
 		t.Fatal(err)
 	}

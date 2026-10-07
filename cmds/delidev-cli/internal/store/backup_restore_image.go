@@ -231,7 +231,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			v.Quota, v.ConfirmedExhausted = nil, false
 			if v.Subscription != nil {
 				state := v.Subscription
-				if state.Generation != "" || state.IdentityCommitment != "" || state.Pending != nil || state.Lease != nil || state.RecoveryRequired {
+				if state.NativeProfileID != "" || state.OwnerMachineID != "" || state.Generation != "" || state.IdentityCommitment != "" || state.Pending != nil || state.Lease != nil || state.RecoveryRequired {
 					// The vault is outside this image. Retain historical references
 					// without authorizing an older bundle or native claim.
 					state.RecoveryRequired = true

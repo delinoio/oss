@@ -307,7 +307,7 @@ func (c *ClaudeContentPublisher) PublishChildHistory(ctx context.Context, config
 		if child.ParentID != string(b.journal.SessionID) {
 			parent = child.ParentID
 		}
-		observed, err := claude.ReadChildTranscript(ctx, config.Home, b.journal.SessionID, config.Workspace, claude.ChildHistoryBinding{TaskID: child.NativeID, ToolID: child.ParentToolID, ParentAgentID: parent, AgentType: *child.Task.AgentType, Description: *child.Task.Description, SpawnDepth: *child.Task.Depth}, c.childProofs[child.NativeID], config.Process.Logger)
+		observed, err := claude.ReadChildTranscript(ctx, claude.NativeHistoryHome(config), b.journal.SessionID, config.Workspace, claude.ChildHistoryBinding{TaskID: child.NativeID, ToolID: child.ParentToolID, ParentAgentID: parent, AgentType: *child.Task.AgentType, Description: *child.Task.Description, SpawnDepth: *child.Task.Depth}, c.childProofs[child.NativeID], config.Process.Logger)
 		if err != nil {
 			if ctx.Err() != nil {
 				return domain.SafeError(ctx.Err())
