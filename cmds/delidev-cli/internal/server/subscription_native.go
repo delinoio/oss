@@ -58,7 +58,7 @@ func openServerSubscription(ctx context.Context, root string, owner domain.ID, b
 	if e != nil {
 		return nil, subscriptionDenied()
 	}
-	info, e := os.Stat(home)
+	info, e := security.StableStat(home)
 	if e != nil {
 		return nil, subscriptionDenied()
 	}

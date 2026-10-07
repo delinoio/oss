@@ -30,7 +30,7 @@ func TestRuntimeCleanupPreservesInventoryBounds(t *testing.T) {
 			if err := security.PrivateDir(home); err != nil {
 				t.Fatal(err)
 			}
-			original, err := os.Stat(home)
+			original, err := security.StableStat(home)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -80,7 +80,7 @@ func TestRuntimeCleanupRejectsSymlinkAndReplacedIdentity(t *testing.T) {
 			if err := security.PrivateDir(home); err != nil {
 				t.Fatal(err)
 			}
-			original, err := os.Stat(home)
+			original, err := security.StableStat(home)
 			if err != nil {
 				t.Fatal(err)
 			}

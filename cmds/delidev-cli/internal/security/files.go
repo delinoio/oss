@@ -13,6 +13,19 @@ import (
 // an existing directory. Callers retain ownership evidence before using it.
 func CreatePrivateDirExclusive(path string) error { return createPrivateDirectory(path) }
 
+// StableStat captures file identity from an open handle. Windows path-based
+// FileInfo values resolve their identity lazily, so a later path replacement
+// can otherwise make os.SameFile compare the replacement with itself.
+func StableStat(path string) (os.FileInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	info, statErr := file.Stat()
+	closeErr := file.Close()
+	return info, errors.Join(statErr, closeErr)
+}
+
 // PrivateDir owns only its final component. Existing shared directories are
 // rejected rather than silently changing another application's permissions.
 func PrivateDir(path string) error {
