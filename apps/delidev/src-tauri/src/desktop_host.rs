@@ -1270,6 +1270,8 @@ mod tests {
     }
 
     fn worker_fixture(script: &str) -> (tempfile::TempDir, Arc<Connector>) {
+        use std::os::unix::fs::PermissionsExt;
+
         let root = tempfile::tempdir().unwrap();
         let executable = root.path().join("sidecar");
         // A joined writer child prevents sibling fixture forks inheriting an

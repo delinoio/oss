@@ -9,6 +9,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    thread,
     time::Duration,
 };
 
@@ -360,7 +361,25 @@ impl Connector {
     }
 
     fn local_worker_proof_inner(&self) -> Result<LocalWorkerProof> {
-        let client: DeviceMetadata = serde_json::from_value(self.run(&[
+        self.local_worker_proof_inner_with_runtime(true)
+    }
+
+    pub(crate) fn local_worker_proof_for_worker_admission(&self) -> Result<LocalWorkerProof> {
+        self.local_worker_proof_inner_with_runtime(false)
+    }
+
+    fn local_worker_proof_inner_with_runtime(
+        &self,
+        include_runtime: bool,
+    ) -> Result<LocalWorkerProof> {
+        let request = |arguments: &[OsString]| {
+            if self.worker_auto_enabled.load(Ordering::Acquire) {
+                self.worker_request(arguments)
+            } else {
+                self.run(arguments)
+            }
+        };
+        let client: DeviceMetadata = serde_json::from_value(request(&[
             "device".into(),
             "inspect".into(),
             "--device-dir".into(),
@@ -368,7 +387,7 @@ impl Connector {
         ])?)
         .map_err(|_| NativeFailure::InvalidEvidence)?;
         let worker_root = self.root.join("worker");
-        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
+        let metadata: DeviceMetadata = serde_json::from_value(request(&[
             "worker".into(),
             "inspect".into(),
             "--worker-dir".into(),
@@ -393,14 +412,24 @@ impl Connector {
             16 << 10,
         )?);
         let verified = verified_connection(&bytes, &metadata, DeviceType::Worker)?;
+        let (endpoint, runtime_generation, runtime_key) = if include_runtime {
+            let runtime = self.runtime()?;
+            (
+                runtime.endpoint.clone(),
+                Some(runtime.generation.clone()),
+                Some(runtime.key.clone()),
+            )
+        } else {
+            (verified.endpoint.clone(), None, None)
+        };
         Ok(LocalWorkerProof {
-            endpoint: self.runtime_endpoint()?,
+            endpoint,
             paired_endpoint: verified.endpoint.clone(),
             server_id: verified.server_id.clone(),
             machine_id: metadata.machine_id,
             token: verified.token.clone(),
-            runtime_generation: Some(self.runtime()?.generation.clone()),
-            runtime_key: Some(self.runtime()?.key.clone()),
+            runtime_generation,
+            runtime_key,
         })
     }
 
@@ -613,6 +642,84 @@ impl Connector {
         timeout: Duration,
     ) -> Result<serde_json::Value> {
         self.resident_request(arguments, input, timeout)
+    }
+
+    pub(crate) fn worker_request(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
+        self.worker_request_with_input(arguments, None)
+    }
+
+    fn worker_request_with_input(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+    ) -> Result<serde_json::Value> {
+        if self.exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        let mut command = self.sidecar_command(arguments, input.is_some())?;
+        let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
+        let stdout = child.stdout.take().ok_or(NativeFailure::SidecarFailed)?;
+        let stderr = child.stderr.take().ok_or(NativeFailure::SidecarFailed)?;
+        let output = thread::spawn(move || read_bounded(stdout, OUTPUT_LIMIT));
+        let diagnostic = thread::spawn(move || read_bounded(stderr, OUTPUT_LIMIT));
+        let writer = input.map(|bytes| {
+            let mut stdin = child.stdin.take().expect("piped input for closed command");
+            thread::spawn(move || {
+                stdin
+                    .write_all(&bytes)
+                    .map_err(|_| NativeFailure::SidecarFailed)
+            })
+        });
+        let started = std::time::Instant::now();
+        let result = loop {
+            if self.exiting.load(Ordering::Acquire) {
+                break Err(NativeFailure::Stopped);
+            }
+            match child.try_wait() {
+                Ok(Some(status)) => break Ok(status),
+                Ok(None) if started.elapsed() < self.command_timeout => {
+                    thread::sleep(Duration::from_millis(25))
+                }
+                Ok(None) => break Err(NativeFailure::TimedOut),
+                Err(_) => break Err(NativeFailure::SidecarFailed),
+            }
+        };
+        if result.is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let output = output.join().map_err(|_| NativeFailure::SidecarFailed)?;
+        let diagnostic = diagnostic
+            .join()
+            .map_err(|_| NativeFailure::SidecarFailed)?;
+        let written = writer
+            .map(|writer| writer.join().map_err(|_| NativeFailure::SidecarFailed))
+            .transpose()?;
+        let status = result?;
+        if let Some(written) = written {
+            written?;
+        }
+        diagnostic?;
+        let envelope: CliEnvelope =
+            serde_json::from_slice(&output?).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if envelope.version != 1 {
+            return Err(NativeFailure::Incompatible);
+        }
+        if let Some(error) = envelope.error {
+            return Err(match error.code.as_str() {
+                "unsupported" => NativeFailure::Incompatible,
+                "invalid_argument" | "missing_input" => NativeFailure::InvalidInput,
+                "unauthenticated" => NativeFailure::CredentialUnavailable,
+                "permission_denied" => NativeFailure::PermissionDenied,
+                "conflict" => NativeFailure::Busy,
+                "recovery_required" => NativeFailure::InvalidEvidence,
+                _ => NativeFailure::SidecarFailed,
+            });
+        }
+        if !status.success() {
+            return Err(NativeFailure::SidecarFailed);
+        }
+        envelope.result.ok_or(NativeFailure::InvalidEvidence)
     }
 
     fn ensure(&self) -> Result<LocalServerState> {

@@ -141,7 +141,14 @@ impl Connector {
         generation: Option<&str>,
     ) -> Result<LocalWorkerStatus> {
         validate_action(action, generation)?;
-        let client: DeviceMetadata = serde_json::from_value(self.run(&[
+        let request = |arguments: &[OsString]| {
+            if self.worker_auto_enabled.load(Ordering::Acquire) {
+                self.worker_request(arguments)
+            } else {
+                self.run(arguments)
+            }
+        };
+        let client: DeviceMetadata = serde_json::from_value(request(&[
             "device".into(),
             "inspect".into(),
             "--device-dir".into(),
@@ -152,21 +159,25 @@ impl Connector {
             return Err(NativeFailure::InvalidEvidence);
         }
         if matches!(action, LocalWorkerAction::Register) {
-            self.run(&["worker".into(), "pair-local".into()])?;
+            request(&["worker".into(), "pair-local".into()])?;
         }
         // Fixed Go-owned scope only. Reuse the independent same-server check;
         // no renderer-selected machine, path, endpoint or credential is
         // accepted.
-        let proof = self.local_worker_proof_inner()?;
+        let proof = if self.worker_auto_enabled.load(Ordering::Acquire) {
+            self.local_worker_proof_for_worker_admission()?
+        } else {
+            self.local_worker_proof_inner()?
+        };
         if proof.server_id != client.server_id {
             return Err(NativeFailure::InvalidEvidence);
         }
         match action {
             LocalWorkerAction::Start => {
-                self.run(&["worker".into(), "start".into(), "--detach".into()])?;
+                request(&["worker".into(), "start".into(), "--detach".into()])?;
             }
             LocalWorkerAction::Stop => {
-                self.run(&[
+                request(&[
                     "worker".into(),
                     "stop".into(),
                     "--generation".into(),
@@ -176,7 +187,7 @@ impl Connector {
             LocalWorkerAction::Status | LocalWorkerAction::Register => {}
         }
         worker_status(
-            self.run(&["worker".into(), "status".into()])?,
+            request(&["worker".into(), "status".into()])?,
             &proof.server_id,
             &proof.paired_endpoint,
             &proof.machine_id,
