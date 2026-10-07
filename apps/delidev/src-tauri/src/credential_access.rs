@@ -154,6 +154,14 @@ impl Connector {
             Some(input),
             self.command_timeout,
         )?;
+        // Replacement or Quit while the reply was in flight cannot publish
+        // an old server's access observation into the current desktop.
+        if self.exiting.load(Ordering::Acquire)
+            || self.runtime()?.generation != generation
+            || self.oauth_server_identity()? != server
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
         let result = validate_result(
             serde_json::from_value(value).map_err(|_| NativeFailure::InvalidEvidence)?,
             &attempt.id,
