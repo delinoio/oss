@@ -327,10 +327,6 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
   .usage-skeletons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.session-workspace { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; min-width: 0; }
-.session-workspace.files-open { grid-template-columns: minmax(320px, 1fr) minmax(300px, 380px); }
-.session-workspace > .session { min-width: 0; }
-.session-app-panel { min-width: 0; overflow: auto; border-left: 1px solid var(--border); background: var(--surface); }
 .session-files { padding: 20px; }
 .session-files h2 { margin: 0; }
 .session-files .file-path { overflow-wrap: anywhere; font-family: ui-monospace, monospace; }
@@ -567,7 +563,6 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
   .inbox-row { grid-template-columns: 16px minmax(0, 1fr); }
   .inbox-read-label { grid-column: 2; }
 }
-@media (max-width: 1000px) { .session-workspace.files-open { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100%; } .session-app-panel { border-left: 0; border-top: 1px solid var(--border); } }
 
 /* Settings shares the application pane; native title bar and window geometry stay untouched. */
 .settings-navigation nav { display: block; margin: 0; }
