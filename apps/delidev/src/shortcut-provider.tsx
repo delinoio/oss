@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createContext, useCallback, useContext, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { createContext, useCallback, useContext, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type MutableRefObject } from "react";
+import { createPortal, flushSync } from "react-dom";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { DialogSurface } from "./ui";
 import { Surface } from "./surface";
-import { ShortcutId, ShortcutScope, ShortcutStore, availableShortcutTarget, bindingAria, bindingKeys, dispatchShortcut, globalShortcutBindings, shortcutModalVisible, shortcutPlatform, type ShortcutDefinition, type ShortcutPlatform } from "./shortcuts";
+import { ShortcutId, ShortcutScope, ShortcutStore, availableShortcutTarget, bindingAria, bindingKeys, dispatchShortcut, globalShortcutBindings, shortcutModalVisible, shortcutPlatform, type ShortcutDefinition, type ShortcutHelpDispatch, type ShortcutPlatform } from "./shortcuts";
 import "./shortcuts.css";
 
 interface Controller { store: ShortcutStore; platform: ShortcutPlatform; openHelp: () => void }
@@ -13,14 +13,15 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
   const [store] = useState(() => new ShortcutStore());
   const [platform] = useState(shortcutPlatform);
   const [helpOpen, setHelpOpen] = useState(false);
+  const helpDispatch = useRef<ShortcutHelpDispatch | undefined>(undefined);
   const openHelp = useCallback(() => { if (!shortcutModalVisible()) setHelpOpen(true); }, []);
   const [controller] = useState(() => ({ store, platform, openHelp }));
   useLayoutEffect(() => {
-    const handle = (event: KeyboardEvent) => { dispatchShortcut(event, store.getSnapshot(), store.surface, platform); };
+    const handle = (event: KeyboardEvent) => { dispatchShortcut(event, store.getSnapshot(), store.surface, platform, false, helpDispatch.current); };
     document.addEventListener("keydown", handle);
     return () => document.removeEventListener("keydown", handle);
   }, [store, platform]);
-  return <Context.Provider value={controller}>{children}{helpOpen ? <ShortcutHelp store={store} platform={platform} close={() => setHelpOpen(false)} /> : null}</Context.Provider>;
+  return <Context.Provider value={controller}>{children}{helpOpen ? <ShortcutHelp store={store} platform={platform} dispatch={helpDispatch} close={() => setHelpOpen(false)} /> : null}</Context.Provider>;
 }
 export function useShortcutSurface(surface: Surface) {
   const controller = useContext(Context);
@@ -49,17 +50,22 @@ export function useShortcuts(definitions: readonly ShortcutDefinition[]) {
 const names: Record<Surface, MessageKey> = {
   [Surface.Sessions]: "sidebar.sessions_6fa3cb", [Surface.NewSession]: "shortcuts.newSession", [Surface.NewGeneralChat]: "shortcuts.newSession", [Surface.Search]: "sidebar.search_49c266", [Surface.Settings]: "sidebar.settings_74a883", [Surface.PullRequests]: "sidebar.pullRequests_d9e3f2", [Surface.Usage]: "sidebar.usage_8d5982", [Surface.Schedules]: "sidebar.schedules_221ff1", [Surface.Activity]: "sidebar.activity_38da15", [Surface.Inbox]: "sidebar.inbox_94835e",
 };
-function ShortcutHelp({ store, platform, close }: { store: ShortcutStore; platform: ShortcutPlatform; close: () => void }) {
+function ShortcutHelp({ store, platform, close, dispatch }: { store: ShortcutStore; platform: ShortcutPlatform; close: () => void; dispatch: MutableRefObject<ShortcutHelpDispatch | undefined> }) {
   useLocale();
   const definitions = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), closeButton = useRef<HTMLButtonElement>(null);
+  const actionDismissal = useRef(false);
   useLayoutEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const node = dialog.current!;
     node.showModal();
+    const owner = { dialog: node, beforeRun: () => { actionDismissal.current = true; flushSync(close); } };
+    dispatch.current = owner;
     closeButton.current?.focus();
     return () => {
+      if (dispatch.current === owner) dispatch.current = undefined;
       node.close();
+      if (actionDismissal.current) return;
       const usableOpener = availableShortcutTarget(opener) && (opener!.tabIndex >= 0 || opener!.hasAttribute("tabindex") || opener!.isContentEditable);
       const target = usableOpener ? opener : document.querySelector<HTMLElement>("#main");
       if (availableShortcutTarget(target)) target?.focus({ preventScroll: true });
