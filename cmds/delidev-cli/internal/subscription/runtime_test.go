@@ -103,8 +103,12 @@ func TestRuntimeCleanupRejectsSymlinkAndReplacedIdentity(t *testing.T) {
 				}
 			}
 			var failure *RuntimeCleanupError
-			if err := CleanupRuntime(home, original); !errors.As(err, &failure) || failure.Reason != want {
-				t.Fatal("unowned runtime inventory accepted")
+			err = CleanupRuntime(home, original)
+			if !errors.As(err, &failure) {
+				t.Fatalf("unowned runtime inventory accepted: %v", err)
+			}
+			if failure.Reason != want {
+				t.Fatalf("cleanup returned reason %q, want %q", failure.Reason, want)
 			}
 			if _, err := os.Stat(home); err != nil {
 				t.Fatal("unconfirmed runtime removed")
