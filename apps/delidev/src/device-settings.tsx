@@ -2,7 +2,7 @@ import { statusLabel } from "./product-status";
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
-import { useRetainSettingsTask, useCloseSettingsTask } from "./settings-task-context";
+import { useCloseSettingsTask } from "./settings-task-context";
 import { useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { DeviceQuery, EntityKind, ResourceQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -77,7 +77,6 @@ export function DeviceRevocation({ initial, currentDeviceId, active, close, revo
   const mutation = useRetainedMutation(`revoke-device:${initial.id}`, DeviceQuery.revokeDevice, (result) => { setAccepted(result.device && result.device.id === initial.id && document(result.device).revoked === true ? result.device : "unknown"); revoked(); });
   const stale = Boolean(current.data?.resource && current.data.resource.revision !== initial.revision);
   const unavailable = !current.data?.resource || Boolean(current.error) || initial.kind !== EntityKind.DEVICE || initial.schemaVersion !== 1 || document(initial).revoked !== false;
-  useRetainSettingsTask(Boolean(accepted));
   const closeTask = useCloseSettingsTask(() => close(DeviceRevocationExit.Result));
   const self = initial.id === currentDeviceId;
   const blocked = mutation.busy || mutation.uncertain;

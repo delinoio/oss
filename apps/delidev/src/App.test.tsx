@@ -12,6 +12,63 @@ import { encode } from "./documents";
 // budget. Per-observation waits and product RPC/native deadlines remain unchanged.
 const fullShellTimeoutMs = 60_000;
 
+it("screen shortcuts reuse guarded forms and preserve drafts across keyboard navigation", async () => {
+  const value = fixture([], [], [], false, true);
+  render(<App transport={value.transport} />);
+  fireEvent.keyDown(document.body, { key: "N", ctrlKey: true, shiftKey: true });
+  const firstMessage = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(firstMessage, { target: { value: "Keyboard-created session" } });
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true }); expect(value.creates).not.toHaveBeenCalled();
+  await screen.findByRole("option", { name: "Agent One" });
+  const form = within(firstMessage.closest("form")!);
+  fireEvent.change(form.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(form.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true, isComposing: true }); expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true, repeat: true }); expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true }); await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const message = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.keyDown(message, { key: "?" }); expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).not.toHaveBeenCalled();
+  fireEvent.change(message, { target: { value: "Retained keyboard draft" } });
+  fireEvent.keyDown(message, { key: "k", ctrlKey: true });
+  const search = await screen.findByRole("textbox", { name: "Search conversations" });
+  await waitFor(() => expect(document.activeElement).toBe(search));
+  fireEvent.change(search, { target: { value: "original query" } });
+  fireEvent.submit(search.closest("form")!); await waitFor(() => expect(value.searches).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Retained keyboard draft");
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true }); expect(document.activeElement).toBe(message);
+  fireEvent.keyDown(document.body, { key: "?" });
+  expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeTruthy();
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Close keyboard shortcuts" }), { key: "Escape" });
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  value.enqueues.mockImplementationOnce(async () => { await gate; return { change: { session: value.session } }; });
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); await waitFor(() => expect(value.enqueues).toHaveBeenCalledTimes(1));
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).toHaveBeenCalledTimes(1);
+  await act(async () => { release(); await gate; });
+}, fullShellTimeoutMs);
+
+it("keyboard Search opens the compact drawer and explicitly refocuses retained drafts", async () => {
+  viewport(true);
+  render(<App transport={fixture().transport} />);
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const query = await screen.findByRole("textbox", { name: "Search conversations" });
+  await waitFor(() => expect(document.activeElement).toBe(query));
+  fireEvent.change(query, { target: { value: "Retained compact query" } });
+  const drawer = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  expect(drawer.open).toBe(true);
+  fireEvent.keyDown(query, { key: "?" }); expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  fireEvent(drawer, new Event("cancel", { bubbles: true, cancelable: true }));
+  await waitFor(() => expect(drawer.open).toBe(false));
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  await waitFor(() => expect(drawer.open).toBe(true)); expect(document.activeElement).toBe(query);
+  fireEvent(drawer, new Event("cancel", { bubbles: true, cancelable: true }));
+  await waitFor(() => expect(drawer.open).toBe(false));
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  await waitFor(() => expect(document.activeElement).toBe(query)); expect((query as HTMLInputElement).value).toBe("Retained compact query");
+});
+
 function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
@@ -390,7 +447,7 @@ it.each(["New project", "Create a project"])("opens a fresh New Project dialog f
   expect(screen.getByRole("button", { name: "Sessions" }).getAttribute("aria-current")).toBe("page");
   expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBeNull();
   expect(window.document.querySelector(".sidebar-action-tooltip")).toBeNull();
-  const name = screen.getByRole("textbox", { name: "Name" });
+  const name = screen.getByRole("searchbox", { name: "Search repository names" });
   await waitFor(() => expect(window.document.activeElement).toBe(name));
   fireEvent.change(name, { target: { value: "Retained project" } });
   expect(value.saveConfiguration).not.toHaveBeenCalled();
@@ -400,8 +457,8 @@ it.each(["New project", "Create a project"])("opens a fresh New Project dialog f
   fireEvent(dialog, new Event("cancel", { cancelable: true }));
   await waitFor(() => expect(window.document.activeElement).toBe(opener));
   fireEvent.click(opener);
-  expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("searchbox", { name: "Search repository names" })).not.toBe(name);
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe("");
   expect(screen.getAllByRole("heading", { name: "New Project" })).toHaveLength(1);
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
@@ -411,10 +468,18 @@ function projectRepository() {
 }
 
 async function fillProject(repository: Resource, name = "Direct project") {
-  fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: name } });
-  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Creation repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const projectName = await screen.findByRole("textbox", { name: "Project name" });
+  fireEvent.change(projectName, { target: { value: name } });
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  return projectName;
+}
+
+async function chooseProjectRepository() {
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Creation repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
 }
 
 it.each([false, true])("preserves the mounted conversation or New session draft while creating a project (new session %s)", async newSession => {
@@ -427,7 +492,7 @@ it.each([false, true])("preserves the mounted conversation or New session draft 
   fireEvent.click(opener);
   await fillProject(repository);
   expect(screen.getByRole("textbox", { name: newSession ? "First message" : "Message" })).toBe(composer);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
   fireEvent.click(opener);
@@ -463,7 +528,7 @@ it.each([false, true])("closes the compact drawer before creation and returns fo
   const dialog = await screen.findByRole("dialog", { name: "New Project" });
   expect(drawer.hasAttribute("open")).toBe(false);
   expect(document.querySelectorAll("dialog[open]")).toHaveLength(1);
-  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Name" })));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("searchbox", { name: "Search repository names" })));
   if (pending) {
     await fillProject(repository);
     fireEvent.click(within(dialog).getByRole("button", { name: "Save Project" }));
@@ -473,32 +538,28 @@ it.each([false, true])("closes the compact drawer before creation and returns fo
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect(opener.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByRole("navigation", { name: "Settings categories" })).toBeNull();
-  expect(Boolean(screen.queryByRole("button", { name: "View original operation" }))).toBe(pending);
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
 }, fullShellTimeoutMs);
 
-it("retains the original uncertain project request when either external creation entry reopens it", async () => {
+it("disposes the original uncertain project request when either external creation entry reopens it", async () => {
   const repository = projectRepository(), value = fixture([], [repository]);
   value.saveConfiguration.mockRejectedValueOnce(new ConnectError("The original response was lost.", Code.Unavailable));
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
   fireEvent.click(await screen.findByRole("button", { name: "New project" }));
-  await fillProject(repository);
-  const name = screen.getByRole("textbox", { name: "Name" });
+  const name = await fillProject(repository);
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
   const original = value.saveConfiguration.mock.calls[0][0];
   fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
-  expect(await screen.findByRole("button", { name: "View original operation" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "New project" })));
   expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create a project" }));
-  expect(await screen.findByRole("textbox", { name: "Name" })).toBe(name);
-  expect((name as HTMLInputElement).value).toBe("Direct project");
-  expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(true);
+  const reopenedSearch = await screen.findByRole("searchbox", { name: "Search repository names" });
+  expect(reopenedSearch).not.toBe(name);
+  expect((reopenedSearch as HTMLInputElement).value).toBe("");
   expect(value.saveConfiguration).toHaveBeenCalledOnce();
-  fireEvent.click(screen.getByRole("button", { name: "Retry the same configuration" }));
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
-  expect(value.saveConfiguration).toHaveBeenCalledTimes(2);
-  expect(value.saveConfiguration.mock.calls[1][0]).toEqual(original);
+  expect(value.saveConfiguration.mock.calls[0][0]).toEqual(original);
   expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
 }, fullShellTimeoutMs);
 
@@ -514,7 +575,7 @@ it.each(["surface", "conversation", "connection"] as const)("disposes a hidden p
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await waitFor(() => expect(value.saveConfiguration).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
-  await screen.findByRole("button", { name: "View original operation" });
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   if (departure === "connection") view.rerender(tree(newRequestId()));
   else if (departure === "conversation") {
     fireEvent.click(screen.getByRole("button", { name: /General Chat Retained session/ }));
@@ -525,11 +586,12 @@ it.each(["surface", "conversation", "connection"] as const)("disposes a hidden p
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   }
   fireEvent.click(await screen.findByRole("button", { name: "New project" }));
-  const name = await screen.findByRole("textbox", { name: "Name" });
+  await chooseProjectRepository();
+  const name = await screen.findByRole("textbox", { name: "Project name" });
   fireEvent.change(name, { target: { value: "Replacement draft" } });
   await waitFor(() => expect(document.activeElement).toBe(name));
   await act(async () => resolve({ resource: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Original accepted project" }) }) }));
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect(screen.getByRole("textbox", { name: "Project name" })).toBe(name);
   expect((name as HTMLInputElement).value).toBe("Replacement draft");
   expect(document.activeElement).toBe(name);
   expect(value.saveConfiguration).toHaveBeenCalledOnce();
@@ -542,17 +604,16 @@ it("retains the creation draft through same-identity reconnect and preserves a d
   const authority = { endpoint: "http://127.0.0.1:9090", serverId: newRequestId() }, deviceId = newRequestId();
   const view = render(<App transport={value.transport} pairingAuthority={authority} currentDeviceId={deviceId} />);
   fireEvent.click(await screen.findByRole("button", { name: "New project" }));
-  await fillProject(repository);
-  const name = screen.getByRole("textbox", { name: "Name" });
+  const name = await fillProject(repository);
   view.rerender(<App transport={replacement.transport} pairingAuthority={authority} currentDeviceId={deviceId} connectionEpoch={1} />);
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect(name.isConnected).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect((name as HTMLInputElement).value).toBe("Direct project");
   expect(value.saveConfiguration).not.toHaveBeenCalled();
   expect(replacement.saveConfiguration).toHaveBeenCalledOnce();
   expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
 }, fullShellTimeoutMs);
 
@@ -582,20 +643,21 @@ it("abandons an uncertain New Project save without replay when reopening", async
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
   const opener = await screen.findByRole("button", { name: "New project" });
   fireEvent.click(opener);
-  const name = await screen.findByRole("textbox", { name: "Name" });
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Fixture repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const name = await screen.findByRole("textbox", { name: "Project name" });
   fireEvent.change(name, { target: { value: "Sidebar project" } });
-  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
   fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
-  await screen.findByRole("button", { name: "View original operation" });
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(opener);
-  expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("searchbox", { name: "Search repository names" })).not.toBe(name);
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe("");
   expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
   expect(value.saveConfiguration).toHaveBeenCalledTimes(1);
   expect(value.enqueues).not.toHaveBeenCalled();
@@ -631,10 +693,11 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
   const currentProjectSessionReads = value.sessionRequests.filter((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next").length;
   const sessionRequestsBeforeSave = value.sessionRequests.length;
   fireEvent.click(screen.getByRole("button", { name: "New project" }));
-  fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: "New bounded project" } });
-  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Fixture repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), { target: { value: "New bounded project" } });
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
   expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();

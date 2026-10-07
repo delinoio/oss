@@ -5,7 +5,6 @@ import { useMutation } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { clientFailure, FailureCode } from "@delinoio/delidev-api-client";
 import { useSettingsOpening } from "./settings-lifetime";
-import { SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
 
 interface Intent { input?: object; bytes?: number; acknowledge?: (result: unknown) => boolean; busy: boolean; uncertain: boolean; error?: unknown }
 const empty: Intent = Object.freeze({ busy: false, uncertain: false });
@@ -59,8 +58,14 @@ export function useRetainedMutationIntents(prefix: string): RetainedMutationInte
 const Context = createContext<IntentRegistry | undefined>(undefined);
 export function MutationIntents({ children }: { children: ReactNode }) {
   useLocale();
+  const opening = useSettingsOpening();
   const [registry] = useState(() => new IntentRegistry());
-  useEffect(() => { registry.alive = true; return () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); }; }, [registry]);
+  useEffect(() => {
+    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); };
+    registry.alive = !opening?.disposed;
+    opening?.controller.signal.addEventListener("abort", dispose, { once: true });
+    return () => { opening?.controller.signal.removeEventListener("abort", dispose); dispose(); };
+  }, [registry, opening]);
   return <Context.Provider value={registry}>{children}</Context.Provider>;
 }
 
@@ -84,9 +89,9 @@ export function useRetainedMutationAccepted(key: string, accepted: () => void) {
 }
 
 // Exact pending requests outlive session navigation. Only switching the whole
-// connection discards that registry. Settings and external project creation own
-// nested opening registries; departure discards their intents, and late results
-// cannot reach a replacement.
+// connection discards that registry. Settings categories, task dialogs, and
+// external project creation own nested opening registries; departure discards
+// their intents, and late results cannot reach a replacement.
 export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void, acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean, retainOnError = false) {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
@@ -95,7 +100,6 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
   const [localError, setLocalError] = useState<{ key: string; error: unknown }>();
   const mounted = useRef(true);
   const state = useSyncExternalStore(registry.subscribe, () => registry.entries.get(key) ?? empty);
-  useRetainSettingsTask(state.busy || state.uncertain, state.busy ? SettingsTaskStatus.Pending : SettingsTaskStatus.Uncertain);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const send = async (input?: MessageInitShape<I>, retainedAcknowledgement?: (result: MessageShape<O>, request: MessageShape<I>) => boolean) => {
     const current = registry.entries.get(key) ?? empty;
@@ -143,7 +147,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     registry.notifyAccepted(key);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
-    if (!mounted.current) return;
+    if (!mounted.current || !registry.alive || opening?.disposed) return;
     try { accepted?.(result, retained); } catch (error) { setLocalError({ key, error }); }
   };
   return { send, retry: () => send(), ...state, error: localError?.key === key ? localError.error : state.error };

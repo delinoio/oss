@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { LocalizedText, copy, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
-import { useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask, useSettingsTaskDismiss, useSettingsTaskVisible } from "./settings-task-context";
+import { useCloseSettingsTask, useInSettingsTask, useSettingsTaskDismiss, useSettingsTaskVisible } from "./settings-task-context";
 import { SettingsTaskDialog, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
 import { ProviderGuidance } from "./provider-guidance";
 import { AccountOAuth, useAccountOAuth, type AccountOAuthFlow } from "./account-oauth";
@@ -169,6 +169,17 @@ function AccountCreationWizard({
   const taskFormId = useId(), taskVisible = useSettingsTaskVisible(), inTask = useInSettingsTask(), closeTask = useCloseSettingsTask(close);
   const localOAuth = useAccountOAuth();
   const oauth = suppliedOAuth ?? localOAuth;
+  const oauthStarted = useRef(false);
+  useEffect(() => {
+    if (oauthStarted.current || !initialProvider?.oauthAvailable || !oauth.supports(initialProvider)) return;
+    let live = true;
+    queueMicrotask(() => {
+      if (!live || oauthStarted.current) return;
+      oauthStarted.current = true;
+      oauth.start(initialProvider);
+    });
+    return () => { live = false; };
+  }, [initialProvider, oauth]);
   const [step, setStep] = useState(initialProvider ? WizardStep.Account : WizardStep.Provider);
   const [providerId, setProviderId] = useState(initialProvider?.providerId ?? "");
   // Keep the clicked contract authoritative when independent inventory pages retain different snapshots.
@@ -281,7 +292,6 @@ function AccountCreationWizard({
     setConnected(result.account);
   });
 
-  useRetainSettingsTask(Boolean(createdAccount || unknownResponse || oauth.view) || providerChecking);
   useSettingsTaskDismiss(() => {
     setApiKey(""); setConnectionKey("");
     // The submitted Add-and-connect intent owns its one-shot credential handoff.
@@ -710,6 +720,6 @@ function ApiAccountSettings({
     {accountTypeFilteringReady ? <p className="api-entry-storage-note">{copy("account-settings.knownUsageMayBeIncompleteEstimates_30eea0")}</p> : null}
     <p className="api-entry-storage-note">{copy("account-settings.credentialsAreStoredSecurelyOnThe_be612b")}</p>
     {selectedAccount && section === AccountSettingsSection.Api ? <SettingsTaskDialog key={selectedAccount.id} title={copy("account-settings.manageConnection_ad2892")} size={SettingsDialogSize.Wide} close={() => { setSelectedAccount(undefined); void rows.refetch(); }}><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
-    {wizard ? <SettingsTaskDialog title={copy("account-settings.addAiApiKey_2c04a8")} size={SettingsDialogSize.Form} retained={Boolean(oauth?.view)} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}><AccountCreationWizard apiFormatSelectingReady={apiFormatSelectingReady} oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} /></SettingsTaskDialog> : null}
+    {wizard ? <SettingsTaskDialog title={copy("account-settings.addAiApiKey_2c04a8")} size={SettingsDialogSize.Form} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}><AccountCreationWizard apiFormatSelectingReady={apiFormatSelectingReady} oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} /></SettingsTaskDialog> : null}
   </section>;
 }
