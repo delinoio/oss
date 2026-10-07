@@ -4,8 +4,10 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	"io"
 	"path/filepath"
 	"strings"
@@ -39,6 +41,41 @@ func (h *desktopHostState) execute(ctx context.Context, r desktopRequest) (any, 
 		return nil, usage()
 	}
 	switch r.Operation {
+	case desktopCredentials:
+		if len(r.Arguments) != 0 || r.Scope != "" || r.RequestID != "" || len(r.Input) > 1024 {
+			return nil, usage()
+		}
+		var input struct {
+			Action     server.DesktopCredentialAction `json:"action"`
+			AttemptID  domain.ID                      `json:"attempt_id"`
+			PreviousID domain.ID                      `json:"previous_id,omitempty"`
+			ServerID   domain.ID                      `json:"server_id"`
+			Generation domain.ID                      `json:"generation"`
+			DeviceID   domain.ID                      `json:"device_id"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(r.Input))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&input) != nil {
+			return nil, usage()
+		}
+		var trailing any
+		if decoder.Decode(&trailing) != io.EOF {
+			return nil, usage()
+		}
+		h.mu.Lock()
+		target, closed, access := h.target, h.closed, h.config.DesktopCredentials
+		h.mu.Unlock()
+		if closed || access == nil || input.Generation != target.Generation || input.ServerID.Validate() != nil || input.DeviceID.Validate() != nil || input.AttemptID.Validate() != nil {
+			return nil, domain.Fail(domain.PermissionDenied, "The original desktop server is unavailable.", "Preserve its original connection.")
+		}
+		// A borrowed service/CLI server has no in-process vault owner here.
+		if target.ServerID == "" {
+			return server.DesktopCredentialResult{AttemptID: input.AttemptID, State: server.DesktopCredentialSkipped}, nil
+		}
+		if input.ServerID != target.ServerID {
+			return nil, domain.Fail(domain.PermissionDenied, "The desktop server changed.", "Preserve its original connection.")
+		}
+		return access.Handle(ctx, input.Action, input.AttemptID, input.PreviousID, input.DeviceID)
 	case desktopLaunch, desktopRetry, desktopEnsure:
 		if len(r.Arguments) != 0 || len(r.Input) != 0 || r.Scope != "" || r.RequestID != "" {
 			return nil, usage()

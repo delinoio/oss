@@ -7,6 +7,7 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "account_oauth_native",
+            "desktop_credential_access",
             "choose_repository_folder",
             "read_appearance",
             "update_appearance",

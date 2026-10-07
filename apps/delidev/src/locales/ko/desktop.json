@@ -29,5 +29,21 @@
   "desktop.delidevCouldNotVerifyThisConnection_862b8e": "DeliDev가 이 연결을 검증하지 못했습니다. 다시 시도하거나 문제 해결을 여세요.",
   "desktop.savedConnection_4df074": "저장된 연결",
   "desktop.readingThisWindowSServerIdentity_9fc24f": "이 창의 서버 식별 정보를 읽는 중…",
-  "desktop.retryWindowContext_6efa5e": "창 컨텍스트 다시 시도"
+  "desktop.retryWindowContext_6efa5e": "창 컨텍스트 다시 시도",
+  "desktop.keychainChecking": "키체인 접근 확인 중",
+  "desktop.keychainFailed": "키체인 접근을 확인하지 못했습니다",
+  "desktop.keychainDescription": "저장된 API 키에 접근하고 있습니다.",
+  "desktop.keychainPrompt": "macOS 권한 창이 나타나면 접근을 허용해 주세요.",
+  "desktop.keychainProgress": "접근 확인 중…",
+  "desktop.keychainContinue": "확인 없이 계속",
+  "desktop.keychainDiagnostics": "연결 및 진단",
+  "desktop.keychainRetry": "다시 시도",
+  "desktop.keychainConfirmation": "키체인 접근이 취소되거나 거부되었습니다. macOS 권한 창에서 접근을 허용한 뒤 다시 시도해 주세요.",
+  "desktop.keychainUnavailable": "키체인에 접근할 수 없습니다. 이 컴퓨터의 키체인을 확인한 뒤 다시 시도해 주세요.",
+  "desktop.keychainRecovery": "저장된 인증 정보에 복구가 필요합니다. 기존 키를 유지하고 연결 및 진단을 열어 주세요.",
+  "desktop.keychainExecutableChanged": "실행 중인 서버 코드를 검증하지 못했습니다. 기존 키를 유지하고 연결 및 진단에서 다시 시작해 주세요.",
+  "desktop.keychainDenied": "이 데스크톱의 접근 권한이 없습니다. 연결 및 진단을 열어 주세요.",
+  "desktop.keychainObservationFailed": "원래 접근 확인 결과를 읽지 못했습니다. 다시 시도하면 같은 작업의 결과를 확인합니다.",
+  "desktop.keychainSkipped": "이번 실행에서는 키체인 접근 확인을 생략했습니다. 저장된 계정 상태는 변경되지 않았습니다.",
+  "desktop.keychainDismiss": "닫기"
 }

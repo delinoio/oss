@@ -57,6 +57,37 @@ Returned secret bytes belong to their caller and must be cleared promptly after 
 
 Unavailable services return a typed unavailable error. On macOS, canceled, denied or disallowed authentication returns confirmation required with platform-specific guidance; native calls remain synchronous and retain their original objects until completion. Cancellation cannot forcibly dismiss an OS-owned prompt or prove that a native mutation did not complete. Linux and Windows retain their noninteractive policy and typed errors. No platform falls back to plaintext storage. A missing sealed key or invalid envelope returns recovery required. Logs contain only operation, opaque owner/reference, purpose and stable error code; no raw native errors, payloads, provider identities or filesystem paths are logged.
 
+## Desktop startup access confirmation
+
+Each fresh macOS desktop process presents a startup notice after its local
+connection is authenticated and automatically checks existing connected API
+credentials through its app-owned resident server. The closed private
+`runtime.credentials` operation shares that server's vault; it introduces no
+public RPC, capability, credential format or database migration. Borrowed
+CLI/service servers and saved remote connections grant no local vault access.
+Other platforms retain their existing noninteractive policy.
+
+The native connector owns one original attempt across renderer remounts and
+local product windows. Its server/runtime generation and original paired client
+are checked before admission; server reads recheck client revocation. Paginated
+account inventory selects only current connected credential-bearing API
+accounts without pending removal, resolves each immutable selected provider
+profile and reads its exact current protected reference. Disconnected,
+subscription and keyless accounts do not open the vault. OAuth reads use the
+current private token reference directly, without refresh, exchange or cleanup
+of another generation. Every returned secret buffer is cleared, including on
+failure. No provider request, account-health write, revision or receipt change
+is permitted. Access success proves decryptability only, not provider readiness.
+
+Repeated observation reuses the original attempt, including unknown replies.
+Terminal failures require an explicit observed-failure Retry and a new attempt
+bound to its original predecessor; status and restart do not retry authentication.
+Continue without checking cancels later reads and retains a skipped observation.
+A synchronous OS-owned prompt may remain open until its original native call
+completes. Server shutdown cancels and joins this work before closing its vault;
+the existing desktop 35-second original-child shutdown boundary remains intact.
+Logs contain only original operation IDs, closed phases and sanitized error codes.
+
 ## Verification and remaining evidence
 
 macOS checks current code with `SecCodeCopySelf` and `SecCodeCheckValidity` before each native credential read/write and fresh OAuth admission/exchange. `errSecCSStaticCodeChanged` (-67034) returns recovery required with closed cause `credential_executable_changed`, independently of keychain authentication. Other code-verification failures also require recovery with `credential_executable_invalid`. A rejected fresh OAuth Start retains the existing `oauth_start_not_admitted` cause only after its admission transaction rolls back; its runtime diagnosis remains in structured logs. This check reads/unlocks no keychain. Original OAuth replay, status, cancellation and native deletion retain their independent authority; original references and once-only exchange receipts are preserved. Logs contain only the fixed executable-change reason or OAuth phase/error code. Repair follows [local development signing](apps-delidev-desktop-contract.md#local-development-signing-and-recovery), using original-item authorization and explicit server replacement, never key regeneration or another exchange.
@@ -66,6 +97,15 @@ The macOS process fixture replaces a running ad-hoc executable and checks its se
 Ordinary deterministic tests inject a test-only in-memory native backend, never a production fallback. Real private filesystem tests cover restart/retry, concurrent conflicting writes, uncertain native commits, cancellation after a native write, bounds, altered envelopes, missing keys, scope mismatch, symlink/shared-permission rejection, deletion while locked and delayed writes after deletion. Raw secret values and untrusted error text must not appear in files/logs.
 
 Automatic native macOS tests run in separate test processes that disable interaction once after framework initialization, create a new password-protected temporary keychain and direct every query to it. The suppression is test-only and cannot be selected by a production environment variable. Unit tests verify production authentication admission, exact query matching and native error classifications without accessing any keychain. They never query the default/login keychain. They cover native create/read/duplicate/delete, locked-store refusal, explicit temporary-keychain unlock and larger envelope payloads. Manual interactive acceptance additionally requires an isolated temporary Keychain to verify prompt display, approval completing the original request, cancellation followed by retry of the same reference, and Doctor reading the original sealed reference. Automated fixtures do not establish interactive or installed-app acceptance. Windows tests target only fresh UUID credential names and delete those temporary entries; native Windows execution remains a required evidence item until run on Windows.
+
+The opt-in `TestMacInteractiveTemporaryKeychain` fixture creates and
+deletes only its new isolated keychain. Run it in an interactive macOS session
+with `DELIDEV_MAC_INTERACTIVE_FIXTURE=1 go test ./cmds/delidev-cli/internal/credentials -run '^TestMacInteractiveTemporaryKeychain$' -count=1 -v`.
+Cancel the first prompt, then approve the explicit retry with the fixture's
+public test password `delidev-isolated-test-password`. This selector exists only
+in test source and changes no production policy. An unavailable prompt or a
+confirmation-required result is a failed interactive acceptance, not an approval
+proof. The retained parent removes the owned keychain after the child exits.
 
 Linux native tests require an explicitly disposable Secret Service session. The fixture under `cmds/delidev-cli/internal/credentials/testdata/secret-service` creates a non-root container user, private home/runtime, private D-Bus session and temporary GNOME Keyring. The fixed test password protects only that discarded fixture. The final locked-state test intentionally leaves test wrapping material in the locked collection; container removal discards the entire fixture. Never opt into this test against an ordinary user's shared collection.
 

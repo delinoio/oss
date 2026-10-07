@@ -223,6 +223,70 @@ func TestDesktopRejectsGenericCommandsAndOverrides(t *testing.T) {
 	}
 	f.quit(t)
 }
+
+func TestDesktopCredentialControlPinsOriginalRuntimeAndClient(t *testing.T) {
+	f := startResidentFixture(t, filepath.Join(t.TempDir(), "private"), "127.0.0.1:0")
+	f.launch(t)
+	pair := f.request(t, "device.pair-local")
+	if pair.Error != nil {
+		t.Fatal(pair.Error.Code)
+	}
+	deviceBytes, err := os.ReadFile(filepath.Join(f.root, "desktop-client", "device.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var device struct {
+		DeviceID domain.ID `json:"device_id"`
+	}
+	if json.Unmarshal(deviceBytes, &device) != nil || device.DeviceID.Validate() != nil {
+		t.Fatal("invalid fixture device")
+	}
+	clear(deviceBytes)
+	attempt := domain.NewID()
+	input := map[string]any{"action": "begin", "server_id": f.target.ServerID, "generation": f.target.Generation, "device_id": device.DeviceID, "attempt_id": attempt}
+	call := func() desktopReply {
+		raw, _ := json.Marshal(input)
+		id := domain.NewID()
+		if err := json.NewEncoder(f.input).Encode(desktopRequest{Version: 2, ID: id, Operation: desktopCredentials, Input: raw}); err != nil {
+			t.Fatal(err)
+		}
+		r := f.next(t)
+		if r.ID != id {
+			t.Fatal("uncorrelated credential reply")
+		}
+		return r
+	}
+	input["generation"] = domain.NewID()
+	if r := call(); r.Error == nil {
+		t.Fatal("foreign runtime admitted")
+	}
+	input["generation"] = f.target.Generation
+	input["device_id"] = domain.NewID()
+	if r := call(); r.Error == nil {
+		t.Fatal("foreign client admitted")
+	}
+	input["device_id"] = device.DeviceID
+	r := call()
+	if r.Error != nil {
+		t.Fatal(r.Error.Code)
+	}
+	for r.Result.(map[string]any)["state"] == "checking" {
+		input["action"] = "status"
+		r = call()
+		if r.Error != nil {
+			t.Fatal(r.Error.Code)
+		}
+	}
+	state := r.Result.(map[string]any)["state"]
+	if state != "succeeded" && state != "skipped" {
+		t.Fatal("empty inventory did not settle", state)
+	}
+	input["extra"] = "not-allowed"
+	if r := call(); r.Error == nil {
+		t.Fatal("unclosed input admitted")
+	}
+	f.quit(t)
+}
 func TestDesktopFrameBoundsAndBufferedRequests(t *testing.T) {
 	r := bufio.NewReader(bytes.NewBufferString("one\ntwo\n"))
 	for _, want := range []string{"one\n", "two\n"} {

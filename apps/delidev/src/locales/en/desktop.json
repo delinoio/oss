@@ -29,5 +29,21 @@
   "desktop.delidevCouldNotVerifyThisConnection_862b8e": "DeliDev could not verify this connection. Retry or open Troubleshooting for help.",
   "desktop.savedConnection_4df074": "Saved connection",
   "desktop.readingThisWindowSServerIdentity_9fc24f": "Reading this window's server identity…",
-  "desktop.retryWindowContext_6efa5e": "Retry window context"
+  "desktop.retryWindowContext_6efa5e": "Retry window context",
+  "desktop.keychainChecking": "Checking Keychain access",
+  "desktop.keychainFailed": "Keychain access could not be confirmed",
+  "desktop.keychainDescription": "Accessing your saved API keys.",
+  "desktop.keychainPrompt": "If macOS asks for permission, allow access.",
+  "desktop.keychainProgress": "Checking access…",
+  "desktop.keychainContinue": "Continue without checking",
+  "desktop.keychainDiagnostics": "Connection & diagnostics",
+  "desktop.keychainRetry": "Try again",
+  "desktop.keychainConfirmation": "Keychain access was canceled or denied. Allow access when macOS asks, then try again.",
+  "desktop.keychainUnavailable": "Keychain access is unavailable. Check this computer’s Keychain and try again.",
+  "desktop.keychainRecovery": "A saved credential needs recovery. Keep your existing keys and open Connection & diagnostics.",
+  "desktop.keychainExecutableChanged": "The running server’s code could not be verified. Keep your existing keys and restart through Connection & diagnostics.",
+  "desktop.keychainDenied": "This desktop is no longer authorized. Open Connection & diagnostics.",
+  "desktop.keychainObservationFailed": "The original access check could not be observed. Try again to observe the same attempt.",
+  "desktop.keychainSkipped": "Keychain access checking was skipped for this launch. Saved account status is unchanged.",
+  "desktop.keychainDismiss": "Dismiss"
 }

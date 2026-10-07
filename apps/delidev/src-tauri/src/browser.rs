@@ -235,6 +235,7 @@ impl Connector {
             worker_exited: std::sync::Mutex::new(None),
             worker_pause_generation: std::sync::Mutex::new(None),
             worker_client_id: std::sync::Mutex::new(None),
+            credential_access: std::sync::Mutex::new(None),
         })
     }
 
