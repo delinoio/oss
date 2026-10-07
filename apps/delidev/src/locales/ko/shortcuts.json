@@ -4,7 +4,6 @@
   "shortcuts.close": "키보드 단축키 닫기",
   "shortcuts.global": "공통",
   "shortcuts.help": "단축키 도움말 열기",
-  "shortcuts.openSearch": "검색 열기",
   "shortcuts.newSession": "새 세션",
   "shortcuts.focusMessage": "메시지 입력창으로 이동",
   "shortcuts.queueMessage": "메시지 대기열에 추가",

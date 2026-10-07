@@ -4,7 +4,7 @@ import { bindingAria, bindingKeys, bindingMatches, dispatchShortcut, globalShort
 import { Surface } from "./surface";
 
 const platform = ShortcutPlatform.Other;
-function definition(extra: Partial<ShortcutDefinition> = {}): ShortcutDefinition { return { id: ShortcutId.Search, scope: ShortcutScope.Global, label: "shortcuts.openSearch", bindings: [{ key: "k", primary: true }], run: vi.fn(), ...extra }; }
+function definition(extra: Partial<ShortcutDefinition> = {}): ShortcutDefinition { return { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: [{ key: "k", primary: true }], run: vi.fn(), ...extra }; }
 function dispatch(items: ShortcutDefinition[], options: KeyboardEventInit = {}, target: HTMLElement = document.body) {
   const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "k", ctrlKey: true, ...options });
   const handle = () => dispatchShortcut(event, items, Surface.Search, platform);
@@ -41,9 +41,9 @@ it("gives target then screen precedence and never falls through a disabled match
 });
 it("blocks conflicts and logs only stable action metadata", () => {
   const log = vi.spyOn(console, "warn").mockImplementation(() => {});
-  const first = definition(), second = definition({ id: ShortcutId.NewSession }); dispatch([first, second]);
+  const first = definition(), second = definition({ id: ShortcutId.Help }); dispatch([first, second]);
   expect(first.run).not.toHaveBeenCalled(); expect(second.run).not.toHaveBeenCalled();
-  expect(log).toHaveBeenCalledWith({ event: "delidev_shortcut_conflict", scope: ShortcutScope.Global, actionIds: [ShortcutId.Search, ShortcutId.NewSession] });
+  expect(log).toHaveBeenCalledWith({ event: "delidev_shortcut_conflict", scope: ShortcutScope.Global, actionIds: [ShortcutId.NewSession, ShortcutId.Help] });
 });
 it.each(["input", "textarea", "select", "editable", "textbox", "combobox"])("preserves question mark text in %s", kind => {
   const element = document.createElement(["input", "textarea", "select"].includes(kind) ? kind : "div");
@@ -70,7 +70,7 @@ it("blocks modals and compact drawers but permits a wide sidebar region", () => 
 it("scopes snapshots and removes original registration owners independently", () => {
   const store = new ShortcutStore(), first = Symbol(), second = Symbol();
   store.register(first, [definition()]); store.register(second, [definition({ id: ShortcutId.SearchFocus, scope: Surface.Search }), definition({ active: false })]);
-  expect(store.getSnapshot().map(item => item.id)).toEqual([ShortcutId.Search]);
+  expect(store.getSnapshot().map(item => item.id)).toEqual([ShortcutId.NewSession]);
   store.setSurface(Surface.Search); expect(store.getSnapshot()).toHaveLength(2);
   store.remove(first); expect(store.getSnapshot().map(item => item.id)).toEqual([ShortcutId.SearchFocus]);
   store.remove(second); expect(store.getSnapshot()).toEqual([]);
