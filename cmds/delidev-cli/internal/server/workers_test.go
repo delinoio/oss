@@ -75,7 +75,7 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	if _, err := client.AttachWorker(ctx, ownerRequest(two, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version})); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("foreign machine attached: %v", err)
 	}
-	attach := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}
+	attach := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1}}
 	// Verify duplicate rejection across the entire negotiated set, including
 	// non-adjacent entries and duplicates after both older capabilities.
 	for _, capabilities := range [][]pb.WorkerCapability{
@@ -131,7 +131,7 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	if claimed == nil || claimed.Id != job.Msg.Job.Id {
 		t.Fatal("wrong assigned job")
 	}
-	output, _ := json.Marshal(workspace.Inspection{Root: "/example/checkout", Name: "checkout", Remotes: []string{"origin"}, DefaultRefs: map[string]string{"origin": "main"}})
+	output, _ := json.Marshal(workspace.Inspection{Root: "/example/checkout", Name: "checkout", Remotes: []string{"origin"}, DefaultRefs: map[string]string{"origin": "main"}, GitHubRepositories: map[string]workspace.GitHubRepository{}})
 	report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: claimed.Id, ExpectedRevision: claimed.Revision}, MachineId: device.Machine.Id, InstanceId: instance, OutputJson: output}
 	if _, err := client.ReportWork(ctx, ownerRequest(two, report)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("foreign completion accepted: %v", err)

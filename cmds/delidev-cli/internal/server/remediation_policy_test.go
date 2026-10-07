@@ -59,7 +59,7 @@ func TestRemediationPolicyTransferRemapsExecutionButKeepsGitHubIdentity(t *testi
 	var executionTarget domain.ID
 	for i := 0; i < 3; i++ {
 		source, target := domain.NewID(), domain.NewID()
-		doctorPut(t, s, domain.MachineKind, target, 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"})
+		doctorPut(t, s, domain.MachineKind, target, 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64", WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}})
 		selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: source, Name: "source", OS: "linux", Architecture: "amd64"})
 		selection.Machines = append(selection.Machines, domain.ConfigurationMachineBinding{SourceID: source, TargetID: target})
 		if i < 2 {

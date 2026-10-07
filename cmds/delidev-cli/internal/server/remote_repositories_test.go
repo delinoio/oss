@@ -63,10 +63,16 @@ func TestRemoteScheduleClonesWithoutCheckoutAndClaimsExecution(t *testing.T) {
 	if err != nil || run.Msg.Session == nil {
 		t.Fatal("schedule did not accept a session", err)
 	}
-	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
-		t.Fatal("schedule preparation was not assigned", f.workerStream.Err())
+	nextJob := func() *pb.Resource {
+		for f.workerStream.Receive() {
+			if job := f.workerStream.Msg().Job; job != nil {
+				return job
+			}
+		}
+		t.Fatal("scheduled work stream ended", f.workerStream.Err())
+		return nil
 	}
-	assigned := f.workerStream.Msg().Job
+	assigned := nextJob()
 	var job domain.Job
 	var preparation workspace.PrepareRequest
 	if domain.Decode(assigned.DocumentJson, &job) != nil || job.Type != domain.PrepareWorkspaceJob || domain.Decode(job.Input, &preparation) != nil || string(preparation.SessionID) != run.Msg.Session.Id {
@@ -93,10 +99,7 @@ func TestRemoteScheduleClonesWithoutCheckoutAndClaimsExecution(t *testing.T) {
 	if err := f.service.dispatchExecution(ctx, current); err != nil {
 		t.Fatal("prepared schedule did not dispatch", err)
 	}
-	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
-		t.Fatal("scheduled execution was not assigned", f.workerStream.Err())
-	}
-	execution := f.workerStream.Msg().Job
+	execution := nextJob()
 	var input domain.ExecutionJobInput
 	if domain.Decode(execution.DocumentJson, &job) != nil || job.Type != domain.ExecuteSessionJob || domain.Decode(job.Input, &input) != nil || input.SessionID != preparation.SessionID || input.Input.Prompt != definition.Prompt {
 		t.Fatal("scheduled execution lost its accepted input")

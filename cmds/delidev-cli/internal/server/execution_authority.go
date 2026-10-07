@@ -690,7 +690,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		} else if !store.MissingNetworkRoute(routeErr) {
 			return nil, routeErr
 		}
-		if !scope.Provider.EnabledValue() {
+		if scope.SubscriptionService == "" && !scope.Provider.EnabledValue() {
 			return nil, providerDisabled()
 		}
 		return struct{ JobID domain.ID }{identity.Job}, tx.PutExecutionGrant(grant)
