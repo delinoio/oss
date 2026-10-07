@@ -164,7 +164,10 @@ func TestNativeClaudeAuthProcessIsolationExitAndLogout(t *testing.T) {
 	second, _ := fixtureConfig(t, "auth-native-second")
 	config := AuthConfig{Process: first.Process, Version: first.Version, Home: first.Home}
 	config.Process.Env = append(config.Process.Env, "ANTHROPIC_API_KEY=foreign-fixture", "CLAUDE_CODE_OAUTH_TOKEN=foreign-fixture", "HTTPS_PROXY=http://foreign.invalid")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Several original child processes are joined in sequence. Race-instrumented
+	// fixture children also wait on exit; this aggregate budget is independent
+	// of the production command and login deadlines.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := VerifyAuthVersion(ctx, config); err != nil {
 		t.Fatal(err)
