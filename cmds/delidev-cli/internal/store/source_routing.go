@@ -44,7 +44,7 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		var provider domain.Provider
 		if model.SourceKind == domain.SubscriptionModel {
 			source.Source = "subscription:" + string(model.SubscriptionService)
-			if len(agent.Routes) > 0 && (agent.Harness != domain.Codex || agent.Options.Permission != domain.PermissionReadOnly && agent.Options.Permission != domain.PermissionWorkspaceWrite) {
+			if len(agent.Routes) > 0 && agent.Harness != domain.Codex {
 				source.Problem = domain.Fail(domain.Unsupported, "This subscription execution profile is unsupported.", "Choose a supported account source and harness.")
 			}
 		} else {
