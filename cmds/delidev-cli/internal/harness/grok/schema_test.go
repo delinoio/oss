@@ -98,7 +98,7 @@ func TestInitializeRejectsForeignOrUninspectedFacts(t *testing.T) {
 			meta := result["_meta"].(map[string]any)
 			switch change {
 			case "version":
-				meta["agentVersion"] = "1.0.42"
+				meta["agentVersion"] = "invalid/version"
 			case "protocol":
 				result["protocolVersion"] = 2
 			case "cwd":
@@ -156,7 +156,7 @@ func TestInspectionRejectsInheritedState(t *testing.T) {
 			report := fixtureObject(inspectionFixture)
 			switch change {
 			case "version":
-				report["grokVersion"] = "1.0.42"
+				report["grokVersion"] = "invalid/version"
 			case "cwd":
 				report["cwd"] = "/foreign"
 			case "project":

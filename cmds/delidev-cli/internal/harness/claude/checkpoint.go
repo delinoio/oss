@@ -298,7 +298,7 @@ func (cp sessionCheckpoint) validateConfiguration(config APIStreamConfig, origin
 	if validateWorkspaceRoots(config) != nil {
 		return historyUncertain()
 	}
-	if cp.Version != 1 || config.Version != SupportedVersion || !validHistoryDigest(ref.SHA256) || cp.Configuration != checkpointConfigurationDigest(config, origin, instructionsSHA256) || cp.Session != ref.SessionID || cp.Session != config.SessionID || cp.Owner != ref.OwnerID || cp.Owner != config.Process.OwnerID || cp.Input != ref.InputID || cp.InputDigest != ref.InputSHA256 || !validHistoryDigest(cp.InputDigest) || cp.Turn != ref.NativeTurnID || !nativeUUID(cp.Turn) || cp.Applied.Model != config.Model || (cp.Applied.Effort != nil && !validNativeEffort(*cp.Applied.Effort, false)) || (config.Effort != "" && (cp.Applied.Effort == nil || *cp.Applied.Effort != config.Effort)) || !validNativePermission(config.Permission) {
+	if cp.Version != 1 || !validHistoryDigest(ref.SHA256) || cp.Configuration != checkpointConfigurationDigest(config, origin, instructionsSHA256) || cp.Session != ref.SessionID || cp.Session != config.SessionID || cp.Owner != ref.OwnerID || cp.Owner != config.Process.OwnerID || cp.Input != ref.InputID || cp.InputDigest != ref.InputSHA256 || !validHistoryDigest(cp.InputDigest) || cp.Turn != ref.NativeTurnID || !nativeUUID(cp.Turn) || cp.Applied.Model != config.Model || (cp.Applied.Effort != nil && !validNativeEffort(*cp.Applied.Effort, false)) || (config.Effort != "" && (cp.Applied.Effort == nil || *cp.Applied.Effort != config.Effort)) || !validNativePermission(config.Permission) {
 		return historyUncertain()
 	}
 	for _, id := range []domain.ID{cp.Session, cp.Owner, cp.Input} {

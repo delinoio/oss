@@ -119,7 +119,7 @@ func (c *GrokEventPublisher) Observe(ctx context.Context, v grok.InputObservatio
 	if observed.RequestID == nil {
 		return nil
 	}
-	request := &domain.GrokInteractionRequest{Version: grok.SupportedVersion, ObservationID: id, Event: observed}
+	request := &domain.GrokInteractionRequest{Version: b.publisher.NativeVersion(), ObservationID: id, Event: observed}
 	u := domain.ExecutionInteractionUpdate{ID: domain.NewID(), NativeRequestID: *observed.RequestID, Grok: request}
 	switch {
 	case v.Permission != nil && v.QuestionOffer == nil && v.PlanOffer == nil:

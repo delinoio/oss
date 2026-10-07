@@ -2,7 +2,7 @@
 
 ## Scope
 
-This planned amendment owns native execution startup in
+This amendment owns native execution startup in
 `cmds/delidev-cli/internal/domain`, `internal/server`, `internal/worker` and
 `internal/harness`, with desktop presentation in `apps/delidev/src` and the
 Worker RPC in `protos/delidev/v1/worker.proto`. It covers first execution,
@@ -11,9 +11,10 @@ operations. It does not activate an unsupported operation or account family.
 
 The owner approved removal of manual Worker inspection, separate execution
 probes, `--version` subprocesses and version-number admission gates on
-2026-10-07. Establish the complete protocol reservation on main before dependent
-implementation. Until the complete feature is active, existing runtime contracts
-remain unchanged; a reservation grants no execution or credential authority.
+2026-10-07. PR #1645 established the complete protocol reservation on main at
+`03429673f2976ab52b98c613f9d3cc1ff4c41d84` before implementation. The active
+schemas use those exact numbers; the prior reservation itself granted no execution
+or credential authority.
 
 ## Runtime and Language
 
@@ -31,10 +32,10 @@ Users retain explicit account connection, installation and executable-path edits
 
 ### Main-first allocation closure
 
-Under issue #964, reserve System `EXECUTION_STARTUP_V1 = 43` and Worker
+Under issue #964, PR #1645 reserved System `EXECUTION_STARTUP_V1 = 43` and Worker
 `EXECUTION_STARTUP_V1 = 23`. Preserve System 42 and Worker 22 for the separate
 inline-model proposal in PR #1642, including while that reservation is pending.
-Reserve these wholly new declarations with `newDeclaration: true`:
+The ledger preserves these declaration reservations with `newDeclaration: true`:
 
 | Declaration | Fields or enum members in numeric order |
 | --- | --- |
@@ -47,16 +48,17 @@ Reserve these wholly new declarations with `newDeclaration: true`:
 | `ExecutionStartupCleanup` | UNSPECIFIED 0, CONFIRMED 1, UNCERTAIN 2 |
 
 Enum member names use their complete upper-snake declaration prefix. The
-reservation changes no active schema, generated binding, capability advertisement,
-assignment, inference route or native operation.
+reservation changed no active schema, generated binding, capability advertisement,
+assignment, inference route or native operation. Runtime activation now exposes
+System 43, Worker 23 and the original-worker ReportExecutionStartup RPC.
 
-### Intended execution behavior
+### Execution behavior
 
 The negotiated v4 assignment replaces mandatory pre-inspected installation
 evidence with an immutable startup selection. Historical v1/v2/v3 assignments
 retain their exact attribution and remain readable. Adapter capabilities report
 implemented code, independently of installed executable or account readiness.
-Workers lacking the new capability receive no new assignment; clients receive an
+Workers lacking the new capability receive no new execution assignment; clients receive an
 update requirement rather than an instruction to run manual inspection.
 
 Acceptance retains atomic input, configuration, routing and job ownership. The
@@ -72,6 +74,9 @@ gate. Unknown versions stay unavailable; never substitute a baseline version.
 Unsupported protocol shapes, methods and feature semantics fail explicitly.
 Version-dependent interpretation must derive from actual negotiated/observed
 protocol evidence. Existing schema, ownership and bounded-content checks remain.
+Grok Build retains its bounded native configuration-integrity reads for effective
+settings and configuration sources. These reads do not discover Worker readiness,
+probe a separate ACP session or run a version command.
 
 `ReportExecutionStartup` binds the exact claimed job/revision and original
 machine/device/instance/server epoch. Its receipt is durable and exact replay
@@ -86,6 +91,10 @@ checkpoint, executable identity, account, Worker, workspace and history checks.
 No installation refresh can silently replace historical native ownership. Title
 initialization follows its actual title process; title failure cannot prevent the
 accepted conversation execution. Existing feature and platform limits remain.
+Source validation preserves the original assignment bytes, including legacy
+v1/v2/v3 installation identity. It does not convert a completed source to v4 or
+require Worker 23 for an already supported legacy source operation; each native
+operation retains its own capability, protocol and original-executable checks.
 
 ### Failure presentation and retry
 
@@ -109,8 +118,9 @@ own settings; normal successful execution shows no prerequisite or ready score.
 
 ## Storage
 
-Use bounded optional startup metadata in existing job JSON with immutable ready
-evidence and independent later failure/cleanup facts. Keep the original assignment
+Use bounded optional startup metadata in existing session JSON and mirror it into
+the original terminal job JSON. Retain immutable ready evidence and independent
+later failure/cleanup facts. Keep the original assignment
 unchanged; do not fabricate native acceptance or rewrite historical snapshots.
 Observation metadata is limited to 4 KiB. Existing durable request receipts and
 native process/outbox journals preserve restart and unknown-write outcomes.
@@ -141,7 +151,8 @@ Check protocol allocations and generated parity with `pnpm proto:check`. Run
 temporary accounts/state and cannot invoke inference or user login.
 
 Cover absent inspection records across manual/continued/scheduled execution,
-single actual-process startup without version/probe children, compatible protocol
+one original protocol initialization without version or separate protocol-probe
+children, compatible protocol
 responses from versions outside former gates, incompatible protocol and settings,
 missing executables, denial, timeout, revocation, Stop/Archive races, duplicate
 requests, reconnect/restart and uncertain delivery/cleanup. Verify old Worker and
@@ -154,11 +165,11 @@ from fixtures, compilation and packaging.
 
 Reuse Worker Connect streams, native adapters, execution grants, original
 subscription leases, existing job storage and desktop Connect Query. This
-reservation adds no external dependency and activates none of these interfaces.
+implementation adds no external dependency.
 
 ## Change Triggers
 
-Activation updates the owning harness/session/desktop/protocol/diagnostics/title
+Changes update the owning harness/session/desktop/protocol/diagnostics/title
 and subscription contracts, the project index and applicable scoped/root AGENTS.
 Preserve historical declaration numbers and evidence boundaries. Update the
 runtime contracts only with the complete implementation and its actual results.

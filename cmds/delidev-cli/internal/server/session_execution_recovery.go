@@ -193,13 +193,13 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 			}
 			initial, err := store.Decode[domain.Job](first)
 			var original domain.ExecutionJobInput
-			if err != nil || domain.Decode(initial.Input, &original) != nil || original.Validate() != nil || original.Version != 1 || original.Configuration.Harness != domain.OpenCode || original.ExecutionID != history || original.SessionID != sr.ID || original.MachineID != input.MachineID || original.ConfigurationDigest != input.ConfigurationDigest || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID {
+			if err != nil || domain.Decode(initial.Input, &original) != nil || original.Validate() != nil || (original.Version != 1 && original.Version != 4) || original.Configuration.Harness != domain.OpenCode || original.ExecutionID != history || original.SessionID != sr.ID || original.MachineID != input.MachineID || original.ConfigurationDigest != input.ConfigurationDigest || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID {
 				return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 			}
 			creation = original.ThreadRequestID
 		}
 		result.Harness = domain.OpenCode
-		result.OpenCode = &domain.OpenCodeRecoveryReference{ClaimVersion: input.Version, CreationRequestID: creation, BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+		result.OpenCode = &domain.OpenCodeRecoveryReference{ClaimVersion: nativeRecoveryClaimVersion(input), CreationRequestID: creation, BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
 	} else if input.Configuration.Harness == domain.ClaudeCode {
 		permission, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode)
 		if err != nil || !progress.ClaudeContinuationBoundary(input.InputID) {
@@ -213,7 +213,16 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 		}
 		result.Harness = domain.ClaudeCode
-		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: input.Version, Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(input.Configuration.Instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: nativeRecoveryClaimVersion(input), Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(input.Configuration.Instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+		if input.Version == 4 {
+			if session.Startup == nil || session.Startup.Ready == nil || session.Startup.Ready.Validate() != nil {
+				return result, domain.ExecutionRecoveryUncertain()
+			}
+			selection := *input.Startup
+			selection.ExecutableSHA256 = session.Startup.Ready.ExecutableSHA256
+			result.Claude.Startup = &selection
+			result.Claude.Version = ""
+		}
 	} else if input.Configuration.Harness != domain.Codex {
 		return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 	}
@@ -325,4 +334,14 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 	}
 	_, err = tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
 	return err
+}
+
+func nativeRecoveryClaimVersion(input domain.ExecutionJobInput) uint32 {
+	if input.Version != 4 {
+		return input.Version
+	}
+	if input.Continuation != nil || input.Fork != nil {
+		return 2
+	}
+	return 1
 }

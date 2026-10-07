@@ -1,5 +1,9 @@
 # DeliDev managed Codex subscriptions
 
+## Direct execution startup
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) removes manual installation inspection and separate execution probes from new negotiated assignments. Initialize the actual selected process and validate its protocol, credential mode and settings before input. Optional observed version metadata cannot grant or deny execution by numeric comparison. Existing protected generation, original account lease, server-owned OAuth and credential write-back/cleanup remain required; readiness never grants login, account refresh or credential ownership.
+
 ## Failed subscription cleanup reservations
 
 Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the

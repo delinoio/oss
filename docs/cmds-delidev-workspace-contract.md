@@ -1,5 +1,9 @@
 # DeliDev Worker workspace contract
 
+## Direct startup retry claims
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) adds an explicit no-send retry claim under the original session lock. A retry with an existing predecessor requires its exact closed execution claim, original process reconciliation and unchanged canonical workspace/Git identities. If startup failed before a claim existed, absence is usable only after server-confirmed no-send/cleanup proof and a complete no-execution-history check. It grants no foreign-claim adoption, filesystem deletion, automatic replay or new Local authority.
+
 ## Scope
 `cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. The Worker first Codex runner now uses the execution lease below; public first dispatch uses that lease; the bounded same-account Codex profile follows [the fork contract](cmds-delidev-forks-contract.md), while additional fork profiles remain separate pending boundaries; managed whole-workspace snapshots follow the storage contract. Record implementation status and validation in pull requests, issues and CI logs/artifacts under the repository validation policy.
 

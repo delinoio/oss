@@ -141,7 +141,7 @@ func (a *OwnedAPI) RetainCheckpoint(ctx context.Context) (raw []byte, reference 
 	requiresResume := stop != nil || s.observer.progress.StoppedOnRejection || last.value.Assistant.Error != nil
 	s.observer.mu.Unlock()
 	ref := CheckpointReference{OwnerID: s.owner, CreationRequestID: c.request, InputRequestID: i.receipt.RequestID, SessionID: history.SessionID, InputID: history.InputID, PartID: i.receipt.PartID, InputSHA256: hex.EncodeToString(i.digest[:]), HistorySHA256: history.Digest, RequiresResume: requiresResume}
-	value := nativeCheckpoint{Version: 1, NativeVersion: SupportedVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
+	value := nativeCheckpoint{Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: s.cwd, NativeRoot: s.runtimeRoot, Project: c.identity.project, Slug: c.identity.slug, Created: c.identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(s.apiProfile.Token)), History: history, Stop: stop, Files: files}
 	if scope := s.apiProfile.WorkspaceRoot; scope != nil && scope.windowsGlobal() {
 		if scope.native != s.runtimeRoot || scope.directory != s.cwd || c.identity.project != "global" {
 			return nil, CheckpointReference{}, sessionUncertain()
@@ -256,7 +256,7 @@ func decodeCheckpoint(raw []byte, ref CheckpointReference, home string) (nativeC
 	}
 	expected := ref
 	expected.SHA256 = ""
-	if !validCheckpointRoots(value) || value.NativeVersion != SupportedVersion || value.Reference != expected || value.RuntimeHome != home || !checkpointPath(home) || !checkpointPath(value.Workspace) || directoryContains(home, value.Workspace) || directoryContains(value.Workspace, home) || !checkpointDigest(value.SettingsSHA256) || !checkpointDigest(value.CredentialSHA256) || domain.Text(value.Project, "native project", 256, true) != nil || domain.Text(value.Slug, "native slug", 256, true) != nil || value.Created <= 0 || value.Created > 9007199254740991 || !validateCheckpointFiles(value.Files) || !validCheckpointHistory(value.History) || value.History.RequestID != ref.InputRequestID || value.History.SessionID != ref.SessionID || value.History.InputID != ref.InputID || value.History.Digest != ref.HistorySHA256 {
+	if !validCheckpointRoots(value) || value.NativeVersion != "" && !domain.ValidNativeVersionMetadata(value.NativeVersion) || value.Reference != expected || value.RuntimeHome != home || !checkpointPath(home) || !checkpointPath(value.Workspace) || directoryContains(home, value.Workspace) || directoryContains(value.Workspace, home) || !checkpointDigest(value.SettingsSHA256) || !checkpointDigest(value.CredentialSHA256) || domain.Text(value.Project, "native project", 256, true) != nil || domain.Text(value.Slug, "native slug", 256, true) != nil || value.Created <= 0 || value.Created > 9007199254740991 || !validateCheckpointFiles(value.Files) || !validCheckpointHistory(value.History) || value.History.RequestID != ref.InputRequestID || value.History.SessionID != ref.SessionID || value.History.InputID != ref.InputID || value.History.Digest != ref.HistorySHA256 {
 		return nativeCheckpoint{}, sessionUncertain()
 	}
 	input := value.History.Messages[0]
