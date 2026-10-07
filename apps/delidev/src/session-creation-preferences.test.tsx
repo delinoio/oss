@@ -14,7 +14,7 @@ import { MutationIntents } from "./mutation";
 import { parseCreationPreferences, CreationPreferenceProblem, type CreationPreferencePair, type CreationPreferenceSnapshot } from "./session-creation-preferences";
 
 function resource(kind: EntityKind, name: string, extra = {}): Resource { return create(ResourceSchema, { kind, id:newRequestId(), revision:1n, schemaVersion:1, documentJson:encode({name,...extra}) }); }
-function fixture(initial = true) {
+function fixture(initial = true, includeRemembered = false) {
  const agent=resource(EntityKind.AGENT,"Remembered agent"), machine=resource(EntityKind.MACHINE,"Disconnected runner",{disabled:false});
  const otherAgent=resource(EntityKind.AGENT,"Manual agent"), otherMachine=resource(EntityKind.MACHINE,"Manual runner");
  const projects=[resource(EntityKind.PROJECT,"Allowed project",{repositories:[],agents:{configured:true,ids:[agent.id]}}),resource(EntityKind.PROJECT,"Forbidden project",{repositories:[],agents:{configured:true,ids:[otherAgent.id]}}),resource(EntityKind.PROJECT,"Empty restriction",{repositories:[],agents:{configured:true,ids:[]}})];
@@ -24,12 +24,12 @@ function fixture(initial = true) {
  const get=vi.fn((request:{kind:EntityKind;id:string})=>({resource:[agent,machine,otherAgent,otherMachine,...projects].find(row=>row.id===request.id&&row.kind===request.kind)}));
  const createSession=vi.fn(async(_request:CreateSessionRequest)=>({change:{session:resource(EntityKind.SESSION,"Accepted")}}));
  const transport=createRouterTransport(router=>{
-  router.service(ResourceService,{getResource:get,listResources:request=>({resources:request.filter?.kind===EntityKind.AGENT?[otherAgent]:request.filter?.kind===EntityKind.MACHINE?[otherMachine]:request.filter?.kind===EntityKind.PROJECT?projects:[]})});
+  router.service(ResourceService,{getResource:get,listResources:request=>({resources:request.filter?.kind===EntityKind.AGENT?[otherAgent,...(includeRemembered?[agent]:[])]:request.filter?.kind===EntityKind.MACHINE?[otherMachine]:request.filter?.kind===EntityKind.PROJECT?projects:[]})});
   router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.AUTOMATIC_TITLES_V1]})});router.service(SessionService,{createSession});
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  const view=(kind=NewSessionKind.Session, readLocalWorker?: () => Promise<{machineId:string;token:string}>)=><StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NewSession kind={kind} active ownsActivation activation={1} back={()=>{}} openSettings={()=>{}} open={()=>{}} created={()=>{}} preferenceBridge={bridge} preferenceScope={scope} readLocalWorker={readLocalWorker}/></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
- return {agent,machine,otherAgent,otherMachine,projects,scope,bridge,memory,get,createSession,view};
+ return {agent,machine,otherAgent,otherMachine,projects,scope,bridge,memory,get,createSession,client,view};
 }
 
 it("restores exact off-page resources including a disconnected registered runner",async()=>{
@@ -98,4 +98,36 @@ it("keeps later accepted choices in memory until uncertain preference writes are
  const f=fixture();f.bridge.update.mockRejectedValueOnce(new Error("Preference acknowledgment lost"));render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"First accepted"}});fireEvent.click(screen.getByRole("button",{name:"Create session"}));await screen.findByRole("button",{name:"Inspect saved choices"});expect(f.bridge.update).toHaveBeenCalledTimes(1);
  await chooseScrollOption(screen.getByRole("combobox",{name:"Agent Worker"}),f.otherAgent.id);await chooseScrollOption(screen.getByRole("combobox",{name:"Runs on"}),f.otherMachine.id);fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Second accepted"}});fireEvent.click(screen.getByRole("button",{name:"Create session"}));await waitFor(()=>expect((screen.getByRole("textbox",{name:"First message"}) as HTMLTextAreaElement).value).toBe(""));expect(f.createSession).toHaveBeenCalledTimes(2);expect(f.bridge.update).toHaveBeenCalledTimes(1);
  fireEvent.click(screen.getByRole("button",{name:"Inspect saved choices"}));fireEvent.click(await screen.findByRole("button",{name:"Retry saving accepted choices"}));await waitFor(()=>expect(f.bridge.update).toHaveBeenCalledTimes(2));expect(f.bridge.update.mock.calls[1][1]).toEqual({agent_id:f.otherAgent.id,machine_id:f.otherMachine.id});expect(f.createSession).toHaveBeenCalledTimes(2);
+});
+
+it.each(["disabled", "missing", "unsupported", "forbidden"])("clears auto-restored choices after a settled %s exact read without changing history", async outcome => {
+ const f=fixture();render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Keep this draft"}});
+ f.get.mockImplementation(request=>{if(outcome==="forbidden")throw new ConnectError("Denied",Code.PermissionDenied);if(outcome==="missing")return {resource:undefined};const original=request.kind===EntityKind.AGENT?f.agent:f.machine;return {resource:create(ResourceSchema,{...original,...(outcome==="unsupported"?{schemaVersion:999}:{}),documentJson:encode({name:"Changed",disabled:outcome==="disabled"})})};});
+ await act(async()=>{await f.client.invalidateQueries();});
+ await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(""));expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe("");
+ expect((screen.getByRole("textbox",{name:"First message"}) as HTMLTextAreaElement).value).toBe("Keep this draft");expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(true);expect(f.bridge.update).not.toHaveBeenCalled();expect(f.createSession).not.toHaveBeenCalled();expect(f.memory.get(NewSessionKind.Session)).toEqual({agent_id:f.agent.id,machine_id:f.machine.id});
+});
+it("revalidates the untouched automatic runner while preserving a subsequent manual Agent choice",async()=>{
+ const f=fixture();render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));await chooseScrollOption(screen.getByRole("combobox",{name:"Agent Worker"}),f.otherAgent.id);
+ f.machine.documentJson=encode({name:"Disconnected runner",disabled:true});await act(async()=>{await f.client.invalidateQueries();});
+ await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(""));expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.otherAgent.id);expect(f.createSession).not.toHaveBeenCalled();expect(f.bridge.update).not.toHaveBeenCalled();
+});
+it("clears a restored runner when a current Worktree capability is lost",async()=>{
+ const f=fixture();f.projects[0].documentJson=encode({name:"Allowed project",repositories:[newRequestId()],agents:{configured:true,ids:[f.agent.id]}});f.machine.documentJson=encode({name:"Runner",worker_capabilities:["remote-workspace-clone-v1"]});render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),f.projects[0].id);await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));
+ f.machine.documentJson=encode({name:"Runner",worker_capabilities:[]});await act(async()=>{await f.client.invalidateQueries();});await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(""));expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id);expect(f.createSession).not.toHaveBeenCalled();
+});
+it("blocks new creation during automatic proof refresh without erasing the draft or replaying creation",async()=>{
+ const f=fixture();render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Still editing"}});
+ let resolve!:(value:{resource:Resource})=>void;const original=f.get.getMockImplementation()!;f.get.mockImplementation(request=>request.id===f.agent.id?new Promise(done=>{resolve=done;}) as never:original(request));
+ let refresh!:Promise<void>;act(()=>{refresh=f.client.invalidateQueries();});await waitFor(()=>expect(resolve).toBeTypeOf("function"));expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(true);expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id);
+ await act(async()=>{resolve({resource:f.agent});await refresh;});expect((screen.getByRole("textbox",{name:"First message"}) as HTMLTextAreaElement).value).toBe("Still editing");await waitFor(()=>expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(false));expect(f.createSession).not.toHaveBeenCalled();
+});
+it("does not clear a manual selection of the formerly remembered exact ID",async()=>{
+ const f=fixture(true,true);render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));await chooseScrollOption(screen.getByRole("combobox",{name:"Agent Worker"}),f.agent.id);
+ f.agent.documentJson=encode({name:"Remembered agent",disabled:true});await act(async()=>{await f.client.invalidateQueries();});expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id);expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id);expect(f.createSession).not.toHaveBeenCalled();
+});
+it("clears only the restored Agent after current project permissions change",async()=>{
+ const f=fixture();render(f.view());await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id));await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),f.projects[0].id);await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));
+ f.projects[0].documentJson=encode({name:"Allowed project",repositories:[],agents:{configured:true,ids:[]}});await act(async()=>{await f.client.invalidateQueries();});await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(""));expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id);expect(f.bridge.update).not.toHaveBeenCalled();expect(f.createSession).not.toHaveBeenCalled();
 });
