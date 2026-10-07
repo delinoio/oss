@@ -1127,8 +1127,8 @@ it("hands wide header focus to main before first Search autofocus and preserves 
   fireEvent.change(screen.getByRole("combobox", { name: "Archive" }), { target: { value: SearchArchiveState.ARCHIVED } });
   fireEvent.click(within(input.closest("form")!).getByRole("button", { name: "Search" }));
   await screen.findByText("No retained conversation matches.");
-  fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Next page" }));
-  await screen.findByText("No further conversations on this page.");
+  fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Load more Search conversations" }));
+  await screen.findByText("All loaded Search conversations are shown.");
   expect(value.searches.mock.calls.at(-1)?.[0]).toMatchObject({ query: "keep this search", archive: SearchArchiveState.ARCHIVED, pageToken: "search-next" });
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(headerAction("Search"));

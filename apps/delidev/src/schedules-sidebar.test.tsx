@@ -25,7 +25,7 @@ function fixture() {
   const definition = { prompt: "Retained prompt", project_id: project.id, agent_id: newRequestId(), machine_id: newRequestId(), workspace: "worktree", mode: "plan", cron: "0 9 * * 1-5", timezone: "UTC", overlap: "wait" };
   const row = (name: string, enabled: boolean, next_run_at: string) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SCHEDULE, revision: 3n, schemaVersion: 1, documentJson: encode({ definition: { ...definition, name, enabled }, next_run_at }) });
   const schedules = [row("Morning review", true, "2026-10-01T00:00:00Z"), row("Weekly cleanup", false, ""), row("Release check", true, "2026-10-02T01:00:00Z")];
-  const list = vi.fn(async (_request: { pageSize: number; pageToken: string; projectId: string; enabled?: boolean }) => ({ schedules, nextPageToken: "schedule-next" }));
+  const list = vi.fn(async (request: { pageSize: number; pageToken: string; projectId: string; enabled?: boolean }) => ({ schedules, nextPageToken: request.pageToken ? "" : "schedule-next" }));
   const choices = vi.fn(async (_request: { filter?: { pageSize: number; pageToken: string; kind: EntityKind } }) => ({ resources: [project], nextPageToken: "project-next" }));
   const history = vi.fn(async (_request: { scheduleId: string; pageSize: number; pageToken: string }) => ({ occurrences: [] }));
   const run = vi.fn(async (_request: unknown) => ({ occurrence: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.OCCURRENCE, revision: 1n, schemaVersion: 1 }) }));
@@ -65,7 +65,7 @@ it("retains independent selector pages while immediate status and project filter
   const value = fixture();
   render(value.view());
   await screen.findByRole("button", { name: /^Morning review/ });
-  fireEvent.click(pane().getByRole("button", { name: "Next" }));
+  fireEvent.click(pane().getByRole("button", { name: "Load more Saved schedules" }));
   fireEvent.click(pane().getByRole("button", { name: "More choices" }));
   await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next"));
   await waitFor(() => expect(value.choices.mock.lastCall?.[0].filter?.pageToken).toBe("project-next"));
@@ -82,21 +82,19 @@ it("retains independent selector pages while immediate status and project filter
   expect(value.run).not.toHaveBeenCalled();
 });
 
-it("keeps Refresh and First on the first page without walking trailing tokens", async () => {
+it("refreshes only accepted schedule ranges without discovering an unseen tail", async () => {
   const value = fixture();
+  value.list.mockImplementation(async request => ({ schedules: value.schedules, nextPageToken: request.pageToken ? "unseen-tail" : "schedule-next" }));
   render(value.view());
   await screen.findByRole("button", { name: /^Morning review/ });
-  fireEvent.click(pane().getByRole("button", { name: "Next" }));
+  fireEvent.click(pane().getByRole("button", { name: "Load more Saved schedules" }));
   await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next"));
   await waitFor(() => expect((pane().getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled).toBe(false));
+  const before = value.list.mock.calls.length;
   fireEvent.click(pane().getByRole("button", { name: "Refresh" }));
-  await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe(""));
-  fireEvent.click(pane().getByRole("button", { name: "Next" }));
-  await waitFor(() => expect(value.list.mock.lastCall?.[0].pageToken).toBe("schedule-next"));
-  await waitFor(() => expect((pane().getByRole("button", { name: "First" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(pane().getByRole("button", { name: "First" }));
-  await waitFor(() => expect((pane().getByRole("button", { name: "First" }) as HTMLButtonElement).disabled).toBe(true));
-  expect(value.list.mock.calls.every(([request]) => request.pageSize === 50 && ["", "schedule-next"].includes(request.pageToken))).toBe(true);
+  await waitFor(() => expect(value.list.mock.calls.length).toBe(before + 2));
+  expect(value.list.mock.calls.slice(before).map(([request]) => request.pageToken)).toEqual(["", "schedule-next"]);
+  expect(pane().queryByRole("button", { name: "First" })).toBeNull();
 });
 
 it("distinguishes initial loading and successful empty first and later pages", async () => {
@@ -108,11 +106,11 @@ it("distinguishes initial loading and successful empty first and later pages", a
   await act(async () => gate.resolve());
   const empty = await screen.findByText("No saved schedules.");
   expect(empty.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-  await waitFor(() => expect((pane().getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(pane().getByRole("button", { name: "Next" }));
-  await screen.findByText("No schedules on this page.");
-  expect((pane().getByRole("button", { name: "First" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((pane().getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  await waitFor(() => expect((pane().getByRole("button", { name: "Load more Saved schedules" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(pane().getByRole("button", { name: "Load more Saved schedules" }));
+  await screen.findByText("All loaded Saved schedules are shown.");
+  expect(pane().queryByRole("button", { name: "First" })).toBeNull();
+  expect(pane().queryByRole("button", { name: "Load more Saved schedules" })).toBeNull();
 });
 
 it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("keeps first-load failure %s separate from successful empty claims", async (code) => {

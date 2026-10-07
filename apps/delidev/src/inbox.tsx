@@ -1,18 +1,29 @@
+import { Code, ConnectError } from "@connectrpc/connect";
+import { ScrollContinuation } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { statusLabel } from "./product-status";
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createQueryOptions, useQuery, useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { EntityKind, FailureCode, InboxQuery, InboxReadState, InboxSource, clientFailure, isEntityId, newRequestId, type InboxView, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, FailureCode, InboxQuery, InboxReadState, InboxSource, clientFailure, isEntityId, newRequestId, type InboxView, type ListInboxResponse, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
 import { Interaction } from "./interactions";
 import { currentInboxSource, inboxResponseCurrent } from "./inbox-source";
 import { draftByteLength, initialInteractionDraft, interactionRequestIdentity, isEmptyInteractionDraft, type InboxInteractionDraft, type InteractionDraftState } from "./inbox-drafts";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
+
+const inboxIdentity = (view: InboxView) => view.entry!.id;
+const inboxRevision = (view: InboxView) => view.entry!.revision;
+function inboxPage(response: ListInboxResponse) {
+  if (response.entries.length > 20 || response.entries.some(view => !view.entry || !isEntityId(view.entry.id))) throw new ConnectError("Invalid inbox page", Code.DataLoss);
+  return { rows: response.entries.map(view => ({ id: view.entry!.id, revision: view.entry!.revision })), nextPageToken: response.nextPageToken, payload: response.entries };
+}
 
 enum DetailReadState { Loading = "loading", Ready = "ready", Stale = "stale", Unavailable = "unavailable" }
 interface DetailRead { id: string; state: DetailReadState; view?: InboxView; error?: unknown }
@@ -85,7 +96,6 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
   const emptyFilters = { source: InboxSource.UNSPECIFIED, readState: InboxReadState.UNSPECIFIED, projectId: "", sessionId: "" };
   const [draftFilters, setDraftFilters] = useState(emptyFilters);
   const [filters, setFilters] = useState(emptyFilters);
-  const [page, setPage] = useState("");
   const listHeading = useRef<HTMLHeadingElement>(null);
   const listScroller = useRef<HTMLDivElement>(null);
   const lastRowFocus = useRef("");
@@ -103,12 +113,14 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
   const transport = useTransport();
   const queryClient = useQueryClient();
   const closeDrawer = useCloseSidebarDrawer();
-  const list = useQuery(InboxQuery.listInbox, { ...filters, pageSize: 20, pageToken: page }, { enabled: active, refetchInterval: active ? 5000 : false, refetchIntervalInBackground: false, retry: false });
+  const request = useCallback((token: string) => ({ ...filters, pageSize: 20, pageToken: token }), [filters]);
+  const reader = useConnectPaginationReader(InboxQuery.listInbox, request, inboxPage);
+  const list = usePaginationChain(JSON.stringify(filters), active, reader);
+  usePaginationRefresh(InboxQuery.listInbox, request(""), active, list.refresh, 5000);
   const selected = useQuery(InboxQuery.getInboxEntry, { id: selectedId }, { enabled: false, retry: false, gcTime: 5 * 60 * 1000 });
 
   const reloadList = () => {
-    if (page) setPage("");
-    else void list.refetch();
+    list.refresh();
   };
   const refresh = () => {
     reloadList();
@@ -133,9 +145,6 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
     setReadTrigger((value) => value + 1);
   }, [notificationId, notificationActivation]);
 
-  useEffect(() => {
-    if (page && list.error && clientFailure(list.error).code === FailureCode.CursorExpired) setPage("");
-  }, [list.error, page]);
 
   useEffect(() => {
     if (!active || !selectedId) return;
@@ -214,7 +223,6 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
     detailHeading.current?.focus();
   }, [detailRead, selectedId]);
 
-  const entries = list.data?.entries ?? [];
   const selectedView = detailRead?.id === selectedId ? detailRead.view : undefined;
   const latestReadReady = detailRead?.id === selectedId && detailRead.state === DetailReadState.Ready && Boolean(selectedView && currentInboxSource(selectedView, selectedId));
   const drafts = draftCollection.values;
@@ -246,7 +254,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
     setDetailRead(undefined);
   };
 
-  const applyFilters = (next = draftFilters) => { setFilters(next); setPage(""); closeDrawer(); };
+  const applyFilters = (next = draftFilters) => { setFilters(next); closeDrawer(); };
 
   return <>
     <SidebarSurface active={active} title={copy("inbox.inbox_94835e")}>
@@ -260,14 +268,14 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
       <p className="sidebar-help">{copy("inbox.openingAnItemDoesNotMark_d46181")}</p>
     </SidebarSurface>
   <section className={`inbox ${selectedId ? "has-selection" : ""}`} aria-label={copy("inbox.inboxWorkspace_bcd93a")} hidden={!active}>
-    <header className="inbox-header"><div><h2>{copy("inbox.inbox_94835e")}</h2><p>{copy("inbox.requestsAndExecutionResults_7a0305")}</p></div><button onClick={refresh} disabled={!active || list.isFetching}>{copy("inbox.refresh_0e9161")}</button></header>
+    <header className="inbox-header"><div><h2>{copy("inbox.inbox_94835e")}</h2><p>{copy("inbox.requestsAndExecutionResults_7a0305")}</p></div><button onClick={refresh} disabled={!active || Boolean(list.loading)}>{copy("inbox.refresh_0e9161")}</button></header>
     <div className="inbox-workspace">
       <section className="inbox-list-pane" aria-label={copy("inbox.inboxItems_950c1d")}>
         <h3 ref={listHeading} tabIndex={-1} className="inbox-list-heading">{copy("inbox.items_fb8e7a")}</h3>
-        <div className="inbox-list-scroll" ref={listScroller} aria-busy={list.isPending || list.isFetching}>
-          <Problem error={list.error} />
-          {list.isPending && !list.data ? <div className="inbox-skeleton" role="status" aria-label={copy("inbox.loadingInbox_fd917e")}><span /><span /><span /></div> : null}
-          {entries.length > 0 ? <ul className="inbox-items">{entries.map((view, index) => {
+        <div className="inbox-list-scroll" ref={listScroller} aria-busy={Boolean(list.loading)}>
+          <Failure failure={list.error?.failure} />
+          {!list.loaded && Boolean(list.loading) ? <div className="inbox-skeleton" role="status" aria-label={copy("inbox.loadingInbox_fd917e")}><span /><span /><span /></div> : null}
+          <ScrollPayloadWindow identity={inboxIdentity} revision={inboxRevision} query={list} root={listScroller} active={active}>{entries => <ul className="inbox-items">{entries.map((view, index) => {
             const entry = view.entry;
             if (!entry) return <li className="inbox-item-unavailable" key={`unavailable-${index}`}>{copy("inbox.inboxItemUnavailable_341441")}</li>;
             const data = document(entry), state = text(data.read_state);
@@ -279,12 +287,13 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
               <span className="inbox-row-copy"><strong>{resourceName(view.account ?? view.session)}</strong><span>{kind}</span><small>{time.label}</small></span>
               <span className={`inbox-read-label ${state === "unread" ? "is-unread" : ""}`}>{state === "unread" ? <><LocalizedText id="inbox.unread_2cbf9b" components={{ s0: <span className="inbox-unread-dot" aria-hidden="true" /> }} /></> : state === "read" ? copy("inbox.read_9b9a8d") : copy("inbox.unavailable_ca1844")}</span>
             </button></li>;
-          })}</ul> : null}
-          {!list.isPending && !list.error && entries.length === 0 ? filters.source === InboxSource.UNSPECIFIED && filters.readState === InboxReadState.UNSPECIFIED && !filters.projectId && !filters.sessionId
+          })}</ul>}</ScrollPayloadWindow>
+          {list.loaded && !list.loading && !list.error && list.rows.length === 0 ? filters.source === InboxSource.UNSPECIFIED && filters.readState === InboxReadState.UNSPECIFIED && !filters.projectId && !filters.sessionId
             ? <p className="inbox-empty">{copy("inbox.noRetainedRequestsOrExecutionResults_8f8962")}</p>
             : <div className="inbox-empty"><p>{copy("inbox.noItemsMatchTheseFilters_da10bc")}</p><button onClick={() => { setDraftFilters({ ...emptyFilters }); applyFilters({ ...emptyFilters }); }}>{copy("inbox.resetFilters_10afa9")}</button></div> : null}
+          <ScrollContinuation query={list} root={listScroller} active={active} label={copy("inbox.items_fb8e7a")} />
         </div>
-        <nav className="inbox-pager" aria-label={copy("inbox.inboxPages_0921bb")}><button disabled={!page || list.isFetching} onClick={() => setPage("")}>{copy("inbox.firstPage_0bdbb7")}</button><button disabled={!list.data?.nextPageToken || list.isFetching} onClick={() => setPage(list.data!.nextPageToken)}>{copy("inbox.nextPage_c08ac7")}</button></nav>
+
       </section>
       <section className="inbox-detail-pane" aria-label={copy("inbox.selectedInboxItem_959221")} ref={detailPane}>
         {!selectedId ? <div className="inbox-no-selection"><h3>{copy("inbox.selectAnItemToViewIts_e2e998")}</h3></div> : <>
@@ -292,7 +301,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
           {detailRead?.id === selectedId && detailRead.state === DetailReadState.Loading ? <p role="status" className="inbox-read-progress">{copy("inbox.loadingTheCurrentItem_15d15c")}</p> : null}
           {detailRead?.id === selectedId && detailRead.state === DetailReadState.Stale ? <div className="inbox-stale-warning"><p>{copy("inbox.theLatestReadFailedThisRetained_cb4adc")}</p><Problem error={detailRead.error} /><button onClick={() => setReadTrigger((value) => value + 1)}>{copy("inbox.retryCurrentRead_79b708")}</button></div> : null}
           {detailRead?.id === selectedId && detailRead.state === DetailReadState.Unavailable ? <div className="inbox-unavailable"><p>{copy("inbox.thisItemIsUnavailableItsCurrent_5617b2")}</p><Problem error={detailRead.error} /></div> : null}
-          {selectedView && detailRead?.state !== DetailReadState.Unavailable ? <InboxDetail view={selectedView} readOnly={!latestReadReady} draft={selectedView.interaction ? drafts.get(selectedView.interaction.id) ?? initialInteractionDraft(selectedView.interaction) : undefined} draftError={selectedView.interaction ? draftCollection.errors.get(selectedView.interaction.id) : undefined} saveDraft={saveDraft} clearDraft={clearDraft} open={open} refresh={refresh} pageContains={entries.some((entry) => entry.entry?.id === selectedId)} /> : null}
+          {selectedView && detailRead?.state !== DetailReadState.Unavailable ? <InboxDetail view={selectedView} readOnly={!latestReadReady} draft={selectedView.interaction ? drafts.get(selectedView.interaction.id) ?? initialInteractionDraft(selectedView.interaction) : undefined} draftError={selectedView.interaction ? draftCollection.errors.get(selectedView.interaction.id) : undefined} saveDraft={saveDraft} clearDraft={clearDraft} open={open} refresh={refresh} pageContains={list.rows.some(entry => entry.id === selectedId)} /> : null}
           {!selectedView && detailRead?.state !== DetailReadState.Unavailable && detailRead?.state !== DetailReadState.Stale ? <div className="inbox-skeleton" role="status" aria-label={copy("inbox.loadingSelectedItem_903c91")}><span /><span /></div> : null}
         </>}
       </section>

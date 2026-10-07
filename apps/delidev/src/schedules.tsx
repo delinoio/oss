@@ -1,14 +1,19 @@
+import { Code, ConnectError } from "@connectrpc/connect";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { formatTimestamp } from "./localization";
 import { statusLabel } from "./product-status";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, newRequestId, isEntityId, type ListSchedulesResponse, type ListScheduleOccurrencesResponse, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, Mode, object, text, Workspace, type Document } from "./documents";
 import { ReferenceFields, ResourceChoice, TextField } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
-import { ServiceProblem, Problem  } from "./ui";
+import { ServiceProblem, Failure, Problem  } from "./ui";
 import { Icon as SidebarIcon } from "./sidebar";
 import { ScheduleCreation, type ScheduleCreationProps } from "./schedule-creation";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
@@ -18,6 +23,15 @@ enum EnabledFilter { All = "all", Enabled = "enabled", Paused = "paused" }
 const ignoreProtectedChange = (_protectedState: boolean) => undefined;
 const scheduleName = (row?: Resource) => text(object(document(row).definition).name) || copy("schedules.extra.d5ef9d155d1e");
 const emptyDefinition = (): Document => ({ name: "", prompt: "", enabled: false, project_id: "", agent_id: "", machine_id: "", workspace: Workspace.Worktree, mode: Mode.Execute, cron: "0 9 * * 1-5", timezone: "UTC", overlap: Overlap.Overlap });
+
+function schedulePage(response: ListSchedulesResponse) {
+  if (response.schedules.length > 50 || response.schedules.some(row => !isEntityId(row.id))) throw new ConnectError("Invalid schedule page", Code.DataLoss);
+  return { rows: response.schedules.map(row => ({ id: row.id, revision: row.revision })), payload: response.schedules, nextPageToken: response.nextPageToken };
+}
+function occurrencePage(response: ListScheduleOccurrencesResponse) {
+  if (response.occurrences.length > 50 || response.occurrences.some(row => !isEntityId(row.id))) throw new ConnectError("Invalid schedule occurrence page", Code.DataLoss);
+  return { rows: response.occurrences.map(row => ({ id: row.id, revision: row.revision })), payload: response.occurrences, nextPageToken: response.nextPageToken };
+}
 
 export function StartingReferences({ project, starting, change, active }: { project: string; starting: unknown[]; change: (value: unknown[]) => void; active: boolean }) {
   useLocale();
@@ -75,9 +89,12 @@ function Occurrence({ resource, open }: { resource: Resource; open: (id: string)
 }
 export function ScheduleHistory({ id, active, open }: { id: string; active: boolean; open: (id: string) => void }) {
   useLocale();
-  const [page, setPage] = useState("");
-  const result = useQuery(ScheduleQuery.listScheduleOccurrences, { scheduleId: id, pageSize: 50, pageToken: page }, { enabled: active, refetchInterval: active && !page ? 5000 : false });
-  return <section><header><h3>{copy("schedules.occurrenceHistory_4a178f")}</h3><button onClick={() => { setPage(""); void result.refetch(); }}>{copy("schedules.refreshHistory_70f3d2")}</button></header><p>{copy("schedules.historyRemainsAvailableAfterScheduleConfiguration_44b3c0")}</p><Problem error={result.error} />{result.data?.occurrences.map((row) => <Occurrence resource={row} key={row.id} open={open} />)}{result.data?.occurrences.length === 0 ? <p>{copy("schedules.noRetainedOccurrences_dc8c9a")}</p> : null}<nav aria-label={copy("schedules.scheduleHistoryPages_a2bbcc")}><button disabled={!page || result.isFetching} onClick={() => setPage("")}>{copy("schedules.firstHistoryPage_7693a1")}</button><button disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>{copy("schedules.nextHistoryPage_6c5c4b")}</button></nav></section>;
+  const content = useRef<HTMLElement>(null), root = useScrollRoot(content);
+  const request = useCallback((token: string) => ({ scheduleId: id, pageSize: 50, pageToken: token }), [id]);
+  const reader = useConnectPaginationReader(ScheduleQuery.listScheduleOccurrences, request, occurrencePage);
+  const result = usePaginationChain(id, active, reader);
+  usePaginationRefresh(ScheduleQuery.listScheduleOccurrences, request(""), active, result.refresh, 5000);
+  return <section ref={content}><header><h3>{copy("schedules.occurrenceHistory_4a178f")}</h3><button disabled={Boolean(result.loading)} onClick={result.refresh}>{copy("schedules.refreshHistory_70f3d2")}</button></header><p>{copy("schedules.historyRemainsAvailableAfterScheduleConfiguration_44b3c0")}</p><Failure failure={result.error?.failure} /><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={result} root={root} active={active}>{payload => payload.map(row => <Occurrence resource={row} key={row.id} open={open} />)}</ScrollPayloadWindow>{result.loaded && result.rows.length === 0 ? <p>{copy("schedules.noRetainedOccurrences_dc8c9a")}</p> : null}<ScrollContinuation query={result} root={root} active={active} label={copy("schedules.occurrenceHistory_4a178f")} /></section>;
 }
 
 export function ScheduleDetails({ initial, active, open, close, edit, protectedChange = ignoreProtectedChange }: { initial: Resource; active: boolean; open: (id: string) => void; close: () => void; edit: (row: Resource) => void; protectedChange?: (protectedState: boolean) => void }) {
@@ -95,13 +112,14 @@ export function ScheduleDetails({ initial, active, open, close, edit, protectedC
   useEffect(() => { protectedChange(blocked || Boolean(confirm)); }, [blocked, confirm, protectedChange]);
   const mutation = () => ({ id: initial.id, expectedRevision: current.revision, requestId: newRequestId() });
   return <section><header><h2>{scheduleName(current)}</h2><button disabled={blocked || Boolean(confirm)} onClick={close}>{copy("schedules.backToSchedules_975251")}</button></header><small>{initial.id}</small>{deleted ? <p>{copy("schedules.scheduleConfigurationDeletedRetainedOccurrencesAnd_08b290")}</p> : <><p>{definition.enabled === true ? copy("schedules.enabled_92c1cd") : copy("schedules.paused_e159b0")} · {text(definition.cron)} · {text(definition.timezone)}</p><p><LocalizedText id="schedules.nextRunUtc_eca09c" components={{ s0: <>{formatTimestamp(text(data.next_run_at)) || copy("schedules.extra.170fa2a3d0f0")}</> }} /></p><p><LocalizedText id="schedules.overlapPolicy_9f02ce" components={{ s0: <>{text(definition.overlap)}</> }} /></p>{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<div className="actions"><button disabled={blocked || current.schemaVersion !== 1} onClick={() => edit(current)}>{copy("schedules.editSchedule_559b37")}</button><button disabled={blocked} onClick={() => void control.send({ mutation: mutation(), action: definition.enabled === true ? ScheduleAction.PAUSE : ScheduleAction.RESUME })}>{definition.enabled === true ? copy("schedules.pauseFutureRuns_bd1b76") : copy("schedules.resumeFutureRuns_273685")}</button><button disabled={blocked} onClick={() => setConfirm("run")}>{copy("schedules.runNow_099139")}</button><button disabled={blocked} onClick={() => setConfirm("delete")}>{copy("schedules.deleteSchedule_d8d0bd")}</button></div>{confirm ? <div className="notice"><p>{confirm === "run" ? copy("schedules.acceptOneIndependentOccurrenceNowUsing_09cf1a") : copy("schedules.deleteFutureSchedulingConfigurationAlreadyAccepted_eb8d35")}</p><button disabled={blocked} onClick={() => confirm === "run" ? void run.send({ mutation: mutation() }) : void remove.send({ mutation: mutation() })}>{confirm === "run" ? copy("schedules.confirmRunNow_e9bc9d") : copy("schedules.confirmScheduleDeletion_27d4ca")}</button><button disabled={blocked} onClick={() => setConfirm(undefined)}>{copy("schedules.cancel_19766e")}</button></div> : null}<Problem error={result.error} /></>}
-    {operations.map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="schedules.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("schedules.scheduleControl_8ea17b") : index === 1 ? copy("schedules.scheduleDeletion_183079") : copy("schedules.runNow_099139")}</> }} /></button> : null}</div>)}{occurrence ? <section><h3>{copy("schedules.runNowAccepted_e83ab1")}</h3><Problem error={occurrenceResult.error} /><Occurrence resource={occurrenceResult.data?.occurrence && occurrenceResult.data.occurrence.revision >= occurrence.revision ? occurrenceResult.data.occurrence : occurrence} open={open} /></section> : null}<ScheduleHistory id={initial.id} active={active} open={open} />
+    {operations.map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="schedules.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("schedules.scheduleControl_8ea17b") : index === 1 ? copy("schedules.scheduleDeletion_183079") : copy("schedules.runNow_099139")}</> }} /></button> : null}</div>)}{occurrence ? <section><h3>{copy("schedules.runNowAccepted_e83ab1")}</h3><Problem error={occurrenceResult.error} /><Occurrence resource={occurrenceResult.data?.occurrence && occurrenceResult.data.occurrence.revision >= occurrence.revision ? occurrenceResult.data.occurrence : occurrence} open={open} /></section> : null}<ScheduleHistory id={initial.id} active={active && !blocked} open={open} />
   </section>;
 }
 
 export function Schedules({ active, open, readLocalWorker }: { active: boolean; open: (id: string) => void; readLocalWorker?: ReadLocalWorkerProof }) {
   useLocale();
-  const [page, setPage] = useState(""), [filter, setFilter] = useState(EnabledFilter.All);
+  const [filter, setFilter] = useState(EnabledFilter.All);
+  const content = useRef<HTMLDivElement>(null), root = useScrollRoot(content);
   const [selected, setSelected] = useState<Resource>(), [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
   const [historyDraft, setHistoryDraft] = useState(""), [history, setHistory] = useState("");
   const [projectId, setProjectId] = useState("");
@@ -119,25 +137,28 @@ export function Schedules({ active, open, readLocalWorker }: { active: boolean; 
     focusHistoryOnExpansion.current = false;
     if (historyExpanded && active && !locked) historyInput.current?.focus();
   }, [historyExpanded, active, locked]);
-  const result = useQuery(ScheduleQuery.listSchedules, { projectId, pageSize: 50, pageToken: page, ...(filter === EnabledFilter.All ? {} : { enabled: filter === EnabledFilter.Enabled }) }, { enabled: active });
+  const request = useCallback((token: string) => ({ projectId, pageSize: 50, pageToken: token, ...(filter === EnabledFilter.All ? {} : { enabled: filter === EnabledFilter.Enabled }) }), [projectId, filter]);
+  const reader = useConnectPaginationReader(ScheduleQuery.listSchedules, request, schedulePage);
+  const result = usePaginationChain(JSON.stringify([projectId, filter]), active && !locked, reader);
+  usePaginationRefresh(ScheduleQuery.listSchedules, request(""), active && !locked, result.refresh);
   const selectSchedule = (row: Resource) => { if (locked) return; setSelected(row); setHistory(""); closeDrawer(); };
   const newSchedule = () => { if (locked) return; setSelected(undefined); setHistory(""); setEditing({ key: newRequestId() }); closeDrawer(); };
   const openHistory = (event: FormEvent) => { event.preventDefault(); if (locked || !historyDraft.trim()) return; setSelected(undefined); setHistory(historyDraft.trim()); closeDrawer(); };
   return <>
     <SidebarSurface active={active} title={copy("schedules.schedules_221ff1")} className="schedules-sidebar">
       <button className="primary sidebar-action" disabled={locked} onClick={newSchedule}><SidebarIcon name="plus" />{copy("schedules.newSchedule_3bfe90")}</button>
-      <div className="sidebar-filter-options" aria-label={copy("schedules.scheduleState_dd8c03")}>{([[EnabledFilter.All, copy("schedules.extra.1c1c1bfaa5af")], [EnabledFilter.Enabled, copy("schedules.extra.92c1cdfdf4cb")], [EnabledFilter.Paused, copy("schedules.extra.e159b06187d3")]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} disabled={locked} onClick={() => { setFilter(value); setPage(""); }}>{label}</button>)}</div>
-      <ResourceChoice label={copy("schedules.filterByProject_9e2a0a")} emptyLabel={copy("schedules.allProjects_4b8727")} kind={EntityKind.PROJECT} value={projectId} change={(id) => { if (!locked) { setProjectId(id); setPage(""); } }} active={active} disabled={locked} />
-      <header className="sidebar-list-heading"><h3>{copy("schedules.savedSchedules_97f381")}</h3><button type="button" disabled={locked || result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}><SidebarIcon name="refresh" />{copy("schedules.refresh_0e9161")}</button></header>
-      <Problem error={result.error} />{result.isPending && active ? <p role="status">{copy("schedules.loadingSchedules_77307d")}</p> : null}{result.error && result.data ? <p className="sidebar-help">{copy("schedules.refreshFailedShowingThePreviousPage_24e457")}</p> : null}
-      {result.data?.schedules.map((row) => <article key={row.id} className="sidebar-schedule-row"><button type="button" disabled={locked} aria-current={selected?.id === row.id ? "true" : undefined} onClick={() => selectSchedule(row)}><span className="schedule-row-title">{scheduleName(row)}</span><span className="schedule-row-state">{object(document(row).definition).enabled === true ? copy("schedules.enabled_92c1cd") : copy("schedules.paused_e159b0")}</span><span className="schedule-row-next"><LocalizedText id="schedules.nextRunUtc_eca09c" components={{ s0: <span>{formatTimestamp(text(document(row).next_run_at)) || copy("schedules.extra.170fa2a3d0f0")}</span> }} /></span></button></article>)}
-      {!result.error && result.data?.schedules.length === 0 ? <p className="sidebar-help schedules-empty"><SidebarIcon name="schedules" />{page ? copy("schedules.noSchedulesOnThisPage_da8089") : copy("schedules.noSavedSchedules_3aa66d")}</p> : null}
-      <nav className="schedules-pages" aria-label={copy("schedules.schedulesPages_927622")}><button disabled={locked || !page || result.isFetching} onClick={() => setPage("")}>{copy("schedules.first_a151ce")}</button><button disabled={locked || !result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>{copy("schedules.next_1ff57a")}</button></nav>
+      <div className="sidebar-filter-options" aria-label={copy("schedules.scheduleState_dd8c03")}>{([[EnabledFilter.All, copy("schedules.extra.1c1c1bfaa5af")], [EnabledFilter.Enabled, copy("schedules.extra.92c1cdfdf4cb")], [EnabledFilter.Paused, copy("schedules.extra.e159b06187d3")]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} disabled={locked} onClick={() => { setFilter(value); }}>{label}</button>)}</div>
+      <ResourceChoice label={copy("schedules.filterByProject_9e2a0a")} emptyLabel={copy("schedules.allProjects_4b8727")} kind={EntityKind.PROJECT} value={projectId} change={(id) => { if (!locked) { setProjectId(id); } }} active={active} disabled={locked} />
+      <header className="sidebar-list-heading"><h3>{copy("schedules.savedSchedules_97f381")}</h3><button type="button" disabled={locked || Boolean(result.loading)} onClick={result.refresh}><SidebarIcon name="refresh" />{copy("schedules.refresh_0e9161")}</button></header>
+      <Failure failure={result.error?.failure} />{!result.loaded && Boolean(result.loading) && active ? <p role="status">{copy("schedules.loadingSchedules_77307d")}</p> : null}{result.error && result.loaded ? <p className="sidebar-help">{copy("schedules.refreshFailedShowingThePreviousPage_24e457")}</p> : null}
+      <div ref={content}><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={result} root={root} active={active && !locked}>{payload => payload.map((row) => <article key={row.id} className="sidebar-schedule-row"><button type="button" disabled={locked} aria-current={selected?.id === row.id ? "true" : undefined} onClick={() => selectSchedule(row)}><span className="schedule-row-title">{scheduleName(row)}</span><span className="schedule-row-state">{object(document(row).definition).enabled === true ? copy("schedules.enabled_92c1cd") : copy("schedules.paused_e159b0")}</span><span className="schedule-row-next"><LocalizedText id="schedules.nextRunUtc_eca09c" components={{ s0: <span>{formatTimestamp(text(document(row).next_run_at)) || copy("schedules.extra.170fa2a3d0f0")}</span> }} /></span></button></article>)}</ScrollPayloadWindow>
+      {!result.error && result.loaded && result.rows.length === 0 ? <p className="sidebar-help schedules-empty"><SidebarIcon name="schedules" />{copy("schedules.noSavedSchedules_3aa66d")}</p> : null}
+      <ScrollContinuation query={result} root={root} active={active && !locked} label={copy("schedules.savedSchedules_97f381")} /></div>
       <button type="button" className="schedules-history-toggle" aria-expanded={historyExpanded} aria-controls={historyRegionId} disabled={locked} onClick={() => { if (locked) return; focusHistoryOnExpansion.current = !historyExpanded; setHistoryExpanded(!historyExpanded); }}><SidebarIcon name="chevron" className="schedules-history-chevron" />{copy("schedules.retainedHistory_183a8d")}</button>
       <div role="region" id={historyRegionId} aria-label={copy("schedules.retainedScheduleHistoryLookup_80858c")} hidden={!historyExpanded}>
         <form className="sidebar-form" onSubmit={openHistory}><label>{copy("schedules.retainedScheduleId_1b69be")}<input ref={historyInput} value={historyDraft} onChange={(event) => setHistoryDraft(event.target.value)} maxLength={36} required disabled={locked} /></label><button aria-label={copy("schedules.openRetainedHistory_95da82")} disabled={locked}>{copy("schedules.retainedHistory_183a8d")}</button></form>
       </div>
     </SidebarSurface>
-    <div hidden={!active} className="page schedule-page">{editing ? <ScheduleEditor readLocalWorker={readLocalWorker} key={editing.key} initial={editing.initial} active={active} saved={(row) => { setEditing(undefined); setProtectedWorkflow(false); if (row) setSelected(row); void result.refetch(); }} cancel={() => { setEditing(undefined); setProtectedWorkflow(false); }} protectedChange={setProtectedWorkflow} /> : selected ? <ScheduleDetails key={selected.id} initial={selected} active={active} open={open} close={() => { setSelected(undefined); setProtectedWorkflow(false); void result.refetch(); }} edit={(initial) => { setSelected(undefined); setEditing({ initial, key: newRequestId() }); }} protectedChange={setProtectedWorkflow} /> : history ? <><button onClick={() => setHistory("")}>{copy("schedules.backToSchedules_975251")}</button><ScheduleHistory key={history} id={history} active={active} open={open} /></> : <section><h2>{copy("schedules.schedules_221ff1")}</h2><p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p></section>}</div>
+    <div hidden={!active} className="page schedule-page">{editing ? <ScheduleEditor readLocalWorker={readLocalWorker} key={editing.key} initial={editing.initial} active={active} saved={(row) => { setEditing(undefined); setProtectedWorkflow(false); if (row) setSelected(row); result.refresh(); }} cancel={() => { setEditing(undefined); setProtectedWorkflow(false); }} protectedChange={setProtectedWorkflow} /> : selected ? <ScheduleDetails key={selected.id} initial={selected} active={active} open={open} close={() => { setSelected(undefined); setProtectedWorkflow(false); result.refresh(); }} edit={(initial) => { setSelected(undefined); setEditing({ initial, key: newRequestId() }); }} protectedChange={setProtectedWorkflow} /> : history ? <><button onClick={() => setHistory("")}>{copy("schedules.backToSchedules_975251")}</button><ScheduleHistory key={history} id={history} active={active} open={open} /></> : <section><h2>{copy("schedules.schedules_221ff1")}</h2><p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p></section>}</div>
   </>;
 }

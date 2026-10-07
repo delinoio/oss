@@ -76,12 +76,12 @@ it("keeps filter drafts independent and sends exact applied/reset IDs and only r
   expect(all.getAttribute("aria-pressed")).toBe("false");
   expect(all.querySelectorAll("svg")).toHaveLength(1);
   for (const reset of ["All activity", "Reset"]) {
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load more Activity" }));
     await waitFor(() => expect(value.activity.mock.calls.at(-1)?.[0].pageToken).toBe("activity-next"));
     fireEvent.click(controls.getByRole("button", { name: reset }));
     // A fresh first page may already be cached. Verify its visible result, then
     // explicitly refresh to observe the exact applied query on the transport.
-    expect(screen.getByText("No activity yet.")).toBeTruthy();
+    expect(await screen.findByText("No activity yet.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(value.activity.mock.calls.at(-1)?.[0]).toMatchObject({ projectId: "", sessionId: "", pageToken: "" }));
     expect((controls.getByLabelText("Project") as HTMLSelectElement).value).toBe("");

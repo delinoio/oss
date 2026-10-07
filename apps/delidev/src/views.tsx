@@ -1,12 +1,15 @@
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import {
   ActivityKind, ActivityQuery, EntityKind, ResourceQuery,
-  SearchArchiveState, SearchExecutionOutcome, SearchQuery,
+  SearchArchiveState, SearchExecutionOutcome, SearchQuery, isEntityId, type ConversationSearchHit, type ActivityEntry, type SearchConversationsResponse, type ListActivityResponse,
 } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
-import { Problem } from "./ui";
+import { Failure } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen, useOpenSidebarDrawer } from "./sidebar-context";
 import { ActivityPRDetails } from "./activity-pr-source";
@@ -30,9 +33,17 @@ const activityNames: Partial<Record<ActivityKind, import("./localization").Messa
   [ActivityKind.PR_VERIFIED_HANDLED]: "views.activity.PR_VERIFIED_HANDLED"
 };
 
-function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
-  useLocale();
-  return <nav aria-label={copy("views.resultsPages_9c69dd")}><button disabled={!page || busy} onClick={() => setPage("")}>{copy("views.firstPage_0bdbb7")}</button><button disabled={!next || busy} onClick={() => setPage(next!)}>{copy("views.nextPage_c08ac7")}</button></nav>;
+const searchIdentity = (hit: ConversationSearchHit) => hit.message!.id;
+const searchRevision = (hit: ConversationSearchHit) => hit.message!.revision;
+const activityIdentity = (entry: ActivityEntry) => entry.id;
+const activityRevision = (entry: ActivityEntry) => entry.sourceRevision;
+function searchPage(response: SearchConversationsResponse) {
+  if (response.hits.length > 30 || response.hits.some(hit => !hit.message || !isEntityId(hit.message.id) || !isEntityId(hit.message.sessionId))) throw new ConnectError("Invalid conversation search page", Code.DataLoss);
+  return { rows: response.hits.map(hit => ({ id: hit.message!.id, revision: hit.message!.revision })), nextPageToken: response.nextPageToken, payload: response.hits };
+}
+function activityPage(response: ListActivityResponse) {
+  if (response.entries.length > 50 || response.entries.some(entry => !isEntityId(entry.id) || !Number.isSafeInteger(Number(entry.observedAtUnixMs)) || Math.abs(Number(entry.observedAtUnixMs)) > 8640000000000000)) throw new ConnectError("Invalid activity page", Code.DataLoss);
+  return { rows: response.entries.map(entry => ({ id: entry.id, revision: entry.sourceRevision })), nextPageToken: response.nextPageToken, payload: response.entries };
 }
 
 interface SearchFilters { query: string; archive: SearchArchiveState; projectId: string; sessionId: string; agentId: string; accountId: string; outcome: SearchExecutionOutcome }
@@ -42,7 +53,8 @@ export function Search({ active, open, focusActivation = 0 }: { active: boolean;
   useLocale();
   const [draft, setDraft] = useState<SearchFilters>(emptySearch);
   const [query, setQuery] = useState<SearchFilters>();
-  const [page, setPage] = useState("");
+  const content = useRef<HTMLElement>(null);
+  const root = useScrollRoot(content);
   const searchInput = useRef<HTMLInputElement>(null);
   const focusedOnce = useRef(false);
   const requestedFocus = useRef(false);
@@ -50,7 +62,10 @@ export function Search({ active, open, focusActivation = 0 }: { active: boolean;
   const closeDrawer = useCloseSidebarDrawer();
   const drawerOpen = useSidebarDrawerOpen();
   const openDrawer = useOpenSidebarDrawer();
-  const result = useQuery(SearchQuery.searchConversations, { ...(query ?? emptySearch), pageSize: 30, pageToken: page }, { enabled: active && Boolean(query?.query.trim()) });
+  const request = useCallback((token: string) => ({ ...(query ?? emptySearch), pageSize: 30, pageToken: token }), [query]);
+  const reader = useConnectPaginationReader(SearchQuery.searchConversations, request, searchPage);
+  const result = usePaginationChain(JSON.stringify(query), active && Boolean(query?.query.trim()), reader);
+  usePaginationRefresh(SearchQuery.searchConversations, request(""), active && Boolean(query?.query.trim()), result.refresh);
   useEffect(() => {
     if (requestedFocus.current && drawerOpen) { requestedFocus.current = false; searchInput.current?.focus(); }
   }, [drawerOpen]);
@@ -70,7 +85,7 @@ export function Search({ active, open, focusActivation = 0 }: { active: boolean;
     { id: ShortcutId.SearchSubmit, scope: Surface.Search, active, label: "shortcuts.searchSubmit", bindings: [{ key: "Enter" }], target: searchInput, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: Boolean(draft.query.trim()), unavailableReason: "shortcuts.searchRequired" },
   ]);
   const change = <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  const submit = (event: FormEvent) => { event.preventDefault(); if (!draft.query.trim()) return; setQuery({ ...draft, query: draft.query.trim() }); setPage(""); closeDrawer(); };
+  const submit = (event: FormEvent) => { event.preventDefault(); if (!draft.query.trim()) return; const next = { ...draft, query: draft.query.trim() }; if (JSON.stringify(query) === JSON.stringify(next)) result.reload(); else setQuery(next); closeDrawer(); };
   return <>
     <SidebarSurface active={active} title={copy("views.search_49c266")}>
       <form className="sidebar-form" onSubmit={submit}>
@@ -86,11 +101,11 @@ export function Search({ active, open, focusActivation = 0 }: { active: boolean;
         <button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SearchSubmit)} disabled={!draft.query.trim()}>{copy("views.search_49c266")}</button>
       </form>
     </SidebarSurface>
-    <section hidden={!active} className="page"><h2>{copy("views.searchConversations_8abdf3")}</h2>
+    <section ref={content} hidden={!active} className="page"><h2>{copy("views.searchConversations_8abdf3")}</h2>
     {!query ? <p>{copy("views.chooseASearchTermAndFilters_99f204")}</p> : null}
-    <Problem error={result.error} />{query && result.isPending ? <p role="status">{copy("views.searching_c31723")}</p> : null}{query && result.error && result.data ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_22c320")}</p> : null}
-    {result.data?.hits.map((hit) => <article key={hit.message?.id} className="result"><button disabled={!hit.message?.sessionId} onClick={() => open(hit.message!.sessionId)}>{hit.sessionName}</button><p>{text(document(hit.message).text)}</p><small>{hit.message?.sessionId}</small></article>)}
-    {result.data?.hits.length === 0 ? <p>{page ? copy("views.noFurtherConversationsOnThisPage_5b8014") : copy("views.noRetainedConversationMatches_b59f78")}</p> : null}<Pager page={page} setPage={setPage} next={result.data?.nextPageToken} busy={result.isFetching} />
+    <Failure failure={result.error?.failure} />{query && !result.loaded && result.loading ? <p role="status">{copy("views.searching_c31723")}</p> : null}{query && result.error && result.loaded ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_22c320")}</p> : null}
+    <ScrollPayloadWindow identity={searchIdentity} revision={searchRevision} query={result} root={root} active={active}>{payload => payload.map((hit) => <article key={hit.message?.id} className="result"><button disabled={!hit.message?.sessionId} onClick={() => open(hit.message!.sessionId)}>{hit.sessionName}</button><p>{text(document(hit.message).text)}</p><small>{hit.message?.sessionId}</small></article>)}</ScrollPayloadWindow>
+    {result.loaded && result.rows.length === 0 ? <p>{copy("views.noRetainedConversationMatches_b59f78")}</p> : null}<ScrollContinuation query={result} root={root} active={active} label={copy("views.searchConversations_8abdf3")} />
   </section></>;
 }
 
@@ -108,12 +123,16 @@ function ActivitySelectedLabel({ label, id, name }: { label: string; id: string;
 }
 export function Activity({ active, open }: { active: boolean; open: (id: string) => void }) {
   useLocale();
-  const [page, setPage] = useState("");
+  const content = useRef<HTMLElement>(null);
+  const root = useScrollRoot(content);
   const [draft, setDraft] = useState<ActivityDraft>(emptyActivityDraft);
   const [selection, setSelection] = useState<ActivityFilters>(emptyActivity);
   const closeDrawer = useCloseSidebarDrawer();
-  const result = useQuery(ActivityQuery.listActivity, { projectId: selection.projectId, sessionId: selection.sessionId, pageSize: 50, pageToken: page }, { enabled: active });
-  const apply = (next: ActivityFilters) => { setSelection(next); setPage(""); closeDrawer(); };
+  const request = useCallback((token: string) => ({ projectId: selection.projectId, sessionId: selection.sessionId, pageSize: 50, pageToken: token }), [selection]);
+  const reader = useConnectPaginationReader(ActivityQuery.listActivity, request, activityPage);
+  const result = usePaginationChain(JSON.stringify(selection), active, reader);
+  usePaginationRefresh(ActivityQuery.listActivity, request(""), active, result.refresh);
+  const apply = (next: ActivityFilters) => { if (selection.projectId === next.projectId && selection.sessionId === next.sessionId) result.reload(); else setSelection(next); closeDrawer(); };
   return <>
   <SidebarSurface active={active} title={copy("views.activity_38da15")} className="activity-sidebar">
     <button type="button" className="activity-all" aria-pressed={!selection.projectId && !selection.sessionId} onClick={() => { setDraft(emptyActivityDraft); apply(emptyActivity); }}>
@@ -134,9 +153,9 @@ export function Activity({ active, open }: { active: boolean; open: (id: string)
       <div className="activity-filter-actions"><button type="button" className="activity-apply" onClick={() => apply({ projectId: draft.projectId, sessionId: draft.sessionId })}>{copy("views.applyFilters_d80ab1")}</button><button type="button" className="activity-reset" onClick={() => { setDraft(emptyActivityDraft); apply(emptyActivity); }}>{copy("views.reset_daee76")}</button></div>
     </div>
   </SidebarSurface>
-  <section hidden={!active} className="page"><header><h2>{copy("views.activity_38da15")}</h2><button disabled={result.isFetching} onClick={() => { setPage(""); void result.refetch(); }}>{copy("views.refresh_0e9161")}</button></header><Problem error={result.error} />{result.isFetching ? <p role="status">{copy("views.loadingActivity_a389c3")}</p> : null}{result.error && result.data ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_c8711b")}</p> : null}
-    {result.data?.entries.map((entry) => <article className="result" key={entry.id}><strong>{activityNames[entry.kind] ? copy(activityNames[entry.kind]!) : copy("views.activity.UNSPECIFIED")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString(displayLocale())}</time></p>{entry.pullRequest ? <ActivityPRDetails target={entry.pullRequest} revision={entry.sourceRevision} active={active} /> : null}{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>{copy("views.openSession_b205bb")}</button> : !entry.pullRequest ? <p>{copy("views.waitingOrSkippedOccurrence_94fac5")}</p> : null}{entry.accountId ? <small><LocalizedText id="views.account_cc4945" components={{ s0: <>{entry.accountId}</> }} /></small> : null}</article>)}
-    {result.data?.entries.length === 0 ? <p>{page ? copy("views.noFurtherActivityOnThisPage_1ca656") : copy("views.noActivityYet_a288d2")}</p> : null}<Pager page={page} setPage={setPage} next={result.data?.nextPageToken} busy={result.isFetching} />
+  <section ref={content} hidden={!active} className="page"><header><h2>{copy("views.activity_38da15")}</h2><button disabled={Boolean(result.loading)} onClick={result.refresh}>{copy("views.refresh_0e9161")}</button></header><Failure failure={result.error?.failure} />{result.loading ? <p role="status">{copy("views.loadingActivity_a389c3")}</p> : null}{result.error && result.loaded ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_c8711b")}</p> : null}
+    <ScrollPayloadWindow identity={activityIdentity} revision={activityRevision} query={result} root={root} active={active}>{payload => payload.map((entry) => <article className="result" key={entry.id}><strong>{activityNames[entry.kind] ? copy(activityNames[entry.kind]!) : copy("views.activity.UNSPECIFIED")}</strong><p><time dateTime={new Date(Number(entry.observedAtUnixMs)).toISOString()}>{new Date(Number(entry.observedAtUnixMs)).toLocaleString(displayLocale())}</time></p>{entry.pullRequest ? <ActivityPRDetails target={entry.pullRequest} revision={entry.sourceRevision} active={active} /> : null}{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>{copy("views.openSession_b205bb")}</button> : !entry.pullRequest ? <p>{copy("views.waitingOrSkippedOccurrence_94fac5")}</p> : null}{entry.accountId ? <small><LocalizedText id="views.account_cc4945" components={{ s0: <>{entry.accountId}</> }} /></small> : null}</article>)}</ScrollPayloadWindow>
+    {result.loaded && result.rows.length === 0 ? <p>{copy("views.noActivityYet_a288d2")}</p> : null}<ScrollContinuation query={result} root={root} active={active} label={copy("views.activity_38da15")} />
   </section></>;
 }
 

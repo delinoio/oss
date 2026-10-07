@@ -156,7 +156,8 @@ describe("selected Inbox background refresh", () => {
       await new Promise<void>((resolve) => { window.setTimeout(resolve, 6000); });
       throw new ConnectError("Fixture entry unavailable", code);
     });
-    await advance(11000);
+    // Flush the five-second poll admission before advancing the delayed read.
+    await advance(5000); await advance(6000);
     expect(value.get).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/This item is unavailable/)).toBeTruthy();
     expect(screen.queryByText("Which methods should be supported?")).toBeNull();
@@ -170,7 +171,8 @@ describe("selected Inbox background refresh", () => {
     await selectQuestion(value);
     const foreignInteraction = create(ResourceSchema, { ...value.interaction, sessionId: newRequestId() });
     value.get.mockImplementationOnce(delayedView(create(InboxViewSchema, { entry: value.entry, session: value.session, interaction: foreignInteraction })));
-    await advance(11000);
+    // Flush the five-second poll admission before advancing the delayed read.
+    await advance(5000); await advance(6000);
     expect(value.get).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/This item is unavailable/)).toBeTruthy();
     expect(screen.queryByRole("textbox", { name: "Your answer" })).toBeNull();
@@ -209,7 +211,7 @@ it("applies source and read filters on the server and resets the active cursor",
   const value = fixture();
   render(value.renderInbox());
   await screen.findByRole("button", { name: /Agent question/ });
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Items" }));
   await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ pageToken: "cursor-2" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
   expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.UNSPECIFIED, readState: InboxReadState.UNSPECIFIED, pageToken: "cursor-2" });
@@ -227,7 +229,7 @@ it("preserves editable response fields when selection and server filters change"
   fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
   const answer = await screen.findByRole("textbox", { name: "Your answer" });
   fireEvent.change(answer, { target: { value: "Passkeys and SSO" } });
-  fireEvent.click(screen.getByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
   await screen.findByText("Original terminal observation");
   fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
   fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
@@ -256,7 +258,7 @@ it("keeps the preceding native answer in the Inbox cache after an oversized past
   expect(screen.getByText(/previous draft was kept/)).toBeTruthy();
   rendered.rerender(value.renderInbox({ active: false }));
   rendered.rerender(value.renderInbox());
-  fireEvent.click(screen.getByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
   await screen.findByText("Original terminal observation");
   fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
   expect((await screen.findByRole("textbox", { name: "Custom answer for question 1" }) as HTMLTextAreaElement).value).toBe("Previous exact answer");
