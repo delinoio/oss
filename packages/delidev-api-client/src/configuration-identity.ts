@@ -19,11 +19,11 @@ function object(value: unknown): value is Record<string, unknown> { return value
 // mutation, native readiness or interpretation of a retired original document.
 export function supportsResourceSchema(resource: Resource): boolean {
   if (resource.documentJson.byteLength > 1 << 20) return false;
-  if (resource.schemaVersion === 1) return true;
-  if (resource.schemaVersion !== 2 && resource.schemaVersion !== 3) return false;
+  if (![1, 2, 3].includes(resource.schemaVersion)) return false;
   try {
     const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson));
     if (!object(value)) return false;
+    if (resource.schemaVersion === 1) return !(resource.kind === EntityKind.ACCOUNT && Object.hasOwn(value, "api_protocol") || resource.kind === EntityKind.PROVIDER && Object.hasOwn(value, "api_formats") || resource.kind === EntityKind.AGENT && Object.hasOwn(value, "routes"));
     if (resource.schemaVersion === 3) {
       if (resource.kind === EntityKind.ACCOUNT) return value.type === "api" && Boolean(apiFormat(value.api_protocol)) && typeof value.provider_id === "string" && !Object.hasOwn(value, "subscription_service") && !Object.hasOwn(value, "subscription");
       if (resource.kind === EntityKind.PROVIDER) return Array.isArray(value.api_formats) && value.api_formats.length > 0 && value.api_formats.length <= 3 && value.api_formats.every(profile => Boolean(apiFormatProfile(profile))) && new Set(value.api_formats.map(profile => (profile as Record<string, unknown>).protocol)).size === value.api_formats.length;

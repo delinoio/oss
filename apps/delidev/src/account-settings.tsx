@@ -13,6 +13,7 @@ import { ApiEntryRow } from "./api-entry-row";
 import type { UsageEntry } from "./usage-entry";
 import {
   AccountQuery,
+  APIFormatId, APIAuthenticationId, apiFormat, apiFormatLabels, providerAPIFormats, supportsResourceSchema,
   AccountTypeFilter,
   FailureCode,
   clientFailure,
@@ -66,6 +67,7 @@ export interface AccountSettingsProps {
   section: AccountSettingsSection;
   active: boolean;
   accountTypeFilteringReady: boolean;
+  apiFormatSelectingReady?: boolean;
   accountTypeFilteringProblem?: unknown;
   accountTypeFilteringLoading?: boolean;
   accountTypeFilteringFetching?: boolean;
@@ -102,34 +104,36 @@ enum WizardStep {
   Created,
 }
 
-function validAccount(resource: Resource | undefined, providerId: string, alias: string): resource is Resource {
-  if (!resource || resource.kind !== EntityKind.ACCOUNT || !resource.id || resource.schemaVersion !== 1 || resource.revision < 1n) return false;
+function validAccount(resource: Resource | undefined, providerId: string, alias: string, protocol: string): resource is Resource {
+  if (!resource || resource.kind !== EntityKind.ACCOUNT || !resource.id || resource.schemaVersion !== 3 || !supportsResourceSchema(resource) || resource.revision < 1n) return false;
   const value = document(resource);
-  return value.provider_id === providerId && value.type === "api" && value.alias === alias;
+  return value.provider_id === providerId && value.type === "api" && value.alias === alias && value.api_protocol === protocol;
 }
 
 function validAccountObservation(resource: Resource | undefined, id: string, providerId: string, minimumRevision: bigint): resource is Resource {
-  if (!resource || resource.kind !== EntityKind.ACCOUNT || resource.id !== id || resource.schemaVersion !== 1 || resource.revision < minimumRevision) return false;
+  if (!resource || resource.kind !== EntityKind.ACCOUNT || resource.id !== id || !supportsResourceSchema(resource) || resource.revision < minimumRevision) return false;
   const data = document(resource);
   return data.type === "api" && data.provider_id === providerId;
 }
 
-function providerContract(provider: AccountProviderSummary): { id: string; authentication: string; protocol: string; endpoint: string; enabled: boolean } {
+function providerContract(provider: AccountProviderSummary, protocol?: APIFormatId | ""): { id: string; authentication: string; protocol: string; endpoint: string; enabled: boolean; formats: string } {
   const data = document(provider.provider);
-  return { id: provider.providerId, authentication: text(data.authentication), protocol: text(data.protocol), endpoint: text(data.endpoint), enabled: provider.enabled };
+  const selected = protocol ? providerAPIFormats(data).find(profile => profile.protocol === protocol) : undefined;
+  return { id: provider.providerId, authentication: selected?.authentication ?? text(data.authentication), protocol: selected?.protocol ?? text(data.protocol), endpoint: selected?.endpoint ?? text(data.endpoint), enabled: provider.enabled, formats: JSON.stringify(providerAPIFormats(data)) };
 }
 
 function providerContractMatches(expected: ReturnType<typeof providerContract>, resource: Resource | undefined): boolean {
-  if (!resource || resource.kind !== EntityKind.PROVIDER || resource.schemaVersion !== 1 || resource.id !== expected.id) return false;
+  if (!resource || resource.kind !== EntityKind.PROVIDER || !supportsResourceSchema(resource) || resource.id !== expected.id) return false;
   const data = document(resource);
   const enabled = data.enabled !== false;
-  return text(data.authentication) === expected.authentication && text(data.protocol) === expected.protocol &&
-    text(data.endpoint) === expected.endpoint && enabled === expected.enabled && expected.enabled;
+  const profile = providerAPIFormats(data).find(profile => profile.protocol === expected.protocol);
+  return profile?.authentication === expected.authentication && profile.endpoint === expected.endpoint &&
+    JSON.stringify(providerAPIFormats(data)) === expected.formats && enabled === expected.enabled && expected.enabled;
 }
 
 function sameProviderContract(left: ReturnType<typeof providerContract> | undefined, right: ReturnType<typeof providerContract>): boolean {
   return Boolean(left && left.id === right.id && left.authentication === right.authentication && left.protocol === right.protocol &&
-    left.endpoint === right.endpoint && left.enabled === right.enabled);
+    left.endpoint === right.endpoint && left.enabled === right.enabled && left.formats === right.formats);
 }
 
 function AccountCreationWizard({
@@ -137,6 +141,7 @@ function AccountCreationWizard({
   openEdit,
   active,
   accountTypeFilteringReady,
+  apiFormatSelectingReady = false,
   initialProvider,
   providers,
   eligibleProviders,
@@ -150,6 +155,7 @@ function AccountCreationWizard({
   openEdit: (resource: Resource) => void;
   active: boolean;
   accountTypeFilteringReady: boolean;
+  apiFormatSelectingReady?: boolean;
   initialProvider?: AccountProviderSummary;
   providers: readonly AccountProviderSummary[];
   eligibleProviders: readonly AccountProviderSummary[];
@@ -171,6 +177,7 @@ function AccountCreationWizard({
   const providerButtons = useRef(new Map<string, HTMLButtonElement>());
   const [focusTarget, setFocusTarget] = useState(initialProvider ? WizardFocus.Account : WizardFocus.Picker);
   const [alias, setAlias] = useState("");
+  const [protocol, setProtocol] = useState<APIFormatId | "">("");
   const [apiKey, setApiKey] = useState("");
   const [providerChecking, setProviderChecking] = useState(false);
   const [providerMismatch, setProviderMismatch] = useState(false);
@@ -209,12 +216,15 @@ function AccountCreationWizard({
     setFocusTarget(WizardFocus.None);
   }, [active, focusTarget, providerId, step, taskVisible]);
   const selectedProviderDocument = document(selectedProvider?.provider);
-  const selectedAuthentication = text(selectedProviderDocument.authentication);
-  const selectedProviderContract = selectedProvider ? providerContract(selectedProvider) : undefined;
+  const formats = providerAPIFormats(selectedProviderDocument).sort((a, b) => Object.values(APIFormatId).indexOf(a.protocol) - Object.values(APIFormatId).indexOf(b.protocol));
+  const selectedProfile = formats.find(profile => profile.protocol === protocol);
+  const selectedAuthentication = selectedProfile?.authentication ?? "";
+  const selectedProviderContract = selectedProvider ? providerContract(selectedProvider, protocol) : undefined;
+  const manualReady = accountTypeFilteringReady && apiFormatSelectingReady;
   const providerContractRef = useRef(selectedProviderContract);
   providerContractRef.current = selectedProviderContract;
-  const capabilityRef = useRef(accountTypeFilteringReady);
-  capabilityRef.current = accountTypeFilteringReady;
+  const capabilityRef = useRef(manualReady);
+  capabilityRef.current = manualReady;
   const providerRead = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: providerId }, { enabled: active && step === WizardStep.Account && Boolean(providerId) });
   const verifyProvider = async (expected: ReturnType<typeof providerContract>): Promise<boolean> => {
     try {
@@ -222,7 +232,8 @@ function AccountCreationWizard({
       return !checked.error && providerContractMatches(expected, checked.data?.resource) && sameProviderContract(providerContractRef.current, expected);
     } catch { return false; }
   };
-  const keyless = selectedAuthentication === Authentication.Keyless;
+  const metadataUnavailable = providerRead.isFetching || Boolean(providerRead.error) || picker.fetching;
+  const keyless = selectedAuthentication === APIAuthenticationId.Keyless;
   const apiKeyValid = keyless || /^[!-~]{1,8192}$/.test(apiKey);
   const aliasValid = alias.trim().length > 0 && !alias.includes(String.fromCharCode(0)) && new TextEncoder().encode(alias).byteLength <= 256;
   const currentId = createdAccount?.id ?? "pending";
@@ -232,14 +243,14 @@ function AccountCreationWizard({
   };
 
   const create = useRetainedMutation("api-account-wizard:create", ConfigurationQuery.saveConfiguration, (result, request) => {
-    let expected: { providerId: string; alias: string } | undefined;
+    let expected: { providerId: string; alias: string; protocol: string } | undefined;
     try {
       const body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(request.documentJson)) as Record<string, unknown>;
-      expected = { providerId: text(body.provider_id), alias: text(body.alias) };
+      expected = { providerId: text(body.provider_id), alias: text(body.alias), protocol: text(body.api_protocol) };
     } catch { /* Malformed request data cannot authorize a follow-up connection. */ }
     const resource = result.resource;
     if (request.kind !== EntityKind.ACCOUNT || !request.mutation || result.requestId !== request.mutation.requestId ||
-      !expected || !validAccount(resource, expected.providerId, expected.alias)) {
+      !expected || !validAccount(resource, expected.providerId, expected.alias, expected.protocol)) {
       clearHandoff();
       setUnknownResponse(true);
       return;
@@ -248,7 +259,7 @@ function AccountCreationWizard({
     setCreatedAccount(resource);
     setStep(WizardStep.Created);
     saved(resource);
-    if (autoConnectAllowed.current && accountTypeFilteringReady && activeRef.current && createGeneration.current === generation.current) {
+    if (autoConnectAllowed.current && manualReady && activeRef.current && createGeneration.current === generation.current) {
       setAutoConnect(generation.current);
     } else {
       autoConnectAllowed.current = false;
@@ -260,6 +271,7 @@ function AccountCreationWizard({
     const returnedConnection = text(object(document(result.account).connection).id);
     const validResult = Boolean(createdAccount && result.requestId === request.mutation?.requestId &&
       validAccountObservation(result.account, request.mutation?.id ?? "", text(document(createdAccount).provider_id), expectedRevision) &&
+      document(result.account).api_protocol === document(createdAccount).api_protocol &&
       (result.replayed || (Boolean(returnedConnection) && result.account.revision > expectedRevision)));
     if (!validResult) {
       setUnknownResponse(true);
@@ -286,12 +298,13 @@ function AccountCreationWizard({
       if (text(body.type) !== "api" || !text(body.provider_id) || !text(body.alias)) return;
       if (!providerId) setProviderId(text(body.provider_id));
       if (!alias) setAlias(text(body.alias));
+      if (!protocol) setProtocol(apiFormat(body.api_protocol) ?? "");
       setEnabled(body.enabled === true);
       setExcludeAutomatic(body.exclude_automatic === true);
       setRecoveryNotifications(body.recovery_notifications === true);
       setStep(WizardStep.Account);
     } catch { /* The exact retained request remains available for inspection and retry. */ }
-  }, [alias, create.busy, create.input, create.uncertain, providerId]);
+  }, [alias, create.busy, create.input, create.uncertain, providerId, protocol]);
 
   useEffect(() => {
     if (active) return;
@@ -314,7 +327,7 @@ function AccountCreationWizard({
     const next = selectedProviderContract;
     const previous = lastProviderContract.current;
     if (previous && next && previous.id === next.id &&
-      (previous.authentication !== next.authentication || previous.protocol !== next.protocol || previous.endpoint !== next.endpoint || (previous.enabled && !next.enabled))) {
+      (previous.authentication !== next.authentication || previous.protocol !== next.protocol || previous.endpoint !== next.endpoint || previous.formats !== next.formats || (previous.enabled && !next.enabled))) {
       generation.current += 1;
       clearHandoff();
       autoConnectAllowed.current = false;
@@ -329,15 +342,13 @@ function AccountCreationWizard({
     if (autoConnect === undefined) return;
     if (autoConnectStarted.current === autoConnect) return;
     autoConnectStarted.current = autoConnect;
-    if (!activeRef.current || !accountTypeFilteringReady || autoConnect !== generation.current || !createdAccount || !selectedProvider) {
+    if (!activeRef.current || !manualReady || autoConnect !== generation.current || !createdAccount || !selectedProvider) {
       clearHandoff();
       setAutoConnect(undefined);
       return;
     }
     const originalProvider = handoffProvider.current;
-    if (!selectedProvider.enabled || !originalProvider || originalProvider.id !== selectedProvider.providerId ||
-      originalProvider.authentication !== selectedAuthentication || originalProvider.protocol !== text(selectedProviderDocument.protocol) ||
-      originalProvider.endpoint !== text(selectedProviderDocument.endpoint)) {
+    if (!selectedProvider.enabled || !originalProvider || !selectedProviderContract || !sameProviderContract(originalProvider, selectedProviderContract)) {
       clearHandoff();
       autoConnectAllowed.current = false;
       setAutoConnect(undefined);
@@ -370,7 +381,7 @@ function AccountCreationWizard({
         apiKey: secret ? new TextEncoder().encode(secret) : new Uint8Array(),
       });
     })();
-  }, [accountTypeFilteringReady, autoConnect, connect.send, createdAccount, keyless, selectedAuthentication, selectedProvider, selectedProviderDocument.endpoint, selectedProviderDocument.protocol]);
+  }, [manualReady, autoConnect, connect.send, createdAccount, keyless, selectedProvider, selectedProviderContract]);
 
   const navigateBack = () => {
     if (unknownResponse) { closeTask(); return; }
@@ -384,6 +395,7 @@ function AccountCreationWizard({
     clearHandoff();
     setApiKey("");
     setProviderId(provider.providerId);
+    setProtocol("");
     setSelectedHint(provider);
     setAutoConnect(undefined);
     setStep(WizardStep.Account);
@@ -400,11 +412,11 @@ function AccountCreationWizard({
   };
   const createAccount = async () => {
     setAttempted(true);
-    if (!accountTypeFilteringReady || unknownResponse || providerChecking || !selectedProvider || !selectedProvider.enabled || !aliasValid || !apiKeyValid || create.busy || create.uncertain) return;
+    if (!manualReady || metadataUnavailable || !selectedProfile || !protocol || unknownResponse || providerChecking || !selectedProvider || !selectedProvider.enabled || !aliasValid || !apiKeyValid || create.busy || create.uncertain) return;
     const requestGeneration = generation.current;
     const requestAlias = alias;
     const requestProviderId = selectedProvider.providerId;
-    const requestProviderContract = providerContract(selectedProvider);
+    const requestProviderContract = providerContract(selectedProvider, protocol);
     const requestEnabled = enabled;
     const requestExcludeAutomatic = excludeAutomatic;
     const requestRecoveryNotifications = recoveryNotifications;
@@ -434,11 +446,12 @@ function AccountCreationWizard({
     void create.send({
       mutation: { id: "", expectedRevision: 0n, requestId },
       kind: EntityKind.ACCOUNT,
-      schemaVersion: 1,
+      schemaVersion: 3,
       documentJson: new TextEncoder().encode(JSON.stringify({
         alias: requestAlias,
         provider_id: requestProviderId,
         type: "api",
+        api_protocol: protocol,
         enabled: requestEnabled,
         exclude_automatic: requestExcludeAutomatic,
         recovery_notifications: requestRecoveryNotifications,
@@ -457,7 +470,7 @@ function AccountCreationWizard({
     if (!accountTypeFilteringReady || unknownResponse || providerChecking || !createdAccount || !selectedProvider || !selectedProvider.enabled || connect.busy || connect.uncertain) return;
     if (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) return;
     const requestGeneration = generation.current;
-    const requestProviderContract = providerContract(selectedProvider);
+    const requestProviderContract = providerContract(selectedProvider, protocol);
     const requestAccount = connected ?? createdAccount;
     const apiKeyBytes = keyless ? new Uint8Array() : new TextEncoder().encode(connectionKey);
     setConnectionKey("");
@@ -494,6 +507,7 @@ function AccountCreationWizard({
     return <section className="account-wizard api-keys-view" aria-labelledby="api-account-created-title">
       <button className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</button>
       <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><h2 id="api-account-created-title">{resourceName(current)}</h2>
+      <p>{copy("account-settings.apiFormat")}: {apiFormatLabels[apiFormat(data.api_protocol) ?? protocol as APIFormatId]}</p>
       <p>{copy("account-settings.entrySavedCredentialConnectionIsSeparate_9ee9e5")}</p>
       {!accountTypeFilteringReady ? <p role="status">{copy("account-settings.connectionIsPausedUntilThisServer_0528c4")}</p> : null}
       {create.busy ? <p role="status">{copy("account-settings.creatingEntry_e95d50")}</p> : null}
@@ -505,7 +519,7 @@ function AccountCreationWizard({
       {!hasCredentials && selectedProvider && selectedProvider.enabled ? keyless ? <p>{copy("account-settings.connectToThisLocalEndpointOn_70be8a")}</p> : <label>{copy("account-settings.apiKey_16f0ee")}<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} disabled={providerChecking} value={connectionKey} onChange={(event) => setConnectionKey(event.target.value)} /></label> : !hasCredentials && selectedProvider ? <p role="status">{copy("account-settings.theSelectedProviderIsOffEnable_eaed28")}</p> : !hasCredentials ? <p role="status">{copy("account-settings.theSelectedProviderIsUnavailableRefresh_3c01cf")}</p> : null}
       {!hasCredentials ? <SettingsTaskActions className=""><button className="primary" type="button" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !selectedProvider?.enabled || (!keyless && !/^[!-~]{1,8192}$/.test(connectionKey)) || connect.busy || connect.uncertain} onClick={connectExisting}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : keyless ? copy("account-settings.connectLocalEndpoint_f37d68") : copy("account-settings.connectApiKey_0f97e9")}</button>{connect.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || connect.busy} onClick={retryConnection}>{copy("account-settings.retryTheSameConnection_bc857b")}</button> : null}</SettingsTaskActions> : null}
       {providerMismatch ? <p role="alert">{keyless ? copy("account-settings.thisProviderChangedOrIsNo_15d334") : copy("account-settings.thisProviderChangedOrIsNo_0b47f9")}</p> : null}
-      {providerChecking ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
+      {providerChecking || metadataUnavailable ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
       <Problem error={providerRead.error} />
       {unknownResponse ? <p role="alert">{copy("account-settings.theServerAcknowledgedARequestWithout_eb87fb")}</p> : null}
       <Problem error={connect.error} />
@@ -543,9 +557,11 @@ function AccountCreationWizard({
       <div className="api-entry-provider"><div><strong>{selectedProvider?.displayName ?? copy("account-settings.unavailable_ca1844")}</strong><span>{keyless ? copy("account-settings.localEndpoint_c04191") : copy("account-settings.apiKey_16f0ee")}</span></div><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain || unknownResponse} onClick={returnToProviders}>{copy("account-settings.change_c0bf75")}</button></div>
       {!accountTypeFilteringReady ? <p role="status">{copy("account-settings.thisServerNoLongerReportsThe_81fc29")}</p> : null}
       <form id={`${taskFormId}-1`} onSubmit={(event) => { event.preventDefault(); createAccount(); }}>
-        <fieldset disabled={!accountTypeFilteringReady || providerChecking || create.busy || create.uncertain}>
+        <fieldset disabled={!manualReady || metadataUnavailable || providerChecking || create.busy || create.uncertain}>
           <label>{copy("account-settings.entryName_978463")}<input autoComplete="off" maxLength={256} value={alias} aria-invalid={(attempted || alias.length > 0) && !aliasValid} onChange={(event) => setAlias(event.target.value)} /></label>
           {(attempted || alias.length > 0) && !aliasValid ? <p role="alert">{copy("account-settings.enterANonEmptyEntryName_24d18d")}</p> : null}
+          <label>{copy("account-settings.apiFormat")}<select required value={protocol} aria-invalid={attempted && !selectedProfile} onChange={(event) => { generation.current += 1; clearHandoff(); setApiKey(""); setConnectionKey(""); setProtocol(apiFormat(event.target.value) ?? ""); setProviderMismatch(false); }}><option value="">{copy("account-settings.chooseApiFormat")}</option>{formats.map(profile => <option key={profile.protocol} value={profile.protocol}>{apiFormatLabels[profile.protocol]}</option>)}</select></label>
+          <p>{protocol === APIFormatId.Responses ? copy("account-settings.responsesHelp") : copy("account-settings.formatHelp")}</p>
           {keyless ? <p>{copy("account-settings.connectToThisLocalEndpointOn_70be8a")}</p> : <>
             <label>{copy("account-settings.apiKey_16f0ee")}<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={apiKey} aria-invalid={(attempted || apiKey.length > 0) && !apiKeyValid} onChange={(event) => setApiKey(event.target.value)} /></label>
             {!providerChecking && !create.busy && !create.uncertain && (attempted || apiKey.length > 0) && !apiKeyValid ? <p role="alert">{copy("account-settings.enter18192PrintableAsciiBytes_5695b1")}</p> : null}
@@ -560,13 +576,14 @@ function AccountCreationWizard({
         </fieldset>
         <p className="api-entry-validation-note">{copy("account-settings.newConnectionsRemainUnverifiedUntilYou_f3828e")}</p>
         <Problem error={create.error} />
+        {!apiFormatSelectingReady ? <p role="status">{copy("account-settings.apiFormatUnsupported")}</p> : null}
         {create.busy ? <p role="status">{copy("account-settings.creatingEntry_e95d50")}</p> : null}
         {create.uncertain ? <p role="status">{copy("account-settings.resultNotConfirmedTheEntryRequest_579041")}</p> : null}
         {create.error && !create.uncertain ? <p role="status">{copy("account-settings.entryCreationFailedCorrectTheDetails_72993a")}</p> : null}
         {providerMismatch ? <p role="alert">{keyless ? copy("account-settings.thisProviderChangedOrIsNo_72e318") : copy("account-settings.thisProviderChangedOrIsNo_c94fdd")}</p> : null}
-        {providerChecking ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
+        {providerChecking || metadataUnavailable ? <p role="status">{copy("account-settings.checkingTheCurrentProviderSettings_411acc")}</p> : null}
         <Problem error={providerRead.error} />
-        <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={!accountTypeFilteringReady || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : copy("account-settings.addAndConnect_4ffa9b")}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>{copy("account-settings.retryTheSameEntryCreation_8f455b")}</button> : null}</SettingsTaskActions>
+        <SettingsTaskActions form={`${taskFormId}-1`} className=""><button type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain || unknownResponse} onClick={returnToProviders}>{copy("agent-worker-wizard.back")}</button><button className="primary" disabled={!manualReady || metadataUnavailable || !selectedProfile || providerChecking || unknownResponse || !aliasValid || !apiKeyValid || !selectedProvider?.enabled || create.busy || create.uncertain}>{providerChecking ? copy("account-settings.checkingProvider_051bfc") : copy("account-settings.addAndConnect_4ffa9b")}</button>{create.uncertain ? <button type="button" disabled={!accountTypeFilteringReady || providerChecking || create.busy} onClick={create.retry}>{copy("account-settings.retryTheSameEntryCreation_8f455b")}</button> : null}</SettingsTaskActions>
       </form>
     </>}
   </section>;
@@ -583,6 +600,7 @@ function ApiAccountSettings({
   section,
   active,
   accountTypeFilteringReady,
+  apiFormatSelectingReady = false,
   accountTypeFilteringProblem,
   accountTypeFilteringLoading = false,
   accountTypeFilteringFetching = false,
@@ -635,8 +653,8 @@ function ApiAccountSettings({
     accountType,
   }, { enabled: active && accountTypeFilteringReady });
   const providersById = useMemo(() => {
-    const values = new Map<string, { displayName: string; enabled: boolean }>();
-    for (const provider of providerSummaries) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled });
+    const values = new Map<string, { displayName: string; enabled: boolean; protocol?: string }>();
+    for (const provider of providerSummaries) values.set(provider.providerId, { displayName: provider.displayName, enabled: provider.enabled, protocol: text(document(provider.provider).protocol) });
     return values;
   }, [providerSummaries]);
   const workflowActive = (wizard && !pauseWorkflowLock) || Boolean(selectedAccount);
@@ -692,6 +710,6 @@ function ApiAccountSettings({
     {accountTypeFilteringReady ? <p className="api-entry-storage-note">{copy("account-settings.knownUsageMayBeIncompleteEstimates_30eea0")}</p> : null}
     <p className="api-entry-storage-note">{copy("account-settings.credentialsAreStoredSecurelyOnThe_be612b")}</p>
     {selectedAccount && section === AccountSettingsSection.Api ? <SettingsTaskDialog key={selectedAccount.id} title={copy("account-settings.manageConnection_ad2892")} size={SettingsDialogSize.Wide} close={() => { setSelectedAccount(undefined); void rows.refetch(); }}><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
-    {wizard ? <SettingsTaskDialog title={copy("account-settings.addAiApiKey_2c04a8")} size={SettingsDialogSize.Wide} retained={Boolean(oauth?.view)} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}><AccountCreationWizard oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} /></SettingsTaskDialog> : null}
+    {wizard ? <SettingsTaskDialog title={copy("account-settings.addAiApiKey_2c04a8")} size={SettingsDialogSize.Form} retained={Boolean(oauth?.view)} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}><AccountCreationWizard apiFormatSelectingReady={apiFormatSelectingReady} oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} /></SettingsTaskDialog> : null}
   </section>;
 }

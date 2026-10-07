@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { AccountTypeFilter, KnownSubscriptionModelCatalogSource, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SystemCapability, SystemQuery, newRequestId, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { ApiProtocol, ProviderInventoryCapability, AccountTypeFilter, KnownSubscriptionModelCatalogSource, ConfigurationQuery, EntityKind, ProviderQuery, ResourceQuery, SubscriptionServiceId, SystemCapability, SystemQuery, newRequestId, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationFields, Harness, Routing, newConfiguration } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -11,7 +11,7 @@ import { revealAgentInvalidControl } from "./agent-configuration";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import { copy, useLocale } from "./localization";
 import "./agent-worker-wizard.css";
-import { SourceKind, SelectedAccount, fromKey, modelSource, sameSource, sourceKey, wireService, type Source } from "./worker-source";
+import { SourceKind, SelectedAccount, accountFormatMatches, harnessAPIProtocol, fromKey, modelSource, sameSource, sourceKey, wireService, type Source } from "./worker-source";
 import { WorkerHarnessPicker } from "./worker-harness-picker";
 import { AgentWorkerSourceWizard } from "./agent-worker-source-wizard";
 
@@ -66,7 +66,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const originalModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: text(document(initial).model_id) }, { enabled: active && Boolean(initial && document(initial).model_id) });
   const providers = useQuery(ProviderQuery.listProviderInventory, { enabledOnly: true, pageSize: 50, pageToken: providerPage }, { enabled: active && supported });
   const selectedProvider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: source?.kind === SourceKind.Api ? source.id : "" }, { enabled: active && supported && source?.kind === SourceKind.Api });
-  const accountRows = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: accountPage }, providerId: source?.kind === SourceKind.Api ? source.id : "", accountType: source?.kind === SourceKind.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION, subscriptionService: wireService(source) }, { enabled: active && supported && Boolean(source) });
+  const accountRows = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: accountPage }, providerId: source?.kind === SourceKind.Api ? source.id : "", accountType: source?.kind === SourceKind.Api ? AccountTypeFilter.API : AccountTypeFilter.SUBSCRIPTION, subscriptionService: wireService(source), apiProtocol: source?.kind === SourceKind.Api && providers.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) ? harnessAPIProtocol(text(data.harness)) : ApiProtocol.UNSPECIFIED }, { enabled: active && supported && Boolean(source) });
   const query = useDeferredValue(input);
   const models = useQuery(ProviderQuery.searchModels, { query, providerId: source?.kind === SourceKind.Api ? source.id : "", subscriptionService: wireService(source), includeHidden: true, enabledProvidersOnly: true, pageSize: 50, pageToken: modelPage }, { enabled: active && supported && Boolean(source) && step === Step.Model, placeholderData: previous => previous });
   const knownSupported = status.data?.capabilities.includes(SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1) === true;
@@ -74,7 +74,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
   const knownValid = knownSupported && source?.kind === SourceKind.Subscription && known.data?.subscriptionService === wireService(source) && known.data.models.length <= 200 && /^sha256:[a-f0-9]{64}$/.test(known.data.catalogVersion) && validCatalogDate(known.data.updatedAt) && [KnownSubscriptionModelCatalogSource.BUNDLED, KnownSubscriptionModelCatalogSource.CACHE, KnownSubscriptionModelCatalogSource.ONLINE].includes(known.data.source) && known.data.models.every(row => row.nativeId && row.displayName) && new Set(known.data.models.map(row => row.nativeId)).size === known.data.models.length;
   const currentModel = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: model?.id ?? "" }, { enabled: active && supported && Boolean(model), refetchInterval: active && model ? 5000 : false });
   const accountPageValid = accountRows.data?.resources.every(row => sameSource(row, source));
-  const accountChoices = accountPageValid ? accountRows.data!.resources.filter(showAccountChoice) : [];
+  const accountChoices = accountPageValid ? accountRows.data!.resources.filter(row => showAccountChoice(row) && accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness))) : [];
   const modelPageValid = models.data?.models.every(row => supportsResourceSchema(row) && sourceKey(modelSource(row)) === sourceKey(source));
   const savedModelKey = `${sourceKey(source)}\u0000${query}`;
   const cachedSavedModels = savedModels.key === savedModelKey ? savedModels.rows : {};
@@ -134,6 +134,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel }: { initial?:
     if (through >= Step.Accounts) {
       if (!source || source.kind === SourceKind.Subscription && subscriptionServiceHarnesses[source.id as SubscriptionServiceId] !== data.harness) { fail(Step.Accounts, copy("agent-worker-wizard.chooseAccountSourceForHarness"), "source"); return false; }
       if (!ids.length || ids.length > 1000 || ids.some(id => !knownAccounts[id] || !sameSource(knownAccounts[id]!, source))) { fail(Step.Accounts, copy("agent-worker-wizard.selectCurrentAccount"), "source"); return false; }
+      if (selectedRows.some(row => !accountFormatMatches(row, selectedProvider.data?.resource, text(data.harness)))) { fail(Step.Accounts, copy("agent-worker-wizard.accountApiFormatMismatch"), "source"); return false; }
       if (data.routing === Routing.Fixed && ids.length !== 1 || links.some(link => !Number.isInteger(link.weight) || Number(link.weight) < 1 || Number(link.weight) > 1000)) { fail(Step.Accounts, copy("agent-worker-wizard.fixedRoutingWeights"), "routing"); return false; }
     }
     if (through >= Step.Model && (!input.trim() || new TextEncoder().encode(input.trim()).byteLength > 256 || model && sourceKey(modelSource(model)) !== sourceKey(source))) { fail(Step.Model, copy("agent-worker-wizard.selectModelFromSource"), "model"); return false; }

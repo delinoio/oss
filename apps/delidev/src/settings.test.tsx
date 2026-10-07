@@ -32,7 +32,7 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
       listProviderPresets: () => ({ presetsJson: encode(options.presets ?? [{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
       listProviderInventory: (request) => {
         if (options.providerInventoryError) throw options.providerInventoryError;
-        return options.readProviderInventory?.(request.pageToken, request) ?? ({ entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] });
+        return options.readProviderInventory?.(request.pageToken, request) ?? ({ entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] });
       },
       searchModels: (request) => options.readModelSearch?.(request.pageToken) ?? ({ models: [], providers: [] }),
     });
@@ -416,6 +416,8 @@ it("keeps exact retries within an opening and discards its provider draft on clo
   await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(create);
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "My local provider" } });
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "OpenAI Responses" }).matches(":disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("checkbox", { name: "OpenAI Responses" }));
   fireEvent.change(screen.getByRole("textbox", { name: "API base URL" }), { target: { value: "http://127.0.0.1:11434/v1" } });
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("My local provider");
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
@@ -424,7 +426,7 @@ it("keeps exact retries within an opening and discards its provider draft on clo
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
   const request = input(value.save.mock.calls[0][0]);
   expect(request.mutation.expectedRevision).toBe(0n);
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name: "My local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true });
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name: "My local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true, api_formats: [{ protocol: "openai-responses", endpoint: "http://127.0.0.1:11434/v1", authentication: "bearer" }] });
   view.rerender(value.view(<Settings visible={false} />));
   view.rerender(value.view(<Settings visible />));
   expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
@@ -459,13 +461,13 @@ it("blocks stale settings writes without erasing the staged instructions", async
 });
 
 it("retains a secret only for its exact uncertain connection and excludes it from read cache keys", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "API provider", authentication: "bearer" });
+  const provider = resource(EntityKind.PROVIDER, { name: "API provider", authentication: "bearer", protocol: "openai-responses", endpoint: "https://api.example.test/v1" });
   const account = resource(EntityKind.ACCOUNT, { alias: "API account", provider_id: provider.id, type: "api", health: "disconnected" }, 5n);
   const value = fixture([account, provider]);
   value.connect.mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable));
   render(value.view(<AccountConnection initial={account} active close={() => {}} />));
   const key = screen.getByLabelText("API key");
-  await waitFor(() => expect((key as HTMLInputElement).disabled).toBe(false));
+  await waitFor(() => expect(key.matches(":disabled")).toBe(false));
   fireEvent.change(key, { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Connect API key" }));
   const retry = await screen.findByRole("button", { name: "Retry the same connection" });
@@ -728,7 +730,7 @@ it("keeps the unfiltered picker cursor independent and retains an exact provider
   const anthropic = resource(EntityKind.PROVIDER, { name: "Anthropic", authentication: "bearer", protocol: "anthropic-messages", endpoint: "https://api.example.test/v1", enabled: true });
   const custom = resource(EntityKind.PROVIDER, { name: "Custom API", authentication: "bearer", protocol: "openai-chat", endpoint: "https://custom.example.test/v1", enabled: true });
   const entry = (provider: Resource, displayName: string) => create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName, enabled: true, provider, accountCountsAvailable: true });
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const requests: { query: string; enabledOnly: boolean; pageSize: number; pageToken: string }[] = [];
   let failLater = true;
   const value = fixture([openai, anthropic, custom], { readProviderInventory: (pageToken, request) => {
@@ -738,9 +740,9 @@ it("keeps the unfiltered picker cursor independent and retains an exact provider
     if (failLater) { failLater = false; throw new ConnectError("Temporary fixture failure", Code.Unavailable); }
     return { entries: [entry(custom, "Custom API")], capabilities };
   } });
-  const savedAccount = resource(EntityKind.ACCOUNT, { alias: "Custom key", provider_id: custom.id, type: "api", enabled: true, health: "disconnected" }, 4n);
+  const savedAccount = resource(EntityKind.ACCOUNT, { alias: "Custom key", provider_id: custom.id, type: "api", api_protocol: "openai-chat", enabled: true, health: "disconnected" }, 4n);
   value.save.mockImplementation(async (request: unknown) => ({ resource: savedAccount, requestId: input(request).mutation.requestId }));
-  value.connect.mockImplementation(async (request: unknown) => ({ account: create(ResourceSchema, { ...savedAccount, revision: 5n, documentJson: encode({ alias: "Custom key", provider_id: custom.id, type: "api", enabled: true, health: "unverified", connection: { id: newRequestId() } }) }), requestId: input(request).mutation.requestId }));
+  value.connect.mockImplementation(async (request: unknown) => ({ account: create(ResourceSchema, { ...savedAccount, revision: 5n, documentJson: encode({ alias: "Custom key", provider_id: custom.id, type: "api", api_protocol: "openai-chat", enabled: true, health: "unverified", connection: { id: newRequestId() } }) }), requestId: input(request).mutation.requestId }));
   render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   await waitFor(() => expect(requests.some((request) => !request.enabledOnly && request.query === "")).toBe(true));
@@ -762,6 +764,8 @@ it("keeps the unfiltered picker cursor independent and retains an exact provider
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "Custom API API key" }));
+  await waitFor(() => expect(screen.getByLabelText("API format").matches(":disabled")).toBe(false));
+  fireEvent.change(screen.getByLabelText("API format"), { target: { value: "openai-chat" } });
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Custom key" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
@@ -781,7 +785,7 @@ it.each([
 ])("requires every picker inventory capability (%s)", async (missing) => {
   const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", authentication: "bearer", protocol: "openai-chat", endpoint: "https://api.example.test/v1", enabled: true });
   const entry = create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName: "OpenAI", enabled: true, provider, accountCountsAvailable: true });
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const value = fixture([provider], { readProviderInventory: (_, request) => ({ entries: [entry], capabilities: request.enabledOnly ? capabilities.filter((capability) => capability !== missing) : capabilities }) });
   render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
@@ -840,7 +844,7 @@ it("keeps API connection actions separate from validation and preserves server-o
 it("keeps Subscription free of Provider requests while API inventory preserves exact search scope", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "Exact provider", endpoint: "https://api.example.test/v1", protocol: "openai-responses", authentication: "bearer", enabled: true });
   const entry = create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName: "Exact provider", enabled: true, provider, totalAccounts: 1n, accountCountsAvailable: true });
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const requests: { query: string; pageToken: string; enabledOnly: boolean; pageSize: number }[] = [];
   const value = fixture([provider], { readResources: (kind, token) => ({ resources: [], nextPageToken: kind === EntityKind.ACCOUNT && !token ? "api-page-2" : "" }), readProviderInventory: (pageToken, request) => { requests.push({ ...request, pageToken }); return { entries: [entry], capabilities, nextPageToken: request.query === "Exact" && !pageToken ? "provider-page-2" : "" }; } });
   render(value.view(<Settings />));

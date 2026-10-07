@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { Resource } from "@delinoio/delidev-api-client";
+import { apiFormat, type APIFormatId, type Resource } from "@delinoio/delidev-api-client";
 
 interface AccountPreferences {
+	api_protocol: APIFormatId;
   alias: string;
   enabled: boolean;
   exclude_automatic: boolean;
   recovery_notifications: boolean;
 }
 
-const preferenceTypes = { alias: "string", enabled: "boolean", exclude_automatic: "boolean", recovery_notifications: "boolean" } as const;
+const preferenceTypes = { alias: "string", enabled: "boolean", exclude_automatic: "boolean", recovery_notifications: "boolean", api_protocol: "string" } as const;
 
 // Configuration accepts a complete document. Replace only preference tokens so
 // protected numbers never pass through Number or JSON.stringify. Remove this
@@ -17,6 +18,7 @@ export function accountPreferencesDocument(resource: Resource, preferences: Part
   const replacements = new Map<string, string>();
   for (const [key, value] of Object.entries(preferences)) {
     if (!Object.hasOwn(preferenceTypes, key) || typeof value !== preferenceTypes[key as keyof AccountPreferences]) throw new Error("Invalid account preference");
+    if (key === "api_protocol" && !apiFormat(value)) throw new Error("Invalid account API format");
     replacements.set(key, JSON.stringify(value));
   }
   if (resource.documentJson.byteLength > 1 << 20) throw new Error("Account document is too large");
