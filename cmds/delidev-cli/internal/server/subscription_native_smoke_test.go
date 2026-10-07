@@ -4,9 +4,11 @@ package server
 import (
 	"context"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,8 +139,25 @@ func TestInstalledCodexSubscriptionEmptyLogout(t *testing.T) {
 	if err := native.LogoutManaged(ctx); err != nil {
 		t.Fatal("credential-free native logout/account read failed", domain.SafeError(err).Code)
 	}
+	// Give startup warmups time to run. A quick handshake can otherwise close
+	// before Codex's asynchronous curated catalog download becomes observable.
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		t.Fatal("isolated native observation timed out")
+	}
+	if err := filepath.WalkDir(home, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.Name() == "plugins" || strings.HasPrefix(entry.Name(), "plugins-clone-") {
+			return subscriptionDenied()
+		}
+		return nil
+	}); err != nil {
+		t.Fatal("login-only native runtime unexpectedly created a plugin cache")
+	}
 	if _, err := os.Lstat(auth); !os.IsNotExist(err) {
 		t.Fatal("credential-free logout created account credentials")
 	}
-	t.Logf("version=%s; empty-home logout/account read only, no browser, OAuth completion or inference", native.Version())
+	t.Logf("version=%s; plugin-disabled empty-home logout/account read and joined runtime cleanup only, no browser, OAuth completion or inference", native.Version())
 }

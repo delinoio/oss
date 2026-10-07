@@ -96,3 +96,9 @@ Pinned configuration schema: [Codex 0.151.0 configuration](https://github.com/op
 OpenCode foreground child histories exclude question tools, including completed questions reconstructed after a missed live event. Independent history cannot create child response authority. The Go relay retains original executable tool-call frames until the terminal DONE marker is validated; finish_reason alone cannot release them. Truncated, malformed, repeated-call or canceled streams discard the private buffer without native task publication.
 
 Every OpenCode child history read reconstructs status from its current owned user and assistant records. An earlier failed, interrupted or completed observation cannot settle a later user-only or empty history page. Empty history cannot establish the original child input; an unfinished owned user history may be retained during Stop only with the separately proved joined scope-cleanup source.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Explicit child selections retain exact source/native ID under the parent selected Account and are frozen with their original Worker/execution revision. Remove canonical child Model UUID/revision lookups. Preserve observed/requested separation, native capability checks, original child history and cleanup ownership.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

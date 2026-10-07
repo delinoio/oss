@@ -179,6 +179,10 @@ func cleanupFailedServerLoginDirectory(path string) error {
 	if err != nil || security.CheckPrivateDir(filepath.Dir(path)) != nil {
 		return subscriptionDenied()
 	}
+	info, err = security.StableStat(path)
+	if err != nil {
+		return subscriptionDenied()
+	}
 	return subscription.CleanupRuntime(path, info)
 }
 

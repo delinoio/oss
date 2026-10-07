@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -143,6 +144,51 @@ func TestServerSubscriptionLoginWithoutWorkerAndTransientName(t *testing.T) {
 				t.Fatal("suggestion crossed generations")
 			}
 		})
+	}
+}
+
+func TestServerSubscriptionSequentialAccountsPreserveFirstLogin(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	firstID, secondID := f.input.AccountID, domain.NewID()
+	_, disconnected := f.record()
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.second-subscription", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.AccountKind, secondID, 0, "", "", disconnected)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstRecord store.Record
+	var firstAccount domain.Account
+	var firstBundle []byte
+	for i, id := range []domain.ID{firstID, secondID} {
+		f.input.AccountID = id
+		op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
+		bundle := subscriptionTestBundle("distinct-native-"+string(id), "first", time.Now().UTC())
+		n := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: bundle}
+		done := f.serverRun(n)
+		awaitServerFixture(t, n.started)
+		close(n.finish)
+		awaitServerFixture(t, done)
+		r, a := f.record()
+		if f.progressFor(op.OperationId).State != pb.SubscriptionLoginState_SUBSCRIPTION_LOGIN_STATE_SUCCEEDED || a.Connection == nil || a.Subscription.RecoveryRequired || n.calls.Load() != 1 {
+			t.Fatal("independent account login did not settle once")
+		}
+		if i == 0 {
+			firstRecord, firstAccount, firstBundle = r, a, bytes.Clone(bundle)
+		} else if a.Subscription.Generation == firstAccount.Subscription.Generation || a.Subscription.IdentityCommitment == firstAccount.Subscription.IdentityCommitment {
+			t.Fatal("second account borrowed first authentication")
+		}
+	}
+	f.input.AccountID = firstID
+	r, a := f.record()
+	if r.Revision != firstRecord.Revision || !bytes.Equal(r.Data, firstRecord.Data) {
+		t.Fatal("second login changed the first saved account")
+	}
+	retained, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: firstID, ID: a.Subscription.Generation, Purpose: credentials.AccountLogin})
+	defer clear(retained)
+	defer clear(firstBundle)
+	if err != nil || !bytes.Equal(retained, firstBundle) {
+		t.Fatal("second login changed the first protected bundle")
 	}
 }
 func TestServerSubscriptionCancelCompletionAndCleanupRace(t *testing.T) {

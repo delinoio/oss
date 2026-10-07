@@ -11,6 +11,7 @@ import { ResourceChoice } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { Problem, ServiceProblem } from "./ui";
 import { ChatGPTAccountDeletion, useAccountDeletionCompletion } from "./account-deletion";
+import { ApiAccountDeletion } from "./api-account-deletion";
 import { serviceAccount } from "./subscription-resource";
 import "./api-account.css";
 
@@ -19,6 +20,7 @@ export function ConfigurationDeletion({ active = true, ...props }: DeletionProps
   useLocale();
   const closeTask = useCloseSettingsTask(props.close);
   const key = props.initial.id;
+  if (props.initial.kind === EntityKind.ACCOUNT && document(props.initial).type === "api") return <ApiAccountDeletion key={key} {...props} active={active} close={closeTask} />;
   return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT)
     ? <ChatGPTAccountDeletion key={key} {...props} active={active} />
     : <ConfigurationDeletionRequest key={key} {...props} active={active} close={closeTask} />;
