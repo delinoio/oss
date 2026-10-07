@@ -37,7 +37,7 @@ func (p CodexPhase) Valid() bool {
 // Native output, executable paths and authentication presentation are excluded.
 type CodexDiagnostic struct {
 	DetectedVersion string     `json:"detected_version,omitempty"`
-	MinimumVersion  string     `json:"minimum_version"`
+	MinimumVersion  string     `json:"minimum_version,omitempty"`
 	Phase           CodexPhase `json:"phase"`
 	Code            Code       `json:"code"`
 	Message         string     `json:"message"`
@@ -72,7 +72,7 @@ func WithCodexDiagnostic(version string, phase CodexPhase, err error) error {
 		version = ""
 	}
 	safe := SafeError(err)
-	diagnostic := CodexDiagnostic{DetectedVersion: version, MinimumVersion: CodexMinimumVersion, Phase: phase, Code: safe.Code}
+	diagnostic := CodexDiagnostic{DetectedVersion: version, Phase: phase, Code: safe.Code}
 	diagnostic.Message, diagnostic.Guidance = diagnostic.text()
 	if safe.Code == Unavailable && (errors.Is(err, context.DeadlineExceeded) || safe.Cause == "timeout") {
 		diagnostic.Message = strings.Replace(diagnostic.Message, "The native operation failed or timed out.", "The native operation timed out.", 1)
@@ -87,7 +87,7 @@ func WithCodexDiagnostic(version string, phase CodexPhase, err error) error {
 
 	problem := *safe
 	problem.Guidance, problem.Cause, problem.CorrelationID = diagnostic.Guidance, "", diagnostic.CorrelationID
-	problem.Message = fmt.Sprintf("Codex %s failed during %s (minimum %s): %s", label, phase, CodexMinimumVersion, diagnostic.Message)
+	problem.Message = fmt.Sprintf("Codex %s failed during %s: %s", label, phase, diagnostic.Message)
 	return &codexFailure{diagnostic: diagnostic, problem: &problem, cause: err}
 }
 
@@ -101,7 +101,7 @@ func CodexErrorDiagnostic(err error) *CodexDiagnostic {
 }
 
 func CodexVersionFailure(version string) error {
-	return WithCodexDiagnostic(version, CodexVersion, Fail(Unsupported, "The installed Codex version is below the minimum or is not valid SemVer.", "Install Codex "+CodexMinimumVersion+" or newer and repeat native discovery."))
+	return WithCodexDiagnostic(version, CodexVersion, Fail(Unsupported, "The native version metadata is invalid.", "Check the actual native protocol and executable selection."))
 }
 
 // text reconstructs safe explanations locally, including for Worker observations.
@@ -112,12 +112,18 @@ func (d CodexDiagnostic) text() (string, string) {
 		label = "not detected"
 	}
 	steps := map[CodexPhase]string{CodexDiscovery: "executable discovery", CodexVersion: "version validation", CodexProfile: "profile validation", CodexRuntime: "runtime preparation", CodexLaunch: "native launch", CodexInitialize: "initialization", CodexConfirm: "initialization confirmation", CodexLogin: "sign-in", CodexModels: "model discovery", CodexExecution: "execution", CodexHistory: "history verification", CodexCleanup: "cleanup"}
-	reason := map[Code]string{InvalidArgument: "The native configuration is invalid.", NotFound: "The Codex executable was not found.", Conflict: "The operation conflicts with an existing owner.", Unauthenticated: "Native authentication was not accepted.", PermissionDenied: "Native access was denied.", Unavailable: "The native operation failed or timed out.", ServerUnavailable: "The native service is unavailable.", Unsupported: "The native protocol or version is incompatible.", RecoveryRequired: "The native operation requires recovery.", Canceled: "The native operation was canceled.", Internal: "The native operation failed."}[d.Code]
+	reason := map[Code]string{InvalidArgument: "The native configuration is invalid.", NotFound: "The Codex executable was not found.", Conflict: "The operation conflicts with an existing owner.", Unauthenticated: "Native authentication was not accepted.", PermissionDenied: "Native access was denied.", Unavailable: "The native operation failed or timed out.", ServerUnavailable: "The native service is unavailable.", Unsupported: "The native protocol is incompatible.", RecoveryRequired: "The native operation requires recovery.", Canceled: "The native operation was canceled.", Internal: "The native operation failed."}[d.Code]
 	if reason == "" {
 		reason = "The native operation did not complete."
 	}
+	if d.Code == Unsupported && d.MinimumVersion != "" {
+		reason = "The native protocol or version is incompatible."
+	}
 	if d.Phase == CodexVersion {
-		reason = "Codex requires valid SemVer at or above " + CodexMinimumVersion + "."
+		reason = "The native version metadata is invalid."
+		if d.MinimumVersion != "" {
+			reason = "Codex requires valid SemVer at or above " + CodexMinimumVersion + "."
+		}
 	}
 	return fmt.Sprintf("Codex %s did not complete %s. %s", label, steps[d.Phase], reason), "Check Connection & diagnostics before starting another sign-in or native operation."
 }
@@ -129,7 +135,7 @@ func (d CodexDiagnostic) Validate() error {
 		validCode = true
 	}
 	message, guidance := d.text()
-	if !d.Phase.Valid() || !validCode || d.MinimumVersion != CodexMinimumVersion || (d.DetectedVersion != "" && !ValidInstallationVersion(d.DetectedVersion)) || (d.Message != message && !(d.Code == Unavailable && d.Message == strings.Replace(message, "The native operation failed or timed out.", "The native operation timed out.", 1))) || d.Guidance != guidance || (d.CorrelationID != "" && ID(d.CorrelationID).Validate() != nil) || strings.ContainsAny(d.DetectedVersion, "\r\n") {
+	if !d.Phase.Valid() || !validCode || d.MinimumVersion != "" && d.MinimumVersion != CodexMinimumVersion || (d.DetectedVersion != "" && !ValidInstallationVersion(d.DetectedVersion)) || (d.Message != message && !(d.Code == Unavailable && d.Message == strings.Replace(message, "The native operation failed or timed out.", "The native operation timed out.", 1))) || d.Guidance != guidance || (d.CorrelationID != "" && ID(d.CorrelationID).Validate() != nil) || strings.ContainsAny(d.DetectedVersion, "\r\n") {
 		return Fail(InvalidArgument, "Invalid Codex diagnostic metadata.", "Retain only locally reconstructed bounded diagnostic metadata.")
 	}
 	return nil

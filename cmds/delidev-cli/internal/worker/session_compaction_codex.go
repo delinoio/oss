@@ -94,7 +94,11 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			output, returned = nil, err
 		}
 	}()
-	executable := i.Assignment.Installation.ResolvedPath
+	installation, err := resolveOriginalStartup(ctx, config, i.SourceJobID, i.Assignment)
+	if err != nil {
+		return nil, err
+	}
+	executable := installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.CompactionUncertain()
@@ -219,7 +223,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	defer cancel()
 	cancelAction := context.AfterFunc(ctx, cancel)
 	defer cancelAction()
-	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: i.Assignment.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
+	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
 	if i.Assignment.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}

@@ -12,7 +12,7 @@ import (
 
 func matchesInitialTitleExecution(session domain.Session, original domain.ExecutionJobInput) bool {
 	initial := session.InitialExecution
-	return initial != nil && original.Continuation == nil && session.MachineID == original.MachineID && session.AgentID == original.Configuration.AgentID && initial.ID == original.ExecutionID && initial.InputID == original.InputID && initial.InitialAccountID == original.AccountID && initial.ConnectionID == original.ConnectionID && initial.ConfigurationDigest == original.ConfigurationDigest
+	return initial != nil && original.Continuation == nil && session.MachineID == original.MachineID && session.AgentID == original.Configuration.AgentID && session.NativeExecutionRoot() == original.ExecutionID && (initial.InputID == original.InputID || original.Retry != nil) && initial.InitialAccountID == original.AccountID && initial.ConnectionID == original.ConnectionID && initial.ConfigurationDigest == original.ConfigurationDigest
 }
 
 func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant, record store.Record, job domain.Job) (apiproxy.Scope, error) {
@@ -52,7 +52,10 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 	}
 	parent, err := store.Decode[domain.Job](parentRecord)
 	var original domain.ExecutionJobInput
-	if err != nil || parent.Type != domain.ExecuteSessionJob || parent.State != domain.JobSucceeded || parent.MachineID != grant.MachineID || parent.InstanceID != input.OriginalInstanceID || parent.AssignedDeviceID != input.OriginalDeviceID || domain.Decode(parent.Input, &original) != nil || original.Validate() != nil || original.ExecutionID != input.OriginalExecutionID || original.Configuration.AgentID != input.AgentID || original.Configuration.Harness != input.Harness || original.Installation.Version != input.NativeVersion || original.Installation.ResolvedPath != input.Executable || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID || original.Configuration.ProviderID != input.ProviderID || original.Configuration.ModelID != input.ModelID || original.Configuration.NativeModel != input.NativeModel {
+	if err != nil || parent.Type != domain.ExecuteSessionJob || parent.State != domain.JobSucceeded || parent.MachineID != grant.MachineID || parent.InstanceID != input.OriginalInstanceID || parent.AssignedDeviceID != input.OriginalDeviceID || domain.Decode(parent.Input, &original) != nil || original.Validate() != nil || original.ExecutionID != input.OriginalExecutionID || original.Configuration.AgentID != input.AgentID || original.Configuration.Harness != input.Harness || (input.Version == 1 && (original.Installation.Version != input.NativeVersion || original.Installation.ResolvedPath != input.Executable)) || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID || original.Configuration.ProviderID != input.ProviderID || original.Configuration.ModelID != input.ModelID || original.Configuration.NativeModel != input.NativeModel {
+		return denied()
+	}
+	if input.Version == 2 && (original.Version != 4 || original.Startup == nil || parent.Startup == nil || parent.Startup.Ready == nil || parent.Startup.Failure != nil || parent.Startup.Ready.Validate() != nil || input.Startup == nil || input.Startup.ExecutableSHA256 != parent.Startup.Ready.ExecutableSHA256 || input.Startup.ExplicitPath != original.Startup.ExplicitPath || input.NativeVersion != parent.Startup.Ready.NativeVersion) {
 		return denied()
 	}
 	originalGrant, err := tx.ExecutionGrantForJob(job.ParentID)

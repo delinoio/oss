@@ -152,6 +152,20 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if err != nil {
 		return nil, err
 	}
+	if input.Version == 2 {
+		raw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(input.OriginalJobID), "startup-executable.json"), 8192)
+		var original domain.Installation
+		if err != nil || domain.Decode(raw, &original) != nil || original.Harness != domain.Codex || original.ExecutableSHA256 != input.Startup.ExecutableSHA256 {
+			return nil, publicationUncertain()
+		}
+		selection := *input.Startup
+		selection.ExplicitPath = original.ResolvedPath
+		resolved, err := harness.ResolveExecution(ctx, selection)
+		if err != nil {
+			return nil, err
+		}
+		input.Executable = resolved.ResolvedPath
+	}
 	resolved, err := filepath.EvalSymlinks(input.Executable)
 	if err != nil || resolved != input.Executable || !filepath.IsAbs(input.Executable) {
 		return nil, domain.Fail(domain.RecoveryRequired, "The frozen Codex executable identity changed after profile verification.", "Preserve the title operation and refresh native installation evidence before another session.")
@@ -179,16 +193,8 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != apiproxy.Prefix {
 		return nil, publicationUncertain()
 	}
-	// Registration durably claims this single title attempt before verification
-	// launches even the native version or app-server probe.
+	// Registration owns this attempt. Validate the actual title process once.
 	verificationStarted = true
-	verified, err := harness.VerifyCodexTitleProfile(ctx, config.Root, jobID, input.Executable, input.NativeVersion, config.Logger)
-	if err != nil {
-		return nil, err
-	}
-	if !verified {
-		return nil, domain.Fail(domain.Unsupported, "The frozen Codex title profile is no longer installed and verified.", "Keep the placeholder; no other harness, executable or provider profile may replace it.")
-	}
 	nativeConfig := codex.Config{
 		Mode: codex.ThreadProtocol, Version: input.NativeVersion, Home: filepath.Join(home, "codex"),
 		API:     &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token, TitleProfile: true},

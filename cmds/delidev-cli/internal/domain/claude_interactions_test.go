@@ -46,7 +46,7 @@ func TestClaudeInteractionRejectsForeignOrMixedOriginalRequests(t *testing.T) {
 			u := claudeInteractionFixture()
 			switch change {
 			case "version":
-				u.Claude.Version = "future"
+				u.Claude.Version = "invalid/version"
 			case "arrival":
 				u.Claude.ArrivalID = "invalid"
 			case "tool":

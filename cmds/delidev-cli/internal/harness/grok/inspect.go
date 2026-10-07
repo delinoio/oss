@@ -124,7 +124,7 @@ func validateProfileInspection(raw []byte, cwd string, profile apiProfile) error
 			} `json:"cells"`
 		} `json:"externalCompat"`
 	}
-	if decode(raw, &report) != nil || report.Version != SupportedVersion || !text(report.Channel, 64) || report.Cwd != cwd || !isNull(report.ProjectRoot) || !report.ProjectTrusted ||
+	if decode(raw, &report) != nil || !domain.ValidNativeVersionMetadata(report.Version) || !text(report.Channel, 64) || report.Cwd != cwd || !isNull(report.ProjectRoot) || !report.ProjectTrusted ||
 		report.Permissions.Loaded != 0 || report.Permissions.MCPManagedServersOnly != "off" || !text(report.Permissions.ManagedSettingsPath, 8192) ||
 		report.Permissions.ManagedSettingsExists || report.Permissions.ManagedSettingsActive || report.Permissions.ClaudeBypassLockAdvisory ||
 		!isNull(report.LoginPolicy.DisableAPIKeyAuth) || !isNull(report.LoginPolicy.ForceLoginTeamUUID) || report.LoginPolicy.APIKeyAuthDisabled || report.ExternalCompat.RemoteSettingsLoaded {

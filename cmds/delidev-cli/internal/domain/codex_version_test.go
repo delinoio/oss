@@ -8,15 +8,15 @@ import (
 	"testing"
 )
 
-func TestCodexForwardVersionAdmission(t *testing.T) {
-	for _, version := range []string{"0.151.0", "0.159.2", "0.160.0-beta.1", "1.0.0", "99999999.0.0", "999999999999999999.0.0", "0.151.0+build.7", "0.160.0-beta.1+build.7"} {
+func TestCodexVersionIsMetadata(t *testing.T) {
+	for _, version := range []string{"0.150.9", "0.151.0-beta.1", "unknown", "0.0151.0", "0.159", "0.151.0", "0.159.2", "0.160.0-beta.1", "1.0.0", "99999999.0.0", "999999999999999999.0.0", "0.151.0+build.7", "0.160.0-beta.1+build.7"} {
 		if !CodexVersionAllowed(version) {
 			t.Errorf("allowed native attempt rejected for %s", version)
 		}
 	}
-	for _, version := range []string{"0.150.9", "0.151.0-beta.1", "", "garbage", "0.0151.0", "0.159", "0.159.2-", "0.159.2\nsecret", "0.159.2+"} {
+	for _, version := range []string{"", "invalid/version", "token with space", "https://invalid", strings.Repeat("a", 65)} {
 		if CodexVersionAllowed(version) {
-			t.Errorf("invalid/lower version admitted: %q", version)
+			t.Errorf("unsafe metadata admitted: %q", version)
 		}
 	}
 }
@@ -25,7 +25,7 @@ func TestCodexDiagnosticPreservesVersionAndFirstFailure(t *testing.T) {
 	err := WithCodexDiagnostic("0.159.2", CodexInitialize, Fail(Unsupported, "raw-native-sentinel", "secret-login-url"))
 	err = WithCodexDiagnostic("1.0.0", CodexLogin, err)
 	d := CodexErrorDiagnostic(err)
-	if d == nil || d.DetectedVersion != "0.159.2" || d.MinimumVersion != "0.151.0" || d.Phase != CodexInitialize || d.Code != Unsupported {
+	if d == nil || d.DetectedVersion != "0.159.2" || d.MinimumVersion != "" || d.Phase != CodexInitialize || d.Code != Unsupported {
 		t.Fatalf("diagnostic lost original context: %#v", d)
 	}
 	if strings.Contains(SafeError(err).Message, "sentinel") || strings.Contains(SafeError(err).Guidance, "secret") {

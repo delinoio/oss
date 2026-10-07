@@ -260,3 +260,10 @@ func (a *OwnedAPI) RunFirstInput(ctx context.Context, request domain.ID, input s
 func (a *OwnedAPI) HasOriginalTools() bool {
 	return a != nil && a.connection != nil && a.connection.completedTools != nil
 }
+
+func (a *OwnedAPI) Version() string {
+	if a == nil || a.connection == nil {
+		return ""
+	}
+	return a.connection.nativeVersion
+}

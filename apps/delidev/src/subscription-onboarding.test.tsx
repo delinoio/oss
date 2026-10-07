@@ -91,3 +91,12 @@ it("shows Not reported for older servers and retains other services' unsupported
  expect(screen.getByRole("status").textContent).toBe("Claude sign-in is not supported yet");
  expect(screen.queryByRole("alert")).toBeNull();
 });
+
+it("shows actual version metadata without inventing a minimum", () => {
+ const diagnostic = create(CodexDiagnosticSchema, { detectedVersion: "nightly_42", phase: CodexDiagnosticPhase.VERSION, code: "unsupported", message: "raw-secret" });
+ render(<SubscriptionOnboarding {...props({ stage: Stage.Unsupported, diagnostic })} />);
+ expect(screen.getByRole("alert").textContent).toContain("nightly_42");
+ expect(screen.getByRole("alert").textContent).toContain("The native version metadata is invalid.");
+ expect(screen.queryByText("Minimum version:")).toBeNull();
+ expect(screen.queryByText(/raw-secret/)).toBeNull();
+});

@@ -1,5 +1,9 @@
 # DeliDev Read-Only Diagnostics
 
+## Execution startup observations
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) exposes bounded closed phase/code, optional observed native version, executable digest, original job correlation and separate delivery/cleanup facts. The authenticated original Worker reports once against the claimed revision; duplicate receipts do not rerun work. Keep the first startup failure separate from later cleanup uncertainty. No raw native text, prompt, path, URL, credential or environment value enters these reports. Details and metadata copying perform no diagnostic or inference work. Optional machine discovery and Doctor reads retain their independent read-only contracts.
+
 ## Model request diagnostics (issue #1103)
 
 `SessionService.ListRequestDiagnostics`, `delidev session diagnostics --id <session> [--execution-id <execution>] [--page-size 1..100] [--page-token <token>]` and the session Diagnostics panel provide separate metadata-only native-input and proxy-HTTP observations. The server advertises `REQUEST_DIAGNOSTICS_V1`. Owner and paired-client authorization is rechecked in the three-second-bounded SQLite read. Pages default to 50, cap at 100 and bind their signed 24-hour cursor to server identity, session, optional exact execution and page size. These are live revisioned observations, not a snapshot or a complete native request inventory. An empty or historical page cannot prove that no inference occurred.

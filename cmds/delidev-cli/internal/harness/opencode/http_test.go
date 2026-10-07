@@ -95,7 +95,7 @@ func TestHTTPReadRejectsMalformedBoundedResponses(t *testing.T) {
 }
 
 func TestHealthAndConfigurationRequireExactFacts(t *testing.T) {
-	for _, raw := range []string{`null`, `{"healthy":true,"version":"future"}`, `{"healthy":false,"version":"1.18.32"}`, `{"healthy":null,"version":"1.18.32"}`, `{"healthy":true,"Version":"1.18.32"}`, `{"healthy":true,"version":"1.18.32","version":"1.18.32"}`, `{"healthy":true,"version":"1.18.32","future":true}`} {
+	for _, raw := range []string{`null`, `{"healthy":true,"version":"invalid/version"}`, `{"healthy":false,"version":"1.18.32"}`, `{"healthy":null,"version":"1.18.32"}`, `{"healthy":true,"Version":"1.18.32"}`, `{"healthy":true,"version":"1.18.32","version":"1.18.32"}`, `{"healthy":true,"version":"1.18.32","future":true}`} {
 		if validateHealth([]byte(raw)) == nil {
 			t.Fatal("invalid health accepted", raw)
 		}

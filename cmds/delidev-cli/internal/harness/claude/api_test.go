@@ -232,7 +232,7 @@ func TestAPIStreamRejectsInvalidLaunchBeforeCreatingNativeState(t *testing.T) {
 			path := filepath.Join(filepath.Dir(cfg.Home), "instructions.txt")
 			switch change {
 			case "version":
-				cfg.Version = "2.1.237"
+				cfg.Version = "invalid/version"
 			case "owner":
 				cfg.Process.OwnerID = "invalid"
 			case "executable":

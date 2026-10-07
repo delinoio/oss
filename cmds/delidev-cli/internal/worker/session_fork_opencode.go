@@ -88,7 +88,7 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 
 func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, job domain.Job, i domain.ForkJobInput) (output json.RawMessage, returned error) {
 	c := config.execution
-	if runtime.GOOS == "windows" || c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || c.Instance != job.InstanceID || c.Credential.DeviceID != job.AssignedDeviceID || i.Validate() != nil || i.Version != 2 || i.SourceAssignment.Installation.Version != opencode.SupportedVersion {
+	if runtime.GOOS == "windows" || c == nil || c.Assignment == nil || domain.ID(c.Assignment.Id) != owner || c.Instance != job.InstanceID || c.Credential.DeviceID != job.AssignedDeviceID || i.Validate() != nil || i.Version != 2 || i.SourceAssignment.Version != 4 && !domain.ValidNativeVersionMetadata(i.SourceAssignment.Installation.Version) {
 		return nil, executionCheckpointUncertain()
 	}
 	var prep workspace.PrepareRequest
@@ -111,7 +111,17 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	if err != nil {
 		return nil, err
 	}
-	executable := a.Installation.ResolvedPath
+	installation, err := resolveOriginalStartup(ctx, config, i.SourceJobID, a)
+	if err != nil {
+		return nil, err
+	}
+	if i.Startup != nil && i.Startup.ExecutableSHA256 != installation.ExecutableSHA256 {
+		return nil, executionCheckpointUncertain()
+	}
+	if err := writeStartupExecutable(config.Root, owner, installation); err != nil {
+		return nil, publicationUncertain()
+	}
+	executable := installation.ResolvedPath
 	canonical, err := filepath.EvalSymlinks(executable)
 	if err != nil || canonical != executable || !filepath.IsAbs(executable) {
 		return nil, executionCheckpointUncertain()
@@ -182,7 +192,7 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}
-	nativeConfig := opencode.APIExecutionConfig{Probe: opencode.ProbeConfig{Version: a.Installation.Version, Home: filepath.Join(nativeHome, "opencode"), Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: nativeHome, Env: env, Logger: config.Logger}}, Workspace: manifest.PrimaryPath, Root: root, Settings: settings.Session, ServerOrigin: c.Credential.Endpoint, Token: apiproxy.TokenPrefix + nonce, Instructions: settings.Instructions, Rejection: settings.Rejection}
+	nativeConfig := opencode.APIExecutionConfig{Probe: opencode.ProbeConfig{Version: installation.Version, Home: filepath.Join(nativeHome, "opencode"), Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: nativeHome, Env: env, Logger: config.Logger}}, Workspace: manifest.PrimaryPath, Root: root, Settings: settings.Session, ServerOrigin: c.Credential.Endpoint, Token: apiproxy.TokenPrefix + nonce, Instructions: settings.Instructions, Rejection: settings.Rejection}
 	if a.Configuration.OpenCodeContext != nil {
 		nativeConfig.ContextLimit = int64(a.Configuration.OpenCodeContext.Tokens)
 		nativeConfig.Prune = a.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1
