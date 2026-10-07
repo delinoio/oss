@@ -7,30 +7,42 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { desktopArguments, desktopEnvironment, runDesktop } from "./run-desktop.mjs";
+import { DevelopmentSigningError } from "./development-signing.mjs";
 
 const success = { code: 0, signal: null };
 const environment = { npm_execpath: "/tools/pnpm.cjs", PATH: "/tools", HOME: "/fixture" };
+const identity = "A".repeat(40);
+const macFixtures = { identityFor: async () => identity, lock: () => () => {}, publish: async () => "/immutable/DeliDev.app/Contents/MacOS/delidev-desktop" };
 
 test("macOS prepares a CEF bundle with embedded assets and preserves application argv", async () => {
   const calls = [];
   const logs = [];
+  let released = false;
   const args = ["--data-dir", "/private/델리 dev/$literal`argument`"];
   assert.deepEqual(await runDesktop(["--", ...args], {
     platform: "darwin", arch: "arm64", environment,
+    ...macFixtures,
+    lock: () => () => { released = true; },
+    publish: async (_source, _output, pinned) => { assert.equal(pinned, identity); assert.equal(released, false); return macFixtures.publish(); },
     creditsFor: () => "/cef/CREDITS.html",
     log: entry => logs.push(entry),
     run: async (...call) => { calls.push(call); return success; },
   }), success);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.deepEqual(calls[0][1], [environment.npm_execpath, "build:native"]);
   const [command, argv, options, lifecycle] = calls[1];
   assert.equal(command, process.execPath);
   assert.ok(argv[0].replaceAll("\\", "/").endsWith("/scripts/tauri-cli.mjs"));
-  assert.ok(argv.includes("dev"));
-  assert.ok(argv.includes("--no-watch"));
-  assert.ok(argv.includes("--no-dev-server"));
+  assert.ok(argv.includes("build"));
+  assert.ok(argv.includes("--debug"));
+  assert.deepEqual(argv.slice(argv.indexOf("--bundles"), argv.indexOf("--bundles") + 2), ["--bundles", "app"]);
   assert.ok(argv.includes("desktop-host,custom-protocol"));
-  assert.deepEqual(argv.slice(-args.length - 1), ["--", ...args]);
+  assert.ok(!argv.includes(args[1]));
+  assert.equal(calls[2][0], await macFixtures.publish());
+  assert.deepEqual(calls[2][1], args);
+  assert.deepEqual(calls[2][3], { terminateProcessTree: false });
+  assert.equal(calls[2][2].detached, true);
+  assert.equal(released, true);
   const config = JSON.parse(argv[argv.indexOf("--config") + 1]);
   assert.equal(config.build.devUrl, null);
   assert.equal(config.bundle.macOS.signingIdentity, "-");
@@ -73,11 +85,27 @@ test("failed or interrupted preparation never launches the application", async (
     let calls = 0;
     assert.deepEqual(await runDesktop([], {
       platform: "darwin", environment, log() {},
+      ...macFixtures,
       run: async () => { calls++; return result; },
       creditsFor: () => assert.fail("must not resolve bundle resources after failed preparation"),
     }), result);
     assert.equal(calls, 1);
   }
+});
+
+test("missing local identity and failed publication never launch or terminate a server", async () => {
+  let calls = 0;
+  let releases = 0;
+  const logs = [];
+  const options = { platform: "darwin", arch: "arm64", environment, ...macFixtures, creditsFor: () => "/cef/CREDITS.html",
+    log: row => logs.push(row), lock: () => () => releases++, run: async () => { calls++; return success; } };
+  await runDesktop([], { ...options, identityFor: async () => { throw new DevelopmentSigningError("development-certificate-missing"); } });
+  assert.equal(calls, 0);
+  assert.equal(releases, 0);
+  await runDesktop([], { ...options, publish: async () => { throw new DevelopmentSigningError("development-signing-command-failed"); } });
+  assert.equal(calls, 2);
+  assert.equal(releases, 1);
+  assert.equal(logs.at(-1).code, "development-signing-command-failed");
 });
 
 test("child failures retain status and exception logs omit private argv", async () => {
@@ -91,7 +119,7 @@ test("child failures retain status and exception logs omit private argv", async 
   assert.equal(logs.at(-1).stage, "run");
   assert.equal(logs.at(-1).code, 23);
   assert.deepEqual(await runDesktop([], {
-    environment, log: entry => logs.push(entry),
+    platform: "linux", environment, log: entry => logs.push(entry),
     run: async () => { throw new Error("spawn /private/user-data --token secret"); },
   }), { code: 1, signal: null });
   assert.equal(logs.at(-1).code, "launch-failed");

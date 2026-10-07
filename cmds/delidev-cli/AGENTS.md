@@ -1,5 +1,7 @@
 # DeliDev CLI
 
+- macOS protected access verifies current executable code on every read/write and before fresh OAuth admission/exchange. Classify changed executable code independently of keychain authentication. Preserve original references/receipts and cancellation/deletion authority. Development signing and immutable original server/Worker files follow `docs/apps-delidev-desktop-contract.md#local-development-signing-and-recovery` and the credential contract. Native fixtures own only temporary keychains and synthetic certificates; never alter user items, default search lists or global trust.
+
 - Native read-only Sidechat additionally follows `docs/cmds-delidev-sidechat-contract.md`. Keep original account/snapshot provenance separate from the immutable child enforcement overlay and reference parent workspace roots without ownership. Parent deletion/storage cleanup must durably stop and join every dependent child before removing parent files; independent Fork lifetime remains unchanged.
 
 - Execution-device user-facing messages follow issue #1136: use `Runner Device` / `Runner Devices` for former Execution Worker presentation nouns, including PR planning failures and schedule reconfiguration guidance. Preserve generic technical Worker terminology, Agent Worker, user-assigned names, CLI commands, structured logs, stable error codes/classifications, authorization, protocol/storage identifiers and all execution conditions. The desktop New session selector alone uses `Runs on`; follow `docs/apps-delidev-desktop-contract.md`.
