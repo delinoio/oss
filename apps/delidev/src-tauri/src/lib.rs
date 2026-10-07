@@ -294,7 +294,7 @@ impl Connector {
         {
             return Err(NativeFailure::InvalidInput);
         }
-        let value = self.run_with_input(
+        let value = self.short_request_with_input(
             &[
                 "presentation".into(),
                 "open-github".into(),
@@ -436,13 +436,13 @@ impl Connector {
     fn retry_launch(&self) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "desktop_launch", phase = "explicit-retry");
-        self.connect_inner("desktop-retry")
+        self.connect_inner_with_transport("desktop-retry", true)
     }
 
     fn launch(&self) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "desktop_launch", phase = "starting");
-        let result = self.connect_inner("desktop-launch");
+        let result = self.connect_inner_with_transport("desktop-launch", true);
         match &result {
             Ok(_) => tracing::info!(operation = "desktop_launch", phase = "ready"),
             Err(code) => tracing::warn!(operation = "desktop_launch", phase = "failed", ?code),
@@ -455,19 +455,23 @@ impl Connector {
     // identity.
     fn observe_launch(&self, original: &Connection) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
-        let status = self.run(&self.server_arguments("desktop-status"))?;
+        let status =
+            self.short_request_with_input(&self.server_arguments("desktop-status"), None)?;
         if self.server_state(&status)? != LocalServerState::Ready {
             return Err(NativeFailure::Stopped);
         }
-        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
-            "device".into(),
-            "inspect".into(),
-            "--join-existing".into(),
-            "--device-dir".into(),
-            self.root.join("desktop-client").into_os_string(),
-        ])?)
+        let metadata: DeviceMetadata = serde_json::from_value(self.short_request_with_input(
+            &[
+                "device".into(),
+                "inspect".into(),
+                "--join-existing".into(),
+                "--device-dir".into(),
+                self.root.join("desktop-client").into_os_string(),
+            ],
+            None,
+        )?)
         .map_err(|_| NativeFailure::InvalidEvidence)?;
-        let current = self.read_local_connection(metadata)?;
+        let current = self.read_local_connection_with_transport(metadata, true)?;
         if current.endpoint != original.endpoint
             || current.server_id != original.server_id
             || current.device_id != original.device_id
@@ -490,40 +494,58 @@ impl Connector {
     }
 
     fn connect_inner(&self, action: &str) -> Result<Connection> {
+        self.connect_inner_with_transport(action, false)
+    }
+
+    fn connect_inner_with_transport(&self, action: &str, short: bool) -> Result<Connection> {
         let started = self.run_desktop_host(action)?;
         if self.server_state(&started)? != LocalServerState::Ready {
             return Err(NativeFailure::Stopped);
         }
         tracing::info!(operation = "local_connect", phase = "runtime-ready");
         let client_root = self.root.join("desktop-client");
-        let metadata = self.run(&[
-            "device".into(),
-            "pair-local".into(),
-            "--join-existing".into(),
-            "--device-dir".into(),
-            client_root.clone().into_os_string(),
-        ])?;
+        let metadata = self.request_with_transport(
+            short,
+            &[
+                "device".into(),
+                "pair-local".into(),
+                "--join-existing".into(),
+                "--device-dir".into(),
+                client_root.clone().into_os_string(),
+            ],
+        )?;
         let metadata: DeviceMetadata =
             serde_json::from_value(metadata).map_err(|_| NativeFailure::InvalidEvidence)?;
         tracing::info!(
             operation = "local_connect",
             phase = "client-pairing-verified"
         );
-        self.read_local_connection(metadata)
+        self.read_local_connection_with_transport(metadata, short)
     }
 
     fn read_local_connection(&self, metadata: DeviceMetadata) -> Result<Connection> {
+        self.read_local_connection_with_transport(metadata, false)
+    }
+
+    fn read_local_connection_with_transport(
+        &self,
+        metadata: DeviceMetadata,
+        short: bool,
+    ) -> Result<Connection> {
         let client_root = self.root.join("desktop-client");
         // Go enforces platform-specific privacy and strict credential
         // validation before this fixed file is read. No owner material
         // crosses the bridge.
-        let inspected = self.run(&[
-            "device".into(),
-            "inspect".into(),
-            "--join-existing".into(),
-            "--device-dir".into(),
-            client_root.clone().into_os_string(),
-        ])?;
+        let inspected = self.request_with_transport(
+            short,
+            &[
+                "device".into(),
+                "inspect".into(),
+                "--join-existing".into(),
+                "--device-dir".into(),
+                client_root.clone().into_os_string(),
+            ],
+        )?;
         let inspected: DeviceMetadata =
             serde_json::from_value(inspected).map_err(|_| NativeFailure::InvalidEvidence)?;
         if metadata != inspected {
@@ -540,15 +562,29 @@ impl Connector {
             16 << 10,
         )?);
         let mut connection = connection_from_bytes(&bytes, &metadata)?;
-        let runtime = self.runtime()?;
-        connection.endpoint = runtime.endpoint.clone();
-        connection.runtime_generation = Some(runtime.generation.clone());
-        connection.runtime_key = Some(runtime.key.clone());
+        if !short {
+            let runtime = self.runtime()?;
+            connection.endpoint = runtime.endpoint.clone();
+            connection.runtime_generation = Some(runtime.generation.clone());
+            connection.runtime_key = Some(runtime.key.clone());
+        }
         *self
             .oauth_identity
             .lock()
             .map_err(|_| NativeFailure::Busy)? = Some(metadata);
         Ok(connection)
+    }
+
+    fn request_with_transport(
+        &self,
+        short: bool,
+        arguments: &[OsString],
+    ) -> Result<serde_json::Value> {
+        if short {
+            self.short_request_with_input(arguments, None)
+        } else {
+            self.run(arguments)
+        }
     }
 
     fn sidecar_command(&self, arguments: &[OsString], input: bool) -> Result<Command> {
@@ -645,10 +681,10 @@ impl Connector {
     }
 
     pub(crate) fn worker_request(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
-        self.worker_request_with_input(arguments, None)
+        self.short_request_with_input(arguments, None)
     }
 
-    fn worker_request_with_input(
+    fn short_request_with_input(
         &self,
         arguments: &[OsString],
         input: Option<Zeroizing<Vec<u8>>>,
@@ -745,8 +781,9 @@ impl Connector {
         .ok_or(NativeFailure::InvalidEvidence)?;
         if status.get("version").and_then(|v| v.as_str()) != Some("0.1.0")
             || status.get("protocol_version").and_then(|v| v.as_u64()) != Some(1)
-            || status.get("listener").and_then(|v| v.as_str())
-                != Some(self.runtime_endpoint()?.as_str())
+            || (self.listen != "127.0.0.1:0"
+                && status.get("listener").and_then(|v| v.as_str())
+                    != Some(format!("http://{}", self.listen).as_str()))
         {
             return Err(NativeFailure::Incompatible);
         }
