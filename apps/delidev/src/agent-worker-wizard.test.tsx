@@ -1086,3 +1086,46 @@ it("seeds routed account display metadata without replacing failed independent p
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
+
+
+it.each([false, true])("shows initial selected-provider failure outside the collapsed source picker (routes=%s)", async routes => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, ...(routes ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
+  let unavailable = true;
+  value.get.mockImplementation(request => { if (unavailable && request.id === value.provider.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice(routes ? "Account source 1" : "Account source"), `api:${value.provider.id}`);
+  await screen.findAllByRole("alert");
+  const retry = screen.getByRole("button", { name: "Retry source details" });
+  expect(screen.getByRole("button", { name: "Change source" }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("combobox", { name: routes ? "Account source 1" : "Account source" })).toBeNull();
+  const providerReads = value.get.mock.calls.filter(([request]) => request.id === value.provider.id).length;
+  unavailable = false; fireEvent.click(retry);
+  await screen.findByRole("checkbox", { name: /Personal API/ });
+  expect(value.get.mock.calls.filter(([request]) => request.id === value.provider.id)).toHaveLength(providerReads + 1);
+  expect(screen.queryByRole("button", { name: "Retry source details" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Change source" }).getAttribute("aria-expanded")).toBe("false");
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("retains account choice and weight while retrying selected-provider details (routes=%s)", async routes => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, ...(routes ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
+  await start(value); confirmHarness();
+  await chooseScrollOption(sourceChoice(routes ? "Account source 1" : "Account source"), `api:${value.provider.id}`);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
+  await waitFor(() => expect(screen.queryByText("Loading selected account…")).toBeNull());
+  fireEvent.click(screen.getByText(/^Routing options/));
+  const weight = screen.getByLabelText("Weight for account 1");
+  fireEvent.change(weight, { target: { value: "9" } });
+  let unavailable = true;
+  value.get.mockImplementation(request => { if (unavailable && request.id === value.provider.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  const retry = await screen.findByRole("button", { name: "Retry source details" });
+  expect(screen.getByRole("checkbox", { name: /Personal API/ })).toHaveProperty("checked", true);
+  expect(weight).toHaveProperty("value", "9");
+  unavailable = false; fireEvent.click(retry);
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry source details" })).toBeNull());
+  expect(screen.getByRole("checkbox", { name: /Personal API/ })).toHaveProperty("checked", true);
+  expect(screen.getByLabelText("Weight for account 1")).toBe(weight);
+  expect(weight).toHaveProperty("value", "9");
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
