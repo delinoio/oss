@@ -339,3 +339,32 @@ func TestFailedSubscriptionCleanupRestartUsesOnlyOriginalCheckpoint(t *testing.T
 		})
 	}
 }
+
+func TestFailedSubscriptionCleanupRPC(t *testing.T) {
+	f := unreferencedInitialSubscription(t)
+	request := &pb.CleanupFailedSubscriptionsRequest{RequestId: string(domain.NewID())}
+	_, err := f.client.CleanupFailedSubscriptions(context.Background(), connect.NewRequest(request))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("cleanup admitted an unauthenticated request", err)
+	}
+	accepted, err := f.client.CleanupFailedSubscriptions(context.Background(), subscriptionRequest(f.service.Identity.Token, request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.Msg.Job.Total != 0 || accepted.Msg.Job.State != pb.FailedSubscriptionCleanupState_FAILED_SUBSCRIPTION_CLEANUP_STATE_COMPLETED {
+		t.Fatal(accepted.Msg)
+	}
+	read := &pb.GetFailedSubscriptionCleanupRequest{JobId: accepted.Msg.Job.Id}
+	_, err = f.client.GetFailedSubscriptionCleanup(context.Background(), connect.NewRequest(read))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("cleanup status allowed an unauthenticated read", err)
+	}
+	status, err := f.client.GetFailedSubscriptionCleanup(context.Background(), subscriptionRequest(f.service.Identity.Token, read))
+	if err != nil || !proto.Equal(status.Msg.Job, accepted.Msg.Job) {
+		t.Fatal("generated RPC did not preserve the admitted job", status, err)
+	}
+	replay, err := f.client.CleanupFailedSubscriptions(context.Background(), subscriptionRequest(f.service.Identity.Token, request))
+	if err != nil || !replay.Msg.Replayed || !proto.Equal(replay.Msg.Job, accepted.Msg.Job) {
+		t.Fatal("generated RPC lost the original receipt", replay, err)
+	}
+}
