@@ -47,7 +47,7 @@ it("configures a real Go server through the settings forms and explicitly valida
   await screen.findByText("Health: unverified · Credential connected");
   fireEvent.click(screen.getByRole("button", { name: "Validate connection" }));
   await screen.findByText("Health: ready · Credential connected");
-  fireEvent.click(screen.getByRole("button", { name: "Back to AI API Keys" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Manage connection" }));
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
