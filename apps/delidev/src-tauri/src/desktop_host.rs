@@ -516,11 +516,11 @@ impl Owned {
             if let Some(pipe) = pipe {
                 let _ = pipe.write(&Request::control("runtime.shutdown"));
             }
-            if let Some(mut input) = startup_input {
-                if let Ok(mut frame) = serde_json::to_vec(&Request::control("runtime.shutdown")) {
-                    frame.push(b'\n');
-                    let _ = input.write_all(&frame);
-                }
+            if let Some(mut input) = startup_input
+                && let Ok(mut frame) = serde_json::to_vec(&Request::control("runtime.shutdown"))
+            {
+                frame.push(b'\n');
+                let _ = input.write_all(&frame);
             }
         });
         let mut forced = false;
