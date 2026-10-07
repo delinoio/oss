@@ -2,7 +2,7 @@
 import { createClient } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { EntityKind, ResourceService } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
@@ -11,6 +11,16 @@ import { document } from "./documents";
 import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
+
+async function choose(control: HTMLElement, name: string | RegExp) {
+  await waitFor(() => expect(control.matches(":disabled")).toBe(false));
+  fireEvent.click(control);
+  const popup = window.document.getElementById(control.getAttribute("aria-controls")!)!;
+  const option = await within(popup).findByRole("option", { name });
+  const id = option.dataset.pickerId;
+  fireEvent.click(option);
+  await waitFor(() => expect(control.dataset.value).toBe(id));
+}
 
 it("configures a real Go server through the settings forms and explicitly validates a private keyless provider", async () => {
   const { transport, providerOrigin } = fixture;
@@ -50,14 +60,20 @@ it("configures a real Go server through the settings forms and explicitly valida
   fireEvent.click(screen.getByRole("button", { name: "Close Manage connection" }));
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
-  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const next = async () => {
+    await act(async () => {});
+    const button = screen.getByRole("button", { name: "Next" });
+    await waitFor(() => expect(button.matches(":disabled")).toBe(false));
+    fireEvent.click(button);
+  };
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
-  const source = await screen.findByRole("option", { name: "Owned local API" }) as HTMLOptionElement;
-  change("Account source", source.value);
+  await choose(screen.getByRole("combobox", { name: "Account source 1" }), "Owned local API");
   fireEvent.click(await screen.findByRole("checkbox", { name: /Owned keyless account/ }));
-  next();
-  fireEvent.change(screen.getByRole("combobox", { name: /^Model for / }), { target: { value: "fixture-model" } }); next();
+  await waitFor(() => expect(window.document.querySelector("[data-source-group] .worker-routing ol strong")?.textContent).toBe("Owned keyless account"));
+  // The source reports its independent account proof after the row renders.
+  await next();
+  fireEvent.change(await screen.findByRole("combobox", { name: /^Model for / }), { target: { value: "fixture-model" } }); await next();
   change("Name", "Configured agent");
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await screen.findByRole("heading", { name: "Configured agent" });
