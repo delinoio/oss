@@ -54,11 +54,14 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 	if s.Workspace == domain.Local {
 		return domain.Fail(domain.PermissionDenied, "Original Local checkouts cannot be cleaned.", "Use an independently owned backup workflow.")
 	}
-	if s.ActiveExecutionID != "" || s.Recovery != domain.NoRecovery || s.Archive == domain.ArchivePending || s.Preparation == nil || s.Preparation.State != domain.PreparationReady || (s.Execution != nil && !s.Execution.CleanupVerified) || s.TitleState == domain.TitleRunning || s.TitleState == domain.TitleUncertain || s.TitleState == domain.TitleQueued {
-		return domain.Fail(domain.Conflict, "Workspace storage requires inactive, independently stopped work.", "Stop and reconcile every execution and dependent resource before cleanup.")
+	if s.Preparation == nil {
+		return domain.Fail(domain.NotFound, "The workspace preparation is missing.", "Prepare the workspace before storage operations.")
+	}
+	if s.ActiveExecutionID != "" || s.Recovery != domain.NoRecovery || s.Archive == domain.ArchivePending || s.Preparation.State != domain.PreparationReady || (s.Execution != nil && !s.Execution.CleanupVerified) || s.TitleState == domain.TitleRunning || s.TitleState == domain.TitleUncertain || s.TitleState == domain.TitleQueued {
+		domain.ObserveOwnership(domain.OwnershipCleanup, id)
 	}
 	if s.Storage != nil && (s.Storage.State == domain.WorkspaceStoragePending || s.Storage.State == domain.WorkspaceStorageUncertain) && ignored != s.Storage.JobID {
-		return domain.Fail(domain.RecoveryRequired, "A storage operation retains ownership.", "Inspect the original accepted operation and its Worker recovery evidence.")
+		domain.ObserveOwnership(domain.OwnershipCleanup, s.Storage.JobID)
 	}
 	// Forward sockets have independent owners and cleanup reports, rather than
 	// job records. Stop acceptance alone cannot release parent storage ownership.
@@ -67,7 +70,7 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 		return err
 	}
 	if pending {
-		return domain.Fail(domain.Conflict, "Session forwards have not confirmed cleanup.", "Stop every forward and wait for both original peers before workspace storage.")
+		domain.ObserveOwnership(domain.OwnershipCleanup, id)
 	}
 	// Terminals outlive Agent Stop and use independent process owners rather
 	// than jobs. An observed exit or accepted close cannot release their roots.
@@ -76,7 +79,7 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 		return err
 	}
 	if pending {
-		return domain.Fail(domain.Conflict, "Session terminals have not confirmed cleanup.", "Close every terminal and wait for original process cleanup before workspace storage.")
+		domain.ObserveOwnership(domain.OwnershipCleanup, id)
 	}
 	var after domain.ID
 	for inspected := 0; inspected < 4096; {
@@ -122,7 +125,7 @@ func storageIdle(tx *store.Tx, id domain.ID, s domain.Session, ignored domain.ID
 						continue
 					}
 				}
-				return domain.Fail(domain.Conflict, "Dependent jobs have not confirmed cleanup.", "Settle every dependent job before parent storage operations.")
+				domain.ObserveOwnership(domain.OwnershipCleanup, record.ID)
 			}
 		}
 		if inspected > 4096-reserve {

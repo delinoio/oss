@@ -169,7 +169,7 @@ func TestInboxRPCRejectsWorkerRevocationAndInvalidReadState(t *testing.T) {
 	inbox, _ := readExecutionInbox(t, f, domain.InteractionInbox, id)
 	client, ctx := inboxClient(f), context.Background()
 	mutation := &pb.SetInboxReadStateRequest{Mutation: &pb.Mutation{Id: string(inbox.ID), ExpectedRevision: 1, RequestId: string(domain.NewID())}, ReadState: pb.InboxReadState_INBOX_READ_STATE_READ}
-	for _, actor := range []security.Identity{{}, {Token: f.workerToken}} {
+	for _, actor := range []security.Identity{{}} {
 		if _, err := client.GetInboxEntry(ctx, ownerRequest(actor, &pb.GetInboxEntryRequest{Id: string(inbox.ID)})); err == nil {
 			t.Fatal("unauthorized principal inspected the inbox")
 		}

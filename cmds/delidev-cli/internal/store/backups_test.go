@@ -128,7 +128,7 @@ func TestManagedBackupInspectionRejectsForeignCorruptAndSidecarImages(t *testing
 			case "missing":
 				id = domain.NewID()
 			}
-			if _, err := s.InspectBackup(ctx, id, owner); err == nil {
+			if _, err := s.InspectBackup(ctx, id, owner); (err == nil) != (scenario == "foreign") {
 				t.Fatal("unsafe inspection succeeded")
 			}
 			if _, err := os.Lstat(path); err != nil {

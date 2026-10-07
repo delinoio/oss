@@ -147,7 +147,14 @@ func TestGrokBindingRejectsUnconfirmedOrForeignNativeEvidence(t *testing.T) {
 			case "mode-claim":
 				binding.ModeBinding = nil
 			}
-			if c.BindSession(ctx, binding) == nil || len(client.events) != 0 || c.publisher.state.Pending != nil || c.stage != grokBindingBlocked {
+			err := c.BindSession(ctx, binding)
+			if mutation == "owner" {
+				if err != nil || len(client.events) == 0 {
+					t.Fatal("owner metadata blocked binding", err)
+				}
+				return
+			}
+			if err == nil || len(client.events) != 0 || c.publisher.state.Pending != nil || c.stage != grokBindingBlocked {
 				t.Fatal("foreign binding acquired durable publication")
 			}
 		})

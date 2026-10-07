@@ -4,7 +4,7 @@
   "local-worker-controls.workerControllerRunningServerConnectivityAnd_d14dd1": "Worker controller running. Server connectivity and harness readiness are shown separately below.",
   "local-worker-controls.stopIntentSavedWaitingForThe_bbbf38": "Stop intent saved; waiting for the original Worker controller to exit.",
   "local-worker-controls.workerControllerExitedExistingSessionCleanup_a58050": "Worker controller exited. Existing session cleanup and recovery remain separate.",
-  "local-worker-controls.workerExitIsUnconfirmedInspectIts_ed152e": "Worker exit is unconfirmed. Inspect its private log and original session recovery before explicitly replacing the controller.",
+  "local-worker-controls.workerExitIsUnconfirmedInspectIts_ed152e": "Worker exit is unconfirmed. Startup can continue; previous work may still be running.",
   "local-worker-controls.workerOnThisComputer_53d365": "Worker on this computer",
   "local-worker-controls.thisComputerSWorker_80a5ac": "This computer's Worker",
   "local-worker-controls.registrationIsSeparateFromStartupThe_f724cc": "Registration is separate from startup. The Worker continues after you quit DeliDev. Harnesses must already be installed.",

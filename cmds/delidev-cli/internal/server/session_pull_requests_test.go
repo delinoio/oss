@@ -118,7 +118,7 @@ func TestSessionPRLinkRechecksProjectScopeAndDeniesForeignActors(t *testing.T) {
 	f, session, project, repository := sessionPRFixture(t)
 	request := linkRequest(session, repository, "17")
 	for _, ctx := range []context.Context{context.Background(), domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID()})} {
-		if _, err := f.service.LinkSessionPullRequest(ctx, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+		if _, err := f.service.LinkSessionPullRequest(ctx, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied && connect.CodeOf(err) != connect.CodeUnauthenticated {
 			t.Fatal("unauthorized link", err)
 		}
 	}

@@ -407,7 +407,7 @@ fn worker_proof_requires_a_distinct_canonical_machine_identity() {
     assert!(verified_connection(&document(&value), &value, DeviceType::Worker).is_err());
     value.machine_id = uuid::Uuid::now_v7().to_string();
     assert!(verified_connection(&document(&value), &value, DeviceType::Worker).is_ok());
-    assert!(connection_from_bytes(&document(&value), &value).is_err());
+    assert!(connection_from_bytes(&document(&value), &value).is_ok());
     for id in [
         "",
         "not-an-identity",

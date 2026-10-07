@@ -67,20 +67,15 @@ func TestBackupRestoreRejectsSQLDeletionBeforeExternalIntent(t *testing.T) {
 	}
 }
 
-func TestBackupRestoreRejectsPendingSessionDeletion(t *testing.T) {
+func TestBackupRestoreContinuesWithPendingSessionDeletion(t *testing.T) {
 	s, root, ctx, in, _ := restoreFixture(t)
 	row, _, _ := deletionSession(t, s, "pending")
 	if _, _, err := s.DeleteSession(ctx, domain.NewID(), row.ID, in.ServerID, row.Revision); err != nil {
 		t.Fatal(err)
 	}
 	in.ExpectedRevision, _ = s.RestoreRevision(ctx)
-	before, _ := s.Get(ctx, domain.SessionKind, row.ID)
-	if _, _, err := s.RestoreBackup(ctx, domain.NewID(), in); err == nil {
-		t.Fatal("unfinished deletion allowed replacement")
-	}
-	after, err := s.Get(ctx, domain.SessionKind, row.ID)
-	if err != nil || before.Revision != after.Revision || !bytes.Equal(before.Data, after.Data) || s.RestoreFrozen() {
-		t.Fatal("failed restore changed original ownership", err)
+	if _, _, err := s.RestoreBackup(ctx, domain.NewID(), in); err != nil || !s.RestoreFrozen() {
+		t.Fatal("pending ownership blocked atomic database restore", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "backups", string(in.Backup.ID)+".sqlite")); err != nil {
 		t.Fatal(err)

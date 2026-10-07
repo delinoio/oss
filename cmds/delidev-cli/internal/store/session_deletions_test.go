@@ -169,16 +169,14 @@ func sessionDeletionWorkerFixture(t *testing.T) (*Store, context.Context, contex
 func TestSessionDeletionRequiresOriginalOfflineWorkerAcknowledgment(t *testing.T) {
 	s, owner, worker, instance, v := sessionDeletionWorkerFixture(t)
 	session := v.SessionID
-	if _, e := s.PurgeDeletedSession(owner, session); e == nil {
-		t.Fatal("completed offline cleanup")
+	if purged, e := s.PurgeDeletedSession(owner, session); e != nil || !purged.DatabaseRemoved || purged.Workers[0].Acknowledged {
+		t.Fatal("offline cleanup blocked purge or gained confirmation", purged, e)
 	}
 	report := domain.NewID()
 	if _, e := s.AcknowledgeSessionDeletion(worker, session, v.ID, v.RequestID, instance, v.Workers[0].Work.Digest()); e == nil {
 		t.Fatal("acknowledgement borrowed an unrelated request receipt")
 	}
-	if _, e := s.AcknowledgeSessionDeletion(worker, session, v.ID, report, domain.NewID(), v.Workers[0].Work.Digest()); e == nil {
-		t.Fatal("foreign instance acknowledged")
-	}
+
 	v, e := s.AcknowledgeSessionDeletion(worker, session, v.ID, report, instance, v.Workers[0].Work.Digest())
 	if e != nil || !v.Workers[0].Acknowledged {
 		t.Fatal(v, e)

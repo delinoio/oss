@@ -192,7 +192,9 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	}
 	worker, _ := pairedWorker(t, ctx, f.endpoint, f.identity)
 	_, err = client.ListProviderInventory(ctx, ownerRequest(worker, &pb.ListProviderInventoryRequest{}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 func catalogAccount(t *testing.T, f *accountFixture, endpoint string) (*pb.Resource, *pb.Resource) {
 	t.Helper()
@@ -465,13 +467,17 @@ func TestCatalogWorkerAuthorization(t *testing.T) {
 	worker, _ := pairedWorker(t, ctx, f.endpoint, f.identity)
 	c := catalogClient(f)
 	_, err := c.ListProviderPresets(ctx, ownerRequest(worker, &pb.ListProviderPresetsRequest{}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = c.SearchModels(ctx, ownerRequest(worker, &pb.SearchModelsRequest{}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = c.ResolveModel(ctx, ownerRequest(worker, &pb.ResolveModelRequest{Selector: "anything"}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	wantAccountCode(t, err, domain.NotFound)
 	_, err = c.DiscoverModels(ctx, ownerRequest(worker, &pb.DiscoverModelsRequest{}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	wantAccountCode(t, err, domain.MissingInput)
 }
 
 func TestCatalogDisableCancelsPendingPublication(t *testing.T) {

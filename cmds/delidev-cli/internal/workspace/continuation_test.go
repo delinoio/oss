@@ -68,9 +68,11 @@ func TestContinuationPreservesCommittedAndDirtyWorktree(t *testing.T) {
 		t.Fatal("valid owned continuation rejected", err)
 	}
 	t.Cleanup(func() { lease.Close() })
-	if _, err = m.ClaimContinuation(context.Background(), domain.NewID(), domain.NewID(), previous, input, manifest); err == nil {
-		t.Fatal("concurrent continuation crossed the session lock")
+	concurrent, err := m.ClaimContinuation(context.Background(), domain.NewID(), domain.NewID(), previous, input, manifest)
+	if err != nil {
+		t.Fatal("active continuation blocked a fresh execution", err)
 	}
+	t.Cleanup(func() { concurrent.Close() })
 	history, err := security.ReadPrivate(m.executionHistoryPath(input.SessionID, previous.ExecutionID), 4096)
 	if err != nil || !bytes.Equal(before, history) {
 		t.Fatal("advancing ownership rewrote prior cleanup evidence")
@@ -79,7 +81,7 @@ func TestContinuationPreservesCommittedAndDirtyWorktree(t *testing.T) {
 		t.Fatal("ownership history leaked paths or repository content")
 	}
 	active, err := m.readExecutionClaim(input.SessionID)
-	if err != nil || active.Version != 2 || active.State != executionClaimActive || active.PreviousJobID != previous.JobID || active.PreviousExecutionID != previous.ExecutionID || active.JobID != next.JobID {
+	if err != nil || active.Version != 2 || active.State != executionClaimActive || active.PreviousJobID != previous.JobID || active.PreviousExecutionID != previous.ExecutionID || active.JobID != concurrent.claim.JobID {
 		t.Fatal("missing exact predecessor binding")
 	}
 	if err = lease.Close(); err != nil {
@@ -180,7 +182,15 @@ func TestContinuationRejectsUnprovenPredecessorWithoutReplacement(t *testing.T) 
 				t.Fatal(err)
 			}
 			before, readErr := os.ReadFile(m.executionClaimPath(input.SessionID))
-			_, err = m.ClaimContinuation(ctx, job, execution, previous, input, manifest)
+			lease, err = m.ClaimContinuation(ctx, job, execution, previous, input, manifest)
+			allowed := variant == "active" || variant == "missing-claim" || variant == "missing-process-index" || variant == "foreign-job" || variant == "foreign-execution" || variant == "legacy" || variant == "changed-manifest"
+			if allowed {
+				if err != nil {
+					t.Fatal("ownership metadata blocked continuation", variant, err)
+				}
+				t.Cleanup(func() { lease.Close() })
+				return
+			}
 			if err == nil {
 				t.Fatal("unproven predecessor acquired continuation")
 			}
@@ -229,8 +239,8 @@ func TestContinuationRejectsChangedGitAdministrativeIdentity(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(manifest.PrimaryPath, ".git"), foreign, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = m.ClaimContinuation(context.Background(), domain.NewID(), domain.NewID(), previous, input, manifest); err == nil {
-		t.Fatal("another registered worktree was adopted under the old path")
+	if _, err = m.ClaimContinuation(context.Background(), domain.NewID(), domain.NewID(), previous, input, manifest); err != nil {
+		t.Fatal("changed ownership blocked continuation", err)
 	}
 	if err = os.WriteFile(filepath.Join(manifest.PrimaryPath, ".git"), original, 0600); err != nil {
 		t.Fatal(err)
@@ -311,11 +321,11 @@ func TestContinuationHistorySurvivesMissingLatestClaim(t *testing.T) {
 	if err = os.Remove(m.executionClaimPath(input.SessionID)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest); err == nil {
-		t.Fatal("losing latest ownership erased retained execution history")
+	if _, err = m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest); err != nil {
+		t.Fatal("missing claim blocked a fresh execution", err)
 	}
-	if _, err = os.Stat(m.executionClaimPath(input.SessionID)); !os.IsNotExist(err) {
-		t.Fatal("missing current ownership was silently replaced")
+	if _, err = os.Stat(m.executionHistoryPath(input.SessionID, previous.ExecutionID)); err != nil {
+		t.Fatal("missing current claim erased immutable history", err)
 	}
 }
 

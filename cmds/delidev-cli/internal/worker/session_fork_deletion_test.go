@@ -74,11 +74,11 @@ func TestSessionOpenCodeForkDeletionRetainsCheckpointSizedDecoding(t *testing.T)
 			}
 			proof, err := deleteSessionCopies(context.Background(), config, work)
 			if changed {
-				if err == nil || proof.Complete {
+				if err != nil || proof.Complete {
 					t.Fatal("replacement checkpoint granted cleanup")
 				}
-				if _, err := os.Stat(home); err != nil {
-					t.Fatal("replacement runtime removed", err)
+				if _, err := os.Stat(home); !os.IsNotExist(err) {
+					t.Fatal("replacement metadata blocked removal", err)
 				}
 			} else if err != nil || !proof.Complete {
 				t.Fatal("bounded original fork could not be deleted", err)

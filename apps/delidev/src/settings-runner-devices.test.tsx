@@ -71,7 +71,7 @@ it("renders the approved uncertain/loading hierarchy without duplicate guidance 
   const value = fixture(), pending = deferred<Page>(), current = status(); value.list.mockReturnValue(pending.promise);
   const control = vi.fn(async (_action: LocalWorkerAction) => current); open(value, control);
   await screen.findByText("Exit unconfirmed");
-  expect(screen.getAllByText("Worker exit is unconfirmed. Inspect its private log and original session recovery before explicitly replacing the controller.")).toHaveLength(1);
+  expect(screen.getAllByText("Worker exit is unconfirmed. Startup can continue; previous work may still be running.")).toHaveLength(1);
   expect(screen.getByText(`Execution machine: ${current.machine_id}`)).toBeTruthy();
   const inventory = screen.getByRole("region", { name: "Saved runner devices" });
   expect(within(inventory).getByRole("status").textContent).toBe("Loading runner devices...");

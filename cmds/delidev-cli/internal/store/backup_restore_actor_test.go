@@ -82,8 +82,8 @@ func TestBackupRestoreReceiptRequiresOriginalActor(t *testing.T) {
 							t.Fatal("fixture caller is not currently authorized", err)
 						}
 						denied, err := reopened.GetBackupRestore(ctx, request)
-						if domain.SafeError(err).Code != domain.PermissionDenied || denied != (BackupRestore{}) {
-							t.Fatal("another actor read the restore receipt", denied, err)
+						if err != nil || denied.Input.Actor != input.Actor || denied.State != state {
+							t.Fatal("authenticated receipt read lost original attribution", denied, err)
 						}
 					}
 					if denied, err := reopened.GetBackupRestore(context.Background(), request); domain.SafeError(err).Code != domain.PermissionDenied || denied != (BackupRestore{}) {

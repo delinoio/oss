@@ -26,12 +26,12 @@ it("keeps automatic management paused until an explicit Start", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Start local Worker" }));
   await waitFor(() => expect(control.mock.calls.filter(([action]) => action === LocalWorkerAction.Start)).toHaveLength(1));
 });
-it("reports blocked original ownership and navigates to diagnostics without replacing it", async () => {
+it("allows Start with unconfirmed ownership and keeps diagnostics available", async () => {
   const value: LocalWorkerStatus = { ...running(), state: LocalWorkerState.Uncertain, controller_active: false, management: { state: LocalWorkerManagementState.Blocked, attempts: 1, retry_ms: 0, failure: "invalid-evidence", owned_by_app: false } };
   const diagnostics = vi.fn(), control = vi.fn(async () => value);
   render(<LocalWorkerControls control={control} active onDiagnostics={diagnostics} changed={() => {}} />);
   await screen.findByRole("alert");
-  expect(screen.queryByRole("button", { name: "Start local Worker" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Start local Worker" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
   expect(diagnostics).toHaveBeenCalledOnce();
   expect(control).toHaveBeenCalledOnce();
@@ -91,7 +91,7 @@ it.each([
   [LocalWorkerState.Running, "Controller running", "Worker controller running. Server connectivity and harness readiness are shown separately below.", true, false, true],
   [LocalWorkerState.Stopping, "Stopping", "Stop intent saved; waiting for the original Worker controller to exit.", true, false, true],
   [LocalWorkerState.Exited, "Exited", "Worker controller exited. Existing session cleanup and recovery remain separate.", false, true, false],
-  [LocalWorkerState.Uncertain, "Exit unconfirmed", "Worker exit is unconfirmed. Inspect its private log and original session recovery before explicitly replacing the controller.", false, true, true],
+  [LocalWorkerState.Uncertain, "Exit unconfirmed", "Worker exit is unconfirmed. Startup can continue; previous work may still be running.", false, true, true],
 ] as const)("presents the truthful %s badge with the existing lifecycle predicates", async (state, badge, description, controller_active, start, stop) => {
   const value = { ...running(), state, controller_active, generation: state === LocalWorkerState.NotStarted ? undefined : running().generation };
   render(<LocalWorkerControls presentation={LocalWorkerPresentation.RunnerDevices} control={async () => value} active changed={() => {}} />);

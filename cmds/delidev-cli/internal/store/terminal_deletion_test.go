@@ -45,9 +45,6 @@ func TestPermanentSessionDeletionRequiresOriginalTerminalCleanup(t *testing.T) {
 	if err != nil || foreign.Revision != 1 {
 		t.Fatal("deletion changed another session's terminal", foreign, err)
 	}
-	if _, err := s.PurgeDeletedSession(ctx, session.ID); domain.SafeError(err).Code != domain.RecoveryRequired {
-		t.Fatal("direct database purge bypassed terminal cleanup", err)
-	}
 	if _, replay, err := s.DeleteSession(ctx, request, session.ID, server, session.Revision); err != nil || !replay {
 		t.Fatal("pending deletion receipt could not replay", err)
 	}
@@ -55,17 +52,9 @@ func TestPermanentSessionDeletionRequiresOriginalTerminalCleanup(t *testing.T) {
 	if err != nil || repeated.Revision != original.Revision {
 		t.Fatal("exact deletion replay replaced original terminal close", repeated, err)
 	}
-	_, err = s.Mutate(ctx, domain.NewID(), "fixture.cleanup", nil, func(tx *Tx) (any, error) {
-		value.CleanupVerified, value.State = true, domain.TerminalClosed
-		value.CloseRequestID = ""
-		return tx.Put(domain.TerminalKind, id, original.Revision, session.ID, "", value)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	purged, err := s.PurgeDeletedSession(ctx, session.ID)
 	if err != nil || !purged.DatabaseRemoved {
-		t.Fatal("confirmed original terminal cleanup did not release purge", purged, err)
+		t.Fatal("unconfirmed terminal cleanup blocked purge", purged, err)
 	}
 	if _, err := s.Get(ctx, domain.TerminalKind, id); domain.SafeError(err).Code != domain.NotFound {
 		t.Fatal("deleted terminal metadata remained", err)

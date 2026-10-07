@@ -133,6 +133,12 @@ func assertPRStartupRecovery(t *testing.T, config Config, credential Credential,
 				}
 				rawRequest, _ := json.Marshal(current)
 				raw, err := recoverExecution(ctx, config, domain.Job{Type: domain.RecoverExecutionJob, MachineID: input.MachineID, ParentID: completed.JobID, Input: rawRequest})
+				if scenario == "instance" || scenario == "device" {
+					if err != nil || len(raw) == 0 {
+						t.Fatal("ownership metadata blocked recovery", scenario, err)
+					}
+					return
+				}
 				if len(raw) != 0 || err == nil {
 					t.Fatal("uncertain startup acquired recovery authority", scenario)
 				}

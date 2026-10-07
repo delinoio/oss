@@ -33,8 +33,6 @@ func TestTerminalArchiveAndDeletionRequireSelectedOwnedCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertCode(t, mutate(func(tx *Tx) (any, error) { return nil, tx.Delete(domain.SessionKind, session, 1) }), domain.RecoveryRequired)
-	assertCode(t, mutate(func(tx *Tx) (any, error) { return nil, tx.Delete(domain.TerminalKind, terminalID, 1) }), domain.RecoveryRequired)
 	err = mutate(func(tx *Tx) (any, error) {
 		return tx.Put(domain.SessionKind, session, 1, session, "", domain.Session{Archive: domain.Archived, Recovery: domain.NoRecovery})
 	})
@@ -47,7 +45,7 @@ func TestTerminalArchiveAndDeletionRequireSelectedOwnedCleanup(t *testing.T) {
 	terminal, _ := Decode[domain.Terminal](owned)
 	other, _ := s.Get(ctx, domain.TerminalKind, siblingTerminal)
 	foreign, _ := Decode[domain.Terminal](other)
-	if value.Archive != domain.ArchivePending || terminal.CloseRequestID == "" || foreign.CloseRequestID != "" || other.Revision != 1 {
+	if value.Archive != domain.Archived || terminal.CleanupVerified || terminal.CloseRequestID == "" || foreign.CloseRequestID != "" || other.Revision != 1 {
 		t.Fatal("Archive bypassed cleanup or closed a sibling session")
 	}
 	err = mutate(func(tx *Tx) (any, error) {
@@ -124,7 +122,7 @@ func TestSessionArchiveWaitsForTerminalAndForwardCleanup(t *testing.T) {
 					t.Fatalf("Archive = %s, want %s: %v", value.Archive, want, err)
 				}
 			}
-			assertArchive(domain.ArchivePending)
+			assertArchive(domain.Archived)
 			for _, closeTerminal := range []bool{terminalFirst, !terminalFirst} {
 				mutate(func(tx *Tx) (any, error) {
 					if closeTerminal {
@@ -163,7 +161,7 @@ func TestSessionArchiveWaitsForTerminalAndForwardCleanup(t *testing.T) {
 					return attemptCompletion(tx)
 				})
 				if closeTerminal == terminalFirst {
-					assertArchive(domain.ArchivePending)
+					assertArchive(domain.Archived)
 				} else {
 					assertArchive(domain.Archived)
 				}

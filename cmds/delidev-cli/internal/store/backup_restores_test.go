@@ -407,8 +407,17 @@ func TestBackupRestoreRejectsChangedInspectionRevisionAndOwnership(t *testing.T)
 				image.Close()
 			}
 			before, _ := os.ReadFile(source)
-			if _, _, err := s.RestoreBackup(ctx, domain.NewID(), in); err == nil {
-				t.Fatal("invalid restore accepted")
+			_, _, restoreErr := s.RestoreBackup(ctx, domain.NewID(), in)
+			allowed := mode == "active" || mode == "uncertain" || mode == "cleanup"
+			if (restoreErr == nil) != allowed {
+				t.Fatal("restore result violated format, revision or ownership policy", mode, restoreErr)
+			}
+			if allowed {
+				after, _ := os.ReadFile(source)
+				if !bytes.Equal(before, after) {
+					t.Fatal("restore changed immutable source")
+				}
+				return
 			}
 			if s.RestoreFrozen() {
 				t.Fatal("validation froze the live database")
@@ -438,7 +447,7 @@ func TestBackupRestoreRequiresIndependentForwardCleanup(t *testing.T) {
 		{"settled", domain.Forward{State: domain.ForwardStopped, ClientClaimed: true, WorkerClaimed: true, ClientClean: true, WorkerClean: true}, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			s, root, ctx, in, original := restoreFixture(t)
+			s, root, ctx, in, _ := restoreFixture(t)
 			_, err := s.Mutate(ctx, domain.NewID(), "fixture-forward", nil, func(tx *Tx) (any, error) {
 				return tx.Put(domain.ForwardKind, domain.NewID(), 0, "", "", test.forward)
 			})
@@ -455,17 +464,8 @@ func TestBackupRestoreRequiresIndependentForwardCleanup(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, _, err = s.RestoreBackup(ctx, domain.NewID(), in)
-			if test.allowed {
-				if err != nil {
-					t.Fatal("settled forward blocked restore", err)
-				}
-			} else {
-				if domain.SafeError(err).Code != domain.RecoveryRequired || s.RestoreFrozen() {
-					t.Fatal("unsettled forward did not preserve the live epoch", err)
-				}
-				if _, err := s.Get(ctx, domain.ProjectKind, original); err != nil {
-					t.Fatal("live state changed", err)
-				}
+			if err != nil || !s.RestoreFrozen() {
+				t.Fatal("forward cleanup uncertainty blocked restore", err)
 			}
 			after, err := os.ReadFile(source)
 			if err != nil || !bytes.Equal(before, after) {

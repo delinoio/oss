@@ -60,8 +60,8 @@ func TestSSHSetupAdmissionReplayAndExactHost(t *testing.T) {
 		t.Fatal("Missing receipt replay", err)
 	}
 	foreign := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, err = f.s.GetSSHSetup(foreign, connect.NewRequest(&pb.GetSSHSetupRequest{Id: string(r.ID)})); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker read product setup", err)
+	if _, err = f.s.GetSSHSetup(foreign, connect.NewRequest(&pb.GetSSHSetupRequest{Id: string(r.ID)})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("Unregistered Worker read product setup", err)
 	}
 	canceled, err := f.s.CancelSSHSetup(f.ctx, connect.NewRequest(&pb.CancelSSHSetupRequest{Mutation: &pb.Mutation{Id: string(r.ID), ExpectedRevision: accepted.Msg.Setup.Revision, RequestId: string(domain.NewID())}}))
 	if err != nil {

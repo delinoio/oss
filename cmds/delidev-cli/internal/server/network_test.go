@@ -222,10 +222,10 @@ func TestNetworkMutationUncertainVaultAndWorkerAuthorization(t *testing.T) {
 		t.Fatal("unbounded credential generations", err)
 	}
 	worker := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, err := f.service.GetNetworkRoute(worker, connect.NewRequest(&pb.GetNetworkRouteRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.service.GetNetworkRoute(worker, connect.NewRequest(&pb.GetNetworkRouteRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker product read", err)
 	}
-	if _, err := f.service.SaveNetworkProfile(worker, connect.NewRequest(req)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.service.SaveNetworkProfile(worker, connect.NewRequest(req)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker product write", err)
 	}
 }

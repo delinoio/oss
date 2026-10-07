@@ -250,7 +250,7 @@ func (s *Service) PrepareSessionWorkspace(ctx context.Context, req *connect.Requ
 		if r.Revision != meta.ExpectedRevision {
 			return nil, domain.Fail(domain.Conflict, "The session revision changed.", "Reload its current preparation state before retrying.")
 		}
-		if !session.WorkspaceAvailable() || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted {
+		if !session.WorkspaceAvailable() || session.Archive != domain.NotArchived || domain.OwnershipBlocks(domain.OwnershipCleanup, r.ID, session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || session.Outcome != domain.ExecutionNotStarted) {
 			return nil, domain.Fail(domain.RecoveryRequired, "The session cannot start workspace preparation in its current state.", "Restore visibility and reconcile native ownership before retrying.")
 		}
 		var input workspace.PrepareRequest
@@ -267,7 +267,10 @@ func (s *Service) PrepareSessionWorkspace(ctx context.Context, req *connect.Requ
 			case domain.JobSucceeded, domain.JobQueued, domain.JobClaimed:
 				// Observing an existing attempt never repeats its native operation.
 				return sessionReceipt{SessionID: r.ID}, nil
-			case domain.JobFailed, domain.JobCanceled:
+			case domain.JobFailed, domain.JobCanceled, domain.JobUncertain:
+				if job.State == domain.JobUncertain {
+					domain.ObserveOwnership(domain.OwnershipCleanup, jobRecord.ID)
+				}
 				if err := domain.Decode(job.Input, &input); err != nil {
 					return nil, err
 				}

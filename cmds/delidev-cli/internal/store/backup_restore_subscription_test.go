@@ -11,7 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-func TestBackupRestoreRequiresSettledSubscriptionOwnership(t *testing.T) {
+func TestBackupRestoreContinuesWithSubscriptionOwnershipUncertainty(t *testing.T) {
 	for _, phase := range []string{"queued", "claimed", "recovery", "settled"} {
 		t.Run(phase, func(t *testing.T) {
 			s, _, ctx, in, _ := restoreFixture(t)
@@ -34,27 +34,17 @@ func TestBackupRestoreRequiresSettledSubscriptionOwnership(t *testing.T) {
 				t.Fatal(err)
 			}
 			before, err := s.Get(ctx, domain.AccountKind, id)
-			if err != nil {
-				t.Fatal(err)
+			if err != nil || !bytes.Contains(before.Data, []byte("subscription")) {
+				t.Fatal("invalid retained fixture", err)
 			}
 			in.ExpectedRevision, err = s.RestoreRevision(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, _, err = s.RestoreBackup(ctx, domain.NewID(), in)
-			if phase == "settled" {
-				if err != nil {
-					t.Fatal("settled subscription blocked database restore", err)
-				}
-			} else {
-				if domain.SafeError(err).Code != domain.RecoveryRequired || s.RestoreFrozen() {
-					t.Fatal("restore bypassed unsettled subscription ownership", err)
-				}
-				after, err := s.Get(ctx, domain.AccountKind, id)
-				if err != nil || before.Revision != after.Revision || !bytes.Equal(before.Data, after.Data) {
-					t.Fatal("refused restore changed subscription ownership", err)
-				}
+			if _, _, err = s.RestoreBackup(ctx, domain.NewID(), in); err != nil || !s.RestoreFrozen() {
+				t.Fatal("subscription attribution blocked restore", err)
 			}
+
 		})
 	}
 }

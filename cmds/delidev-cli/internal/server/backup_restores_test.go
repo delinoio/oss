@@ -204,10 +204,10 @@ func TestRestoreRPCRequiresOriginalInspectionAndCurrentAuthority(t *testing.T) {
 	revision := inspection.Msg.RestoreRevision
 	request := &pb.RestoreBackupRequest{RequestId: string(domain.NewID()), Backup: inspection.Msg.Backup, Sha256: inspection.Msg.Sha256, ExpectedRestoreRevision: &revision, Confirm: true}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, err := s.RestoreBackup(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.RestoreBackup(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal(err)
 	}
-	if _, err := s.GetBackupRestore(worker, connect.NewRequest(&pb.GetBackupRestoreRequest{RequestId: request.RequestId})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.GetBackupRestore(worker, connect.NewRequest(&pb.GetBackupRestoreRequest{RequestId: request.RequestId})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal(err)
 	}
 	request.Confirm = false

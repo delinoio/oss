@@ -321,7 +321,7 @@ func TestConfigurationImportPreviewReadOnlyAtomicRemappingAndReplay(t *testing.T
 	if _, err = s.ApplyConfigurationImport(transferOwner(), connect.NewRequest(&pb.ApplyConfigurationImportRequest{RequestId: string(domain.NewID()), PreviewJson: tampered})); err == nil {
 		t.Fatal("changed preview accepted")
 	}
-	if _, err = s.PreviewConfigurationImport(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID()}), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: []byte(`{}`)})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err = s.PreviewConfigurationImport(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID()}), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: []byte(`{}`)})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker allowed", err)
 	}
 }

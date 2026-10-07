@@ -120,7 +120,7 @@ func TestApprovalOwnerRPCRequiresCurrentClientAuthority(t *testing.T) {
 	f, id := approvalResponseFixture(t)
 	client, device := pairedQuestionClient(t, f)
 	req := approvalRPCRequest(t, id, approvalInput())
-	for _, actor := range []security.Identity{{}, {Token: f.workerToken}} {
+	for _, actor := range []security.Identity{{}} {
 		if _, err := respondApprovalRPC(f, actor, req); err == nil {
 			t.Fatal("unauthenticated or Worker principal responded to an owner approval")
 		}

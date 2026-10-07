@@ -31,7 +31,7 @@ func TestGitHubTokenFormNeedsCurrentAuthorizedProfileWithoutCredentialRead(t *te
 		t.Fatal("unauthenticated form", err)
 	}
 	_, err = f.service.GetGitHubTokenForm(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice}), connect.NewRequest(req))
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker form", err)
 	}
 	req.ExpectedRevision++

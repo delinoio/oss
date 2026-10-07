@@ -146,6 +146,12 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}()
 	// A interrupted removal cannot upgrade missing native evidence to success.
 	cleanupConfirmed := !proof.RemovalStarted
+	if _, err := os.Lstat(filepath.Join(root, "workspaces", string(w.SessionID))); errors.Is(err, os.ErrNotExist) {
+		domain.ObserveOwnership(domain.OwnershipCleanup, w.DeletionID)
+		cleanupConfirmed = false
+	} else if err != nil {
+		return proof, err
+	}
 	allowAbsentWorkspace := w.Fork == nil
 	if w.Fork != nil && !proof.RemovalStarted {
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
@@ -411,7 +417,7 @@ func retiringAssignment(ctx context.Context, config Config, client delidevv1conn
 		return false
 	}
 	for _, copy := range w.Copies {
-		if string(copy.JobID) == resource.Id && copy.InstanceID == instance && copy.Revision == resource.Revision && copy.Digest == executionInputDigest(resource.DocumentJson) {
+		if string(copy.JobID) == resource.Id && !domain.OwnershipBlocks(domain.OwnershipInstance, w.DeletionID, copy.InstanceID != instance) && copy.Revision == resource.Revision && copy.Digest == executionInputDigest(resource.DocumentJson) {
 			return true
 		}
 	}

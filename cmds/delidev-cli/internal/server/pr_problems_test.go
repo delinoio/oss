@@ -96,13 +96,13 @@ func TestPRProblemsRPCPersistsDismissesReplaysAndInvalidatesPages(t *testing.T) 
 	}
 	// Owner/client handlers reject Workers before any lookup or mutation.
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice})
-	if _, err := f.service.DismissPullRequestProblem(worker, connect.NewRequest(dismissal)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.service.DismissPullRequestProblem(worker, connect.NewRequest(dismissal)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker dismissal", err)
 	}
-	if _, err := f.service.ListPullRequestProblems(worker, connect.NewRequest(list)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.service.ListPullRequestProblems(worker, connect.NewRequest(list)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker history", err)
 	}
-	if _, err := f.service.RefreshPullRequestProblems(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.service.RefreshPullRequestProblems(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker collect", err)
 	}
 	// Receipts store references, never the retained body or token.

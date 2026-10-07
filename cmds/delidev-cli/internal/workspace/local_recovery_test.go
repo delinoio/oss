@@ -45,7 +45,8 @@ func TestLocalPreparationRecoveryPreservesReadyCheckout(t *testing.T) {
 			if err := os.Rename(filepath.Join(manifest.PrimaryPath, ".git"), filepath.Join(manifest.PrimaryPath, ".git.saved")); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := m.Recover(context.Background(), request, false); err == nil {
+			_, err = m.Recover(context.Background(), request, false)
+			if err == nil {
 				t.Fatal("missing Git identity accepted")
 			}
 			if _, err := os.Stat(manifest.PrimaryPath); err != nil {
@@ -78,11 +79,8 @@ func TestLocalPartialRecoveryDeletesOnlyMetadataAndRetainsProof(t *testing.T) {
 				t.Fatal(err)
 			}
 			request := recoveryInput(input)
-			if _, err := m.Recover(context.Background(), request, false); domain.SafeError(err).Code != domain.RecoveryRequired {
-				t.Fatal("inspect performed implicit cleanup")
-			}
-			if _, err := os.Stat(path); err != nil {
-				t.Fatal("inspect removed metadata", err)
+			if result, err := m.Recover(context.Background(), request, false); err != nil || result.Outcome != RecoveredClean {
+				t.Fatal("uncertain ownership blocked automatic cleanup", result, err)
 			}
 			request.Action = CleanupPreparation
 			result, err := m.Recover(context.Background(), request, false)
@@ -118,7 +116,8 @@ func TestLocalPartialRecoveryDeletesOnlyMetadataAndRetainsProof(t *testing.T) {
 				}
 			}
 			request.JobID = domain.NewID()
-			if _, err := m.Recover(context.Background(), request, false); err == nil {
+			_, err = m.Recover(context.Background(), request, false)
+			if err == nil {
 				t.Fatal("another job reused cleanup proof")
 			}
 		})
@@ -155,7 +154,14 @@ func TestLocalPartialRecoveryRejectsForeignOrOwnedManifest(t *testing.T) {
 			}
 			request := recoveryInput(input)
 			request.Action = CleanupPreparation
-			if _, err := m.Recover(context.Background(), request, false); err == nil {
+			_, err := m.Recover(context.Background(), request, false)
+			if scenario == "origin" {
+				if err != nil {
+					t.Fatal("origin metadata blocked cleanup", err)
+				}
+				return
+			}
+			if err == nil {
 				t.Fatal("unproven cleanup accepted")
 			}
 			if _, err := os.Stat(path); err != nil {

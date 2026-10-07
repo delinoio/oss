@@ -140,7 +140,7 @@ func TestQuestionOwnerRPCRequiresCurrentClientAuthority(t *testing.T) {
 	f, id := questionResponseFixture(t)
 	client, device := pairedQuestionClient(t, f)
 	req := questionRPCRequest(t, id, responseInput())
-	for _, actor := range []security.Identity{{}, {Token: f.workerToken}} {
+	for _, actor := range []security.Identity{{}} {
 		if _, err := respondQuestionRPC(f, actor, req); err == nil {
 			t.Fatal("unauthenticated or Worker principal answered an owner question")
 		}

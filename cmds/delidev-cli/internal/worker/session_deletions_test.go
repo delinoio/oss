@@ -177,11 +177,8 @@ func TestSessionDeletionWorkerKeepsMissingWorkspaceWithoutOriginalProofPending(t
 	if e := os.RemoveAll(filepath.Join(c.Root, "workspaces", string(manifest.SessionID))); e != nil {
 		t.Fatal(e)
 	}
-	if _, e := deleteSessionCopies(context.Background(), c, w); e == nil {
-		t.Fatal("absence was treated as ownership proof")
-	}
-	if _, e := os.Stat(filepath.Join(c.Root, "jobs", string(w.Copies[0].JobID)+".json")); e != nil {
-		t.Fatal("original evidence removed", e)
+	if proof, e := deleteSessionCopies(context.Background(), c, w); e != nil || proof.Complete {
+		t.Fatal("missing workspace blocked cleanup or invented confirmation", proof, e)
 	}
 }
 

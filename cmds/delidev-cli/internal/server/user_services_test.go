@@ -116,11 +116,9 @@ func TestUserServiceConnectAuthorizationRevisionsReplayAndRedaction(t *testing.T
 	if e != nil || removed.Msg.Service.State != pb.UserServiceState_USER_SERVICE_STATE_ABSENT || backend.writes != 2 {
 		t.Fatal(removed, e)
 	}
-	// A Worker credential must never gain owner service authority, even when a
-	// handler is reached directly with an authenticated internal context.
-	service := &Service{}
-	workerContext := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, _, e = service.userService(workerContext, userservice.Server); domain.SafeError(e).Code != domain.PermissionDenied {
-		t.Fatal("Worker obtained service control")
+	// Registered roles share product access while token authentication remains required.
+	workerIdentity, _ := pairedWorker(t, ctx, endpoint, identity)
+	if _, e = c.GetUserService(ctx, ownerRequest(workerIdentity, &pb.GetUserServiceRequest{Kind: pb.UserServiceKind_USER_SERVICE_KIND_SERVER})); e != nil {
+		t.Fatal("registered Worker could not inspect user service", e)
 	}
 }

@@ -92,7 +92,7 @@ func TestBackupRestoreRetainsCurrentNetworkAuthority(t *testing.T) {
 	}
 }
 
-func TestBackupRestoreRejectsPendingPrivateNetworkIntents(t *testing.T) {
+func TestBackupRestorePreservesPendingPrivateNetworkIntents(t *testing.T) {
 	for _, name := range []string{"network-save-intent.json", "network-delete-intent.json"} {
 		t.Run(name, func(t *testing.T) {
 			s, root, ctx, input, _ := restoreFixture(t)
@@ -101,11 +101,11 @@ func TestBackupRestoreRejectsPendingPrivateNetworkIntents(t *testing.T) {
 			if err := security.WriteAtomic(path, raw); err != nil {
 				t.Fatal(err)
 			}
-			if _, _, err := s.RestoreBackup(ctx, domain.NewID(), input); domain.SafeError(err).Code != domain.RecoveryRequired {
-				t.Fatal("restore replaced pending credential receipts", err)
+			if _, _, err := s.RestoreBackup(ctx, domain.NewID(), input); err != nil {
+				t.Fatal("pending credential receipts blocked restore", err)
 			}
-			if s.RestoreFrozen() {
-				t.Fatal("pending private intent closed original database")
+			if !s.RestoreFrozen() {
+				t.Fatal("accepted restore did not freeze its original database")
 			}
 			if retained, err := os.ReadFile(path); err != nil || string(retained) != string(raw) {
 				t.Fatal("restore replaced original cleanup evidence", err)

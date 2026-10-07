@@ -87,7 +87,7 @@ func TestGitHubOnboardingAdmissionAndShutdownClearTokens(t *testing.T) {
 	f := newIntegrationFixture(t)
 	for _, ctx := range []context.Context{context.Background(), domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice})} {
 		request := &pb.InspectGitHubTokenRequest{RequestId: string(domain.NewID()), Token: []byte("fixture-pat")}
-		if _, err := f.service.InspectGitHubToken(ctx, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied || !bytes.Equal(request.Token, make([]byte, len(request.Token))) {
+		if _, err := f.service.InspectGitHubToken(ctx, connect.NewRequest(request)); (connect.CodeOf(err) != connect.CodeUnauthenticated && connect.CodeOf(err) != connect.CodePermissionDenied) || !bytes.Equal(request.Token, make([]byte, len(request.Token))) {
 			t.Fatal("unauthorized inspection retained token", err)
 		}
 	}

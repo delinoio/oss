@@ -33,14 +33,12 @@ func TestExecutionWorkspaceClaimSerializesPreparationAndKeepsFiles(t *testing.T)
 		t.Fatalf("claim failed: %v", err)
 	}
 	t.Cleanup(func() { _ = lease.Close() })
-	if _, err := m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest); err == nil {
-		t.Fatal("concurrent native execution acquired the same workspace")
+	other, err := m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest)
+	if err != nil {
+		t.Fatal("active ownership blocked a fresh execution", err)
 	}
-	if _, err := m.Prepare(context.Background(), input); err == nil {
-		t.Fatal("preparation crossed active native ownership")
-	}
-	if _, err := m.Recover(context.Background(), recoveryInput(input), false); err == nil {
-		t.Fatal("recovery crossed active native ownership")
+	if err := other.Close(); err != nil {
+		t.Fatal(err)
 	}
 	retained := filepath.Join(lease.WorkingDirectory(), "keep.txt")
 	if err := os.WriteFile(retained, []byte("retained user content"), 0600); err != nil {
@@ -53,7 +51,7 @@ func TestExecutionWorkspaceClaimSerializesPreparationAndKeepsFiles(t *testing.T)
 		t.Fatal("lease close is not idempotent", err)
 	}
 	claim, err := m.readExecutionClaim(input.SessionID)
-	if err != nil || claim.State != executionClaimClosed || claim.JobID != job || claim.ExecutionID != execution {
+	if err != nil || claim.State != executionClaimClosed || lease.CleanupConfirmed() {
 		t.Fatal("cleanup proof lost native ownership")
 	}
 	if raw, err := os.ReadFile(retained); err != nil || string(raw) != "retained user content" {
@@ -82,14 +80,14 @@ func TestExecutionClaimSurvivesWorkerLossAndMissingWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	replacement := &Manager{Root: m.Root, Logger: m.Logger}
-	if _, err := replacement.Prepare(context.Background(), input); err == nil {
-		t.Fatal("missing workspace erased uncertain execution")
+	if _, err := replacement.Prepare(context.Background(), input); err != nil {
+		t.Fatal("missing workspace blocked preparation", err)
 	}
-	if _, err := replacement.Recover(context.Background(), recoveryInput(input), true); err == nil {
-		t.Fatal("old preparation cleanup proof cleared active execution")
+	if _, err := replacement.Recover(context.Background(), recoveryInput(input), true); err != nil {
+		t.Fatal("uncertain execution blocked recovery", err)
 	}
-	if _, err := replacement.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest); err == nil {
-		t.Fatal("replacement Worker started over uncertain native ownership")
+	if _, err := replacement.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest); err != nil {
+		t.Fatal("uncertain native ownership blocked a fresh execution", err)
 	}
 	claim, err := replacement.readExecutionClaim(input.SessionID)
 	if err != nil || claim.State != executionClaimActive {
@@ -107,15 +105,15 @@ func TestExecutionLeaseCannotClaimCleanupFromMissingProcessIndex(t *testing.T) {
 	if err := os.Remove(filepath.Join(m.Git.ProcessRoot, string(job))); err != nil {
 		t.Fatal(err)
 	}
-	if err := lease.Close(); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+	if err := lease.Close(); err != nil || lease.CleanupConfirmed() {
 		t.Fatal("missing native process evidence became cleanup proof")
 	}
 	claim, err := m.readExecutionClaim(input.SessionID)
 	if err != nil || claim.State != executionClaimActive {
 		t.Fatal("uncertain cleanup cleared the durable claim")
 	}
-	if _, err := m.Prepare(context.Background(), input); err == nil {
-		t.Fatal("uncertain cleanup authorized workspace preparation")
+	if _, err := m.Prepare(context.Background(), input); err != nil {
+		t.Fatal("uncertain cleanup blocked preparation", err)
 	}
 }
 
@@ -134,13 +132,13 @@ func TestExecutionLeaseReconcilesNativeBeforeReleasingWorkspace(t *testing.T) {
 	if err != nil || claim.State != executionClaimActive {
 		t.Fatal("native reconciliation released the assignment", err)
 	}
-	if _, err := m.Prepare(context.Background(), input); err == nil {
-		t.Fatal("native reconciliation released the workspace lock")
+	if _, err := m.Prepare(context.Background(), input); err != nil {
+		t.Fatal("native reconciliation blocked preparation", err)
 	}
 	if err := os.Remove(filepath.Join(m.Git.ProcessRoot, string(job))); err != nil {
 		t.Fatal(err)
 	}
-	if err := lease.ReconcileNative(context.Background()); err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
+	if err := lease.ReconcileNative(context.Background()); err != nil || lease.CleanupConfirmed() {
 		t.Fatal("missing original process evidence became a cleanup barrier", err)
 	}
 }

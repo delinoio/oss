@@ -39,10 +39,10 @@ func TestBackupPagesAndInspectionRecheckAuthorityAndInventory(t *testing.T) {
 		t.Fatal("changed inventory retained cursor")
 	}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, err := s.CreateBackup(worker, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.CreateBackup(worker, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker created backup", err)
 	}
-	if _, err := s.ListBackups(worker, connect.NewRequest(&pb.ListBackupsRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.ListBackups(worker, connect.NewRequest(&pb.ListBackupsRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker listed backups", err)
 	}
 	client := domain.NewID()
@@ -69,10 +69,10 @@ func TestBackupDeletionRPCIsOwnerClientOnlyAndReturnsCurrentOriginalJob(t *testi
 	}
 	request := &pb.DeleteBackupRequest{RequestId: string(domain.NewID()), Backup: inspected.Msg.Backup, Sha256: inspected.Msg.Sha256}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, err := s.DeleteBackup(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.DeleteBackup(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal(err)
 	}
-	if _, err := s.ListBackupDeletions(worker, connect.NewRequest(&pb.ListBackupDeletionsRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.ListBackupDeletions(worker, connect.NewRequest(&pb.ListBackupDeletionsRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal(err)
 	}
 	accepted, err := s.DeleteBackup(ctx, connect.NewRequest(request))
@@ -107,13 +107,13 @@ func TestBackupCreationRPCSeparatesAcceptanceFromPublicationAndRetainsOriginalJo
 		t.Fatal("acceptance published an image", items, err)
 	}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, err := s.RequestBackup(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.RequestBackup(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal(err)
 	}
-	if _, err := s.GetBackupCreation(worker, connect.NewRequest(&pb.GetBackupCreationRequest{Id: accepted.Msg.Job.Id})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.GetBackupCreation(worker, connect.NewRequest(&pb.GetBackupCreationRequest{Id: accepted.Msg.Job.Id})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal(err)
 	}
-	if _, err := s.ListBackupCreations(worker, connect.NewRequest(&pb.ListBackupCreationsRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.ListBackupCreations(worker, connect.NewRequest(&pb.ListBackupCreationsRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal(err)
 	}
 	if _, err := s.Store.RunBackupCreation(ctx, domain.ID(accepted.Msg.Job.Id), s.Identity.ServerID); err != nil {
@@ -195,7 +195,7 @@ func TestBackupDeletionReadObservesExactJobBeyondHistoryAndRejectsOtherAuthority
 		t.Fatal(err)
 	}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, err := s.GetBackupDeletion(worker, request); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.GetBackupDeletion(worker, request); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal(err)
 	}
 	created, err := s.RequestBackup(ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())}))
