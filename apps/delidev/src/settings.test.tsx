@@ -630,7 +630,7 @@ it("retains incompatible permission selections across harness changes until expl
   fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "claude-code" } });
   expect(screen.getByRole("alert").textContent).toContain("workspace-write · on-request");
   expect(screen.queryByRole("combobox", { name: "Permission mode" })).toBeNull();
-  expect(screen.queryByRole("textbox", { name: "Approval policy" })).toBeNull();
+  expect((screen.getByRole("textbox", { name: "Approval policy" }) as HTMLInputElement).disabled).toBe(true);
   fireEvent.change(screen.getByRole("combobox", { name: "Claude permission mode" }), { target: { value: "acceptEdits" } });
   fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "codex" } });
   expect((screen.getByRole("combobox", { name: "Permission mode" }) as HTMLSelectElement).value).toBe("workspace-write");

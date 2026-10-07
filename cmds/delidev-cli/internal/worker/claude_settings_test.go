@@ -35,7 +35,7 @@ func TestClaudeExecutionSettingsNeverDropUnsupportedSelections(t *testing.T) {
 		func(c *domain.ExecutionConfiguration) { c.Options.ApprovalReviewModel = "other" },
 		func(c *domain.ExecutionConfiguration) { c.Options.ApprovalPolicy = "never" },
 		func(c *domain.ExecutionConfiguration) { c.Options.ServiceTier = "fast" },
-		func(c *domain.ExecutionConfiguration) { c.Effort = "High" },
+		func(c *domain.ExecutionConfiguration) { c.Effort = "invalid\x00effort" },
 		func(c *domain.ExecutionConfiguration) { c.Options.Permission = domain.PermissionReadOnly },
 	} {
 		c := f.input.Configuration

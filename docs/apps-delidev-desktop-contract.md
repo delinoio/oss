@@ -1,5 +1,26 @@
 # DeliDev desktop client
 
+## Modal background visibility
+
+All app-owned dialogs and compact modal navigation drawers use a transparent
+backdrop in light, dark and system themes. Opening a modal preserves the underlying
+screen's content, ordinary brightness, layout, filters, pagination and scroll.
+Do not hide category inventories, local Worker controls or pairing presentation,
+or change category headings or column geometry solely because a dialog is open.
+Keep dialog surfaces opaque with their existing borders and local shadows; do not
+apply a viewport-sized shadow, dimming or blur to the background.
+
+Preserve native `showModal()` input blocking, Settings background inertness,
+initial focus, contained Tab navigation, existing Escape/backdrop-click behavior,
+and available-opener focus restoration. A nested modal retains its parent's
+presentation and blocks parent input. Existing same-window task steps still show
+only their active step. Inactive application surfaces and closed disclosures keep
+their existing visibility rules. Loading, empty, denied, progress and error states
+retain their original data and lifecycle ownership. This presentation rule adds
+no RPC, protocol allocation, storage migration or native execution authority and
+does not change OS-owned dialogs. Protected external native browser children keep
+their existing modal visibility and security boundaries.
+
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
@@ -2048,3 +2069,9 @@ AI Subscription offers the explicit capability-41 Auto cleanup action under the 
 The approved existing wizard uses endpoint-only API completion, exact direct input and official subscription suggestions without Saved choices. Keep keyboard, focus, localization, themes and responsive behavior. Clear editor-local responses on source/account/generation/lifetime changes and errors. Native observations retain no register/use action. Usage selects pricing by source and native ID.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+### Worker native option availability
+
+The existing 720px Configure form, 40px controls, responsive layout, saving flow and keyboard/focus ownership follow the [catalog native-option contract](cmds-delidev-catalog-contract.md#native-execution-option-selection). Keep advisory effort hints separate from native support determination. Codex exposes default, read-only, workspace-write and full-access for both API and subscription accounts; bilingual full-access guidance explains possible access to managed authentication files. Claude also exposes its native auto permission choice.
+
+Unavailable native adapters disable the corresponding field, display a bilingual reason below it and retain saved values until explicitly cleared. Grok effort is unavailable while no applied-setting observation adapter exists; Codex child options, service tier and approval policy are unavailable on other harnesses, and approval-review model is unavailable on every harness. No additional approval window or automatic conversion is introduced. Native rejection uses the existing execution error presentation and never causes omission or default retry.

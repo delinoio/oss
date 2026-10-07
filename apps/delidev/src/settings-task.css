@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .settings-task-background { min-width: 0; margin: 0; padding: 0; border: 0; }
+/* Keep the disabled fieldset as the modal's accessibility boundary. Restore only controls disabled by that wrapper, excluding explicit disabled attributes and nested disabled fieldsets. Remove this reset if task isolation no longer uses the disabled fieldset. */
+.settings-task-background:disabled { color: inherit; }
+.settings-task-background:disabled :is(button, input, select, textarea):disabled:not([disabled]):not(:where(.settings-task-background fieldset[disabled] *)) { opacity: 1; }
 .settings-task-outlet { display: contents; }
 dialog.settings-task-dialog { width: min(768px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--border); border-radius: 16px; color: var(--text); background: var(--surface); box-shadow: 0 16px 48px var(--shadow-soft); overflow: hidden; }
 .settings-task-dialog:not([open]) { display: none; }

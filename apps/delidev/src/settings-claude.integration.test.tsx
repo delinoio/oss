@@ -56,6 +56,7 @@ it("persists native Claude permission selection through the desktop and real Go 
   const agent = agents.resources.find((row) => document(row).name === "Native Claude settings")!;
   expect(document(agent)).toMatchObject({ harness: "claude-code", options: { permission: "default", claude_permission: "dontAsk" } });
   const prior = document(agent);
-  await expect(configurations.saveConfiguration({ kind: EntityKind.AGENT, mutation: { id: agent.id, expectedRevision: agent.revision, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode({ ...prior, options: { permission: "read-only", claude_permission: "plan" } }) })).rejects.toThrow();
-  expect(document((await resources.getResource({ id: agent.id, kind: EntityKind.AGENT })).resource)).toEqual(prior);
+  const retained = { ...prior, options: { permission: "read-only", claude_permission: "plan" } };
+  await configurations.saveConfiguration({ kind: EntityKind.AGENT, mutation: { id: agent.id, expectedRevision: agent.revision, requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(retained) });
+  expect(document((await resources.getResource({ id: agent.id, kind: EntityKind.AGENT })).resource)).toEqual(retained);
 }, 15000);
