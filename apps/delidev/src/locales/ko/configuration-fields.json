@@ -174,5 +174,13 @@
   "configuration-fields.accountFormatFutureExecutions": "진행 중인 실행은 원래 포맷을 유지합니다. 새 실행을 시작하기 전에 새 포맷을 검증하세요.",
   "configuration-fields.nativeOptionUnavailable": "이 실행 인터페이스에는 대응하는 설정이 없습니다. 저장된 값은 직접 지울 때까지 유지됩니다.",
   "configuration-fields.clearRetainedNativeOption": "저장된 옵션 지우기",
-  "configuration-fields.nativePermissionUnavailable": "이 도구는 네이티브 권한을 사용합니다. 이 실행 인터페이스에는 Codex 파일 시스템 샌드박스 모드에 대응하는 설정이 없습니다."
+  "configuration-fields.nativePermissionUnavailable": "이 도구는 네이티브 권한을 사용합니다. 이 실행 인터페이스에는 Codex 파일 시스템 샌드박스 모드에 대응하는 설정이 없습니다.",
+  "configuration-fields.repositoryEdit.noCheckouts": "연결된 체크아웃 없음",
+  "configuration-fields.repositoryEdit.checkouts": "체크아웃",
+  "configuration-fields.repositoryEdit.checkoutHelp": "Runner Device의 기존 폴더를 연결하세요.",
+  "configuration-fields.repositoryEdit.inspectionHelp": "검사는 가져오기를 수행하지 않습니다. 저장할 때 연결된 폴더를 다시 검증합니다.",
+  "configuration-fields.repositoryEdit.advanced": "고급 설정",
+  "configuration-fields.repositoryEdit.advancedSummary": "Git 원격, 기준 및 시작 참조, 자동 가져오기, 수정 정책",
+  "configuration-fields.repositoryEdit.githubHelp": "GitHub 접근에 사용할 프로필을 선택하세요. Runner Device의 Git 인증은 별도로 설정합니다.",
+  "configuration-fields.repositoryEdit.remoteUrl": "원격 Git URL"
 }
