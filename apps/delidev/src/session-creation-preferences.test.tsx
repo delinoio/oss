@@ -87,3 +87,8 @@ it("keeps Local proof pinned above saved runner choices without additional proof
 it("does not restore a runner missing the current project's Worktree clone capability",async()=>{
  const f=fixture();f.projects[0].documentJson=encode({name:"Allowed project",repositories:[newRequestId()],agents:{configured:true,ids:[f.agent.id]}});render(f.view());await waitFor(()=>expect((screen.getByRole("combobox",{name:"Runs on"}) as HTMLSelectElement).value).toBe(f.machine.id));fireEvent.change(screen.getByRole("combobox",{name:"Project"}),{target:{value:f.projects[0].id}});await waitFor(()=>expect((screen.getByRole("combobox",{name:"Agent Worker"}) as HTMLSelectElement).value).toBe(f.agent.id));expect((screen.getByRole("combobox",{name:"Runs on"}) as HTMLSelectElement).value).toBe("");expect(f.bridge.update).not.toHaveBeenCalled();
 });
+
+it("does not restore cached exact-ID resources after their current read fails",async()=>{
+ const f=fixture();const first=render(f.view());await waitFor(()=>expect((screen.getByRole("combobox",{name:"Agent Worker"}) as HTMLSelectElement).value).toBe(f.agent.id));expect((screen.getByRole("combobox",{name:"Runs on"}) as HTMLSelectElement).value).toBe(f.machine.id);first.unmount();
+ f.get.mockImplementation(()=>{throw new ConnectError("Current exact resource lookup failed",Code.Unavailable);});render(f.view());await waitFor(()=>expect(f.get).toHaveBeenCalledTimes(4));await screen.findByRole("alert");expect((screen.getByRole("combobox",{name:"Agent Worker"}) as HTMLSelectElement).value).toBe("");expect((screen.getByRole("combobox",{name:"Runs on"}) as HTMLSelectElement).value).toBe("");expect(f.bridge.update).not.toHaveBeenCalled();
+});
