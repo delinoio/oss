@@ -1619,7 +1619,7 @@ fn run() -> Result<(), NativeFailure> {
     }
     let executable = std::env::current_exe().map_err(|_| NativeFailure::SidecarMissing)?;
     let connector = Arc::new(Connector::new(bundled_sidecar(&executable)?, root)?);
-    let endpoint = connector.runtime_endpoint().map_err(|code| {
+    let endpoint = connector.runtime_endpoint().inspect_err(|code| {
         use delidev_desktop::{
             language::{LanguagePreference, resolve},
             localization::{Message, text_in},
@@ -1628,7 +1628,7 @@ fn run() -> Result<(), NativeFailure> {
             LanguagePreference::System,
             sys_locale::get_locale().into_iter(),
         );
-        let message = match code {
+        let message = match *code {
             NativeFailure::Busy | NativeFailure::ServiceManaged => Message::StartupConflict,
             NativeFailure::Incompatible => Message::StartupIncompatible,
             _ => Message::StartupUnavailable,
@@ -1638,7 +1638,6 @@ fn run() -> Result<(), NativeFailure> {
             .set_description(text_in(message, locale))
             .set_level(rfd::MessageLevel::Error)
             .show();
-        code
     })?;
     let mut context = tauri::generate_context!();
     let security = &mut context.config_mut().app.security;
