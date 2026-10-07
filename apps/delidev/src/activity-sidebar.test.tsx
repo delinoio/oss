@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { ActivityService, EntityKind, InboxService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
+import { LocalConnectionPresentation } from "./local-connection-presentation";
 import { encode } from "./documents";
 
 function resource(kind: EntityKind, name: string): Resource {
@@ -57,7 +58,7 @@ async function enterActivity() {
 
 it("keeps filter drafts independent and sends exact applied/reset IDs and only resets the result cursor", async () => {
   const value = fixture();
-  render(<StrictMode><App transport={value.transport()} localServer={<span>Fixture server footer</span>} /></StrictMode>);
+  render(<StrictMode><App transport={value.transport()} localServer={<LocalConnectionPresentation><span>Fixture server footer</span></LocalConnectionPresentation>} /></StrictMode>);
   const panel = await enterActivity();
   const controls = within(panel);
   expect(panel.classList.contains("activity-sidebar")).toBe(true);
@@ -93,7 +94,7 @@ it("keeps filter drafts independent and sends exact applied/reset IDs and only r
   expect(value.stop).not.toHaveBeenCalled();
   // Issue #1137 moves lifecycle controls to the persistent advanced panel;
   // Activity preserves the ordinary footer's generic connection presentation.
-  expect(screen.queryByText("Fixture server footer")).toBeNull();
+  expect(screen.getByText("Fixture server footer").closest("[hidden]")).toBeTruthy();
   expect(screen.getByText("This computer · Connected")).toBeTruthy();
 }, 15000);
 
