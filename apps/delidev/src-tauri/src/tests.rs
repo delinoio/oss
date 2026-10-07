@@ -1,3 +1,5 @@
+use std::{thread, time::Instant};
+
 use super::*;
 
 #[test]
@@ -1172,4 +1174,20 @@ esac
         connector.local_worker(LocalWorkerAction::Start, None),
         Err(NativeFailure::Stopped)
     ));
+}
+
+// Unit operation fixtures share a framed resident adapter. Actual process,
+// listener and credential ownership are covered separately by the Go binary.
+#[cfg(unix)]
+pub(crate) fn fixture_connector(executable: PathBuf, root: PathBuf) -> Result<Connector> {
+    use std::os::unix::fs::PermissionsExt;
+    let operation = executable.with_extension("operation");
+    fs::rename(&executable, &operation).unwrap();
+    let adapter = include_str!("resident_fixture.py").replace(
+        "OPERATION_PATH",
+        &serde_json::to_string(&operation.to_string_lossy()).unwrap(),
+    );
+    fs::write(&executable, adapter).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    Connector::new(executable, root)
 }

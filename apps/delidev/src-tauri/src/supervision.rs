@@ -181,6 +181,7 @@ impl Supervision {
 
     pub fn request_stop(&self) {
         self.connector.exiting.store(true, Ordering::Release);
+        self.connector.session.fence();
         let mut state = self.shared.value.lock().unwrap_or_else(|e| e.into_inner());
         state.exit = true;
         self.shared.wake.notify_all();
