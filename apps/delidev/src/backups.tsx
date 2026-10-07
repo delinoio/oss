@@ -78,7 +78,7 @@ export function Backups({ active }: { active: boolean }) {
       // Wait for the close commit so an in-flight inspection no longer disables
       // the originating row button before returning keyboard focus.
       const origin = inspectButtons.current.get(inspectionOrigin.current);
-      (origin && !origin.disabled ? origin : listHeading.current)?.focus();
+      (origin?.isConnected && !origin.disabled ? origin : listHeading.current)?.focus();
     }
   }, [selected]);
   const [created, setCreated] = useState("");
