@@ -8,6 +8,7 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, NativeModelService, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type DiscoverNativeModelsRequest, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
+import { chooseScrollOption } from "./test-scroll-picker";
 import { NativeModelSettings } from "./native-model-settings";
 
 function fixture(loseFirst = false, scoped = false) {
@@ -24,7 +25,7 @@ function fixture(loseFirst = false, scoped = false) {
   const createModel = vi.fn();
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_CODEX_MODEL_DISCOVERY_V1] }) });
-    router.service(ResourceService, { listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MACHINE ? [machine] : request.filter?.kind === EntityKind.ACCOUNT ? [account] : [] }) });
+    router.service(ResourceService, { getResource: request => ({ resource: request.id === machine.id ? machine : request.id === account.id ? account : undefined }), listResources: (request) => ({ resources: request.filter?.kind === EntityKind.MACHINE ? [machine] : request.filter?.kind === EntityKind.ACCOUNT ? [account] : [] }) });
     router.service(NativeModelService, {
       discoverNativeModels: discover,
       getNativeModelObservation: () => ({ job }),
@@ -40,10 +41,9 @@ function fixture(loseFirst = false, scoped = false) {
 }
 
 async function choose(value: ReturnType<typeof fixture>) {
-  await screen.findByRole("option", { name: "Runner fixture" });
-  await screen.findByRole("option", { name: /^Account fixture/ });
-  fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: value.machine.id } });
-  fireEvent.change(screen.getByLabelText(value.scoped ? "Connected selected account" : "Connected account"), { target: { value: value.account.id } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runner Device" }), value.machine.id);
+  if (value.scoped) fireEvent.change(screen.getByRole("combobox", { name: "Connected selected account" }), { target: { value: value.account.id } });
+  else await chooseScrollOption(screen.getByRole("combobox", { name: "Connected account" }), value.account.id);
   fireEvent.click(screen.getByRole("button", { name: "Observe models" }));
 }
 
