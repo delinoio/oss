@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, ConfigurationQuery, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceQuery, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
+import { chooseScrollOption } from "./test-scroll-picker";
 import { Settings } from "./settings";
 import { SettingsOpening } from "./settings-lifetime";
 import { MutationIntents, useRetainedMutation } from "./mutation";
@@ -218,8 +219,7 @@ it.each([undefined, Code.Unavailable, Code.Canceled])("disposes an Agent opening
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
   const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
-  await screen.findByRole("option", { name: "Fixture Provider" });
-  fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Account source" }), `api:${value.provider.id}`);
   fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ })); next();
   fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "fixture-native" } }); next();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Committed Agent" } });
