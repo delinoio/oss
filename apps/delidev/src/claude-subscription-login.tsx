@@ -255,8 +255,9 @@ export function useClaudeSubscriptionLogin(
   const machinesActive = active && !hidden && view?.step === Step.Runner && !view.busy;
   const machines = usePaginationChain(`claude-runners:${pending.current?.opening ?? ""}`, machinesActive, machineReader);
   usePaginationRefresh(ResourceQuery.listResources, machineRequest(""), machinesActive, machines.refresh);
-  // Only the exact selected machine owns a full record. Scrolling retains
-  // eligibility/name projections and never substitutes a page row for it.
+  // Scrolling retains bounded original page records for explicit inspection,
+  // plus closed eligibility/name projections. The selected machine's exact
+  // owner read remains separate; page evidence never substitutes for it.
   const ownerRunner = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: view?.machine ?? "" }, { enabled: active && Boolean(view?.machine), gcTime: 0 });
   const ownerReadError = ownerRunner.error || (ownerRunner.data && (!validRunnerObservation(ownerRunner.data.resource) || ownerRunner.data.resource.id !== view?.machine) ? new ConnectError("Runner ownership could not be confirmed.", Code.DataLoss) : undefined);
   const selectedRunner = ownerRunner.data?.resource?.kind === EntityKind.MACHINE && ownerRunner.data.resource.id === view?.machine && ownerRunner.data.resource.revision > 0n ? ownerRunner.data.resource : undefined;
