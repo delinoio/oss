@@ -27,7 +27,6 @@
   "usage.refreshModelDetails": "모델 상세 새로 고침",
   "usage.backToUsage": "사용량으로 돌아가기",
   "usage.generalChatOnly_9032cc": "일반 대화만",
-  "usage.applyFilters_d80ab1": "필터 적용",
   "usage.resetToLast30Days_a15ab6": "최근 30일로 초기화",
   "usage.tokenUsage_00f594": "토큰 사용량",
   "usage.delidevActivityOnlyArchivedSessionsIncluded_09c1fa": "DeliDev 활동만 · 보관된 세션 포함",
@@ -37,8 +36,6 @@
   "usage.timezone_9229e0": "시간대: <s0/>",
   "usage.responseTimesShowWhenTheServer_c28198": "응답 시각은 공급자의 실행 시각이 아니라 서버가 응답을 최초로 보관한 시각입니다.",
   "usage.allSessionsAccountsApisAndModels_d7b7c7": "모든 세션, 계정, API 및 모델",
-  "usage.unappliedFilterEdits_f387c1": "적용되지 않은 필터 편집",
-  "usage.unappliedFilterEditsAreInThe_b69e11": "적용되지 않은 필터 편집은 사용량 사이드바에 있습니다.",
   "usage.refreshingThisAppliedRange_349e6c": "적용된 범위를 새로 고치는 중…",
   "usage.loadingTokenUsage_ded2ab": "토큰 사용량을 불러오는 중…",
   "usage.theRefreshFailedTheseAreThe_a67de1": "새로 고침에 실패했습니다. 이 적용 범위에서 마지막으로 성공적으로 가져온 값이며 표시된 데이터는 오래되었습니다.",
@@ -89,5 +86,7 @@
   "usage.sentence.67a16314500f": "구독 서비스 {{v0}}",
   "usage.sentence.1d3a37cc1c5e": "모델 {{v0}}",
   "usage.range": "{{from}} – {{until}} (종료 시각 제외)",
-  "usage.pendingStart": "서버 현재 시각의 30일 전"
+  "usage.pendingStart": "서버 현재 시각의 30일 전",
+  "usage.waitingForDateInput": "날짜 입력이 끝나기를 기다리고 있습니다. 결과는 아직 적용된 조건을 사용합니다.",
+  "usage.invalidFiltersRetained": "날짜 범위가 올바르지 않습니다. 결과는 마지막으로 유효했던 조건을 사용합니다."
 }

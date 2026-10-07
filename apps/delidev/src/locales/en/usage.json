@@ -27,7 +27,6 @@
   "usage.refreshModelDetails": "Refresh model details",
   "usage.backToUsage": "Back to Usage",
   "usage.generalChatOnly_9032cc": "General Chat only",
-  "usage.applyFilters_d80ab1": "Apply filters",
   "usage.resetToLast30Days_a15ab6": "Reset to last 30 days",
   "usage.tokenUsage_00f594": "Token Usage",
   "usage.delidevActivityOnlyArchivedSessionsIncluded_09c1fa": "DeliDev activity only · Archived sessions included",
@@ -37,8 +36,6 @@
   "usage.timezone_9229e0": "Timezone: <s0/>",
   "usage.responseTimesShowWhenTheServer_c28198": "Response times show when the server first retained each response, not provider execution time.",
   "usage.allSessionsAccountsApisAndModels_d7b7c7": "All sessions, accounts, APIs and models",
-  "usage.unappliedFilterEdits_f387c1": "Unapplied filter edits",
-  "usage.unappliedFilterEditsAreInThe_b69e11": "Unapplied filter edits are in the Usage sidebar.",
   "usage.refreshingThisAppliedRange_349e6c": "Refreshing this applied range…",
   "usage.loadingTokenUsage_ded2ab": "Loading token usage…",
   "usage.theRefreshFailedTheseAreThe_a67de1": "The refresh failed. These are the last successfully retrieved values for this applied range; the displayed data is stale.",
@@ -89,5 +86,7 @@
   "usage.sentence.67a16314500f": "Subscription service {{v0}}",
   "usage.sentence.1d3a37cc1c5e": "Model {{v0}}",
   "usage.range": "{{from}} – {{until}} (exclusive)",
-  "usage.pendingStart": "30 days before server now"
+  "usage.pendingStart": "30 days before server now",
+  "usage.waitingForDateInput": "Waiting for date input to finish. The results still use the applied conditions.",
+  "usage.invalidFiltersRetained": "The date range is invalid. The results still use the last valid conditions."
 }
