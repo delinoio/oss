@@ -1018,7 +1018,7 @@ A full-width tool strip exposes Diff, Files, Terminals, Browser, Diagnostics and
 Info. Default to closed; activating the selected tool closes it. Preserve one
 visible panel and restore the original trigger focus on Close/Escape. At 900px
 available session width, an open panel occupies a 400px right column. Below that
-threshold it overlays only the transcript row, with a width capped at 400px;
+threshold it overlays the notices and transcript, with a width capped at 400px;
 it cannot obscure the request tray or composer. CSS reflow uses the same DOM and
 controllers. Tool labels wrap at narrow widths and effective zoom.
 
@@ -1026,7 +1026,9 @@ The transcript scrolls independently. Open interactions remain expanded, and
 request/queue contents have bounded scroll space near the composer. Preserve
 original page-scoped counts, pagination and live delivery ordering. The composer
 stays at the bottom, with a 120px textarea adjustable from 80px to 180px; short
-viewports start at 80px. Keep the existing Execute/Plan selection, Enter behavior,
+available areas start at 80px, with independently bounded upper rows. Compact
+sidebar navigation takes space from the workspace instead of displacing input.
+Keep the existing Execute/Plan selection, Enter behavior,
 connection-owned prompt limits, send locks and exact uncertain retries. An empty
 conversation states that content appears after the harness accepts input, never
 that enqueueing resumes a blocked session.
