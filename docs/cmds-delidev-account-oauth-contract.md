@@ -29,6 +29,16 @@ browser authority. Complete feature PRs follow reservation closure on main in
 this order: common lifecycle plus Hugging Face, Gemini, then Baseten.
 
 Go owns exchange, device polling, protected access/refresh tokens and refresh.
+On macOS, check current executable code before a fresh Start admission or
+exchange. A failed check cannot create an attempt or claim/dispatch an exchange.
+Device approval rechecks code before every admitted pending/slow-down poll;
+invalid code settles the original attempt as recovery without another request.
+Retain original replay, status, cancellation and recovery authority. A rolled-back
+Start uses the existing admission-rejection cause; runtime exchange failures and
+retained problems use closed credential-runtime causes. The desktop shows localized
+explicit server restart guidance without rendering native content or resending
+authorization. Follow the [credential contract](cmds-delidev-credentials-contract.md)
+and [development signing policy](apps-delidev-desktop-contract.md#local-development-signing-and-recovery).
 SQLite, logs and frontend caches contain no tokens, verifier or device code.
 Credential resolution serializes refresh per connection and atomically replaces
 the protected generation without changing account, connection or execution
