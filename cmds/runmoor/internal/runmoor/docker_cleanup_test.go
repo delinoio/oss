@@ -72,6 +72,10 @@ func TestDockerCleanupRevalidatesVolumeOwnership(t *testing.T) {
 				switch {
 				case path == "/_ping":
 					_, _ = w.Write([]byte("OK"))
+				case req.Method == http.MethodGet && path != "/containers/json" && strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/json"):
+					// The volume fixture has no execution containers. The cleanup
+					// container preflight must observe their confirmed absence.
+					http.Error(w, "No such container", http.StatusNotFound)
 				case req.Method == http.MethodGet && (path == "/containers/json" || path == "/networks"):
 					_, _ = w.Write([]byte("[]"))
 				case req.Method == http.MethodGet && path == "/volumes":
