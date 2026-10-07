@@ -7,12 +7,13 @@ export interface ScrollPickerOption { id: string; label: string; disabled?: bool
 
 /** Choices are display projections. The domain owns exact-ID selection,
  * authoritative reads and any resulting configuration change. */
-export function ScrollPicker({ options, label, value, change, query, active, disabled = false, required = false, autoFocus = false, placeholder = "", selectedLabel }: {
+export function ScrollPicker({ options, label, value, change, query, active, disabled = false, required = false, autoFocus = false, placeholder = "", selectedLabel, markRequired = false }: {
   options: ScrollPickerOption[]; label: string; value: string; change: (id: string) => void;
   query: ScrollContinuationQuery; active: boolean; disabled?: boolean; required?: boolean;
-  autoFocus?: boolean; placeholder?: string; selectedLabel?: string;
+  autoFocus?: boolean; placeholder?: string; selectedLabel?: string; markRequired?: boolean;
 }) {
   const id = useId(), trigger = useRef<HTMLButtonElement>(null), root = useRef<HTMLDivElement>(null), container = useRef<HTMLDivElement>(null);
+  const focusedInitially = useRef(false);
   const [open, setOpen] = useState(false), [highlight, setHighlight] = useState("");
   const enabled = options.filter(option => !option.disabled);
   const selected = options.find(option => option.id === value);
@@ -22,7 +23,7 @@ export function ScrollPicker({ options, label, value, change, query, active, dis
     if (!available || option.disabled) return;
     close(true); change(option.id);
   };
-  useLayoutEffect(() => { if (autoFocus && available) trigger.current?.focus(); }, [autoFocus, available]);
+  useLayoutEffect(() => { if (autoFocus && available && !focusedInitially.current) { focusedInitially.current = true; trigger.current?.focus(); } }, [autoFocus, available]);
   useEffect(() => { if (!available) setOpen(false); }, [available]);
   useEffect(() => {
     if (!open) return;
@@ -49,7 +50,7 @@ export function ScrollPicker({ options, label, value, change, query, active, dis
       if (open && option) choose(option); else reveal();
     }
   }}>
-    <span id={`${id}-label`}>{label}</span>
+    <span id={`${id}-label`}>{label}{markRequired ? <span className="agent-required" aria-hidden="true"> *</span> : null}</span>
     <button ref={trigger} type="button" role="combobox" aria-labelledby={`${id}-label`} aria-expanded={open} aria-controls={`${id}-choices`} aria-haspopup="listbox" aria-required={required || undefined} aria-activedescendant={open && highlight ? `${id}-option-${options.findIndex(option => option.id === highlight)}` : undefined} disabled={!available} data-value={value} onClick={() => open ? close() : reveal()}>{selected?.label ?? selectedLabel ?? placeholder}</button>
     {required ? <input hidden aria-hidden="true" tabIndex={-1} required value={value} onChange={() => {}} disabled={!available} onInvalid={event => { event.preventDefault(); trigger.current?.focus(); reveal(); }} /> : null}
     {open ? <div ref={root} className="scroll-picker-popup" id={`${id}-choices`} role="listbox" aria-labelledby={`${id}-label`}>
