@@ -2281,3 +2281,5 @@ Empty successful native-model observations retain the selected immutable observa
 Foreign session-deletion status cannot stop original-session polling, display cleanup proof or enable Finish. Read-only retry retains the original session query.
 
 Backup tracking and dismissal accessible names distinguish creation from deletion for the same backup resource, without exposing operation UUIDs.
+
+API-entry asynchronous save presentation retains its feature heading, entry name and selected-server scope through pending, unknown, failed and completed outcomes. Generic operation headings remain suppressed.

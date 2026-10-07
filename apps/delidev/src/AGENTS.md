@@ -739,3 +739,5 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Validate original session identity before treating deletion status as terminal; foreign status remains read-only retryable and cannot authorize Finish.
 
 - Name backup creation and deletion tracking distinctly, including their independent dismissal actions, while keeping raw operation IDs hidden.
+
+- Retain API-entry feature identity and selected-server scope while displaying an asynchronous save or its result.
