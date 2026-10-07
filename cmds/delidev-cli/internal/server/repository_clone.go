@@ -173,7 +173,7 @@ func finishRepositoryClone(tx *store.Tx, record store.Record, job domain.Job, re
 			err = localOriginRequired()
 		}
 		inspection := outcome.Inspection
-		repository := domain.Repository{Name: input.DirectoryName, Checkouts: []domain.Checkout{{MachineID: input.MachineID, Path: inspection.Root}}, PreferredRemote: "origin", AutoFetch: true}
+		repository := domain.Repository{RemoteURL: input.URL, Name: input.DirectoryName, Checkouts: []domain.Checkout{{MachineID: input.MachineID, Path: inspection.Root}}, PreferredRemote: "origin", AutoFetch: true}
 		if identity, ok := inspection.GitHubRepositories["origin"]; ok {
 			repository.GitHubOwner, repository.GitHubName = identity.Owner, identity.Name
 		}

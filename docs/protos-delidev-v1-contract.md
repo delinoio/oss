@@ -1,16 +1,81 @@
 # DeliDev v1 Connect contract
 
-## Agent Worker source-route reservations
+## Failed subscription cleanup reservations
 
-Issue #964 reserves System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
-`SaveAgentWorkerRequest.route_models = 5`. The planned repeated field reuses
-`AgentWorkerModelSelection`, aligned with the ordered Agent source groups, and
-is exclusive with the legacy singular model. Establish both ledger reservations
-on main before activation. Capability 35 keeps its known-subscription-model
-ownership. No active schema, generated output, advertisement or migration is
-introduced by this prerequisite.
+Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the
+`CleanupFailedSubscriptions` and `GetFailedSubscriptionCleanup` request/response
+messages, `FailedSubscriptionCleanupJob` and `FailedSubscriptionCleanupResult`,
+and the closed cleanup state/outcome/reason enums in `allocations.json`.
+Establish this complete reservation on main before dependent implementation.
+The request reserves the original request ID; status reserves original job ID
+and pagination token. Responses reserve the job, original receipt identity,
+replay flag and bounded result pagination. Job metadata reserves ID/revision,
+state, total/processed/deleted/retained counts and safe problem code. Results
+reserve account ID/alias, outcome, reason and safe problem code.
+
+The planned button deliberately starts one server-wide cleanup without another
+confirmation. Only failed, canceled, expired, unsupported or interrupted initial
+ChatGPT server logins without independent authentication or Worker ownership are
+candidates. Original native and protected-credential cleanup, fresh revisions,
+complete retained-reference checks and deletion receipts remain authoritative.
+Ordinary disconnected accounts and active logins remain outside the batch.
+Reservations introduce no active schemas, generated bindings, capability
+advertisement, native cleanup, configuration deletion or database migration.
+
+## Grok Build subscription reservations
+
+The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
+reserves System login 39, System execution 40, Worker managed execution 21 and
+progress diagnostic field 10 under issue #964. The ledger also owns the new
+GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Establish
+the complete closure on main before active schemas, generated bindings or runtime
+support. Codex field 7 and existing System 30/35/36/37 and Worker 19 ownership
+remain unchanged. Reservations activate nothing and add no migration.
 
 
+
+## Native Claude subscription reservations
+
+Issue #964 reserves System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20`. Establish the complete closure in
+`allocations.json` on main before dependent implementation. Preserve every
+existing field, Codex bundle assignment and independent capability.
+
+Progress reserves login method/native diagnostic fields 8/9. Worker progress
+reserves state/login method/native diagnostic/suggested name fields 7–10;
+protected Take reserves native profile ID field 6; Finish reserves native
+identity field 10. `SubscriptionLoginMethod` reserves UNSPECIFIED 0,
+BROWSER_CALLBACK 1 and BROWSER_CODE 2. The native diagnostic phase enum reserves
+UNSPECIFIED 0 and discovery/version/runtime/launch/login/status/execution/history/
+cleanup values 1–9. Native diagnostic fields are detected version/required
+version/phase/code/correlation ID 1–5; native identity is profile ID/identity
+commitment 1–2. Code submission reserves mutation/operation ID/code 1–3 and
+accepted response field 1. Original Worker code Take reserves account/lease/
+machine/instance/operation IDs 1–5 and code/submission ID response fields 1–2.
+Wholly new declarations retain one owner and explicit `newDeclaration: true`.
+
+The planned owner/client code submission and original Worker code Take are
+single-use transient input to the original installed Claude process, never
+OAuth exchange or credential distribution. Native credentials remain owned by
+the account's selected Runner Device. This prerequisite adds no active schemas,
+generated bindings, advertisement, login, execution or browser authority and no
+database migration. Follow the subscription and structure contracts.
+
+## Agent Worker account source routes
+
+PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5` on main before implementation. The
+active repeated field reuses `AgentWorkerModelSelection`, aligned with ordered
+Agent schema-3 routes and exclusive with the legacy singular model. The existing
+mutation/revision/receipt response remains unchanged. Capability 36 advertises
+this complete configuration extension; capability 35 retains its separate known
+subscription catalog reservation. Schema 1/2 APIs and accountless CLI writes
+remain compatible; current clients retain schema 3 even with one remaining source.
+Resource reads expose schema 3 only for ordered-source Agents. Older clients must
+treat that family as unsupported and cannot overwrite it through legacy saves.
+No Worker protocol shape or database migration changes. The selected-source native
+configuration remains unchanged; complete source decisions are additive server-owned
+initial-execution JSON under the [catalog contract](cmds-delidev-catalog-contract.md).
 
 
 ## Known subscription model allocation and activation
@@ -51,6 +116,14 @@ database migration. Existing profile/revision-bound token forms remain unchanged
 
 After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
 
+Fine-grained `PrepareGitHubTokenForm` with selected-repositories access permits
+an empty `resource_owner`, echoes it unchanged and omits `target_name` from the
+canonical URL. Explicit valid owners remain supported. This draft-only allowance
+does not change saved-profile owner requirements or revision-bound form reads.
+The desktop's Classic shortcut uses public-repositories access without scopes;
+existing explicit private-repositories requests retain their separate behavior.
+No protocol field, enum, capability or migration is added.
+
 ## Agent Worker wizard
 
 PR #1351 established the issue #964 allocations on main before implementation.
@@ -76,29 +149,23 @@ compatibility is a configuration declaration, never native/account/platform proo
 No database migration is added. Follow the [catalog contract](cmds-delidev-catalog-contract.md)
 and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
-## Repository addition reservations
+## Repository addition contracts
 
-### Remote-first repository reservations
+### Remote repositories
 
-The approved remote-first extension under issue #964 reserves System
-`REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19`.
-Establish both allocations on main before active declarations, generated bindings
-or advertisements. URL-only registration will be an owner/client configuration
-operation without Worker admission; managed Worktree preparation will clone the
-immutable remote source on its selected Worker. Optional checkouts remain the
-source only for explicit Local execution. System 31/32 and Worker 18 retain their
-separate immediate-clone/listing contracts. Reservations grant no configuration,
-Git, filesystem or execution capability and add no SQLite migration.
+Main reservation PR #1377 established System `REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19` before activation. System 31/32 and Worker 18 retain their separate immediate Local Clone and GitHub metadata contracts. Capability 37 permits credential-free URL registration with no checkout, Worker or local proof. Clients must verify it before repository saves/imports. Worker 19 permits managed session clones; acceptance and assignment independently require it on the selected machine.
 
-Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
+Schema-1 Repository JSON adds required `remote_url` for explicit saves/imports and permits an empty `checkouts` list. Historical omitted URLs and original accepted preparations remain readable without conversion, extraction, migration or rewrite. Each new preparation binds `source_kind` (`remote-clone`, `local-checkout` or an internally derived `independent-fork`) and `remote_url` in the immutable request digest. Legacy omitted source kinds keep their existing linked-checkout contract. Ready managed repositories bind SHA-256 native directory commitments; these are ownership metadata, never raw native identities. The ordered complete result must match the original source kind and URL. Unknown kinds grant no execution or deletion authority.
+
+PR #1355 activates main-established System `REPOSITORY_CLONE_V1 = 31` and
 `GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
 `ListGitHubRepositoriesRequest`/`Response`, `RepositoryCloneGitHubSelection`,
 `CloneRepositoryRequest`/`Response` fields in the allocation ledger. These
-reservations must reach main before active declarations, generated bindings or
-capability advertisements. Listing will be an explicit revision-bound
-owner/client profile read. Clone will be a durable originating-Worker operation
+allocations reached main before active declarations, generated bindings and
+capability advertisements. Listing is an explicit revision-bound
+owner/client profile read. Clone is a durable originating-Worker operation
 using existing job receipts; its proof token is transient and PAT bytes never
-enter its assignment. Reservations alone grant no support or Git authority.
+enter its assignment. System 31/32 and Worker 18 retain that separate authority.
 
 ## Metadata-only request diagnostics
 
@@ -759,3 +826,10 @@ user codes remain Start-only; later provider implementations retain their gates.
   expected attempt revision 1. Cancellation keeps its own mutation receipt.
   Public Complete cannot supply a Device callback or initiate polling. These
   semantics reuse the main-reserved fields and grant no unregistered capability.
+## Pre-release protocol reset reservation
+
+The [pre-release reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
+reserves protocol 2 and `AttachWorkerRequest.protocol_version = 10` on main.
+The field is absent from active schemas until complete implementation. The
+reset removes historical forwarding imports/reflection and obsolete API
+surfaces; retained field and enum numbers preserve their original meanings.

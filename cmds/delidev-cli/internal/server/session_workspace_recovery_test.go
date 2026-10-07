@@ -339,6 +339,9 @@ func createUnbornRecoverySession(t *testing.T, f *accountFixture, selection doma
 	if out, err := exec.Command("git", "-C", checkout, "init", "-b", "unborn").CombinedOutput(); err != nil {
 		t.Fatalf("private Git: %v %s", err, out)
 	}
+	if out, err := exec.Command("git", "-C", checkout, "remote", "add", "origin", "https://github.com/fixture/repo.git").CombinedOutput(); err != nil {
+		t.Fatalf("private Git remote: %v %s", err, out)
+	}
 	if err := os.WriteFile(filepath.Join(checkout, "staged.txt"), []byte("original staged content"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +355,7 @@ func createUnbornRecoverySession(t *testing.T, f *accountFixture, selection doma
 	}
 	repo := domain.NewID()
 	_, err = db.Mutate(context.Background(), domain.NewID(), "fixture.local-recovery-repository", nil, func(tx *store.Tx) (any, error) {
-		return tx.Put(domain.RepositoryKind, repo, 0, "", "", domain.Repository{Name: "Local recovery", Checkouts: []domain.Checkout{{MachineID: selection.MachineID, Path: checkout}}})
+		return tx.Put(domain.RepositoryKind, repo, 0, "", "", domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Local recovery", Checkouts: []domain.Checkout{{MachineID: selection.MachineID, Path: checkout}}})
 	})
 	closeErr := db.Close()
 	if err != nil || closeErr != nil {

@@ -103,14 +103,18 @@ try {
       assert.deepEqual(await cards.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-label"))), ["Codex", "Claude Code", "OpenCode", "Grok Build"]);
       const layout = await group.evaluate(node => {
         const style = getComputedStyle(node), form = node.closest("form");
-        return { columns: style.gridTemplateColumns.split(" ").length, width: form.getBoundingClientRect().width, gap: style.gap, cards: [...node.children].map(card => ({ height: card.getBoundingClientRect().height, padding: getComputedStyle(card).padding, radius: getComputedStyle(card).borderRadius, mark: getComputedStyle(card.querySelector(".worker-harness-mark")).width, ink: getComputedStyle(card.querySelector(".worker-harness-mark")).backgroundColor, hasMask: getComputedStyle(card.querySelector(".worker-harness-mark")).maskImage !== "none", overflow: card.scrollWidth > card.clientWidth, inline: Boolean(card.getAttribute("style")) })) };
+        return { columns: style.gridTemplateColumns.split(" ").length, width: form.getBoundingClientRect().width, gap: style.gap, cards: [...node.children].map(card => {
+          const mark = card.querySelector(".worker-harness-mark"), image = getComputedStyle(mark);
+          return { height: card.getBoundingClientRect().height, padding: getComputedStyle(card).padding, radius: getComputedStyle(card).borderRadius, mark: image.width, image: image.backgroundImage, size: image.backgroundSize, ink: image.backgroundColor, mask: image.maskImage, decorative: mark.getAttribute("aria-hidden") === "true", overflow: card.scrollWidth > card.clientWidth, inline: Boolean(card.getAttribute("style")) };
+        }) };
       });
       assert.equal(layout.columns, layout.width >= 640 ? 2 : 1, JSON.stringify(layout));
       assert.equal(layout.gap, "16px");
       for (const card of layout.cards) {
         assert(card.height >= 176 && !card.overflow && !card.inline, JSON.stringify(card));
         assert.equal(card.padding, "24px"); assert.equal(card.radius, "8px"); assert.equal(card.mark, "48px");
-        assert(card.hasMask); assert.notEqual(card.ink, "rgba(0, 0, 0, 0)");
+        assert.notEqual(card.image, "none"); assert.equal(card.size, "contain");
+        assert.equal(card.mask, "none"); assert.equal(card.ink, "rgba(0, 0, 0, 0)"); assert(card.decorative);
       }
       const codex = form.getByRole("radio", { name: "Codex", exact: true }), claude = form.getByRole("radio", { name: "Claude Code", exact: true });
       await codex.focus(); await codex.press("ArrowLeft");
@@ -207,14 +211,24 @@ try {
   };
   if (githubOnly) {
     let onboardingChecks = 0;
-    for (const [width, height] of [[1440, 900], [960, 640], [640, 480]]) {
+    // Half-size CSS viewports cover effective 200% layout, not native chrome zoom.
+    for (const [width, height] of [[1440, 900], [960, 640], [640, 480], [720, 450], [480, 320]]) {
       await page.setViewportSize({ width, height }); await page.emulateMedia({ colorScheme: "light" });
       await page.goto(`${origin}/?theme=light&github-onboarding=true`);
       await page.getByRole("button", { name: "Settings", exact: true }).click(); await select("Git Profiles");
       await page.getByRole("button", { name: "New GitHub profile", exact: true }).click();
       const token = page.getByLabel("GitHub personal access token", { exact: true }); await token.waitFor();
       assert(await token.evaluate(node => node === document.activeElement), "Password initial focus");
-      assert(await page.locator(".integration-draft-guidance").evaluate(node => node.open), "Initial token-form disclosure");
+      const guidance = page.locator(".integration-draft-guidance");
+      assert(await guidance.evaluate(node => node.tagName === "SECTION" && !node.querySelector("details, summary, input, select")), "Static token creation guidance without fields or disclosure");
+      assert.deepEqual(await guidance.getByRole("button").allTextContents(), ["Classic", "Fine grained"]);
+      assert(await guidance.locator(".integration-draft-actions").evaluate(node => {
+        const [classic, fine] = [...node.children].map(button => button.getBoundingClientRect());
+        const width = node.closest(".integration-onboarding").getBoundingClientRect().width;
+        return classic.height >= 40 && fine.height >= 40 && (width < 640
+          ? Math.abs(classic.x - fine.x) < 1 && fine.top >= classic.bottom + 7
+          : Math.abs(classic.y - fine.y) < 1 && fine.left >= classic.right + 7);
+      }), "Responsive 40px token creation buttons");
       const check = async stage => {
         assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `Onboarding ${stage} ${width} overflow`);
         assert(await page.locator(".integration-onboarding form").evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().width <= 720.5)), `Onboarding ${stage} form cap`);
@@ -222,6 +236,11 @@ try {
         onboardingChecks++;
       };
       await check("token");
+      if (screenshotDirectory) {
+        await guidance.getByRole("button", { name: "Fine grained", exact: true }).scrollIntoViewIfNeeded();
+        await page.screenshot({ path: join(screenshotDirectory, `github-guidance-${width}x${height}.png`) });
+        await token.scrollIntoViewIfNeeded();
+      }
       await token.pressSequentially("fixture-pat"); await page.keyboard.press("Tab");
       assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Verify token");
       await page.keyboard.press("Enter");
@@ -235,8 +254,9 @@ try {
       assert(await token.evaluate(node => node === document.activeElement), "Back restores password focus");
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       assert(await page.getByRole("button", { name: "New GitHub profile", exact: true }).evaluate(node => node === document.activeElement), "Cancel restores opener focus");
+      keyboardChecks += 4;
     }
-    console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: 0, childFormChecks: 0, harnessChecks: 0, hiddenAccountChoiceChecks: 0, languages: 1, themes: 1, inventories: 1, viewports: 3, effectiveZoomChecks: 0, primarySurfaceChecks: 0, keyboardChecks: 0, onboardingChecks, nativeAcceptance: "not-performed", githubAccountAcceptance: "not-performed" }));
+    console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: 0, childFormChecks: 0, harnessChecks: 0, hiddenAccountChoiceChecks: 0, languages: 1, themes: 1, inventories: 1, viewports: 5, effectiveZoomChecks: 2, primarySurfaceChecks: 0, keyboardChecks, onboardingChecks, nativeAcceptance: "not-performed", githubAccountAcceptance: "not-performed" }));
   } else {
   for (language of ["en", "ko"]) for (const theme of ["light", "dark", "system"]) for (const populated of [false, true]) for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport[0], height: viewport[1] });
@@ -430,8 +450,8 @@ try {
     await page.getByRole("button", { name: /^Edit Example PROJECT/ }).click(); await page.getByRole("dialog").waitFor();
     await page.screenshot({ path: screenshotPath });
   }
-  }
   console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: 2, viewports: viewports.length, effectiveZoomChecks: categories.length * viewports.length * 2, primarySurfaceChecks: 16, keyboardChecks, nativeAcceptance: "not-performed" }));
+  }
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

@@ -144,6 +144,7 @@ func TestGitHubOnboardingOfficialForms(t *testing.T) {
 		path, scope string
 	}{
 		{pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_FINE_GRAINED, "example-org", pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES, "/settings/personal-access-tokens/new", ""},
+		{pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_FINE_GRAINED, "", pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES, "/settings/personal-access-tokens/new", ""},
 		{pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_CLASSIC, "", pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES, "/settings/tokens/new", ""},
 		{pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_CLASSIC, "explicit-owner", pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_PRIVATE_REPOSITORIES, "/settings/tokens/new", "repo"},
 	} {
@@ -158,7 +159,11 @@ func TestGitHubOnboardingOfficialForms(t *testing.T) {
 		}
 		if tc.kind == pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_FINE_GRAINED {
 			q := u.Query()
-			if len(q) != 9 || q.Get("target_name") != tc.owner || q.Get("expires_in") != "30" {
+			count := 8
+			if tc.owner != "" {
+				count++
+			}
+			if len(q) != count || q.Has("target_name") != (tc.owner != "") || q.Get("target_name") != tc.owner || q.Get("expires_in") != "30" {
 				t.Fatal("owner/expiry changed", q)
 			}
 			for _, permission := range []string{"metadata", "contents", "pull_requests", "issues", "statuses"} {
@@ -169,7 +174,7 @@ func TestGitHubOnboardingOfficialForms(t *testing.T) {
 		}
 	}
 	for _, tc := range []*pb.PrepareGitHubTokenFormRequest{
-		{TokenKind: pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_FINE_GRAINED, Access: pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES},
+		{TokenKind: pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_FINE_GRAINED, Access: pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_PUBLIC_REPOSITORIES},
 		{TokenKind: pb.GitHubTokenKind(99), ResourceOwner: "owner", Access: pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES},
 		{TokenKind: pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_CLASSIC, Access: pb.GitHubTokenAccess(99)},
 		{TokenKind: pb.GitHubTokenKind_GIT_HUB_TOKEN_KIND_FINE_GRAINED, ResourceOwner: "bad/owner", Access: pb.GitHubTokenAccess_GIT_HUB_TOKEN_ACCESS_SELECTED_REPOSITORIES},

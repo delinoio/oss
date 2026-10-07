@@ -51,7 +51,7 @@ func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
 				if _, err := tx.Put(r.Kind, r.ID, r.Revision, "", "", v); err != nil {
 					return nil, err
 				}
-				if _, err := tx.Put(domain.RepositoryKind, companion, 0, "", "", domain.Repository{Name: "Companion", Checkouts: []domain.Checkout{{MachineID: policy.MachineID, Path: "/tmp/isolated-companion-fixture"}}}); err != nil {
+				if _, err := tx.Put(domain.RepositoryKind, companion, 0, "", "", domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Companion", Checkouts: []domain.Checkout{{MachineID: policy.MachineID, Path: "/tmp/isolated-companion-fixture"}}}); err != nil {
 					return nil, err
 				}
 				return tx.Put(domain.ProjectKind, project, 0, "", "", domain.Project{Name: "Explicit fix project", Repositories: []domain.ID{companion, r.ID}, PrimaryRepository: companion})

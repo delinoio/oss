@@ -95,6 +95,7 @@ type WorkerCapability string
 
 const (
 	CodexReadOnlySidechatWorkerV1  WorkerCapability = "codex-read-only-sidechat-v1"
+	RemoteWorkspaceCloneV1         WorkerCapability = "remote-workspace-clone-v1"
 	RepositoryCloneV1              WorkerCapability = "repository-clone-v1"
 	SignedWorkerUpdatesV1          WorkerCapability = "signed-worker-updates-v1"
 	RepositoryInspectionMetadataV1 WorkerCapability = "repository-inspection-metadata-v1"
@@ -254,7 +255,8 @@ func (r AuxiliaryTitleResult) Validate(input AuxiliaryTitleInput) error {
 }
 
 type RepositoryInspectionInput struct {
-	Path            string   `json:"path"`
-	PreferredRemote string   `json:"preferred_remote,omitempty"`
-	RequiredRemotes []string `json:"required_remotes,omitempty"`
+	Path                   string   `json:"path"`
+	PreferredRemote        string   `json:"preferred_remote,omitempty"`
+	RequiredRemotes        []string `json:"required_remotes,omitempty"`
+	ExpectedRemoteIdentity string   `json:"expected_remote_identity,omitempty"`
 }

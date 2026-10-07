@@ -1005,3 +1005,11 @@ Real 30 follows implemented OAuth 29 and actual accounting/diagnostics/retiremen
 Sidechat storage retirement decodes original storage/recovery inputs with the owning strict 3 MiB rule, even when no Sidechat is selected. Its private retirement wrapper permits the existing complete 4 MiB deletion plan plus 4 KiB fixed operation metadata, consistently at publication and restart. The allowance preserves complete original child cleanup obligations and grants no additional native removal authority or ordinary entity capacity.
 
 Server-owned subscription login retains optional original server_operation metadata and a disjoint native_started credential fence. Pending, claimed or recovery-required server ownership blocks managed restore and deletion like original Worker ownership; a terminal record grants no external authority. Restart preserves original pending/runtime obligations as recovery-required without relaunch. No new SQLite migration is required. Follow the managed subscription contract.
+## Pre-release database baseline reservation
+
+The [pre-release reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
+reserves baseline 32 after real schema 31. Its complete implementation directly
+initializes the current functional layout and removes upgrades from schemas
+1–31. Unsupported DBs and backups retain their original files and sidecars;
+no startup, inspection or restore may silently convert or reset them. This
+reservation adds no executable migration or runtime capability.

@@ -15,10 +15,13 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/testgit"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 )
 
 func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
+	gitExecutable, registerGit := testgit.Setup(t, map[string]string{})
+	t.Setenv("PATH", filepath.Dir(gitExecutable)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	root := filepath.Join(t.TempDir(), "server")
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
@@ -192,7 +195,14 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 		git("commit", "-m", "fixture")
 		commit := git("rev-parse", "HEAD")
 		commits = append(commits, commit)
-		saved := run([]string{"repository", "create", "--wait"}, domain.Repository{Name: "fixture-" + strconv.Itoa(i), Checkouts: []domain.Checkout{{MachineID: domain.ID(machine), Path: checkout}}, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
+		url := "https://github.com/fixture/repo-" + strconv.Itoa(i) + ".git"
+		git("remote", "add", "origin", url)
+		registerGit(url, checkout)
+		checkouts := []domain.Checkout{}
+		if i == 1 {
+			checkouts = append(checkouts, domain.Checkout{MachineID: domain.ID(machine), Path: checkout})
+		}
+		saved := run([]string{"repository", "create", "--wait"}, domain.Repository{RemoteURL: url, Name: "fixture-" + strconv.Itoa(i), Checkouts: checkouts, Starting: domain.Reference{Type: domain.CommitReference, Name: commit}})["resource"].(map[string]any)
 		repositories = append(repositories, domain.ID(saved["id"].(string)))
 	}
 	project := run([]string{"project", "create"}, domain.Project{Name: "all repositories", Repositories: repositories, PrimaryRepository: repositories[1]})["resource"].(map[string]any)

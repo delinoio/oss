@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,17 +31,38 @@ type Inspection struct {
 	GitHubRepositories map[string]GitHubRepository `json:"github_repositories,omitempty"`
 }
 type Git struct {
-	Executable       string
-	ProcessRoot      string
-	OwnerID          domain.ID
-	Logger           *slog.Logger
-	HooksDir         string
-	Timeout          time.Duration
-	environment      []string
-	cloneDiagnostics bool
-	readOnly         bool
-	offline          bool
-	diffIndexFile    string
+	Executable          string
+	ProcessRoot         string
+	OwnerID             domain.ID
+	Logger              *slog.Logger
+	HooksDir            string
+	Timeout             time.Duration
+	environment         []string
+	cloneDiagnostics    bool
+	readOnly            bool
+	offline             bool
+	restrictedTransport bool
+	diffIndexFile       string
+}
+
+func appendGitConfig(environment []string, key, value string) []string {
+	countIndex, count := -1, 0
+	for index, entry := range environment {
+		name, raw, ok := strings.Cut(entry, "=")
+		if name != "GIT_CONFIG_COUNT" {
+			continue
+		}
+		parsed, err := strconv.Atoi(raw)
+		if !ok || err != nil || parsed < 0 {
+			return environment
+		}
+		countIndex, count = index, parsed
+	}
+	if countIndex < 0 {
+		return append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0="+key, "GIT_CONFIG_VALUE_0="+value)
+	}
+	environment[countIndex] = "GIT_CONFIG_COUNT=" + strconv.Itoa(count+1)
+	return append(environment, "GIT_CONFIG_KEY_"+strconv.Itoa(count)+"="+key, "GIT_CONFIG_VALUE_"+strconv.Itoa(count)+"="+value)
 }
 
 type limitedOutput struct {
@@ -94,6 +116,12 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		// Read-only workspace observations never grant that command authority.
 		commandArgs = append(commandArgs, "-c", "core.fsmonitor=false")
 	}
+	if g.restrictedTransport {
+		// Managed clone commands keep the same transport boundary after the
+		// initial clone. In particular, automatic branch fetches must not inherit
+		// a repository, system or user redirect/protocol policy.
+		commandArgs = append(commandArgs, "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false")
+	}
 	if g.HooksDir != "" {
 		commandArgs = append(commandArgs, "-c", "core.hooksPath="+g.HooksDir)
 	}
@@ -129,7 +157,7 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		// populating the private checkout. Propagate the bounded override through
 		// Git's config environment so those children receive the same long-path
 		// capability without changing the source repository configuration.
-		environment = append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.longpaths", "GIT_CONFIG_VALUE_0=true")
+		environment = appendGitConfig(environment, "core.longpaths", "true")
 	}
 	var diagnostic limitedOutput
 	diagnostic.limit = 8192
@@ -245,6 +273,52 @@ func (g Git) Inspect(ctx context.Context, path string) (Inspection, error) {
 	}
 	return result, nil
 }
+
+func selectedInspectionRemote(inspection Inspection, preferred string) (string, error) {
+	if preferred != "" {
+		if !slices.Contains(inspection.Remotes, preferred) {
+			return "", domain.Fail(domain.InvalidArgument, "The preferred remote does not exist on this Worker.", "Refresh repository inspection and select a current remote.")
+		}
+		return preferred, nil
+	}
+	if slices.Contains(inspection.Remotes, "origin") {
+		return "origin", nil
+	}
+	if len(inspection.Remotes) == 1 {
+		return inspection.Remotes[0], nil
+	}
+	return "", domain.Fail(domain.MissingInput, "The checkout's source remote is ambiguous or absent.", "Choose a preferred remote before saving this checkout.")
+}
+
+// ValidateRemoteIdentity checks the selected checkout's effective Git remote
+// against an opaque server-provided identity. The raw URL stays in the Worker
+// process and is never returned in inspection output or error text.
+func (g Git) ValidateRemoteIdentity(ctx context.Context, inspection Inspection, preferred, expected string) error {
+	if expected == "" {
+		return nil
+	}
+	if !domain.ValidRepositoryCloneSourceIdentity(expected) {
+		return domain.Fail(domain.RecoveryRequired, "The repository source identity is invalid.", "Inspect the original save operation before retrying.")
+	}
+	remote, err := selectedInspectionRemote(inspection, preferred)
+	if err != nil {
+		return err
+	}
+	raw, err := g.run(ctx, inspection.Root, "remote", "get-url", "--all", "--", remote)
+	if err != nil {
+		return err
+	}
+	value := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
+	if value == "" || strings.ContainsAny(value, "\r\n") {
+		return domain.Fail(domain.InvalidArgument, "The selected checkout has no single usable source remote.", "Configure one credential-free remote that matches the repository URL.")
+	}
+	actual, err := domain.RepositoryCloneSourceIdentity(value)
+	if err != nil || actual != expected {
+		return domain.Fail(domain.InvalidArgument, "The selected checkout belongs to a different repository.", "Choose a checkout of the configured repository source.")
+	}
+	return nil
+}
+
 func DefaultStarting(inspection Inspection, preferred string) (domain.Reference, error) {
 	remote := preferred
 	if remote != "" && !slices.Contains(inspection.Remotes, remote) {

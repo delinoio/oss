@@ -1,7 +1,7 @@
 import { productError, ProductError,  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
-import { ConfigurationQuery, EntityKind, ResourceQuery, newRequestId } from "@delinoio/delidev-api-client";
+import { ConfigurationQuery, EntityKind, ResourceQuery, SystemQuery, SystemCapability, newRequestId } from "@delinoio/delidev-api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { document, items, object, text, type Document } from "./documents";
 import { ResourceChoice, TextField } from "./configuration-fields";
@@ -32,13 +32,14 @@ const name = (entry: Entry) => text(entry.document.name) || text(entry.document.
 function readBundle(raw: string): Bundle {
   if (encoder.encode(raw).byteLength > bundleLimit) throw new ProductError("validation.0c01933238f8");
   const value = object(JSON.parse(raw));
-  if (![1, 2].includes(value.version as number) || !Array.isArray(value.entries) || !Array.isArray(value.machines) || value.entries.length > 256 || value.machines.length > 64) throw new ProductError("validation.71aacc919010");
+  if (![1, 2, 3].includes(value.version as number) || !Array.isArray(value.entries) || !Array.isArray(value.machines) || value.entries.length > 256 || value.machines.length > 64) throw new ProductError("validation.71aacc919010");
   const ids = new Set<string>();
   for (const item of value.entries) {
     const entry = object(item), id = text(entry.id);
     if (!canonicalId.test(id) || ids.has(id) || !Object.hasOwn(kinds, text(entry.kind)) || !entry.document || typeof entry.document !== "object" || Array.isArray(entry.document)) throw new ProductError("validation.c2538b95da40");
     const data = object(entry.document);
     if (value.version === 1 && (data.type === "subscription" || data.source_kind === "subscription" || data.protocol === "native-subscription" || data.subscription_service !== undefined)) throw new ProductError("validation.3944ec33203a");
+    if (Number(value.version) < 3 && entry.kind === "agent" && data.routes !== undefined) throw new ProductError("validation.sourceRoutesVersion");
     ids.add(id);
   }
   for (const item of value.machines) {
@@ -65,7 +66,7 @@ function readBundle(raw: string): Bundle {
 function readPreview(bytes: Uint8Array): Preview {
   if (bytes.byteLength > 1 << 20) throw new ProductError("validation.6eb6dd2fc3cb");
   const value = object(JSON.parse(decoder.decode(bytes))), plan = object(value.plan);
-  if (!text(value.token) || ![1, 2].includes(plan.version as number) || !Array.isArray(plan.changes) || !plan.changes.length || plan.changes.length > 256 || !Array.isArray(plan.machines)) throw new ProductError("validation.9b79652ebc21");
+  if (!text(value.token) || ![1, 2, 3].includes(plan.version as number) || !Array.isArray(plan.changes) || !plan.changes.length || plan.changes.length > 256 || !Array.isArray(plan.machines)) throw new ProductError("validation.9b79652ebc21");
   for (const item of plan.changes) {
     const change = object(item);
     if (!canonicalId.test(text(change.id)) || !canonicalId.test(text(change.source_id)) || !Object.hasOwn(kinds, text(change.kind)) || !Object.values(ImportAction).includes(change.action as ImportAction) || !change.after || typeof change.after !== "object" || Array.isArray(change.after)) throw new ProductError("validation.028484655c91");
@@ -109,6 +110,13 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const exportText = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
   const opening = useSettingsOpening();
+  // Legacy exports contain checkout-backed repositories without the URL-only
+  // field. Only imports that contain a remote repository need capability 37.
+  const containsRemoteRepositories = loaded?.bundle.entries.some(entry => entry.kind === "repository" && typeof entry.document.remote_url === "string" && entry.document.remote_url !== "") === true;
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && containsRemoteRepositories, retry: false });
+  const remoteUnsupported = containsRemoteRepositories && status.data !== undefined && !status.data.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1);
+  const statusPending = containsRemoteRepositories && status.data === undefined && !status.error;
+  const statusFailed = containsRemoteRepositories && Boolean(status.error);
   const exportRead = useMutation(ConfigurationQuery.exportConfiguration, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   const previewRead = useMutation(ConfigurationQuery.previewConfigurationImport, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; }; }, []);
@@ -125,7 +133,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const reportedState = text(report?.state);
   const state = [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(reportedState as JobState) ? reportedState : text(jobValue?.state) || reportedState;
   const importProblem = object(jobValue?.problem ?? report?.problem);
-  const blocked = loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain || Boolean(report);
+  const blocked = loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain || Boolean(report) || statusPending || statusFailed || remoteUnsupported;
   useEffect(() => {
     onWorkflowReadyChange?.(Boolean(draft || loaded || preview || report || problem || loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain));
     return () => onWorkflowReadyChange?.(false);
@@ -145,7 +153,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     finally { exportRead.reset(); gate.current = false; }
   };
   const inspect = async () => {
-    if (gate.current || blocked || !loaded || !active) return;
+    if (gate.current || blocked || !loaded || !active || remoteUnsupported) return;
     gate.current = true; setProblem(""); setPreview(undefined);
     const original = generation.current;
     try {
@@ -200,6 +208,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
       <p className="transfer-load-guidance">{copy("configuration-transfer.youWillMapResourcesAndReview_44f7cd")}</p>
     </section>
     {loading || exportRead.isPending || previewRead.isPending || mutation.busy ? <p role="status">{loading ? copy("configuration-transfer.readingConfigurationFile_9ae6ad") : exportRead.isPending ? copy("configuration-transfer.exportingConfiguration_340dcb") : previewRead.isPending ? copy("configuration-transfer.loadingConfigurationChangePreview_7826df") : copy("configuration-transfer.sendingConfigurationImportRequest_f2dc3b")}</p> : null}
+    {remoteUnsupported ? <p role="status">Update the selected server before importing repositories by URL.</p> : null}
+    {status.error ? <Problem error={status.error} /> : null}
+    {status.error ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry server capability check</button> : null}
     {loaded ? <fieldset className="transfer-panel transfer-mapping" disabled={blocked}>
       <legend>{copy("configuration-transfer.mapImportedConfiguration_d0218d")}</legend>
       <p>{copy("configuration-transfer.newEntriesKeepTheirOriginalContents_63b0dc")}</p>
@@ -215,9 +226,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
           }) : null}
         </section>;
       })}
-      <button disabled={!active} onClick={() => void inspect()}>{copy("configuration-transfer.previewConfigurationChanges_97d7ba")}</button>
+       <button disabled={!active || blocked || remoteUnsupported} onClick={() => void inspect()}>{copy("configuration-transfer.previewConfigurationChanges_97d7ba")}</button>
     </fieldset> : null}
-    {preview ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationChangePreview_226628")}><h3>{copy("configuration-transfer.reviewChangesBeforeApplying_294dcf")}</h3><p>{copy("configuration-transfer.newRepositoryPathsMustPassValidation_178644")}</p>{preview.machines.map((machine) => <p key={text(machine.id)}><LocalizedText id="configuration-transfer.targetWorker_aa1b09" components={{ s0: <>{text(machine.name)}</>, s1: <>{text(machine.os)}</>, s2: <>{text(machine.architecture)}</>, s3: <>{text(machine.id)}</> }} /></p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || copy("configuration-transfer.extra.eba66b2c00bb")} · {text(change.kind)}</h4><p><LocalizedText id="configuration-transfer.target_8daa2b" components={{ s0: <>{text(change.id)}</> }} /></p><p>{change.before ? copy("configuration-transfer.currentAndImportedValuesAreBoth_99d4dd") : copy("configuration-transfer.newValuesAreIncludedInThe_88d082")}</p></article>)}<label>{copy("configuration-transfer.completeChangeDetails_79b757")}<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active} onClick={() => { if (!blocked) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>{copy("configuration-transfer.applyReviewedConfiguration_1229a2")}</button></section> : null}
+     {preview ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationChangePreview_226628")}><h3>{copy("configuration-transfer.reviewChangesBeforeApplying_294dcf")}</h3><p>{copy("configuration-transfer.newRepositoryPathsMustPassValidation_178644")}</p>{preview.machines.map((machine) => <p key={text(machine.id)}><LocalizedText id="configuration-transfer.targetWorker_aa1b09" components={{ s0: <>{text(machine.name)}</>, s1: <>{text(machine.os)}</>, s2: <>{text(machine.architecture)}</>, s3: <>{text(machine.id)}</> }} /></p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || copy("configuration-transfer.extra.eba66b2c00bb")} · {text(change.kind)}</h4><p><LocalizedText id="configuration-transfer.target_8daa2b" components={{ s0: <>{text(change.id)}</> }} /></p><p>{change.before ? copy("configuration-transfer.currentAndImportedValuesAreBoth_99d4dd") : copy("configuration-transfer.newValuesAreIncludedInThe_88d082")}</p></article>)}<label>{copy("configuration-transfer.completeChangeDetails_79b757")}<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><button className="primary" disabled={blocked || !active || remoteUnsupported} onClick={() => { if (!blocked && !remoteUnsupported) void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); }}>{copy("configuration-transfer.applyReviewedConfiguration_1229a2")}</button></section> : null}
     {mutation.uncertain ? <section className="transfer-panel" aria-label={copy("configuration-transfer.uncertainConfigurationImport_4b21c6")}><button disabled={mutation.busy || !active} onClick={mutation.retry}>{copy("configuration-transfer.retryTheSameConfigurationImport_9d3291")}</button></section> : null}
     {report ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationImportResult_7c1375")}><p role="status">{state === JobState.Succeeded ? copy("configuration-transfer.configurationImportCompletedConnectEachImported_2af629") : state === JobState.Failed || state === JobState.Canceled ? copy("configuration-transfer.configurationImportFailedExistingConfigurationWas_c7e5ad") : state === JobState.Queued || state === JobState.Claimed ? copy("configuration-transfer.importAcceptedWaitingForConfirmationOf_8ed561") : copy("configuration-transfer.theImportOutcomeIsUnavailableInspect_7a2ebb")}</p>{jobId ? <><small>{jobId}</small><button disabled={job.isFetching || !active} onClick={() => void job.refetch()}>{copy("configuration-transfer.refreshConfigurationImport_e42bc3")}</button></> : null}{text(importProblem.message) ? <ServiceProblem code={text(importProblem.code) || text(importProblem.problem_code)}><p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p></ServiceProblem> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setReport(undefined); invalidate(); }}>{copy("configuration-transfer.returnToRetainedImportDocument_9a833a")}</button> : null}</section> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
