@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { Code, ConnectError, createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { DeviceService, DeviceType, NetworkService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
@@ -15,15 +15,6 @@ import { MutationIntents } from "./mutation";
 import { useSettingsFixture } from "./settings-test-fixture";
 const fixture = useSettingsFixture();
 
-async function choose(control: HTMLElement, name: string | RegExp) {
-  await waitFor(() => expect(control.matches(":disabled")).toBe(false));
-  fireEvent.click(control);
-  const popup = window.document.getElementById(control.getAttribute("aria-controls")!)!;
-  const option = await within(popup).findByRole("option", { name });
-  const id = option.dataset.pickerId;
-  fireEvent.click(option);
-  await waitFor(() => expect(control.dataset.value).toBe(id));
-}
 it("selects one real exact route after response loss and exports a pending recipient without account/key-store access", async () => {
   const { transport, directory } = fixture;
   const status = await createClient(SystemService, transport).getStatus({});
@@ -60,7 +51,9 @@ it("selects one real exact route after response loss and exports a pending recip
   expect(selectButton.closest("fieldset")?.disabled).toBe(true);
   releaseRouteRead();
   await waitFor(() => expect(selectButton.closest("fieldset")?.disabled).toBe(false));
-  await choose(screen.getByRole("combobox", { name: "Profile to select" }), "Integration Direct");
+  const profileOption = await screen.findByRole("option", { name: /Integration Direct/ });
+  fireEvent.change(screen.getByRole("combobox", { name: "Profile to select" }), { target: { value: (profileOption as HTMLOptionElement).value } });
+  await waitFor(() => expect(selectButton.closest("fieldset")?.disabled).toBe(false));
   fireEvent.click(selectButton);
   fireEvent.click(await screen.findByRole("button", { name: "Retry original route selection" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original route selection" })).toBeNull());
@@ -70,6 +63,7 @@ it("selects one real exact route after response loss and exports a pending recip
   const recipient = { version: 1, authority: { server_id: authority.serverId, endpoint: authority.endpoint, machine_id: newRequestId(), device_id: newRequestId(), pairing_id: grant.pairing!.id }, key_id: newRequestId(), recipient: stdout.trim() };
   const file = Object.assign(new File([JSON.stringify(recipient)], "recipient.json", { type: "application/json" }), { text: async () => JSON.stringify(recipient) });
   fireEvent.change(screen.getByLabelText("Worker public recipient document"), { target: { files: [file] } });
+  fireEvent.click(screen.getByText("Worker configuration transfer", { exact: true }));
   const exportButton = await screen.findByRole("button", { name: "Export current encrypted configuration" });
   await waitFor(() => expect((exportButton as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(exportButton);

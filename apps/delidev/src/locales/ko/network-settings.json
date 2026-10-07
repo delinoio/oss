@@ -71,5 +71,12 @@
   "network-settings.extra.167cab7952f7": "내보내기는 접수되었지만 유효한 암호화 결과가 없습니다. 원래 요청을 확인하세요. 대체 결과는 생성하지 않았습니다.",
   "network-settings.extra.002c7c68468b": "직접",
   "network-settings.extra.65c55c94d0e0": "공개 수신자 문서가 한도를 초과합니다.",
-  "network-settings.extra.8264d06ae667": "공개 수신자가 선택한 서버 및 실행 장치와 일치하지 않습니다."
+  "network-settings.extra.8264d06ae667": "공개 수신자가 선택한 서버 및 실행 장치와 일치하지 않습니다.",
+  "network-settings.currentRoute": "현재 경로",
+  "network-settings.readingRoute": "현재 경로 읽는 중…",
+  "network-settings.routeUnavailable": "현재 경로를 확인할 수 없습니다. 라우팅 새로고침으로 다시 시도하세요.",
+  "network-settings.profiles": "네트워크 프로필",
+  "network-settings.noProfiles": "저장된 네트워크 프로필 없음",
+  "network-settings.createProfileHelp": "프록시를 통해 연결하려면 프로필을 만드세요.",
+  "network-settings.workerTransfer": "Worker 구성 전송"
 }
