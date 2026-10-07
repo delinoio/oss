@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind } from "@delinoio/delidev-api-client";
 import { items, text, type Document } from "./documents";
 import { RepositoryIdentity, RestrictionFields, projectRepositoryOption } from "./configuration-fields";
 import { ProductError, copy, ownedMessage, useLocale, useProductMessage } from "./localization";
 import { useProjectRepositoryCatalog } from "./project-repositories";
-import { SettingsTaskActions } from "./settings-task";
+import { kindNames } from "./configuration-fields";
+import { MutationIntents } from "./mutation";
+import { ConfigurationEditor } from "./settings";
+import { SettingsLifetime } from "./settings-lifetime";
+import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskActions, SettingsTaskDialog, SettingsTasks, SettingsTaskStatusOutlet } from "./settings-task";
+import { SettingsTaskContext } from "./settings-task-context";
 import { Problem } from "./ui";
 import "./project-creation.css";
 
@@ -19,7 +25,7 @@ function focusControl(form: HTMLFormElement | null, field: string) {
   control?.scrollIntoView?.({ block: "nearest" });
 }
 
-export function ProjectCreation({ data, change, active, visible, blocked, busy, saveDisabled, submit, cancel, cancelDisabled, uncertain, retry, children }: {
+export function ProjectCreationWizard({ data, change, active, visible, blocked, busy, saveDisabled, submit, cancel, cancelDisabled, uncertain, retry, children }: {
   data: Document; change: (value: Document) => void; active: boolean; visible: boolean; blocked: boolean; saveDisabled: boolean;
   busy: boolean; submit: () => void; cancel: () => void; cancelDisabled: boolean; uncertain: boolean; retry: () => void; children?: ReactNode;
 }) {
@@ -135,4 +141,32 @@ export function ProjectCreation({ data, change, active, visible, blocked, busy, 
       {step === Step.Restrictions ? <button key="save" type="submit" className="primary" disabled={saveDisabled}>{copy("project-creation.save")}</button> : <button key="next" type="button" className="primary" disabled={blocked || (step === Step.Repositories ? !validRepositories : !configured)} onClick={event => { event.preventDefault(); next(); }}>{copy("project-creation.next")}</button>}
     </SettingsTaskActions>
   </form>;
+}
+export const ProjectCreation = ProjectCreationWizard;
+
+export function ProjectCreationDialog({ activation, close, fallbackFocus }: { activation: number; close: () => void; fallbackFocus: () => HTMLElement | null }) {
+  return <SettingsLifetime>{() => <MutationIntents><ProjectCreationTask activation={activation} close={close} fallbackFocus={fallbackFocus} /></MutationIntents>}</SettingsLifetime>;
+}
+
+function ProjectCreationTask({ activation, close, fallbackFocus }: { activation: number; close: () => void; fallbackFocus: () => HTMLElement | null }) {
+  useLocale();
+  const client = useQueryClient();
+  const saved = useCallback(() => { close(); void client.invalidateQueries({ refetchType: "active" }); }, [client, close]);
+  return <SettingsTasks>
+    <SettingsTaskStatusOutlet className="page" />
+    <SettingsTaskDialog title={`${copy("settings.new_18fdd5")} ${kindNames[EntityKind.PROJECT]}`} size={SettingsDialogSize.Form} focus={SettingsDialogFocus.Input} activation={activation} fallbackFocus={fallbackFocus} close={close}>
+      <ProjectCreationEditor active saved={saved} cancel={close} />
+    </SettingsTaskDialog>
+  </SettingsTasks>;
+}
+
+function ProjectCreationEditor({ active, saved, cancel }: { active: boolean; saved: () => void; cancel: () => void }) {
+  const task = useContext(SettingsTaskContext);
+  const onSaved = useCallback(() => {
+    // A successful save refreshes the Home inventory and can remove the empty-state
+    // opener. Select the persistent fallback during dialog cleanup instead.
+    task?.retireOpener(() => true);
+    if (task) task.dismissWithClose(saved, true); else saved();
+  }, [saved, task]);
+  return <ConfigurationEditor kind={EntityKind.PROJECT} active={active} saved={onSaved} cancel={cancel} />;
 }

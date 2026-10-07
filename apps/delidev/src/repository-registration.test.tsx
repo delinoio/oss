@@ -4,13 +4,14 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, IntegrationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, SettingsEntryDestination } from "./settings";
-import { encode, document, type Document } from "./documents";
+import { encode, document as resourceDocument, type Document } from "./documents";
 import { LocalWorkerState } from "./local-worker-controls";
 import { validRepositoryInspection, selectedInspectionRemote } from "./repository-registration";
+import { i18n, SupportedLanguage } from "./localization";
 
 const metadata = { root: "/canonical/oss", name: "oss", remotes: ["origin", "upstream"], default_refs: { origin: "main" }, github_repositories: { origin: { owner: "delinoio", name: "oss" }, upstream: { owner: "another", name: "repo" } } };
 function row(kind: EntityKind, value: Document): Resource { return create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode(value) }); }
@@ -33,7 +34,7 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
   const clone = vi.fn(async (request: { requestId: string; machineId: string; parentPath: string; url: string; directoryName: string; localWorkerToken: string; githubSelection?: { profileId: string; owner: string; name: string } }) => {
     const job = row(EntityKind.JOB, { type: "clone-repository", state: "queued", machine_id: request.machineId }); resources.set(job.id, job); jobs.push(job); return { job, requestId: request.requestId };
   });
-  const repositories = vi.fn(async (request: { profileId: string; expectedRevision: bigint; page: number }) => ({ schemaVersion: 1, documentJson: encode({ profile_id: request.profileId, profile_revision: String(request.expectedRevision), generation_id: (document(resources.get(request.profileId)).connection as Document).generation_id, observed_at: new Date().toISOString(), page: request.page, page_size: 50, next_page: request.page === 1 ? 2 : 0, repositories: request.page === 1 ? [{ repository: { provider: "github.com", id: "123", node_id: "R_123", owner: "delinoio", name: "oss", private: true, default_branch: "main" }, archived: true, https_url: "https://github.com/delinoio/oss.git", ssh_url: "git@github.com:delinoio/oss.git" }] : [] }) }));
+  const repositories = vi.fn(async (request: { profileId: string; expectedRevision: bigint; page: number }) => ({ schemaVersion: 1, documentJson: encode({ profile_id: request.profileId, profile_revision: String(request.expectedRevision), generation_id: (resourceDocument(resources.get(request.profileId)).connection as Document).generation_id, observed_at: new Date().toISOString(), page: request.page, page_size: 50, next_page: request.page === 1 ? 2 : 0, repositories: request.page === 1 ? [{ repository: { provider: "github.com", id: "123", node_id: "R_123", owner: "delinoio", name: "oss", private: true, default_branch: "main" }, archived: true, https_url: "https://github.com/delinoio/oss.git", ssh_url: "git@github.com:delinoio/oss.git" }] : [] }) }));
   const listResources = vi.fn((request: { filter?: { kind?: EntityKind; pageToken?: string } }) => {
     const matching = [...resources.values()].filter(resource => resource.kind === request.filter?.kind);
     if (pagedProfiles && request.filter?.kind === EntityKind.INTEGRATION) return request.filter.pageToken ? { resources: matching, nextPageToken: "" } : { resources: profileOnFirstPage ? matching : [], nextPageToken: "profile-next" };
@@ -330,7 +331,7 @@ it.each(["Cancel", "Close Add repository", "Escape"])("dismisses with %s, restor
   opener.focus(); await f.add();
   const dialog = screen.getByRole("dialog", { name: "Add repository" });
   expect(window.document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Git URL" }));
-  expect(screen.getByText("No saved entries.")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "No repositories yet", hidden: true })).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Enter a path…" }));
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Absolute checkout path" }), { target: { value: "/discard" } });
   if (action === "Escape") fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
@@ -402,6 +403,94 @@ it("shows only usable PAT profiles and requires explicit profile and repository 
   fireEvent.change(screen.getByRole("textbox", { name: "Clone to" }), { target: { value: "/parent" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
   await screen.findByText("Repository clone accepted"); expect(f.clone.mock.calls[0][0].githubSelection).toMatchObject({ profileId: profile.id, owner: "delinoio", name: "oss" });
 });
+it.each(["Escape", "Close", "Cancel"])("closes only the GitHub child with %s and preserves the parent draft and chooser state", async action => {
+  const f = fixture(metadata, true), profile = connectedProfile(f); f.mount(); await f.add(false);
+  const parent = screen.getByRole("dialog", { name: "Add repository" });
+  const url = within(parent).getByRole("textbox", { name: "Git URL" }) as HTMLInputElement;
+  const name = within(parent).getByRole("textbox", { name: "Repository name" }) as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "My edited name" } });
+  const body = parent.querySelector(".settings-task-body")!; body.scrollTop = 40;
+  const opener = await screen.findByRole("button", { name: "Choose from GitHub" }); fireEvent.click(opener);
+  const child = screen.getByRole("dialog", { name: "Choose a GitHub repository" });
+  expect(parent.contains(child)).toBe(false); expect(screen.getAllByRole("dialog")).toHaveLength(2);
+  const select = within(child).getByRole("combobox", { name: "GitHub profile" }); expect(document.activeElement).toBe(select);
+  fireEvent.change(select, { target: { value: profile.id } }); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  fireEvent.change(within(child).getByRole("textbox", { name: "Filter this page" }), { target: { value: "oss" } });
+  fireEvent.click(child); expect(child.isConnected).toBe(true);
+  if (action === "Escape") fireEvent(child, new Event("cancel", { bubbles: true, cancelable: true }));
+  else fireEvent.click(within(child).getByRole("button", { name: action === "Close" ? "Close Choose a GitHub repository" : "Cancel" }));
+  expect(screen.queryByRole("dialog", { name: "Choose a GitHub repository" })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Add repository" })).toBe(parent);
+  expect(url.value).toBe("https://github.com/delinoio/oss.git"); expect(name.value).toBe("My edited name"); expect(body.scrollTop).toBe(40);
+  expect(document.activeElement).toBe(opener); expect(f.save).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+  fireEvent.click(opener);
+  expect((screen.getByRole("combobox", { name: "GitHub profile" }) as HTMLSelectElement).value).toBe(profile.id);
+  expect((screen.getByRole("textbox", { name: "Filter this page" }) as HTMLInputElement).value).toBe("oss");
+  fireEvent(screen.getByRole("dialog", { name: "Choose a GitHub repository" }), new Event("cancel", { cancelable: true }));
+  fireEvent(parent, new Event("cancel", { cancelable: true })); expect(screen.queryByRole("dialog")).toBeNull();
+});
+it("immediately applies a GitHub choice without saving or replacing a manually edited name", async () => {
+  const f = fixture(metadata, true), profile = connectedProfile(f); f.mount(); await f.add(false);
+  const parent = screen.getByRole("dialog", { name: "Add repository" });
+  fireEvent.change(screen.getByRole("textbox", { name: "Git URL" }), { target: { value: "https://example.com/previous.git" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Repository name" }), { target: { value: "Keep my name" } });
+  const opener = await screen.findByRole("button", { name: "Choose from GitHub" }); fireEvent.click(opener);
+  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
+  fireEvent.click(await screen.findByRole("button", { name: "delinoio/oss Private · Archived" }));
+  expect(screen.queryByRole("dialog", { name: "Choose a GitHub repository" })).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Add repository" })).toBe(parent); expect(document.activeElement).toBe(opener);
+  expect((screen.getByRole("textbox", { name: "Git URL" }) as HTMLInputElement).value).toBe("https://github.com/delinoio/oss.git");
+  expect((screen.getByRole("textbox", { name: "Repository name" }) as HTMLInputElement).value).toBe("Keep my name");
+  expect(f.save).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+  fireEvent.click(within(parent).getByRole("button", { name: "Add repository" })); await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson))).toMatchObject({ name: "Keep my name", integration_id: profile.id, github_owner: "delinoio", github_name: "oss" });
+});
+it("ignores a late repository page after child cancellation or Settings departure", async () => {
+  const f = fixture(metadata, true), profile = connectedProfile(f), response = deferred<Awaited<ReturnType<typeof f.repositories>>>();
+  const reply = await f.repositories({ profileId: profile.id, expectedRevision: profile.revision, page: 1 }); f.repositories.mockClear(); f.repositories.mockReturnValueOnce(response.promise);
+  f.mount(); await f.add(false); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await waitFor(() => expect(f.repositories).toHaveBeenCalledTimes(1));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).getByRole("button", { name: "Cancel" }));
+  const opener = screen.getByRole("button", { name: "Choose from GitHub" });
+  await act(async () => response.resolve(reply)); expect(document.activeElement).toBe(opener);
+  expect(screen.queryByRole("dialog", { name: "Choose a GitHub repository" })).toBeNull(); expect(f.save).not.toHaveBeenCalled();
+  fireEvent.click(opener); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  const destination = screen.getByRole("button", { name: "Leave Settings" }); fireEvent.click(destination); destination.focus();
+  await f.client.invalidateQueries(); expect(screen.queryByRole("dialog")).toBeNull(); expect(document.activeElement).toBe(destination);
+  expect(f.save).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+});
+it("updates child language in place without resetting selection, filter, focus or requests", async () => {
+  const f = fixture(metadata, true), profile = connectedProfile(f); f.mount(); await f.add(false);
+  fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } }); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  const child = screen.getByRole("dialog", { name: "Choose a GitHub repository" }), filter = screen.getByRole("textbox", { name: "Filter this page" }) as HTMLInputElement;
+  fireEvent.change(filter, { target: { value: "oss" } }); filter.focus(); const calls = f.repositories.mock.calls.length;
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+  expect(screen.getByRole("dialog", { name: "GitHub 저장소 선택" })).toBe(child); expect(document.activeElement).toBe(filter); expect(filter.value).toBe("oss");
+  expect((screen.getByRole("combobox", { name: "GitHub 프로필" }) as HTMLSelectElement).value).toBe(profile.id);
+  expect(screen.getByRole("button", { name: "delinoio/oss 비공개 · 보관됨" })).toBeTruthy(); expect(f.repositories).toHaveBeenCalledTimes(calls);
+  fireEvent.click(within(child).getByRole("button", { name: "취소" })); expect(document.activeElement).toBe(screen.getByRole("button", { name: "GitHub에서 선택" }));
+});
+it("focuses the child heading without admitting reads on an unsupported server", async () => {
+  const f = fixture(); connectedProfile(f); f.mount(); await f.add(false);
+  fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
+  const child = screen.getByRole("dialog", { name: "Choose a GitHub repository" });
+  expect(document.activeElement).toBe(within(child).getByRole("heading", { name: "Choose a GitHub repository" }));
+  expect((within(child).getByRole("combobox", { name: "GitHub profile" }) as HTMLSelectElement).disabled).toBe(true);
+  expect(within(child).getByText(/Update the selected server to choose repositories/)).toBeTruthy(); expect(f.repositories).not.toHaveBeenCalled();
+  fireEvent.click(within(child).getByRole("button", { name: "Cancel" }));
+});
+it("retains the child and parent on permission denial and rejects stale profile choices", async () => {
+  const f = fixture(metadata, true), profile = connectedProfile(f); f.repositories.mockRejectedValueOnce(new ConnectError("Repository access denied", Code.PermissionDenied));
+  f.mount(); await f.add(false); fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
+  fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
+  await within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).findByRole("alert"); expect(screen.getAllByRole("dialog")).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: "delinoio/oss Private · Archived" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh repositories" })); await screen.findByRole("button", { name: "delinoio/oss Private · Archived" });
+  f.resources.set(profile.id, { ...profile, revision: profile.revision + 1n }); await f.client.invalidateQueries();
+  await screen.findByText("The selected profile changed. Refresh profiles and select its current version.");
+  expect((screen.getByRole("button", { name: "delinoio/oss Private · Archived" }) as HTMLButtonElement).disabled).toBe(true); expect(f.save).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+});
 it("keeps profile pagination explicit instead of scanning every page", async () => {
   const f = fixture(metadata, true, true, true); connectedProfile(f); f.mount(); await f.add();
   await screen.findByRole("button", { name: "Next profile page" });
@@ -417,7 +506,7 @@ it("clears a selected profile when outer profile paging changes page", async () 
   const f = fixture(metadata, true, true, true, undefined, true), profile = connectedProfile(f); f.mount(); await f.add();
   fireEvent.click(await screen.findByRole("button", { name: "Choose from GitHub" }));
   fireEvent.change(screen.getByRole("combobox", { name: "GitHub profile" }), { target: { value: profile.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Back to Git URL" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Choose a GitHub repository" })).getByRole("button", { name: "Cancel" }));
   fireEvent.click(await screen.findByRole("button", { name: "Next profile page" }));
   await screen.findByRole("button", { name: "Choose from GitHub" });
   fireEvent.click(screen.getByRole("button", { name: "Choose from GitHub" }));

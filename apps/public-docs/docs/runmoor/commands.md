@@ -32,6 +32,11 @@ Status and doctor JSON use `schema_version: 1`. Status includes image revisions,
 
 `pause` stops acquisition/new capacity and preserves running jobs. `drain` additionally waits for jobs/local cleanup. `stop` drains before exiting and waits for open image setup and pending image removal, including with `--force`. Finish setup by shutting down its VM or sealing the revision, and retry pending removal as needed. New image work requires restarting the manager after stop; `stop --pool NAME` drains that pool while the manager keeps serving other pools. Only explicit `--force` terminates owned work. `resume` revalidates the pool. Pool control commands without `--pool` apply to all pools. A validated reload automatically resumes a suspended pool only when a setting related to its reported failure changed; a verified managed image can also recover image, version or repeated startup failures. Otherwise, correct the cause and use `resume`.
 
+> **Unreleased pause recovery fix:** A late dependency failure and corrected
+> reload preserve an explicit `pause --pool NAME` or `stop --pool NAME`,
+> including scoped force-stop. Correct the cause, then use `resume --pool NAME`
+> to enable new work.
+
 Reload validates the requested configuration first. Managed image changes prepare before activation; preparation failures retain the previous verified environment. Existing jobs retain their original configuration and timeout. Removed/changed pools drain their previous generation; a new generation with the same GitHub scale-set identity waits until the old one retires. A failed configuration validation does not replace the last accepted configuration.
 
 > **Unreleased service reload:** After you install a newer Runmoor CLI,

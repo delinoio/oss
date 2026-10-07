@@ -1,5 +1,5 @@
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, IntegrationQuery, PullRequestFixQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
@@ -10,6 +10,7 @@ import { SettingsEntryDestination } from "./settings";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
 import { usePRWorkflow } from "./pr-workflow";
+import { Icon } from "./sidebar";
 
 interface LoadedPullRequests {
   repositoryId: string;
@@ -22,6 +23,32 @@ interface LoadedPullRequests {
 }
 
 const plainSearch = (value: string) => value.length <= 120 && /^[\p{L}\p{N} ._-]*$/u.test(value);
+
+function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetails }: {
+  row: Resource; selected: boolean; expanded: boolean; choose: () => void; toggleDetails: () => void;
+}) {
+  useLocale();
+  const detailsId = useId();
+  const name = resourceName(row);
+  const config = document(row);
+  const owner = text(config.github_owner), repository = text(config.github_name);
+  const detailsLabel = copy("pull-requests.repositoryDetails", { name, id: row.id });
+  return <div className="pr-repository-item">
+    <div className="pr-repository-heading" data-selected={selected}>
+      <button type="button" className="sidebar-repository-row" aria-label={copy("pull-requests.repositoryId_cfd937", { v0: name, v1: row.id })} aria-pressed={selected} onClick={choose}>
+        <svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg>
+        <span className="sidebar-repository-info">{name}</span>
+      </button>
+      <button type="button" className="pr-repository-details-toggle" aria-label={detailsLabel} aria-expanded={expanded} aria-controls={detailsId} onClick={toggleDetails}>
+        <Icon name="chevron" />
+      </button>
+    </div>
+    <div id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
+      <dl><dt>{copy("pull-requests.githubRepository")}</dt><dd>{owner && repository ? `${owner}/${repository}` : copy("pull-requests.repositoryNotConfigured")}</dd>
+        <dt>{copy("pull-requests.repositoryIdentifier")}</dt><dd>{row.id}</dd></dl>
+    </div>
+  </div>;
+}
 
 function PendingDismissal({ intent, id }: { intent: RetainedMutationIntent; id: string }) {
   useLocale();
@@ -77,7 +104,9 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   useLocale();
   const [repositoryPage, setRepositoryPage] = useState("");
   const [repositoryId, setRepositoryId] = useState("");
+  const [expandedRepositoryId, setExpandedRepositoryId] = useState("");
   const [state, setState] = useState(ItemState.Open);
+  const stateGroupId = useId();
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(20);
   const [loaded, setLoaded] = useState<LoadedPullRequests>();
@@ -121,18 +150,20 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const filtersChanged = Boolean(loaded && (loaded.state !== state || loaded.search !== search.trim() || loaded.pageSize !== pageSize));
   return <>
     <SidebarSurface active={active} title={copy("pull-requests.pullRequests_d9e3f2")}>
-      <header className="sidebar-list-heading"><h3>{copy("pull-requests.repositories_1e32af")}</h3><button type="button" disabled={!active || repositories.isFetching} onClick={() => { if (repositoryPage) setRepositoryPage(""); else void repositories.refetch(); }}>{copy("pull-requests.refresh_0e9161")}</button></header>
+      <header className="sidebar-list-heading"><h3>{copy("pull-requests.repositories_1e32af")}</h3><button type="button" disabled={!active || repositories.isFetching} onClick={() => { if (repositoryPage) setRepositoryPage(""); else void repositories.refetch(); }}><Icon name="refresh" />{copy("pull-requests.refresh_0e9161")}</button></header>
       <Problem error={repositories.error} />
       {repositories.isPending && active ? <p role="status">{copy("pull-requests.loadingRepositories_460ca9")}</p> : null}
       {repositories.error && repositories.data ? <p className="sidebar-help">{copy("pull-requests.refreshFailedShowingThePreviousRepository_6c5a34")}</p> : null}
-      {repositories.data?.resources.map((row) => <button key={row.id} type="button" className="sidebar-repository-row" aria-label={copy("pull-requests.repositoryId_cfd937", { v0: resourceName(row), v1: row.id })} aria-pressed={repositoryId === row.id} onClick={() => chooseRepository(row)}><svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg><span className="sidebar-repository-info"><span>{resourceName(row)}</span><small>{row.id}</small></span></button>)}
+      {repositories.data?.resources.map((row) => <RepositoryNavigationRow key={row.id} row={row} selected={repositoryId === row.id} expanded={expandedRepositoryId === row.id} choose={() => chooseRepository(row)} toggleDetails={() => setExpandedRepositoryId((current) => current === row.id ? "" : row.id)} />)}
       {!repositories.error && repositories.data?.resources.length === 0 ? <div className="sidebar-repository-empty"><svg className="sidebar-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h7l2 2h9v11H3z" /></svg><p>{copy("pull-requests.noRepositoriesOnThisPage_249a41")}</p></div> : null}
       <nav className="sidebar-repository-pages" aria-label={copy("pull-requests.repositoryPages_eeaada")}><button disabled={!repositoryPage || repositories.isFetching} onClick={() => setRepositoryPage("")}>{copy("pull-requests.first_a151ce")}</button><button disabled={!repositories.data?.nextPageToken || repositories.isFetching} onClick={() => setRepositoryPage(repositories.data!.nextPageToken)}>{copy("pull-requests.next_1ff57a")}</button></nav>
       {repositoryId ? <>
         <section className="sidebar-query-options" aria-label={copy("pull-requests.queryOptions_aeced2")}><h3>{copy("pull-requests.queryOptions_aeced2")}</h3>
         <form className="sidebar-form" onSubmit={load}>
-          <label>{copy("pull-requests.state_a3b50c")}<select value={state} onChange={(event) => setState(event.target.value as ItemState)}><option value={ItemState.Open}>{copy("pull-requests.open_ed077f")}</option><option value={ItemState.Closed}>{copy("pull-requests.closed_c21ead")}</option><option value={ItemState.All}>{copy("pull-requests.all_a52ace")}</option></select></label>
-          <label>{copy("pull-requests.searchTitleAndBody_f2c94c")}<input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} /></label>
+          <fieldset className="pr-state-field"><legend>{copy("pull-requests.state_a3b50c")}</legend><div className="pr-state-options">
+            {[{ value: ItemState.Open, label: copy("pull-requests.open_ed077f") }, { value: ItemState.Closed, label: copy("pull-requests.closed_c21ead") }, { value: ItemState.All, label: copy("pull-requests.all_a52ace") }].map((option) => <label key={option.value} className="pr-state-choice"><input type="radio" name={stateGroupId} value={option.value} checked={state === option.value} onChange={() => setState(option.value)} /><span>{option.label}</span></label>)}
+          </div></fieldset>
+          <label>{copy("pull-requests.searchTitleAndBody_f2c94c")}<span className="pr-search-input"><Icon name="search" /><input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} /></span></label>
           {!searchValid ? <p role="alert">{copy("pull-requests.usePlainWordsNumbersSpacesHyphens_0bce88")}</p> : null}
           {selectedQuery.error ? <Problem error={selectedQuery.error} /> : null}
           {selected && !configured ? <p className="sidebar-help">{copy("pull-requests.setASupportedGithubProfileOwner_c9cd89")}</p> : null}
@@ -143,8 +174,8 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
           {loaded && filtersChanged ? <p className="sidebar-help">{copy("pull-requests.theDisplayedResultsBelongToThe_44e130")}</p> : null}
         </form>
         </section>
-      </> : <p className="sidebar-help">{copy("pull-requests.selectARepositoryNoGithubRequest_b499d2")}</p>}
-      <button type="button" className="sidebar-action" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.Repositories); }}>{copy("pull-requests.repositorySettings_b00980")}</button>
+      </> : <p className="sidebar-help pr-repository-guidance">{copy("pull-requests.selectARepositoryNoGithubRequest_b499d2")}</p>}
+      <div className="pr-repository-settings"><button type="button" className="sidebar-action" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.Repositories); }}><Icon name="settings" />{copy("pull-requests.repositorySettings_b00980")}</button></div>
     </SidebarSurface>
     <section hidden={!active} className="page pull-requests-page">
       <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>
