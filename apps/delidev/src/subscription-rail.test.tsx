@@ -70,3 +70,9 @@ it("rejects unknown blocking membership and malformed reset evidence",()=>{
  const nonblocking=railAccount(resource("Nonblocking","chatgpt",{quota:[quota({}),quota({blocking:false,reset_at:"bad"})]}));expect(remainingBadge(nonblocking.windows,now)).toBe(28);expect(freshWindow(nonblocking.windows[1]!,now)).toBe(false);
  for(const reset of [undefined,""]){expect(remainingBadge(railAccount(resource("Valid","chatgpt",{quota:[quota({reset_at:reset})]})).windows,now)).toBe(28);}
 });
+it("shows malformed observation dates as unknown without individual percentages",async()=>{
+ const f=mount(()=>({resources:[resource("Invalid date","chatgpt",{quota:[{id:"weekly",state:"observed",remaining:.28,observed_at:"not-a-date",blocking:true,comparison_group:"weekly"}]})]}));const opener=await screen.findByRole("button",{name:/Invalid date · Quota unavailable/});fireEvent.click(opener);const dialog=screen.getByRole("dialog",{name:"ChatGPT · Invalid date"});expect(dialog.textContent).toContain("No current quota evidence");expect(dialog.textContent).not.toContain("28% remaining");expect(dialog.textContent).not.toContain("Stale observation");expect(f.requests).toHaveBeenCalledOnce();
+});
+it("missing observed timestamps cannot establish individual or aggregate evidence",()=>{
+ for(const observed_at of [undefined, ""]){const projected=railAccount(resource("Missing observation","chatgpt",{quota:[{id:"weekly",state:"observed",remaining:.28,observed_at,blocking:true,comparison_group:"weekly"}]}));expect(projected.windows[0]!.valid).toBe(false);expect(remainingBadge(projected.windows,now)).toBeUndefined();}
+});

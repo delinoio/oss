@@ -11,7 +11,8 @@ export function railAccount(resource: Resource): RailAccount {
     connected: !data.removal && object(data.subscription).recovery_required !== true && Boolean(text(object(data.connection).id)),
     windows: items(data.quota).map(entry => { const value = object(entry);
       const stringFields = ["id", "state", "observed_at", "reset_at", "comparison_group"];
-      const valid = stringFields.every(key => value[key] === undefined || typeof value[key] === "string") && (value.remaining === undefined || typeof value.remaining === "number") && (value.reset_at === undefined || value.reset_at === "" || typeof value.reset_at === "string" && Number.isFinite(Date.parse(value.reset_at)));
+      const validObservation = value.observed_at === undefined || value.observed_at === "" ? value.state !== "observed" : typeof value.observed_at === "string" && Number.isFinite(Date.parse(value.observed_at));
+      const valid = validObservation && stringFields.every(key => value[key] === undefined || typeof value[key] === "string") && (value.remaining === undefined || typeof value.remaining === "number") && (value.reset_at === undefined || value.reset_at === "" || typeof value.reset_at === "string" && Number.isFinite(Date.parse(value.reset_at)));
       return { valid, id: text(value.id), state: text(value.state), remaining: typeof value.remaining === "number" ? value.remaining : undefined, observedAt: text(value.observed_at), resetAt: text(value.reset_at), blocking: typeof value.blocking === "boolean" ? value.blocking : undefined, comparisonGroup: text(value.comparison_group) }; }) };
 }
 export function freshWindow(window: RailWindow, now: number) {
