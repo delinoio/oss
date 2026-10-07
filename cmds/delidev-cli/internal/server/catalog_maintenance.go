@@ -16,7 +16,7 @@ const catalogRefreshInterval = 15 * time.Minute
 // observations persist across restart; undispatched reads need no catch-up queue.
 // Parent cancellation is joined before the vault/database/scope can be released.
 func (s *Service) runCatalogMaintenance(parent context.Context) {
-	ctx, cancel := context.WithCancel(domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice}))
+	ctx, cancel := context.WithCancel(context.WithValue(domain.WithPrincipal(parent, domain.Principal{Type: domain.OwnerDevice}), automaticInspectionKey{}, true))
 	var workers sync.WaitGroup
 	defer func() { cancel(); workers.Wait() }()
 	tick := time.NewTicker(2 * time.Second)
@@ -41,7 +41,7 @@ func (s *Service) runCatalogMaintenance(parent context.Context) {
 			// Unrelated high-volume events must not turn this background task
 			// into a hot SQLite scan. The ticker also guarantees eventual work.
 			nextScan = now.Add(100 * time.Millisecond)
-			page, err := s.Store.CatalogCandidates(ctx, after, store.MaxPage, now, catalogRefreshInterval)
+			page, err := s.Store.AccountInspectionCandidates(ctx, after, store.MaxPage, now, catalogRefreshInterval)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -60,11 +60,7 @@ func (s *Service) runCatalogMaintenance(parent context.Context) {
 					workers.Add(1)
 					go func(record store.Record) {
 						defer workers.Done()
-						requestID := domain.NewID()
-						_, err := s.discoverModels(ctx, &pb.Mutation{Id: string(record.ID), ExpectedRevision: record.Revision, RequestId: string(requestID)}, string(requestID))
-						if err != nil && ctx.Err() == nil {
-							s.logger.Warn("catalog_maintenance_unpublished", "account_id", record.ID, "request_id", requestID, "error_code", domain.SafeError(err).Code)
-						}
+						s.maintainAPIAccount(ctx, record)
 						select {
 						case completed <- record.ID:
 						case <-ctx.Done():
@@ -87,5 +83,60 @@ func (s *Service) runCatalogMaintenance(parent context.Context) {
 		case <-changed:
 		case <-tick.C:
 		}
+	}
+}
+
+// Completion timestamps and provider delays are independent for both operations.
+func accountObservationDue(connection, observedConnection domain.ID, completed time.Time, retry *uint32, now time.Time) bool {
+	if connection != observedConnection || completed.IsZero() {
+		return true
+	}
+	interval := catalogRefreshInterval
+	if retry != nil && time.Duration(*retry)*time.Second > interval {
+		interval = time.Duration(*retry) * time.Second
+	}
+	return !completed.Add(interval).After(now)
+}
+func (s *Service) maintainAPIAccount(ctx context.Context, record store.Record) {
+	original, err := store.Decode[domain.Account](record)
+	if err != nil || original.Connection == nil {
+		return
+	}
+	account := original
+	if v := account.Validation; v == nil || accountObservationDue(account.Connection.ID, v.ConnectionID, v.ObservedAt, v.RetryAfterSeconds, time.Now()) {
+		request := domain.NewID()
+		_, err = s.validateAccount(ctx, &pb.Mutation{Id: string(record.ID), ExpectedRevision: record.Revision, RequestId: string(request)}, string(request))
+		if err != nil {
+			if ctx.Err() == nil {
+				s.logger.Warn("validation_maintenance_unpublished", "account_id", record.ID, "request_id", request, "error_code", domain.SafeError(err).Code)
+			}
+			return
+		}
+	}
+	// Validation publication increments the account revision. Read the confirmed
+	// latest record before discovery, while retaining this worker's original connection.
+	record, err = s.Store.Get(ctx, domain.AccountKind, record.ID)
+	if err != nil || ctx.Err() != nil {
+		return
+	}
+	account, err = store.Decode[domain.Account](record)
+	if err != nil || account.Connection == nil || account.Connection.ID != original.Connection.ID || !account.Enabled || account.Removal != nil {
+		return
+	}
+	providerRecord, err := s.Store.Get(ctx, domain.ProviderKind, account.ProviderID)
+	if err != nil {
+		return
+	}
+	provider, err := store.Decode[domain.Provider](providerRecord)
+	if err != nil || !provider.EnabledValue() || !provider.Discovery {
+		return
+	}
+	if c := account.Catalog; c != nil && !accountObservationDue(account.Connection.ID, c.ConnectionID, c.ObservedAt, c.RetryAfterSeconds, time.Now()) {
+		return
+	}
+	request := domain.NewID()
+	_, err = s.discoverModels(ctx, &pb.Mutation{Id: string(record.ID), ExpectedRevision: record.Revision, RequestId: string(request)}, string(request))
+	if err != nil && ctx.Err() == nil {
+		s.logger.Warn("catalog_maintenance_unpublished", "account_id", record.ID, "request_id", request, "error_code", domain.SafeError(err).Code)
 	}
 }

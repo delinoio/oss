@@ -128,3 +128,9 @@
 .account-oauth-user-code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-family: monospace; user-select: all; }
 
 .api-format-choice output { display: block; min-height: 40px; padding: 10px 12px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--surface); }
+
+.api-verification { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; margin-top: 12px; min-width: 0; overflow-wrap: anywhere; }
+.api-verification > div { flex: 1 1 180px; min-width: 0; }
+.api-verification p { margin: 0 0 4px; }
+.api-verification small { flex-basis: 100%; color: var(--muted); }
+.api-verification button { min-height: 40px; white-space: normal; }

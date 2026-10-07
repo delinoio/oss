@@ -246,6 +246,34 @@ ORDER BY a.id LIMIT ?`
 	return result, err
 }
 
+// AccountInspectionCandidates preserves independent persisted validation and catalog due times.
+func (s *Store) AccountInspectionCandidates(ctx context.Context, after domain.ID, limit int, now time.Time, interval time.Duration) ([]Record, error) {
+	if limit < 1 || limit > MaxPage || interval < time.Second {
+		return nil, domain.Fail(domain.InvalidArgument, "Invalid catalog maintenance bounds.", "Use bounded maintenance pages and a positive refresh interval.")
+	}
+	var result []Record
+	err := s.Read(ctx, func(tx *Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		query := `SELECT a.id,a.kind,a.revision,a.session_id,a.project_id,a.body,a.created_at,a.updated_at
+FROM entities a JOIN entities p ON p.id=json_extract(a.body,'$.provider_id') AND p.kind='provider'
+WHERE a.kind='account' AND a.id>? AND json_extract(a.body,'$.type')='api'
+AND json_extract(a.body,'$.enabled')=1 AND json_type(a.body,'$.connection')='object'
+AND COALESCE(json_type(a.body,'$.removal'),'null')='null'
+AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription'
+AND ((COALESCE(json_extract(a.body,'$.validation.connection_id'),'')<>json_extract(a.body,'$.connection.id')
+OR unixepoch(json_extract(a.body,'$.validation.observed_at'))+MAX(?,COALESCE(json_extract(a.body,'$.validation.retry_after_seconds'),0))<=unixepoch(?))
+OR (json_extract(p.body,'$.discovery')=1 AND (COALESCE(json_extract(a.body,'$.catalog.connection_id'),'')<>json_extract(a.body,'$.connection.id')
+OR unixepoch(json_extract(a.body,'$.catalog.observed_at'))+MAX(?,COALESCE(json_extract(a.body,'$.catalog.retry_after_seconds'),0))<=unixepoch(?))))
+ORDER BY a.id LIMIT ?`
+		var err error
+		result, err = tx.modelRecords(query, after, int64(interval/time.Second), now.UTC().Format(time.RFC3339Nano), int64(interval/time.Second), now.UTC().Format(time.RFC3339Nano), limit)
+		return err
+	})
+	return result, err
+}
+
 // ModelBySourceNative resolves an exact executable identity inside the save
 // transaction. CLI aliases and other sources never participate in this lookup.
 func (t *Tx) ModelBySourceNative(provider domain.ID, service domain.SubscriptionService, native string) (Record, bool, error) {

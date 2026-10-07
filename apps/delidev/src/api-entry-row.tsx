@@ -49,8 +49,9 @@ function Quota({ window, now, compact = false }: { window: SubscriptionQuotaWind
   const value = quotaPresentation(window, now);
   return <div className="api-quota-window"><small>{window.id || copy("api-entry-row.extra.aae8d5aad61f")}</small><strong>{value.percent === undefined ? copy("api-entry-row.notReported_adadfa") : copy("api-entry-row.remaining_fe6b6b", { v0: value.percent })}</strong>{value.percent !== undefined ? <progress value={value.percent} max={100} aria-label={copy("api-entry-row.remaining_f33475", { v0: window.id || copy("api-entry-row.extra.aae8d5aad61f") })} /> : null}<small>{value.state === QuotaObservationState.Observed ? copy("api-entry-row.observed_64fa8a") : value.state === QuotaObservationState.Failed ? copy("api-entry-row.observationFailed_d2fffd") : value.state === QuotaObservationState.Stale ? copy("api-entry-row.staleObservation_ce693c") : value.state === QuotaObservationState.Unsupported ? copy("api-entry-row.unsupported_543246") : copy("api-entry-row.unknown_b764cd")}</small>{!compact && window.observedAt ? <small><LocalizedText id="api-entry-row.observed_e8e2c1" components={{ s0: <time dateTime={window.observedAt}>{formatTimestamp(window.observedAt)}</time> }} /></small> : null}{!compact && window.resetAt ? <small><LocalizedText id="api-entry-row.resets_8693d0" components={{ s0: <time dateTime={window.resetAt}>{formatTimestamp(window.resetAt)}</time> }} /></small> : null}</div>;
 }
-export function ApiEntryRow({ row, provider, active, manage, edit, remove, openUsage, storage }: {
+export function ApiEntryRow({ row, provider, active, manage, edit, remove, openUsage, storage, verification }: {
   storage?: ReactNode;
+  verification?: ReactNode;
   row: Resource; provider?: { displayName: string; enabled: boolean; protocol?: string }; active: boolean;
   manage: () => void; edit: () => void; remove: () => void; openUsage?: (entry: UsageEntry) => void;
 }) {
@@ -75,12 +76,15 @@ export function ApiEntryRow({ row, provider, active, manage, edit, remove, openU
   const closeMenu = () => { setMenu(false); menuButton.current?.focus(); };
   const cleanup = Boolean(text(object(value.removal).request_id));
   const connected = Boolean(text(object(value.connection).id));
+  const validation = object(value.validation);
+  const verified = value.health === "ready" && connected && validation.connection_id === object(value.connection).id && validation.state === "observed" && ["credential-accepted", "keyless-endpoint"].includes(text(validation.authentication));
   return <article className="api-entry-row api-usage-row" aria-labelledby={nameId}>
     <div className="api-usage-main">
       <div className="api-entry-identity"><span className="api-entry-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 15l6-6m-8 9H5a4 4 0 0 1 0-8h4m6-4h4a4 4 0 0 1 0 8h-4" /></svg></span><div>
         <h2 id={nameId}>{name}</h2><p className="api-entry-provider-name">{provider?.displayName ?? copy("api-entry-row.extra.37709967fc3f") + text(value.provider_id)}</p>
         <p className="api-entry-format">{apiFormatLabels[apiFormat(value.api_protocol) ?? apiFormat(provider?.protocol)!] ?? ""}</p>
-        <div className="api-entry-statuses"><span data-state={cleanup ? "warning" : connected ? "connected" : "neutral"}><span className="api-entry-sr-only">{copy("api-entry-row.connection_9adb21")}</span>{cleanup ? copy("api-entry-row.credentialCleanupPending_50459d") : connected ? copy("api-entry-row.connected_229655") : copy("api-entry-row.disconnected_04dfac")}</span><span data-state={value.health === "ready" ? "connected" : "warning"}><span className="api-entry-sr-only">{copy("api-entry-row.health_6e9098")}</span>{statusLabel(text(value.health)) || copy("api-entry-row.extra.b764cdc0eab7")}</span></div>
+        <div className="api-entry-statuses"><span data-state={cleanup ? "warning" : connected ? "connected" : "neutral"}><span className="api-entry-sr-only">{copy("api-entry-row.connection_9adb21")}</span>{cleanup ? copy("api-entry-row.credentialCleanupPending_50459d") : connected ? copy("api-entry-row.connected_229655") : copy("api-entry-row.disconnected_04dfac")}</span><span data-state={value.health === "ready" ? "connected" : "warning"}><span className="api-entry-sr-only">{copy("api-entry-row.health_6e9098")}</span>{verified ? copy("api-verification.badge") : statusLabel(text(value.health)) || copy("api-entry-row.extra.b764cdc0eab7")}</span></div>
+        {verification}
         {!supported ? <small>{row.id}</small> : null}
       </div></div>
       <dl className="api-usage-metrics"><UsageMetrics data={result.data} /><div className="api-usage-metric"><dt>{copy("api-entry-row.quota_6c105c")}</dt><dd>{value.confirmed_exhausted === true ? <strong className="api-entry-exhausted">{copy("api-entry-row.confirmedExhausted_763851")}</strong> : windows.length ? windows.slice(0, 2).map((window, index) => <Quota key={index} window={window} now={now} compact />) : <strong>{copy("api-entry-row.notReported_adadfa")}</strong>}</dd></div></dl>
