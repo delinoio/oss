@@ -1,10 +1,11 @@
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SystemService } from "@delinoio/delidev-api-client";
 import { LocalServerControls, LocalServerState, type LocalServerStatus } from "./local-server";
+import { Modal } from "./ui";
 import { MutationIntents } from "./mutation";
 import { LocalConnectionHelp, LocalConnectionPresentationProvider } from "./local-connection-presentation";
 
@@ -51,4 +52,22 @@ it("reveals the original connection view inline and preserves its confirmation a
   fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
   await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
   mounted.unmount(); target.remove();
+});
+
+it("presents the same guarded controller inside the invoking modal and releases only its view on departure", () => {
+  const stop = vi.fn(async () => ({})), restart = vi.fn(), request = vi.fn();
+  const transport = createRouterTransport(router => router.service(SystemService, { stopServer: stop }));
+  const client = new QueryClient();
+  const view = (open: boolean) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><LocalConnectionPresentationProvider inline={false} onRequest={request}>{open ? <Modal title="Original account task" close={() => {}}><LocalConnectionHelp /></Modal> : null}<LocalServerControls status={{ state: LocalServerState.Ready, attempts: 0, retry_ms: 0 }} restart={restart} busy={false} /></LocalConnectionPresentationProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  const mounted = render(view(true));
+  const task = screen.getByRole("dialog", { name: "Original account task" });
+  fireEvent.click(within(task).getByRole("button", { name: "Connection controls" }));
+  fireEvent.click(within(task).getByText("Local server"));
+  fireEvent.click(within(task).getByRole("button", { name: "Stop local server" }));
+  expect(within(task).getByRole("button", { name: "Confirm server stop" })).toBeTruthy();
+  expect(screen.getAllByRole("button", { name: "Confirm server stop" })).toHaveLength(1);
+  mounted.rerender(view(false));
+  expect(request).toHaveBeenLastCalledWith(undefined);
+  expect(screen.queryByRole("button", { name: "Confirm server stop" })).toBeNull();
+  expect(stop).not.toHaveBeenCalled(); expect(restart).not.toHaveBeenCalled();
 });
