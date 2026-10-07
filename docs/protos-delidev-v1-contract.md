@@ -1,10 +1,15 @@
 # DeliDev v1 Connect contract
 
-## Inline Worker models and endpoint-only completion reservation
+## Direct execution startup reservation
 
-Reserve System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields on main. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
-
-Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+The [startup contract](cmds-delidev-execution-startup-contract.md) reserves System
+43, Worker 23, `ReportExecutionStartupRequest`, `ReportExecutionStartupResponse`,
+`ExecutionStartupObservation` and the four closed startup enums under issue #964.
+The allocation ledger owns every field and enum member of these new declarations.
+Establish the complete closure on main before dependent implementation. Preserve
+System 42 and Worker 22 for the separate inline-model reservation in PR #1642.
+These reservations activate no schema, execution or credential authority and add
+no migration.
 
 ## Failed subscription cleanup reservations
 
@@ -839,3 +844,9 @@ reserves protocol 2 and `AttachWorkerRequest.protocol_version = 10` on main.
 The field is absent from active schemas until complete implementation. The
 reset removes historical forwarding imports/reflection and obsolete API
 surfaces; retained field and enum numbers preserve their original meanings.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Reserve System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields on main. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

@@ -1,10 +1,15 @@
 # DeliDev source ownership and compatibility
 
-## Inline Worker models and endpoint-only completion reservation
+## Direct execution startup reservation
 
-Main first reserves System 42, Worker 22 and the complete endpoint/model-identity/pricing closure in the allocation ledger. Compose full DB baseline 32 / protocol 2 reset with inline Worker schema 4 and current portable bundle 4. The prior atomic Model/Agent save and portable bundle 2 proposal are superseded only on complete activation. The 2026-10-07 owner amendment waives earlier DB retention and permits explicit DB/sidecar reset without conversion, retaining original native and protected-credential cleanup authority.
-
-Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+The [startup contract](cmds-delidev-execution-startup-contract.md) reserves System
+43, Worker 23, `ReportExecutionStartupRequest`, `ReportExecutionStartupResponse`,
+`ExecutionStartupObservation` and the four closed startup enums under issue #964.
+The allocation ledger owns every field and enum member of these new declarations.
+Establish the complete closure on main before dependent implementation. Preserve
+System 42 and Worker 22 for the separate inline-model reservation in PR #1642.
+These reservations activate no schema, execution or credential authority and add
+no migration.
 
 ## Failed subscription cleanup reservations
 
@@ -378,3 +383,9 @@ native login, execution, browser dispatch or cleanup authority and add no
 migration. The complete feature owns selected-Runner native authentication,
 metadata-only server ownership, single-use original login input and joined
 native lifecycle/execution cleanup under the subscription and desktop contracts.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Main first reserves System 42, Worker 22 and the complete endpoint/model-identity/pricing closure in the allocation ledger. Compose full DB baseline 32 / protocol 2 reset with inline Worker schema 4 and current portable bundle 4. The prior atomic Model/Agent save and portable bundle 2 proposal are superseded only on complete activation. The 2026-10-07 owner amendment waives earlier DB retention and permits explicit DB/sidecar reset without conversion, retaining original native and protected-credential cleanup authority.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
