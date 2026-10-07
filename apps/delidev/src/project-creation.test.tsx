@@ -97,8 +97,10 @@ it("searches later pages, keeps off-filter selections, limits rendered choices a
   const first = Array.from({ length: 50 }, (_, index) => repository(`Repository ${index}`)), last = repository("Later needle");
   const value = fixture([...first, last]); value.list.mockImplementation(async token => token ? { resources: [last] } : { resources: first, nextPageToken: "second" });
   render(value.view()); await choose("Repository 0");
-  await screen.findByRole("button", { name: "Next results" });
+  await screen.findByRole("button", { name: "Load more Repository choices" });
   expect(within(screen.getByRole("group", { name: "Repository choices" })).getAllByRole("checkbox")).toHaveLength(50);
+  fireEvent.click(screen.getByRole("button", { name: "Load more Repository choices" }));
+  await waitFor(() => expect(within(screen.getByRole("group", { name: "Repository choices" })).getAllByRole("checkbox")).toHaveLength(51));
   fireEvent.change(search(), { target: { value: "needle" } }); await choose("Later needle");
   expect(screen.getByText("2 selected repositories")).toBeTruthy();
   next(); expect(name().value).toBe("Repository 0");

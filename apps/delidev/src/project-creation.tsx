@@ -13,6 +13,8 @@ import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskActions, SettingsTaskDialog, SettingsTasks, SettingsTaskStatusOutlet } from "./settings-task";
 import { SettingsTaskContext } from "./settings-task-context";
 import { Problem } from "./ui";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { usePaginationChain } from "./scroll-pagination-query";
 import "./project-creation.css";
 
 enum Step { Repositories = 1, Configure, Restrictions }
@@ -33,7 +35,8 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
   const [step, setStep] = useState(Step.Repositories);
   const [nameEdited, setNameEdited] = useState(Boolean(text(data.name)));
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
+  const resultsRoot = useRef<HTMLDivElement>(null);
+  const root = useScrollRoot(resultsRoot);
   const [focusAttempt, setFocusAttempt] = useState(0);
   const [validationField, setValidationField] = useState<"search" | "name" | "primary">();
   const [problem, setProblem] = useProductMessage("");
@@ -43,8 +46,12 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
   const query = useDeferredValue(search.trim().toLowerCase());
   const names = useMemo(() => new Map(catalog.rows.filter(row => row.supported).map(row => [row.id, row.name])), [catalog.rows]);
   const matches = useMemo(() => catalog.rows.filter(row => row.name.toLowerCase().includes(query)), [catalog.rows, query]);
-  const pageIndex = Math.min(page, Math.max(0, Math.ceil(matches.length / 50) - 1));
-  const choices = matches.slice(pageIndex * 50, (pageIndex + 1) * 50);
+  const readMatches = useCallback(async (token: string) => {
+    const offset = Number(token || 0), rows = matches.slice(offset, offset + 50);
+    return { rows, nextPageToken: offset + 50 < matches.length ? String(offset + 50) : "" };
+  }, [matches]);
+  const results = usePaginationChain(JSON.stringify([query, matches.map(row => [row.id, row.revision.toString()])]), active && visible && !blocked && step === Step.Repositories, readMatches);
+  const choices = results.rows;
   const ids = items(data.repositories).map(text);
   const firstName = ids.length ? names.get(ids[0]!) : "";
   useEffect(() => {
@@ -102,11 +109,12 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     <section hidden={step !== Step.Repositories}>
       <h3>{stepName(Step.Repositories)}</h3><p>{copy("project-creation.selectHelp")}</p>
       <fieldset disabled={blocked || step !== Step.Repositories}>
-        <label className="project-repository-search" htmlFor={inputId}>{copy("project-creation.search")}<input id={inputId} data-project-focus="search" type="search" autoComplete="off" maxLength={256} value={search} placeholder={copy("project-creation.search")} aria-controls={`${inputId}-results`} onChange={event => { setSearch(event.target.value); setPage(0); }} /></label>
-        <div id={`${inputId}-results`} className="project-repository-results" role="group" aria-label={copy("project-creation.repositoryChoices")}>
+        <label className="project-repository-search" htmlFor={inputId}>{copy("project-creation.search")}<input id={inputId} data-project-focus="search" type="search" autoComplete="off" maxLength={256} value={search} placeholder={copy("project-creation.search")} aria-controls={`${inputId}-results`} onChange={event => { setSearch(event.target.value); }} /></label>
+        <div ref={resultsRoot} id={`${inputId}-results`} className="project-repository-results" role="group" aria-label={copy("project-creation.repositoryChoices")}>
           {choices.map((row, index) => { const duplicateName = catalog.rows.some(other => other.id !== row.id && other.name === row.name); const identityId = `${inputId}-repository-${index}-identity`; return <div key={row.id} className="project-repository-choice"><label className="checkbox"><input type="checkbox" aria-describedby={duplicateName ? identityId : undefined} checked={ids.includes(row.id)} disabled={!row.supported || (!ids.includes(row.id) && ids.length >= 1000)} onChange={event => repositories(event.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />{row.name || copy("project-creation.nameUnavailable")}</label>{duplicateName || !row.supported ? <RepositoryIdentity id={row.id} descriptionId={duplicateName ? identityId : undefined} /> : null}{!row.supported ? <small>{copy("project-creation.unsupportedRepository")}</small> : null}</div>; })}
+        <ScrollContinuation query={results} root={root} active={active && visible && !blocked && step === Step.Repositories} label={copy("project-creation.repositoryChoices")} />
         </div>
-        {matches.length > 50 ? <nav className="actions" aria-label={copy("project-creation.resultPages")}><button type="button" disabled={pageIndex === 0} onClick={() => setPage(pageIndex - 1)}>{copy("project-creation.previousResults")}</button><button type="button" disabled={(pageIndex + 1) * 50 >= matches.length} onClick={() => setPage(pageIndex + 1)}>{copy("project-creation.nextResults")}</button></nav> : null}
+
         {catalog.loading ? <p role="status">{copy(catalog.rows.length ? "project-creation.loadingMore" : "project-creation.loading")}</p> : null}
         {catalog.complete && !matches.length ? <p role="status">{copy(catalog.rows.length ? "project-creation.noMatches" : "project-creation.empty")}</p> : null}
         {catalog.error ? <><p role="status">{copy("project-creation.incomplete")}</p>{catalog.error instanceof ProductError ? <p role="alert">{copy(catalog.error.productMessage.key)}</p> : <Problem error={catalog.error} />}<div className="actions"><button type="button" onClick={catalog.retry}>{copy("project-creation.retryRead")}</button><button type="button" onClick={catalog.reload}>{copy("project-creation.reload")}</button></div></> : null}

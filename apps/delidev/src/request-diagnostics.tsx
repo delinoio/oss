@@ -2,14 +2,17 @@ import { useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
 import { Surface } from "./surface";
 import { ownedMessage, useProductMessage, copy, useLocale  } from "./localization";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   subscriptionServiceFromWire, subscriptionServiceLabel, subscriptionServiceHarnesses, isEntityId, RequestDiagnosticSource as Source, RequestDiagnosticState as State,
   RequestDiagnosticOperation as Operation, SessionQuery, SystemCapability, SystemQuery,
   type ListRequestDiagnosticsResponse, type RequestDiagnostic,
 } from "@delinoio/delidev-api-client";
-import { Problem } from "./ui";
+import { Failure, Problem } from "./ui";
+import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
+import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
+import { ScrollPayloadWindow } from "./scroll-payload-window";
 
 const efforts = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const effectiveTiers = new Set(["auto", "default", "flex", "priority", "standard"]);
@@ -85,30 +88,35 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
   const panelRoot = useRef<HTMLElement>(null);
   const shortcuts = useShortcuts([{ id: ShortcutId.DiagnosticsClose, scope: Surface.Sessions, label: "shortcuts.closeDiagnostics", bindings: [{ key: "Escape" }], target: panelRoot, input: ShortcutInput.Target, run: close }]);
   const input = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState(""), [execution, setExecution] = useState(""), [page, setPage] = useState("");
+  const [draft, setDraft] = useState(""), [execution, setExecution] = useState("");
   const [problem, setProblem] = useProductMessage("");
   const status = useQuery(SystemQuery.getStatus, {}, { retry: false });
   const supported = status.data?.capabilities.includes(SystemCapability.REQUEST_DIAGNOSTICS_V1) ?? false;
-  const result = useQuery(SessionQuery.listRequestDiagnostics, { sessionId, executionId: execution, pageSize: 50, pageToken: page }, {
-    enabled: supported, retry: false, gcTime: 0, staleTime: Infinity, refetchOnWindowFocus: false,
-    select: (response) => validateDiagnosticPage(response, sessionId, execution),
-  });
+  const root = useScrollRoot(panelRoot);
+  const request = useCallback((token: string) => ({ sessionId, executionId: execution, pageSize: 50, pageToken: token }), [sessionId, execution]);
+  const project = useCallback((response: ListRequestDiagnosticsResponse) => {
+    const page = validateDiagnosticPage(response, sessionId, execution);
+    return { rows: page.records.map(row => ({ id: row.id, revision: row.revision })), payload: page.records, nextPageToken: page.nextPageToken };
+  }, [sessionId, execution]);
+  const reader = useConnectPaginationReader(SessionQuery.listRequestDiagnostics, request, project);
+  const result = usePaginationChain(JSON.stringify([sessionId, execution]), supported, reader);
+  usePaginationRefresh(SessionQuery.listRequestDiagnostics, request(""), supported, result.refresh);
   useEffect(() => { input.current?.focus(); }, []);
   return <aside ref={panelRoot} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiagnosticsClose)} className="session-files" aria-label={copy("request-diagnostics.modelRequestDiagnostics_0c266b")} onKeyDown={shortcuts.onKeyDown}>
     <header><h2>{copy("request-diagnostics.modelRequestDiagnostics_0c266b")}</h2><button onClick={close} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiagnosticsClose)}>{copy("request-diagnostics.closeDiagnostics_143427")}</button></header>
     <p>{copy("request-diagnostics.nativeInputsAndIndividualHttpAttempts_6d3cf6")}</p>
     <p>{copy("request-diagnostics.httpLatencyCoversTheObservedRequest_bc4448")}</p>
-    <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a")); return; } setProblem(""); setExecution(draft); setPage(""); }}>
+    <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a")); return; } setProblem(""); if (draft === execution) result.reload(); else setExecution(draft); }}>
       <label>{copy("request-diagnostics.executionIdOptional_43c4ca")}<input ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button disabled={!supported}>{copy("request-diagnostics.applyExecutionFilter_591b7d")}</button>
     </form>
-    {problem ? <p role="alert">{problem}</p> : null}<Problem error={status.error || result.error} />
+    {problem ? <p role="alert">{problem}</p> : null}<Problem error={status.error} /><Failure failure={result.error?.failure} />
     {status.isPending ? <p role="status">{copy("request-diagnostics.checkingDiagnosticSupport_65aa48")}</p> : status.data && !supported ? <p>{copy("request-diagnostics.requestDiagnosticsAreUnavailableOnThis_cb5bc2")}</p> : null}
     {status.error ? <button onClick={() => void status.refetch()}>{copy("request-diagnostics.retryServerCapabilities_18a515")}</button> : null}
-    {supported ? <button disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("request-diagnostics.refreshDiagnostics_7bce98")}</button> : null}
-    {supported && result.isPending ? <p role="status">{copy("request-diagnostics.loadingRequestObservations_ac40d6")}</p> : null}
-    {result.error && result.data ? <p role="alert">{copy("request-diagnostics.refreshFailedTheDisplayedObservationsMay_c02e74")}</p> : null}
-    {result.data?.records.map((value) => <DiagnosticRow key={value.id} value={value} />)}
-    {result.data?.records.length === 0 ? <p>{copy("request-diagnostics.noRetainedRequestObservationsForThis_ddf6c6")}</p> : null}
-    <nav aria-label={copy("request-diagnostics.diagnosticPages_45198d")}><button disabled={!page || result.isFetching} onClick={() => setPage("")}>{copy("request-diagnostics.firstPage_0bdbb7")}</button><button disabled={!result.data?.nextPageToken || result.isFetching} onClick={() => setPage(result.data!.nextPageToken)}>{copy("request-diagnostics.nextPage_c08ac7")}</button></nav>
+    {supported ? <button disabled={Boolean(result.loading)} onClick={result.refreshExplicit}>{copy("request-diagnostics.refreshDiagnostics_7bce98")}</button> : null}
+    {supported && !result.loaded && result.loading ? <p role="status">{copy("request-diagnostics.loadingRequestObservations_ac40d6")}</p> : null}
+    {result.error && result.loaded ? <p role="alert">{copy("request-diagnostics.refreshFailedTheDisplayedObservationsMay_c02e74")}</p> : null}
+    <ScrollPayloadWindow query={result} root={root} active={supported} identity={value => value.id} revision={value => value.revision}>{payload => payload.map(value => <DiagnosticRow key={value.id} value={value} />)}</ScrollPayloadWindow>
+    {result.loaded && result.rows.length === 0 ? <p>{copy("request-diagnostics.noRetainedRequestObservationsForThis_ddf6c6")}</p> : null}
+    <ScrollContinuation query={result} root={root} active={supported} label={copy("request-diagnostics.modelRequestDiagnostics_0c266b")} />
   </aside>;
 }
