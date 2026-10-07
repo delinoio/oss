@@ -201,9 +201,8 @@ it("renders the approved two-row table with UTC labels, full metadata and inert 
     expect(within(table).getByText(`Original modification timestamp: ${backup.modifiedAt}`)).toBeTruthy();
     expect(table.querySelector(`time[datetime="${backup.modifiedAt}"]`)).toBeTruthy();
   }
-  expect(screen.getByText("2 on this page")).toBeTruthy();
-  expect((screen.getByRole("button", { name: "First backup page" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole("button", { name: "Next backup page" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("2 loaded")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /backup page/ })).toBeNull();
   await screen.findByText("No creation jobs on this page.");
   expect(screen.queryByRole("navigation", { name: "Creation job pages" })).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
@@ -240,20 +239,20 @@ it("keeps three cursor owners independent and changes tabs without extra reads",
   f.deletions.mockImplementation(async input => ({ jobs: [f.deletion], nextPageToken: input.pageToken ? "" : "deletion-page-2" }));
   render(f.view());
   await screen.findByText("Backup creation pending");
-  fireEvent.click(screen.getByRole("button", { name: "Next backup page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Database backups" }));
   await waitFor(() => expect(f.list.mock.calls.at(-1)![0].pageToken).toBe("inventory-page-2"));
-  fireEvent.click(screen.getByRole("button", { name: "Next creation page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Creation jobs" }));
   await waitFor(() => expect(f.creations.mock.calls.at(-1)![0].pageToken).toBe("creation-page-2"));
   const before = [f.list.mock.calls.length, f.creations.mock.calls.length, f.deletions.mock.calls.length];
   fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
   expect([f.list.mock.calls.length, f.creations.mock.calls.length, f.deletions.mock.calls.length]).toEqual(before);
-  fireEvent.click(screen.getByRole("button", { name: "Next deletion page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Deletion jobs" }));
   await waitFor(() => expect(f.deletions.mock.calls.at(-1)![0].pageToken).toBe("deletion-page-2"));
   fireEvent.click(screen.getByRole("tab", { name: "Creation jobs" }));
-  expect((screen.getByRole("button", { name: "First creation page" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((screen.getByRole("button", { name: "First backup page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Load more Creation jobs" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Load more Database backups" })).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
-  expect((screen.getByRole("button", { name: "First deletion page" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Load more Deletion jobs" })).toBeNull();
   expect(f.inspect).not.toHaveBeenCalled();
   expect(f.create).not.toHaveBeenCalled();
   expect(f.remove).not.toHaveBeenCalled();
@@ -350,34 +349,30 @@ it("retains cached inventory during an updating read and its failed refresh", as
   expect((screen.getByRole("button", { name: "Create database backup" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
-it("hides only successful empty first-page pagers and retains First on empty later pages", async () => {
+it("accumulates empty inventory pages and exhausts without a manual reset", async () => {
   const f = fixture();
-  f.list.mockResolvedValueOnce({ backups: [], nextPageToken: "inventory-page-2" }).mockResolvedValueOnce({ backups: [] });
-  f.creations.mockResolvedValue({ jobs: [] });
+  f.list.mockResolvedValueOnce({ backups: [], nextPageToken: "inventory-page-2" }).mockResolvedValue({ backups: [] });
   render(f.view());
   await screen.findByText("No managed backups.");
-  expect(screen.getByRole("navigation", { name: "Backup pages" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Next backup page" }));
-  await screen.findByText("No backups on this page.");
-  expect((screen.getByRole("button", { name: "First backup page" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((screen.getByRole("button", { name: "Next backup page" }) as HTMLButtonElement).disabled).toBe(true);
-  f.list.mockResolvedValueOnce({ backups: [] });
-  fireEvent.click(screen.getByRole("button", { name: "First backup page" }));
-  await screen.findByText("No managed backups.");
-  await waitFor(() => expect(screen.queryByRole("navigation", { name: "Backup pages" })).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "Load more Database backups" }));
+  await waitFor(() => expect(f.list).toHaveBeenCalledTimes(2));
+  expect(f.list.mock.calls[1]![0].pageToken).toBe("inventory-page-2");
+  expect(screen.queryByRole("button", { name: "Load more Database backups" })).toBeNull();
+  expect(f.inspect).not.toHaveBeenCalled();
 });
 
-it.each(["creation", "deletion"])("preserves %s empty-page scope and continuation paging", async kind => {
+it.each(["creation", "deletion"])("stops repeated %s history cursors until explicit reload", async kind => {
   const f = fixture();
-  if (kind === "creation") f.creations.mockImplementation(async input => ({ jobs: [], nextPageToken: input.pageToken ? "" : "creation-page-2" }));
-  else f.deletions.mockImplementation(async input => ({ jobs: [], nextPageToken: input.pageToken ? "" : "deletion-page-2" }));
+  const jobs = kind === "creation" ? f.creations : f.deletions;
+  jobs.mockResolvedValue({ jobs: [], nextPageToken: `${kind}-page-2` });
   render(f.view());
   if (kind === "deletion") fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
   await screen.findByText(`No ${kind} jobs on this page.`);
-  fireEvent.click(screen.getByRole("button", { name: `Next ${kind} page` }));
-  await waitFor(() => expect((screen.getByRole("button", { name: `First ${kind} page` }) as HTMLButtonElement).disabled).toBe(false));
-  expect((screen.getByRole("button", { name: `Next ${kind} page` }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByText(`No ${kind} jobs on this page.`)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: `Load more ${kind === "creation" ? "Creation jobs" : "Deletion jobs"}` }));
+  await screen.findByRole("button", { name: "Reload list" });
+  expect(jobs).toHaveBeenCalledTimes(2);
+  expect(f.create).not.toHaveBeenCalled();
+  expect(f.remove).not.toHaveBeenCalled();
 });
 
 it("clears fresh confirmation on a failed or in-flight reinspection", async () => {
@@ -440,4 +435,29 @@ it("ignores a late accepted response from a disposed opening without replaying t
   expect(screen.queryByRole("region", { name: "Accepted backup operations" })).toBeNull();
   expect(screen.queryByText(`Backup creation accepted: ${f.creation.id}`)).toBeNull();
   expect(f.create).toHaveBeenCalledTimes(1);
+});
+
+it("keeps backup metadata across four pages and restores an evicted payload with its original token", async () => {
+  const f = fixture();
+  const backups = Array.from({ length: 4 }, (_, index) => ({ ...f.backup, id: newRequestId(), sizeBytes: BigInt(index + 1) }));
+  f.creations.mockResolvedValue({ jobs: [] });
+  f.list.mockImplementation(async input => {
+    const index = input.pageToken ? Number(input.pageToken.slice(1)) : 0;
+    return { backups: [backups[index]!], nextPageToken: index < 3 ? `p${index + 1}` : "" };
+  });
+  render(f.view());
+  await screen.findByRole("button", { name: `Inspect backup ${backups[0]!.id}` });
+  for (let index = 1; index < 4; index++) {
+    fireEvent.click(screen.getByRole("button", { name: "Load more Database backups" }));
+    await screen.findByRole("button", { name: `Inspect backup ${backups[index]!.id}` });
+  }
+  expect(screen.getByText("4 loaded")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: `Inspect backup ${backups[0]!.id}` })).toBeNull();
+  expect(screen.getAllByRole("table", { name: "Database backups" })).toHaveLength(3);
+  fireEvent.click(screen.getByRole("button", { name: "Restore previously loaded items" }));
+  await screen.findByRole("button", { name: `Inspect backup ${backups[0]!.id}` });
+  expect(f.list.mock.calls.map(([input]) => input.pageToken)).toEqual(["", "p1", "p2", "p3", ""]);
+  expect(f.inspect).not.toHaveBeenCalled();
+  expect(f.create).not.toHaveBeenCalled();
+  expect(f.remove).not.toHaveBeenCalled();
 });
