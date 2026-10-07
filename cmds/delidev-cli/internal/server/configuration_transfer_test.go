@@ -709,7 +709,7 @@ func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
 		selection.Bundle.Version = version
 		raw, _ = json.Marshal(selection)
 		_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
-		if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.Unsupported {
+		if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.InvalidArgument {
 			t.Fatalf("unsupported bundle accepted routes: %v", err)
 		}
 	}
