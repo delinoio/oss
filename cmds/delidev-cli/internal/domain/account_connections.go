@@ -62,7 +62,7 @@ func (a Account) validateConnectionGenerations() error {
 	original := false
 	for _, generation := range a.RetainedConnections {
 		c := generation.Connection
-		if ids[c.ID] || c.CredentialReferenceID() != root || c.APIFormat == nil {
+		if ids[c.ID] || c.CredentialReferenceID() != root || c.APIFormat == nil || (c.Authentication == KeylessAuth) != (a.Connection.Authentication == KeylessAuth) {
 			return invalid()
 		}
 		ids[c.ID] = true

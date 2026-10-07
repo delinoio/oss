@@ -43,6 +43,7 @@ func TestAccountConnectionGenerationsRejectForgedReferences(t *testing.T) {
 		func(a *Account) { a.RetainedConnections[0].Connection.CredentialID = NewID() },
 		func(a *Account) { a.RetainedConnections[0].Connection.ID = a.Connection.ID },
 		func(a *Account) { a.RetainedConnections[0].Connection.APIFormat = nil },
+		func(a *Account) { a.RetainedConnections[0].Connection.Authentication = KeylessAuth },
 		func(a *Account) { a.RetainedConnections[0].Validation.ConnectionID = NewID() },
 		func(a *Account) { a.RetainedConnections = nil },
 		func(a *Account) { a.RetainedConnections = append(a.RetainedConnections, a.RetainedConnections[0]) },

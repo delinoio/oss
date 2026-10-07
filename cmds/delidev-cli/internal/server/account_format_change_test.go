@@ -40,6 +40,20 @@ func TestAccountApiFormatChangeKeepsKeyAcrossRestartAndCleanup(t *testing.T) {
 	}
 	account = connected.Msg.Account
 	original := accountBody(t, account).Connection.ID
+	invalid := formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)
+	invalid.Alias = ""
+	if _, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(invalid)); err == nil {
+		t.Fatal("invalid preferences were accepted")
+	}
+	unchanged, _ := f.s.accountRecord(f.ctx, domain.ID(account.Id))
+	if unchanged.Revision != account.Revision || !bytes.Equal(unchanged.Data, account.DocumentJson) {
+		t.Fatal("failed format transaction published partial state")
+	}
+	same, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT)))
+	if err != nil || accountBody(t, same.Msg.Account).Connection.ID != original || len(accountBody(t, same.Msg.Account).RetainedConnections) != 0 {
+		t.Fatal("unchanged format rotated connection", err)
+	}
+	account = same.Msg.Account
 	puts, deletes, enumerations := f.vault.counts()
 	request := formatRequest(account, pb.ApiProtocol_API_PROTOCOL_OPENAI_RESPONSES)
 	request.Alias = "Changed"
@@ -67,6 +81,17 @@ func TestAccountApiFormatChangeKeepsKeyAcrossRestartAndCleanup(t *testing.T) {
 			t.Fatal(err)
 		}
 		changed = next
+	}
+	tampered := *request
+	tampered.Alias = "Different retry"
+	if _, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(&tampered)); err == nil {
+		t.Fatal("changed receipt retry was accepted")
+	}
+	stripped := accountBody(t, changed.Msg.Account)
+	stripped.RetainedConnections = nil
+	raw, _ := json.Marshal(stripped)
+	if _, err := f.s.SaveConfiguration(f.ctx, connect.NewRequest(&pb.SaveConfigurationRequest{Mutation: acctMutation(changed.Msg.Account, domain.NewID()), Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT, SchemaVersion: 3, DocumentJson: raw})); err == nil {
+		t.Fatal("ordinary edit cleared protected generations")
 	}
 	f.restart(t)
 	replay, err := f.s.ChangeAccountApiFormat(f.ctx, connect.NewRequest(request))
@@ -263,6 +288,14 @@ func TestAccountApiFormatChangePreservesSessionContinuation(t *testing.T) {
 	}
 	if accountBody(t, changed.Msg.Account).Health != domain.AccountUnverified {
 		t.Fatal("new format was validated by save")
+	}
+	validated, err := f.accounts.ValidateAccount(ctx, ownerRequest(f.identity, &pb.ValidateAccountRequest{Mutation: acctMutation(changed.Msg.Account, domain.NewID())}))
+	if err != nil || accountBody(t, validated.Msg.Account).Health != domain.AccountReady {
+		t.Fatal("explicit current generation validation failed", err)
+	}
+	originalEvidence := accountBody(t, validated.Msg.Account).ForConnection(original.ConnectionID)
+	if originalEvidence.Connection.ID != original.ConnectionID || originalEvidence.APIProtocol != domain.OpenAIResponses || originalEvidence.Health != domain.AccountReady {
+		t.Fatal("new validation changed original evidence")
 	}
 	f.enqueue(t, "continue original format", domain.PlanMode)
 	if err := f.service.dispatchExecution(ctx, f.refresh(t)); err != nil {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useInfiniteQuery, useQuery } from "@connectrpc/connect-query";
 import { APIFormatId, APIAuthenticationId, apiFormat, apiFormatLabels, apiFormatToWire, providerAPIFormats, accountAPIProfile, AccountTypeFilter, EntityKind, ProviderInventoryCapability, ProviderQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
@@ -67,6 +67,7 @@ export function ProviderAPIFormatFields({ data, change, active, initial, saveBlo
 
 export function AccountAPIFormatField({ data, change, active, initial, saveBlocked, keepsFormatKey }: Props) {
   useLocale();
+  const labelId = useId();
   const { inventory, ready, keepsKey } = useFormatCapability(active);
   const provider = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROVIDER, id: text(data.provider_id) }, { enabled: active && Boolean(data.provider_id), retry: false });
   const metadata = document(provider.data?.resource);
@@ -80,7 +81,7 @@ export function AccountAPIFormatField({ data, change, active, initial, saveBlock
   useEffect(() => { saveBlocked?.(blocked); return () => saveBlocked?.(false); }, [blocked, saveBlocked]);
   const formats = providerAPIFormats(metadata).filter(profile => (profile.authentication === APIAuthenticationId.Keyless) === (originalProfile?.authentication === APIAuthenticationId.Keyless));
   const selected = apiFormat(data.api_protocol) ?? originalProfile?.protocol ?? "";
-  return <><label>{copy("configuration-fields.apiFormat")}<select value={selected} disabled={!canChange} onChange={event => { const protocol = apiFormat(event.target.value); if (protocol) change({ ...data, api_protocol: protocol }); }}>{!selected ? <option value="">{copy("configuration-fields.loadingApiFormats")}</option> : null}{selected && !formats.some(profile => profile.protocol === selected) ? <option value={selected}>{apiFormatLabels[selected]}</option> : null}{formats.map(profile => <option key={profile.protocol} value={profile.protocol}>{apiFormatLabels[profile.protocol]}</option>)}</select></label>
+  return <><label><span id={labelId}>{copy("configuration-fields.apiFormat")}</span><select aria-labelledby={labelId} value={selected} disabled={!canChange} onChange={event => { const protocol = apiFormat(event.target.value); if (protocol) change({ ...data, api_protocol: protocol }); }}>{!selected ? <option value="">{copy("configuration-fields.loadingApiFormats")}</option> : null}{selected && !formats.some(profile => profile.protocol === selected) ? <option value={selected}>{apiFormatLabels[selected]}</option> : null}{formats.map(profile => <option key={profile.protocol} value={profile.protocol}>{apiFormatLabels[profile.protocol]}</option>)}</select></label>
     <p>{copy(keepsKey ? "configuration-fields.accountFormatKeepsKey" : "configuration-fields.accountFormatChangeHelp")}</p>{keepsKey ? <p>{copy("configuration-fields.accountFormatFutureExecutions")}</p> : null}<p>{copy("configuration-fields.accountCredentialClassHelp")}</p>
     {!ready ? <p role="status">{inventory.isFetching ? copy("configuration-fields.loadingApiFormats") : copy("configuration-fields.apiFormatsUnavailable")}</p> : null}<Problem error={inventory.error || provider.error} />
   </>;

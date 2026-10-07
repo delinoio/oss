@@ -176,7 +176,7 @@ on their ordinary preset endpoints.
 
 
 A disconnected SQL record alone does not prove cleanup: a failed native Connect
-may retain protected staging intents. Format-change admission holds the account
+may retain protected staging intents. Disconnected format-change admission holds the account
 gate, checks the original revision and credential class, then verifies no remaining
 native references outside SQLite before publication. Failed enumeration rejects
 the edit. Exact accepted receipt replays do not reopen the vault. Keyless proof
