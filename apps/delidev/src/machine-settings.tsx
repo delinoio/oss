@@ -1,7 +1,7 @@
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
-import { useRetainSettingsTask, useCloseSettingsTask } from "./settings-task-context";
+import { useCloseSettingsTask } from "./settings-task-context";
 import { useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -25,7 +25,6 @@ export function MachineSettings({ initial, active, close, authority }: { initial
   const [verify, setVerify] = useState(false);
   const [job, setJob] = useState<Resource | "unknown">();
   const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response) => { if (response.machine) setAcknowledged(response.machine); setJob(response.job ?? "unknown"); });
-  useRetainSettingsTask(Boolean(job));
   const pending = discovery.busy || discovery.uncertain || Boolean(job);
   const stale = Boolean(edit && edit.revision !== current.revision);
   return <section><header><h3>{resourceName(current)}</h3></header><p><LocalizedText id="machine-settings.worker_5b4b08" components={{ s0: <>{text(data.os)}</>, s1: <>{text(data.architecture)}</>, s2: <>{text(data.version)}</> }} /></p><p><LocalizedText id="machine-settings.lastObserved_f1bd8c" components={{ s0: <>{text(data.last_seen) || copy("machine-settings.extra.b764cdc0eab7")}</>, s1: <>{data.disabled === true ? copy("machine-settings.disabled_3c6ef5") : ""}</> }} /></p><p>{copy("machine-settings.checksRunOnThisWorkerDelidev_36310f")}</p>

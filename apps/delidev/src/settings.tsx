@@ -2,7 +2,6 @@
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import type { UsageEntry } from "./usage-entry";
 import { providerPresetNames } from "@delinoio/delidev-api-client";
-import { useAccountOAuth } from "./account-oauth";
 import { SubscriptionAccounts } from "./subscription-accounts";
 import { Backups } from "./backups";
 import { Integrations } from "./integrations";
@@ -44,7 +43,7 @@ import { RepositoryIcon, RepositoryRow } from "./repository-list";
 import { ToastKind, useNotifications } from "./toast-notifications";
 import "./api-account.css";
 import { SettingsTasks, SettingsTaskBackground, SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
-import { useRetainSettingsTask, useSettingsTaskVisible, useInSettingsTask, useCloseSettingsTask } from "./settings-task-context";
+import { useSettingsTaskVisible, useInSettingsTask, useCloseSettingsTask } from "./settings-task-context";
 
 export enum ConfigurationEditorPresentation { Workflow, InlineServerPreferences }
 
@@ -68,7 +67,6 @@ function OrdinaryConfigurationEditor({ kind, initial, initialData, serverPrefere
   const observedConflict = useRef<unknown>(undefined);
   const form = useRef<HTMLFormElement>(null);
   const formId = useId(), taskVisible = useSettingsTaskVisible(), inTask = useInSettingsTask(), cancelTask = useCloseSettingsTask(cancel);
-  useRetainSettingsTask(Boolean(job) || childPending);
   const current = useQuery(ResourceQuery.getResource, { kind, id: source?.id ?? "" }, { enabled: active && Boolean(source), refetchInterval: active ? 5000 : false });
   const repositoryStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.REPOSITORY, retry: false });
   const savedKind = { [EntityKind.AGENT]: "settings.savedKind.AGENT" as const, [EntityKind.TEMPLATE]: "settings.savedKind.TEMPLATE" as const, [EntityKind.PROJECT]: "settings.savedKind.PROJECT" as const, [EntityKind.REPOSITORY]: "settings.savedKind.REPOSITORY" as const, [EntityKind.ACCOUNT]: "settings.savedKind.ACCOUNT" as const, [EntityKind.MACHINE]: "settings.savedKind.MACHINE" as const, [EntityKind.PROVIDER]: "settings.savedKind.PROVIDER" as const, [EntityKind.MODEL]: "settings.savedKind.MODEL" as const, [EntityKind.SETTINGS]: "settings.savedKind.SETTINGS" as const };
@@ -326,20 +324,6 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     window.document.getElementById("main")?.focus({ preventScroll: true });
     navigate(SettingsCategory.Diagnostics);
   };
-  const oauth = useAccountOAuth();
-  const oauthStarted = useRef(false);
-  useEffect(() => {
-    if (oauthStarted.current || entry?.kind !== SettingsEntryKind.AddAccount || !entry.provider?.oauthAvailable || !oauth.supports(entry.provider)) return;
-    let active = true;
-    // Wait until mount effects settle so Strict Mode's setup replay cannot
-    // create an OAuth owner that its simulated cleanup immediately disposes.
-    queueMicrotask(() => {
-      if (!active || oauthStarted.current) return;
-      oauthStarted.current = true;
-      oauth.start(entry.provider!);
-    });
-    return () => { active = false; };
-  }, [entry, oauth]);
   const [device, setDevice] = useState<Resource>();
   const [expandedDevices, setExpandedDevices] = useState<ReadonlySet<string>>(() => new Set());
   const pairedPageIds = useRef<ReadonlySet<string>>(new Set());
@@ -478,7 +462,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
             {controlLocalWorker && isRunnerDevices ? <div hidden={Boolean(machine || editing || deleting || routing || account)}><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} onDiagnostics={openConnectionDiagnostics} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div hidden={Boolean(device)}><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             {isApiAccounts ? <div hidden={hasOverlay}>
-              <AccountSettings openUsage={openUsage} oauth={oauth} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
+              <AccountSettings openUsage={openUsage} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} accountTypeFilteringProblem={apiInventory.error} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { void apiInventory.refetch(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setApiProviderPage(""); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); setPage(""); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={apiInventory.error} providerPicker={providerPicker} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
             </div> : null}
             {isSubscriptionAccounts ? <div>
               <SubscriptionAccounts active={visible && isSubscriptionAccounts && !hasOverlay} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} />

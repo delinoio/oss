@@ -2,7 +2,7 @@ import { formatTimestamp } from "./localization";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
-import { useSettingsTaskDismiss, useCloseSettingsTask, useInSettingsTask, useRetainSettingsTask } from "./settings-task-context";
+import { useSettingsTaskDismiss, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { ManagedSubscriptionAccount, serviceAccount } from "./subscription-accounts";
 import { useEffect, useState, useId } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -54,7 +54,6 @@ function ApiAccountConnection({ initial, active, close }: { initial: Resource; a
   useSettingsTaskDismiss(() => setKey(""));
   const mutation = () => ({ id: initial.id, expectedRevision: current.revision, requestId: newRequestId() });
   const removal = current.id === initial.id ? accountRemovalMutation(current) : undefined;
-  useRetainSettingsTask(Boolean(data.removal));
   const retryRemoval = () => {
     if (blocked || !removal) return;
     void disconnect.send({ mutation: removal });

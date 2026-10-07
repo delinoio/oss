@@ -1,7 +1,7 @@
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
-import { useRetainSettingsTask, useSettingsTaskDismiss, useCloseSettingsTask } from "./settings-task-context";
+import { useSettingsTaskDismiss, useCloseSettingsTask } from "./settings-task-context";
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useRef, useState, useId } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
@@ -112,7 +112,6 @@ function IntegrationConnection({ initial, active, close, initialRetry, initialPr
   const changed = (row?: Resource) => { if (row) setAcknowledged(row); void result.refetch(); };
   const validate = useRetainedMutation(`integration-validate:${initial.id}`, IntegrationQuery.validateIntegrationProfile, (reply) => { changed(reply.profile); setProblem(problemDocument(reply.problemJson)); });
   const remove = useRetainedMutation(`integration-delete:${initial.id}`, IntegrationQuery.deleteIntegrationProfile, (reply) => { setConfirm(false); setProblem(problemDocument(reply.problemJson)); if (reply.deleted) close(); else changed(reply.profile); });
-  useRetainSettingsTask(replace.isPending || Boolean(retryIdentity) || Boolean(data.pending));
   useSettingsTaskDismiss(() => setToken(""));
   const blocked = replace.isPending || validate.busy || validate.uncertain || remove.busy || remove.uncertain;
   const original = pendingIdentity(initial.id, pending);

@@ -166,7 +166,7 @@ it("cannot infer cleanup success from a malformed cleanup problem", async () => 
   expect(value.disconnect.mock.calls[1][0]).toEqual(value.disconnect.mock.calls[0][0]);
 });
 
-it("completes a hidden deletion once without keeping the task opener", async () => {
+it("disposes a late deletion result without retaining a hidden task", async () => {
   const value = fixture(); let release!: () => void;
   value.remove.mockImplementationOnce(async request => { await new Promise<void>(resolve => { release = resolve; }); return { id: request.mutation!.id, requestId: request.mutation!.requestId }; });
   confirm(value);
@@ -174,7 +174,7 @@ it("completes a hidden deletion once without keeping the task opener", async () 
   fireEvent.click(screen.getByRole("button", { name: "Close Delete entry" }));
   expect(screen.queryByRole("dialog")).toBeNull();
   await act(async () => release());
-  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
+  expect(value.deleted).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
 });
 
@@ -202,7 +202,7 @@ it("shows the original reference conflict prominently and requires fresh confirm
   expect(value.remove).toHaveBeenCalledTimes(1);
 });
 
-it.each(["X", "Escape"])("retains pending cleanup and exact retries through %s dismissal", async method => {
+it.each(["X", "Escape"])("disposes pending cleanup through %s dismissal", async method => {
   const value = fixture(); let release!: () => void;
   value.disconnect.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve; }); throw new ConnectError("ack lost", Code.Unavailable); });
   confirm(value);
@@ -211,11 +211,10 @@ it.each(["X", "Escape"])("retains pending cleanup and exact retries through %s d
   else fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
   expect(screen.queryByRole("dialog")).toBeNull();
   await act(async () => release());
-  expect(await screen.findByText("Delete entry: The original result is unconfirmed.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "View original operation" }));
-  fireEvent.click(screen.getByRole("button", { name: cleanupLabel }));
-  await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
-  expect(value.disconnect.mock.calls[1][0]).toEqual(value.disconnect.mock.calls[0][0]);
+  expect(screen.queryByText("Delete entry: The original result is unconfirmed.")).toBeNull();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  expect(value.deleted).not.toHaveBeenCalled();
+  expect(value.disconnect).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
 });
 

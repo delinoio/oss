@@ -15,7 +15,6 @@ import { accountRemovalMutation } from "./account-removal";
 import { useAccountDeletionCompletion } from "./account-deletion";
 import { useSettingsOpening } from "./settings-lifetime";
 import { SettingsTaskActions } from "./settings-task";
-import { SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
 import "./account-deletion.css";
 
 enum Stage { Confirmation, Checking, Disconnecting, Deleting, Paused, Deleted }
@@ -78,9 +77,6 @@ export function ApiAccountDeletion({ initial, active, deleted, close }: { initia
   const mounted = useRef(false), activeRef = useRef(active);
   activeRef.current = active;
   const live = (p: Attempt) => mounted.current && activeRef.current && !opening?.disposed && !p.disposed && pending.current === p;
-  const waiting = [Stage.Checking, Stage.Disconnecting, Stage.Deleting].includes(view.stage);
-  const retained = view.stage !== Stage.Deleted && (waiting || Boolean(!pending.current?.disposed && (pending.current?.disconnect || pending.current?.deletion)));
-  useRetainSettingsTask(retained, waiting ? SettingsTaskStatus.Pending : pending.current?.retry === Retry.Disconnect || pending.current?.retry === Retry.Delete ? SettingsTaskStatus.Uncertain : SettingsTaskStatus.AwaitingConfirmation);
   useAccountDeletionCompletion(view.stage === Stage.Deleted, active, deleted);
   useEffect(() => {
     mounted.current = true;

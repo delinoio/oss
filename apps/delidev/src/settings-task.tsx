@@ -1,27 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Children, Fragment, cloneElement, createContext, isValidElement, useCallback, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskStatus, SettingsTaskContext, useRetainSettingsTask, useSettingsTaskDismiss, type SettingsTaskPresentation } from "./settings-task-context";
+import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskContext, useSettingsTaskDismiss, type SettingsTaskPresentation } from "./settings-task-context";
+import { useQueryClient } from "@tanstack/react-query";
+import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
+import { MutationIntents } from "./mutation";
 import "./settings-task.css";
 import { DialogSurface } from "./ui";
 import { copy, useLocale } from "./localization";
 
 export { SettingsDialogFocus, SettingsDialogSize } from "./settings-task-context";
-interface Host { outlet: HTMLDivElement | null; statusTarget: HTMLDivElement | null; setStatusTarget: (node: HTMLDivElement | null) => void; locked: boolean; modal: boolean; register: (id: string, mounted: boolean, visible?: boolean) => void }
+interface Host { outlet: HTMLDivElement | null; statusTarget: HTMLDivElement | null; setStatusTarget: (node: HTMLDivElement | null) => void; modal: boolean; register: (id: string, mounted: boolean) => void }
 const HostContext = createContext<Host | undefined>(undefined);
+const ScopeContext = createContext(false);
+
+// Controllers created above their dialog must enter this boundary first. One
+// original task owns its waits and retries; nested steps share that same scope.
+export function SettingsTaskScope({ children }: { children: ReactNode }) {
+  return <SettingsLifetime>{() => <MutationIntents><ScopeContext.Provider value>{children}</ScopeContext.Provider></MutationIntents>}</SettingsLifetime>;
+}
 
 export function SettingsTasks({ children }: { children: ReactNode }) {
   const [outlet, setOutlet] = useState<HTMLDivElement | null>(null);
   const [statusTarget, setStatusTarget] = useState<HTMLDivElement | null>(null);
-  const tasks = useRef(new Map<string, boolean>());
-  const [locked, setLocked] = useState(false);
+  const tasks = useRef(new Set<string>());
   const [modal, setModal] = useState(false);
-  const register = useCallback((id: string, mounted: boolean, visible = true) => {
-    if (mounted) tasks.current.set(id, visible); else tasks.current.delete(id);
-    setLocked(tasks.current.size > 0);
-    setModal([...tasks.current.values()].some(Boolean));
+  const register = useCallback((id: string, mounted: boolean) => {
+    if (mounted) tasks.current.add(id); else tasks.current.delete(id);
+    setModal(tasks.current.size > 0);
   }, []);
-  const host = useMemo(() => ({ outlet, statusTarget, setStatusTarget, locked, modal, register }), [outlet, statusTarget, locked, modal, register]);
+  const host = useMemo(() => ({ outlet, statusTarget, setStatusTarget, modal, register }), [outlet, statusTarget, modal, register]);
   return <HostContext.Provider value={host}>{children}<div className="settings-task-outlet" ref={setOutlet} /></HostContext.Provider>;
 }
 
@@ -32,11 +40,11 @@ export function SettingsTaskStatusOutlet({ className = "" }: { className?: strin
 
 export function SettingsTaskBackground({ children }: { children: ReactNode }) {
   const host = useContext(HostContext);
-  // Dialogs are portaled outside this fieldset. A hidden unresolved task still
-  // disables replacement writes, while its explicit outcome opener stays usable.
-  return <><SettingsTaskStatusOutlet /><fieldset className="settings-task-background" disabled={host?.locked} inert={host?.modal || undefined} aria-hidden={host?.modal || undefined} onClickCapture={event => {
+  // Dialogs are portaled outside this fieldset. Only a mounted task disables
+  // the category; dismissal releases it before the close callback returns.
+  return <fieldset className="settings-task-background" disabled={host?.modal} inert={host?.modal || undefined} aria-hidden={host?.modal || undefined} onClickCapture={event => {
     if (event.target instanceof Element) event.target.closest<HTMLButtonElement>("button")?.focus({ preventScroll: true });
-  }}>{children}</fieldset></>;
+  }}>{children}</fieldset>;
 }
 
 function available(node: HTMLElement | null) {
@@ -63,12 +71,12 @@ function containTab(event: KeyboardEvent<HTMLDialogElement>) {
 interface DialogProps extends SettingsTaskPresentation { close: () => void; children: ReactNode; retained?: boolean; onDismiss?: () => void; activation?: number; fallbackFocus?: () => HTMLElement | null }
 export function SettingsTaskDialog(props: DialogProps) {
   const parent = useContext(SettingsTaskContext);
-  return parent ? <SettingsTaskStep {...props} /> : <SettingsTaskWindow {...props} />;
+  const scoped = useContext(ScopeContext);
+  return parent ? <SettingsTaskStep {...props} /> : scoped ? <SettingsTaskWindow {...props} /> : <SettingsTaskScope><SettingsTaskWindow {...props} /></SettingsTaskScope>;
 }
-function SettingsTaskStep({ title, size, focus, children, retained = false, onDismiss }: DialogProps) {
+function SettingsTaskStep({ title, size, focus, children, onDismiss }: DialogProps) {
   const task = useContext(SettingsTaskContext)!, id = useId();
   const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  useRetainSettingsTask(retained);
   useSettingsTaskDismiss(() => onDismiss?.());
   const present = task.present;
   useLayoutEffect(() => {
@@ -78,30 +86,23 @@ function SettingsTaskStep({ title, size, focus, children, retained = false, onDi
   const context = useMemo(() => ({ ...task, stepId: id }), [task, id]);
   return task.stepTarget ? createPortal(<SettingsTaskContext.Provider value={context}><div data-settings-task-step hidden={task.activeStep !== id}>{children}</div></SettingsTaskContext.Provider>, task.stepTarget) : null;
 }
-function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, retained = false, onDismiss: dismissed, activation, fallbackFocus }: DialogProps) {
+function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, onDismiss: dismissed, fallbackFocus }: DialogProps) {
   useLocale();
+  const opening = useSettingsOpening()!, client = useQueryClient();
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  const lastActivation = useRef(activation);
   const returnFocus = useRef(fallbackFocus);
   returnFocus.current = fallbackFocus;
   const openerRetired = useRef(false);
   const closeRequested = useRef(false);
-  const retainedDismissal = useRef(false);
   const categoryContent = useRef(document.querySelector<HTMLElement>(".settings-content"));
-  const [visible, setVisible] = useState(true), [actions, setActions] = useState<HTMLDivElement | null>(null);
+  const [actions, setActions] = useState<HTMLDivElement | null>(null);
   const [presentation, setPresentation] = useState<SettingsTaskPresentation>();
   const [activeStep, setActiveStep] = useState<string>();
   const [stepTarget, setStepTarget] = useState<HTMLDivElement | null>(null);
-  const [signalStatus, setSignalStatus] = useState(SettingsTaskStatus.AwaitingConfirmation);
   const committed = useRef(false);
-  const signals = useRef(new Map<string, SettingsTaskStatus>()), dismissals = useRef(new Map<string, () => void>()), presentations = useRef(new Map<string, SettingsTaskPresentation>());
+  const dismissals = useRef(new Map<string, () => void>()), presentations = useRef(new Map<string, SettingsTaskPresentation>());
   const host = useContext(HostContext), register = host?.register;
-  const retain = useCallback((key: string, retained: boolean, status = SettingsTaskStatus.AwaitingConfirmation) => {
-    if (retained) signals.current.set(key, status); else signals.current.delete(key);
-    const states = [...signals.current.values()];
-    setSignalStatus(states.includes(SettingsTaskStatus.Uncertain) ? SettingsTaskStatus.Uncertain : states.includes(SettingsTaskStatus.Pending) ? SettingsTaskStatus.Pending : SettingsTaskStatus.AwaitingConfirmation);
-  }, []);
   const onDismiss = useCallback((key: string, action?: () => void) => { if (action) dismissals.current.set(key, action); else dismissals.current.delete(key); }, []);
   const present = useCallback((key: string, value?: SettingsTaskPresentation) => {
     if (value) presentations.current.set(key, value); else presentations.current.delete(key);
@@ -109,33 +110,25 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
     setActiveStep([...presentations.current.keys()].at(-1));
   }, []);
   const current = presentation ?? { title, size, focus };
-  // A confirmed completion can run before child retention effects observe the
-  // cleared mutation. Only an authoritative completion may force close here.
-  const dismissWithClose = useCallback((idleClose?: () => void, force = false) => {
-    const keep = !force && (retained || signals.current.size > 0);
+  const dismissWithClose = useCallback((idleClose?: () => void, _force = false) => {
+    if (closeRequested.current) return;
+    closeRequested.current = true;
+    // Fence late continuations before callbacks can mount another task. Disposal
+    // aborts client waits, never an explicit server/Worker cancellation operation.
+    opening.dispose(client);
     dismissed?.();
     for (const action of dismissals.current.values()) action();
-    if (keep) { retainedDismissal.current = true; setVisible(false); } else { closeRequested.current = true; (idleClose ?? close)(); }
-  }, [retained, dismissed, close]);
+    (idleClose ?? close)();
+  }, [opening, client, dismissed, close]);
   const dismiss = useCallback(() => dismissWithClose(), [dismissWithClose]);
   const retireOpener = useCallback((removed: (node: HTMLElement) => boolean) => {
     if (opener.current && removed(opener.current)) openerRetired.current = true;
   }, []);
-  const context = useMemo(() => ({ visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present, retireOpener }), [visible, dismiss, dismissWithClose, actions, stepTarget, activeStep, retain, onDismiss, present, retireOpener]);
-  useLayoutEffect(() => {
-    if (lastActivation.current === activation) return;
-    lastActivation.current = activation;
-    if (visible) return;
-    // External creation entries reopen the original retained controller rather
-    // than replacing its immutable pending or uncertain request.
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setVisible(true);
-  }, [activation, visible]);
-  useLayoutEffect(() => { register?.(id, true, visible); return () => register?.(id, false); }, [id, register, visible]);
+  const context = useMemo(() => ({ visible: true, dismiss, dismissWithClose, actions, stepTarget, activeStep, onDismiss, present, retireOpener }), [dismiss, dismissWithClose, actions, stepTarget, activeStep, onDismiss, present, retireOpener]);
+  useLayoutEffect(() => { register?.(id, true); return () => register?.(id, false); }, [id, register]);
   useLayoutEffect(() => {
     const node = dialog.current;
-    if (!visible || !node) return;
-    retainedDismissal.current = false;
+    if (!node) return;
     // React Strict Mode replays this layout effect before the first microtask.
     // A later unmount without dismissWithClose is a programmatic completion
     // (for example, a successful save closing its parent task), so it must use
@@ -154,17 +147,11 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
       live = false;
       cancelAnimationFrame(frame);
       node.close();
-      // StrictMode and retained-task visibility changes also clean up this
-      // effect. They must not unlock the background or steal focus.
+      // Strict Mode's simulated cleanup must not unlock or steal focus.
       if (!closeRequested.current && !committed.current) return;
-      let restoreFocus: (ignoreSignals?: boolean) => HTMLElement | null = () => null;
       // A category departure or replacement dialog cannot restore a stale opener.
       if (anotherModal(node)) return;
-      restoreFocus = (ignoreSignals = false) => {
-        // On accepted completion, child layout cleanups release their pending
-        // signals after this parent's cleanup. Recheck on the restoration frame;
-        // a hidden, still-retained operation keeps its signals and cannot restore.
-        if (!ignoreSignals && !closeRequested.current && !retainedDismissal.current && signals.current.size > 0) return null;
+      const restoreFocus = () => {
         if (anotherModal(node)) return null;
         const focused = document.activeElement;
         if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return null;
@@ -180,37 +167,30 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
           background?.removeAttribute("inert");
           background?.removeAttribute("aria-hidden");
         }
-        const target = openerTarget ?? (available(fallback) ? fallback : null);
+        const target = available(openerTarget) ? openerTarget : available(fallback) ? fallback : null;
+        // Native close can restore an opener that this commit has just disabled.
+        // Do not leave focus on an unavailable control while its read refreshes.
+        if (focused === opener.current && opener.current?.matches(":disabled")) opener.current.blur();
         if (target?.matches("h1")) target.tabIndex = -1;
         target?.focus({ preventScroll: true });
         if (target && document.activeElement !== target) requestAnimationFrame(() => { if (target.isConnected) target.focus({ preventScroll: true }); });
         return target;
       };
-      // Settings keeps its retained background locked. External creation can
-      // return to its visible Home opener after an explicit pending dismissal.
-      // A forced confirmed completion already marked closeRequested, even if a
-      // stale child retention signal is still present during this cleanup.
-      if ((retained || signals.current.size > 0) && !closeRequested.current && !(returnFocus.current && retainedDismissal.current)) {
-        // A parent can unmount the task immediately after a successful child
-        // save, before the child clears its retention signal. A retained task
-        // remains connected and must keep focus; an unmounted task can safely
-        // restore its opener after React removes the dialog.
-        queueMicrotask(() => { if (!node.isConnected && !anotherModal(node)) restoreFocus(true); });
-        return;
-      }
-      restoreFocus();
-      requestAnimationFrame(() => restoreFocus());
+      // Programmatic completion runs before React commits updated list controls.
+      // Inspect their final availability after that commit, preserving explicit
+      // user dismissal's immediate return and the native dialog restoration.
+      if (closeRequested.current) restoreFocus(); else queueMicrotask(restoreFocus);
+      requestAnimationFrame(restoreFocus);
     };
   // Step changes do not create another modal opening or overwrite its opener.
-  }, [visible, host?.outlet]);
+  }, [host?.outlet]);
   useLayoutEffect(() => {
     const node = dialog.current;
-    if (!visible || !presentation || !node?.open || anotherModal(node)) return;
+    if (!presentation || !node?.open || anotherModal(node)) return;
     const target = presentation.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>(".settings-task-footer [data-settings-task-cancel]") ?? node.querySelector<HTMLElement>(".settings-task-footer button:not(.primary)") : presentation.focus === SettingsDialogFocus.Input ? node.querySelector<HTMLElement>(".settings-task-body [data-settings-task-step]:not([hidden]) input:not(:disabled)") : heading.current;
     (target ?? heading.current)?.focus({ preventScroll: true });
-  }, [visible, presentation]);
+  }, [presentation]);
   const content = <SettingsTaskContext.Provider value={context}>
-    {!visible && (!host || host.statusTarget) ? createPortal(<div className="settings-task-retained" role="status"><span>{title}: {signalStatus === SettingsTaskStatus.Pending ? copy("settings-task.originalOperationInProgress") : signalStatus === SettingsTaskStatus.Uncertain ? copy("settings-task.originalResultUnconfirmed") : copy("settings-task.originalOperationAwaitsConfirmation")}</span><button type="button" onClick={event => { opener.current = event.currentTarget; setVisible(true); }}>{copy("settings-task.viewOriginalOperation")}</button></div>, host?.statusTarget ?? document.body) : null}
     {(!host || host.outlet) ? createPortal(<>
 
     <DialogSurface ref={dialog} onKeyDown={containTab} className="settings-task-dialog" data-size={current.size} aria-modal="true" aria-labelledby={`${id}-title`} onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss(); }}>
@@ -230,8 +210,8 @@ function associateForm(children: ReactNode, form?: string, task?: React.ContextT
     if (child.type === Fragment) return cloneElement(child as React.ReactElement<{ children: ReactNode }>, { children: associateForm((child.props as { children: ReactNode }).children, form, task) });
     if (child.type !== "button") return child;
     const button = child as React.ReactElement<ButtonHTMLAttributes<HTMLButtonElement> & { "data-settings-task-cancel"?: boolean }>;
-    // Idle cancellation preserves the controller's own cleanup/focus callback.
-    // An admitted operation instead hides without invoking that departure path.
+    // Local cancellation remains available while a request is pending. Nested
+    // steps keep their own Back/Keep callback and the parent's lifetime.
     const cancel = button.props["data-settings-task-cancel"] && task && (!task.stepId || button.props.disabled)
       ? (event: React.MouseEvent<HTMLButtonElement>) => {
         if (task.stepId || !button.props.onClick || button.props.onClick === task.dismiss) task.dismiss();

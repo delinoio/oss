@@ -431,9 +431,9 @@ try {
           continue;
         }
         if (category === "Repositories") {
-          // Current remote registration accepts a URL. Local folder authority
-          // remains an explicitly opened, independently inspected connection.
-          await page.getByRole("textbox", { name: "Git URL", exact: true }).waitFor();
+          // Local checkout inspection is optional in remote-first registration.
+          // Exercise its manual entry without inventing native folder authority.
+          // These remote-first controls currently use English in both languages.
           await page.getByRole("button", { name: "Connect a Local folder (optional)", exact: true }).click();
           await page.getByRole("button", { name: "Enter a path…", exact: true }).click();
           await page.getByRole("textbox", { name: "Absolute checkout path", exact: true }).waitFor();
@@ -473,7 +473,13 @@ try {
         await page.mouse.click(2, 2); assert(await dialog.isVisible(), "Backdrop preserves task");
         formsChecked++;
         await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
-        await page.waitForFunction(() => document.querySelector(".settings-content")?.contains(document.activeElement), { timeout: 2000 }); keyboardChecks++;
+        try {
+          await page.waitForFunction(() => document.querySelector(".settings-content")?.contains(document.activeElement), undefined, { timeout: 2000 });
+        } catch {
+          const focus = await page.evaluate(() => ({ tag: document.activeElement?.tagName, id: document.activeElement?.id, className: document.activeElement?.className }));
+          throw new Error(`${language}/${theme}/${viewport}/${category}: close focus ${JSON.stringify(focus)}`);
+        }
+        keyboardChecks++;
       }
     }
   }

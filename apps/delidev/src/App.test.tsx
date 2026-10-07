@@ -538,10 +538,10 @@ it.each([false, true])("closes the compact drawer before creation and returns fo
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect(opener.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByRole("navigation", { name: "Settings categories" })).toBeNull();
-  expect(Boolean(screen.queryByRole("button", { name: "View original operation" }))).toBe(pending);
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
 }, fullShellTimeoutMs);
 
-it("retains the original uncertain project request when either external creation entry reopens it", async () => {
+it("disposes the original uncertain project request when either external creation entry reopens it", async () => {
   const repository = projectRepository(), value = fixture([], [repository]);
   value.saveConfiguration.mockRejectedValueOnce(new ConnectError("The original response was lost.", Code.Unavailable));
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
@@ -551,18 +551,15 @@ it("retains the original uncertain project request when either external creation
   await screen.findByRole("button", { name: "Retry the same configuration" });
   const original = value.saveConfiguration.mock.calls[0][0];
   fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
-  expect(await screen.findByRole("button", { name: "View original operation" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "New project" })));
   expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create a project" }));
-  expect(name.isConnected).toBe(true);
-  expect((name as HTMLInputElement).value).toBe("Direct project");
-  expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(true);
+  const reopenedSearch = await screen.findByRole("searchbox", { name: "Search repository names" });
+  expect(reopenedSearch).not.toBe(name);
+  expect((reopenedSearch as HTMLInputElement).value).toBe("");
   expect(value.saveConfiguration).toHaveBeenCalledOnce();
-  fireEvent.click(screen.getByRole("button", { name: "Retry the same configuration" }));
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
-  expect(value.saveConfiguration).toHaveBeenCalledTimes(2);
-  expect(value.saveConfiguration.mock.calls[1][0]).toEqual(original);
+  expect(value.saveConfiguration.mock.calls[0][0]).toEqual(original);
   expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
 }, fullShellTimeoutMs);
 
@@ -578,7 +575,7 @@ it.each(["surface", "conversation", "connection"] as const)("disposes a hidden p
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await waitFor(() => expect(value.saveConfiguration).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
-  await screen.findByRole("button", { name: "View original operation" });
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   if (departure === "connection") view.rerender(tree(newRequestId()));
   else if (departure === "conversation") {
     fireEvent.click(screen.getByRole("button", { name: /General Chat Retained session/ }));
@@ -655,7 +652,7 @@ it("abandons an uncertain New Project save without replay when reopening", async
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
   fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
-  await screen.findByRole("button", { name: "View original operation" });
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(opener);
