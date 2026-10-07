@@ -180,7 +180,16 @@ func (f *nativeClaudeLifecycleFixture) FinishSubscription(_ context.Context, req
 func TestNativeClaudeWorkerLoginCancelAndOriginalRecovery(t *testing.T) {
 	for _, scenario := range []string{"success", "cancel", "lost-completion"} {
 		t.Run(scenario, func(t *testing.T) {
-			base, err := filepath.EvalSymlinks(t.TempDir())
+			// The native profile appends three UUID components to the runtime root.
+			// Keep the CreateProcess working directory below Windows' independent
+			// current-directory limit; the long-path behavior is covered by the
+			// workspace tests without making this native launch fixture flaky.
+			base, err := os.MkdirTemp("", "dc-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(base) })
+			base, err = filepath.EvalSymlinks(base)
 			if err != nil {
 				t.Fatal(err)
 			}
