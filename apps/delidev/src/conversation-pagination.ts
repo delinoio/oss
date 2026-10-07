@@ -30,5 +30,5 @@ export function useConversationPages(kind: EntityKind, sessionId: string, active
   const query = usePaginationChain(`${kind}:${sessionId}`, active, kind === EntityKind.QUEUE ? queueReader : resourceReader);
   usePaginationRefresh(ResourceQuery.listResources, request(""), active && kind !== EntityKind.QUEUE, query.refresh, interval ?? false);
   usePaginationRefresh(SessionQuery.listQueue, queueRequest(""), active && kind === EntityKind.QUEUE, query.refresh, interval ?? false);
-  return { ...query, data: query.loaded ? { resources: query.payloadPages.flatMap(page => page.payload), inputs: query.payloadPages.flatMap(page => page.payload), nextPageToken: query.nextPageToken } : undefined, isPending: !query.loaded && !query.error, isFetching: Boolean(query.loading), refetch: query.refresh };
+  return { ...query, data: query.loaded ? { resources: query.payloadPages.flatMap(page => page.payload), inputs: query.payloadPages.flatMap(page => page.payload), nextPageToken: query.nextPageToken } : undefined, isPending: !query.loaded && !query.error, isFetching: Boolean(query.loading), refetch: query.refreshExplicit };
 }
