@@ -153,11 +153,14 @@ func disconnectedSubscription(a domain.Account) bool {
 	if a.Type != domain.SubscriptionAccount || a.SubscriptionService.Harness() == "" || a.Health != domain.AccountDisconnected || a.Connection != nil || a.Removal != nil {
 		return false
 	}
+	// A completed Worker logout can retain OwnerMachineID as historical routing
+	// metadata. With no generation, lease, pending action or recovery it grants no
+	// active Worker authority; protected references are still checked at deletion.
 	st := a.Subscription
 	if st == nil {
 		return true
 	}
-	if st.Validate(a) != nil || st.Pending != nil || st.Lease != nil || st.RecoveryRequired || st.Generation != "" || st.IdentityCommitment != "" || st.OwnerMachineID != "" || st.Observation != nil && st.Observation.Active() || st.ResetCredits != nil {
+	if st.Validate(a) != nil || st.Pending != nil || st.Lease != nil || st.RecoveryRequired || st.Generation != "" || st.IdentityCommitment != "" || st.Observation != nil && st.Observation.Active() || st.ResetCredits != nil {
 		return false
 	}
 	return st.ServerOperation == nil || !st.ServerOperation.Active() && !st.ServerOperation.NativeStarted
@@ -221,10 +224,10 @@ func (s *Service) CleanupFailedSubscriptions(ctx context.Context, req *connect.R
 				return nil, err
 			}
 			target := failedCleanupAccount{Version: 2, AccountID: r.ID, Revision: r.Revision, DeleteRequestID: domain.NewID(), Alias: a.Alias}
-			if failedCleanupCandidate(a) {
-				target.OperationID = a.Subscription.ServerOperation.ID
-			} else if disconnectedSubscription(a) {
+			if disconnectedSubscription(a) {
 				target.Target = subscriptionCleanupDisconnected
+			} else if failedCleanupCandidate(a) {
+				target.OperationID = a.Subscription.ServerOperation.ID
 			} else {
 				continue
 			}

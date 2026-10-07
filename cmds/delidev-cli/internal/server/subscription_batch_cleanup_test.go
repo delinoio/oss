@@ -457,7 +457,9 @@ func TestDisconnectedSubscriptionCleanupOwnershipAndVault(t *testing.T) {
 		func(a *domain.Account) { a.Type = domain.APIAccount },
 		func(a *domain.Account) { a.Health = domain.AccountReady },
 		func(a *domain.Account) { a.Subscription = &domain.SubscriptionState{RecoveryRequired: true} },
-		func(a *domain.Account) { a.Subscription = &domain.SubscriptionState{OwnerMachineID: domain.NewID()} },
+		func(a *domain.Account) {
+			a.Subscription = &domain.SubscriptionState{Generation: domain.NewID(), RecoveryRequired: true}
+		},
 		func(a *domain.Account) {
 			a.Subscription = &domain.SubscriptionState{Lease: &domain.SubscriptionLease{}}
 		},
@@ -528,5 +530,39 @@ func TestSubscriptionCleanupCompletedLogout(t *testing.T) {
 	runFailedCleanup(t, f, accepted.Job.Id)
 	if result := readFailedCleanup(t, f, accepted.Job.Id, ""); result.Job.Deleted != 1 {
 		t.Fatal(result)
+	}
+}
+
+func TestSubscriptionCleanupCompletedWorkerLogout(t *testing.T) {
+	f := unreferencedInitialSubscription(t)
+	raw := f.login()
+	clear(raw)
+	op := f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	lease, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clear(lease.Bundle)
+	if _, err := f.finish(lease, nil, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+	if accepted.Job.Total != 2 {
+		t.Fatal("confirmed Worker logout excluded", accepted)
+	}
+	runFailedCleanup(t, f, accepted.Job.Id)
+	result := readFailedCleanup(t, f, accepted.Job.Id, "")
+	if result.Job.Deleted != 1 || result.Job.Retained != 1 {
+		t.Fatal(result)
+	}
+}
+
+func TestSubscriptionCleanupLegacyDisconnectedFailure(t *testing.T) {
+	f := batchFailedAccount(t, true)
+	f.changeFailedLogin(func(a *domain.Account) { a.Subscription.ServerOperation.CleanupPhase = "" })
+	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+	runFailedCleanup(t, f, accepted.Job.Id)
+	if result := readFailedCleanup(t, f, accepted.Job.Id, ""); result.Job.Deleted != 1 {
+		t.Fatal("disconnected legacy failure required a replacement cleanup", result)
 	}
 }

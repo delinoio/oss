@@ -49,5 +49,6 @@
   "account-deletion.api.cleanupUnconfirmed": "Credential cleanup could not be confirmed. The entry has been kept.",
   "account-deletion.api.retryCleanupGuidance": "Retry only the original credential cleanup request.",
   "account-deletion.api.departure": "Leaving this category stops automatic deletion. Accepted disconnection and cleanup continue.",
-  "account-deletion.api.refresh": "Refresh entry for confirmation"
+  "account-deletion.api.refresh": "Refresh entry for confirmation",
+  "account-deletion.cleaningUpAndDeleting": "Cleaning up credentials and deleting the account..."
 }

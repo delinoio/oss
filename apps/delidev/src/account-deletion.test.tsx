@@ -499,3 +499,31 @@ it("retains a failed login when the server cannot confirm cleanup", async () => 
  expect(value.logout).not.toHaveBeenCalled();
  expect(value.remove).toHaveBeenCalledTimes(1);
 });
+
+it("retries only the original failed-login deletion after an uncertain response", async () => {
+ const value = fixture(false, true);
+ value.remove.mockRejectedValueOnce(new ConnectError("Response unavailable.", Code.Unavailable));
+ render(<value.Harness />);
+ fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+ fireEvent.click(await screen.findByRole("button", { name: "Retry the same deletion" }));
+ await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
+ expect(value.remove).toHaveBeenCalledTimes(2);
+ expect(value.remove.mock.calls[1][0]).toEqual(value.remove.mock.calls[0][0]);
+ expect(value.logout).not.toHaveBeenCalled();
+});
+
+it("disposes late failed-login deletion completion when its task closes", async () => {
+ const value = fixture(false, true); let release!: () => void;
+ value.remove.mockImplementationOnce(async request => {
+  await new Promise<void>(resolve => { release = resolve; });
+  return { id: request.mutation!.id, requestId: request.mutation!.requestId };
+ });
+ render(<value.Harness />);
+ fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+ await screen.findByText("Cleaning up credentials and deleting the account...");
+ fireEvent.click(screen.getByRole("button", { name: "Back to subscriptions" }));
+ await act(async () => release());
+ expect(value.deleted).not.toHaveBeenCalled();
+ expect(value.remove).toHaveBeenCalledTimes(1);
+ expect(value.logout).not.toHaveBeenCalled();
+});

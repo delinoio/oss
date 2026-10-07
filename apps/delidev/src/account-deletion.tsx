@@ -18,7 +18,7 @@ import { safeDiagnostic } from "./subscription-onboarding";
 import { Failure } from "./ui";
 import "./account-deletion.css";
 
-enum Stage { Confirmation, Checking, Logout, Deleting, Paused, Deleted }
+enum Stage { Confirmation, Checking, Logout, CleanupDeleting, Deleting, Paused, Deleted }
 enum Retry { Logout, Delete, Progress }
 interface Attempt {
   confirmed: Resource;
@@ -76,7 +76,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
   const [confirmed, setConfirmed] = useState(initial);
   const [view, setView] = useState<View>({ stage: Stage.Confirmation });
   const pending = useRef<Attempt | undefined>(undefined);
-  const waiting = [Stage.Checking, Stage.Logout, Stage.Deleting].includes(view.stage);
+  const waiting = [Stage.Checking, Stage.Logout, Stage.CleanupDeleting, Stage.Deleting].includes(view.stage);
   useAccountDeletionCompletion(view.stage === Stage.Deleted, active, deleted);
   const mounted = useRef(false), activeRef = useRef(active);
   activeRef.current = active;
@@ -105,7 +105,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       if (!unchanged(resource, p) || !(cleared(resource) || failedInitialLogin(resource))) { changed(p); return; }
       p.deletion = create(DeleteConfigurationRequestSchema, { kind: EntityKind.ACCOUNT, mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() } });
     }
-    p.observing = false; p.busy = true; p.retry = undefined; setView({ stage: Stage.Deleting });
+    p.observing = false; p.busy = true; p.retry = undefined; setView({ stage: !cleared(p.confirmed) && failedInitialLogin(p.confirmed) ? Stage.CleanupDeleting : Stage.Deleting });
     try {
       const result = await clients.configuration.deleteConfiguration(p.deletion);
       if (!live(p)) return;
@@ -247,7 +247,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
       <p>{copy("account-deletion.activeExecutionsWillBeCanceledRetained_066584")}</p>
       <div className="actions"><button className="account-deletion-confirm" disabled={!active} onClick={() => void confirm()}>{copy("account-deletion.disconnectAndDeleteAccount_fdb5f5")}</button><button disabled={!active} onClick={leave}>{copy("account-deletion.keepAccount_9be7d9")}</button></div>
     </> : <>
-      <p role="status">{view.stage === Stage.Checking ? copy("account-deletion.checkingTheCurrentAccount_9c2ed5") : view.stage === Stage.Logout ? copy("account-deletion.loggingOutAndCleaningUpCredentials_6b3730") : view.stage === Stage.Deleting ? copy("account-deletion.deletingTheAccountConfiguration_9b97e4") : copy("account-deletion.accountDeletionPaused_df3fd2")}</p>
+      <p role="status">{view.stage === Stage.Checking ? copy("account-deletion.checkingTheCurrentAccount_9c2ed5") : view.stage === Stage.Logout ? copy("account-deletion.loggingOutAndCleaningUpCredentials_6b3730") : view.stage === Stage.CleanupDeleting ? copy("account-deletion.cleaningUpAndDeleting") : view.stage === Stage.Deleting ? copy("account-deletion.deletingTheAccountConfiguration_9b97e4") : copy("account-deletion.accountDeletionPaused_df3fd2")}</p>
       {view.stage === Stage.Logout ? <p>{copy("account-deletion.theAccountWillBeDeletedAfter_6b177a")}</p> : null}
       <Failure failure={view.failure} />
       <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <button disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? copy("account-deletion.retryOriginalLogoutRequest_ce84e9") : pending.current.retry === Retry.Delete ? copy("account-deletion.retryTheSameDeletion_b32bf6") : copy("account-deletion.retryOriginalStatusCheck_88bd61")}</button> : <button disabled={!active || pending.current?.busy} onClick={() => void refresh()}>{copy("account-deletion.refreshAccountForConfirmation_deba05")}</button> : null}<button disabled={!active} onClick={leave}>{copy("account-deletion.backToSubscriptions_257d53")}</button></div>
