@@ -232,11 +232,12 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	cleanup, success := false, false
 	var identity *pb.NativeSubscriptionIdentity
 	phase := domain.NativeSubscriptionRuntime
+	versionVerified := false
 	defer func() {
 		if returned != nil {
-			detected := claude.SupportedVersion
-			if phase == domain.NativeSubscriptionVersion {
-				detected = ""
+			detected := ""
+			if versionVerified {
+				detected = claude.SupportedVersion
 			}
 			diagnostic := &pb.NativeSubscriptionDiagnostic{DetectedVersion: detected, RequiredVersion: claude.SupportedVersion, Phase: pb.NativeSubscriptionDiagnosticPhase(phase), Code: string(domain.SafeError(returned).Code), CorrelationId: string(op.ID)}
 			reportCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
@@ -282,6 +283,7 @@ func runClaudeAccount(ctx context.Context, config Config, client delidevv1connec
 	if err := claude.VerifyAuthVersion(bounded, profile.config); err != nil {
 		return err
 	}
+	versionVerified = true
 	phase = domain.NativeSubscriptionLogin
 	if op.Action == domain.SubscriptionLogout {
 		phase = domain.NativeSubscriptionCleanup
@@ -458,6 +460,7 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 	finish := func(joined bool) error {
 		defer closeHTTP()
 		var identity *pb.NativeSubscriptionIdentity
+		var closeProblem error
 		bounded, stop := context.WithTimeout(context.Background(), 30*time.Second)
 		defer stop()
 		if joined && profile != nil {
@@ -468,13 +471,18 @@ func beginClaudeSubscriptionExecution(ctx context.Context, config Config, owner 
 		} else {
 			joined = false
 		}
-		finished := lease.finishClaude(identity, joined, joined)
 		if profile != nil {
 			if closed := profile.close(); closed != nil {
-				return closed
+				joined, identity, closeProblem = false, nil, closed
 			}
 		}
-		return finished
+		// Keep the server lease until the original local lock is released. A
+		// queued logout can start as soon as Finish commits and must not race
+		// the closing execution profile or turn a settled execution into recovery.
+		if err := lease.finishClaude(identity, joined, joined); err != nil {
+			return err
+		}
+		return closeProblem
 	}
 	if len(lease.response.Bundle) != 0 || domain.ID(lease.response.NativeProfileId).Validate() != nil {
 		clear(lease.response.Bundle)

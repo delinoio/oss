@@ -163,6 +163,13 @@ func (f *nativeClaudeLifecycleFixture) FinishSubscription(_ context.Context, req
 	if err != nil || domain.Decode(raw, &claim) != nil || claim.State != managedClosed || len(req.Msg.Bundle) != 0 || req.Msg.RefreshConfirmed || !req.Msg.CleanupConfirmed {
 		f.t.Error("completion did not retain its metadata-only original cleanup claim")
 	}
+	profile, _ := claudeProfileRoot(f.config.Root, f.credential, f.account, f.profile)
+	lock, err := security.TryLock(profile + ".lock")
+	if err != nil {
+		f.t.Error("server completion raced the retained original profile lock")
+	} else {
+		_ = lock.Close()
+	}
 	if f.loseFinish && len(f.finishes) == 1 {
 		return nil, connect.NewError(connect.CodeUnavailable, nil)
 	}
@@ -262,7 +269,22 @@ func TestNativeClaudeWorkerLoginCancelAndOriginalRecovery(t *testing.T) {
 					t.Fatal("canceled or recovered original profile retained native authority", err)
 				}
 			} else {
-				owned, err := openClaudeProfile(f.config, f.credential, f.account, f.profile, f.installation, domain.NewID(), false)
+				f.config.execution = &PublicationConfig{Credential: f.credential, Instance: instance, Assignment: &pb.Resource{Revision: 3}}
+				f.mu.Unlock()
+				locked = false
+				owned, complete, err := beginClaudeSubscriptionExecution(ctx, f.config, domain.NewID(), domain.ExecutionJobInput{AccountID: f.account, Installation: f.installation})
+				if err != nil || owned == nil {
+					t.Fatal("original native subscription execution could not acquire its profile", err)
+				}
+				if err = complete(true); err != nil {
+					t.Fatal("joined execution did not release local ownership before server completion", err)
+				}
+				f.mu.Lock()
+				locked = true
+				if f.takes != 2 || len(f.finishes) != 2 || f.finishes[1].NativeIdentity == nil || f.finishes[1].NativeIdentity.IdentityCommitment != finish.NativeIdentity.IdentityCommitment || f.finishes[1].LeaseId == finish.LeaseId {
+					t.Fatal("execution replaced the pinned native identity")
+				}
+				owned, err = openClaudeProfile(f.config, f.credential, f.account, f.profile, f.installation, domain.NewID(), false)
 				if err != nil {
 					t.Fatal(err)
 				}
