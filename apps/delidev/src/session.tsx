@@ -1,3 +1,6 @@
+import { useShortcuts } from "./shortcut-provider";
+import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
+import { Surface } from "./surface";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { Subagents } from "./subagents";
@@ -235,6 +238,14 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refetch(); });
   const control = useRetainedMutation(`control:${id}`, SessionQuery.controlSession, (value) => { if (value.change?.session) setAcknowledged(value.change.session); });
   const locked = send.busy || send.uncertain;
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const canSend = !locked && Boolean(draft.trim()) && text(data.archive) === "active";
+  const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }) }); };
+  const shortcuts = useShortcuts([
+    { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
+    { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
+    { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter" }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: !locked, unavailableReason: "shortcuts.pending" },
+  ]);
   const next = messages.data?.nextPageToken;
   // Stream arrivals have exact identities even when their JSON sequence exceeds
   // JavaScript's safe-integer range. Append only arrivals on the final page.
@@ -269,9 +280,9 @@ export function SessionView({ id, draft, setDraft }: { id: string; draft: string
       {queued.map((r) => <QueuedInput key={r.id} resource={r} session={session} refresh={() => void queue.refetch()} />)}
       <nav aria-label={copy("session.queuePages_1acdd8")}><button disabled={!queuePage || queue.isFetching} onClick={() => setQueuePage("")}>{copy("session.firstPage_0bdbb7")}</button><button disabled={!queue.data?.nextPageToken || queue.isFetching} onClick={() => setQueuePage(queue.data!.nextPageToken)}>{copy("session.nextPage_c08ac7")}</button></nav>
     </details>
-    <form className="composer" onSubmit={(event) => { event.preventDefault(); void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }) }); }}>
-      <label htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label><textarea id={`prompt-${id}`} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
-      <div className="actions"><label>{copy("session.mode_cd20bc")}<select value={mode} disabled={locked} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("session.plan_fa8ed0")}</option></select></label><button className="primary" disabled={locked || !draft.trim() || text(data.archive) !== "active"}>{copy("session.queueMessage_891d4e")}</button></div>
+    <form className="composer" onSubmit={(event) => { event.preventDefault(); enqueue(); }}>
+      <label htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label><textarea ref={composer} onKeyDown={shortcuts.onKeyDown} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
+      <div className="actions"><label>{copy("session.mode_cd20bc")}<select value={mode} disabled={locked} onChange={(event) => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("session.plan_fa8ed0")}</option></select></label><button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}>{copy("session.queueMessage_891d4e")}</button></div>
       <Problem error={send.error} />{send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
     </form>
   </section>{panel === SessionPanel.Terminals && session ? <div id={`terminals-${id}`} className="session-app-panel"><SessionTerminals key={id} session={session} close={() => { setPanel(SessionPanel.Closed); terminalsButton.current?.focus(); }} /></div> : panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); filesButton.current?.focus(); }} /></div> : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={() => { setPanel(SessionPanel.Closed); diffButton.current?.focus(); }} /></div> : panel === SessionPanel.Diagnostics ? <div id={`diagnostics-${id}`} className="session-app-panel"><RequestDiagnostics key={id} sessionId={id} close={() => { setPanel(SessionPanel.Closed); diagnosticsButton.current?.focus(); }} /></div> : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={() => { setPanel(SessionPanel.Closed); browserButton.current?.focus(); }} /></div> : null}</div>;

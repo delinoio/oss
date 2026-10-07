@@ -8,9 +8,13 @@ import {
 import { document, resourceName, text } from "./documents";
 import { Problem } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
-import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen } from "./sidebar-context";
+import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen, useOpenSidebarDrawer } from "./sidebar-context";
 import { ActivityPRDetails } from "./activity-pr-source";
 import "./activity-sidebar.css";
+import { Surface } from "./surface";
+export { Surface } from "./surface";
+import { useShortcuts } from "./shortcut-provider";
+import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
 
 const activityNames: Partial<Record<ActivityKind, import("./localization").MessageKey>> = {
   [ActivityKind.UNSPECIFIED]: "views.activity.UNSPECIFIED",
@@ -26,7 +30,6 @@ const activityNames: Partial<Record<ActivityKind, import("./localization").Messa
   [ActivityKind.PR_VERIFIED_HANDLED]: "views.activity.PR_VERIFIED_HANDLED"
 };
 
-export enum Surface { Sessions = "sessions", NewSession = "new-session", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search", Settings = "settings" }
 function Pager({ page, next, setPage, busy }: { page: string; next?: string; setPage: (value: string) => void; busy: boolean }) {
   useLocale();
   return <nav aria-label={copy("views.resultsPages_9c69dd")}><button disabled={!page || busy} onClick={() => setPage("")}>{copy("views.firstPage_0bdbb7")}</button><button disabled={!next || busy} onClick={() => setPage(next!)}>{copy("views.nextPage_c08ac7")}</button></nav>;
@@ -35,28 +38,43 @@ function Pager({ page, next, setPage, busy }: { page: string; next?: string; set
 interface SearchFilters { query: string; archive: SearchArchiveState; projectId: string; sessionId: string; agentId: string; accountId: string; outcome: SearchExecutionOutcome }
 const emptySearch: SearchFilters = { query: "", archive: SearchArchiveState.UNSPECIFIED, projectId: "", sessionId: "", agentId: "", accountId: "", outcome: SearchExecutionOutcome.UNSPECIFIED };
 
-export function Search({ active, open }: { active: boolean; open: (id: string) => void }) {
+export function Search({ active, open, focusActivation = 0 }: { active: boolean; open: (id: string) => void; focusActivation?: number }) {
   useLocale();
   const [draft, setDraft] = useState<SearchFilters>(emptySearch);
   const [query, setQuery] = useState<SearchFilters>();
   const [page, setPage] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const focusedOnce = useRef(false);
+  const requestedFocus = useRef(false);
+  const lastFocusActivation = useRef(0);
   const closeDrawer = useCloseSidebarDrawer();
   const drawerOpen = useSidebarDrawerOpen();
+  const openDrawer = useOpenSidebarDrawer();
   const result = useQuery(SearchQuery.searchConversations, { ...(query ?? emptySearch), pageSize: 30, pageToken: page }, { enabled: active && Boolean(query?.query.trim()) });
   useEffect(() => {
+    if (requestedFocus.current && drawerOpen) { requestedFocus.current = false; searchInput.current?.focus(); }
+  }, [drawerOpen]);
+  useEffect(() => {
+    const requested = focusActivation !== lastFocusActivation.current;
+    if (active && requested) { searchInput.current?.focus(); lastFocusActivation.current = focusActivation; focusedOnce.current = true; }
     if (!active || focusedOnce.current) return;
     if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches && !drawerOpen) return;
     const frame = window.requestAnimationFrame(() => { searchInput.current?.focus(); focusedOnce.current = true; });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, drawerOpen]);
+  }, [active, drawerOpen, focusActivation]);
+  const shortcuts = useShortcuts([
+    { id: ShortcutId.SearchFocus, scope: Surface.Search, active, label: "shortcuts.focusSearch", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, run: () => {
+      if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches && !drawerOpen) { requestedFocus.current = true; openDrawer(); }
+      else searchInput.current?.focus();
+    } },
+    { id: ShortcutId.SearchSubmit, scope: Surface.Search, active, label: "shortcuts.searchSubmit", bindings: [{ key: "Enter" }], target: searchInput, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: Boolean(draft.query.trim()), unavailableReason: "shortcuts.searchRequired" },
+  ]);
   const change = <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const submit = (event: FormEvent) => { event.preventDefault(); if (!draft.query.trim()) return; setQuery({ ...draft, query: draft.query.trim() }); setPage(""); closeDrawer(); };
   return <>
     <SidebarSurface active={active} title={copy("views.search_49c266")}>
       <form className="sidebar-form" onSubmit={submit}>
-        <label>{copy("views.searchConversations_8abdf3")}<input ref={searchInput} value={draft.query} onChange={(event) => change("query", event.target.value)} /></label>
+        <label>{copy("views.searchConversations_8abdf3")}<input ref={searchInput} aria-keyshortcuts={shortcuts.aria(ShortcutId.SearchFocus, ShortcutId.SearchSubmit)} value={draft.query} onChange={(event) => change("query", event.target.value)} /></label>
         <label>{copy("views.archive_66f480")}<select value={draft.archive} onChange={(event) => change("archive", Number(event.target.value) as SearchArchiveState)}><option value={SearchArchiveState.UNSPECIFIED}>{copy("views.includeArchived_b6c334")}</option><option value={SearchArchiveState.ACTIVE}>{copy("views.activeOnly_a9b5ed")}</option><option value={SearchArchiveState.ARCHIVED}>{copy("views.archivedOnly_da7ebd")}</option></select></label>
         <ResourceChoice label={copy("views.project_985959")} kind={EntityKind.PROJECT} value={draft.projectId} change={(id) => change("projectId", id)} active={active} />
         <ResourceChoice label={copy("views.session_6959b4")} kind={EntityKind.SESSION} value={draft.sessionId} change={(id) => change("sessionId", id)} active={active} />
@@ -65,7 +83,7 @@ export function Search({ active, open }: { active: boolean; open: (id: string) =
         <label>{copy("views.outcome_4e80ab")}<select value={draft.outcome} onChange={(event) => change("outcome", Number(event.target.value) as SearchExecutionOutcome)}>{[
           [SearchExecutionOutcome.UNSPECIFIED, copy("views.extra.a52ace420f21")], [SearchExecutionOutcome.NOT_STARTED, copy("views.extra.ba35f0c47d86")], [SearchExecutionOutcome.RUNNING, copy("views.extra.f4ccae29e1bb")], [SearchExecutionOutcome.SUCCEEDED, copy("views.extra.6d9a6f97a5fd")], [SearchExecutionOutcome.FAILED, copy("views.extra.031a8f0f659d")], [SearchExecutionOutcome.STOPPED, copy("views.extra.1a4f630ac1b6")],
         ].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <button className="primary" disabled={!draft.query.trim()}>{copy("views.search_49c266")}</button>
+        <button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SearchSubmit)} disabled={!draft.query.trim()}>{copy("views.search_49c266")}</button>
       </form>
     </SidebarSurface>
     <section hidden={!active} className="page"><h2>{copy("views.searchConversations_8abdf3")}</h2>

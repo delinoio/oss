@@ -12,6 +12,63 @@ import { encode } from "./documents";
 // budget. Per-observation waits and product RPC/native deadlines remain unchanged.
 const fullShellTimeoutMs = 60_000;
 
+it("screen shortcuts reuse guarded forms and preserve drafts across keyboard navigation", async () => {
+  const value = fixture([], [], [], false, true);
+  render(<App transport={value.transport} />);
+  fireEvent.keyDown(document.body, { key: "N", ctrlKey: true, shiftKey: true });
+  const firstMessage = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(firstMessage, { target: { value: "Keyboard-created session" } });
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true }); expect(value.creates).not.toHaveBeenCalled();
+  await screen.findByRole("option", { name: "Agent One" });
+  const form = within(firstMessage.closest("form")!);
+  fireEvent.change(form.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.change(form.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true, isComposing: true }); expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true, repeat: true }); expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true }); await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const message = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.keyDown(message, { key: "?" }); expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).not.toHaveBeenCalled();
+  fireEvent.change(message, { target: { value: "Retained keyboard draft" } });
+  fireEvent.keyDown(message, { key: "k", ctrlKey: true });
+  const search = await screen.findByRole("textbox", { name: "Search conversations" });
+  await waitFor(() => expect(document.activeElement).toBe(search));
+  fireEvent.change(search, { target: { value: "original query" } });
+  fireEvent.submit(search.closest("form")!); await waitFor(() => expect(value.searches).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Retained keyboard draft");
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true }); expect(document.activeElement).toBe(message);
+  fireEvent.keyDown(document.body, { key: "?" });
+  expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeTruthy();
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Close keyboard shortcuts" }), { key: "Escape" });
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  value.enqueues.mockImplementationOnce(async () => { await gate; return { change: { session: value.session } }; });
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); await waitFor(() => expect(value.enqueues).toHaveBeenCalledTimes(1));
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).toHaveBeenCalledTimes(1);
+  await act(async () => { release(); await gate; });
+}, fullShellTimeoutMs);
+
+it("keyboard Search opens the compact drawer and explicitly refocuses retained drafts", async () => {
+  viewport(true);
+  render(<App transport={fixture().transport} />);
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  const query = await screen.findByRole("textbox", { name: "Search conversations" });
+  await waitFor(() => expect(document.activeElement).toBe(query));
+  fireEvent.change(query, { target: { value: "Retained compact query" } });
+  const drawer = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  expect(drawer.open).toBe(true);
+  fireEvent.keyDown(query, { key: "?" }); expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  fireEvent(drawer, new Event("cancel", { bubbles: true, cancelable: true }));
+  await waitFor(() => expect(drawer.open).toBe(false));
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  await waitFor(() => expect(drawer.open).toBe(true)); expect(document.activeElement).toBe(query);
+  fireEvent(drawer, new Event("cancel", { bubbles: true, cancelable: true }));
+  await waitFor(() => expect(drawer.open).toBe(false));
+  fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+  await waitFor(() => expect(document.activeElement).toBe(query)); expect((query as HTMLInputElement).value).toBe("Retained compact query");
+});
+
 function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
