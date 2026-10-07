@@ -67,15 +67,20 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 6 {
+	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 7 {
 		t.Fatalf("fresh inventory was not capability-complete: %+v", initial.Msg)
 	}
 	accountTypeFilterAdvertised := false
+	oauthFormatAdvertised := false
 	for _, capability := range initial.Msg.Capabilities {
 		accountTypeFilterAdvertised = accountTypeFilterAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER
+		oauthFormatAdvertised = oauthFormatAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1
 	}
 	if !accountTypeFilterAdvertised {
 		t.Fatalf("fresh inventory omitted account-type filtering capability: %+v", initial.Msg.Capabilities)
+	}
+	if !oauthFormatAdvertised {
+		t.Fatalf("fresh inventory omitted OAuth API format capability: %+v", initial.Msg.Capabilities)
 	}
 	for _, entry := range initial.Msg.Entries {
 		hosted := entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA && entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_LM_STUDIO && entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_VLLM
