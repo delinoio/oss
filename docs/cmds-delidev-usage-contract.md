@@ -260,3 +260,9 @@ another accounting source. Context metadata carries no current token count or
 exact cost claim; missing native categories retain the existing unavailable
 normalization. The private manual summarize adapter alone grants no public
 accounting or product-action capability.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Token pricing uses exact Provider/service and native-ID identity with its own revision. Preserve immutable price versions, original response estimates, exact category/currency handling and budget gates. New pricing affects only future observations. No independent saved Model or completion history is required.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

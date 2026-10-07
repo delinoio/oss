@@ -68,7 +68,7 @@ it("automatically closes API entry deletion and refreshes the current inventory 
   await screen.findByRole("article", { name: "Deleted API entry" });
   fireEvent.click(screen.getByRole("button", { name: "More actions for Deleted API entry" }));
   fireEvent.click(screen.getByRole("button", { name: "Delete entry" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect and delete entry" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() => expect(screen.queryByRole("article", { name: "Deleted API entry" })).toBeNull());
   expect(screen.getByRole("heading", { name: "AI API Keys", level: 1 })).toBeTruthy();

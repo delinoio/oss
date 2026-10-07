@@ -23,6 +23,14 @@ func init() {
 	}
 	// Each mode implements only its controlled protocol fixture. Unsupported
 	// requests fail instead of reaching an installed CLI or an external account.
+	if !strings.HasPrefix(mode, "thread-") && !strings.Contains(strings.Join(os.Args, "\n"), "features.plugins=false") {
+		os.Exit(42)
+	}
+	if marker := os.Getenv("DELIDEV_CODEX_PLUGIN_OVERRIDE_SENTINEL"); marker != "" && strings.Contains(strings.Join(os.Args, "\n"), "features.plugins=false") {
+		if os.WriteFile(marker, []byte("disabled"), 0600) != nil {
+			os.Exit(43)
+		}
+	}
 	initialized, notified := false, false
 	threads := &threadFixture{mode: mode}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -91,6 +99,15 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
 		default:
+			if request.Method == "experimentalFeature/list" && !strings.HasPrefix(mode, "thread-") {
+				enabled := strings.HasSuffix(mode, "plugins-enabled")
+				data := []any{map[string]any{"name": "plugins", "stage": "stable", "displayName": nil, "description": nil, "announcement": nil, "enabled": enabled, "defaultEnabled": true}}
+				if strings.HasSuffix(mode, "plugins-missing") {
+					data = []any{}
+				}
+				write(request.ID, map[string]any{"data": data, "nextCursor": nil})
+				continue
+			}
 			if managedFixtureHandle(mode, request.ID, request.Method, request.Params, write) {
 				continue
 			}

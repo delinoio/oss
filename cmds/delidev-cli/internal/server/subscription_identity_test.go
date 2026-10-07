@@ -12,7 +12,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-func TestSubscriptionConfigurationRPCV2HasNoProviderDependency(t *testing.T) {
+func TestSubscriptionConfigurationRPCHasNoProviderDependency(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	ctx := transferOwner()
 	save := func(kind domain.Kind, value any, version uint32) *pb.Resource {
@@ -54,8 +54,8 @@ func TestSubscriptionConfigurationRPCV2HasNoProviderDependency(t *testing.T) {
 		t.Fatal(err)
 	}
 	var bundle domain.ConfigurationBundle
-	if domain.Decode(export.Msg.DocumentJson, &bundle) != nil || bundle.Version != 2 {
-		t.Fatal("export did not negotiate v2")
+	if domain.Decode(export.Msg.DocumentJson, &bundle) != nil || bundle.Version != domain.ConfigurationBundleVersion {
+		t.Fatal("export did not use the current portable configuration version")
 	}
 }
 

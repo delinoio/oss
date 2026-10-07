@@ -38,7 +38,7 @@ export function SessionTerminals({ session, close }: { session: Resource; close:
   // The accepted resource can be beyond the first history page. Retain just
   // that one selection so creation immediately attaches to the original shell.
   const resource = supported ? list.data?.resources.find((value) => value.id === selected) ?? (createdTerminal?.id === selected ? createdTerminal : undefined) : undefined;
-  return <aside className="session-files" aria-label={copy("session-terminals.sessionTerminals_db991c")}>
+  return <aside data-shortcuts="passthrough" className="session-files" aria-label={copy("session-terminals.sessionTerminals_db991c")}>
     <header><h3>{copy("session-terminals.terminals_7482c4")}</h3><button onClick={close}>{copy("session-terminals.hideTerminals_522e2b")}</button></header>
     <p>{copy("session-terminals.terminalsRunOnThisSessionS_0699b6")}</p>
     <form onSubmit={(event) => { event.preventDefault(); void create.send({ mutation: { requestId: newRequestId(), id: session.id, expectedRevision: session.revision }, shellOverride: shell, rows: 24, columns: 80 }); }}>
