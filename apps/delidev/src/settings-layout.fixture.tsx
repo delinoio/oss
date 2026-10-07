@@ -25,7 +25,8 @@ function ToastFixtureControls() {
 }
 const populated = args.get("populated") === "true";
 const githubOnboarding = args.get("github-onboarding") === "true";
-const apiUsage = args.get("apiUsage") === "true";
+const apiFormatEdit = args.get("apiFormatEdit") === "true";
+const apiUsage = apiFormatEdit || args.get("apiUsage") === "true";
 const longNames = args.get("longNames") === "true";
 const projectWizard = args.get("projectWizard") === "true";
 const cleanupFixture = args.get("cleanupFixture") === "true";
@@ -64,6 +65,11 @@ const fixtureWorker: LocalWorkerStatus = {
 
 const subscription = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: "ChatGPT fixture", type: "subscription", subscription_service: "chatgpt", enabled: true, exclude_automatic: false, recovery_notifications: false, health: "disconnected", quota: [] }) });
 const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, schemaVersion: 1, revision: 1n, documentJson: encode({ name: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: false }) });
+if (apiFormatEdit) {
+  const original = resourceDocument(provider);
+  provider.schemaVersion = 3;
+  provider.documentJson = encode({ ...original, endpoint: "https://openrouter.ai/api/v1", authentication: "bearer", api_formats: ["openai-chat", "openai-responses", "anthropic-messages"].map(protocol => ({ protocol, endpoint: "https://openrouter.ai/api/v1", authentication: "bearer" })) });
+}
 const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Fixture model with a complete long identity", native_id: "example-model-native-".repeat(12), alias: "example-model", provider_id: provider.id, new: true, hidden: false, harnesses: ["codex"] }) });
 const extraModels = args.get("manyModels") === "true" ? Array.from({ length: 20 }, (_, index) => create(ResourceSchema, { ...model, id: newRequestId(), documentJson: encode({ ...resourceDocument(model), name: `Fixture model ${index + 2}`, native_id: `example-model-${index + 2}` }) })) : [];
 const backup = { id: newRequestId(), revision: 1n, sizeBytes: 9007199254740993n, modifiedAt: "2026-09-29T00:00:00.123Z" };
@@ -78,8 +84,15 @@ const records = populated ? [
   create(ResourceSchema, { id: currentDeviceId, kind: EntityKind.DEVICE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Example desktop", type: "client", paired_at: "2026-10-01T08:00:00Z", revoked: false }) }),
   create(ResourceSchema, { id: newRequestId(), kind: EntityKind.DEVICE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Example runner", type: "worker", machine_id: machineId, paired_at: "2026-10-01T07:30:00Z", revoked: false }) }),
 ] : [];
+if (apiFormatEdit) {
+  const account = records.find(row => row.kind === EntityKind.ACCOUNT && resourceDocument(row).alias === "OpenRouter")!;
+  const original = resourceDocument(account);
+  account.schemaVersion = 3;
+  account.documentJson = encode({ ...original, api_protocol: "openai-chat", exclude_automatic: false, recovery_notifications: true, connection: { id: newRequestId(), authentication: "bearer" } });
+}
 if (projectWizard) records.push(...["oss", "delidev"].map(name => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name }) })));
 const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+if (apiFormatEdit) capabilities.push(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_API_FORMAT_CHANGE_V1);
 let notificationPreferences = { revision: 1n, interactions: true, terminals: false };
 const fixtureTransport = createRouterTransport(router => {
   router.service(IntegrationService, { listGitHubRepositories: request => {

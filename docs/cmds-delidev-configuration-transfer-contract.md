@@ -1,5 +1,14 @@
 # DeliDev Portable Configuration
 
+## API format generation exclusion
+
+Portable v4 retains selected API protocols and Provider profiles, with unchanged
+v1–3 import semantics. Capability-9 current/retained connection generations,
+`credential_id`, health/validation/catalog and protected credentials are excluded.
+Imported API accounts always start disconnected and cannot import old execution
+authority. See the [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
 ## API format bundle version 4
 
 Version 4 preserves Provider `api_formats` and Account `api_protocol` under the

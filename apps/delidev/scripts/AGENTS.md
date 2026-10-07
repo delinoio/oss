@@ -1,3 +1,5 @@
+- `test-account-format-layout.mjs` validates the synthetic capability-9 edit dialog at wide/narrow viewports, native labeled select, Provider lock, key absence, footer/body scrolling and keyboard focus/closure. Keep screenshots outside the checkout and native-select keystroke/native/account acceptance limits explicit.
+
 - `test-subscription-cleanup-layout.mjs` validates the synthetic Settings fixture in English/Korean, light/dark and wide/narrow layouts with keyboard activation and focus preservation. Keep outputs outside the checkout and separate browser fixture evidence from native/account acceptance.
 
 # DeliDev scripts ownership

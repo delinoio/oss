@@ -1,5 +1,46 @@
 # DeliDev account lifecycle
 
+## Connected API format changes
+
+ProviderInventory capability 9 and `ChangeAccountApiFormat` were reserved on main
+in PR #1666. The owner/client operation receives an account ID, expected revision,
+request ID, closed API protocol and editable preferences. Its transaction publishes
+all preferences and the selected profile together with an actor-bound retry receipt.
+An exact replay returns current account metadata without another generation or
+protected-store operation. A conflicting revision or failed transaction publishes
+nothing. Unknown formats, unsupported profiles, pending cleanup and keyless/key
+ownership changes fail closed. Active inspections must settle before the change;
+late original inspection results cannot validate a new connection ID.
+
+A changed connected tuple creates a new connection ID with `credential_id` pointing
+to the original protected reference. The previous connection/profile, health and
+validation are retained in server-owned `retained_connections` in account JSON.
+The new generation is unverified, with validation and catalog observations cleared.
+Quota/exhaustion and ordinary account enablement remain shared controls. Saving
+sends no external API request and performs no key Put/Delete/Enumerate. Explicit
+Validate connection observes only the new generation and gates new-session
+execution. At most 128 previous generations are retained; the next change rejects
+without evicting original session authority. These runtime fields cannot be forged
+or cleared through ordinary configuration writes or portable imports.
+
+Existing executions, queued continuation, Resume, Fork, Sidechat, compaction,
+auxiliary work and title generation resolve their original connection ID and
+profile. New sessions resolve the current generation. Referenced current and old
+profiles remain immutable. Incompatible configured Workers receive a server-owned
+reconfiguration marker atomically; explicit compatible Worker saving clears it.
+Ordered-route schema 3 may contain this marker, while remaining exclusive with
+legacy routing fields. Existing executions require the original Worker to exist,
+without reading its newly edited configuration or this new-session routing marker.
+
+Explicit Disconnect or deletion revokes all generations, requests cancellation of
+all unfinished account work, joins original credential users and uses the existing
+confirmed cleanup path to delete the shared reference once. Failed deletion retains
+the original retry obligation. OAuth completion receipts and refresh serialization
+retain their original account/reference identity through any number of changes.
+No SQLite migration, native change, Provider identity change or format conversion
+is introduced.
+
+
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
@@ -14,8 +55,9 @@ API accounts may declare the closed `api_protocol` selection under the
 Explicit selections use resource schema 3; legacy accounts retain their original
 provider tuple. Connect stores the selected protocol/URL/authentication in the
 immutable connection generation. Validation, discovery and execution resolve
-that same tuple. Disconnect must finish protected cleanup before a format edit;
-reconnection requires explicit key input and validation. An account cannot change
+that same tuple. Capability 9 changes a connected account for future sessions
+without key input under the amendment below. Capability 7 alone requires
+Disconnect, confirmed cleanup, explicit key input and validation. An account cannot change
 between keyless and key-required authentication. Referenced profiles, including
 legacy defaults and disconnected accounts, cannot be removed or replaced.
 
@@ -30,7 +72,7 @@ inference, native execution or OAuth authority.
 
 
 A disconnected SQL record alone does not prove cleanup: a failed native Connect
-may retain protected staging intents. Format-change admission holds the account
+may retain protected staging intents. Disconnected format-change admission holds the account
 gate, checks the original revision and credential class, then verifies no remaining
 native references outside SQLite before publication. Failed enumeration rejects
 the edit. Exact accepted receipt replays do not reopen the vault. Keyless proof
