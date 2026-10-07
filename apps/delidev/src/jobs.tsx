@@ -15,8 +15,9 @@ export function TrackedJob({ initial, active, children }: { initial: Resource; a
   const latest = result.data?.resource;
   const current = latest && latest.id === initial.id && latest.kind === EntityKind.JOB && latest.revision >= initial.revision ? latest : initial;
   const value = document(current), state = text(value.state), problem = object(value.problem);
-  const attention = state !== JobState.Succeeded || Boolean(result.error) || Boolean(text(problem.message));
-  return <>{attention ? <section className="notice" data-job-state={state}><OperationStatus state={state} />{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<Problem error={result.error} />{result.error ? <button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}</section> : null}{children?.(state, object(value.output))}</>;
+  const unreadable = Boolean(result.data && (!latest || latest !== current));
+  const attention = state !== JobState.Succeeded || Boolean(result.error) || unreadable || Boolean(text(problem.message));
+  return <>{attention ? <section className="notice" data-job-state={state}><OperationStatus state={state} />{unreadable ? <p role="alert">{copy("jobs.unreadableStatus")}</p> : null}{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<Problem error={result.error} />{result.error || unreadable ? <button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}</section> : null}{children?.(state, object(value.output))}</>;
 }
 
 // Presentation only: callers retain original query, polling and mutation ownership.

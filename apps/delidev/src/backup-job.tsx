@@ -36,7 +36,7 @@ export function BackupJob({ kind, accepted, active, completed, dismiss }: Tracke
     <Problem error={query.error} />
     {job?.problemCode ? <p><LocalizedText id="backup-job.operationNeedsAttention_bfbf09" components={{ s0: <>{job.problemCode}</> }} /></p> : null}
     {query.error && query.data ? <p>{copy("backup-job.theLastObservationIsStaleCurrent_4263e8")}</p> : null}
-    {query.error ? <button disabled={!active || query.isFetching} onClick={() => void query.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}
+    {query.error || query.data && !job ? <button disabled={!active || query.isFetching} onClick={() => void query.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}
     {succeeded || failed ? <button aria-label={copy("backup-job.dismissBackup", { v0: accepted.backupId })} disabled={!active} onClick={dismiss}>{copy("backup-job.dismissTracking_12e6bb")}</button> : null}
   </article>;
 }

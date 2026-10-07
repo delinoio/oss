@@ -4,5 +4,6 @@
   "jobs.retryStatusRead": "Retry original status read",
   "jobs.failed": "The work failed. Review the problem before trying again.",
   "jobs.canceled": "The work was canceled. Any remaining cleanup still requires confirmation.",
-  "jobs.readingStatus": "Reading the original status…"
+  "jobs.readingStatus": "Reading the original status…",
+  "jobs.unreadableStatus": "The original status could not be verified. Read it again before continuing."
 }

@@ -59,3 +59,14 @@ it("retries only a failed read of the original status without hiding feature chi
   expect(f.read).toHaveBeenCalledTimes(2);
   for (const [request] of f.read.mock.calls as unknown as [{ id: string }][]) expect(request.id).toBe(f.initial.id);
 });
+
+it("retains the original identity when a status response is foreign", async () => {
+  const f = fixture("succeeded");
+  f.read.mockResolvedValueOnce({ resource: create(ResourceSchema, { ...f.initial, id: newRequestId() }) });
+  render(f.view);
+  expect(await screen.findByText("The original status could not be verified. Read it again before continuing.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retry original status read" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original status read" })).toBeNull());
+  expect(f.read).toHaveBeenCalledTimes(2);
+  for (const [request] of f.read.mock.calls as unknown as [{ id: string }][]) expect(request.id).toBe(f.initial.id);
+});
