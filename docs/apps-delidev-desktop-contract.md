@@ -2269,6 +2269,10 @@ Every app-owned dialog exposes one header dismissal control and Escape. Remove a
 Destructive top-level confirmation selects `SettingsDialogFocus.Close`; neutral nested Keep retains `Cancel` focus. If that neutral control is absent or unavailable, focus the named header close button. Never select an arbitrary destructive button or mutation retry as the fallback. Empty action regions, task footers and wizard footer spacing disappear. Header dismissal and Escape preserve task disposal, opener restoration, pending/uncertain dismissal and fencing of late results.
 
 This audit includes Settings forms/workflows, repository registration and its GitHub chooser, account/profile/subscription management and deletion, network/backup confirmations, pairing documents, notification editors, shared Modal consumers, shortcut help and compact navigation/information drawers. Keep wizard Previous/Next, page Cancel edit, internal Back/Keep, OAuth provider return, SSH/login/storage business cancellation, device-revocation exit/focus controls, Claude Later and Fork/storage Discard/Finish. Their effects differ from hiding or disposing their header presentation. Browser fixtures and responsive checks remain separate from packaged CEF keyboard, zoom and platform acceptance.
+### Frontend validation concurrency
+
+The shared hosted CI CPU budget permits at most two jsdom workers while Go/native preparation runs. Preserve individual test deadlines and product deadlines. Increase concurrency only after focus, lifetime and full-shell wizard regressions pass under peak concurrent build load.
+
 ### Operation result presentation
 
 Shared tracked jobs and independent backup, native-model observation, Fork, workspace storage, manual context compaction and configuration-import views show feature results and actionable progress, failure, cancellation and uncertainty. Generic operation headings, raw job/action UUIDs and revisions, unconditional per-operation Refresh controls and empty success notices are absent from visible and accessible presentation. Successful tracking still invokes its existing completion callbacks and preserves feature children, Finish/Discard controls, inventory/history/context refresh, backup resource IDs, model provenance, explicit Original observation ID lookup and independently confirmed cleanup proofs.
@@ -2291,8 +2295,4 @@ A successful Fork status without its verified original-source child retains exac
 
 Desktop update candidates retain the exact recovery ID and decimal revision as functional read-only journal-inspection operands. Their display permits later local recovery without live server negotiation and grants no installation or restart authority.
 
-
-
-### Frontend validation concurrency
-
-The shared hosted CI CPU budget permits at most two jsdom workers while Go/native preparation runs. Preserve individual test deadlines and product deadlines. Increase concurrency only after focus, lifetime and full-shell wizard regressions pass under peak concurrent build load.
+Failed unverified manual native-observation lookups remain editable. Discovery acknowledgments and verified lookup jobs retain unsettled ownership across later read failures, preventing replacement.

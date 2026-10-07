@@ -743,3 +743,5 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Retain API-entry feature identity and selected-server scope while displaying an asynchronous save or its result.
 
 - Successful Fork status remains reinspectable until its returned child verifies against the original source.
+
+- Failed manual native-model lookup grants no accepted operation ownership; allow correction until discovery acknowledgment or verified status retains the original unsettled job.
