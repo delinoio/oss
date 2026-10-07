@@ -162,7 +162,7 @@ esac
         "sidecar fixture writer failed: {written}"
     );
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-    let connector = Connector::new(executable, root.clone()).unwrap();
+    let connector = fixture_connector(executable, root.clone()).unwrap();
     assert_eq!(
         connector.connect().err(),
         Some(NativeFailure::ServiceManaged)
@@ -795,7 +795,7 @@ fi
     );
     fs::write(&executable, script).unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-    let connector = Arc::new(Connector::new(executable, root.clone()).unwrap());
+    let connector = Arc::new(fixture_connector(executable, root.clone()).unwrap());
     let runtime = Arc::new(Supervision::new(connector));
     for _ in 0..20 {
         assert!(runtime.launch_connection().unwrap().is_none());
