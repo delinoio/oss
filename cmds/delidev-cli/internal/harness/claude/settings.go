@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -64,7 +63,7 @@ func decodeAppliedSettings(raw []byte, model string, effort NativeEffort) (Appli
 }
 
 func validNativeEffort(effort NativeEffort, allowDefault bool) bool {
-	return (allowDefault && effort == "") || slices.Contains([]NativeEffort{LowEffort, MediumEffort, HighEffort, XHighEffort, MaxEffort}, effort)
+	return (allowDefault && effort == "") || domain.Text(string(effort), "native effort", 256, true) == nil
 }
 
 // ReadAppliedSettings performs one exact correlated native read and never

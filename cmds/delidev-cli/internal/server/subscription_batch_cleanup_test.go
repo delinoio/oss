@@ -18,6 +18,7 @@ import (
 func batchFailedAccount(t *testing.T, cleared bool) *subscriptionFixture {
 	t.Helper()
 	f, operation := legacyFailedServerLogin(t, false)
+	excludeUnrelatedBatchFixture(t, f)
 	if cleared {
 		if err := f.service.recoverFailedServerLogin(failedLoginContext(), f.input.AccountID, operation); err != nil {
 			t.Fatal(err)
@@ -92,10 +93,17 @@ func TestFailedSubscriptionBatchCleanup(t *testing.T) {
 
 func TestFailedSubscriptionCleanupEmptyAndExcludedOwnership(t *testing.T) {
 	f := unreferencedInitialSubscription(t)
+	excludeUnrelatedBatchFixture(t, f)
 	zero := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
-	if zero.Job.Total != 0 || zero.Job.State != pb.FailedSubscriptionCleanupState_FAILED_SUBSCRIPTION_CLEANUP_STATE_COMPLETED {
-		t.Fatal(zero)
+	if zero.Job.Total != 1 {
+		t.Fatal("disconnected account excluded", zero)
 	}
+	runFailedCleanup(t, f, zero.Job.Id)
+	if result := readFailedCleanup(t, f, zero.Job.Id, ""); result.Job.Deleted != 1 {
+		t.Fatal(result)
+	}
+	f = unreferencedInitialSubscription(t)
+	excludeUnrelatedBatchFixture(t, f)
 	op := f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 	if a := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID()); a.Job.Total != 0 {
 		t.Fatal("active login included")
@@ -226,8 +234,18 @@ func TestFailedSubscriptionCleanupCompleteInventoryAndPartialSuccess(t *testing.
 	_, err := f.service.Store.Mutate(failedLoginContext(), domain.NewID(), "fixture.cleanup.inventory", nil, func(tx *store.Tx) (any, error) {
 		for i := 0; i < 51; i++ {
 			id := domain.NewID()
-			account.Subscription.ServerOperation.ID = domain.NewID()
-			if _, err := tx.Put(domain.AccountKind, id, 0, "", "", account); err != nil {
+			target := account
+			if i%2 == 0 {
+				target.Subscription = nil
+				target.SubscriptionService = []domain.SubscriptionService{domain.SubscriptionChatGPT, domain.SubscriptionClaude, domain.SubscriptionGrok}[i%3]
+			} else {
+				original := *account.Subscription
+				operation := *original.ServerOperation
+				operation.ID = domain.NewID()
+				original.ServerOperation = &operation
+				target.Subscription = &original
+			}
+			if _, err := tx.Put(domain.AccountKind, id, 0, "", "", target); err != nil {
 				return nil, err
 			}
 		}
@@ -342,6 +360,8 @@ func TestFailedSubscriptionCleanupRestartUsesOnlyOriginalCheckpoint(t *testing.T
 
 func TestFailedSubscriptionCleanupRPC(t *testing.T) {
 	f := unreferencedInitialSubscription(t)
+	excludeUnrelatedBatchFixture(t, f)
+	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 	request := &pb.CleanupFailedSubscriptionsRequest{RequestId: string(domain.NewID())}
 	_, err := f.client.CleanupFailedSubscriptions(context.Background(), connect.NewRequest(request))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
@@ -366,5 +386,183 @@ func TestFailedSubscriptionCleanupRPC(t *testing.T) {
 	replay, err := f.client.CleanupFailedSubscriptions(context.Background(), subscriptionRequest(f.service.Identity.Token, request))
 	if err != nil || !replay.Msg.Replayed || !proto.Equal(replay.Msg.Job, accepted.Msg.Job) {
 		t.Fatal("generated RPC lost the original receipt", replay, err)
+	}
+}
+
+// The shared subscription fixture includes a second, referenced disconnected
+// account. These original-login tests isolate it; mixed-inventory tests below
+// explicitly cover referenced disconnected accounts.
+func excludeUnrelatedBatchFixture(t *testing.T, f *subscriptionFixture) {
+	t.Helper()
+	_, err := f.service.Store.Mutate(failedLoginContext(), domain.NewID(), "fixture.cleanup.exclude", nil, func(tx *store.Tx) (any, error) {
+		rows, err := all(tx, domain.AccountKind)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			if r.ID == f.input.AccountID {
+				continue
+			}
+			a, err := store.Decode[domain.Account](r)
+			if err != nil {
+				return nil, err
+			}
+			a.Health = domain.AccountFailed
+			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+				return nil, err
+			}
+		}
+		return struct{}{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSubscriptionCleanupDisconnectedServices(t *testing.T) {
+	for _, service := range []domain.SubscriptionService{domain.SubscriptionChatGPT, domain.SubscriptionClaude, domain.SubscriptionGrok} {
+		t.Run(string(service), func(t *testing.T) {
+			f := unreferencedInitialSubscription(t)
+			// The original referenced account is also selected, but must be retained.
+			f.changeFailedLogin(func(a *domain.Account) {
+				a.SubscriptionService = service
+				a.Subscription = nil
+			})
+			accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+			if accepted.Job.Total != 2 {
+				t.Fatal(accepted)
+			}
+			runFailedCleanup(t, f, accepted.Job.Id)
+			result := readFailedCleanup(t, f, accepted.Job.Id, "")
+			if result.Job.Deleted != 1 || result.Job.Retained != 1 {
+				t.Fatal(result)
+			}
+			for _, item := range result.Results {
+				if item.AccountId != string(f.input.AccountID) && item.Reason != pb.FailedSubscriptionCleanupReason_FAILED_SUBSCRIPTION_CLEANUP_REASON_REFERENCED {
+					t.Fatal(item)
+				}
+			}
+		})
+	}
+}
+
+func TestDisconnectedSubscriptionCleanupOwnershipAndVault(t *testing.T) {
+	f := unreferencedInitialSubscription(t)
+	excludeUnrelatedBatchFixture(t, f)
+	_, original := f.record()
+	if !disconnectedSubscription(original) {
+		t.Fatal("empty disconnected account excluded")
+	}
+	for _, change := range []func(*domain.Account){
+		func(a *domain.Account) { a.Type = domain.APIAccount },
+		func(a *domain.Account) { a.Health = domain.AccountReady },
+		func(a *domain.Account) { a.Subscription = &domain.SubscriptionState{RecoveryRequired: true} },
+		func(a *domain.Account) {
+			a.Subscription = &domain.SubscriptionState{Generation: domain.NewID(), RecoveryRequired: true}
+		},
+		func(a *domain.Account) {
+			a.Subscription = &domain.SubscriptionState{Lease: &domain.SubscriptionLease{}}
+		},
+		func(a *domain.Account) {
+			a.Subscription = &domain.SubscriptionState{Pending: &domain.SubscriptionOperation{}}
+		},
+	} {
+		raw, _ := json.Marshal(original)
+		var a domain.Account
+		_ = json.Unmarshal(raw, &a)
+		change(&a)
+		if disconnectedSubscription(a) {
+			t.Fatal("independent ownership included")
+		}
+	}
+	ref := credentials.Ref{Owner: f.input.AccountID, ID: domain.NewID(), Purpose: credentials.AccountLogin}
+	if _, err := f.secrets.Put(context.Background(), ref, []byte("synthetic-staged-token")); err != nil {
+		t.Fatal(err)
+	}
+	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+	runFailedCleanup(t, f, accepted.Job.Id)
+	result := readFailedCleanup(t, f, accepted.Job.Id, "")
+	if result.Job.Deleted != 0 || result.Job.Retained != 1 {
+		t.Fatal("status bypassed credential proof", result)
+	}
+	if _, err := f.secrets.Get(context.Background(), ref); err != nil {
+		t.Fatal("disconnected metadata deleted protected credentials", err)
+	}
+}
+
+func TestCleanupVersionOneChildRemainsReadable(t *testing.T) {
+	f := batchFailedAccount(t, false)
+	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+	_, err := f.service.Store.Mutate(failedLoginContext(), domain.NewID(), "fixture.cleanup.legacy", nil, func(tx *store.Tx) (any, error) {
+		rows, err := tx.Jobs("", domain.ID(accepted.Job.Id), "", "", 2)
+		if err != nil || len(rows) != 1 {
+			return nil, failedCleanupUnavailable()
+		}
+		j, in, _, err := decodeFailedCleanupAccount(rows[0], domain.ID(accepted.Job.Id))
+		if err != nil {
+			return nil, err
+		}
+		in.Version = 1
+		j.Input, _ = json.Marshal(in)
+		_, err = tx.PutJob(rows[0].ID, rows[0].Revision, "", "", j)
+		return struct{}{}, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runFailedCleanup(t, f, accepted.Job.Id)
+	if result := readFailedCleanup(t, f, accepted.Job.Id, ""); result.Job.Deleted != 1 {
+		t.Fatal(result)
+	}
+}
+
+func TestSubscriptionCleanupCompletedLogout(t *testing.T) {
+	f := batchFailedAccount(t, true)
+	f.changeFailedLogin(func(a *domain.Account) {
+		a.Subscription.ServerOperation.Action = domain.SubscriptionLogout
+		a.Subscription.ServerOperation.State = domain.SubscriptionSucceeded
+		a.Subscription.ServerOperation.CleanupPhase = ""
+	})
+	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+	if accepted.Job.Total != 1 {
+		t.Fatal("completed logout excluded", accepted)
+	}
+	runFailedCleanup(t, f, accepted.Job.Id)
+	if result := readFailedCleanup(t, f, accepted.Job.Id, ""); result.Job.Deleted != 1 {
+		t.Fatal(result)
+	}
+}
+
+func TestSubscriptionCleanupCompletedWorkerLogout(t *testing.T) {
+	f := unreferencedInitialSubscription(t)
+	raw := f.login()
+	clear(raw)
+	op := f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	lease, err := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clear(lease.Bundle)
+	if _, err := f.finish(lease, nil, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+	if accepted.Job.Total != 2 {
+		t.Fatal("confirmed Worker logout excluded", accepted)
+	}
+	runFailedCleanup(t, f, accepted.Job.Id)
+	result := readFailedCleanup(t, f, accepted.Job.Id, "")
+	if result.Job.Deleted != 1 || result.Job.Retained != 1 {
+		t.Fatal(result)
+	}
+}
+
+func TestSubscriptionCleanupLegacyDisconnectedFailure(t *testing.T) {
+	f := batchFailedAccount(t, true)
+	f.changeFailedLogin(func(a *domain.Account) { a.Subscription.ServerOperation.CleanupPhase = "" })
+	accepted := acceptFailedCleanup(t, f, failedLoginContext(), domain.NewID())
+	runFailedCleanup(t, f, accepted.Job.Id)
+	if result := readFailedCleanup(t, f, accepted.Job.Id, ""); result.Job.Deleted != 1 {
+		t.Fatal("disconnected legacy failure required a replacement cleanup", result)
 	}
 }

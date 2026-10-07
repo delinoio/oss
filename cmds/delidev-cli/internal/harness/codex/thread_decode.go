@@ -138,9 +138,7 @@ func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID 
 	if settings.Options.ServiceTier != "" && (response.ServiceTier == nil || *response.ServiceTier != settings.Options.ServiceTier) {
 		return &thread, nil, incompatible()
 	}
-	switch response.ApprovalPolicy {
-	case ApprovalUntrusted, ApprovalOnRequest, ApprovalNever:
-	default:
+	if domain.Text(string(response.ApprovalPolicy), "observed approval policy", 256, true) != nil {
 		return &thread, nil, incompatible()
 	}
 	if settings.Options.ApprovalPolicy != "" && string(response.ApprovalPolicy) != settings.Options.ApprovalPolicy {

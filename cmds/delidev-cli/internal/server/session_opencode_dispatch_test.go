@@ -70,15 +70,13 @@ func TestOpenCodeFirstDispatchIgnoresStaleInstallationInspection(t *testing.T) {
 }
 
 func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) {
-	for _, failure := range []string{"effort", "subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier", "validation", "worker-stale", "provider-protocol"} {
+	for _, failure := range []string{"subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier", "validation", "worker-stale", "provider-protocol"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newFirstDispatchFixtureForHarness(t, domain.OpenCode)
 			switch failure {
-			case "effort", "subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier":
+			case "subagent-model", "subagent-effort", "concurrency", "review-model", "service-tier":
 				f.mutateAgent(t, func(a *domain.Agent) {
 					switch failure {
-					case "effort":
-						a.Effort = "high"
 					case "subagent-model":
 						a.Options.SubagentModel = "another-model"
 					case "subagent-effort":
@@ -151,5 +149,30 @@ func TestOpenCodeFirstDispatchRefusalDoesNotConsumeRoutingOrInput(t *testing.T) 
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestNativeEffortDispatchKeepsExactSelectionWithoutSupportLists(t *testing.T) {
+	for _, harness := range []domain.Harness{domain.ClaudeCode, domain.OpenCode} {
+		for _, effort := range []string{"", "high", "Future-Effort"} {
+			t.Run(string(harness)+"/"+effort, func(t *testing.T) {
+				f := newFirstDispatchFixtureForHarness(t, harness)
+				if effort != "" {
+					f.mutateAgent(t, func(a *domain.Agent) { a.Effort = effort })
+				}
+				if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
+					t.Fatal(err)
+				}
+				session, err := store.Decode[domain.Session](f.refresh(t))
+				if err != nil || session.InitialExecution == nil || !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
+					t.Fatal("original execution was not dispatched", err)
+				}
+				var job domain.Job
+				var input domain.ExecutionJobInput
+				if domain.Decode(f.workerStream.Msg().Job.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Version != 4 || input.Startup == nil || input.Configuration.Effort != effort || input.ConfigurationDigest != session.InitialExecution.ConfigurationDigest || input.Input.Prompt != f.selection.Prompt {
+					t.Fatal("native effort changed or gained replacement input authority")
+				}
+			})
+		}
 	}
 }

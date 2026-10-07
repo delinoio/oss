@@ -72,118 +72,121 @@ func (f *earlyExecutionRegistrationRPC) RegisterExecution(context.Context, *conn
 }
 
 func TestManagedExecutionPreNativeFailureRemovesAuthentication(t *testing.T) {
-	for _, mode := range []string{"auth-write", "publisher", "registration", "response", "native-open", "finish", "take"} {
-		t.Run(mode, func(t *testing.T) {
-			if mode == "auth-write" && (runtime.GOOS == "windows" || os.Geteuid() == 0) {
-				t.Skip("the failed CreateTemp fixture requires Unix owner permission enforcement")
-			}
-			f := newCheckpointFixture(t)
-			// Use a fresh execution while preserving the helper's unrelated empty runtime.
-			f.input.ExecutionID = domain.NewID()
-			f.input.Configuration.Subscription = true
-			var err error
-			f.input.ConfigurationDigest, err = f.input.Configuration.Digest()
-			if err != nil {
-				t.Fatal(err)
-			}
-			binary, err := os.Executable()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if mode == "native-open" {
-				// Invalid executable bytes fail before an OS process can launch.
-				binary = filepath.Join(t.TempDir(), "invalid-codex")
-				if err := os.WriteFile(binary, []byte("invalid native fixture\n"), 0700); err != nil {
+	for _, permission := range []domain.PermissionMode{domain.PermissionDefault, domain.PermissionReadOnly, domain.PermissionWorkspaceWrite, domain.PermissionFullAccess} {
+		for _, mode := range []string{"auth-write", "publisher", "registration", "response", "native-open", "finish", "take"} {
+			t.Run(string(permission)+"/"+mode, func(t *testing.T) {
+				if mode == "auth-write" && (runtime.GOOS == "windows" || os.Geteuid() == 0) {
+					t.Skip("the failed CreateTemp fixture requires Unix owner permission enforcement")
+				}
+				f := newCheckpointFixture(t)
+				// Use a fresh execution while preserving the helper's unrelated empty runtime.
+				f.input.ExecutionID = domain.NewID()
+				f.input.Configuration.Subscription = true
+				f.input.Configuration.Options.Permission = permission
+				var err error
+				f.input.ConfigurationDigest, err = f.input.Configuration.Digest()
+				if err != nil {
 					t.Fatal(err)
 				}
-			}
-			f.input.Installation.ResolvedPath, err = filepath.EvalSymlinks(binary)
-			if err != nil {
-				t.Fatal(err)
-			}
-			manager := &workspace.Manager{Root: f.root}
-			preparation := workspace.PrepareRequest{SessionID: f.input.SessionID, MachineID: f.input.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
-			manifest, err := manager.Prepare(context.Background(), preparation)
-			if err != nil {
-				t.Fatal(err)
-			}
-			f.input.Preparation, _ = json.Marshal(preparation)
-			f.input.Manifest, _ = json.Marshal(manifest)
-			if err := f.input.Validate(); err != nil {
-				t.Fatal(err)
-			}
-			f.job.Input, _ = json.Marshal(f.input)
-			f.job.InstanceID = domain.NewID()
-			document, _ := json.Marshal(f.job)
-			resource := &pb.Resource{Id: string(f.jobID), Kind: pb.EntityKind_ENTITY_KIND_JOB, SchemaVersion: 1, Revision: 9, SessionId: string(f.input.SessionID), DocumentJson: document}
-			bundle := workerSubscriptionBundle("first")
-			defer clear(bundle)
-			subscriptions := &earlyExecutionSubscriptionRPC{bundle: bundle, finished: make(chan *pb.FinishSubscriptionRequest, 1)}
-			if mode == "auth-write" {
-				subscriptions.denyAuthenticationHome = filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex")
-				t.Cleanup(func() { _ = os.Chmod(subscriptions.denyAuthenticationHome, 0700) })
-			}
-			_, handler := delidevv1connect.NewSubscriptionServiceHandler(subscriptions)
-			server := httptest.NewServer(handler)
-			defer server.Close()
-			token, err := security.RandomToken()
-			if err != nil {
-				t.Fatal(err)
-			}
-			credential := Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: server.URL, ServerID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.NewID(), MachineID: f.input.MachineID, Token: token}
-			publication := &PublicationConfig{Credential: credential, Instance: f.job.InstanceID, Assignment: resource, Client: &earlyExecutionRegistrationRPC{mode: mode}}
-			if mode == "publisher" {
-				publication.Client = nil
-			}
+				binary, err := os.Executable()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mode == "native-open" {
+					// Invalid executable bytes fail before an OS process can launch.
+					binary = filepath.Join(t.TempDir(), "invalid-codex")
+					if err := os.WriteFile(binary, []byte("invalid native fixture\n"), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				f.input.Installation.ResolvedPath, err = filepath.EvalSymlinks(binary)
+				if err != nil {
+					t.Fatal(err)
+				}
+				manager := &workspace.Manager{Root: f.root}
+				preparation := workspace.PrepareRequest{SessionID: f.input.SessionID, MachineID: f.input.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
+				manifest, err := manager.Prepare(context.Background(), preparation)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.input.Preparation, _ = json.Marshal(preparation)
+				f.input.Manifest, _ = json.Marshal(manifest)
+				if err := f.input.Validate(); err != nil {
+					t.Fatal(err)
+				}
+				f.job.Input, _ = json.Marshal(f.input)
+				f.job.InstanceID = domain.NewID()
+				document, _ := json.Marshal(f.job)
+				resource := &pb.Resource{Id: string(f.jobID), Kind: pb.EntityKind_ENTITY_KIND_JOB, SchemaVersion: 1, Revision: 9, SessionId: string(f.input.SessionID), DocumentJson: document}
+				bundle := workerSubscriptionBundle("first")
+				defer clear(bundle)
+				subscriptions := &earlyExecutionSubscriptionRPC{bundle: bundle, finished: make(chan *pb.FinishSubscriptionRequest, 1)}
+				if mode == "auth-write" {
+					subscriptions.denyAuthenticationHome = filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex")
+					t.Cleanup(func() { _ = os.Chmod(subscriptions.denyAuthenticationHome, 0700) })
+				}
+				_, handler := delidevv1connect.NewSubscriptionServiceHandler(subscriptions)
+				server := httptest.NewServer(handler)
+				defer server.Close()
+				token, err := security.RandomToken()
+				if err != nil {
+					t.Fatal(err)
+				}
+				credential := Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: server.URL, ServerID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.NewID(), MachineID: f.input.MachineID, Token: token}
+				publication := &PublicationConfig{Credential: credential, Instance: f.job.InstanceID, Assignment: resource, Client: &earlyExecutionRegistrationRPC{mode: mode}}
+				if mode == "publisher" {
+					publication.Client = nil
+				}
 
-			var output json.RawMessage
-			if mode == "finish" || mode == "take" {
-				subscriptions.failFinish = mode == "finish"
-				subscriptions.failTake = mode == "take"
-				client := &earlyExecutionRegistrationRPC{mode: "registration"}
-				if err := security.PrivateDir(filepath.Join(f.root, "jobs")); err != nil {
-					t.Fatal(err)
+				var output json.RawMessage
+				if mode == "finish" || mode == "take" {
+					subscriptions.failFinish = mode == "finish"
+					subscriptions.failTake = mode == "take"
+					client := &earlyExecutionRegistrationRPC{mode: "registration"}
+					if err := security.PrivateDir(filepath.Join(f.root, "jobs")); err != nil {
+						t.Fatal(err)
+					}
+					config := Config{Root: f.root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+					work := assignment{context: context.Background(), cancel: func() {}}
+					err = runAndReportJob(context.Background(), config, client, credential, f.job.InstanceID, work, resource, f.job)
+					var uncertain *managedExecutionUncertain
+					if !errors.As(err, &uncertain) || client.reported {
+						t.Fatal("uncertain protected completion did not stop the work lane", err)
+					}
+					raw, readErr := security.ReadPrivate(filepath.Join(f.root, "jobs", string(f.jobID)+".json"), 2<<20)
+					var j journal
+					if readErr != nil || domain.Decode(raw, &j) != nil || j.State != journalStarted {
+						t.Fatal("uncertain completion replaced the original claim journal", readErr)
+					}
+				} else {
+					output, err = executeSession(context.Background(), Config{Root: f.root, execution: publication, executionContext: context.Background()}, f.jobID, f.job)
+					var uncertain *managedExecutionUncertain
+					if errors.As(err, &uncertain) {
+						t.Fatal("verified unused-original cleanup interrupted the work lane", err)
+					}
 				}
-				config := Config{Root: f.root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
-				work := assignment{context: context.Background(), cancel: func() {}}
-				err = runAndReportJob(context.Background(), config, client, credential, f.job.InstanceID, work, resource, f.job)
-				var uncertain *managedExecutionUncertain
-				if !errors.As(err, &uncertain) || client.reported {
-					t.Fatal("uncertain protected completion did not stop the work lane", err)
+				if err == nil || len(output) != 0 {
+					t.Fatal("pre-native failure was reported as completed execution", err)
 				}
-				raw, readErr := security.ReadPrivate(filepath.Join(f.root, "jobs", string(f.jobID)+".json"), 2<<20)
-				var j journal
-				if readErr != nil || domain.Decode(raw, &j) != nil || j.State != journalStarted {
-					t.Fatal("uncertain completion replaced the original claim journal", readErr)
+				auth := filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex", "auth.json")
+				if _, err := os.Lstat(auth); !os.IsNotExist(err) {
+					t.Fatal("pre-native failure retained plaintext authentication", err)
 				}
-			} else {
-				output, err = executeSession(context.Background(), Config{Root: f.root, execution: publication, executionContext: context.Background()}, f.jobID, f.job)
-				var uncertain *managedExecutionUncertain
-				if errors.As(err, &uncertain) {
-					t.Fatal("verified unused-original cleanup interrupted the work lane", err)
+				select {
+				case finish := <-subscriptions.finished:
+					if mode == "take" {
+						t.Fatal("uncertain delivery invented a completion")
+					}
+					if !finish.CleanupConfirmed || finish.Succeeded || !bytes.Equal(finish.Bundle, bundle) {
+						t.Fatal("pre-native cleanup outcome was not independently reported")
+					}
+				default:
+					if mode != "take" {
+						t.Fatal("protected execution completion was not reported")
+					}
 				}
-			}
-			if err == nil || len(output) != 0 {
-				t.Fatal("pre-native failure was reported as completed execution", err)
-			}
-			auth := filepath.Join(f.root, "runtimes", string(f.input.ExecutionID), "codex", "auth.json")
-			if _, err := os.Lstat(auth); !os.IsNotExist(err) {
-				t.Fatal("pre-native failure retained plaintext authentication", err)
-			}
-			select {
-			case finish := <-subscriptions.finished:
-				if mode == "take" {
-					t.Fatal("uncertain delivery invented a completion")
-				}
-				if !finish.CleanupConfirmed || finish.Succeeded || !bytes.Equal(finish.Bundle, bundle) {
-					t.Fatal("pre-native cleanup outcome was not independently reported")
-				}
-			default:
-				if mode != "take" {
-					t.Fatal("protected execution completion was not reported")
-				}
-			}
-			assertManagedWorkerFilesRedacted(t, f.root, bundle)
-		})
+				assertManagedWorkerFilesRedacted(t, f.root, bundle)
+			})
+		}
 	}
 }
