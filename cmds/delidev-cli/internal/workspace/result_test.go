@@ -49,7 +49,7 @@ func TestRemoteManifestValidationBindsEveryPreparationSelection(t *testing.T) {
 			copy := manifest
 			copy.Repositories = append([]PreparedRepository{}, manifest.Repositories...)
 			change(&copy)
-			if name == "session" || name == "machine" || name == "ownership" {
+			if name == "session" || name == "machine" {
 				if err := ValidateResult(request, copy, "linux"); err != nil {
 					t.Fatal(err)
 				}

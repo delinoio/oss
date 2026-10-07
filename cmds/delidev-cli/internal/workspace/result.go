@@ -110,7 +110,7 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 			}
 			registration = expected.ForkRegistrationSource
 		}
-		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != registration || domain.OwnershipBlocks(domain.OwnershipResource, input.SessionID, repo.Owned != (input.Type == domain.Worktree)) {
+		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != registration || repo.Owned != (input.Type == domain.Worktree) {
 			return ResultUncertain()
 		}
 		seen[repo.ID] = true
@@ -165,7 +165,7 @@ func canonicalCommit(value string) bool {
 // Local captures historical preparation facts; an unborn branch has no commit
 // or starting reference. Only this explicit state permits empty commit fields.
 func validLocalRepository(repo PreparedRepository) bool {
-	if domain.OwnershipBlocks(domain.OwnershipResource, repo.ID, repo.Owned) || repo.Path != repo.Source || len(repo.LocalIdentityDigest) != 64 || !canonicalCommit(repo.LocalIdentityDigest) || repo.StartingCommit != repo.BaseCommit {
+	if repo.Owned || repo.Path != repo.Source || len(repo.LocalIdentityDigest) != 64 || !canonicalCommit(repo.LocalIdentityDigest) || repo.StartingCommit != repo.BaseCommit {
 		return false
 	}
 	switch repo.LocalHEAD {
