@@ -90,6 +90,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   useLocale();
   const reportRead = useContext(AgentReadProblem), readIdentity = useId();
   const transport = useTransport(), client = useQueryClient(), generation = useRef(0);
+  const latestChange = useRef(change); latestChange.current = change;
   const [selectionBusy, setSelectionBusy] = useState(false), [selectionError, setSelectionError] = useState<unknown>();
   const needsProviderCapability = activeApiOnly && (kind === EntityKind.PROVIDER || kind === EntityKind.MODEL);
   const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 1 }, { enabled: active && needsProviderCapability });
@@ -136,7 +137,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   useLayoutEffect(() => { generation.current++; setSelectionBusy(false); setSelectionError(undefined); return () => { generation.current++; }; }, [active, disabled, kind, allowedKey, transport]);
   const select = async (id: string) => {
     if (!active || disabled || selectionBusy) return;
-    if (!id) { change(""); return; }
+    if (!id) { latestChange.current(""); return; }
     const original = generation.current; setSelectionBusy(true); setSelectionError(undefined);
     try {
       const response = await client.fetchQuery({ ...createQueryOptions(ResourceQuery.getResource, { kind, id }, { transport }), staleTime: 0, retry: false });
@@ -148,7 +149,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
         if (generation.current !== original) return;
         if (!provider || provider.kind !== EntityKind.PROVIDER || !supportsResourceSchema(provider) || document(provider).enabled !== true || document(provider).protocol === Protocol.Subscription) throw new ConnectError("Selected provider is unavailable", Code.FailedPrecondition);
       }
-      change(id, document(row), row);
+      latestChange.current(id, document(row), row);
     } catch (error) { if (generation.current === original) setSelectionError(error); }
     finally { if (generation.current === original) setSelectionBusy(false); }
   };
