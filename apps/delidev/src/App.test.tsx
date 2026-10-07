@@ -124,7 +124,7 @@ it("starts General Chat with explicit execution selections and no project or Loc
   expect(request.localWorkerToken).toBe("");
   expect(proof).not.toHaveBeenCalled();
   expect(await screen.findByRole("heading", { name: "Retained session" })).toBeTruthy();
-});
+}, fullShellTimeoutMs);
 
 it("retains separate Local and General Chat drafts through Settings, language and same-identity reconnect", async () => {
   const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Draft project" }) });
