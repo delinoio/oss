@@ -179,6 +179,13 @@ func TestRetainedHistoryReaderPinsFileAndAncestorIdentityAcrossPair(t *testing.T
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
 			}
+			if name == "scope-permissions" {
+				raw, err := scope.read(ctx, filepath.Join("native", "second"), 16)
+				if err != nil || string(raw) != "second" {
+					t.Fatal("sharing permissions blocked the retained file", err)
+				}
+				return
+			}
 			if raw, err := scope.read(ctx, filepath.Join("native", "second"), 16); err == nil || raw != nil {
 				t.Fatal("mutated pair returned partial content")
 			}
