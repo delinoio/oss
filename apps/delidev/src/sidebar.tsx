@@ -1,3 +1,4 @@
+import { SubscriptionRail } from "./subscription-rail";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject, type MouseEvent, type ReactNode } from "react";
@@ -363,6 +364,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       <SidebarButton label={copy("sidebar.schedules_221ff1")} icon="schedules" current={surface === Surface.Schedules} onClick={() => navigate(Surface.Schedules)} />
       <SidebarButton label={copy("sidebar.activity_38da15")} icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
       <span className="sidebar-rail-spacer" />
+      <SubscriptionRail enabled={connectionReady && !drawerOpen} manage={openSettings} focusFallback={() => rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button")?.focus()} />
       <button type="button" className="sidebar-rail-button" aria-label={copy("shortcuts.title")} aria-keyshortcuts={helpAria} aria-haspopup="dialog" onClick={openShortcutHelp}><Icon name="help" /><span className="sidebar-rail-tooltip" aria-hidden="true">{copy("shortcuts.title")}</span></button>
       <SidebarButton label={copy("sidebar.settings_74a883")} icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
