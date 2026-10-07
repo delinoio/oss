@@ -350,6 +350,46 @@ mod tests {
     }
 
     #[test]
+    fn worker_exit_records_only_the_retained_original_generation() {
+        let generation = uuid::Uuid::now_v7().to_string();
+        let admission =
+            serde_json::json!({"version":1,"result":{"started":true,"generation":generation}});
+        let (_root, connector) = fixture(&format!(
+            "#!/bin/sh\nprintf '%s\\n' '{admission}'\nread action\n"
+        ));
+        connector
+            .run_host_child(&connector.executable, &[], true)
+            .unwrap();
+        assert!(connector.owns_worker_generation(&generation));
+        {
+            let mut children = connector.hosted.lock().unwrap();
+            children[0].child.kill().unwrap();
+            children[0].child.wait().unwrap();
+        }
+        connector.reap_worker_children();
+        assert_eq!(*connector.worker_exited.lock().unwrap(), Some(generation));
+        assert!(connector.hosted.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unconfirmed_worker_admission_blocks_another_native_child() {
+        let (_root, connector) = fixture("#!/bin/sh\nprintf '%s\\n' '{}'\nread action\n");
+        assert!(
+            connector
+                .run_host_child(&connector.executable, &[], true)
+                .is_err()
+        );
+        assert!(connector.worker_admission_unconfirmed());
+        connector.manage_worker();
+        assert_eq!(
+            connector.worker_management.lock().unwrap().state,
+            crate::LocalWorkerManagementState::Blocked
+        );
+        assert_eq!(connector.hosted.lock().unwrap().len(), 1);
+        connector.shutdown_owned().unwrap();
+    }
+
+    #[test]
     fn quit_requests_original_child_and_joins_it_once() {
         let script = format!(
             "#!/bin/sh\n{}IFS= read -r control\n[ \"$control\" = \

@@ -1043,9 +1043,9 @@ fn automatic_worker_keeps_stop_and_quits_only_its_original_child() {
 case "$3:$4" in
 device:inspect) printf '%s\n' '{client}' ;;
 worker:inspect) printf '%s\n' '{worker}' ;;
-worker:status) /bin/cat '{root}/status.json' ;;
+worker:status) if [ -f '{root}/status-fail' ]; then exit 2; fi; /bin/cat '{root}/status.json' ;;
 worker:stop) exit 2 ;;
-worker:desktop-prepare) printf '%s\n' '{{"version":1,"result":{{"executable":"{executable}"}}}}' ;;
+worker:desktop-prepare) if [ -f '{root}/prepare-fail' ]; then exit 2; fi; printf '%s\n' '{{"version":1,"result":{{"executable":"{executable}"}}}}' ;;
 worker:desktop-host)
   printf '%s\n' '{admission}'
   IFS= read -r action
@@ -1072,13 +1072,32 @@ esac
         .local_worker(LocalWorkerAction::Status, None)
         .unwrap();
     assert!(!borrowed.management.unwrap().owned_by_app);
+    connector.worker_management_failure(NativeFailure::CredentialUnavailable);
+    assert_eq!(
+        connector
+            .local_worker(LocalWorkerAction::Status, None)
+            .unwrap()
+            .management
+            .unwrap()
+            .state,
+        LocalWorkerManagementState::Blocked
+    );
     assert!(
         connector
             .local_worker(LocalWorkerAction::Start, Some(&generation))
             .is_err()
     );
+    fs::write(root.join("prepare-fail"), []).unwrap();
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Start, None)
+            .is_err()
+    );
+    assert!(connector.worker_launch_pending.load(Ordering::Acquire));
+    fs::remove_file(root.join("prepare-fail")).unwrap();
+    connector.manage_worker();
     let owned = connector
-        .local_worker(LocalWorkerAction::Start, None)
+        .local_worker(LocalWorkerAction::Status, None)
         .unwrap();
     assert!(owned.management.unwrap().owned_by_app);
     assert!(
@@ -1090,6 +1109,17 @@ esac
             .is_err()
     );
     assert!(connector.worker_pause_generation.lock().unwrap().is_none());
+    fs::write(root.join("status-fail"), []).unwrap();
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Stop, Some(&generation))
+            .is_err()
+    );
+    assert_eq!(
+        *connector.worker_pause_generation.lock().unwrap(),
+        Some(generation.clone())
+    );
+    fs::remove_file(root.join("status-fail")).unwrap();
     assert!(
         connector
             .local_worker(LocalWorkerAction::Stop, Some(&generation))

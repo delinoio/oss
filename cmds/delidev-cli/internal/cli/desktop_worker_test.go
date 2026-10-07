@@ -165,6 +165,19 @@ func TestDesktopWorkerOriginalAdmissionReuseEOFAndStop(t *testing.T) {
 	if stopped, err := worker.Status(workerRoot); err != nil || stopped.ControllerActive || stopped.Lifecycle.Desired != worker.WorkerStopped {
 		t.Fatal("original Stop was not durable", stopped, err)
 	}
+	revokeDesktop(t, root, credential)
+	before, err := worker.Status(workerRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := desktopWorkerHost(ctx, o, []string{"--mode", "ensure", "--client-id", string(clientCredential.DeviceID)}, IO{In: &emptyReader{}, Out: io.Discard, Err: io.Discard}, endpoint.URL); err == nil {
+		t.Fatal("revoked Worker admitted recovery")
+	}
+	after, err := worker.Status(workerRoot)
+	retained, credentialErr := worker.LoadCredential(workerRoot)
+	if err != nil || credentialErr != nil || after.Lifecycle != before.Lifecycle || retained != credential {
+		t.Fatal("revoked registration or lifecycle replaced", err, credentialErr)
+	}
 }
 
 type lostWorkerAdmission struct{ observed chan struct{} }

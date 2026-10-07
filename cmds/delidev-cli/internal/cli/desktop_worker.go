@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -57,6 +58,35 @@ func desktopWorkerAuthority(ctx context.Context, o options, expected string, cli
 	return nil
 }
 
+// Recovery authenticates the retained registration without issuing a grant.
+// A revoked Worker must remain diagnostic rather than cycling generations.
+func desktopWorkerRegistration(ctx context.Context, o options, root, expected string) error {
+	identity, err := security.LoadIdentity(o.dataDir)
+	if err != nil {
+		return err
+	}
+	saved, err := worker.LoadCredential(root)
+	if err != nil {
+		return err
+	}
+	if saved.Type != domain.WorkerDevice || saved.ServerID != identity.ServerID || saved.Endpoint != expected {
+		return recoveryRequired()
+	}
+	paired, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true}, strings.NewReader(saved.Token))
+	if err != nil {
+		return err
+	}
+	defer paired.transport.CloseIdleConnections()
+	status, err := paired.system.GetStatus(ctx, request(paired, &pb.GetStatusRequest{}))
+	if err != nil {
+		return rpc.ClientError(err)
+	}
+	if status.Msg.ServerId != string(saved.ServerID) || status.Msg.ProtocolVersion != rpc.ProtocolVersion || status.Msg.Stopping {
+		return recoveryRequired()
+	}
+	return nil
+}
+
 // Preparation is an intentional native bootstrap, not a renderer/read operation.
 // Its selected private path never enters renderer metadata. The selected original
 // process independently revalidates the signed selection below.
@@ -79,6 +109,9 @@ func desktopWorkerExecutable(ctx context.Context, o options, args []string) (any
 		if _, err := pairLocalDeviceAt(bounded, o, filepath.Join(o.dataDir, "worker"), domain.WorkerDevice, false, "http://"+server.DefaultListen); err != nil {
 			return nil, err
 		}
+	}
+	if err := desktopWorkerRegistration(bounded, o, filepath.Join(o.dataDir, "worker"), "http://"+server.DefaultListen); err != nil {
+		return nil, err
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -159,6 +192,9 @@ func desktopWorkerHost(ctx context.Context, o options, args []string, streams IO
 			return nil, err
 		}
 	}
+	if err := desktopWorkerRegistration(admission, o, root, expected); err != nil {
+		return nil, err
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -199,7 +235,19 @@ func desktopWorkerHost(ctx context.Context, o options, args []string, streams IO
 	if status.State == worker.StateUncertain && !status.ControllerActive && domain.ID(*exited) != status.Lifecycle.Generation {
 		return nil, recoveryRequired()
 	}
+	// Admission may have waited behind service/update control. Recheck signed
+	// selection and retained authorization inside the final startup gate.
+	selected, err = worker.DesktopExecutable(root, executable)
+	if err != nil {
+		return nil, err
+	}
+	if selected != executable {
+		return nil, workerUpdateFailure()
+	}
 	if err := desktopWorkerAuthority(admission, o, expected, domain.ID(*clientID)); err != nil {
+		return nil, err
+	}
+	if err := desktopWorkerRegistration(admission, o, root, expected); err != nil {
 		return nil, err
 	}
 	originalGate.Lock()

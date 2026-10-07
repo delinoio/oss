@@ -77,11 +77,15 @@ impl WorkerSupervision {
                 if server.status().state == LocalServerState::Ready {
                     match server.launch_connection() {
                         Ok(Some(connection)) => {
-                            *connector
+                            let previous = connector
                                 .worker_client_id
                                 .lock()
-                                .unwrap_or_else(|e| e.into_inner()) =
-                                Some(connection.device_id.clone());
+                                .unwrap_or_else(|e| e.into_inner())
+                                .replace(connection.device_id.clone());
+                            if previous.is_some_and(|id| id != connection.device_id) {
+                                connector
+                                    .publish_worker_management(LocalWorkerManagement::default());
+                            }
                             connector.manage_worker();
                         }
                         Ok(None) => {}
@@ -173,6 +177,18 @@ impl Connector {
         } else if pending_stop && !status.desired_stopped {
             next.state = LocalWorkerManagementState::Blocked;
             next.failure = Some(NativeFailure::TimedOut);
+        } else if next.state == LocalWorkerManagementState::Blocked
+            && matches!(
+                next.failure,
+                Some(
+                    NativeFailure::CredentialUnavailable
+                        | NativeFailure::PermissionDenied
+                        | NativeFailure::Incompatible
+                )
+            )
+        {
+            // Process metadata cannot clear a rejected authenticated admission.
+            // A new explicit Start or adopted authenticated client rechecks it.
         } else if status.desired_stopped {
             next.state = LocalWorkerManagementState::Paused;
             next.failure = None;
@@ -207,6 +223,36 @@ impl Connector {
     }
 
     pub(crate) fn start_managed_worker(&self, mode: WorkerHostMode) -> Result<LocalWorkerStatus> {
+        let before = if mode == WorkerHostMode::Launch {
+            self.local_worker_inner(LocalWorkerAction::Status, None)
+                .ok()
+                .and_then(|status| status.generation)
+        } else {
+            None
+        };
+        let result = self.admit_managed_worker(mode);
+        if mode == WorkerHostMode::Launch
+            && result.is_err()
+            && self
+                .worker_pause_generation
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_none()
+        {
+            let after = self
+                .local_worker_inner(LocalWorkerAction::Status, None)
+                .ok();
+            // Retry an intentional launch that failed before opening its Go
+            // barrier. A stopped newly published generation consumes that
+            // intent and cannot be reopened by this retry.
+            let pending =
+                after.is_none_or(|status| !status.desired_stopped || status.generation == before);
+            self.worker_launch_pending.store(pending, Ordering::Release);
+        }
+        result
+    }
+
+    fn admit_managed_worker(&self, mode: WorkerHostMode) -> Result<LocalWorkerStatus> {
         if self.exiting.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
         }

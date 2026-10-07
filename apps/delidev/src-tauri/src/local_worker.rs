@@ -79,7 +79,23 @@ impl Connector {
                 return result;
             }
             if matches!(action, LocalWorkerAction::Stop) {
-                let current = self.local_worker_inner(LocalWorkerAction::Status, None)?;
+                let current = match self.local_worker_inner(LocalWorkerAction::Status, None) {
+                    Ok(current) => current,
+                    Err(error) => {
+                        // A lost read cannot prove that the user's original
+                        // Stop is stale. Preserve only its canonical target;
+                        // it can never suppress a different generation.
+                        let mut paused = self
+                            .worker_pause_generation
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        if paused.is_none() {
+                            *paused = generation.map(str::to_owned);
+                        }
+                        self.worker_launch_pending.store(false, Ordering::Release);
+                        return Err(error);
+                    }
+                };
                 if current.generation.as_deref() != generation {
                     return Err(NativeFailure::InvalidEvidence);
                 }
