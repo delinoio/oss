@@ -16,6 +16,7 @@ import "./styles.css";
 import "./settings-presentation.css";
 
 const args = new URLSearchParams(location.search);
+const hiddenWorkerChoices = args.get("hiddenWorkerChoices") === "true";
 void i18n.changeLanguage(args.get("language") === SupportedLanguage.Korean ? SupportedLanguage.Korean : SupportedLanguage.English);
 function ToastFixtureControls() {
   const notifications = useNotifications();
@@ -70,7 +71,7 @@ const creationId = newRequestId();
 const records = populated ? [
   ...[EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY, EntityKind.MACHINE].map(kind => create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision: 1n, documentJson: encode({ name: `Example ${EntityKind[kind]} ${"long-name-".repeat(15)}`, harness: "codex", contents: "Complete fixture instruction text.\nSecond line retained.", repositories: [], accounts: [], templates: [] }) })),
   model, ...extraModels,
-  ...["Personal API", "Team API", "Backup API"].map((alias, index) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias, type: "api", provider_id: provider.id, enabled: true, health: "unverified", ...(index < 2 ? { connection: { authentication: "keyless" } } : {}) }) })),
+  ...["Personal API", "Team API", "Backup API"].map((alias, index) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias, type: "api", provider_id: provider.id, enabled: true, health: "unverified", ...(index < 2 && !hiddenWorkerChoices ? { connection: { authentication: "keyless" } } : {}) }) })),
   ...["api", "subscription"].map(type => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias: apiUsage && type === "api" ? longNames ? "OpenRouter-long-identity-".repeat(10) : "OpenRouter" : `Fixture ${type} entry`, type, provider_id: provider.id, connection: apiUsage && type === "api" ? { id: newRequestId() } : "disconnected", health: "unverified", enabled: true, quota: [] }) })),
   create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SETTINGS, schemaVersion: 1, revision: 1n, documentJson: encode({ default_routing: "priority", automatic_fetch: false, notifications: false, remediation: { ci_failure: false, review_feedback: false, merge_conflict: false, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 3 } }) }),
   create(ResourceSchema, { id: newRequestId(), kind: EntityKind.INTEGRATION, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Fixture GitHub profile", provider: "github.com", token_kind: "fine-grained", resource_owner: "fixture-owner", ...(args.get("repository-pat") === "true" ? { connection: { generation_id: newRequestId() } } : {}) }) }),
