@@ -75,7 +75,6 @@ function GitHubRepositoryDialog({ opener, close, children }: { opener: RefObject
   }}>
     <header className="repository-github-header"><h2 ref={heading} tabIndex={-1} id={id}>{copy("repository-github.title")}</h2><button type="button" aria-label={copy("repository-github.close")} onClick={close}>×</button></header>
     <div className="repository-github-body">{children}</div>
-    <footer className="repository-github-footer"><button type="button" onClick={close}>{copy("repository-github.cancel")}</button></footer>
   </DialogSurface>, document.body);
 }
 

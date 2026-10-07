@@ -70,13 +70,12 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
     {status ? <p role="status">{status.state === RegistrationState.Authorized ? copy("local-registration.thisDesktopRegistrationIsAuthorized_f356ec") : status.state === RegistrationState.Revoked ? copy("local-registration.thisDesktopRegistrationWasRevokedYou_1f8ea7") : copy("local-registration.aDesktopRegistrationRecoveryIsPending_de3baf")}</p> : null}
     {status && (status.state !== RegistrationState.Authorized || pending) ? <button disabled={busy} onClick={() => setConfirm(true)}>{pending ? copy("local-registration.continueDesktopRecovery_250cf5") : copy("local-registration.reRegisterThisDesktop_405621")}</button> : null}
     {error && !confirm ? <p role="alert">{recoveryProblem(error)}</p> : null}
-    <Modal title={copy("local-registration.reRegisterThisDesktop_405621")} visible={confirm && active} close={() => setConfirm(false)}>
+    <Modal focusClose trapFocus title={copy("local-registration.reRegisterThisDesktop_405621")} visible={confirm && active} close={() => setConfirm(false)}>
       <p>{copy("local-registration.thisCreatesANewDesktopRegistration_0adc71")}</p>
       <p>{copy("local-registration.switchingToTheNewRegistrationClears_d3ec15")}</p>
       {pending ? <p>{copy("local-registration.theOriginalRecoveryRequestIsRetained_a082ac")}</p> : null}
       {error ? <p role="alert">{recoveryProblem(error)}</p> : null}
       <button disabled={busy || !status} onClick={() => void recover()}>{busy ? copy("local-registration.recovering_959bdc") : pending ? copy("local-registration.retryOriginalDesktopRecovery_3b14fa") : copy("local-registration.confirmDesktopReRegistration_d9ee3f")}</button>
-      <button onClick={() => setConfirm(false)}>{copy("local-registration.close_7d9eb7")}</button>
     </Modal>
   </section>;
 }

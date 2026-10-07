@@ -31,7 +31,7 @@ it("disconnects and deletes a real Go keyless account from one Settings confirma
   expect(background.hasAttribute("inert")).toBe(true);
   expect(background.disabled).toBe(true);
   expect(within(background).getByRole("heading", { name: "AI API Keys", hidden: true })).toBeTruthy();
-  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Keep entry" })));
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close Delete entry" })));
   fireEvent.click(within(dialog).getByRole("button", { name: "Disconnect and delete entry" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() => expect(screen.queryByRole("heading", { name: "Owned deletion entry" })).toBeNull());

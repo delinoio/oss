@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { ConfigurationService, EntityKind, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
-import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskActions, SettingsTaskBackground, SettingsTaskDialog, SettingsTasks } from "./settings-task";
+import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskActions, SettingsTaskDismissButton, SettingsTaskBackground, SettingsTaskDialog, SettingsTasks } from "./settings-task";
 import { ConfigurationEditor } from "./settings";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
@@ -202,4 +202,25 @@ it("keeps a fresh task independent of its predecessor's late accepted save", asy
   submit();
   await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
   expect(save.mock.calls[1][0]).not.toEqual(save.mock.calls[0][0]);
+});
+
+
+it("focuses header close after an audited duplicate is removed, without admitting destruction", async () => {
+  const destroy = vi.fn();
+  renderTask(<SettingsTaskDialog title="Delete safe fixture" size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Close} close={() => {}}><SettingsTaskActions><button onClick={destroy}>Confirm irreversible deletion</button><SettingsTaskDismissButton data-settings-task-cancel>Keep duplicate</SettingsTaskDismissButton></SettingsTaskActions></SettingsTaskDialog>);
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close Delete safe fixture" })));
+  expect(screen.queryByRole("button", { name: "Keep duplicate" })).toBeNull();
+  fireEvent.keyDown(document.activeElement!, {key:"Enter"});
+  expect(destroy).not.toHaveBeenCalled();
+});
+it("retains page cancellation and distinct nested return, while omitting empty task actions", async () => {
+  const cancel = vi.fn();
+  const page = renderTask(<SettingsTaskActions><SettingsTaskDismissButton onClick={cancel}>Cancel page edit</SettingsTaskDismissButton></SettingsTaskActions>);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel page edit" })); expect(cancel).toHaveBeenCalledOnce(); page.unmount();
+  function Steps() { const [step,setStep] = useState(false); return <><button onClick={() => setStep(true)}>Open nested confirmation</button><SettingsTaskActions><SettingsTaskDismissButton>Cancel outer task</SettingsTaskDismissButton></SettingsTaskActions>{step ? <SettingsTaskDialog title="Nested confirmation" size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setStep(false)}><SettingsTaskActions><button>Confirm nested deletion</button><SettingsTaskDismissButton data-settings-task-cancel onClick={() => setStep(false)}>Keep nested item</SettingsTaskDismissButton></SettingsTaskActions></SettingsTaskDialog> : null}</>; }
+  renderTask(<SettingsTaskDialog title="Outer task" size={SettingsDialogSize.Form} close={() => {}}><Steps /></SettingsTaskDialog>);
+  expect(screen.queryByRole("button", {name:"Cancel outer task"})).toBeNull(); expect(document.querySelector(".settings-task-footer .actions")).toBeNull();
+  fireEvent.click(screen.getByRole("button", {name:"Open nested confirmation"}));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", {name:"Keep nested item"})));
+  fireEvent.click(screen.getByRole("button", {name:"Keep nested item"})); expect(screen.getByRole("dialog", {name:"Outer task"})).toBeTruthy(); expect(screen.queryByRole("button", {name:"Confirm nested deletion"})).toBeNull();
 });

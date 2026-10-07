@@ -59,7 +59,7 @@ it.each([true, false])("cleans a connected=%s API entry before fresh-revision de
   const value = fixture(connected);
   const view = render(<value.Harness />);
   expect(value.status).not.toHaveBeenCalled(); expect(value.disconnect).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
-  await waitFor(() => expect(globalThis.document.activeElement).toBe(screen.getByRole("button", { name: "Keep entry" })));
+  await waitFor(() => expect(globalThis.document.activeElement).toBe(screen.getByRole("button", { name: "Close Delete entry" })));
   fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
   await waitFor(() => expect(value.deleted).toHaveBeenCalledTimes(1));
   expect(value.order).toEqual(["status", "disconnect", "status", "delete"]);
@@ -247,10 +247,10 @@ it("changes English/Korean presentation without starting or replaying work", asy
   const value = fixture(); render(<value.Harness />);
   await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
   expect(screen.getByRole("button", { name: "연결 해제 후 항목 삭제" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "항목 유지" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "닫기 Delete entry" })).toBeTruthy();
   expect(value.disconnect).not.toHaveBeenCalled();
   await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); });
-  fireEvent.click(screen.getByRole("button", { name: "Keep entry" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Delete entry" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(value.disconnect).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
 });

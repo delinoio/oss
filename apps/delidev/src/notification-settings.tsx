@@ -1,3 +1,4 @@
+import { SettingsTaskDismissButton } from "./settings-task";
 import { ownedMessage } from "./localization";
 import { copy, useLocale } from "./localization";
 import { SettingsTaskContext } from "./settings-task-context";
@@ -124,7 +125,7 @@ function NotificationPreferencesEditor({ initial, active, ids, form, firstCheckb
       </fieldset>}
       {mutation.busy ? <p role="status">{copy("notification-settings.savingNotificationPreferences_e709d9")}</p> : null}
       {stale ? <p role="alert">{copy("notification-settings.thesePreferencesChangedElsewhereYourDraft_eb11d4")}</p> : null}
-      <SettingsTaskActions form={`${ids}-form`}>{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>{copy("notification-settings.saveNotificationPreferences_c2c2b6")}</button><button type="button" data-settings-task-cancel disabled={blocked} onClick={finishEdit}>{copy("notification-settings.cancelNotificationEdit_d3de52")}</button></> : null}
+      <SettingsTaskActions form={`${ids}-form`}>{draft ? <><button className="primary" disabled={blocked || stale || Boolean(current.error) || current.isFetching}>{copy("notification-settings.saveNotificationPreferences_c2c2b6")}</button><SettingsTaskDismissButton type="button" data-settings-task-cancel disabled={blocked} onClick={finishEdit}>{copy("notification-settings.cancelNotificationEdit_d3de52")}</SettingsTaskDismissButton></> : null}
         {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("notification-settings.retryTheSameNotificationPreferences_944448")}</button> : null}
       </SettingsTaskActions>
     </form>;

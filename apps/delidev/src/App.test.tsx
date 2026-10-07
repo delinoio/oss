@@ -498,7 +498,7 @@ it.each([false, true])("preserves the mounted conversation or New session draft 
   fireEvent.click(opener);
   await fillProject(repository);
   expect(screen.getByRole("textbox", { name: newSession ? "First message" : "Message" })).toBe(composer);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
   await waitFor(() => expect(document.activeElement).toBe(opener));
   expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
   fireEvent.click(opener);
@@ -619,7 +619,7 @@ it("retains the creation draft through same-identity reconnect and preserves a d
   expect(value.saveConfiguration).not.toHaveBeenCalled();
   expect(replacement.saveConfiguration).toHaveBeenCalledOnce();
   expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
   expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
 }, fullShellTimeoutMs);
 

@@ -2,7 +2,6 @@
   "repository-github.choose": "GitHub에서 선택",
   "repository-github.title": "GitHub 저장소 선택",
   "repository-github.close": "GitHub 저장소 선택 닫기",
-  "repository-github.cancel": "취소",
   "repository-github.checkingProfiles": "연결된 GitHub 프로필을 확인하는 중…",
   "repository-github.refreshGitHubProfiles": "GitHub 프로필 새로고침",
   "repository-github.firstProfilePage": "첫 프로필 페이지",

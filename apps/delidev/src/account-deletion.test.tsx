@@ -16,6 +16,7 @@ import { document, encode, object } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SettingsLifetime } from "./settings-lifetime";
 import { Settings } from "./settings";
+import { SettingsDialogSize, SettingsTaskDialog } from "./settings-task";
 
 const alias = "ChatGPT fixture";
 const confirmLabel = "Disconnect and delete account";
@@ -45,11 +46,12 @@ function fixture(connected = true, service: "chatgpt" | "claude" = "chatgpt", fa
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const closed = vi.fn(), deleted = vi.fn();
-  function Harness({ settings = false, active = true }: { settings?: boolean; active?: boolean }) {
+  function Harness({ settings = false, active = true, task = false }: { settings?: boolean; active?: boolean; task?: boolean }) {
     const [visible, setVisible] = useState(true);
+    const content = <ConfigurationDeletion initial={initial} active={active} deleted={() => { deleted(); setVisible(false); }} close={() => { closed(); setVisible(false); }} />;
     return <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}>
       <button onClick={() => setVisible(false)}>Leave fixture</button><button onClick={() => setVisible(true)}>Reopen fixture</button>
-      {settings ? <Settings visible={visible && active} /> : visible ? <SettingsLifetime>{() => <MutationIntents><ConfigurationDeletion initial={initial} active={active} deleted={() => { deleted(); setVisible(false); }} close={() => { closed(); setVisible(false); }} /></MutationIntents>}</SettingsLifetime> : null}
+      {settings ? <Settings visible={visible && active} /> : visible ? <SettingsLifetime>{() => <MutationIntents>{task ? <SettingsTaskDialog title="Delete configuration" size={SettingsDialogSize.Confirmation} close={() => { closed(); setVisible(false); }}>{content}</SettingsTaskDialog> : content}</MutationIntents>}</SettingsLifetime> : null}
     </QueryClientProvider></TransportProvider></StrictMode>;
   }
   const complete = () => {
@@ -81,8 +83,8 @@ function dismissTask(method: "X" | "Escape") {
 }
 
 it.each([
-  ["Delete account", "X"], ["Delete account", "Escape"], ["Delete account", "Cancel"],
-  ["Edit preferences", "X"], ["Edit preferences", "Escape"], ["Edit preferences", "Cancel"],
+  ["Delete account", "X"], ["Delete account", "Escape"],
+  ["Edit preferences", "X"], ["Edit preferences", "Escape"],
 ] as const)("keeps subscription content and disclosures visible beneath %s through %s dismissal", async (action, dismissal) => {
   const value = fixture();
   render(<value.Harness settings />);
@@ -258,7 +260,7 @@ it.each(["X", "Escape"] as const)("discards an idle deletion confirmation on %s"
   fireEvent.click(screen.getByRole("button", { name: `More actions for ${alias}` }));
   fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
   expect(screen.getByRole("button", { name: confirmLabel })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Keep account" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Close / }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
 });
@@ -267,7 +269,7 @@ it("preserves explicit Back abandonment after a definite idle failure", async ()
   const value = fixture(false); value.remove.mockRejectedValue(new ConnectError("referenced", Code.Aborted));
   await openSettingsDeletion(value);
   fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
-  fireEvent.click(await screen.findByRole("button", { name: "Back to subscriptions" }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Close / }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
   expect(value.remove).toHaveBeenCalledTimes(1);
@@ -547,4 +549,42 @@ it("disposes late failed-login deletion completion when its task closes", async 
  expect(value.deleted).not.toHaveBeenCalled();
  expect(value.remove).toHaveBeenCalledTimes(1);
  expect(value.logout).not.toHaveBeenCalled();
+});
+
+
+it("omits empty top-level deletion actions during checking, logout and deleting", async () => {
+  const value = fixture();
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const read = value.read.getMockImplementation()!;
+  value.read.mockImplementationOnce(async () => { await pending; return read(); });
+  render(<value.Harness task />);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  expect(screen.getByText("Checking the current account...")).toBeTruthy();
+  expect(screen.getByRole("dialog").querySelector(".account-deletion .actions")).toBeNull();
+  await act(async () => release());
+  await waitFor(() => expect(value.progress).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("dialog").querySelector(".account-deletion .actions")).toBeNull();
+  expect(value.remove).not.toHaveBeenCalled();
+  let finish!: () => void;
+  const deleting = new Promise<void>(resolve => { finish = resolve; });
+  const remove = value.remove.getMockImplementation()!;
+  value.remove.mockImplementationOnce(async request => { await deleting; return remove(request); });
+  value.complete(); await tick();
+  await screen.findByText("Deleting the account configuration...");
+  expect(screen.getByRole("dialog").querySelector(".account-deletion .actions")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Close Delete configuration" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await act(async () => finish());
+  expect(value.deleted).not.toHaveBeenCalled();
+});
+
+it("retains the original paused deletion recovery action", async () => {
+  const value = fixture(); value.read.mockRejectedValueOnce(new ConnectError("Unavailable", Code.Unavailable));
+  render(<value.Harness task />);
+  fireEvent.click(screen.getByRole("button", { name: confirmLabel }));
+  const recovery = await screen.findByRole("button", { name: "Refresh account for confirmation" });
+  expect(screen.getByRole("dialog").querySelector(".account-deletion .actions")?.contains(recovery)).toBe(true);
+  expect(screen.queryByRole("button", { name: "Back to subscriptions" })).toBeNull();
+  expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
 });

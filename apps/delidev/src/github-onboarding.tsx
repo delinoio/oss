@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskDismissButton } from "./settings-task";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { useTransport } from "@connectrpc/connect-query";
@@ -144,7 +145,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
       <form onSubmit={event => { event.preventDefault(); void verify(); }}>
         <fieldset disabled={busy}><label>GitHub personal access token<input ref={tokenInput} type="password" autoComplete="off" spellCheck={false} maxLength={512} value={token} onChange={event => setToken(event.target.value)} placeholder="Enter a personal access token" /></label><p>We’ll use your token to find your GitHub username.</p></fieldset>
         {busy ? <p role="status">Verifying GitHub token…</p> : null}{message ? <p role="alert">{message}</p> : null}<Problem error={error} />
-        <div className="actions"><button className="primary" disabled={busy || !tokenValid(token)}>Verify token</button><button type="button" onClick={cancel}>Cancel</button></div>
+        <div className="actions"><button className="primary" disabled={busy || !tokenValid(token)}>Verify token</button><SettingsTaskDismissButton type="button" onClick={cancel}>Cancel</SettingsTaskDismissButton></div>
       </form>
       <GitHubDraftTokenForm changeKind={setKind} active={active} disabled={busy} />
       <p className="integration-storage-note">Your token is saved only when you confirm the profile.</p>
@@ -159,7 +160,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
       </fieldset>
       {busy ? <p role="status">Saving GitHub profile and connecting token…</p> : null}<Problem error={error} />
       {saveUncertain ? <p role="status">The profile save is uncertain. Retry only the original save; your token was cleared and must be reentered after reconciliation.</p> : null}
-      <div className="actions"><button className="primary" disabled={busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>Save and connect</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>Retry the same profile save</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>Back</button><button type="button" disabled={busy || saveUncertain} onClick={cancel}>Cancel</button></div>
+      <div className="actions"><button className="primary" disabled={busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>Save and connect</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>Retry the same profile save</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>Back</button><SettingsTaskDismissButton type="button" disabled={busy || saveUncertain} onClick={cancel}>Cancel</SettingsTaskDismissButton></div>
       <p className="integration-storage-note">Tokens are stored in the selected server’s OS credential store. Saved tokens cannot be displayed.</p>
     </form>}
     <p className="integration-access-note">Identity verification does not confirm repository access.</p>

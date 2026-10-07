@@ -160,7 +160,7 @@ it.each(["navigation", "Escape then navigation"])("discards a project draft and 
 });
 it("focuses targeted creation and confines the presentation to Projects", async () => {
   const value = fixture(); render(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} />)); await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search repository names" })));
-  expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(true); fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(true); fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
   for (const category of ["Repositories", "Instructions", "API Providers"]) { fireEvent.click(screen.getByRole("button", { name: category })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(false); expect(screen.getByRole("heading", { level: 1, name: category })).toBeTruthy(); }
 });
 it("consumes explicit New Project and Repositories entry while another category has an unsaved form", async () => {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskDismissButton } from "./settings-task";
 import { useCallback, useContext, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind } from "@delinoio/delidev-api-client";
@@ -141,7 +142,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     {problem ? <p role="alert">{problem}</p> : null}
     {children}
     <SettingsTaskActions form={formId}>
-      <button type="button" data-settings-task-cancel disabled={cancelDisabled} onClick={cancel}>{copy("project-creation.cancel")}</button>
+      <SettingsTaskDismissButton type="button" data-settings-task-cancel disabled={cancelDisabled} onClick={cancel}>{copy("project-creation.cancel")}</SettingsTaskDismissButton>
       {step !== Step.Repositories ? <button type="button" disabled={blocked} onClick={() => { setProblem(""); setValidationField(undefined); setStep(step - 1); }}>{copy("project-creation.previous")}</button> : null}
       {uncertain ? <button type="button" disabled={busy} onClick={retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}
       {/* Keep the submit button separate: a browser can run the click's default

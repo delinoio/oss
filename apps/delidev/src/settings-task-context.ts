@@ -2,7 +2,7 @@
 import { createContext, useContext, useId, useLayoutEffect, useRef } from "react";
 
 export enum SettingsDialogSize { Confirmation = "confirmation", Form = "form", Wide = "wide" }
-export enum SettingsDialogFocus { Input = "input", Heading = "heading", Cancel = "cancel" }
+export enum SettingsDialogFocus { Input = "input", Heading = "heading", Cancel = "cancel", Close = "close" }
 export interface SettingsTaskPresentation { title: string; subtitle?: string; size: SettingsDialogSize; focus?: SettingsDialogFocus }
 export interface SettingsTaskContextValue {
   visible: boolean;

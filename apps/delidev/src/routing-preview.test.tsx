@@ -49,7 +49,9 @@ it("uses a saved alias and service, keeping the full identity in a closed disclo
   expect(value.get).toHaveBeenCalledTimes(1);
   expect(value.save).not.toHaveBeenCalled();
   expect(within(dialog).queryByRole("button", { name: "Back to Agent Workers" })).toBeNull();
-  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(within(dialog).queryByRole("button", { name: /^Close$/ })).toBeNull();
+  expect(dialog.querySelector(".settings-task-actions")).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close Preview routing" }));
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
@@ -124,7 +126,7 @@ it("bounds concurrent metadata reads to four and ignores a disposed late account
   await act(async () => { releases.splice(0).forEach(release => release()); });
   await waitFor(() => expect(value.get).toHaveBeenCalledTimes(7));
   expect(peak).toBe(4);
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Preview routing" }));
   await act(async () => { releases.splice(0).forEach(release => release()); });
   expect(screen.getByText("Closed preview")).toBeTruthy();
   expect(value.get).toHaveBeenCalledTimes(7);

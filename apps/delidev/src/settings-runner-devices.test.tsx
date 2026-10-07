@@ -139,7 +139,7 @@ it("retains the Runner Devices list beneath detail and removes its scope for oth
   expect(worker.closest("[hidden]")).toBeNull();
   expect(worker.closest(".settings-runner-column")).toBe(column);
   expect(worker.closest("fieldset")?.hasAttribute("inert")).toBe(true);
-  expect(screen.getByText(/These optional checks help troubleshoot failures/)).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Back to Runner Devices" }));
+  expect(screen.getByText(/These optional checks help troubleshoot failures/)).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: /^Close / }));
   expect(content.classList.contains("settings-runner-devices")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-runner-devices")).toBe(false);
 });

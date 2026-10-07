@@ -1,3 +1,4 @@
+import { SettingsTaskDismissButton } from "./settings-task";
 import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
@@ -84,7 +85,7 @@ function IntegrationEditor({ initial, active, close }: { initial?: Resource; act
     <h3>{initial ? copy("integrations.renameGithubProfile_1f9dd2") : copy("integrations.newGithubProfile_e9e486")}</h3>
     <fieldset disabled={blocked}><label>{copy("integrations.profileName_d36632")}<input ref={nameInput} required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} /></label><label>{copy("integrations.tokenType_ced916")}<select disabled={Boolean(initial)} value={kind} onChange={(event) => setKind(event.target.value)}><option value={TokenKind.FineGrained}>{copy("integrations.fineGrainedPatPreferred_70fe9c")}</option><option value={TokenKind.Classic}>{copy("integrations.classicPat_41e9c0")}</option></select></label><label>{copy("integrations.resourceOwner_f8abf0")}<input disabled={Boolean(initial)} required={kind === TokenKind.FineGrained} maxLength={100} pattern="[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?" value={owner} onChange={(event) => setOwner(event.target.value)} /></label><p>{copy("integrations.useASeparateFineGrainedProfile_11aa24")}</p><p>{copy("integrations.tokenTypeAndOwnerCannotBe_4aad40")}</p></fieldset>
     {stale ? <p role="alert">{copy("integrations.thisProfileChangedReopenItsCurrent_50a08c")}</p> : null}<Problem error={current.error || save.error} />
-    <SettingsTaskActions form={formId}><button className="primary" disabled={blocked || stale || Boolean(current.error)}>{copy("integrations.saveProfile_0c8209")}</button>{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>{copy("integrations.retryTheSameProfileSave_c79c48")}</button> : null}<button type="button" data-settings-task-cancel onClick={closeTask}>{copy("integrations.cancelEdit_6fa271")}</button></SettingsTaskActions>
+    <SettingsTaskActions form={formId}><button className="primary" disabled={blocked || stale || Boolean(current.error)}>{copy("integrations.saveProfile_0c8209")}</button>{save.uncertain ? <button type="button" disabled={save.busy} onClick={save.retry}>{copy("integrations.retryTheSameProfileSave_c79c48")}</button> : null}<SettingsTaskDismissButton type="button" data-settings-task-cancel onClick={closeTask}>{copy("integrations.cancelEdit_6fa271")}</SettingsTaskDismissButton></SettingsTaskActions>
   </form>;
 }
 function IntegrationCreation({ active, close, connected }: { active: boolean; close: () => void; connected: (profile: Resource, retry?: GitHubTokenRetry, problem?: Document) => void }) {
@@ -95,7 +96,7 @@ function IntegrationCreation({ active, close, connected }: { active: boolean; cl
   // Keep a settled older-server editor mounted across inactive query states so
   // its exact metadata retry cannot be replaced by the negotiation placeholder.
   if (!status.isPending) negotiated.current = Boolean(supported);
-  if (negotiated.current === undefined) return <><SettingsLoading label="Checking GitHub connection support…" /><button onClick={close}>Cancel</button></>;
+  if (negotiated.current === undefined) return <><SettingsLoading label="Checking GitHub connection support…" /><SettingsTaskDismissButton onClick={close}>Cancel</SettingsTaskDismissButton></>;
   return negotiated.current ? <GitHubOnboarding active={active} close={close} connected={connected} /> : <><p role="status">Update the selected server to verify a token before creating a profile. You can still create a profile first below.</p><IntegrationEditor active={active} close={close} /></>;
 }
 function IntegrationConnection({ initial, active, close, initialRetry, initialProblem }: { initial: Resource; active: boolean; close: () => void; initialRetry?: GitHubTokenRetry; initialProblem?: Document }) {
@@ -142,7 +143,7 @@ function IntegrationConnection({ initial, active, close, initialRetry, initialPr
     }
   };
   return <section className="integration-manage">
-    <header><div><h3>{resourceName(current)}</h3><p>{profileDescription(data)}</p></div><button disabled={replace.isPending} onClick={closeTask}>{copy("integrations.backToGithubProfiles_48e4d1")}</button></header>
+    <header><div><h3>{resourceName(current)}</h3><p>{profileDescription(data)}</p></div><SettingsTaskDismissButton disabled={replace.isPending} onClick={closeTask}>{copy("integrations.backToGithubProfiles_48e4d1")}</SettingsTaskDismissButton></header>
     <ProfileFacts profile={current} />
     {text(identity.login) ? <p><LocalizedText id="integrations.authenticatedAsGithubId_5a4d87" components={{ s0: <>{text(identity.login)}</>, s1: <>{text(identity.id)}</> }} /></p> : null}
     <section className="integration-section" aria-label={copy("integrations.connectAToken_d30079")}><h4>{copy("integrations.connectAToken_d30079")}</h4>
@@ -164,7 +165,7 @@ function IntegrationConnection({ initial, active, close, initialRetry, initialPr
     <section className="integration-section integration-delete" aria-label={copy("integrations.deleteProfile_47311a")}><h4>{copy("integrations.deleteProfile_47311a")}</h4>
       <p>{copy("integrations.deletionRequiresConfirmationRepositoryAssociationsWill_c1a76b")}</p>
       <button className="integration-danger" disabled={blocked || Boolean(result.error) || (deleting && !original)} onClick={() => deleting && original ? void remove.send({ mutation: original }) : setConfirm(true)}>{deleting ? copy("integrations.retryOriginalProfileDeletion_861363") : copy("integrations.deleteProfile_47311a")}</button>
-      {confirm ? <SettingsTaskDialog title={copy("integrations.deleteProfile_47311a")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setConfirm(false)}><div className="notice"><p>{copy("integrations.deleteThisProfileAndItsServer_d6827d")}</p><SettingsTaskActions className=""><button className="integration-danger" disabled={blocked} onClick={() => void remove.send({ mutation: mutation() })}>{copy("integrations.confirmProfileDeletion_079ac8")}</button><button data-settings-task-cancel disabled={blocked} onClick={() => setConfirm(false)}>{copy("integrations.keepProfile_8e76f0")}</button></SettingsTaskActions></div></SettingsTaskDialog> : null}
+      {confirm ? <SettingsTaskDialog title={copy("integrations.deleteProfile_47311a")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setConfirm(false)}><div className="notice"><p>{copy("integrations.deleteThisProfileAndItsServer_d6827d")}</p><SettingsTaskActions className=""><button className="integration-danger" disabled={blocked} onClick={() => void remove.send({ mutation: mutation() })}>{copy("integrations.confirmProfileDeletion_079ac8")}</button><SettingsTaskDismissButton data-settings-task-cancel disabled={blocked} onClick={() => setConfirm(false)}>{copy("integrations.keepProfile_8e76f0")}</SettingsTaskDismissButton></SettingsTaskActions></div></SettingsTaskDialog> : null}
     </section>
     {text(object(validation.problem).message) ? <ServiceProblem code={text(object(validation.problem).code) || text(object(validation.problem).problem_code)}><p role="alert">{text(object(validation.problem).message)} {text(object(validation.problem).guidance)}</p></ServiceProblem> : null}{problem ? <p role="alert">{text(problem.message)} {text(problem.guidance)}</p> : null}
     <Problem error={result.error || tokenError} />{[validate, remove].map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="integrations.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("integrations.validation_98c41d") : copy("integrations.deletion_7770ba")}</> }} /></button> : null}</div>)}
