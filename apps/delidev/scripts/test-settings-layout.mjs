@@ -50,6 +50,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
+const projectsOnly = process.env.DELIDEV_LAYOUT_PROJECTS_ONLY === "1";
 const languageOnly = process.env.DELIDEV_LAYOUT_LANGUAGE_ONLY === "1";
 let language = "en";
 const messages = new Map();
@@ -210,7 +211,65 @@ try {
     }
     gitChecks++; keyboardChecks += 4;
   };
-  if (languageOnly) {
+  if (projectsOnly) {
+    let projectStepChecks = 0;
+    for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const zoom of [1, 2]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
+      await page.setViewportSize({ width: width / zoom, height: height / zoom });
+      await page.goto(`${origin}/?theme=${theme}&language=${language}&projectWizard=true`);
+      await page.getByRole("button", { name: l("Settings"), exact: true }).click(); await select("Projects");
+      const opener = page.getByRole("button", { name: l("New Project"), exact: true }); await opener.click();
+      const dialog = page.getByRole("dialog"), form = dialog.locator(".project-creation");
+      const search = form.getByRole("searchbox", { name: l("Search repository names"), exact: true });
+      await page.waitForFunction(() => document.activeElement?.matches('[data-project-focus="search"]'));
+      const check = async step => {
+        const bounds = await dialog.evaluate(node => {
+          const box = node.getBoundingClientRect(), body = node.querySelector(".settings-task-body"), footer = node.querySelector(".settings-task-footer");
+          const controls = [...node.querySelectorAll("button, input:not([type=checkbox]), select")].filter(control => control.getClientRects().length);
+          return { width: box.width, left: box.left, right: innerWidth - box.right, height: box.height, bodyHeight: body.clientHeight, overflow: body.scrollWidth > body.clientWidth, footerBottom: footer.getBoundingClientRect().bottom, controls: controls.every(control => control.getBoundingClientRect().height >= 39.5) };
+        });
+        assert(bounds.width <= 768.5 && bounds.left >= 15.5 && bounds.right >= 15.5 && bounds.height <= height / zoom - 47.5 && bounds.bodyHeight > 0 && !bounds.overflow && bounds.footerBottom <= height / zoom && bounds.controls, `${language}/${theme}/${width}x${height}/${zoom}/step${step} ${JSON.stringify(bounds)}`);
+        assert.equal(await form.locator(".project-creation-steps [aria-current=step]").count(), 1);
+        assert.equal(await form.locator(".project-creation-steps button").count(), 0);
+        assert.equal(await dialog.locator(".settings-task-footer button.primary").textContent(), l(step === 3 ? "Save Project" : "Next"));
+        if (screenshotDirectory) {
+          await mkdir(screenshotDirectory, { recursive: true });
+          await page.screenshot({ path: join(screenshotDirectory, `project-${language}-${theme}-${width}x${height}-zoom${zoom}-step${step}.png`) });
+        }
+        projectStepChecks++;
+      };
+      assert(await dialog.getByRole("button", { name: l("Next"), exact: true }).isDisabled());
+      await search.press("Tab"); await page.keyboard.press("Space");
+      assert(await form.getByRole("checkbox", { name: "oss", exact: true }).isChecked());
+      await search.fill("delidev"); await form.getByRole("checkbox", { name: "delidev", exact: true }).check();
+      await search.fill(""); await check(1);
+      await dialog.getByRole("button", { name: l("Next"), exact: true }).click();
+      const name = form.getByRole("textbox", { name: l("Project name"), exact: true });
+      assert.equal(await name.inputValue(), "oss"); assert(await name.evaluate(node => node === document.activeElement));
+      const primary = form.getByRole("combobox", { name: l("Primary repository"), exact: true });
+      assert.equal(await primary.inputValue(), ""); assert(await dialog.getByRole("button", { name: l("Next"), exact: true }).isDisabled()); await check(2);
+      await primary.selectOption({ label: "oss" }); await dialog.getByRole("button", { name: l("Next"), exact: true }).click();
+      assert(await form.getByRole("heading", { name: l("Usage restrictions"), exact: true }).evaluate(node => node === document.activeElement));
+      assert(await dialog.getByRole("button", { name: l("Save Project"), exact: true }).isEnabled()); await check(3);
+      assert.equal(await page.locator("html").getAttribute("data-fixture-project-save-count"), null, "Next cannot submit the final-step button's form");
+      assert.equal(await dialog.getByRole("alert").count(), 0, "Advancement has no mutation failure");
+      await dialog.getByRole("button", { name: l("Previous"), exact: true }).click(); assert.equal(await primary.inputValue(), await primary.locator("option").filter({ hasText: /^oss$/ }).getAttribute("value"));
+      const close = dialog.locator(".settings-task-close"); await close.focus();
+      for (const key of ["Shift+Tab", "Tab", "Tab"]) { await page.keyboard.press(key); assert(await dialog.evaluate(node => node.contains(document.activeElement))); keyboardChecks++; }
+      await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.querySelector(".settings-toolbar button.primary") === document.activeElement);
+      await opener.click(); await search.waitFor(); assert.equal(await search.inputValue(), ""); assert.equal(await form.getByRole("checkbox", { checked: true }).count(), 0);
+      await dialog.locator(".settings-task-close").click(); await dialog.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => document.querySelector(".settings-toolbar button.primary") === document.activeElement);
+      await opener.click(); await form.getByRole("checkbox", { name: "oss", exact: true }).check();
+      await dialog.getByRole("button", { name: l("Next"), exact: true }).click(); await primary.selectOption({ label: "oss" });
+      await dialog.getByRole("button", { name: l("Next"), exact: true }).click();
+      assert.equal(await page.locator("html").getAttribute("data-fixture-project-save-count"), null);
+      await dialog.getByRole("button", { name: l("Save Project"), exact: true }).click(); await dialog.waitFor({ state: "hidden" });
+      assert.equal(await page.locator("html").getAttribute("data-fixture-project-save-count"), "1", "Only explicit Save submits");
+      await page.waitForFunction(() => document.querySelector(".settings-toolbar button.primary") === document.activeElement);
+    }
+    console.log(JSON.stringify({ operation: "project_wizard_layout", result: "passed", projectStepChecks, languages: 2, themes: 2, viewports: 4, effectiveZoom: [1, 2], keyboardChecks, nativeAcceptance: "not-performed" }));
+  } else if (languageOnly) {
     if (screenshotDirectory) await mkdir(screenshotDirectory, { recursive: true });
     for (const fixtureLanguage of ["en", "ko"]) for (const theme of ["light", "dark", "system"]) for (const [width, height] of [[1280,800], [640,480], [480,320], [320,240]]) {
       language = fixtureLanguage;
@@ -494,7 +553,7 @@ try {
     await page.screenshot({ path: screenshotPath });
   }
   }
-  console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
+  if (!projectsOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

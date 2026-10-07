@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -90,6 +91,46 @@ func (f *oauthFixture) deviceJoined(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("unjoined device job")
+}
+
+func TestBasetenDeviceRuntimeChangeBeforePollRequiresRecovery(t *testing.T) {
+	f := newDeviceFixture(t)
+	var invalid atomic.Bool
+	var authorizations, polls atomic.Int32
+	f.s.credentialRuntimeCheck = func(context.Context) error {
+		if !invalid.Load() {
+			return nil
+		}
+		err := domain.Fail(domain.RecoveryRequired, "The running server executable changed on disk.", "Explicitly restart the server after reviewing active work.")
+		err.Cause = credentials.ExecutableChangedCause
+		return err
+	}
+	f.s.oauthDeviceClient = deviceFixtureClient{
+		authorize: func(context.Context, oauthProfile) (oauthDeviceGrant, error) {
+			authorizations.Add(1)
+			invalid.Store(true)
+			return deviceGrant(), nil
+		},
+		poll: func(context.Context, oauthProfile, []byte) (oauthTokenResult, oauthDevicePoll, error) {
+			polls.Add(1)
+			return tokenResult("fixture-access", "fixture-refresh", time.Now().Add(time.Hour)), oauthDeviceIssued, nil
+		},
+	}
+	id := domain.NewID()
+	start := f.deviceStart(t, id)
+	recovery := f.deviceStatus(t, start.Attempt.Id, pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED)
+	f.deviceJoined(t)
+	if recovery.Attempt.Problem == nil || recovery.Attempt.Problem.Cause != credentials.ExecutableChangedCause || polls.Load() != 0 || authorizations.Load() != 1 {
+		t.Fatal("changed code dispatched a Device poll or lost its recovery diagnosis")
+	}
+	replay := f.deviceStart(t, id)
+	if !replay.Replayed || replay.Attempt.Id != start.Attempt.Id || authorizations.Load() != 1 {
+		t.Fatal("runtime recovery replay repeated Device authorization")
+	}
+	_, err := f.s.CancelAccountOAuth(f.ctx, connect.NewRequest(&pb.CancelAccountOAuthRequest{Mutation: oauthMutation(recovery.Attempt, domain.NewID())}))
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 func TestBasetenDevicePendingSlowDownAndProtectedCompletion(t *testing.T) {
 	f := newDeviceFixture(t)

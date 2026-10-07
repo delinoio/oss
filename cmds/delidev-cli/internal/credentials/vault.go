@@ -299,6 +299,9 @@ func (v *Vault) log(operation string, r Ref, err error) {
 	attributes := []any{"operation", operation, "owner_id", r.Owner, "credential_id", r.ID, "purpose", r.Purpose}
 	if err != nil {
 		attributes = append(attributes, "error_code", domain.SafeError(err).Code)
+		if domain.SafeError(err).Cause == ExecutableChangedCause {
+			attributes = append(attributes, "reason", "executable_changed")
+		}
 		v.logger.Warn("protected credential operation failed", attributes...)
 	} else {
 		v.logger.Info("protected credential operation completed", attributes...)

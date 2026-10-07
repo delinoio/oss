@@ -69,6 +69,10 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	if err := m.cleanupDeletionStaging(ctx, w); err != nil {
 		return err
 	}
+	stage = "final-root-ownership"
+	if err := m.cleanupDeletionFinalRoots(ctx, w); err != nil {
+		return err
+	}
 	storedManifest, e := m.deletionSnapshotManifest(ctx, w)
 	if e != nil {
 		return e
