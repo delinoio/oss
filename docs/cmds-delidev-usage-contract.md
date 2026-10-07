@@ -270,7 +270,8 @@ Token pricing uses exact Provider/service and native-ID identity with its own re
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
 
-### Automatic desktop filter application
+## Automatic desktop filter application
+
 Token Usage applies Session, Project, Account, Provider, Subscription service, Model and General Chat changes immediately as one validated snapshot. Provider/service and General Chat/project exclusions change atomically. From/Until edits wait for 300ms without further date input; a selection change cancels that wait and validates the latest complete snapshot immediately. Invalid ranges issue no summary query and preserve the last valid applied conditions and results. Date errors appear after the wait; valid corrections apply automatically. No Apply button remains. Activity, Inbox and Search retain explicit application.
 
 Keep the applied IANA zone fixed until Reset or a new Usage entry. An unchanged endpoint retains its original millisecond instant, including the later occurrence of a DST fold; convert only edited endpoints with the existing gap rejection and earlier-fold rule. Empty endpoints retain server defaults. Exact query identity prevents duplicate identical-key reads or late responses replacing a newer result. New-key loading/errors do not present another range's data as current; same-key Refresh errors retain stale values.
