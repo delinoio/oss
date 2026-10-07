@@ -81,17 +81,29 @@ Require `AUTOMATIC_TITLES_V1` from `GetStatus` before enabling creation. Missing
 
 Session detail and loaded sidebar rows show server-owned automatic title state and safe reason. They never infer state from a local request or overwrite the status with cached selection. Manual session names remain ordinary names.
 
+### Dedicated General Chat creation
+
+Home provides a 36px **New general chat** action immediately below **New session**, with a decorative chat-plus icon and its own selected-page state. `Surface.NewGeneralChat` belongs to the same Home rail, Inbox/Search header, inventory/scroll scope and compact drawer. Existing New session retains its Project and Worktree/Local flow.
+
+`NewSessionKind.GeneralChat` reuses the chat-first controller with an 820px content column, 210px composer, 18px card corners and 40px send control. Show **What would you like to talk about?**, **Ask questions or share ideas without a project.**, and **Ask a question, share an idea, or just chat…**. The accessible send action is **Start general chat**. Keep explicit unselected Agent Worker/Runs on choices, Execute/Plan, collapsed Options and the existing optional estimated-cost budget. Omit Project, Git/Local controls and implementation-directory guidance. General Chat retains the selected Agent Worker's ordinary tools and permissions; it is not a tool-free execution profile.
+
+The existing authenticated CreateSession RPC submits `workspace=general-chat`, `source=MANUAL` and `name_mode=automatic`, without project, starting-reference or Local credential fields. Preserve server/native execution checks, automatic-title negotiation, byte bounds, validation and exact receipt retry. This presentation adds no protocol capability, migration, account or native authority.
+
+Keep each creation controller mounted after first entry until its connection identity changes. New session and General Chat retain independent messages, execution choices, Options/budgets, activation counters, heading/message IDs and mutation keys (`create-session` and `create-general-chat`). Navigation, Settings and same-identity reconnect preserve both drafts. A readable acceptance clears only its originating message, retains selections and opens the existing SessionView only while the original activation still owns navigation; otherwise show **Open conversation** for General Chat. Pending/uncertain operations cannot consume, unlock or retry another controller's request.
+
+Use existing light/dark semantic tokens and bundled English/Korean catalogs. Entry focuses First message; Enter, Shift+Enter, IME, form-control boundaries and button focus follow chat-first creation. Keep loading, empty-page, permission, connection, stale selection and uncertainty states separate. At 1,100px and below wrap the toolbar, at 520px and below stack selectors, and below 760px reuse the shared drawer. Preserve scrollability at 960×640 and no horizontal clipping at 200% zoom. Browser fixtures and actual CEF/account/platform acceptance remain separate.
+
 ### Contextual desktop navigation
-The desktop shell uses a shared 52px icon rail beside a 288px context pane; at viewport widths up to and including 1,100px, only the pane contracts to 256px. Preserve the native 960×640 minimum. The rail order is Sessions, Pull requests, Usage, Schedules, Activity, with Settings at the bottom. DeliDev remains static, left-aligned text. The header Inbox bell and Search magnifier appear only in the home area (`Surface.Sessions`, including welcome and selected detail, and `Surface.NewSession`). Other destinations render no action group, buttons, disabled controls or placeholders. Keep the 34px minimum header height, bell-then-magnifier order, 34×34px targets, 18px decorative SVGs, 2px action gap, `#5b6577` foreground and existing hover/focus treatment; hiding actions must not move the heading, pane content or rail. Accessible button names remain exactly **Inbox** and **Search**. Their existing callbacks select the corresponding context surface without selecting a rail item; Sessions returns to the retained conversation or welcome. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
+The desktop shell uses a shared 52px icon rail beside a 288px context pane; at viewport widths up to and including 1,100px, only the pane contracts to 256px. Preserve the native 960×640 minimum. The rail order is Sessions, Pull requests, Usage, Schedules, Activity, with Settings at the bottom. DeliDev remains static, left-aligned text. The header Inbox bell and Search magnifier appear only in the home area (`Surface.Sessions`, including welcome and selected detail, `Surface.NewSession` and `Surface.NewGeneralChat`). Other destinations render no action group, buttons, disabled controls or placeholders. Keep the 34px minimum header height, bell-then-magnifier order, 34×34px targets, 18px decorative SVGs, 2px action gap, `#5b6577` foreground and existing hover/focus treatment; hiding actions must not move the heading, pane content or rail. Accessible button names remain exactly **Inbox** and **Search**. Their existing callbacks select the corresponding context surface without selecting a rail item; Sessions returns to the retained conversation or welcome. Sidebar-only styling must not alter the conversation/composer, title bar, or right-side panels. The rail and groups remain keyboard-operable with visible focus, descriptive names/tooltips, and reduced-motion-safe status graphics.
 
 Below 760 CSS pixels, retain the rail and show a purpose-named **Open …** control in the main area. It opens one native modal drawer beside the rail with a visible Close action, Escape handling, contained focus, background inertness and focus restoration to the opener. Keep the same surface controllers and query observers while switching between pane and drawer placement; filter edits alone do not close the drawer. Selection, opening a destination, explicit Apply/Reset/Search/Load and schedule selection close it. If the viewport becomes wide while open, close modal mode without dropping state and focus the corresponding visible navigation control. Reflow without clipping at 200% zoom.
 
 Header-origin navigation and Settings entry/departure transfer focus after the destination DOM commit and drawer close. Consume a pending destination in the parent synchronous layout effect: wide viewports focus `#main` with `preventScroll`, allowing the existing subsequent first-entry Search query autofocus to win; compact viewports focus the persistent destination opener (**Open inbox filters**, **Open search filters**, or the other surface’s purpose-named control). First compact Search query autofocus still waits for explicitly opening its drawer. Evaluate the current `(max-width: 759px)` media query at handoff, discard superseded navigation/Settings intent, and never schedule a competing later autofocus frame or focus an inert/closed destination. Other ordinary rail, tray and notification navigation retain their existing focus behavior. Settings entry/departure uses the visible main or compact destination opener; explicit New Project entry retains once-only Name focus and departure never restores a former modal opener. Visibility depends only on surface, including loading, empty, denied, offline and cached-refresh states; controllers, query instances, filters, cursors, per-surface scroll, selected session, composer and New session drafts remain connection-scoped memory. Hiding actions introduces no Web Storage, extra reads/writes, feature flag, API/schema change or telemetry. Issue #1149 supersedes only the previous globally visible header-action rule. Record verification and native coverage limits in issue #1149, its pull requests and CI runs.
 
 ### Project-grouped Home navigation
-Sessions and New Session share one connection-owned Home navigation/scroll scope. The 52px rail, 288px pane (256px at <=1,100px), native 960×640 minimum and <760px native modal drawer remain unchanged. The static DeliDev header with existing Inbox/Search and the 36px New session action stay above the independently scrolling inventory. Projects and named/fallback groups precede General Chat. Home uses system fonts, an 18px brand, 14px conversation titles, 12px secondary text, 34px flat rows, 8px ordinary radii, and 4/8/12/16/24px spacing. Its pane is `#F7F8FA`, text `#202632`, secondary text `#5B6577` and separators `#E3E6EB`; blue is reserved for primary action, selection and focus. Keep the New project plus at 34×34px with its existing 6px radius. Other menu contexts, their manual paging, conversation/composer, native title bar and right panels retain their behavior.
+Sessions, New Session and New General Chat share one connection-owned Home navigation/scroll scope. The 52px rail, 288px pane (256px at <=1,100px), native 960×640 minimum and <760px native modal drawer remain unchanged. The static DeliDev header with existing Inbox/Search and the stacked 36px New session/New general chat actions stay above the independently scrolling inventory. Projects and named/fallback groups precede General Chat. Home uses system fonts, an 18px brand, 14px conversation titles, 12px secondary text, 34px flat rows, 8px ordinary radii, and 4/8/12/16/24px spacing. Its pane is `#F7F8FA`, text `#202632`, secondary text `#5B6577` and separators `#E3E6EB`; blue is reserved for primary action, selection and focus. Keep the New project plus at 34×34px with its existing 6px radius. Other menu contexts, their manual paging, conversation/composer, native title bar and right panels retain their behavior.
 
-Generated authenticated Connect Query reads keep independent project-catalog, unfiltered global-session and expanded named-project chains, with 50 records per request. A visible continuation within 96px of the scrolling root's bottom requests another batch; underfilled lists continue serially until filled or exhausted. Hidden, collapsed, inactive and document-hidden anchors cannot traverse. Each scope has one reader and its own abort/publication generation. Leaving Home, closing a project, changing filters or replacing a transport cancels the affected reads and discards ignored-abort outcomes. Sessions/New Session and same-server/device reconnect retain accepted ranges, selection and scroll; a different connection identity drops them. No Web Storage or durable navigation state is used.
+Generated authenticated Connect Query reads keep independent project-catalog, unfiltered global-session and expanded named-project chains, with 50 records per request. A visible continuation within 96px of the scrolling root's bottom requests another batch; underfilled lists continue serially until filled or exhausted. Hidden, collapsed, inactive and document-hidden anchors cannot traverse. Each scope has one reader and its own abort/publication generation. Leaving Home, closing a project, changing filters or replacing a transport cancels the affected reads and discards ignored-abort outcomes. Sessions/New Session/New General Chat and same-server/device reconnect retain accepted ranges, selection and scroll; a different connection identity drops them. No Web Storage or durable navigation state is used.
 
 Append accepted rows in server order and deduplicate by original Resource ID, preserving exact bigint revisions. Empty batches with a new continuation remain traversable; absent continuation stops, and repeated/non-advancing tokens produce a stable failure with explicit Reload list. The empty global project selector remains unfiltered. Only an original empty parent is General Chat; off-catalog parents retain `Project · <UUID>` fallback groups. When a later catalog batch names a fallback, retain its rows, expansion and selection until an authoritative named read accepts success. Equal display names never merge identities. A collapsed/unqueried group is not an empty scope.
 
@@ -104,6 +116,48 @@ The always-visible New project plus and the successful-empty **Create a project*
 Issue #1137 supersedes the earlier Home server-management disclosure. Outside the list, Home displays generic connection status under **This computer** or the actual saved profile name, without versions or lifecycle controls. A native non-ready observation or authenticated stopping status overrides cached success and labels previous data as potentially stale. LocalDesktop/SavedDesktop pass an internal TypeScript enum descriptor through App; do not infer identity from endpoints, ReactNode labels or contents. The footer remains separate from the independently scrolling catalog. Original management controllers, confirmations and uncertain requests now stay mounted in the persistent Connection & diagnostics panel; saved verification/local-window controls retain their original authority and lifetime. Presentation cannot cancel, replay, start/stop, register/pair/recover or grant authority.
 
 Long names truncate on one line with complete pointer/focus and accessible descriptions. Preserve independent passive execution/archive glyphs and unknown values, title states/reasons, visible focus, keyboard activation and reduced motion. Automatic insertion never moves focus. Keep one responsive drawer/controller lifetime, native focus containment/background inertness, Escape/Close/opener restoration, and 200% reflow. There is no new feature flag, dependency, preference, persisted schema, migration or write authority. Diagnostics contain stable stage/classification only, never names, prompts, cursors, credentials or endpoint/path values. Record component/browser checks and unperformed native CEF/platform acceptance separately in issue #1161, its pull requests and CI runs.
+
+#### Session hover information card
+
+Session rows display one read-only card per sidebar. Its hierarchy is the complete
+session name, decorative workspace icon and label, separately labeled Execution
+and Archive observations, then the automatic title state and full safe reason.
+Manual titles omit the title-state section and its divider. Known state labels
+use bundled English/Korean presentation; unknown values remain explicit and never
+infer success, active state or execution readiness. The complete row description
+remains available through `aria-describedby`; the card has `role="tooltip"`,
+no actions, no focusable controls and no live announcement.
+
+Use a 320px width, 16px padding, 8px corners, 15px/20px semibold title and
+12px/18px body. Existing semantic theme tokens own the surface, text, separators,
+neutral badges and soft shadow; there is no arrow. Full names and reasons wrap,
+and oversized cards scroll within the viewport. Position the card 8px right of
+the source row at its top. If it cannot fit to the right, prefer below, otherwise
+above; measured bounds retain an 8px viewport inset. Compact cards are DOM
+descendants of the open sidebar dialog and use the manual popover top layer to
+escape overflow without acquiring modal or focus authority.
+
+Pointer entry opens after 300ms; focus opens immediately. Source/card departure
+has a 150ms grace period, and either source focus or source/card hover retains
+the card. Escape dismisses only this presentation and suppresses reopening until
+a new pointer/focus entry. Clicking the row keeps the original session activation
+and closes the card. External scrolling, resize, surface changes, hidden/inactive
+navigation, drawer closure and source removal clear the card and pending timers;
+scrolling the card itself does not dismiss it. One sidebar controller owns timers
+and global listeners, and row subscriptions observe only their active boolean.
+Language updates retain interaction state and remeasure wrapped content. Hover
+uses existing `NavigationRow` metadata only, with no additional RPC, persistence,
+public interface, dependency, migration or execution authority.
+
+`scripts/test-session-hover-layout.mjs` under the desktop app runs explicit
+host-supplied Playwright Chromium checks against the synthetic Settings fixture's
+opt-in session inventory. `DELIDEV_LAYOUT_PLAYWRIGHT_MODULE` and
+`DELIDEV_LAYOUT_BROWSER_CHANNEL` select the validation host;
+`DELIDEV_HOVER_SCREENSHOT_DIR` optionally saves synthetic screenshots outside the
+checkout. These checks cover English/Korean, light/dark, ordinary and effective
+200% viewports, placement, full text, card scrolling, pointer transitions, Escape,
+modal clipping and static CSS CSP. They do not establish actual native CEF,
+operating-system chrome zoom or macOS/Windows/Ubuntu X11 acceptance.
 
 For issue #1054, record component and native validation separately in pull requests, issues and CI runs, including untested viewports and platforms.
 
@@ -134,11 +188,15 @@ Disclosure, history draft, filters, selection and independent pages survive menu
 
 
 ### Standalone Pull requests
-The Pull requests rail item selects `Surface.PullRequests`; it does not open Settings. The sidebar shows one bounded 50-resource repository catalog page with independent First/Next pagination and exact local UUIDs. Selecting a row alone is a local authenticated catalog/resource read and must not query GitHub. The initial state has no selected repository. Load remains disabled for missing integration/profile mappings, GitHub owner/name or supported schema and shows configuration guidance.
+The Pull requests rail item selects `Surface.PullRequests`; it does not open Settings. The sidebar shows one bounded 50-resource repository catalog page with independent First/Next pagination. Repository selection remains keyed by exact local UUID, which stays in its accessible name and separate Details region rather than the visible name-only row. Selecting a row alone is a local authenticated catalog/resource read and must not query GitHub. The initial state has no selected repository. Load remains disabled for missing integration/profile mappings, GitHub owner/name or supported schema and shows configuration guidance.
 
 State (Open by default), bounded plain title/body terms and PR page size 20 are drafts until explicit **Load pull requests**. Retain capacity-recovery choices 1/5/10/20, First/Next, detail/back and deliberate refresh. Changed repository selection immediately clears previous content; changed filters leave the existing result labeled with its last applied conditions. Reuse validated PR detail, diff, Checks, statuses, rules, required CI, feedback, reviewer verification and retained problem/remediation history. Do not add cross-repository aggregation, GitHub query syntax, new writes or execution capabilities. Repository settings targets Repositories in the current Settings visit through its explicit category-entry workflow, creating a fresh visit when Settings was inactive. Never restore abandoned Settings-local drafts.
 
-Issue #1155 scopes the approved sidebar presentation to `Surface.PullRequests` on the existing sidebar root. Keep the same rail, pane, portal, controller/query instances, drawer and independent middle/footer scrolling regions; the footer retains its 35% maximum. Order the content as Pull requests, Repositories with Refresh, glyph/name/full wrapping UUID rows or the decorative folder empty block, First/Next, a divided Query options section for the selected repository, and the full-width secondary Repository settings action. A successful empty catalog page says exactly **No repositories on this page.**, never that the entire catalog is empty. Preserve page-scoped loading/failure/cached-refresh states. Selected rows retain `aria-pressed` and pale blue `#e7efff`; decorative outline SVGs are accessibility-hidden. Explicit-load guidance remains visible with both empty and selected states.
+The approved name-only redesign replaces issue #1155's always-visible UUID presentation and remains scoped to `Surface.PullRequests` on the existing sidebar root. Keep the same rail, pane, portal, controller/query instances, drawer and independent middle/footer scrolling regions; the footer retains its 35% maximum. Order the content as Pull requests, Repositories with Refresh, glyph/name rows with separate Details buttons or the decorative folder empty block, First/Next, a divided Query options section for the selected repository, and the full-width secondary Repository settings action. Selection and Details are sibling buttons, never nested. One expanded repository UUID stays in bounded connection memory across navigation and same-identity reconnect, clears with identity replacement, and exposes a labeled region through `aria-expanded`/`aria-controls`. Display only the already-loaded configured GitHub owner/name and full wrapping local UUID in that region; missing mappings show configuration absence. Expansion never selects a repository, submits a form, fetches metadata or persists state. Do not add raw inspected URLs, credentials or checkout paths. A successful empty catalog page says exactly **No repositories on this page.**, never that the entire catalog is empty. Preserve page-scoped loading/failure/cached-refresh states. Selected row groups retain pale blue `#e7efff`, with `aria-pressed` on the selection button and complete original identities in accessible names. Decorative outline SVGs are accessibility-hidden. Explicit-load guidance remains visible with both empty and selected states.
+
+Query options uses native Open/Closed/All radios under the State legend, followed by title/body search, PR page size, explicit-load guidance and Load pull requests. Radio labels form a neutral three-part segmented group; the selected segment uses the existing surface token and dark-blue selected-text token, never a solid accent fill. Keep native radio keyboard behavior and the existing form-control focus policy without automatic focus changes. Edits remain drafts until Load. The Repository settings action stays below the query/guidance area in scrollable content, separated by a thin divider rather than moved into the connection footer. Repository names, details, control labels and errors wrap; rows and primary controls retain at least 40px targets. Preserve the 52px rail, 288px pane, 256px pane at widths up to 1100px, below-760px modal drawer and native 960×640 minimum. Validate English/Korean, light/dark themes, 1440×900, 1100×768, 960×640, compact effective widths and 200% effective zoom separately from packaged CEF/native acceptance.
+
+`scripts/test-pr-sidebar-layout.mjs` uses the separate synthetic `src/pull-requests-layout.fixture.tsx` entry to exercise the actual App and static styles with host-supplied Playwright/Chrome. It reuses `DELIDEV_LAYOUT_PLAYWRIGHT_MODULE` and optional `DELIDEV_LAYOUT_BROWSER_CHANNEL`; optional `DELIDEV_PR_SIDEBAR_SCREENSHOT_DIR` output must remain outside the repository. Temporary bundles, browser and server are disposed after the check. Synthetic read counters, keyboard and geometry checks confer no native/account authority and do not establish actual browser chrome zoom or packaged CEF/platform acceptance.
 
 Use the existing system font, 17px semibold titles, 13px body/control text, 12px sentence-case headings and metadata, 16px horizontal pane insets, 8/12/16/24px spacing and 8px control corners. Primary text is `#202632`, muted text `#5b6577`, borders `#d8dee8`, primary accent `#2563d8` and selected fill `#e7efff` on the existing off-white pane. Inputs and Load remain at least 40px high; Load pull requests is the only solid blue primary sidebar action. Existing inline server/registration/saved-server controls use a 36px minimum action-row height and expand for wrapping labels, status, errors, confirmations and recovery guidance. New footer overrides exclude every nested dialog and its contents, including when the outer pane itself is the responsive dialog; standard modal typography, controls and geometry remain unchanged. Preserve each control's owning visibility, authorization and retry contract. This presentation does not implement adjacent header/control-relocation work or restore controls removed by those owning changes. Other contexts, main content/composer and native window behavior retain their existing styling.
 
@@ -216,6 +274,8 @@ Completed removals have a separately paginated, read-only history in Saved serve
 Profile-owned Worker controls accept the same closed lifecycle action and original stop generation as local controls, with no renderer-selected profile ID. Go's `connection worker-*` commands validate the pinned client and retain grant/pairing requests before network effects. Native reads validate the same profile before and after private Worker proof retrieval; the command handler also rechecks the original window instance before returning. A saved window can therefore select Local sessions/schedules with fresh proof for this computer while its server runs elsewhere. Independent profile Workers have independent device/machine identities and process generations. Registration, current server authorization, controller status and session cleanup remain separate facts; no mutation is automatically repeated by status polling or window reopening.
 
 ### Native tray and menu bar
+The native File menu binds New Window to `CmdOrCtrl+T`: Command+T on macOS and Control+T on Windows/Linux. Command/Control+N no longer opens a product window. Menu clicks and the shortcut share one app-level handler, creating one window per activation through the existing Local/Saved window admission. Close Window retains `CmdOrCtrl+W`, and the existing menu order is preserved.
+
 One native tray groups the local window and each open saved-server window. TypeScript reads `SystemService.GetOverview`, today's existing usage summary and bounded account pages directly through Connect Query. Overview and today's usage summary poll every 15 seconds, and account reads every 30 seconds while the app process runs, including hidden windows. A failed or missing usage read remains unavailable on publication instead of carrying an old total forward. Rust receives only a validated presentation projection, never RPC authority, account credentials, prompts, native tool identities or paths.
 
 Show server observation time, exact active-session and unanswered-request counts, connected/registered Workers, known UTC-day tokens with incomplete telemetry, and separate account quota windows. Preserve zero and decimal precision; failed or missing evidence is unavailable. Today's half-open UTC range comes from the server. A quota cannot become pooled remaining capacity: preserve its own state, observation/reset times and stale result. At most 20 account aliases and eight windows per account are shown, with explicit Settings links for additional records. Email-shaped aliases are masked before native IPC and again before native menu rendering.
@@ -483,9 +543,9 @@ Settings keeps all 17 category lists and their owning controllers mounted when a
 
 Use the closed size enum: 480px confirmations for configuration deletion, account disconnect/logout, device revocation and network-profile/backup deletion; 768px forms for Project, Provider, Model, account preferences and GitHub-profile create/edit, pricing, routing preview and notification edits; 960px workflows for Agent Workers, Instructions, repository editing/registration, account creation/connection/management, SSH setup, Runner Device details, network settings, pairing documents and backup inspection. Width never exceeds viewport minus 32px; height never exceeds viewport minus 48px. Use 16px outer corners, 20px titles, 16px section titles, 14px body and 12px hints/scope, existing theme tokens and 40px controls with 8px corners. Header and action footer remain fixed; only the body scrolls. Narrow forms stack and wrap full identifiers/actions. These task rules supersede the ordinary-flow action and page-form geometry above only while a task is open.
 
-X, Escape and local Cancel dismiss presentation; backdrop clicks do not dismiss it. Before submission, dispose drafts and secret inputs. Pending or unconfirmed submissions instead hide the same mounted task controller, retain its original immutable request, receipt/job/operation identity and necessary transient authority within the current category, and expose a status plus View original operation in the list. Block replacement submissions; an uncertain write has only its existing exact original retry. Clear editable secret inputs on dismissal while preserving any credential bytes already owned by an authorized original request. Same-computer encrypted imports retain their exact ciphertext/digest for explicit retry; dismissal clears editable copies and cannot prepare a replacement protected recipient during uncertainty. SSH start keeps its original setup ID, blocks replacement host inspection and is never resubmitted after an ambiguous start. Dismissal never calls server/Worker cancellation or OAuth Cancel. Explicit business cancellation remains a separate operation. Confirmed saves use the existing completion and list refresh; accepted jobs retain their existing observation and Done flow. Late hidden results cannot reopen a dialog, navigate or take focus.
+X, Escape and local Cancel dismiss presentation; backdrop clicks do not dismiss it. Before submission, dispose drafts and secret inputs. Pending or unconfirmed submissions instead hide the same mounted task controller, retain its original immutable request, receipt/job/operation identity and necessary transient authority within the current category, and expose a status plus View original operation in the list. Block replacement submissions; an uncertain write has only its existing exact original retry. Clear editable secret inputs on dismissal while preserving any credential bytes already owned by an authorized original request. Same-computer encrypted imports retain their exact ciphertext/digest for explicit retry; dismissal clears editable copies and cannot prepare a replacement protected recipient during uncertainty. SSH start keeps its original setup ID, blocks replacement host inspection and is never resubmitted after an ambiguous start. Dismissal never calls server/Worker cancellation or OAuth Cancel. Explicit business cancellation remains a separate operation. Confirmed saves use the existing completion and list refresh; accepted jobs retain their existing observation and Done flow. Confirmed subscription/API-account configuration deletion releases task retention before invoking its existing completion callback once, closes immediately and refreshes the current category inventory. It has no completion screen, browser-cleanup count read, Return action or new toast, and does not await inventory refresh or independent browser cleanup. A confirmed-deleted account row cannot remain an opener while inventory refresh is pending; retire that original focus destination and use the visible category action/title. A hidden successful deletion clears its retained status/opener without taking focus; category disposal still rejects late completion callbacks. Late hidden results cannot reopen a dialog, navigate or take focus.
 
-Internal workflow and confirmation steps share one native modal surface, keeping their parent controllers mounted rather than stacking dialogs. The dialog has no separate Settings lifetime. Category departure and Settings exit retain the disposal rules below, including original native/account ownership and detached work. The native modal makes the background inert and contains Tab/Shift+Tab. Creation focuses its first input, long details focus their title and destructive confirmations focus the least destructive Cancel/Keep action. Restore focus only to a connected visible opener; otherwise use that category's primary action/title. Do not overwrite a deliberate focus transfer or restore a departed category. Closing a compact category drawer precedes opening its task. Follow the [W3C modal Dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
+Internal workflow and confirmation steps share one native modal surface, keeping their parent controllers mounted rather than stacking dialogs. The read-only GitHub repository chooser is the sole exception: it opens its own child modal above the mounted Add repository task as defined under Remote repository registration. The dialog has no separate Settings lifetime. Category departure and Settings exit retain the disposal rules below, including original native/account ownership and detached work. The native modal makes the background inert and contains Tab/Shift+Tab. Creation focuses its first input, long details focus their title and destructive confirmations focus the least destructive Cancel/Keep action. Restore focus only to a connected visible opener; otherwise use that category's primary action/title. Do not overwrite a deliberate focus transfer or restore a departed category. Closing a compact category drawer precedes opening its task. Follow the [W3C modal Dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
 
 Validation covers open/close/save/failure/denial, unchanged list position, discarded drafts/secrets, pending close, exact uncertain retry, duplicate blocking, hidden late results and departure, X/Escape/Tab/Shift+Tab/return focus, drawer handoff, Strict Mode and same-server reconnect. The frontend jsdom suite uses at most four workers to preserve timer responsiveness during concurrent native builds; test and product deadlines remain independent and unchanged. Raise concurrency only after verifying those suites under peak shared-host load. Browser fixtures cover light/dark at 1440×900, 1280×820, 960×640, 640×480 and effective 200% layouts. Keep those checks separate from actual packaged CEF keyboard/zoom and account/platform acceptance. Prepare required generated clients and hydrated LFS assets, run `pnpm test` in `apps/delidev`, and remove generated `dist` directories after validation. No RPC, schema, migration or dependency changes are required.
 
@@ -515,11 +575,12 @@ historical attribution. Source-scoped server catalog queries supply autocomplete
 
 Creation and editing use the same four steps: Harness, Accounts, Model, Configure.
 Fill existing values on edit. Stage navigation never saves. Choose a supported
-harness, then one subscription service or API provider and at least one account.
-Multiple accounts must share that source. Keep their explicit order and relative
+harness, then ordered subscription service/API provider groups, each with at least
+one same-source account. Keep their explicit order and relative
 weights (1–1,000), all six routing policies and the inherited server default.
-Fixed routing permits exactly one account. Source or harness changes clear
-incompatible account/model choices and require explicit selection; ordinary Back
+Fixed routing permits exactly one account per group. A source change clears only
+that group's model/accounts; a harness change clears incompatible groups. Both
+require explicit selection; ordinary Back
 and disclosure changes retain values. Legacy accountless Workers remain readable
 through existing APIs, but need an account before wizard resaving. Retired models
 remain inert; affected Workers require explicit current account and model
@@ -537,10 +598,21 @@ connection, validation or inference. Saving declares configured harness/model
 compatibility; execution still rechecks current authority and native support.
 
 Configure retains name, permission, reasoning, instructions and native options,
-including mounted collapsed values, and shows the selected source/model/accounts.
-Submit only SaveAgentWorker under negotiated System capability 33; older servers
-show update guidance. Go validates source membership and atomically reuses/creates
-the internal model plus Worker under the original revision and UUID-v7 receipt.
+including mounted collapsed values, and reviews every ordered source/model/account group.
+The single-source wizard retains capability 33 compatibility. Capability 36 enables
+ordered source groups with Add/Remove and keyboard-operable Move up/down controls.
+Accounts retains server-filtered per-source pagination, routing policies and weights;
+Model displays the same group order with a source-scoped autocomplete/exact ID for
+each. Both wizard generations retain English/Korean presentation and the independent
+capability-35 known-model catalog. Known candidates remain advisory, while saved
+models retain exact revisions and take precedence over duplicate known IDs after
+all saved pages are read. New account choices require a connected Ready or
+Unverified account; retained selections stay visible independently of that filter. New groups default to Priority. Configure saves all typed model choices and
+the Worker once under the original revision and UUID-v7 receipt. Schema-3 editors
+require capability 36; unsupported servers show update guidance. Stage navigation
+never starts login, validation, discovery or inference. New sessions advance only
+after complete confirmed quota exhaustion; observed recovery restores preference
+for future sessions. Existing executed sessions keep their original selection.
 Keep exact uncertain request bytes, current-revision conflicts, visit disposal,
 late-response fencing and same-identity reconnect/Strict Mode behavior.
 
@@ -558,11 +630,21 @@ button-based single-selection radiogroup with one selected Tab entry, wrapping
 Arrow Up/Down/Left/Right selection, Home/End and native Space/Enter activation.
 With an unsupported saved harness, select no card and use the first card as the
 Tab entry and validation focus target. Preserve the new Codex default and saved
-edit selection. Card selection never advances or saves; Next owns advancement.
+edit selection. Arrows and Home/End only change selection/focus; click or native
+Space/Enter confirmation opens Accounts and focuses its heading, including
+current-card reselection. Harness has no Next button or form-submit advancement.
 Reselecting the current harness preserves account/model choices, while an actual
-change retains the existing explicit reset. Buttons retain visible keyboard focus
-and disabled server-support/mutation guards. Local SVG masks use semantic ink in
-both themes without network access, inline styles or additional dependencies.
+change retains the existing explicit reset. Later steps retain Next. Buttons
+retain visible keyboard focus
+and disabled server-support/mutation guards. Harness cards contain decorative
+official local images in the existing 48px boxes, preserving original colors,
+proportions and transparency without network access, inline styles or additional
+dependencies. OpenCode and Grok use the supplied light/dark variants selected by
+the resolved `data-theme`, with the OS color scheme as the first-paint fallback
+before that attribute exists. Keep these assets and their source/version/hash,
+usage conditions and separate license in `public/harness-marks`; retain the
+subscription provider assets and notices independently. Follow the repository
+license contract for vendor trademark conditions and distribution notices.
 Input/select focus preserves ordinary
 boundaries; buttons/disclosures retain visible focus. The combobox supports
 Arrow Up/Down, Enter and Escape with active-descendant semantics. Stage changes
@@ -881,6 +963,36 @@ Legacy saved/retained execution-Worker controls expose explicit registration, st
 Status polling is read-only and separately reports not started, starting, controller running, stopping, exited and uncertain. Startup timeout may retain a process waiting for the server's previous instance lease; it cannot automatically start another generation. The UI captures the generation when confirming stop, blocks a newly stale confirmation and retains the original target after uncertain acknowledgment or settings navigation. Refreshing or retrying that stop cannot cancel a replacement. An explicitly stopped reserved child cannot launch later. Offline stop remains available through local Go infrastructure without depending on server connectivity. Controller exit does not establish per-session/native cleanup; existing server recovery and Worker journals remain authoritative. Full native Quit preserves independently started servers and detached Workers; app-owned server children follow the app-owned sidecar shutdown boundary. These explicit controls alone establish no OS service, automatic Worker-process restart, SSH setup or binary-update acceptance; main-window supervision follows its separate amendment.
 
 ### Projects, repositories and configuration actions
+
+#### Repository inventory presentation
+
+Repositories retains the shared Settings body anchor, typography, theme tokens,
+toolbar and visit lifetime. `repository-list.tsx` and its static stylesheet group
+each saved repository into a bordered 8px-corner row with 16px padding: decorative
+Git glyph, full name, source-type label, GitHub configuration badge and explicit
+name-scoped Edit/Delete actions. Registered folder paths and GitHub owner/name
+occupy two semantic metadata columns, stacked below 640px available body width.
+Complete paths and the full repository ID wrap without truncation. The source
+label never exposes configured or inspected raw URLs. Registered folders are
+saved associations, not online-state or Local execution proof.
+
+The badge distinguishes missing GitHub configuration, configured metadata and
+unsupported resource formats. Configured metadata does not establish token
+health, repository access or execution readiness. The existing explicit access
+inspection and item-browser controllers retain their schema gates, read scope,
+revisions and disposal. Edit/Delete retain their existing schema gates and shared
+task dialogs. No row render, reflow or language change performs GitHub reads,
+Worker inspection, mutations or native discovery.
+
+The successful final empty first page uses the shared empty panel and the single
+header Add repository action. Empty continuation pages and retained refresh
+failures remain distinct. Pagination preserves server order/cursors and shows
+only the number of repositories on the current returned page, never an inferred
+inventory total. This presentation does not change registration, cloning,
+configured source authority or original Local checkout ownership below.
+
+#### Repository registration
+
 When the outer GitHub profile inventory moves to another page, clear the
 selected profile and repository page before exposing the new page. The picker
 must never retain repository rows from a profile that is no longer selected.
@@ -1014,6 +1126,58 @@ from component checks in validation records in pull requests, issues and CI logs
 Session creation uses paginated project/Agent/Worker selectors with no first-option fallback, retains configured-empty Agent restrictions, and bounds the first prompt to 256 KiB UTF-8 before state retention. The first-message textarea preserves autofocus and its insertion caret without a focus ring under the shared form-control focus treatment. Disable Project selection while Local Worker proof or session creation is pending or uncertain so the displayed selection remains aligned with the retained request. Project sessions allow independent starting overrides by repository without changing saved base references. General Chat clears project/Git selection and uses the selected Worker's isolated directory. Explicit Local creation reads this computer’s original paired Worker proof through the native boundary and keeps existing checkouts as-is.
 
 Session details expose revision-bound rename, retry of confirmed failed/canceled preparation, original-workspace inspection, separately confirmed incomplete-preparation cleanup, and original-execution reconciliation. A confirmation captures the original revision and execution identity; peer changes block new submission while preserving drafts and exact uncertain retries. Original preparation/recovery jobs remain inspectable independently. Recovery acknowledgment is not successful cleanup or renewed execution authority. Recovery never sends input or invokes Resume; successful reconciliation leaves the server's paused state intact.
+
+### Session workspace presentation
+
+Existing session detail uses a compact conversation-first workspace. Keep the
+shared sidebar and native title bar. The header retains the original name,
+automatic-title observation, connection and independent outcome/dispatch/Archive
+states. Stop and Resume retain their existing revision, uncertainty, budget and
+startup-rejection guards. Fork/Sidechat and Archive/Restore use a keyboard-operable
+Session actions popup; opening or closing it never creates or replaces authority.
+
+A full-width tool strip exposes Diff, Files, Terminals, Browser, Diagnostics and
+Info. Default to closed; activating the selected tool closes it. Preserve one
+visible panel and restore the original trigger focus on Close/Escape. At 900px
+available session width, an open panel occupies a 400px right column. Below that
+threshold it overlays the notices and transcript, with a width capped at 400px;
+it cannot obscure the request tray or composer. CSS reflow uses the same DOM and
+controllers. Tool labels wrap at narrow widths and effective zoom.
+
+The transcript scrolls independently. Open interactions remain expanded, and
+request/queue contents have bounded scroll space near the composer. Preserve
+original page-scoped counts, pagination and live delivery ordering. The composer
+stays at the bottom, with a 120px textarea adjustable from 80px to 180px; short
+available areas start at 80px, with independently bounded upper rows. Compact
+sidebar navigation takes space from the workspace instead of displacing input.
+Keep the existing Execute/Plan selection, Enter behavior,
+connection-owned prompt limits, send locks and exact uncertain retries. An empty
+conversation states that content appears after the harness accepts input, never
+that enqueueing resumes a blocked session.
+
+Info groups status/recovery, PR associations, execution settings, context,
+Subagents, usage/budget and workspace storage. Status/recovery starts expanded;
+other groups start collapsed. Information controllers stay mounted while their
+presentation is hidden, including budget observation and staged editors. Preserve
+existing internal disclosure/query lifetimes and original mutation receipts.
+Closing or switching Browser releases its native presentation; hiding Terminals
+cannot close the independently Worker-owned shell.
+
+Compact notices retain localized code-based summaries for connection/control/send
+failures, session problems, recovery, startup rejection and budget thresholds.
+Show details opens the corresponding Info section, reveals admitted original
+technical evidence and transfers focus without mutating the session. Keep stale,
+unsupported, denied, unavailable and measured-zero observations distinct. Original
+technical text and identifiers remain inert, wrapping inside the inspector.
+Successful retained jobs use neutral surfaces and success text within Info.
+
+Session-only static styles reuse semantic Light/Dark/System colors and system
+fonts: 20px title, 13px body/control text, 12px metadata, 36px actions, 8px ordinary
+corners and compact spacing. All owned labels and accessibility names support
+English/Korean. Preserve the shared form-control focus rule and visible focus on
+buttons/disclosures. This presentation changes no RPC, protocol allocation,
+migration, native permission or execution eligibility. Record component/browser
+verification separately from real CEF/platform acceptance.
 
 ### Retained execution configuration and instructions
 The session offers a read-only execution configuration view from its original `initial_execution.configuration`, with no current Agent/model/template lookup. Show retained harness/model/revisions, native option selections, routing/account order and weights, original account, and separately selected current execution/account. Later configuration edits or deletions cannot rewrite the displayed snapshot. Missing snapshots, unsupported document versions, additional unknown options and integer values outside exact JavaScript precision remain explicit rather than becoming defaults or reconstructed values.
@@ -1251,7 +1415,7 @@ Repository settings include an explicit GitHub item browser with PR/issue select
 
 The session's explicit PR associations panel uses generated SessionQuery link/unlink and session-scoped ResourceQuery pages. Keep the conversation mounted, include archived sessions, restrict new selections to the current project's named repositories and show original titles/identities as historical inert data. Decode the complete page before rendering actions, preserve exact decimal IDs and revision values, and bind link acknowledgments to their original request/repository/number. Uncertain mutations retain exact bytes across panel/session navigation. Closing discards association queries while ordinary configuration selectors keep their existing connection-scoped cache policy. Link/unlink never resumes a session, executes a fix, resolves a problem or writes to GitHub. See the integration contract for persisted metadata and receipt boundaries.
 
-GitHub profile management includes revision-bound official token forms through generated Connect Query, explicit fine-grained repository-selection guidance and classic broad-scope disclosure. Form requests are click-driven and late results cannot open a browser after the view closes. Validated PR/issue details offer explicit Open on GitHub. The trusted main/pinned-server native capability delegates only closed GitHub destinations through sidecar stdin to Go OS presentation; it grants no external renderer navigation, credentials or arbitrary opener. See the integration contract.
+GitHub profile management includes revision-bound official token forms through generated Connect Query, explicit fine-grained repository-selection guidance and classic broad-scope disclosure. Token-first creation under capability 34 uses a static helper with Classic then Fine grained buttons, without owner/type/access inputs or a disclosure. Each click prepares and opens its matching official form, carries the token kind into confirmation and holds both buttons disabled through native dispatch. Fine-grained draft URLs omit an undeclared owner while retaining read-only permissions and 30-day expiry; Classic opens without scopes. Confirmation retains explicit owner/type declarations and saved-profile Manage retains its existing disclosure. Buttons use shared 40px controls/8px corners and an 8px gap, stacking below 640px available form width. Preserve password focus, complete permission/repository/expiry/approval guidance and translated progress/failures. Form requests are click-driven and late results cannot open a browser after the view closes or becomes disabled. Validated PR/issue details offer explicit Open on GitHub. The trusted main/pinned-server native capability delegates only closed GitHub destinations through sidecar stdin to Go OS presentation; it grants no external renderer navigation, credentials or arbitrary opener. See the integration contract.
 
 PR detail also offers Read active PR rules through the same generated query. Show the exact base ref/commit, original source/type/ruleset identities and separate required-context/App tables, retaining unknown source types and explicit zero-App uncertainty. Reject foreign/mixed/duplicate/incomplete bounded projections before rendering. Read all pages on the server; the desktop has no partial-rule paging or inferred CI result. Follow `docs/cmds-delidev-integrations-contract.md`.
 
@@ -1695,3 +1859,9 @@ The cleared sidecar environment retains its existing narrow OS allowlist. Its PA
 ### Remote repository registration
 
 Add repository reuses PR #1355's 640px layout, URL validation and GitHub picker within the shared Settings task dialog. Its primary action saves a credential-free Git URL and editable suggested name without requiring any local folder, registered Worker, online state or local proof. Connect a Local folder and Clone to this computer are optional disclosures; their original inspection/proof and once-only clone jobs remain intact. Capability 37 gates URL saves/imports and the new URL-only import shape; absent support shows update guidance before sending. Legacy inspected-folder registration and checkout-backed imports retain their older payload without `remote_url`. Immediate Clone retains System 31/32 and Worker 18 gates and registers its original URL. Worktree execution always clones on the selected Runner Device; Local explicitly requires its connected original folder and never silently switches execution modes. Pending and uncertain operations retain the original shared task lifecycle, focus containment and responsive scrolling.
+
+Choose from GitHub opens a separate read-only child `DialogSurface`, portaled outside the parent form and scrolling body. Keep the 640px parent mounted with its fields, scroll position and original operation owner. The child is at most 560px wide and viewport minus 32px; its height is at most viewport minus 48px. Use shared light/dark tokens, 16px outer corners, 20px title, 14px body, 12px hints and 40px controls with 8px corners. Its title/X header and Cancel footer stay fixed while only its body scrolls. Full repository identities and actions wrap on narrow viewports. English/Korean catalogs own all chooser labels and guidance.
+
+The child contains the existing explicit profile selection, bounded profile pagination/refresh, current-page filter, repository rows and pagination/refresh, complete loading/empty/error/stale/unsupported states and PAT-versus-native-Git guidance. Selection immediately invokes the existing parent callback with the verified repository/profile revision, URL and identity, then closes only the child; preserve manually edited names. It never saves, clones or changes authorization. Cancel/X/Escape preserve the parent draft and restore its still-available Choose from GitHub opener. Backdrop clicks retain both dialogs. Opening focuses the usable profile selector or otherwise the title; Tab/Shift+Tab stay in the child, and the parent is inert. Contain portal keyboard and cancel events so they cannot dismiss or submit the parent.
+
+Profile/page/filter choices survive child dismissal and reopening within the same parent. Child reads and current-profile polling pause when hidden; existing capability/revision/generation and complete-page checks remain authoritative. Parent hiding, closing or Settings departure also closes the child without stale focus restoration or selection from late replies. The category owns the original disposable transport and all queries; no new Settings lifetime, task operation, RPC, migration or dependency is introduced. Existing workflow and confirmation steps continue to use one native surface. Component and synthetic browser checks, including effective 200% layouts, remain separate from packaged CEF/platform acceptance.

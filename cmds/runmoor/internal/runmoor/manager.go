@@ -172,15 +172,11 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 			switch old.Phase {
 			case Paused:
 				next.Phase = Paused
+				copyPoolFailureState(next, old)
 			case Suspended:
 				if s.Paused || s.Stopping || !(validatedReload && suspensionCorrected(old, p, conn, s.Config, c) || managedRecoveryMatches(s, &old)) {
 					next.Phase = Suspended
-					next.PreparationFailures = old.PreparationFailures
-					next.SuspensionSource = old.SuspensionSource
-					if old.Problem != nil {
-						copy := *old.Problem
-						next.Problem = &copy
-					}
+					copyPoolFailureState(next, old)
 				}
 			}
 			if recovery := s.ManagedRecovery[p.Name]; recovery != nil && recovery.PoolID == old.ID {
@@ -199,6 +195,15 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 		s.Stopping = false
 	}
 	return nil
+}
+
+func copyPoolFailureState(next *PoolState, old PoolState) {
+	next.PreparationFailures = old.PreparationFailures
+	next.SuspensionSource = old.SuspensionSource
+	if old.Problem != nil {
+		copy := *old.Problem
+		next.Problem = &copy
+	}
 }
 
 func refreshRetirementAuthority(s *Snapshot, c Config) {
@@ -425,7 +430,7 @@ func (m *Manager) step() error {
 		if p.Phase == Retired {
 			continue
 		}
-		if p.Phase != Suspended {
+		if !poolLoopStopped(p) {
 			m.ensurePoolLoop(id)
 		}
 		if p.Phase == Draining {
@@ -573,6 +578,24 @@ func (m *Manager) ensurePoolLoop(id string) {
 		m.poolLoop(ctx, id)
 	}()
 }
+
+func poolLoopStopped(p *PoolState) bool {
+	if p == nil || p.Phase == Retired || p.Phase == Suspended {
+		return true
+	}
+	if p.Phase != Paused || p.Problem == nil {
+		return false
+	}
+	switch p.Problem.Code {
+	case ErrAuth, ErrOwnership, ErrImage, ErrPlatform, ErrRunnerVersion:
+		return true
+	case ErrPreparation:
+		return p.PreparationFailures >= 3
+	default:
+		return false
+	}
+}
+
 func (m *Manager) poolProblem(id string, err error, suspend bool) {
 	m.poolProblemWithSource(id, err, suspend, SuspensionUnknown)
 }
@@ -587,7 +610,11 @@ func (m *Manager) poolProblemWithSource(id string, err error, suspend bool, sour
 		v.Problem = p
 		v.SuspensionSource = SuspensionUnknown
 		if suspend && v.Phase != Draining {
-			v.Phase = Suspended
+			// Paused is the durable scoped operator decision for manual pools.
+			// A late dependency failure may diagnose it, but cannot replace it.
+			if v.Phase != Paused {
+				v.Phase = Suspended
+			}
 			if p.Code == ErrOwnership {
 				v.SuspensionSource = source
 			}
@@ -601,7 +628,7 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 	for ctx.Err() == nil {
 		s := m.Store.View()
 		p := s.Pools[id]
-		if p == nil || p.Phase == Retired || p.Phase == Suspended {
+		if poolLoopStopped(p) {
 			return
 		}
 		if p.Phase == Ready && p.Spec.Backend == Docker && s.Config.DockerCapacityPending && !s.Stopping {
@@ -941,7 +968,11 @@ func (m *Manager) failPreparation(id string, err error) {
 		pool := s.Pools[r.PoolID]
 		pool.PreparationFailures++
 		if pool.Phase != Draining && (pool.PreparationFailures >= 3 || p.Code == ErrAuth || p.Code == ErrRunnerVersion || p.Code == ErrOwnership) {
-			pool.Phase = Suspended
+			// Keep scoped pause/stop authority while retaining failure diagnostics
+			// and the runner's ordinary busy-aware cleanup path.
+			if pool.Phase != Paused {
+				pool.Phase = Suspended
+			}
 			pool.Problem = p
 			pool.SuspensionSource = SuspensionUnknown
 		}

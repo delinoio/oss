@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { copy, useLocale } from "./localization";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
-import { useQuery, useTransport } from "@connectrpc/connect-query";
+import { useTransport } from "@connectrpc/connect-query";
 import {
-  BrowserQuery, ConfigurationService, DeleteConfigurationRequestSchema, EntityKind, FailureCode,
+  ConfigurationService, DeleteConfigurationRequestSchema, EntityKind, FailureCode,
   RequestSubscriptionRequestSchema, ResourceSchema, ResourceService, SubscriptionAction, SubscriptionLoginState,
   SubscriptionService, SubscriptionServiceId, SystemCapability, SystemService, clientFailure, isEntityId, newRequestId,
   type ClientFailure, type DeleteConfigurationRequest, type RequestSubscriptionRequest, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
 import { useSettingsOpening } from "./settings-lifetime";
-import { SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
+import { SettingsTaskContext, SettingsTaskStatus, useRetainSettingsTask } from "./settings-task-context";
 import { serviceAccount } from "./subscription-resource";
 import { safeDiagnostic } from "./subscription-onboarding";
-import { Failure, Problem } from "./ui";
+import { Failure } from "./ui";
 import "./account-deletion.css";
 
 enum Stage { Confirmation, Checking, Logout, Deleting, Paused, Deleted }
@@ -46,19 +46,17 @@ function cleared(resource: Resource) {
     !state.recovery_required && !state.generation && !object(state.server_operation).native_started;
 }
 
-export function AccountDeletionResult({ initial, active, deleted }: { initial: Resource; active: boolean; deleted: () => void }) {
-  useLocale();
-  const isApi = document(initial).type === "api";
-  const isChatGPT = serviceAccount(initial, undefined, SubscriptionServiceId.ChatGPT);
-  const cleanup = useQuery(BrowserQuery.getAccountBrowserCleanup, { accountId: initial.id }, { enabled: active, retry: false });
-  const actions = <><button disabled={!active || cleanup.isFetching} onClick={() => void cleanup.refetch()}>{copy("account-deletion.refreshCleanupStatus_fb7773")}</button><button disabled={!active} onClick={deleted}>{isApi ? copy("account-deletion.returnToAiApiKeys_4b92a5") : copy("account-deletion.returnToAccounts_4b7a6d")}</button></>;
-  return <section className={isApi ? "api-entry-workflow" : isChatGPT ? "subscription-account-create account-deletion" : undefined}>
-    {isApi ? <header className="api-entry-heading"><h2>{copy("account-deletion.apiKeyEntryDeleted_3200d9")}</h2><p className="api-entry-scope">{copy("account-deletion.savedOnTheSelectedServer_93dbee")}</p></header> : <h3>{copy("account-deletion.accountConfigurationDeleted_2a5579")}</h3>}
-    <p>{copy("account-deletion.browserCleanupIsTrackedSeparatelyOffline_5550d1")}</p>
-    <Problem error={cleanup.error} />
-    {cleanup.data ? <p><LocalizedText id="account-deletion.profileCleanupObligationsPendingConfirmedRemoved_063eba" components={{ s0: <>{cleanup.data.pending}</>, s1: <>{cleanup.data.removed}</> }} /></p> : <p>{copy("account-deletion.cleanupStatusIsUnavailableUntilThe_de4aa8")}</p>}
-    {isChatGPT ? <div className="actions">{actions}</div> : actions}
-  </section>;
+export function useAccountDeletionCompletion(accepted: boolean, active: boolean, deleted: () => void) {
+  const opening = useSettingsOpening(), completed = useRef(false);
+  const retireOpener = useContext(SettingsTaskContext)?.retireOpener;
+  useEffect(() => {
+    if (!accepted || !active || opening?.disposed || completed.current) return;
+    // Commit cleared retention before parent teardown. A confirmed-deleted row
+    // is no longer a focus destination, even while inventory refresh is pending.
+    completed.current = true;
+    retireOpener?.(node => Boolean(node.closest(".subscription-row, .api-entry-row")));
+    deleted();
+  }, [accepted, active, opening, retireOpener, deleted]);
 }
 
 // This category owns only the confirmed client sequence. Go retains every
@@ -74,10 +72,11 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
   const [view, setView] = useState<View>({ stage: Stage.Confirmation });
   const pending = useRef<Attempt | undefined>(undefined);
   const waiting = [Stage.Checking, Stage.Logout, Stage.Deleting].includes(view.stage);
-  // Direct clients bypass mutation retention. Keep submitted/observed work and
-  // its cleanup outcome mounted until explicit Back/Return or category disposal.
-  const retained = waiting || view.stage === Stage.Deleted || Boolean(pending.current?.logout || pending.current?.operation || pending.current?.deletion);
+  // Direct clients bypass mutation retention. Keep original operations mounted
+  // through uncertainty, then release retention before completing the dialog.
+  const retained = view.stage !== Stage.Deleted && (waiting || Boolean(pending.current?.logout || pending.current?.operation || pending.current?.deletion));
   useRetainSettingsTask(retained, waiting ? SettingsTaskStatus.Pending : pending.current?.retry !== undefined ? SettingsTaskStatus.Uncertain : SettingsTaskStatus.AwaitingConfirmation);
+  useAccountDeletionCompletion(view.stage === Stage.Deleted, active, deleted);
   const mounted = useRef(false), activeRef = useRef(active);
   activeRef.current = active;
   const live = (p: Attempt) => mounted.current && activeRef.current && !opening?.disposed && !p.disposed && pending.current === p;
@@ -239,7 +238,7 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     else if (p.retry === Retry.Progress) { p.observing = true; setView({ stage: Stage.Logout }); void inspect(p); }
   };
   const leave = () => { if (pending.current) pending.current.disposed = true; close(); };
-  if (view.stage === Stage.Deleted) return <AccountDeletionResult initial={confirmed} active={active} deleted={deleted} />;
+  if (view.stage === Stage.Deleted) return null;
   return <section className="subscription-account-create account-deletion">
     <h3>{waiting ? copy("account-deletion.deleting_983c74", { v0: resourceName(confirmed) }) : copy("account-deletion.delete_a19801", { v0: resourceName(confirmed) })}</h3>
     {view.stage === Stage.Confirmation ? <>

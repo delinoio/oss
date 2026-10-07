@@ -204,6 +204,13 @@ policy keeps its systemd user manager running.
 
 Manager-only restart reconciles SQLite with actual Docker/Tart and GitHub state, resumes verified live work and retries incomplete cleanup. Ambiguous resources are quarantined rather than deleted. Confirmed termination releases resources; unresolved cleanup/ownership records remain durable. Runmoor never automatically reruns a failed GitHub job.
 
+With the **unreleased Docker cleanup fix**, a container that replaces a
+stopped runner or daemon remains untouched, even if its Runmoor labels
+were copied. Cleanup reports `OWNERSHIP_AMBIGUOUS` and remains incomplete.
+The original execution remains confirmed stopped and its capacity stays
+released. Preserve the replacement and Runmoor state while investigating;
+copied labels do not prove ownership.
+
 For Tart, `OWNERSHIP_AMBIGUOUS` keeps the VM, its Runmoor records and its
 capacity reservation intact, including after `stop --force`. Do not remove or
 rename the VM to clear the warning. Follow [Tart ownership recovery](./tart#tart-ownership-recovery)

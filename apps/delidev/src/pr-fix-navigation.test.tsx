@@ -7,7 +7,18 @@ import { App } from "./App";
 import { document, encode, object, type Document } from "./documents";
 import { defaultRemediationPolicy } from "./remediation-policy";
 
+// This fixture mounts the complete desktop shell for every case. Keep its
+// product assertions under the repository's CI CPU contention budget without
+// changing the global test deadline or any product deadline.
+vi.setConfig({ testTimeout: 15000 });
+
 type FixRequest = MessageShape<typeof PullRequestFixQuery.requestPullRequestFix.input>;
+
+// These full-shell navigation fixtures can exceed Vitest's default on a
+// shared CI worker under concurrent frontend/build load. Keep the larger
+// deadline local to this file so product and unrelated test deadlines remain
+// unchanged.
+vi.setConfig({ testTimeout: 15000 });
 
 function fixture() {
   const repositoryId = newRequestId(), projectId = newRequestId();
@@ -89,7 +100,7 @@ it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps
   if (state === "removed repository") f.removeRepository();
   f.back();
   if (state !== "removed repository") {
-    if (state === "removed PR row") fireEvent.change(screen.getByLabelText("State"), { target: { value: "all" } });
+    if (state === "removed PR row") fireEvent.click(screen.getByRole("radio", { name: "All" }));
     fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
     if (state === "failed GitHub reload") await within(screen.getByRole("region", { name: "GitHub query results" })).findByRole("alert");
     else await screen.findByText("No pull requests on this returned page.");
