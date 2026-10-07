@@ -67,5 +67,10 @@
   "sidebar.sentence.7e9a504e5355": "알 수 없는 작업공간({{v0}})",
   "sidebar.sentence.407326d462c1": "세션: {{v0}} {{v1}}. 실행 상태: {{v2}}. 보관 상태: {{v3}}. 작업공간: {{v4}}.{{v5}}",
   "sidebar.sentence.7436726e0559": "프로젝트 · {{v0}}",
-  "sidebar.newGeneralChat": "새 일반 대화"
+  "sidebar.newGeneralChat": "새 일반 대화",
+  "sidebar.sessionActions": "추가 세션 작업",
+  "sidebar.sessionActionsRead": "현재 세션을 읽는 중입니다. 읽기가 성공할 때까지 작업을 사용할 수 없습니다.",
+  "sidebar.retrySessionActionsRead": "세션 읽기 재시도",
+  "sidebar.refreshSessionActions": "새 작업 전에 현재 세션 새로고침",
+  "sidebar.fork": "포크"
 }

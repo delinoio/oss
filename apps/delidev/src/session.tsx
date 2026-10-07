@@ -1,3 +1,4 @@
+import { sessionControlEligibility, useSessionControl } from "./session-control";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
 import { initialInteractionDraft, interactionRequestIdentity, type InboxInteractionDraft } from "./inbox-drafts";
@@ -255,7 +256,8 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
   const interactions = useConversationPages(EntityKind.INTERACTION, id, live.generation > 0, 20);
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const observed = live.resources.get(id);
-  const session = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
+  const original = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
+  const { resource: session, control, action } = useSessionControl(id, original);
   const data = readDocument(session);
   const startupFailure = executionStartupFailure(data);
   const startupRetry = canRetryExecutionStartup(data);
@@ -273,7 +275,6 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
   }, [messages.data, live.resources, live.removed, live.newMessageIds, id]);
   useEffect(() => { if (live.generation > 1) { void messages.refresh(); void queue.refresh(); void interactions.refresh(); } }, [live.generation]);
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refresh(); });
-  const control = useRetainedMutation(`control:${id}`, SessionQuery.controlSession, (value) => { if (value.change?.session) setAcknowledged(value.change.session); });
   const locked = send.busy || send.uncertain;
   const composer = useRef<HTMLTextAreaElement>(null);
   const canSend = !locked && Boolean(draft.trim()) && text(data.archive) === "active";
@@ -288,10 +289,6 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
   const pending = queueRows(queue.data?.inputs ?? [], live.resources, live.removed, live.newQueueIds, id, !!queue.data && !queue.data.nextPageToken);
   const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
   const queued = pending.filter((r) => text(readDocument(r).delivery) !== "removed");
-  const action = (value: SessionAction) => {
-    if (!session) return;
-    void control.send({ mutation: { id, expectedRevision: session.revision, requestId: newRequestId() }, action: value });
-  };
   const panelButtons = {
     [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
     [SessionPanel.Terminals]: terminalsButton, [SessionPanel.Browser]: browserButton,
@@ -339,9 +336,9 @@ export function SessionView({ id, draft, setDraft, openRunnerSettings }: { id: s
       </div>
       <div className="session-controls">
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
-        <button type="button" disabled={!session || control.busy || control.uncertain || budgetBlocked || Object.hasOwn(data, "startup_rejection") || Boolean(object(data.startup).failure) && !startupRetry || text(data.archive) !== "active"} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
+        <button type="button" disabled={!session || control.busy || control.uncertain || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
         <SessionActions>
-          {session ? <SessionForkAction source={session} /> : null}
+          {session ? <SessionForkAction source={session} disabled={control.busy || control.uncertain} /> : null}
           <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
         </SessionActions>
       </div>

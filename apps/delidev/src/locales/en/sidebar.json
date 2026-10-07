@@ -67,5 +67,10 @@
   "sidebar.sentence.7e9a504e5355": "Unknown workspace ({{v0}})",
   "sidebar.sentence.407326d462c1": "Session: {{v0}} {{v1}}. Execution state: {{v2}}. Archive state: {{v3}}. Workspace: {{v4}}.{{v5}}",
   "sidebar.sentence.7436726e0559": "Project · {{v0}}",
-  "sidebar.newGeneralChat": "New general chat"
+  "sidebar.newGeneralChat": "New general chat",
+  "sidebar.sessionActions": "More session actions",
+  "sidebar.sessionActionsRead": "Reading current session. Actions are unavailable until the read succeeds.",
+  "sidebar.retrySessionActionsRead": "Retry session read",
+  "sidebar.refreshSessionActions": "Refresh the current session before a new action",
+  "sidebar.fork": "Fork"
 }

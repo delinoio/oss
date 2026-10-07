@@ -994,3 +994,19 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .subscription-cleanup-results summary { cursor: pointer; }
 
 .subscription-header-actions button[aria-disabled="true"] { opacity: .5; cursor: default; }
+
+/* Reserve the sibling action target without shifting titles on hover. */
+.sidebar-session-container { position: relative; }
+.sidebar-session-container .sidebar-session-row { padding-right: 33px; height: 32px; min-height: 32px; }
+.sidebar-session-container .sidebar-session-title { flex: 1.4 1 0; }
+.sidebar-session-container .sidebar-session-title-state { flex: 1 1 0; max-width: 42%; }
+.sidebar-session-more { position: absolute; right: 2px; top: 2px; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-height: 28px; padding: 0; margin: 0; border: 0; background: transparent; color: var(--text-secondary); opacity: 0; }
+.sidebar-session-container:hover .sidebar-session-more, .sidebar-session-container:focus-within .sidebar-session-more, .sidebar-session-more[data-open=true] { opacity: 1; }
+@media (hover: none) { .sidebar-session-more { opacity: 1; } }
+.sidebar-statuses[data-outcome=running] > :first-child { color: var(--execution-running); }
+.sidebar-statuses[data-outcome=succeeded] > :first-child { color: var(--success-text); }
+.sidebar-statuses[data-outcome=failed] > :first-child { color: var(--danger-text); }
+.sidebar-session-menu { position: fixed; inset: auto; z-index: 1200; width: 220px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; margin: 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px var(--shadow-soft); }
+.sidebar-session-menu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; margin: 0; padding: 6px 8px; border: 0; text-align: left; background: transparent; }
+.sidebar-session-menu button:hover { background: var(--surface-hover); }
+.sidebar-session-menu p { font-size: 12px; overflow-wrap: anywhere; }

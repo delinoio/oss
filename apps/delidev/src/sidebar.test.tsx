@@ -1,3 +1,4 @@
+import { MutationIntents } from "./mutation";
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
@@ -57,7 +58,7 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
     selectSurface = setSurface;
     return <Sidebar surface={surface} selectedSessionId="" navigate={navigate} openSession={openSession} newSession={newSession} newGeneralChat={newGeneralChat} newProject={newProject} openSettings={openSettings} {...currentProps} />;
   }
-  const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><Harness /></QueryClientProvider></TransportProvider>;
+  const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Harness /></MutationIntents></QueryClientProvider></TransportProvider>;
   const view = render(tree());
   const setProps = (next: Partial<ComponentProps<typeof Sidebar>>) => { currentProps = { ...currentProps, ...next }; view.rerender(tree()); };
   return { ...view, setProps, client, navigate, openSession, openSettings, newSession, newGeneralChat, newProject, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
