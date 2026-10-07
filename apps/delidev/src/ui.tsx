@@ -19,13 +19,13 @@ export function Problem({ error, ...presentation }: { error: unknown } & InlineP
 export function Failure({ failure, summary, actions }: { failure?: ClientFailure } & InlineProblemPresentation) {
   useLocale();
   if (!failure) return null;
-  return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong>{summary ? <div>{summary}</div> : <p>{copy(failureGuidance[failure.code])}</p>}{actions ? <div className="actions">{actions}</div> : null}<details><summary>{copy("ui.technicalDetails")}</summary><strong>{failure.message}</strong><p>{failure.guidance}</p><code>{failure.code}</code></details>{failure.correlationId ? <small><LocalizedText id="ui.reference_0eac07" components={{ s0: <>{failure.correlationId}</> }} /></small> : null}</div>;
+  return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong><p>{copy(failureGuidance[failure.code])}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<details><summary>{copy("ui.technicalDetails")}</summary><strong>{failure.message}</strong><p>{failure.guidance}</p><code>{failure.code}</code></details>{failure.correlationId ? <small><LocalizedText id="ui.reference_0eac07" components={{ s0: <>{failure.correlationId}</> }} /></small> : null}</div>;
 }
 export function ServiceProblem({ code, children, summary, actions }: { code?: string; children: ReactNode } & InlineProblemPresentation) {
   useLocale();
   const normalized = code?.replaceAll("-", "_");
   const key = normalized && Object.hasOwn(failureGuidance, normalized) ? failureGuidance[normalized as FailureCode] : "ui.failure.internal";
-  return <div className="problem" role="alert">{summary ? <div>{summary}</div> : <p>{copy(key)}</p>}{actions ? <div className="actions">{actions}</div> : null}<details><summary>{copy("ui.technicalDetails")}</summary>{children}</details></div>;
+  return <div className="problem" role="alert"><p>{copy(key)}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<details><summary>{copy("ui.technicalDetails")}</summary>{children}</details></div>;
 }
 /** Localized summary only; callers retain the original evidence separately. */
 export function failureSummary(code?: string): string {

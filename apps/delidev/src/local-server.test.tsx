@@ -6,6 +6,7 @@ import { expect, it, vi } from "vitest";
 import { SystemService } from "@delinoio/delidev-api-client";
 import { LocalServerControls, LocalServerState, type LocalServerStatus } from "./local-server";
 import { MutationIntents } from "./mutation";
+import { LocalConnectionHelp, LocalConnectionPresentationProvider } from "./local-connection-presentation";
 
 it("requires an explicit stop, retains its uncertain request, and never restarts from a stopped status", async () => {
   const stop = vi.fn(async (_request: unknown) => ({}));
@@ -27,4 +28,27 @@ it("requires an explicit stop, retains its uncertain request, and never restarts
   expect(stop.mock.calls[1][0]).toEqual(stop.mock.calls[0][0]);
   fireEvent.click(screen.getByRole("button", { name: "Start local server" }));
   expect(restart).toHaveBeenCalledTimes(1);
+});
+
+it("reveals the original connection view inline and preserves its confirmation across presentation moves", async () => {
+  const stop = vi.fn(async () => ({})), restart = vi.fn();
+  const transport = createRouterTransport(router => router.service(SystemService, { stopServer: stop }));
+  const client = new QueryClient();
+  const target = document.createElement("div");
+  document.body.append(target);
+  const view = (destination?: HTMLElement) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><LocalConnectionPresentationProvider target={destination} inline={false}><LocalConnectionHelp /><LocalServerControls status={{ state: LocalServerState.Ready, attempts: 0, retry_ms: 0 }} restart={restart} busy={false} /></LocalConnectionPresentationProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  const mounted = render(view());
+  expect(screen.queryByRole("button", { name: "Stop local server" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Connection controls" }));
+  fireEvent.click(screen.getByText("Local server"));
+  fireEvent.click(screen.getByRole("button", { name: "Stop local server" }));
+  mounted.rerender(view(target));
+  expect(screen.getAllByRole("button", { name: "Confirm server stop" })).toHaveLength(1);
+  mounted.rerender(view());
+  expect(screen.getByRole("button", { name: "Confirm server stop" })).toBeTruthy();
+  expect(stop).not.toHaveBeenCalled();
+  expect(restart).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm server stop" }));
+  await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
+  mounted.unmount(); target.remove();
 });

@@ -1,6 +1,7 @@
 import { validateDesktopRuntime } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { Modal } from "./ui";
@@ -26,18 +27,20 @@ function recoveryProblem(error: unknown) {
   return copy("local-registration.extra.881bd1533eb2");
 }
 
-export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = true }: { active?: boolean; busy: boolean; setBusy: (value: boolean) => void; recovered: (connection: NativeConnection) => Promise<void> }) {
+export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = true, target, inline = true }: { target?: HTMLElement; inline?: boolean; active?: boolean; busy: boolean; setBusy: (value: boolean) => void; recovered: (connection: NativeConnection) => Promise<void> }) {
   useLocale();
   const [status, setStatus] = useState<DesktopRegistration>();
   const [confirm, setConfirm] = useState(false);
   const [pending, setPending] = useState<RecoveryRequest>();
   const [error, setError] = useState<unknown>();
-  const operating = useRef(false);
+  const operating = useRef(false), alive = useRef(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const inspect = async () => {
     if (busy || operating.current) return;
     operating.current = true; setBusy(true); setError(undefined);
     try {
       const value = registration(await invoke<DesktopRegistration>("inspect_local_registration"));
+      if (!alive.current) return;
       if (pending && pending.serverId !== value.server_id) throw "invalid-evidence";
       setStatus(value);
       if (value.state === RegistrationState.Recovering) {
@@ -49,8 +52,8 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
         // Retire the completed request; any new recovery needs fresh confirmation.
         setPending(undefined); setConfirm(false);
       }
-    } catch (reason) { setError(reason); setStatus(undefined); }
-    finally { operating.current = false; setBusy(false); }
+    } catch (reason) { if (alive.current) { setError(reason); setStatus(undefined); } }
+    finally { operating.current = false; if (alive.current) setBusy(false); }
   };
   const recover = async () => {
     if (busy || operating.current || !status || (status.state === RegistrationState.Authorized && !pending)) return;
@@ -58,14 +61,16 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
     operating.current = true; setPending(original); setBusy(true); setError(undefined);
     try {
       const connection = await invoke<NativeConnection>("recover_local_registration", { deviceId: original.deviceId, revision: original.revision, requestId: original.requestId });
+      if (!alive.current) return;
       validateDesktopRuntime(connection);
       if (!id.test(connection.device_id) || connection.device_id === original.deviceId || connection.server_id !== status.server_id) throw "invalid-evidence";
       await recovered(connection);
+      if (!alive.current) return;
       setPending(undefined); setConfirm(false); setStatus(undefined);
-    } catch (reason) { setError(reason); }
-    finally { operating.current = false; setBusy(false); }
+    } catch (reason) { if (alive.current) setError(reason); }
+    finally { operating.current = false; if (alive.current) setBusy(false); }
   };
-  return <section aria-label={copy("local-registration.desktopRegistration_65a097")}>
+  const view = <section aria-label={copy("local-registration.desktopRegistration_65a097")}>
     <button disabled={busy} onClick={() => void inspect()}>{copy("local-registration.checkDesktopRegistration_a540c5")}</button>
     {status ? <p role="status">{status.state === RegistrationState.Authorized ? copy("local-registration.thisDesktopRegistrationIsAuthorized_f356ec") : status.state === RegistrationState.Revoked ? copy("local-registration.thisDesktopRegistrationWasRevokedYou_1f8ea7") : copy("local-registration.aDesktopRegistrationRecoveryIsPending_de3baf")}</p> : null}
     {status && (status.state !== RegistrationState.Authorized || pending) ? <button disabled={busy} onClick={() => setConfirm(true)}>{pending ? copy("local-registration.continueDesktopRecovery_250cf5") : copy("local-registration.reRegisterThisDesktop_405621")}</button> : null}
@@ -78,4 +83,5 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
       <button disabled={busy || !status} onClick={() => void recover()}>{busy ? copy("local-registration.recovering_959bdc") : pending ? copy("local-registration.retryOriginalDesktopRecovery_3b14fa") : copy("local-registration.confirmDesktopReRegistration_d9ee3f")}</button>
     </Modal>
   </section>;
+  return target ? createPortal(view, target) : <div hidden={!inline}>{view}</div>;
 }

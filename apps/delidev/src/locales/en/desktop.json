@@ -40,9 +40,9 @@
   "desktop.keychainRetry": "Try again",
   "desktop.keychainConfirmation": "Keychain access was canceled or denied. Allow access when macOS asks, then try again.",
   "desktop.keychainUnavailable": "Keychain access is unavailable. Check this computer’s Keychain and try again.",
-  "desktop.keychainRecovery": "A saved credential needs recovery. Keep your existing keys and open Connection & diagnostics.",
-  "desktop.keychainExecutableChanged": "The running server’s code could not be verified. Keep your existing keys and restart through Connection & diagnostics.",
-  "desktop.keychainDenied": "This desktop is no longer authorized. Open Connection & diagnostics.",
+  "desktop.keychainRecovery": "A saved credential needs recovery. Preserve the original keys and restore access to the original macOS Keychain item, then retry this attempt. Continue without access to use workflows that do not need these credentials.",
+  "desktop.keychainExecutableChanged": "The running server code could not be verified. Preserve the existing keys. Quit and reopen the trusted installed DeliDev app before retrying; do not approve an unexpected executable in the Keychain prompt.",
+  "desktop.keychainDenied": "This desktop is no longer authorized. Preserve the existing keys. Continue without access, then use Check desktop registration to confirm the original registration before explicitly re-registering.",
   "desktop.keychainObservationFailed": "The original access check could not be observed. Try again to observe the same attempt.",
   "desktop.keychainSkipped": "Keychain access checking was skipped for this launch. Saved account status is unchanged.",
   "desktop.keychainDismiss": "Dismiss"

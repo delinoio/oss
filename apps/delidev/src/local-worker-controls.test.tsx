@@ -91,7 +91,7 @@ it.each([
   [LocalWorkerState.Running, "Controller running", "Worker controller running. Server connectivity and harness readiness are shown separately below.", true, false, true],
   [LocalWorkerState.Stopping, "Stopping", "Stop intent saved; waiting for the original Worker controller to exit.", true, false, true],
   [LocalWorkerState.Exited, "Exited", "Worker controller exited. Existing session cleanup and recovery remain separate.", false, true, false],
-  [LocalWorkerState.Uncertain, "Exit unconfirmed", "Worker exit is unconfirmed. Inspect its private log and original session recovery before explicitly replacing the controller.", false, true, true],
+  [LocalWorkerState.Uncertain, "Exit unconfirmed", "Worker exit is unconfirmed. Refresh its original status and review the affected session recovery before explicitly replacing the controller.", false, true, true],
 ] as const)("presents the truthful %s badge with the existing lifecycle predicates", async (state, badge, description, controller_active, start, stop) => {
   const value = { ...running(), state, controller_active, generation: state === LocalWorkerState.NotStarted ? undefined : running().generation };
   render(<LocalWorkerControls presentation={LocalWorkerPresentation.RunnerDevices} control={async () => value} active changed={() => {}} />);
