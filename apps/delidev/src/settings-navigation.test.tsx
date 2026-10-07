@@ -6,16 +6,20 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountOAuthAttemptSchema, AccountOAuthState, AccountService, EntityKind, ProviderConnectionMethod, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { AccountOAuthAttemptSchema, AccountOAuthState, AccountService, ApiAuthentication, ApiProtocol, EntityKind, ProviderConnectionMethod, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ProviderApiFormatSchema, ResourceSchema, ResourceService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, OAuthNativeProvider, type OAuthNativeControl } from "./account-oauth";
 import { encode } from "./documents";
 import { Settings } from "./settings";
 
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
-function fixture(delay?: "begin" | "start") {
+function fixture(delay?: "begin" | "start", selecting = false) {
   const pending = deferred(), providerId = newRequestId(), generation = newRequestId();
   const provider = create(ResourceSchema, { kind: EntityKind.PROVIDER, id: providerId, schemaVersion: 1, revision: 3n, documentJson: encode({ name: "OpenRouter", preset_id: "openrouter", endpoint: "https://openrouter.ai/api/v1", protocol: "openai-chat", authentication: "bearer", enabled: true }) });
-  const entry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENROUTER, providerId, displayName: "OpenRouter", enabled: true, provider, accountCountsAvailable: true, connectionMethod: ProviderConnectionMethod.OAUTH_PKCE });
+  const entry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENROUTER, providerId, displayName: "OpenRouter", enabled: true, provider, accountCountsAvailable: true, connectionMethod: ProviderConnectionMethod.OAUTH_PKCE, apiFormats: selecting ? [
+    create(ProviderApiFormatSchema, { protocol: ApiProtocol.OPENAI_RESPONSES, endpoint: "https://openrouter.ai/api/v1", authentication: ApiAuthentication.BEARER }),
+    create(ProviderApiFormatSchema, { protocol: ApiProtocol.OPENAI_CHAT, endpoint: "https://openrouter.ai/api/v1", authentication: ApiAuthentication.BEARER }),
+    create(ProviderApiFormatSchema, { protocol: ApiProtocol.ANTHROPIC_MESSAGES, endpoint: "https://openrouter.ai/api/v1", authentication: ApiAuthentication.BEARER }),
+  ] : [] });
   const attempt = create(AccountOAuthAttemptSchema, { id: newRequestId(), providerId, revision: 1n, state: AccountOAuthState.ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION, expiresAt: new Date(Date.now() + 600000).toISOString() });
   const start = vi.fn(async request => { if (delay === "start") await pending.promise; return { attempt, requestId: request.provider?.requestId, authorizationUrl: "https://openrouter.ai/auth?fixture" }; });
   let callback = false, connected = false;
@@ -28,7 +32,7 @@ function fixture(delay?: "begin" | "start") {
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({}) });
     router.service(ResourceService, { listResources: list, getResource: () => ({ resource: provider }) });
-    router.service(ProviderService, { listProviderPresets: () => ({ presetsJson: encode([]) }), listProviderInventory: () => ({ entries: [entry], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER, ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1] }) });
+    router.service(ProviderService, { listProviderPresets: () => ({ presetsJson: encode([]) }), listProviderInventory: () => ({ entries: [entry], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER, ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1, ...(selecting ? [ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_OAUTH_API_PROTOCOL_V1] : [])] }) });
     router.service(AccountService, { startAccountOAuth: start, getAccountOAuthStatus: () => ({ attempt }), cancelAccountOAuth: cancel, completeAccountOAuth: complete });
   });
   const native = vi.fn<OAuthNativeControl>(async (_opening, action, original) => {
@@ -38,7 +42,7 @@ function fixture(delay?: "begin" | "start") {
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><Settings /></OAuthNativeProvider></QueryClientProvider></TransportProvider></StrictMode>);
-  return { pending, start, cancel, complete, native, list, trigger: () => { callback = true; } };
+  return { pending, start, cancel, complete, native, list, entry, trigger: () => { callback = true; } };
 }
 async function add() {
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
@@ -47,6 +51,18 @@ async function add() {
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue in browser" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Continue in browser" }));
 }
+it("uses inventory API formats when a managed legacy provider document has only its original tuple", async () => {
+  const value = fixture(undefined, true);
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add AI API key" }));
+  const format = await screen.findByRole("combobox", { name: "API format" }) as HTMLSelectElement;
+  expect(format.options.length).toBe(4);
+  expect(format.options[1].value).toBe("openai-responses");
+  expect(format.options[2].value).toBe("openai-chat");
+  expect(format.options[3].value).toBe("anthropic-messages");
+  expect(JSON.parse(new TextDecoder().decode(value.entry.provider?.documentJson))).not.toHaveProperty("api_formats");
+  expect(value.start).not.toHaveBeenCalled();
+});
 it("starts a provider entry once after mounting its destination under Strict Mode and disposes only local callback authority", async () => {
   const value = fixture();
   expect(value.native.mock.calls.every(call => call[1] === OAuthNativeAction.Profiles)).toBe(true); expect(value.start).not.toHaveBeenCalled();

@@ -65,7 +65,7 @@ function checkedAccount(value: Resource | undefined, pending: Pending): Resource
 
 function oauthFormats(provider: AccountProviderSummary) {
   const body = document(provider.provider);
-  return providerAPIFormats(body).filter(profile => profile.authentication === APIAuthenticationId.Bearer);
+  return (provider.apiFormats ?? providerAPIFormats(body)).filter(profile => profile.authentication === APIAuthenticationId.Bearer);
 }
 
 export function useAccountOAuth() {
@@ -301,7 +301,7 @@ export function AccountOAuth({ flow, back, manual, done, metadataReady = true, m
   const configuring = view.stage === Stage.Configure;
   const gemini = profileOf(view.provider) === AccountOAuthProfile.GoogleGemini;
   const selecting = view.provider.oauthFormatSelectingAvailable;
-  const formats = selecting ? oauthFormats(view.provider) : providerAPIFormats(document(view.provider.provider)).filter(profile => profile.protocol === document(view.provider.provider).protocol);
+  const formats = selecting ? oauthFormats(view.provider) : (view.provider.apiFormats ?? providerAPIFormats(document(view.provider.provider))).filter(profile => profile.protocol === document(view.provider.provider).protocol);
   const protocol = protocolChoice || (formats.length === 1 ? formats[0].protocol : "");
   const progress = view.stage === Stage.Starting ? copy("account-oauth.extra.d2fd2ff796d5") : view.stage === Stage.Exchanging ? copy("account-oauth.extra.e290f644cae5") : view.stage === Stage.Saving ? copy("account-oauth.extra.adfcae535266") : view.stage === Stage.Canceling ? copy("account-oauth.extra.1d7dcbdd28ae") : view.stage === Stage.Recovering ? copy("account-oauth.extra.b62b51814edd") : waiting ? copy("account-oauth.extra.808197b5a070") : view.stage === Stage.Expired ? copy("account-oauth.extra.92b4263f2141") : view.stage === Stage.Interrupted ? copy("account-oauth.extra.3b6a9f24087b") : view.stage === Stage.Canceled ? copy("account-oauth.extra.9198736066a6") : copy("account-oauth.extra.dcf547440e7c");
   const leave = (fallback: boolean, callback: () => void) => void flow.abandon(fallback, () => callback());

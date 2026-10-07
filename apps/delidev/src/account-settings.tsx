@@ -23,6 +23,7 @@ import {
   ResourceQuery,
   UsageQuery,
   newRequestId,
+  type APIFormatProfile,
   type Resource,
 } from "@delinoio/delidev-api-client";
 import "./api-account.css";
@@ -49,6 +50,7 @@ export interface AccountProviderSummary {
   keyCreationUrl?: string;
   oauthAvailable?: boolean;
   oauthFormatSelectingAvailable?: boolean;
+  apiFormats?: APIFormatProfile[];
 }
 
 export interface AccountProviderPicker {
@@ -118,24 +120,32 @@ function validAccountObservation(resource: Resource | undefined, id: string, pro
   return data.type === "api" && data.provider_id === providerId;
 }
 
-function providerContract(provider: AccountProviderSummary, protocol?: APIFormatId | ""): { id: string; authentication: string; protocol: string; endpoint: string; enabled: boolean; formats: string } {
+function providerFormats(provider: AccountProviderSummary): APIFormatProfile[] {
+  return provider.apiFormats ?? providerAPIFormats(document(provider.provider));
+}
+
+function providerContract(provider: AccountProviderSummary, protocol?: APIFormatId | ""): { id: string; authentication: string; protocol: string; endpoint: string; enabled: boolean; formats: string; rawAuthentication: string; rawProtocol: string; rawEndpoint: string; rawFormats: string } {
   const data = document(provider.provider);
-  const selected = protocol ? providerAPIFormats(data).find(profile => profile.protocol === protocol) : undefined;
-  return { id: provider.providerId, authentication: selected?.authentication ?? text(data.authentication), protocol: selected?.protocol ?? text(data.protocol), endpoint: selected?.endpoint ?? text(data.endpoint), enabled: provider.enabled, formats: JSON.stringify(providerAPIFormats(data)) };
+  const formats = providerFormats(provider);
+  const selected = protocol ? formats.find(profile => profile.protocol === protocol) : undefined;
+  return { id: provider.providerId, authentication: selected?.authentication ?? text(data.authentication), protocol: selected?.protocol ?? text(data.protocol), endpoint: selected?.endpoint ?? text(data.endpoint), enabled: provider.enabled, formats: JSON.stringify(formats), rawAuthentication: text(data.authentication), rawProtocol: text(data.protocol), rawEndpoint: text(data.endpoint), rawFormats: JSON.stringify(providerAPIFormats(data)) };
 }
 
 function providerContractMatches(expected: ReturnType<typeof providerContract>, resource: Resource | undefined): boolean {
   if (!resource || resource.kind !== EntityKind.PROVIDER || !supportsResourceSchema(resource) || resource.id !== expected.id) return false;
   const data = document(resource);
   const enabled = data.enabled !== false;
-  const profile = providerAPIFormats(data).find(profile => profile.protocol === expected.protocol);
-  return profile?.authentication === expected.authentication && profile.endpoint === expected.endpoint &&
-    JSON.stringify(providerAPIFormats(data)) === expected.formats && enabled === expected.enabled && expected.enabled;
+  const selected = (JSON.parse(expected.formats) as APIFormatProfile[]).find(profile => profile.protocol === expected.protocol);
+  return Boolean(selected && selected.authentication === expected.authentication && selected.endpoint === expected.endpoint &&
+    text(data.authentication) === expected.rawAuthentication && text(data.protocol) === expected.rawProtocol &&
+    text(data.endpoint) === expected.rawEndpoint && JSON.stringify(providerAPIFormats(data)) === expected.rawFormats &&
+    enabled === expected.enabled && expected.enabled);
 }
 
 function sameProviderContract(left: ReturnType<typeof providerContract> | undefined, right: ReturnType<typeof providerContract>): boolean {
   return Boolean(left && left.id === right.id && left.authentication === right.authentication && left.protocol === right.protocol &&
-    left.endpoint === right.endpoint && left.enabled === right.enabled && left.formats === right.formats);
+    left.endpoint === right.endpoint && left.enabled === right.enabled && left.formats === right.formats &&
+    left.rawAuthentication === right.rawAuthentication && left.rawProtocol === right.rawProtocol && left.rawEndpoint === right.rawEndpoint && left.rawFormats === right.rawFormats);
 }
 
 function AccountCreationWizard({
@@ -229,7 +239,7 @@ function AccountCreationWizard({
     setFocusTarget(WizardFocus.None);
   }, [active, focusTarget, providerId, step, taskVisible]);
   const selectedProviderDocument = document(selectedProvider?.provider);
-  const formats = providerAPIFormats(selectedProviderDocument).sort((a, b) => Object.values(APIFormatId).indexOf(a.protocol) - Object.values(APIFormatId).indexOf(b.protocol));
+  const formats = (selectedProvider ? providerFormats(selectedProvider) : providerAPIFormats(selectedProviderDocument)).sort((a, b) => Object.values(APIFormatId).indexOf(a.protocol) - Object.values(APIFormatId).indexOf(b.protocol));
   const protocol = protocolChoice || (formats.length === 1 ? formats[0].protocol : "");
   const selectedProfile = formats.find(profile => profile.protocol === protocol);
   const selectedAuthentication = selectedProfile?.authentication ?? "";
