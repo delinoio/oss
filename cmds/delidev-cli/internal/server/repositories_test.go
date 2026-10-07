@@ -144,7 +144,7 @@ func TestRepositoryValidationIsAtomicAcrossWorkersAndRevisions(t *testing.T) {
 	}
 }
 
-func TestRepositoryValidationOmitsSourceIdentityForLegacyWorkers(t *testing.T) {
+func TestRepositoryValidationRejectsWorkersWithoutSourceInspection(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
 	if err != nil {
@@ -159,34 +159,12 @@ func TestRepositoryValidationOmitsSourceIdentityForLegacyWorkers(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(domain.Repository{RemoteURL: "https://github.com/source/repo.git", Name: "repo", Checkouts: []domain.Checkout{{MachineID: machine, Path: "/tmp/repo"}}})
-	result, err := SaveConfiguration(ctx, db, ConfigurationMutation{RequestID: domain.NewID(), Kind: domain.RepositoryKind, Document: raw})
-	if err != nil {
-		t.Fatal(err)
+	_, err = SaveConfiguration(ctx, db, ConfigurationMutation{RequestID: domain.NewID(), Kind: domain.RepositoryKind, Document: raw})
+	if domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatal("Worker without source inspection was accepted", err)
 	}
-	var parent store.Record
-	if err := domain.Decode(result.Data, &parent); err != nil {
-		t.Fatal(err)
-	}
-	var children []store.Record
-	if err := db.Read(ctx, func(tx *store.Tx) error {
-		var err error
-		children, err = tx.Jobs("", parent.ID, "", "", store.MaxPage)
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if len(children) != 1 {
-		t.Fatalf("legacy inspection jobs: %d", len(children))
-	}
-	job, err := store.Decode[domain.Job](children[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	var input domain.RepositoryInspectionInput
-	if err := domain.Decode(job.Input, &input); err != nil {
-		t.Fatal(err)
-	}
-	if input.ExpectedRemoteIdentity != "" {
-		t.Fatal("legacy Worker received the post-capability source identity")
+	jobs, err := db.List(ctx, store.Filter{Kind: domain.JobKind, Limit: 10})
+	if err != nil || len(jobs) != 0 {
+		t.Fatal("unsupported Worker gained a repository job", err)
 	}
 }

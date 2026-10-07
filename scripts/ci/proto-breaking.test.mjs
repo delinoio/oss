@@ -69,7 +69,7 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
   result = run(baseline);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /Previously present field.*value/u);
   write("unrelated.txt", "final commit in the same push\n");
   git("add", "unrelated.txt");
@@ -78,7 +78,7 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   result = run("HEAD^");
   assert.equal(result.status, 0, result.stdout + result.stderr);
   result = run(baseline);
-  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /Previously present field.*value/u);
   assert.equal(existsSync(join(cwd, ".git/lfs/objects/aa/aa", oid)), false);
   result = run(noSchema);

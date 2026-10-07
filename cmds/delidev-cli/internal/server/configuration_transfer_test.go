@@ -433,7 +433,7 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 			targets := []domain.ID{domain.NewID(), domain.NewID()}
 			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Both checkouts", AutoFetch: true}
 			for i, source := range sources {
-				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"})
+				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64", WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}})
 				selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: source, Name: "source", OS: "linux", Architecture: "amd64"})
 				selection.Machines = append(selection.Machines, domain.ConfigurationMachineBinding{SourceID: source, TargetID: targets[i]})
 				repository.Checkouts = append(repository.Checkouts, domain.Checkout{MachineID: source, Path: "/untrusted/old"})
@@ -542,7 +542,7 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 			if outcome == "canonical-path" {
 				root = "/different/canonical"
 			}
-			job.Output, _ = json.Marshal(workspace.Inspection{Root: root, Name: "repository"})
+			job.Output, _ = json.Marshal(workspace.Inspection{Root: root, Name: "repository", Remotes: []string{"origin"}, GitHubRepositories: map[string]workspace.GitHubRepository{"origin": {Owner: "fixture", Name: "repo"}}})
 			if outcome == "failure" && index == 1 {
 				job.State = domain.JobFailed
 				job.Problem = domain.Fail(domain.InvalidArgument, "fixture rejection", "Retry explicitly.")

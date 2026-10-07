@@ -33,7 +33,7 @@ it("saves and inspects a real immutable model price through desktop settings and
   // Pricing uses an inline settings task. A missing dialog does not signal a
   // completed save; the editor heading disappears after its mutation settles.
   await waitFor(() => expect(screen.queryByRole("heading", { name: "New pricing version" })).toBeNull());
-  const usage = createClient(UsageService, UsageAccountingProfile, transport);
+  const usage = createClient(UsageService, transport);
   const original = await usage.getModelPricing({ modelId: model.id });
   expect(original.modelRevision).toBe(model.revision);
   expect(original.pricing?.basis?.inputPerMillion).toBe("0.000000001");
