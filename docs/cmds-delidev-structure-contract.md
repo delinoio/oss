@@ -22,6 +22,18 @@ configuration version 4 protect explicit selections from older-client writes whi
 retaining legacy reads. Follow the catalog, account and proxy contracts.
 
 
+
+## Direct execution startup reservation
+
+The [startup contract](cmds-delidev-execution-startup-contract.md) reserves System
+43, Worker 23, `ReportExecutionStartupRequest`, `ReportExecutionStartupResponse`,
+`ExecutionStartupObservation` and the four closed startup enums under issue #964.
+The allocation ledger owns every field and enum member of these new declarations.
+Establish the complete closure on main before dependent implementation. Preserve
+System 42 and Worker 22 for the separate inline-model reservation in PR #1642.
+These reservations activate no schema, execution or credential authority and add
+no migration.
+
 ## Failed subscription cleanup reservations
 
 Issue #964 reserves System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41`, the

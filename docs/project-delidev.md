@@ -57,6 +57,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Direct execution startup (planned)](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
