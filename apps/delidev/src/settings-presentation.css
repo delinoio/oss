@@ -94,6 +94,4 @@
 /* Language is a device preference and follows the existing Appearance body. */
 .settings-content .language-settings { max-width: 720px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
 .settings-content .language-settings label { font-size: 16px; line-height: 24px; font-weight: 600; }
-.settings-content .language-settings select { width: min(320px, 100%); min-height: 40px; }
-@container settings-body (max-width: 639px) { .settings-content .language-settings select { width: 100%; } }
 .settings-content[aria-label] .settings-breadcrumb { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 18px; }
