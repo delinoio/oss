@@ -426,6 +426,13 @@ func (m *Manager) cleanupDeletionFinalRoots(ctx context.Context, w domain.Sessio
 			if len(namespace[copy.JobID]) != 0 {
 				return domain.SessionDeletionPending()
 			}
+			// The previous retirement may have removed the proof but failed to
+			// synchronize its parent. Before generic cleanup retires the intent
+			// and journal, make the observed absence durable so a crash cannot
+			// resurrect an unsynchronized claim without its final-root proof.
+			if err := security.SyncParent(m.finalRemovalClaimPath(copy.JobID)); err != nil {
+				return domain.SessionDeletionPending()
+			}
 			continue
 		}
 		raw, err := security.ReadPrivate(m.removalIntentPath(copy.JobID), maxSnapshotManifest)
