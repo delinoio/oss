@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { expect, it, vi } from "vitest";
 import { AccountingUnitKind, EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, SystemService, UsageTimeGranularity, UsageAccountingProfile, UsageTotalsSchema, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
+import { SidebarOutletProvider } from "./sidebar-context";
 import { encode } from "./documents";
 
 function fixture() {
@@ -44,22 +45,20 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
   expect(f.read.mock.calls[0][0].accountingProfile).toBe(UsageAccountingProfile.NATIVE_UNITS_V1);
 });
 
-it("applies filters explicitly and preserves a draft across navigation", async () => {
+it("applies selections immediately and preserves invalid dates across navigation", async () => {
   const f = fixture(); const view = render(f.view());
   await screen.findByText("Incomplete coverage");
   await chooseScrollOption(screen.getByRole("combobox", { name: "Account" }), f.ids.account);
   fireEvent.click(screen.getByRole("checkbox", { name: "General Chat only" }));
   expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).disabled).toBe(true);
-  expect(f.read).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(3));
   view.rerender(f.view(false)); view.rerender(f.view());
   expect((screen.getByRole("combobox", { name: "Account" }) as HTMLSelectElement).dataset.value).toBe(f.ids.account);
-  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
-  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
-  expect(f.read.mock.calls[1][0]).toMatchObject({ accountId: f.ids.account, generalChat: true, projectId: "" });
+  expect(screen.queryByRole("button", { name: "Apply filters" })).toBeNull();
+  expect(f.read.mock.calls[2][0]).toMatchObject({ accountId: f.ids.account, generalChat: true, projectId: "" });
   fireEvent.change(screen.getByLabelText(/^From \(/), { target: { value: "2026-09-25T10:00" } });
   fireEvent.change(screen.getByLabelText(/^Until \(/), { target: { value: "2026-09-24T10:00" } });
-  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
-  await screen.findByRole("alert"); expect(f.read).toHaveBeenCalledTimes(2);
+  await screen.findByRole("alert"); expect(f.read).toHaveBeenCalledTimes(3);
 });
 
 it.each([false, true])("keeps native-only groups and models out of response views with mixed responses=%s", async (mixed) => {
@@ -133,7 +132,7 @@ it("labels a new applied time scope while its result is still loading", async ()
   f.read.mockImplementationOnce(() => new Promise(() => {}));
   fireEvent.change(screen.getByLabelText(/^From \(/), { target: { value: "2026-09-23T10:00" } });
   fireEvent.change(screen.getByLabelText(/^Until \(/), { target: { value: "2026-09-24T10:00" } });
-  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+  await screen.findByText("Loading token usage…");
   const applied = screen.getByRole("group", { name: "Applied conditions" });
   expect(applied.textContent).toContain("2026");
   expect(applied.textContent).not.toContain("Last 30 days · server time");
@@ -281,4 +280,62 @@ it("consumes an account entry once, preserves its exact bounds and retains subse
   view.rerender(viewFor(true, next));
   await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
   expect(f.read.mock.calls[1][0].accountId).toBe(next.accountId);
+});
+
+it("retains the drawer and input focus on automatic dates and selections, while Refresh keeps the applied range", async () => {
+  const f = fixture(); const closeDrawer = vi.fn();
+  render(<SidebarOutletProvider target={null} drawerOpen closeDrawer={closeDrawer}>{f.view()}</SidebarOutletProvider>);
+  await screen.findByText("Incomplete coverage");
+  const input = screen.getByLabelText(/^From \(/) as HTMLInputElement;
+  input.focus();
+  fireEvent.change(input, { target: { value: "2026-09-01T10:00" } });
+  expect(document.activeElement).toBe(input);
+  expect(screen.getAllByText(/Waiting for date input/).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+  expect(f.read.mock.calls[1][0].fromUnixMs).toBe(0n);
+  fireEvent.change(screen.getByLabelText(/^Until \(/), { target: { value: "2026-09-02T10:00" } });
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(3));
+  expect(closeDrawer).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(input);
+  fireEvent.click(screen.getByRole("checkbox", { name: "General Chat only" }));
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(4));
+  expect(closeDrawer).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Waiting for date input/)).toBeNull();
+});
+
+it("keeps current query results when an older scope resolves later, without showing old data under new conditions", async () => {
+  const f = fixture(); render(f.view());
+  await screen.findByText("Incomplete coverage");
+  let finishA!: (data: typeof f.data) => void;
+  let finishB!: (data: typeof f.data) => void;
+  f.read.mockImplementationOnce(() => new Promise(resolve => { finishA = resolve; }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "General Chat only" }));
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText("Retained session")).toBeNull();
+  expect(screen.getByText("Loading token usage…")).toBeTruthy();
+  f.read.mockImplementationOnce(() => new Promise(resolve => { finishB = resolve; }));
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Account" }), f.ids.account);
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(3));
+  const b = create(GetUsageSummaryResponseSchema, f.data);
+  b.groups[0].sessionName = "Latest scope";
+  finishB(b);
+  await screen.findByText("Latest scope");
+  const a = create(GetUsageSummaryResponseSchema, f.data);
+  a.groups[0].sessionName = "Earlier scope";
+  finishA(a);
+  await waitFor(() => expect(screen.queryByText("Loading token usage…")).toBeNull());
+  expect(screen.getByText("Latest scope")).toBeTruthy();
+  expect(screen.queryByText("Earlier scope")).toBeNull();
+  expect(screen.getByRole("group", { name: "Applied conditions" }).textContent).toContain(f.ids.account);
+});
+
+it("does not reuse old scope data when a new valid selection fails", async () => {
+  const f = fixture(); render(f.view()); await screen.findByText("Incomplete coverage");
+  f.read.mockRejectedValueOnce(new ConnectError("Fixture unavailable", Code.Unavailable));
+  fireEvent.click(screen.getByRole("checkbox", { name: "General Chat only" }));
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+  await screen.findByRole("alert");
+  expect(screen.queryByText("Retained session")).toBeNull();
+  expect(screen.queryByText(/These are the last successfully retrieved values/)).toBeNull();
 });
