@@ -129,6 +129,35 @@ installation, configuration/storage references, original/target definitions and
 file identities, native process identity, UUID-v7 token and typed operation stage.
 It contains no credentials and adds no public field or SQLite migration.
 
+
+Publication has its own private typed stages: prepared, claim-pending, claimed,
+publish-pending, published, restore-pending and restored. Derive the claim name
+from the journal's UUID-v7 token beside the canonical definition. Persist claim
+intent before moving the canonical file with a no-replace rename. Sync the moved
+file and directory, then record its exact identity and SHA-256 digest. Unknown
+external bytes remain in the private claimed file, outside journal content. Only
+the captured original may authorize publishing the verified staged target, also by a
+no-replace rename into the vacant canonical path. Darwin uses `RENAME_EXCL`;
+Linux uses `RENAME_NOREPLACE`. Unsupported operations fail closed; no replacing
+rename or exchange fallback is allowed. Sync each rename's directory before
+recording its observed outcome. Verify the complete target at the canonical
+path before native replacement on either platform.
+
+A changed claim or an occupied publication destination aborts before native
+replacement. Record restoration intent and restore the captured definition only
+with a no-replace rename into a vacant canonical path. A later writer remains
+authoritative; retain its canonical file, the claim, staged bytes and journal on
+conflict. Interrupted claim/publication/restoration resumes from the token,
+recorded identities and verified files, including when the canonical path is
+temporarily absent. Symlink, permission, identity, byte or sync uncertainty
+retains private intent for retry or operator reconciliation. Legacy private
+journals remain supported conservatively: a published target permits only a
+missing staging file or the exact displaced original; unknown staging bytes
+block native replacement. Successful completion retains the displaced original
+as a private claim file and retires the journal. Unjournaled retained claims
+grant no authority to publish, restore or delete a definition; automatic
+pathname-based deletion could race another writer.
+
 The journal records the reload CLI's PID and process-start identity as its
 completion owner. While holding the service-operation lock, an authenticated
 retry atomically replaces that identity with its own verified identity through
@@ -141,6 +170,7 @@ records without an initiator remain conservative until recovery claims them.
 The retry removes its journal only after readiness and final normal reload
 acceptance succeed.
 
+
 Linux atomically publishes the target definition, performs `daemon-reload`,
 revalidates the original active invocation against its captured definition, and
 uses `systemctl --user kill --kill-who=main --signal=SIGKILL runmoor.service`.
@@ -152,9 +182,9 @@ macOS uses `launchctl debug --program` with an exact one-run private
 reads only its private authority record, keeps no manager state and waits for
 unload or user-session termination. It remains available if the initiating CLI
 is interrupted. Verify its exact arguments before `bootout`, confirm a reachable
-GUI domain, publish the target plist, then `bootstrap`. This replaces launchd's
-cached executable as well as its on-disk reference; `AbandonProcessGroup=true`
-continues to protect independent executions. An inactive unverified loaded job
+GUI domain, reverify the already published target plist, then `bootstrap`. This
+replaces launchd's cached executable as well as its on-disk reference;
+`AbandonProcessGroup=true` continues to protect independent executions. An inactive unverified loaded job
 or a changed native/definition identity remains an error.
 
 The actual replacement service and a verified restart of the exact previous

@@ -1,3 +1,6 @@
+import { useShortcuts } from "./shortcut-provider";
+import { ShortcutId, ShortcutInput } from "./shortcuts";
+import { Surface } from "./surface";
 import { ownedMessage, useProductMessage, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -79,6 +82,8 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
 
 export function RequestDiagnostics({ sessionId, close }: { sessionId: string; close: () => void }) {
   useLocale();
+  const panelRoot = useRef<HTMLElement>(null);
+  const shortcuts = useShortcuts([{ id: ShortcutId.DiagnosticsClose, scope: Surface.Sessions, label: "shortcuts.closeDiagnostics", bindings: [{ key: "Escape" }], target: panelRoot, input: ShortcutInput.Target, run: close }]);
   const input = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(""), [execution, setExecution] = useState(""), [page, setPage] = useState("");
   const [problem, setProblem] = useProductMessage("");
@@ -89,8 +94,8 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
     select: (response) => validateDiagnosticPage(response, sessionId, execution),
   });
   useEffect(() => { input.current?.focus(); }, []);
-  return <aside className="session-files" aria-label={copy("request-diagnostics.modelRequestDiagnostics_0c266b")} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
-    <header><h2>{copy("request-diagnostics.modelRequestDiagnostics_0c266b")}</h2><button onClick={close}>{copy("request-diagnostics.closeDiagnostics_143427")}</button></header>
+  return <aside ref={panelRoot} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiagnosticsClose)} className="session-files" aria-label={copy("request-diagnostics.modelRequestDiagnostics_0c266b")} onKeyDown={shortcuts.onKeyDown}>
+    <header><h2>{copy("request-diagnostics.modelRequestDiagnostics_0c266b")}</h2><button onClick={close} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiagnosticsClose)}>{copy("request-diagnostics.closeDiagnostics_143427")}</button></header>
     <p>{copy("request-diagnostics.nativeInputsAndIndividualHttpAttempts_6d3cf6")}</p>
     <p>{copy("request-diagnostics.httpLatencyCoversTheObservedRequest_bc4448")}</p>
     <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a")); return; } setProblem(""); setExecution(draft); setPage(""); }}>

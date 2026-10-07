@@ -7,6 +7,8 @@ import { useQuery } from "@connectrpc/connect-query";
 import { FailureCode, SystemQuery } from "@delinoio/delidev-api-client";
 import { Workspace, workspaceNames } from "./documents";
 import { Surface } from "./views";
+import { useShortcutHelp, useGlobalShortcutAria } from "./shortcut-provider";
+import { ShortcutId } from "./shortcuts";
 import type { SettingsEntryDestination } from "./settings";
 import { HomeNavigation, ReadStage, type NavigationRow } from "./home-navigation";
 import { HomeScope, useNavigationQuery } from "./home-navigation-query";
@@ -47,6 +49,7 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
     case "computer": return <svg {...common}><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></svg>;
     case "chat": return <svg {...common}><path d="M4 5h16v12H9l-5 4z"/><path d="M8 9h8M8 13h5"/></svg>;
     case "chat-plus": return <svg {...common}><path d="M4 5h16v12H9l-5 4z"/><path d="M12 8v6M9 11h6"/></svg>;
+    case "help":
     case "unknown": return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 4.3 1.2c-.9 1.1-2.1 1.2-2.1 3M12 17h.01"/></svg>;
     case "options": return <svg {...common}><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>;
     case "server": return <svg {...common}><rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/><path d="M7 7h.01M7 17h.01M12 7h5M12 17h5"/></svg>;
@@ -368,6 +371,10 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
     home.resetSessions();
   };
 
+  const openShortcutHelp = useShortcutHelp();
+  const helpAria = useGlobalShortcutAria(ShortcutId.Help);
+  const searchAria = useGlobalShortcutAria(ShortcutId.Search);
+  const newSessionAria = useGlobalShortcutAria(ShortcutId.NewSession);
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
   const chooseNewSession = (projectId?: string) => { newSession(projectId); setDrawerOpen(false); };
   return <SessionHoverProvider enabled={active} scope={surface}><aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
@@ -378,6 +385,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       <SidebarButton label={copy("sidebar.schedules_221ff1")} icon="schedules" current={surface === Surface.Schedules} onClick={() => navigate(Surface.Schedules)} />
       <SidebarButton label={copy("sidebar.activity_38da15")} icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
       <span className="sidebar-rail-spacer" />
+      <button type="button" className="sidebar-rail-button" aria-label={copy("shortcuts.title")} aria-keyshortcuts={helpAria} aria-haspopup="dialog" onClick={openShortcutHelp}><Icon name="help" /><span className="sidebar-rail-tooltip" aria-hidden="true">{copy("shortcuts.title")}</span></button>
       <SidebarButton label={copy("sidebar.settings_74a883")} icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
     <dialog ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? copy("sidebar.delidevNavigation_a550af") : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
@@ -386,11 +394,11 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
         <h1>{copy("sidebar.delidev_44fcad")}</h1>
         {sessionNavigation ? <div className="sidebar-header-actions">
           <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.inbox_94835e")} onClick={() => navigateHeader(Surface.Inbox)}><Icon name="inbox" /></button>
-          <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.search_49c266")} onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
+          <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.search_49c266")} aria-keyshortcuts={searchAria} onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
         </div> : null}
       </header>
       <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>{copy("sidebar.closeNavigation_99904d")}</button>
-      {sessionNavigation ? <button type="button" className="sidebar-new-session" aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />{copy("sidebar.newSession_cffdba")}</button> : null}
+      {sessionNavigation ? <button type="button" className="sidebar-new-session" aria-keyshortcuts={newSessionAria} aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />{copy("sidebar.newSession_cffdba")}</button> : null}
       {sessionNavigation ? <button type="button" className="sidebar-new-general-chat" aria-current={surface === Surface.NewGeneralChat ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newGeneralChat(); setDrawerOpen(false); }}><Icon name="chat-plus" />{copy("sidebar.newGeneralChat")}</button> : null}
       <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? copy("sidebar.projectAndSessionNavigation_ccbca5") : copy("sidebar.menuNavigationAndFilters_b5a21d")}>
         <div hidden={!sessionNavigation}>

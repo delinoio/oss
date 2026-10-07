@@ -973,3 +973,9 @@ initializes the current functional layout and removes upgrades from schemas
 1–31. Unsupported DBs and backups retain their original files and sidecars;
 no startup, inspection or restore may silently convert or reset them. This
 reservation adds no executable migration or runtime capability.
+
+## Inline Worker models and endpoint-only completion reservation
+
+DB baseline 32 directly initializes the complete Model-free current schema: inline Worker definitions, source/native-ID pricing and immutable execution/usage attribution. Remove persistent catalogs and model indexes/suppressions. Earlier DBs and backups are unsupported. The owner waives earlier DB retention and permits explicit DB/sidecar reset; protected credentials and native ownership retain their original cleanup authority. No conversion or placeholder migration is permitted.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

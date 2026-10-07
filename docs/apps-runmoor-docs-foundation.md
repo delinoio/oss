@@ -98,6 +98,8 @@ reload never starts a stopped service, downloads a release or downgrades.
 Explain that an interrupted operation can have changed the service executable
 before configuration acceptance. Users inspect status/the user service and retry
 with the same CLI/configuration; incompatible rollback remains prohibited.
+Explain that manual or tool-written service-definition edits that conflict with
+publication remain preserved and block native replacement until reconciliation.
 Keep the internal journal, temporary helper and native command choreography out
 of public guides. Preserve manual package installation and drained backup/rollback
 workflows and distinguish fixtures/builds from actual platform and job acceptance.
