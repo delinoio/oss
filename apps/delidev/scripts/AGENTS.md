@@ -85,3 +85,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 
 - Concurrent localization preparation publishes each generated compiler input through unique same-directory atomic replacement and skips unchanged output. Never truncate a live catalog; keep staging files disposable and remove them after failure.
+
+- `test-subscription-rail-layout.mjs` builds only the isolated synthetic quota rail fixture into an external temporary directory. Use host Playwright/Chrome to verify bilingual themes, wide/960px/effective-200%-reflow viewports, bounded popover placement, keyboard dismissal/focus and independent continuation with fixed Help/Settings. Keep screenshots outside the checkout and exclude the fixture from release entrypoints. Browser evidence grants no real-account, quota/native or packaged CEF acceptance.

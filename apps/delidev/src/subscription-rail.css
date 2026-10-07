@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.subscription-rail-group { min-height: 0; flex: 0 1 auto; max-height: 42%; width: 44px; display: flex; }
+.sidebar-rail > .sidebar-rail-button { flex-shrink: 0; }
+.subscription-rail-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; width: 44px; scrollbar-width: none; padding: 3px 0; }
+.subscription-rail-account { width: 44px; min-width: 44px; margin-bottom: 6px; }
+.subscription-rail-account[aria-expanded=true] { background: var(--surface-selected); border-color: var(--selected-border); }
+.subscription-rail-badge { position: absolute; right: 0; top: 0; padding: 1px 2px; background: var(--surface-muted); border: 1px solid var(--surface); border-radius: 5px; color: var(--text); font-size: 10px; line-height: 14px; font-weight: 650; }
+.subscription-rail-guidance, .subscription-rail-scroll > [role=status], .subscription-rail-scroll .sidebar-continuation, .subscription-rail-reload { font-size: 10px; overflow-wrap: anywhere; }
+.subscription-rail-scroll .sidebar-continuation button, .subscription-rail-reload { width: 100%; padding: 3px 1px; min-width: 0; }
+.subscription-rail-popover { position: fixed; inset: auto; margin: 0; width: 280px; max-width: calc(100vw - 8px); max-height: calc(100dvh - 8px); overflow: auto; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); z-index: 40; font-size: 13px; overflow-wrap: anywhere; box-shadow: 0 4px 20px #0002; }
+.subscription-rail-popover header { align-items: flex-start; gap: 6px; }
+.subscription-rail-popover header button { padding: 0; width: 32px; min-width: 32px; min-height: 32px; }
+.subscription-rail-popover p { margin: 8px 0; }
+.subscription-rail-popover section { padding-block: 8px; border-top: 1px solid var(--border); }
+.subscription-rail-popover details { margin-block: 12px; }
