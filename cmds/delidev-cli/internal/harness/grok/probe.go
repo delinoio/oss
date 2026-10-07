@@ -17,6 +17,9 @@ import (
 )
 
 const SupportedVersion = domain.GrokProtocolVersion
+
+// Grok ACP has its own version, independent of the DeliDev Worker protocol.
+const acpProtocolVersion = 1
 const maxProbeFrame = 1 << 20
 const maxProbeStderr = 64 << 10
 
@@ -137,7 +140,7 @@ func Probe(ctx context.Context, config ProbeConfig) (returned error) {
 		Method  string           `json:"method"`
 		Params  initializeParams `json:"params"`
 	}{JSONRPC: "2.0", ID: requestID, Method: "initialize", Params: initializeParams{
-		ProtocolVersion: 2, ClientCapabilities: struct{}{}, ClientInfo: clientInfo{Name: "delidev", Title: "DeliDev", Version: "0.1.0"},
+		ProtocolVersion: acpProtocolVersion, ClientCapabilities: struct{}{}, ClientInfo: clientInfo{Name: "delidev", Title: "DeliDev", Version: "0.1.0"},
 	}})
 	writeDone = make(chan struct{})
 	var writeError error
