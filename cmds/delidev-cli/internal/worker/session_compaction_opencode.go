@@ -321,13 +321,15 @@ func readOpenCodeSessionCompactionCheckpoint(ctx context.Context, root string, c
 	}
 	raw, p, err := readOpenCodeCompactionDocument(path)
 	if err != nil || executionInputDigest(raw) != ref.CheckpointDigest || p.Version != 1 || p.Input.Validate() != nil || p.Input.Version != 3 || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", p.ServerID != credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", p.DeviceID != credential.DeviceID) ||
-		p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.Input.Assignment.AccountID != input.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.Input.Assignment.ConnectionID != input.ConnectionID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(p.ServerID), p.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(p.DeviceID), p.DeviceID != credential.DeviceID) ||
+		p.Input.Assignment.ExecutionID != ref.ExecutionID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Input.Assignment.SessionID), p.Input.Assignment.SessionID != input.SessionID) ||
+		p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Input.Assignment.AccountID), p.Input.Assignment.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Input.Assignment.ConnectionID), p.Input.Assignment.ConnectionID != input.ConnectionID) ||
 		p.Input.SourceJobID != input.Continuation.Previous.JobID || p.SourceDigest != source.NativeReference.SHA256 || p.NativeReference.SHA256 != ref.NativeDigest ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.NativeReference.OwnerID != ref.JobID) {
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.NativeReference.OwnerID), p.NativeReference.OwnerID != ref.JobID) {
 		return empty, domain.CompactionUncertain()
 	}
 	canonical, err := json.Marshal(p)
@@ -373,14 +375,18 @@ func readOpenCodeSessionCompactionCheckpoint(ctx context.Context, root string, c
 	if err != nil {
 		return empty, err
 	}
-	if p.Resume.Kind != opencode.ResumeSessionMutation || p.Resume.RequestID != p.Input.Restore.ThreadRequestID || p.Resume.SessionID != sourceRef.SessionID || p.Resume.MessageID != sourceRef.InputID || p.Resume.PartID != sourceRef.PartID || p.Resume.InputRequestID != sourceRef.InputRequestID || p.Command.Kind != opencode.CompactSessionMutation || p.Command.RequestID != ref.ActionID || p.Command.SessionID != sourceRef.SessionID || p.Command.MessageID != sourceRef.InputID || p.Command.PartID != sourceRef.PartID || p.Command.InputRequestID != sourceRef.InputRequestID {
+	if p.Resume.Kind != opencode.ResumeSessionMutation || p.Resume.RequestID != p.Input.Restore.ThreadRequestID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Resume.SessionID), p.Resume.SessionID != sourceRef.SessionID) ||
+		p.Resume.MessageID != sourceRef.InputID || p.Resume.PartID != sourceRef.PartID || p.Resume.InputRequestID != sourceRef.InputRequestID || p.Command.Kind != opencode.CompactSessionMutation || p.Command.RequestID != ref.ActionID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Command.SessionID), p.Command.SessionID != sourceRef.SessionID) ||
+		p.Command.MessageID != sourceRef.InputID || p.Command.PartID != sourceRef.PartID || p.Command.InputRequestID != sourceRef.InputRequestID {
 		return empty, domain.CompactionUncertain()
 	}
 	operationRaw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(ref.JobID)+".json"), 2<<20)
 	var operation journal
 	var result domain.SessionCompactionResult
 	if err != nil || domain.Decode(operationRaw, &operation) != nil || operation.Version != 1 || operation.JobID != ref.JobID || operation.InstanceID.Validate() != nil || operation.ReportID.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", operation.InstanceID != p.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(operation.InstanceID), operation.InstanceID != p.InstanceID) ||
 		operation.Revision != p.AssignmentRevision || p.AssignmentRevision == 0 || operation.Digest != p.AssignmentDigest || operation.State != journalFinished && operation.State != journalReported || operation.Problem != nil || domain.Decode(operation.Output, &result) != nil || result.Validate() != nil || result.Version != 3 || result.Checkpoint != ref {
 		return empty, domain.CompactionUncertain()
 	}

@@ -147,7 +147,8 @@ func (s *Service) SetSessionBudget(ctx context.Context, req *connect.Request[pb.
 		return nil, rpc.Error(err, correlation)
 	}
 	var receipt sessionReceipt
-	if domain.Decode(result.Data, &receipt) != nil || receipt.SessionID != identity.Session {
+	if domain.Decode(result.Data, &receipt) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(receipt.SessionID), receipt.SessionID != identity.Session) {
 		return nil, rpc.Error(domain.Fail(domain.NotFound, "The original budget session is no longer retained.", "Refresh sessions; an old receipt cannot recreate a removed session."), correlation)
 	}
 	view, err := s.readSessionBudget(bounded, receipt.SessionID)

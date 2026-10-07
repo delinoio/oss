@@ -32,7 +32,9 @@ func publishGrokContent(tx *store.Tx, input domain.ExecutionJobInput, sr store.R
 				return err
 			}
 			message, err = store.Decode[domain.ExecutionMessage](r)
-			if err != nil || r.SessionID != sr.ID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.GrokText == nil || message.GrokText.ResponseOrdinal != v.ResponseOrdinal || len(message.GrokText.Chunks) == 0 || uint32(len(message.GrokText.Chunks)) != state.MessageChunks || message.NativeID != message.GrokText.Chunks[0].EventID || message.State != domain.MessageStreaming || uint32(len(message.Text)) != state.MessageBytes {
+			if err != nil ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+				message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.GrokText == nil || message.GrokText.ResponseOrdinal != v.ResponseOrdinal || len(message.GrokText.Chunks) == 0 || uint32(len(message.GrokText.Chunks)) != state.MessageChunks || message.NativeID != message.GrokText.Chunks[0].EventID || message.State != domain.MessageStreaming || uint32(len(message.Text)) != state.MessageBytes {
 				return executionEventConflict()
 			}
 			revision = r.Revision
@@ -60,7 +62,9 @@ func publishGrokContent(tx *store.Tx, input domain.ExecutionJobInput, sr store.R
 			return err
 		}
 		message, err := store.Decode[domain.ExecutionMessage](r)
-		if err != nil || r.SessionID != sr.ID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.GrokText == nil || message.GrokText.ResponseOrdinal != v.Ordinal || len(message.GrokText.Chunks) == 0 || uint32(len(message.GrokText.Chunks)) != state.MessageChunks || message.NativeID != message.GrokText.Chunks[0].EventID || message.State != domain.MessageStreaming || uint32(len(message.Text)) != state.MessageBytes {
+		if err != nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+			message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.GrokText == nil || message.GrokText.ResponseOrdinal != v.Ordinal || len(message.GrokText.Chunks) == 0 || uint32(len(message.GrokText.Chunks)) != state.MessageChunks || message.NativeID != message.GrokText.Chunks[0].EventID || message.State != domain.MessageStreaming || uint32(len(message.Text)) != state.MessageBytes {
 			return executionEventConflict()
 		}
 		message.State, message.LastSequence = domain.MessageComplete, event.Sequence

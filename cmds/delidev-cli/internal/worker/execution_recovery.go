@@ -12,14 +12,14 @@ import (
 func recoverExecution(ctx context.Context, config Config, job domain.Job) (json.RawMessage, error) {
 	var request domain.ExecutionRecoveryRequest
 	if domain.Decode(job.Input, &request) != nil || request.Validate() != nil || request.JobID != job.ParentID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", request.MachineID != job.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(request.MachineID), request.MachineID != job.MachineID) {
 		return nil, domain.ExecutionRecoveryUncertain()
 	}
 	credential, err := LoadCredential(config.Root)
 	if err != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", credential.ServerID != request.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", credential.MachineID != request.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", credential.DeviceID != request.DeviceID) {
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(credential.ServerID), credential.ServerID != request.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(credential.MachineID), credential.MachineID != request.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(credential.DeviceID), credential.DeviceID != request.DeviceID) {
 		return nil, domain.ExecutionRecoveryUncertain()
 	}
 	if request.Startup != nil {
@@ -27,8 +27,9 @@ func recoverExecution(ctx context.Context, config Config, job domain.Job) (json.
 	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(request.Preparation, &preparation) != nil || domain.Decode(request.Manifest, &manifest) != nil || preparation.SessionID != request.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", preparation.MachineID != request.MachineID) {
+	if domain.Decode(request.Preparation, &preparation) != nil || domain.Decode(request.Manifest, &manifest) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(preparation.SessionID), preparation.SessionID != request.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(preparation.MachineID), preparation.MachineID != request.MachineID) {
 		return nil, domain.ExecutionRecoveryUncertain()
 	}
 	digest, _ := hex.DecodeString(request.PromptDigest)

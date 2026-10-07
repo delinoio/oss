@@ -91,7 +91,14 @@ func TestOpenCodeBindingPublicationRejectsForeignSettingsAndOwners(t *testing.T)
 			if test.rpc != nil {
 				test.rpc(request)
 			}
-			if _, err := f.call(request); err == nil {
+			_, err := f.call(request)
+			if test.name == "worker-instance" || test.name == "machine" {
+				if err != nil {
+					t.Fatal("ownership metadata blocked publication", err)
+				}
+				return
+			}
+			if err == nil {
 				t.Fatal("foreign OpenCode binding was accepted")
 			}
 			r, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)

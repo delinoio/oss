@@ -41,7 +41,8 @@ func localReviewRecord(tx *store.Tx, session, id domain.ID, kind domain.LocalRev
 	if err != nil {
 		return r, v, err
 	}
-	if r.SessionID != session || v.Type != kind {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(id), r.SessionID != session) ||
+		v.Type != kind {
 		return r, v, localReviewConflict()
 	}
 	return r, v, v.Validate()
@@ -95,7 +96,9 @@ func (s *Service) localReviewResult(ctx context.Context, result store.Result, se
 		// read-only recovery of the immutable submission and accepted input.
 		// Replay already checked the original actor and exact request digest.
 		refs = localReviewReceipt{SessionID: session, ReviewID: result.RequestID}
-	} else if domain.Decode(result.Data, &refs) != nil || refs.SessionID != session || refs.ReviewID.Validate() != nil || refs.Deleted {
+	} else if domain.Decode(result.Data, &refs) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(refs.SessionID), refs.SessionID != session) ||
+		refs.ReviewID.Validate() != nil || refs.Deleted {
 		return nil, refs, domain.Fail(domain.NotFound, "The original local review is no longer retained.", "Refresh the session; an old receipt cannot recreate deleted comments.")
 	}
 	var resource *pb.Resource

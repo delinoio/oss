@@ -81,13 +81,13 @@ func OpenExecutionPublisher(config PublicationConfig) (publisher *ExecutionPubli
 	}
 	var job domain.Job
 	if domain.Decode(config.Assignment.DocumentJson, &job) != nil || job.Validate() != nil || job.State != domain.JobClaimed || job.Type != domain.ExecuteSessionJob ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != config.Credential.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", job.InstanceID != config.Instance) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(job.MachineID), job.MachineID != config.Credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(job.InstanceID), job.InstanceID != config.Instance) {
 		return nil, publicationUncertain()
 	}
 	var input domain.ExecutionJobInput
 	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != config.Assignment.SessionId ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != job.MachineID) {
 		return nil, publicationUncertain()
 	}
 	directory := filepath.Join(config.Root, "jobs", string(jobID))
@@ -112,9 +112,9 @@ func OpenExecutionPublisher(config PublicationConfig) (publisher *ExecutionPubli
 	if err == nil {
 		var retained publicationJournal
 		if domain.Decode(raw, &retained) != nil || retained.Version != state.Version || retained.JobID != state.JobID ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", retained.InstanceID != state.InstanceID) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", retained.ServerID != state.ServerID) ||
-			domain.OwnershipBlocks(domain.OwnershipDevice, "", retained.DeviceID != state.DeviceID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(retained.InstanceID), retained.InstanceID != state.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(retained.ServerID), retained.ServerID != state.ServerID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(retained.DeviceID), retained.DeviceID != state.DeviceID) ||
 			retained.Revision != state.Revision || retained.AssignmentDigest != state.AssignmentDigest || retained.LastSequence > domain.MaxExecutionEvents {
 			return nil, publicationUncertain()
 		}

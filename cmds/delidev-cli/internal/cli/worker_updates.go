@@ -124,24 +124,9 @@ func handoffWorkerUpdate(ctx context.Context, o options, root string, id domain.
 	}
 	credential, e := worker.LoadCredential(root)
 	if e != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id),
-
-			credential.
-				ServerID !=
-				j.Operation.ServerID,
-		) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(id),
-
-			credential.
-				DeviceID !=
-				j.Operation.DeviceID,
-		) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(id),
-
-			credential.
-				MachineID !=
-				j.Operation.MachineID,
-		) {
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id), credential.ServerID != j.Operation.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(id), credential.DeviceID != j.Operation.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(id), credential.MachineID != j.Operation.MachineID) {
 		return nil, workerUpdateFailure()
 	}
 	verifier, e := updates.NewVerifier()

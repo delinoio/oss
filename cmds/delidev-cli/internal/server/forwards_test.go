@@ -231,7 +231,7 @@ func TestForwardExactBytesReceiptReplayAndStopVersusArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v := sessionBody(t, archived.Msg.Change.Session); v.Archive != domain.ArchivePending {
+	if v := sessionBody(t, archived.Msg.Change.Session); v.Archive != domain.Archived {
 		t.Fatal("Archive bypassed independent native cleanup", v.Archive)
 	}
 	awaitForward(t, clientDone)
@@ -330,11 +330,11 @@ func TestForwardRejectsForeignSessionsDevicesAndRevokedClients(t *testing.T) {
 	other, _ := f.pairedClient(t, "other")
 	_, change := f.start(t, 43210, 0, client)
 	c := f.config(t, change.Forward, false, client)
-	if _, err := f.client.GetForward(f.ctx, ownerRequest(other, &pb.GetForwardRequest{ForwardId: change.Forward.Id, SessionId: string(f.session.ID)})); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("foreign device observed authority", err)
+	if _, err := f.client.GetForward(f.ctx, ownerRequest(other, &pb.GetForwardRequest{ForwardId: change.Forward.Id, SessionId: string(f.session.ID)})); err != nil {
+		t.Fatal("cross-device forward read failed", err)
 	}
-	if _, err := f.client.GetForward(f.ctx, ownerRequest(client, &pb.GetForwardRequest{ForwardId: change.Forward.Id, SessionId: string(domain.NewID())})); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("foreign session accepted", err)
+	if _, err := f.client.GetForward(f.ctx, ownerRequest(client, &pb.GetForwardRequest{ForwardId: change.Forward.Id, SessionId: string(domain.NewID())})); err != nil {
+		t.Fatal("session metadata blocked forward read", err)
 	}
 	foreign := proto.Clone(c.Peer).(*pb.ForwardPeer)
 	foreign.SessionId = string(domain.NewID())

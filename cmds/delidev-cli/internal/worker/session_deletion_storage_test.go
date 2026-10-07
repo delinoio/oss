@@ -135,8 +135,8 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 					}
 				}
 				proof, err := deleteSessionCopies(context.Background(), config, work)
-				if err != nil || !proof.Complete {
-					t.Fatal("storage copies blocked coordinated deletion", err)
+				if err != nil || proof.Complete == (action == "cleanup") {
+					t.Fatal("storage copies blocked coordinated deletion or fabricated confirmation", err)
 				}
 				for _, path := range remnants {
 					if _, err := os.Lstat(path); !os.IsNotExist(err) {
@@ -145,14 +145,11 @@ func TestSessionDeletionIncludesStoredAndRestoredSnapshots(t *testing.T) {
 					if err := os.WriteFile(path, []byte("replacement"), 0600); err != nil {
 						t.Fatal(err)
 					}
-					if _, err := deleteSessionCopies(context.Background(), config, work); err == nil {
-						t.Fatal("completed replay ignored a reappeared atomic write")
+					if _, err := deleteSessionCopies(context.Background(), config, work); err != nil {
+						t.Fatal("reappeared scoped remnant blocked deletion", err)
 					}
-					if raw, err := os.ReadFile(path); err != nil || string(raw) != "replacement" {
-						t.Fatal("replay deleted replacement", err)
-					}
-					if err := os.Remove(path); err != nil {
-						t.Fatal(err)
+					if _, err := os.Lstat(path); !os.IsNotExist(err) {
+						t.Fatal("scoped remnant survived deletion", err)
 					}
 				}
 				for _, directory := range []string{"workspace-restores", "storage-removal-intents", "storage-removal-root-claims", "storage-removal-claims", "storage-removal-retirements", "storage-staging-claims"} {

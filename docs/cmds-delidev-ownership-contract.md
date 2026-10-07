@@ -30,7 +30,10 @@ request-ID deduplication and negotiated protocol support remain enforced.
 
 Unconfirmed native cleanup does not block subsequent admission. Preserve Stop
 intent, existing deadlines and retry-attempt limits. A prior native attempt may
-still be running when a later attempt is admitted. Never publish unconfirmed
+still be running when a later attempt is admitted. Explicit Resume without queued
+input creates a new input and execution attempt from the retained input; it leaves
+the prior input, assignment and execution history intact. Request receipts and
+revision checks prevent duplicate admission of that explicit action. Never publish unconfirmed
 cleanup or an unknown native outcome as positively confirmed success.
 
 Terminate only through retained original native process, job or control handles.

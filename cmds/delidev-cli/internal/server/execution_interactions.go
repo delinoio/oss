@@ -82,7 +82,9 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 	}
 	key, keyErr := value.NativeRequestID.Key()
 	newKey, newErr := u.NativeRequestID.Key()
-	if keyErr != nil || newErr != nil || key != newKey || r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || value.Closure != domain.InteractionOpen {
+	if keyErr != nil || newErr != nil || key != newKey ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != session.ID) ||
+		value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != u.Type || value.Closure != domain.InteractionOpen {
 		return false, executionEventConflict()
 	}
 	if value.Grok != nil {
@@ -171,7 +173,8 @@ func endPublishedInteractions(tx *store.Tx, input domain.ExecutionJobInput, even
 		if err != nil {
 			return false, err
 		}
-		if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.Closure != domain.InteractionOpen {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+			value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.Closure != domain.InteractionOpen {
 			return false, executionEventConflict()
 		}
 		unconfirmed, err := closePublishedInteraction(tx, r, value, domain.InteractionTurnEnded, event.Sequence)

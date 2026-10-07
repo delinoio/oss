@@ -104,9 +104,12 @@ func workspaceReadScope(tx *store.Tx, id domain.ID) (workspace.PrepareRequest, w
 		return input, manifest, err
 	}
 	job, err := store.Decode[domain.Job](row)
-	if err != nil || row.SessionID != id || job.Type != domain.PrepareWorkspaceJob || job.State != domain.JobSucceeded ||
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(id), row.SessionID != id) ||
+		job.Type != domain.PrepareWorkspaceJob || job.State != domain.JobSucceeded ||
 		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(id), job.MachineID != session.MachineID) ||
-		domain.Decode(job.Input, &input) != nil || domain.Decode(job.Output, &manifest) != nil || input.SessionID != id ||
+		domain.Decode(job.Input, &input) != nil || domain.Decode(job.Output, &manifest) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(id), input.SessionID != id) ||
 		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(id), input.MachineID != session.MachineID) ||
 		input.Type != session.Workspace || workspace.ValidateResult(input, manifest, machine.OS) != nil {
 		return input, manifest, workspace.ResultUncertain()

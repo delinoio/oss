@@ -67,8 +67,8 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return a.titleScope(tx, grant, jobRecord, job)
 	}
 	if job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", job.InstanceID != grant.InstanceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != grant.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(job.InstanceID), job.InstanceID != grant.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(job.MachineID), job.MachineID != grant.MachineID) {
 		return empty, executionDenied()
 	}
 	canceled, err := tx.JobCancellationRequested(grant.JobID)
@@ -77,8 +77,8 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	}
 	var input domain.ExecutionJobInput
 	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != grant.ExecutionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != grant.MachineID) ||
-		input.SessionID != jobRecord.SessionID {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != grant.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.SessionID), input.SessionID != jobRecord.SessionID) {
 		return empty, executionDenied()
 	}
 	instance, seen, err := tx.WorkerInstance(grant.MachineID)
@@ -91,7 +91,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	}
 	device, err := store.Decode[domain.Device](deviceRecord)
 	if err != nil || device.Revoked || domain.OwnershipBlocks(domain.OwnershipActor, "", device.Type != domain.WorkerDevice) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", device.MachineID != grant.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(device.MachineID), device.MachineID != grant.MachineID) {
 		return empty, executionDenied()
 	}
 	_, machine, machineErr := activeMachine(tx, grant.MachineID)
@@ -112,7 +112,8 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	ir, err := tx.Get(domain.QueueKind, input.InputID)
-	if err != nil || ir.SessionID != input.SessionID {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ir.SessionID), ir.SessionID != input.SessionID) {
 		return empty, executionDenied()
 	}
 	queued, err := store.Decode[domain.QueuedInput](ir)
@@ -153,9 +154,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		}
 		lease := state.Lease
 		if lease.Action != domain.SubscriptionExecute || lease.OperationID != grant.JobID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", lease.MachineID != grant.MachineID) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", lease.InstanceID != grant.InstanceID) ||
-			domain.OwnershipBlocks(domain.OwnershipDevice, "", lease.DeviceID != grant.DeviceID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(lease.MachineID), lease.MachineID != grant.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(lease.InstanceID), lease.InstanceID != grant.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(lease.DeviceID), lease.DeviceID != grant.DeviceID) ||
 			lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
 			return empty, executionDenied()
 		}
@@ -304,9 +305,10 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	// existing exact original observation, even after Stop or account revocation.
 	// It grants no inference and is joined before lease/storage closure.
 	lease.PublishDiagnostic = func(ctx context.Context, value domain.RequestDiagnostic) error {
-		if value.SessionID != scope.SessionID || value.ExecutionID != scope.ExecutionID ||
-			domain.OwnershipBlocks(domain.OwnershipResource, "", value.AccountID != scope.AccountID) ||
-			domain.OwnershipBlocks(domain.OwnershipResource, "", value.ConnectionID != scope.ConnectionID) ||
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(value.SessionID), value.SessionID != scope.SessionID) ||
+			value.ExecutionID != scope.ExecutionID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(value.AccountID), value.AccountID != scope.AccountID) ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(value.ConnectionID), value.ConnectionID != scope.ConnectionID) ||
 			value.ProviderID != scope.ProviderID || (value.ModelID != scope.ModelID && (scope.ChildModel == nil || value.ModelID != scope.ChildModel.ModelID)) || value.Source != domain.DiagnosticProxyHTTP {
 			return executionDenied()
 		}
@@ -359,9 +361,10 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				Usage   domain.NativeResponseUsage
 			}{request, usage}, func(tx *store.Tx) (any, error) {
 				original, err := tx.RequestDiagnostic(request)
-				if err != nil || original.Source != domain.DiagnosticProxyHTTP || original.ExecutionID != scope.ExecutionID || original.SessionID != scope.SessionID ||
-					domain.OwnershipBlocks(domain.OwnershipResource, "", original.AccountID != scope.AccountID) ||
-					domain.OwnershipBlocks(domain.OwnershipResource, "", original.ConnectionID != scope.ConnectionID) ||
+				if err != nil || original.Source != domain.DiagnosticProxyHTTP || original.ExecutionID != scope.ExecutionID ||
+					domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(original.SessionID), original.SessionID != scope.SessionID) ||
+					domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(original.AccountID), original.AccountID != scope.AccountID) ||
+					domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(original.ConnectionID), original.ConnectionID != scope.ConnectionID) ||
 					original.ModelID != scope.ModelID || original.HTTPAttempted == nil || !*original.HTTPAttempted {
 					return nil, executionDenied()
 				}
@@ -372,8 +375,8 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				job, err := store.Decode[domain.Job](jr)
 				var input domain.SessionCompactionInput
 				if err != nil || job.Type != domain.CompactSessionJob ||
-					domain.OwnershipBlocks(domain.OwnershipInstance, "", job.InstanceID != grant.InstanceID) ||
-					domain.OwnershipBlocks(domain.OwnershipDevice, "", job.AssignedDeviceID != grant.DeviceID) ||
+					domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(job.InstanceID), job.InstanceID != grant.InstanceID) ||
+					domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(job.AssignedDeviceID), job.AssignedDeviceID != grant.DeviceID) ||
 					domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.ActionID != scope.ExecutionID || input.Completion.NativeTurnID != scope.CompactionSourceTurn {
 					return nil, executionDenied()
 				}
@@ -501,14 +504,21 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 					return err
 				}
 				if len(session.AccountChanges) != 0 {
-					return domain.Fail(domain.PermissionDenied, "Account-switched execution requires full native history.", "Provider conversation and previous-response references cannot cross account selections.")
+					domain.ObserveOwnership(domain.OwnershipResource, scope.SessionID)
 				}
 				exists, err := tx.HasExecutionReference(reference(kind, nativeID))
 				if err != nil {
 					return err
 				}
 				if !exists {
-					return executionDenied()
+					domain.ObserveOwnership(domain.OwnershipResource, scope.SessionID)
+					exists, err = tx.HasNativeReference(reference(kind, nativeID))
+					if err != nil {
+						return err
+					}
+					if !exists {
+						return domain.Fail(domain.NotFound, "The native reference does not exist.", "Select an existing reference.")
+					}
 				}
 				return nil
 			})

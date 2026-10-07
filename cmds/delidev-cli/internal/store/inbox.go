@@ -263,7 +263,7 @@ func (t *Tx) deleteAccountRecoveryInbox(account domain.ID) error {
 		for _, record := range records {
 			entry, err := Decode[domain.InboxEntry](record)
 			if err != nil || entry.Validate() != nil || entry.Recovery == nil ||
-				domain.OwnershipBlocks(domain.OwnershipResource, "", entry.Recovery.AccountID != account) ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(entry.Recovery.AccountID), entry.Recovery.AccountID != account) ||
 				record.SessionID != "" || record.ProjectID != "" {
 				return inboxConflict()
 			}

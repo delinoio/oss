@@ -113,7 +113,9 @@ func (l *ExecutionLease) PreparePRGitTool(ctx context.Context, selection domain.
 			l.manager.Logger.WarnContext(ctx, "manual_pr_git_preparation_failed", "attempt_id", selection.AttemptID, "execution_id", l.claim.ExecutionID, "phase", phase, "code", domain.SafeError(returnedErr).Code)
 		}
 	}()
-	if selection.Validate() != nil || input.SessionID != l.claim.SessionID || manifest.SessionID != l.claim.SessionID {
+	if selection.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.SessionID), input.SessionID != l.claim.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(manifest.SessionID), manifest.SessionID != l.claim.SessionID) {
 		return nil, toolFailure()
 	}
 	current, err := l.manager.readExecutionClaim(l.claim.SessionID)

@@ -187,7 +187,9 @@ func (c *ClaudeContentPublisher) publishChildContent(ctx context.Context, o clau
 		return false, nil
 	}
 	b := c.binding
-	if !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || len(o.Content) > 128 || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 {
+	if !c.inputPublished ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || len(o.Content) > 128 || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 {
 		return true, b.block()
 	}
 	parentTool := o.Content[0].ParentToolID

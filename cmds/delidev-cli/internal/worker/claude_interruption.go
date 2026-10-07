@@ -18,7 +18,9 @@ type claudePublishedInterruption struct {
 // input UUID; the initiating callback is independently bound by its settlement.
 func (c *ClaudeContentPublisher) publishInterruption(ctx context.Context, o claude.LifecycleObservation) error {
 	b, prior := c.binding, c.interruption
-	if prior == nil || prior.resultID != "" || !c.inputPublished || c.active != "" || !c.toolsComplete() || !c.interactionsSettled() || c.resultUsage || o.SessionID != b.journal.SessionID || o.TurnID != b.turn || c.seen[o.NativeID] || len(c.seen) >= 65536 {
+	if prior == nil || prior.resultID != "" || !c.inputPublished || c.active != "" || !c.toolsComplete() || !c.interactionsSettled() || c.resultUsage ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		o.TurnID != b.turn || c.seen[o.NativeID] || len(c.seen) >= 65536 {
 		return b.block()
 	}
 	s := prior.settlement

@@ -94,10 +94,10 @@ func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.Sessio
 	defer p.mu.Unlock()
 	i, publication := p.input, p.state
 	if p.closed || p.release == nil || i.Validate() != nil || i.Configuration.Harness != domain.OpenCode || (i.Version != 4 && i.Installation.Version != opencode.SupportedVersion) || (i.Continuation != nil || i.Fork != nil) != (resume != nil) || publication.Pending != nil || publication.LastSequence != 0 || publication.JobID != p.job || i.ExecutionID != p.execution ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.InstanceID != p.config.Instance) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.ServerID != p.config.Credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", publication.DeviceID != p.config.Credential.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", i.MachineID != p.config.Credential.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(publication.InstanceID), publication.InstanceID != p.config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(publication.ServerID), publication.ServerID != p.config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(publication.DeviceID), publication.DeviceID != p.config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(i.MachineID), i.MachineID != p.config.Credential.MachineID) {
 		return nil, openCodeClaimUncertain()
 	}
 	ref := openCodeClaimReference{Version: 1, JobID: p.job, InstanceID: publication.InstanceID, ServerID: publication.ServerID, DeviceID: publication.DeviceID, MachineID: i.MachineID, ExecutionID: i.ExecutionID, SessionID: i.SessionID, InputID: i.InputID, AccountID: i.AccountID, ConnectionID: i.ConnectionID, ThreadRequestID: i.ThreadRequestID, InputRequestID: i.TurnRequestID, Revision: publication.Revision, AssignmentDigest: publication.AssignmentDigest, ConfigurationDigest: i.ConfigurationDigest}
@@ -108,7 +108,9 @@ func openOpenCodeClaimsWithResume(p *ExecutionPublisher, resume *opencode.Sessio
 		} else if i.Fork != nil {
 			thread, turn = string(i.Fork.NativeThreadID), string(i.Fork.NativeTurnID)
 		}
-		if resume.Validate() != nil || resume.Kind != opencode.ResumeSessionMutation || resume.RequestID != i.ThreadRequestID || resume.SessionID != thread || resume.MessageID != turn {
+		if resume.Validate() != nil || resume.Kind != opencode.ResumeSessionMutation || resume.RequestID != i.ThreadRequestID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(resume.SessionID), resume.SessionID != thread) ||
+			resume.MessageID != turn {
 			return nil, openCodeClaimUncertain()
 		}
 		ref.Version = 2
@@ -190,7 +192,8 @@ func (s openCodeClaimState) validateNext(c opencode.SessionClaim) error {
 		return nil
 	}
 	input := s.Claims[1]
-	if c.Kind == opencode.CreateSessionMutation || c.Kind == opencode.SubmitInputMutation || c.InputRequestID != input.RequestID || c.SessionID != input.SessionID {
+	if c.Kind == opencode.CreateSessionMutation || c.Kind == opencode.SubmitInputMutation || c.InputRequestID != input.RequestID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(c.SessionID), c.SessionID != input.SessionID) {
 		return openCodeClaimUncertain()
 	}
 	var stop *opencode.SessionClaim

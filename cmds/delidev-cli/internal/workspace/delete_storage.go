@@ -65,10 +65,11 @@ func (m *Manager) deletionSnapshotManifest(ctx context.Context, w domain.Session
 		}
 		raw, err := security.ReadPrivate(filepath.Join(path, "snapshot.json"), maxSnapshotManifest)
 		var snapshot snapshotManifest
-		if err != nil || domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != copy.SnapshotID || snapshot.Workspace.SessionID != w.SessionID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", snapshot.Workspace.MachineID != w.MachineID) ||
-			snapshot.Preparation.SessionID != w.SessionID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", snapshot.Preparation.MachineID != w.MachineID) ||
+		if err != nil || domain.DecodeBounded(raw, &snapshot, maxSnapshotManifest) != nil || snapshot.Version != 1 || snapshot.ID != copy.SnapshotID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(snapshot.Workspace.SessionID), snapshot.Workspace.SessionID != w.SessionID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(snapshot.Workspace.MachineID), snapshot.Workspace.MachineID != w.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(snapshot.Preparation.SessionID), snapshot.Preparation.SessionID != w.SessionID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(snapshot.Preparation.MachineID), snapshot.Preparation.MachineID != w.MachineID) ||
 			snapshot.Preparation.Type == domain.Local || ValidateResult(snapshot.Preparation, snapshot.Workspace, runtime.GOOS) != nil || !slices.Contains(w.PreparationDigests, snapshot.Workspace.InputDigest) {
 			return nil, domain.SessionDeletionPending()
 		}
@@ -94,7 +95,9 @@ func (m *Manager) deletionRestoredWorkspace(ctx context.Context, w domain.Sessio
 		return false, nil
 	}
 	var binding restoreBinding
-	if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || !digestValid(binding.SnapshotDigest) || binding.SessionID != w.SessionID || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || !slices.ContainsFunc(w.Copies, func(c domain.SessionDeletionCopy) bool {
+	if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || !digestValid(binding.SnapshotDigest) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(binding.SessionID), binding.SessionID != w.SessionID) ||
+		binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || !slices.ContainsFunc(w.Copies, func(c domain.SessionDeletionCopy) bool {
 		return c.Type == domain.WorkspaceStorageJob && c.JobID == binding.OperationID && c.SnapshotID == binding.SnapshotID
 	}) {
 		return false, domain.SessionDeletionPending()
@@ -247,7 +250,9 @@ func (m *Manager) cleanupDeletionRemovals(ctx context.Context, w domain.SessionD
 		stage = "intent"
 		raw, err := security.ReadPrivate(m.removalIntentPath(copy.JobID), maxSnapshotManifest)
 		var intent storageRemovalIntent
-		if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != copy.JobID || intent.SessionID != w.SessionID || copy.SnapshotID.Validate() != nil || intent.SnapshotID != copy.SnapshotID || (intent.Action != StorageCleanup && intent.Action != StorageDelete) || !digestValid(intent.SnapshotDigest) {
+		if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != copy.JobID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(intent.SessionID), intent.SessionID != w.SessionID) ||
+			copy.SnapshotID.Validate() != nil || intent.SnapshotID != copy.SnapshotID || (intent.Action != StorageCleanup && intent.Action != StorageDelete) || !digestValid(intent.SnapshotDigest) {
 			return domain.SessionDeletionPending()
 		}
 		// Only these immutable references are needed. Do not reconstruct a native

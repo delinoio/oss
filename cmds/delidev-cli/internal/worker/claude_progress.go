@@ -76,7 +76,9 @@ func (b *ClaudeBindingPublisher) publishProgressLocked(ctx context.Context, o cl
 	if compaction {
 		inputMatches = o.InputID == "" && !o.Accepted
 	}
-	if b.stage != claudeSessionBound && !accepted || o.SessionID != b.journal.SessionID || !inputMatches || o.TurnID != b.turn || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || b.progressSeen[o.NativeID] || len(b.progressSeen) >= 65536 {
+	if b.stage != claudeSessionBound && !accepted ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		!inputMatches || o.TurnID != b.turn || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || b.progressSeen[o.NativeID] || len(b.progressSeen) >= 65536 {
 		return true, b.block()
 	}
 	u := &domain.ExecutionClaudeProgress{ID: domain.NewID(), Observation: v}

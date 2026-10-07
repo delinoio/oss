@@ -339,11 +339,12 @@ func readForkCheckpoint(root string, input domain.ExecutionJobInput) (codex.Cont
 		return result.Native, err
 	}
 	raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(f.RuntimeID), "fork-completion.json"), maxExecutionCheckpointBytes)
-	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &result) != nil || ((input.Configuration.SidechatPolicy == "" && result.Version != 1) || (input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 && result.Version != 3)) || result.SidechatPolicy != input.Configuration.SidechatPolicy || result.JobID != f.JobID || result.SessionID != input.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", result.MachineID != input.MachineID) ||
+	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &result) != nil || ((input.Configuration.SidechatPolicy == "" && result.Version != 1) || (input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 && result.Version != 3)) || result.SidechatPolicy != input.Configuration.SidechatPolicy || result.JobID != f.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(result.SessionID), result.SessionID != input.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(result.MachineID), result.MachineID != input.MachineID) ||
 		result.RuntimeID != f.RuntimeID || result.ConfigurationDigest != input.ConfigurationDigest ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", result.AccountID != input.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", result.ConnectionID != input.ConnectionID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(result.AccountID), result.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(result.ConnectionID), result.ConnectionID != input.ConnectionID) ||
 		result.ManifestDigest != executionInputDigest(input.Manifest) || string(result.Native.ThreadID) != string(f.NativeThreadID) || string(result.Native.TurnID) != string(f.NativeTurnID) || result.Native.Status != codex.TurnCompleted || string(mustForkJSON(result)) != string(raw) {
 		return codex.ContinuationCheckpoint{}, executionCheckpointUncertain()
 	}

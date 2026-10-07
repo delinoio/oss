@@ -19,7 +19,8 @@ type openCodeRevisionPart struct {
 func (c *OpenCodeTextPublisher) observeRevision(ctx context.Context, native opencode.NativePart) error {
 	b := c.binding
 	owner := c.messages[native.MessageID]
-	if native.SessionID != b.thread || owner == nil || owner.role != domain.AssistantMessage || c.parts[native.ID] != nil || c.tools[native.ID] != nil || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(native.SessionID), native.SessionID != b.thread) ||
+		owner == nil || owner.role != domain.AssistantMessage || c.parts[native.ID] != nil || c.tools[native.ID] != nil || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 		return publicationUncertain()
 	}
 	r := domain.OpenCodeRevision{Source: domain.OpenCodeRevisionSource(native.Kind)}
@@ -92,12 +93,15 @@ func (c *OpenCodeEventPublisher) publishChanges(ctx context.Context, o opencode.
 			SessionID string                    `json:"sessionID"`
 			Diff      []domain.OpenCodeFileDiff `json:"diff"`
 		}
-		if domain.Decode(o.Ancillary, &wire) != nil || wire.SessionID != b.thread {
+		if domain.Decode(o.Ancillary, &wire) != nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(wire.SessionID), wire.SessionID != b.thread) {
 			return publicationUncertain()
 		}
 		changes.Source, changes.Diffs = domain.OpenCodeSessionDiff, wire.Diff
 	case opencode.MessageUpdatedEvent:
-		if o.Message == nil || o.Message.User == nil || o.Message.Assistant != nil || o.Message.ID != b.turn || o.Message.SessionID != b.thread || !c.text.seen[o.EventID] {
+		if o.Message == nil || o.Message.User == nil || o.Message.Assistant != nil || o.Message.ID != b.turn ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.Message.SessionID), o.Message.SessionID != b.thread) ||
+			!c.text.seen[o.EventID] {
 			return publicationUncertain()
 		}
 		var wire struct {

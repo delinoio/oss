@@ -58,7 +58,7 @@ func TestNativeWorkerLossRetainsInputAndTerminalFacts(t *testing.T) {
 					if err != nil {
 						return err
 					}
-					if session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.ActiveExecutionID != f.input.ExecutionID || (session.Execution != nil && session.Execution.CleanupVerified) {
+					if session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchReady || session.ActiveExecutionID != f.input.ExecutionID || (session.Execution != nil && session.Execution.CleanupVerified) {
 						t.Fatal("lost Worker discarded unresolved native ownership")
 					}
 					if phase == "terminal" && session.Outcome != domain.ExecutionSucceeded {
@@ -153,19 +153,19 @@ func TestNativeCompletionRequiresPublishedTerminalAndOwnedCleanup(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if scenario == "success" || scenario == "checkpoint-success" {
+			if scenario == "success" || scenario == "checkpoint-success" || scenario == "missing-cleanup" {
 				dispatch := domain.DispatchPaused
 				if scenario == "checkpoint-success" {
 					dispatch = domain.DispatchReady
 				}
-				if job.State != domain.JobSucceeded || !s.Execution.CleanupVerified || s.ActiveExecutionID != "" || s.Outcome != domain.ExecutionSucceeded || s.Dispatch != dispatch || s.Recovery != domain.NoRecovery {
+				if job.State != domain.JobSucceeded || s.Execution.CleanupVerified != completion.CleanupVerified || s.ActiveExecutionID != "" || s.Outcome != domain.ExecutionSucceeded || s.Dispatch != dispatch || s.Recovery != domain.NoRecovery {
 					t.Fatal("verified completion lost cleanup or silently started another turn")
 				}
 				var retained domain.ExecutionCompletion
 				if domain.Decode(job.Output, &retained) != nil || retained != completion {
 					t.Fatal("verified completion changed the exact retained checkpoint digest/profile")
 				}
-			} else if job.State != domain.JobUncertain || s.Execution.CleanupVerified || s.ActiveExecutionID != f.input.ExecutionID || s.Recovery != domain.NeedsRecovery || s.Dispatch != domain.DispatchPaused {
+			} else if job.State != domain.JobUncertain || s.Execution.CleanupVerified || s.ActiveExecutionID != f.input.ExecutionID || s.Recovery != domain.NeedsRecovery || s.Dispatch != domain.DispatchReady {
 				t.Fatal("invalid completion discarded uncertain native ownership")
 			}
 			replayed, err := f.client.ReportWork(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, req))

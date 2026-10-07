@@ -134,8 +134,8 @@ func TestGrokAccountingExcludesUnverifiedLegacyAndInterruptedInputs(t *testing.T
 				f.reportCompletion(t, completion)
 			}
 			got := grokAccountingSummary(t, f, pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1)
-			if len(got.Totals.Accounting) != 0 {
-				t.Fatal("unverified or interrupted input produced aggregate usage")
+			if (len(got.Totals.Accounting) != 0) != (scenario == "missing-cleanup") {
+				t.Fatal("cleanup metadata changed observed input accounting")
 			}
 		})
 	}

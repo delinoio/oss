@@ -254,7 +254,7 @@ func (s *Service) GetFailedSubscriptionCleanup(ctx context.Context, req *connect
 		}
 		_, in, _, err := decodeFailedCleanup(row)
 		if err != nil ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", in.Input.ServerID != s.Identity.ServerID) {
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(in.Input.ServerID), in.Input.ServerID != s.Identity.ServerID) {
 			return failedCleanupUnavailable()
 		}
 		value.Job, err = failedCleanupMessage(row)
@@ -507,7 +507,7 @@ func (s *Service) runFailedSubscriptionCleanups(parent context.Context) {
 func (s *Service) runFailedSubscriptionCleanup(ctx context.Context, row store.Record) error {
 	j, in, _, err := decodeFailedCleanup(row)
 	if err != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", in.Input.ServerID != s.Identity.ServerID) {
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(in.Input.ServerID), in.Input.ServerID != s.Identity.ServerID) {
 		return failedCleanupUnavailable()
 	}
 	if j.State.Terminal() {

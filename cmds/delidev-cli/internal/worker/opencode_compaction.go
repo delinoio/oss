@@ -53,7 +53,8 @@ func (c *OpenCodeEventPublisher) publishContext(ctx context.Context, o opencode.
 	}
 	if o.Message != nil {
 		m := o.Message
-		if m.SessionID != b.thread || m.ID == b.turn || c.text.messages[m.ID] != nil {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(m.SessionID), m.SessionID != b.thread) ||
+			m.ID == b.turn || c.text.messages[m.ID] != nil {
 			return publicationUncertain()
 		}
 		previous := c.contextMessages[m.ID]
@@ -87,7 +88,7 @@ func (c *OpenCodeEventPublisher) publishContext(ctx context.Context, o opencode.
 	}
 	if o.Part != nil {
 		p := o.Part
-		if p.SessionID != b.thread {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.SessionID), p.SessionID != b.thread) {
 			return publicationUncertain()
 		}
 		if p.Tool != nil && p.Tool.Timing != nil && p.Tool.Timing.Compacted != nil {

@@ -48,7 +48,9 @@ func publishGrokStop(tx *store.Tx, input domain.ExecutionJobInput, sr store.Reco
 		return err
 	}
 	m, err := store.Decode[domain.ExecutionMessage](r)
-	if err != nil || r.SessionID != sr.ID || m.ExecutionID != input.ExecutionID || m.NativeThreadID != event.NativeThreadID || m.NativeTurnID != event.NativeTurnID || m.Role != domain.AssistantMessage || m.LastSequence >= event.Sequence || m.GrokText == nil || m.GrokText.ResponseOrdinal != 1 || len(m.GrokText.Chunks) == 0 || uint32(len(m.GrokText.Chunks)) != v.TextChunks || m.GrokText.Interruption != nil || m.NativeID != m.GrokText.Chunks[0].EventID || m.GrokText.Chunks[len(m.GrokText.Chunks)-1].EventID != p.GrokContent.LastEvent || uint32(len(m.Text)) != p.GrokContent.TextBytes {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+		m.ExecutionID != input.ExecutionID || m.NativeThreadID != event.NativeThreadID || m.NativeTurnID != event.NativeTurnID || m.Role != domain.AssistantMessage || m.LastSequence >= event.Sequence || m.GrokText == nil || m.GrokText.ResponseOrdinal != 1 || len(m.GrokText.Chunks) == 0 || uint32(len(m.GrokText.Chunks)) != v.TextChunks || m.GrokText.Interruption != nil || m.NativeID != m.GrokText.Chunks[0].EventID || m.GrokText.Chunks[len(m.GrokText.Chunks)-1].EventID != p.GrokContent.LastEvent || uint32(len(m.Text)) != p.GrokContent.TextBytes {
 		return executionEventConflict()
 	}
 	first, _ := domain.GrokEventIndex(m.NativeID, event.NativeThreadID)
@@ -87,7 +89,9 @@ func publishGrokStop(tx *store.Tx, input domain.ExecutionJobInput, sr store.Reco
 			return err
 		}
 		u, err := store.Decode[domain.GrokUsageRecord](r)
-		if err != nil || r.SessionID != sr.ID || u.ExecutionID != input.ExecutionID || u.Harness != domain.GrokBuild || u.Version != input.Installation.Version || u.ThreadID != event.NativeThreadID || u.TurnID != event.NativeTurnID || u.Usage.Ordinal != 1 || u.Usage.Counts != v.Completed.Counts {
+		if err != nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+			u.ExecutionID != input.ExecutionID || u.Harness != domain.GrokBuild || u.Version != input.Installation.Version || u.ThreadID != event.NativeThreadID || u.TurnID != event.NativeTurnID || u.Usage.Ordinal != 1 || u.Usage.Counts != v.Completed.Counts {
 			return executionEventConflict()
 		}
 	}

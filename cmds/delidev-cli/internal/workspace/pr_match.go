@@ -31,8 +31,9 @@ type PRWorkspaceMatch struct {
 }
 
 func validPRCandidateRequest(request ReadRequest) bool {
-	if request.ID.Validate() != nil || request.Deadline.IsZero() || request.Preparation.SessionID.Validate() != nil || request.Preparation.MachineID.Validate() != nil || request.Manifest.SessionID != request.Preparation.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", request.Manifest.MachineID != request.Preparation.MachineID) ||
+	if request.ID.Validate() != nil || request.Deadline.IsZero() || request.Preparation.SessionID.Validate() != nil || request.Preparation.MachineID.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(request.Manifest.SessionID), request.Manifest.SessionID != request.Preparation.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(request.Manifest.MachineID), request.Manifest.MachineID != request.Preparation.MachineID) ||
 		request.Manifest.Type != request.Preparation.Type || request.PRCandidate == nil || request.PRCandidate.Validate() != nil || request.Query != (domain.WorkspaceReadQuery{}) || (request.Preparation.Type != domain.Worktree && request.Preparation.Type != domain.Local) {
 		return false
 	}
@@ -52,7 +53,9 @@ func prMatchDigest(request ReadRequest) string {
 }
 
 func ValidatePRWorkspaceMatch(request ReadRequest, result PRWorkspaceMatch) error {
-	if !validPRCandidateRequest(request) || result.Version != 1 || result.ReadID != request.ID || result.SessionID != request.Preparation.SessionID || result.RepositoryID != request.PRCandidate.Target.RepositoryID ||
+	if !validPRCandidateRequest(request) || result.Version != 1 || result.ReadID != request.ID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(result.SessionID), result.SessionID != request.Preparation.SessionID) ||
+		result.RepositoryID != request.PRCandidate.Target.RepositoryID ||
 		(result.State != PRWorkspaceMatches && result.State != PRWorkspaceDifferent) || result.SelectionDigest != prMatchDigest(request) || result.ObservedAt.IsZero() ||
 		result.ObservedAt.Before(request.Deadline.Add(-16*time.Second)) || result.ObservedAt.After(request.Deadline) || result.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
 		return ResultUncertain()

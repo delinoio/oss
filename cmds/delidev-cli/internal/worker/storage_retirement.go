@@ -129,8 +129,8 @@ func acknowledgeStorageRemoval(ctx context.Context, config Config, assigned *pb.
 	}
 	var accepted domain.Job
 	if ack == nil || ack.Id != assigned.Id || ack.SessionId != assigned.SessionId || ack.Kind != pb.EntityKind_ENTITY_KIND_JOB || ack.SchemaVersion != 1 || ack.Revision <= assigned.Revision || workspace.DecodeStorageJob(ack.DocumentJson, &accepted) != nil || accepted.Type != job.Type ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", accepted.MachineID != job.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", accepted.InstanceID != job.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(accepted.MachineID), accepted.MachineID != job.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(accepted.InstanceID), accepted.InstanceID != job.InstanceID) ||
 		!bytes.Equal(accepted.Input, job.Input) {
 		return workspace.ResultUncertain()
 	}
@@ -225,7 +225,9 @@ func retireStorageReport(ctx context.Context, config Config, path string, receip
 			return workspace.ResultUncertain()
 		}
 		var output workspace.StorageResult
-		if domain.Decode(reported.Output, &output) != nil || !output.CleanupVerified || output.OperationID != receipt.JobID || output.SessionID != receipt.Removal.SessionID || (output.Action != receipt.Removal.Action && (output.Action != workspace.StorageRecover || output.RecoveredJobID != receipt.Removal.OperationID)) {
+		if domain.Decode(reported.Output, &output) != nil || !output.CleanupVerified || output.OperationID != receipt.JobID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(output.SessionID), output.SessionID != receipt.Removal.SessionID) ||
+			(output.Action != receipt.Removal.Action && (output.Action != workspace.StorageRecover || output.RecoveredJobID != receipt.Removal.OperationID)) {
 			return workspace.ResultUncertain()
 		}
 		if output.Snapshot != nil {
@@ -311,8 +313,8 @@ func validateRetriedStorageReport(receipt storageRetirement, result journal, cre
 	}
 	var accepted domain.Job
 	if workspace.DecodeStorageJob(ack.DocumentJson, &accepted) != nil || accepted.Type != domain.WorkspaceStorageJob ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", accepted.MachineID != credential.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", accepted.InstanceID != receipt.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(accepted.MachineID), accepted.MachineID != credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(accepted.InstanceID), accepted.InstanceID != receipt.InstanceID) ||
 		accepted.Input == nil {
 		return workspace.ResultUncertain()
 	}
@@ -385,7 +387,7 @@ func replayPendingStorageReports(ctx context.Context, config Config, client deli
 		journalRaw, err := security.ReadPrivate(filepath.Join(config.Root, "jobs", string(receipt.JobID)+".json"), 2<<20)
 		var result journal
 		if err != nil || domain.Decode(journalRaw, &result) != nil || result.Version != 1 || result.State != journalFinished || result.JobID != receipt.JobID || result.ReportID != receipt.ReportID ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", result.InstanceID != receipt.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(result.InstanceID), result.InstanceID != receipt.InstanceID) ||
 			result.Revision != receipt.Revision || result.Digest != receipt.Digest || storageJournalResultDigest(result) != receipt.ResultDigest {
 			return workspace.ResultUncertain()
 		}

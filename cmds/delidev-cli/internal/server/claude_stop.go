@@ -44,7 +44,8 @@ func publishClaudeStop(tx *store.Tx, input domain.ExecutionJobInput, p *domain.E
 	if err != nil {
 		return err
 	}
-	if r.SessionID != input.SessionID || m.ExecutionID != input.ExecutionID || m.NativeThreadID != event.NativeThreadID || m.NativeTurnID != event.NativeTurnID || m.NativeID != v.NativeMessageID || m.Role != domain.AssistantMessage || m.Claude == nil || m.Claude.Model != input.Configuration.NativeModel || m.LastSequence >= event.Sequence {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+		m.ExecutionID != input.ExecutionID || m.NativeThreadID != event.NativeThreadID || m.NativeTurnID != event.NativeTurnID || m.NativeID != v.NativeMessageID || m.Role != domain.AssistantMessage || m.Claude == nil || m.Claude.Model != input.Configuration.NativeModel || m.LastSequence >= event.Sequence {
 		return executionEventConflict()
 	}
 	m.Claude, err = domain.InterruptClaudeContent(m.Claude, m.State, *v)

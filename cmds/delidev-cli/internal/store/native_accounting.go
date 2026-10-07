@@ -172,7 +172,7 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 		}
 		a := u.Attribution()
 		if u.Kind != kind || u.SourceID != o.id || u.SourceID != o.source || u.SessionID != o.session || u.ProjectID != o.project || u.InputID != o.input || a.ExecutionID != o.execution ||
-			domain.OwnershipBlocks(domain.OwnershipResource, "", a.AccountID != o.account) ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(a.AccountID), a.AccountID != o.account) ||
 			a.ProviderID != o.provider || a.ModelID != o.model {
 			return domain.NativeAccountingSummary{}, corrupt()
 		}

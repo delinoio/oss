@@ -29,7 +29,11 @@ func activityExecution(tx *store.Tx, id, session, project domain.ID) (domain.Exe
 		return domain.ExecutionJobInput{}, 0, err
 	}
 	var input domain.ExecutionJobInput
-	if j.Type != domain.ExecuteSessionJob || r.SessionID != session || r.ProjectID != project || domain.Decode(j.Input, &input) != nil || input.SessionID != session || input.ExecutionID.Validate() != nil || input.AccountID.Validate() != nil {
+	if j.Type != domain.ExecuteSessionJob ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(id), r.SessionID != session) ||
+		r.ProjectID != project || domain.Decode(j.Input, &input) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(id), input.SessionID != session) ||
+		input.ExecutionID.Validate() != nil || input.AccountID.Validate() != nil {
 		return input, 0, invalidActivity()
 	}
 	state, ok := map[domain.JobState]pb.ActivityJobState{
@@ -89,7 +93,9 @@ func activityEntry(tx *store.Tx, r store.Record) (*pb.ActivityEntry, error) {
 		if err != nil {
 			return nil, err
 		}
-		if occurrence.Validate() != nil || occurrence.SessionID != r.SessionID || occurrence.Selection.ProjectID != r.ProjectID {
+		if occurrence.Validate() != nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(occurrence.SessionID), occurrence.SessionID != r.SessionID) ||
+			occurrence.Selection.ProjectID != r.ProjectID {
 			return nil, invalidActivity()
 		}
 		if occurrence.Trigger == domain.CronOccurrence {

@@ -267,7 +267,9 @@ func (c *OpenCodeEventPublisher) PublishTerminal(ctx context.Context) (domain.Ex
 	if err != nil {
 		return fail(err)
 	}
-	if !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !(progress.IdleNotification || progress.IdleReconciled) || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery || progress.SessionID != b.thread || progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID {
+	if !progress.SettledObserved || !progress.TerminalObserved || !progress.UserSeen || !progress.InputPartSeen || !(progress.IdleNotification || progress.IdleReconciled) || progress.Status != opencode.NativeStatusIdle || progress.NeedsRecovery ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(progress.SessionID), progress.SessionID != b.thread) ||
+		progress.MessageID != b.turn || progress.RequestID != b.reference.InputRequestID {
 		return fail(publicationUncertain())
 	}
 	var history opencode.HistoryObservation
@@ -436,7 +438,8 @@ func (c *OpenCodeEventPublisher) publishTodo(ctx context.Context, o opencode.Obs
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	claims, err := b.readClaims()
-	if err != nil || !b.validPublicationClaims(claims) || b.stage != openCodeAccepted || c.text.blocked || o.Todo == nil || o.Todo.SessionID != b.thread {
+	if err != nil || !b.validPublicationClaims(claims) || b.stage != openCodeAccepted || c.text.blocked || o.Todo == nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.Todo.SessionID), o.Todo.SessionID != b.thread) {
 		return publicationUncertain()
 	}
 	update := domain.ExecutionProgressUpdate{ID: domain.NewID(), Progress: domain.NativeProgress{Kind: domain.OpenCodeTodoProgressKind, Todo: &domain.OpenCodeTodoProgress{NativeEventID: o.EventID, Todos: o.Todo.Todos}}}

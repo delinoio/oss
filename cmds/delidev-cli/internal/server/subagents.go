@@ -264,7 +264,9 @@ func validateOpenCodeParentTool(tx *store.Tx, input domain.ExecutionJobInput, se
 		return err
 	}
 	message, err := store.Decode[domain.ExecutionMessage](record)
-	if err != nil || record.SessionID != session.ID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != p.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.NativeID != r.PartID || message.NativeParentID != r.MessageID || message.Role != domain.ToolMessage || message.Tool == nil {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(record.SessionID), record.SessionID != session.ID) ||
+		message.ExecutionID != input.ExecutionID || message.NativeThreadID != p.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.NativeID != r.PartID || message.NativeParentID != r.MessageID || message.Role != domain.ToolMessage || message.Tool == nil {
 		return executionEventConflict()
 	}
 	snapshot := message.Tool.Started

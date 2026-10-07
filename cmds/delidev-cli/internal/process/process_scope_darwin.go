@@ -82,7 +82,6 @@ func launchScope(s processScope, dir, socket string) (func() error, error) {
 		return nil, err
 	}
 	if err = launchctl("bootstrap", s.Domain, path); err != nil {
-		_ = launchctl("bootout", s.Domain+"/"+s.Label)
 		return nil, err
 	}
 	return func() error {
@@ -92,9 +91,18 @@ func launchScope(s processScope, dir, socket string) (func() error, error) {
 		if err != nil {
 			return err
 		}
-		if !saved.Complete && saved.Started {
+		if saved.Complete {
+			deadline := time.Now().Add(10 * time.Second)
+			for ProcessAlive(saved.Owner) && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+		if !saved.Complete || ProcessAlive(saved.Owner) {
+			domain.ObserveOwnership(domain.OwnershipCleanup, saved.OwnerID)
 			return scopeError()
 		}
+		// The original one-shot supervisor has exited. Unload only its empty
+		// definition; bootout must never substitute for the retained control pipe.
 		return launchctl("bootout", s.Domain+"/"+s.Label)
 	}, nil
 }

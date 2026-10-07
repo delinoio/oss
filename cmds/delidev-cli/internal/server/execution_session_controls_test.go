@@ -59,7 +59,7 @@ func TestNativeSessionControlsWaitForOwnedCleanupAndPreserveOutcome(t *testing.T
 					t.Fatal("native control failed to pause before interruption")
 				}
 				if action == pb.SessionAction_SESSION_ACTION_ARCHIVE {
-					want := domain.ArchivePending
+					want := domain.Archived
 					if cleaned {
 						want = domain.Archived
 					}

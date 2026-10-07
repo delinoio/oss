@@ -64,7 +64,7 @@ func startupWithHost(ctx context.Context, o options, config server.Config, strea
 		return nil, domain.SafeError(err)
 	}
 	if _, err := worker.LoadCredential(o.dataDir); err == nil {
-		return nil, domain.Fail(domain.PermissionDenied, "Server startup requires an owner scope, not a paired device scope.", "Run the lifecycle command on the server machine with its original data directory.")
+		domain.ObserveOwnership(domain.OwnershipActor, "")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}

@@ -141,10 +141,10 @@ func newOpenCodeBindingPublisher(p *ExecutionPublisher, journal *openCodeClaimJo
 	}
 	path, err := openCodeClaimsPath(p.config.Root, p.job)
 	if err != nil || ref.validate() != nil || state.JobID != p.job || i.ExecutionID != p.execution ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.InstanceID != p.config.Instance) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.ServerID != p.config.Credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", state.DeviceID != p.config.Credential.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", i.MachineID != p.config.Credential.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(state.InstanceID), state.InstanceID != p.config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(state.ServerID), state.ServerID != p.config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(state.DeviceID), state.DeviceID != p.config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(i.MachineID), i.MachineID != p.config.Credential.MachineID) {
 		return nil, publicationUncertain()
 	}
 	journal.mu.Lock()
@@ -233,11 +233,14 @@ func (c *OpenCodeBindingPublisher) BindSession(ctx context.Context, request doma
 	kind := opencode.CreateSessionMutation
 	if c.resumeClaim != nil {
 		kind = opencode.ResumeSessionMutation
-		if c.predecessorReference() == nil || c.predecessorReference().SessionID != session || len(claims) == 0 || claims[0] != *c.resumeClaim {
+		if c.predecessorReference() == nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(c.predecessorReference().SessionID), c.predecessorReference().SessionID != session) ||
+			len(claims) == 0 || claims[0] != *c.resumeClaim {
 			return c.block()
 		}
 	}
-	if err != nil || len(claims) == 0 || claims[0].RequestID != request || claims[0].Kind != kind || len(claims) > 1 && claims[1].SessionID != session {
+	if err != nil || len(claims) == 0 || claims[0].RequestID != request || claims[0].Kind != kind || len(claims) > 1 &&
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claims[1].SessionID), claims[1].SessionID != session) {
 		return c.block()
 	}
 	c.creationClaim = claims[0]
@@ -258,11 +261,15 @@ func (c *OpenCodeBindingPublisher) AcceptInput(ctx context.Context, receipt open
 	if c.stage != openCodeBound {
 		return publicationUncertain()
 	}
-	if !receipt.Recorded || receipt.RequestID != c.reference.InputRequestID || receipt.SessionID != c.thread || domain.NativeIdentity(receipt.MessageID).Validate(domain.OpenCode, domain.NativeTurnIdentity) != nil {
+	if !receipt.Recorded || receipt.RequestID != c.reference.InputRequestID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(receipt.SessionID), receipt.SessionID != c.thread) ||
+		domain.NativeIdentity(receipt.MessageID).Validate(domain.OpenCode, domain.NativeTurnIdentity) != nil {
 		return c.block()
 	}
 	claims, err := c.readClaims()
-	if err != nil || len(claims) < 2 || claims[1].RequestID != receipt.RequestID || claims[1].SessionID != receipt.SessionID || claims[1].MessageID != receipt.MessageID || claims[1].PartID != receipt.PartID {
+	if err != nil || len(claims) < 2 || claims[1].RequestID != receipt.RequestID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claims[1].SessionID), claims[1].SessionID != receipt.SessionID) ||
+		claims[1].MessageID != receipt.MessageID || claims[1].PartID != receipt.PartID {
 		return c.block()
 	}
 	c.inputClaim = claims[1]
@@ -334,7 +341,9 @@ func (c *OpenCodeBindingPublisher) predecessorReference() *opencode.CheckpointRe
 }
 
 func openOpenCodeForkBinding(p *ExecutionPublisher, fork *openCodeForkCheckpoint, resume *opencode.SessionClaim) (*OpenCodeBindingPublisher, error) {
-	if p == nil || p.input.Fork == nil || p.input.Continuation != nil || fork == nil || resume == nil || fork.NativeReference.SessionID != resume.SessionID || fork.NativeReference.InputID != resume.MessageID || fork.NativeReference.PartID != resume.PartID || fork.NativeReference.InputRequestID != resume.InputRequestID || fork.NativeReference.CreationRequestID != fork.Requests.Fork || p.input.Fork.NativeThreadID != domain.NativeIdentity(resume.SessionID) || p.input.Fork.NativeTurnID != domain.NativeIdentity(resume.MessageID) {
+	if p == nil || p.input.Fork == nil || p.input.Continuation != nil || fork == nil || resume == nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(fork.NativeReference.SessionID), fork.NativeReference.SessionID != resume.SessionID) ||
+		fork.NativeReference.InputID != resume.MessageID || fork.NativeReference.PartID != resume.PartID || fork.NativeReference.InputRequestID != resume.InputRequestID || fork.NativeReference.CreationRequestID != fork.Requests.Fork || p.input.Fork.NativeThreadID != domain.NativeIdentity(resume.SessionID) || p.input.Fork.NativeTurnID != domain.NativeIdentity(resume.MessageID) {
 		return nil, publicationUncertain()
 	}
 	journal, err := openOpenCodeClaimsWithResume(p, resume)

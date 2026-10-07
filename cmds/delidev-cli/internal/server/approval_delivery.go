@@ -19,7 +19,8 @@ func publishApprovalDelivery(tx *store.Tx, job store.Record, input domain.Execut
 		return false, err
 	}
 	response := value.ApprovalResponse
-	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.NativeApprovalInteraction || value.Closure != domain.InteractionOpen || response == nil || response.ID != u.ResponseID || response.State != domain.ApprovalResponseClaimed || response.Delivery != nil || response.Claim == nil {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+		value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.NativeApprovalInteraction || value.Closure != domain.InteractionOpen || response == nil || response.ID != u.ResponseID || response.State != domain.ApprovalResponseClaimed || response.Delivery != nil || response.Claim == nil {
 		return false, executionEventConflict()
 	}
 	_, err = store.Decode[domain.Job](job)

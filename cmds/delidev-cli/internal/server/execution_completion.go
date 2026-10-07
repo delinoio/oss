@@ -10,8 +10,9 @@ import (
 
 func nativeExecutionScope(tx *store.Tx, record store.Record, job domain.Job) (domain.ExecutionJobInput, store.Record, domain.Session, error) {
 	var input domain.ExecutionJobInput
-	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) {
+	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.SessionID), input.SessionID != record.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != job.MachineID) {
 		return input, store.Record{}, domain.Session{}, executionEventConflict()
 	}
 	sr, session, err := sessionRecord(tx, input.SessionID)
@@ -176,7 +177,8 @@ func retainNativeUncertainty(tx *store.Tx, input domain.ExecutionJobInput, sr st
 	if err != nil {
 		return err
 	}
-	if ir.SessionID != sr.ID || queued.ExecutionID != input.ExecutionID {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ir.SessionID), ir.SessionID != sr.ID) ||
+		queued.ExecutionID != input.ExecutionID {
 		return executionEventConflict()
 	}
 	if queued.Delivery == domain.InputClaimed {

@@ -153,6 +153,9 @@ func (s *Service) DiscoverNativeModels(ctx context.Context, req *connect.Request
 func (s *Service) nativeModelChange(ctx context.Context, id domain.ID, replayed bool, correlation string) (*connect.Response[pb.NativeModelChange], error) {
 	message := &pb.NativeModelChange{Replayed: replayed}
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
 		record, _, scope, err := nativeModelJob(tx, id)
 		if err != nil {
 			return err

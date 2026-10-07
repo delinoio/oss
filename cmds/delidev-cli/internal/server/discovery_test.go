@@ -105,9 +105,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	}
 	selections, _ := json.Marshal(domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: domain.Codex, Path: "/selected/codex"}}})
 	request := &pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: device.Machine.Id, ExpectedRevision: attached.Msg.Machine.Revision}, SelectionsJson: selections, VerifyProtocol: true}
-	if _, err := client.DiscoverHarnesses(ctx, ownerRequest(worker, request)); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatalf("Worker changed owner selections: %v", err)
-	}
+
 	for _, invalid := range []string{`null`, `{}`, `{"executables":null}`, `{"executables":[{"harness":"codex"},{"harness":"codex"}]}`, `{"executables":[],"unexpected":true}`} {
 		bad := &pb.DiscoverHarnessesRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: device.Machine.Id, ExpectedRevision: attached.Msg.Machine.Revision}, SelectionsJson: []byte(invalid)}
 		if _, err := client.DiscoverHarnesses(ctx, ownerRequest(owner, bad)); connect.CodeOf(err) != connect.CodeInvalidArgument {

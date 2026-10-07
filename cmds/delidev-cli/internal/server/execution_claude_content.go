@@ -23,7 +23,8 @@ func publishClaudeMessage(tx *store.Tx, input domain.ExecutionJobInput, session 
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != u.NativeID || value.NativeParentID != "" || value.Role != domain.AssistantMessage || value.Text != "" || value.InputID != "" || value.Phase != nil || value.ClaudeTool != nil || value.Tool != nil || value.Artifact != nil || value.Progress != nil || value.Claude == nil {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != session.ID) ||
+			value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != u.NativeID || value.NativeParentID != "" || value.Role != domain.AssistantMessage || value.Text != "" || value.InputID != "" || value.Phase != nil || value.ClaudeTool != nil || value.Tool != nil || value.Artifact != nil || value.Progress != nil || value.Claude == nil {
 			return executionEventConflict()
 		}
 		revision = r.Revision

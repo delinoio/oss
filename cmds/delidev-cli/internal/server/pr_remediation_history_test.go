@@ -112,10 +112,10 @@ func TestPRRemediationHistoryAndResumeKeepOriginalAttemptsWithoutDispatch(t *tes
 		t.Fatal("historical reads required credentials or lost attempts", err)
 	}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice})
-	if _, err := f.service.ListPullRequestRemediationAttempts(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.service.ListPullRequestRemediationAttempts(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker read remediation history", err)
 	}
-	if _, err := f.service.ResumePullRequestRemediation(worker, connect.NewRequest(resume)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := f.service.ResumePullRequestRemediation(worker, connect.NewRequest(resume)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker resumed allowance", err)
 	}
 	if err := f.service.Store.Read(owner, func(tx *store.Tx) error {

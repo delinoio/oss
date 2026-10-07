@@ -40,7 +40,9 @@ func (c *ClaudeContentPublisher) PublishTaskObservation(ctx context.Context, o c
 	if err := c.verify(); err != nil {
 		return true, err
 	}
-	if !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || o.Task == nil || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || b.progressSeen[o.NativeID] || len(b.progressSeen) >= 65536 || !reflect.DeepEqual(o, claude.LifecycleObservation{Kind: o.Kind, SessionID: o.SessionID, InputID: o.InputID, TurnID: o.TurnID, NativeID: o.NativeID, Accepted: true, Task: o.Task, Native: o.Native}) {
+	if !c.inputPublished ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || o.Task == nil || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || b.progressSeen[o.NativeID] || len(b.progressSeen) >= 65536 || !reflect.DeepEqual(o, claude.LifecycleObservation{Kind: o.Kind, SessionID: o.SessionID, InputID: o.InputID, TurnID: o.TurnID, NativeID: o.NativeID, Accepted: true, Task: o.Task, Native: o.Native}) {
 		return true, b.block()
 	}
 	n := o.Task

@@ -19,7 +19,8 @@ func publishClaudeUsage(tx *store.Tx, input domain.ExecutionJobInput, session st
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || m.ExecutionID != input.ExecutionID || m.NativeThreadID != event.NativeThreadID || m.NativeTurnID != event.NativeTurnID || m.NativeID != u.NativeMessageID || m.Claude == nil || m.Claude.Model != u.Model || u.Model != input.Configuration.NativeModel || m.Role != domain.AssistantMessage || m.NativeParentID != "" || m.State != domain.MessageStreaming {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != session.ID) ||
+			m.ExecutionID != input.ExecutionID || m.NativeThreadID != event.NativeThreadID || m.NativeTurnID != event.NativeTurnID || m.NativeID != u.NativeMessageID || m.Claude == nil || m.Claude.Model != u.Model || u.Model != input.Configuration.NativeModel || m.Role != domain.AssistantMessage || m.NativeParentID != "" || m.State != domain.MessageStreaming {
 			return executionEventConflict()
 		}
 		switch u.Source {

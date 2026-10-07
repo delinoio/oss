@@ -595,7 +595,8 @@ func (m *Manager) Read(session domain.ID) (Manifest, error) {
 	if err := domain.Decode(raw, &manifest); err != nil {
 		return manifest, err
 	}
-	if manifest.Version != 1 || manifest.SessionID != session {
+	if manifest.Version != 1 ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(manifest.SessionID), manifest.SessionID != session) {
 		return Manifest{}, domain.Fail(domain.RecoveryRequired, "The workspace manifest identity is invalid.", "Preserve the workspace and restore its matching metadata.")
 	}
 	return manifest, nil
@@ -651,7 +652,12 @@ func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Ma
 	if manifest.Reference != nil {
 		return m.removeSidechatMetadata(ctx, root, manifest)
 	}
-	if claim == nil || claim.ManifestDigest != manifestDigest(manifest) || claim.SessionID != manifest.SessionID || claim.Version != 1 {
+	if claim == nil || claim.ManifestDigest != manifestDigest(manifest) ||
+
+		claim.
+			SessionID !=
+			manifest.SessionID ||
+		claim.Version != 1 {
 		domain.ObserveOwnership(domain.OwnershipCleanup, manifest.SessionID)
 		claim = nil
 	}

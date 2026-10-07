@@ -56,7 +56,7 @@ func lifecycleConflict() error {
 }
 func workerCredential(root string) (Credential, error) {
 	c, err := LoadCredential(root)
-	if err == nil && domain.OwnershipBlocks(domain.OwnershipActor, "", c.Type != domain.WorkerDevice) {
+	if err == nil && c.Type != domain.WorkerDevice {
 		err = domain.Fail(domain.PermissionDenied, "This scope is not a Worker.", "Select the original private Worker directory.")
 	}
 	return c, err
@@ -74,9 +74,9 @@ func readLifecycle(root string, c Credential) (Lifecycle, error) {
 		return value, err
 	}
 	if value.Version != 1 || value.Generation.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", value.ServerID != c.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", value.DeviceID != c.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", value.MachineID != c.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(value.ServerID), value.ServerID != c.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(value.DeviceID), value.DeviceID != c.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(value.MachineID), value.MachineID != c.MachineID) ||
 		value.Endpoint != c.Endpoint || value.WorkerVersion == "" || (value.Desired != WorkerRunning && value.Desired != WorkerStopped) {
 		return value, lifecycleConflict()
 	}

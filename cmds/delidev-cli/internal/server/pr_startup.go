@@ -36,16 +36,17 @@ func settlePRStartupRejection(tx *store.Tx, record store.Record, job domain.Job,
 			return store.Record{}, false, nil
 		}
 	} else if job.State != domain.JobUncertain || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || len(job.Output) != 0 || session.ExecutionRecoveryJobID != recoveryID || session.Recovery != domain.Reconciling || session.Outcome != domain.ExecutionFailed ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", job.AssignedDeviceID != rejected.DeviceID) {
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(job.AssignedDeviceID), job.AssignedDeviceID != rejected.DeviceID) {
 		return store.Record{}, false, nil
 	}
 	assignment, err := tx.JobAssignment(record.ID)
 	if err != nil {
 		return store.Record{}, true, err
 	}
-	if assignment.SessionID != sr.ID || assignment.ProjectID != sr.ProjectID || rejected.ValidateAssignment(assignment.ID, assignment.Revision, assignment.Data) != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", rejected.InstanceID != job.InstanceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", rejected.MachineID != job.MachineID) {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(assignment.SessionID), assignment.SessionID != sr.ID) ||
+		assignment.ProjectID != sr.ProjectID || rejected.ValidateAssignment(assignment.ID, assignment.Revision, assignment.Data) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(rejected.InstanceID), rejected.InstanceID != job.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(rejected.MachineID), rejected.MachineID != job.MachineID) {
 		return store.Record{}, false, nil
 	}
 	var original domain.Job
@@ -70,7 +71,7 @@ func settlePRStartupRejection(tx *store.Tx, record store.Record, job domain.Job,
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
 	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", preparation.MachineID != input.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(preparation.MachineID), preparation.MachineID != input.MachineID) ||
 		workspace.ValidatePRStartupRejection(preparation, manifest, rejected.Workspace, machine.OS) != nil {
 		return store.Record{}, false, nil
 	}
@@ -82,7 +83,8 @@ func settlePRStartupRejection(tx *store.Tx, record store.Record, job domain.Job,
 	if err != nil {
 		return store.Record{}, true, err
 	}
-	if ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || (recoveryID == "" && queued.Delivery != domain.InputClaimed || recoveryID != "" && queued.Delivery != domain.InputUncertain) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ir.SessionID), ir.SessionID != sr.ID) ||
+		ir.ProjectID != sr.ProjectID || (recoveryID == "" && queued.Delivery != domain.InputClaimed || recoveryID != "" && queued.Delivery != domain.InputUncertain) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 		return store.Record{}, false, nil
 	}
 	queued.Delivery = domain.InputRejected

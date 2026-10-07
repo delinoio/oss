@@ -81,7 +81,7 @@ func (m *Manager) cleanupStorageStaging(ctx context.Context, r StorageRequest) e
 	}
 	claim, err := m.readStagingClaim(r.OperationID)
 	if err != nil || claim.Reference != removalReference(r) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != r.Preparation.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != r.Preparation.MachineID) ||
 		claim.PreparationDigest != r.Manifest.InputDigest || claim.RequestDigest != storageRequestDigest(r) {
 		return ResultUncertain()
 	}
@@ -109,8 +109,10 @@ func (m *Manager) cleanupDeletionStaging(ctx context.Context, w domain.SessionDe
 			continue
 		}
 		claim, err := m.readStagingClaim(copy.JobID)
-		if err != nil || claim.Reference.SessionID != w.SessionID || claim.Reference.SnapshotID != copy.SnapshotID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != w.MachineID) ||
+		if err != nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.Reference.SessionID), claim.Reference.SessionID != w.SessionID) ||
+			claim.Reference.SnapshotID != copy.SnapshotID ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != w.MachineID) ||
 			!slices.Contains(w.PreparationDigests, claim.PreparationDigest) {
 			return domain.SessionDeletionPending()
 		}

@@ -40,7 +40,9 @@ func startupProofDigest(raw []byte) string {
 // ValidatePRStartupRejection is a pure comparison for server publication. It
 // cannot inspect Worker paths, invoke Git or infer a proof from absent events.
 func ValidatePRStartupRejection(input PrepareRequest, manifest Manifest, proof domain.PRStartupRejectionProof, workerOS string) error {
-	if input.validateStructure() != nil || ValidateResult(input, manifest, workerOS) != nil || proof.Validate() != nil || proof.SessionID != input.SessionID || proof.PreparationDigest != preparationDigest(input) {
+	if input.validateStructure() != nil || ValidateResult(input, manifest, workerOS) != nil || proof.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(proof.SessionID), proof.SessionID != input.SessionID) ||
+		proof.PreparationDigest != preparationDigest(input) {
 		return domain.StartupRejectionUncertain()
 	}
 	rawManifest, err := json.Marshal(manifest)
@@ -83,7 +85,9 @@ func (m *Manager) ReadPRStartupRejection(ctx context.Context, job, execution dom
 	defer lock.Close()
 	raw, err := security.ReadPrivate(m.prStartupPath(input.SessionID, execution), 4096)
 	var record prStartupRecord
-	if err != nil || domain.Decode(raw, &record) != nil || record.validate() != nil || record.Phase != prStartupRejected || record.JobID != job || record.ExecutionID != execution || record.SessionID != input.SessionID || m.requireNoPRNativeEligibility(record) != nil || m.requireNoExecutionHistory(input.SessionID) != nil {
+	if err != nil || domain.Decode(raw, &record) != nil || record.validate() != nil || record.Phase != prStartupRejected || record.JobID != job || record.ExecutionID != execution ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(record.SessionID), record.SessionID != input.SessionID) ||
+		m.requireNoPRNativeEligibility(record) != nil || m.requireNoExecutionHistory(input.SessionID) != nil {
 		return empty, domain.StartupRejectionUncertain()
 	}
 	proof := domain.PRStartupRejectionProof{JobID: job, ExecutionID: execution, SessionID: input.SessionID, PreparationDigest: record.PreparationDigest, ManifestDigest: record.ManifestDigest, TargetDigest: record.TargetDigest, JournalDigest: startupProofDigest(raw), Reason: record.Reason, StartedAt: record.StartedAt, FinishedAt: *record.FinishedAt}

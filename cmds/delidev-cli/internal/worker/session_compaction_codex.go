@@ -399,11 +399,13 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 	}
 	var p codexSessionCompactionCheckpoint
 	if domain.DecodeWithLimit(data, &p, maxCompactionCheckpoint) != nil || p.Version != 1 || p.Input.Validate() != nil || p.Input.Version != 2 || p.Input.Assignment.Configuration.Harness != domain.Codex || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", p.ServerID != credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", p.DeviceID != credential.DeviceID) ||
-		p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.Input.Assignment.AccountID != input.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.Input.Assignment.ConnectionID != input.ConnectionID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(p.ServerID), p.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(p.DeviceID), p.DeviceID != credential.DeviceID) ||
+		p.Input.Assignment.ExecutionID != ref.ExecutionID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Input.Assignment.SessionID), p.Input.Assignment.SessionID != input.SessionID) ||
+		p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Input.Assignment.AccountID), p.Input.Assignment.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Input.Assignment.ConnectionID), p.Input.Assignment.ConnectionID != input.ConnectionID) ||
 		p.Input.SourceJobID != input.Continuation.Previous.JobID {
 		return empty, domain.CompactionUncertain()
 	}
@@ -419,7 +421,7 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 	var journal journal
 	var result domain.SessionCompactionResult
 	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.InstanceID.Validate() != nil || journal.ReportID.Validate() != nil || journal.Revision != p.AssignmentRevision || p.AssignmentRevision == 0 ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", journal.InstanceID != p.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(journal.InstanceID), journal.InstanceID != p.InstanceID) ||
 		journal.JobID != ref.JobID || journal.Digest != p.AssignmentDigest || journal.State != journalFinished && journal.State != journalReported || journal.Problem != nil || domain.Decode(journal.Output, &result) != nil || result.Validate() != nil || result.Harness != domain.Codex || result.Checkpoint != ref || result.Codex.HistoryDigest != p.Native.HistoryDigest || result.Codex.NativeThreadID != domain.NativeIdentity(source.Native.ThreadID) || result.Codex.SourceNativeTurnID != domain.NativeIdentity(source.Native.TurnID) {
 		return empty, domain.CompactionUncertain()
 	}

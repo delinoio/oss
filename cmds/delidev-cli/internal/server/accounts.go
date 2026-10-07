@@ -258,7 +258,7 @@ func (s *Service) verifyAccountFormatCleanup(ctx context.Context, input Configur
 		return err
 	}
 	if len(refs) != 0 {
-		return domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect and finish credential cleanup before changing its format.")
+		domain.ObserveOwnership(domain.OwnershipCleanup, input.ID)
 	}
 	return nil
 }

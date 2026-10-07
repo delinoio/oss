@@ -190,7 +190,7 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if assignment.ID.Validate() != nil || assignment.SessionID.Validate() != nil || assignment.Operation.ID.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", assignment.Terminal.MachineID != m.credential.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(assignment.Terminal.MachineID), assignment.Terminal.MachineID != m.credential.MachineID) {
 		return domain.TerminalUnavailable()
 	}
 	switch assignment.Operation.Action {
@@ -232,7 +232,7 @@ func (m *terminalManager) apply(ctx context.Context, assignment terminal.Assignm
 		}
 		var original terminal.Assignment
 		if domain.Decode(claimed.Msg.AssignmentJson, &original) != nil || terminalOperationDigest(original) != j.Digest ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", original.Terminal.InstanceID != m.instance) {
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(original.Terminal.InstanceID), original.Terminal.InstanceID != m.instance) {
 			return domain.TerminalUnavailable()
 		}
 		assignment = original
@@ -301,8 +301,9 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 			result.State, result.Problem = domain.TerminalUncertain, domain.Fail(domain.RecoveryRequired, "The original terminal already owns a shell.", "Reattach to it; never create a replacement for this request.")
 			return result
 		}
-		if a.Preparation == nil || a.Manifest == nil || a.Preparation.SessionID != a.SessionID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", a.Preparation.MachineID != m.credential.MachineID) {
+		if a.Preparation == nil || a.Manifest == nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(a.Preparation.SessionID), a.Preparation.SessionID != a.SessionID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(a.Preparation.MachineID), a.Preparation.MachineID != m.credential.MachineID) {
 			result.State, result.Problem = domain.TerminalUncertain, workspace.ResultUncertain()
 			return result
 		}

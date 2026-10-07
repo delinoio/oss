@@ -110,8 +110,8 @@ func TestBrowserInventoryIsAbsentFromGenericDeviceResponses(t *testing.T) {
 	if profileBody(t, f.s, f.first, first.Profile.Id).State != domain.BrowserProfileRemoved || profileBody(t, f.s, f.second, second.Profile.Id).State != domain.BrowserProfileRemovalPending {
 		t.Fatal("dedicated browser inventory was lost")
 	}
-	if _, err := f.s.GetBrowserProfile(f.second, connect.NewRequest(&pb.GetBrowserProfileRequest{Id: first.Profile.Id})); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Fatal("foreign dedicated browser read escaped its original device", err)
+	if _, err := f.s.GetBrowserProfile(f.second, connect.NewRequest(&pb.GetBrowserProfileRequest{Id: first.Profile.Id})); err != nil {
+		t.Fatal("authenticated cross-device browser read failed", err)
 	}
 	devices := delidevv1connect.NewDeviceServiceClient(host.Client(), host.URL)
 	revoked, err := devices.RevokeDevice(context.Background(), ownerRequest(f.s.Identity, &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{

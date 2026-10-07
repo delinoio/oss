@@ -116,7 +116,9 @@ func validateGrokInteraction(tx *store.Tx, input domain.ExecutionJobInput, event
 		return err
 	}
 	message, err := store.Decode[domain.ExecutionMessage](r)
-	if err != nil || r.SessionID != input.SessionID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.FirstSequence >= event.Sequence || message.GrokTool == nil || !reflect.DeepEqual(*message.GrokTool, u.Grok.Event) {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+		message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.FirstSequence >= event.Sequence || message.GrokTool == nil || !reflect.DeepEqual(*message.GrokTool, u.Grok.Event) {
 		return executionEventConflict()
 	}
 	digest, err := grok.PublicRequestDigest(u.NativeRequestID)

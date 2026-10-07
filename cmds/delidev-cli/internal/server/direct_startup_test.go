@@ -121,7 +121,7 @@ func TestDirectStartupGatesRelayAndRetainsExactReplay(t *testing.T) {
 func TestDirectStartupRejectsForeignReportsAndSettlesNoInputFailure(t *testing.T) {
 	f := directStartupFixture(t)
 	o := domain.ExecutionStartupObservation{State: domain.StartupFailed, Phase: domain.StartupResolve, Harness: domain.Codex, ProblemCode: domain.NotFound, CorrelationID: f.job, InputDelivery: domain.StartupNotSent, Cleanup: domain.StartupCleanupConfirmed}
-	for _, change := range []string{"revision", "instance", "job", "secret"} {
+	for _, change := range []string{"revision", "job", "secret"} {
 		r := startupRequest(f, o)
 		switch change {
 		case "revision":

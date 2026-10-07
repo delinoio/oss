@@ -18,7 +18,9 @@ func (c *GrokBindingPublisher) Closure(ctx context.Context, claim grok.ClosureCl
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.stage != grokTextClosing || claim.RequestID != c.closureID || claim.ProductSessionID != c.reference.SessionID || claim.NativeSessionID != c.thread || claim.NativePromptID != c.turn {
+	if c.stage != grokTextClosing || claim.RequestID != c.closureID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.ProductSessionID), claim.ProductSessionID != c.reference.SessionID) ||
+		claim.NativeSessionID != c.thread || claim.NativePromptID != c.turn {
 		return c.block()
 	}
 	if _, err := c.readClaims(); err != nil {

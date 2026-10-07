@@ -18,7 +18,8 @@ type openCodeToolPart struct {
 func (c *OpenCodeTextPublisher) observeTool(ctx context.Context, native opencode.NativePart) error {
 	b := c.binding
 	owner := c.messages[native.MessageID]
-	if native.SessionID != b.thread || owner == nil || owner.role != domain.AssistantMessage || c.revisions[native.ID] != nil || c.parts[native.ID] != nil || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(native.SessionID), native.SessionID != b.thread) ||
+		owner == nil || owner.role != domain.AssistantMessage || c.revisions[native.ID] != nil || c.parts[native.ID] != nil || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 		return publicationUncertain()
 	}
 	var snapshot domain.ToolSnapshot

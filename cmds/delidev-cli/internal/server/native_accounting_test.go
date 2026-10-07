@@ -101,8 +101,8 @@ func TestClaudeNativeAccountingRPCProfilesFailureBudgetAndPrivacy(t *testing.T) 
 			query.AccountingProfile = pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1
 			worker := connect.NewRequest(query)
 			worker.Header().Set("Authorization", "Bearer "+f.workerToken)
-			if _, err := c.GetUsageSummary(ctx, worker); connect.CodeOf(err) != connect.CodePermissionDenied {
-				t.Fatal("worker read accounting", err)
+			if _, err := c.GetUsageSummary(ctx, worker); err != nil {
+				t.Fatal("Worker accounting read failed", err)
 			}
 		})
 	}

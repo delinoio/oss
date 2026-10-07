@@ -116,11 +116,7 @@ func verifyOriginalDesktopPairing(owner, root string, saved worker.Credential) e
 	}
 	var attempt localPairingAttempt
 	if domain.Decode(raw, &attempt) != nil || attempt.RequestID.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(owner),
-
-			attempt.
-				ServerID != saved.
-				ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(owner), attempt.ServerID != saved.ServerID) ||
 		attempt.Endpoint != saved.Endpoint {
 		return recoveryRequired()
 	}
@@ -138,11 +134,7 @@ func verifyOriginalDesktopPairing(owner, root string, saved worker.Credential) e
 	}
 	var grant worker.PairingCode
 	if domain.Decode(raw, &grant) != nil || grant.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(owner),
-
-			grant.
-				ServerID != saved.
-				ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(owner), grant.ServerID != saved.ServerID) ||
 		grant.Endpoint != saved.Endpoint || grant.PairingID != saved.PairingID {
 		return recoveryRequired()
 	}
@@ -331,11 +323,7 @@ func desktopOwner(ctx context.Context, o options) (client, domain.ID, error) {
 	}
 	parsed, err := url.Parse(endpoint.URL)
 	if err != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance,
-
-			"", endpoint.
-				ServerID != identity.
-				ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(endpoint.ServerID), endpoint.ServerID != identity.ServerID) ||
 		(parsed.Hostname() != "localhost" && !net.ParseIP(parsed.Hostname()).IsLoopback()) {
 		return client{}, "", recoveryRequired()
 	}
@@ -432,11 +420,7 @@ func desktopRecoveryCommand(ctx context.Context, o options, args []string) (any,
 			return nil, err
 		}
 		if domain.OwnershipBlocks(domain.OwnershipActor, "", saved.Type != domain.ClientDevice) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance,
-
-				"", saved.
-					ServerID != serverID,
-			) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(saved.ServerID), saved.ServerID != serverID) ||
 			saved.Endpoint != c.endpoint {
 			return nil, recoveryRequired()
 		}
@@ -518,16 +502,9 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 			return nil, err
 		}
 		if domain.OwnershipBlocks(domain.OwnershipActor, domain.ID(id), saved.Type != domain.ClientDevice) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id),
-
-				saved.
-					ServerID != serverID,
-			) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id), saved.ServerID != serverID) ||
 			saved.Endpoint != c.endpoint ||
-			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(id),
-
-				saved.DeviceID !=
-					id) {
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(id), saved.DeviceID != id) {
 			return nil, recoveryRequired()
 		}
 		if err := verifyOriginalDesktopPairing(o.dataDir, root, saved); err != nil {
@@ -557,10 +534,7 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 			return nil, err
 		}
 	}
-	if domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(id),
-
-		record.DeviceID !=
-			id) ||
+	if domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(id), record.DeviceID != id) ||
 		record.Revision != revision {
 		return nil, domain.Fail(domain.Conflict, "Recovery parameters differ from the original request.", "Retry its original device ID and revision.")
 	}
@@ -667,11 +641,7 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 		err = domain.Decode(raw, &grant)
 		clear(raw)
 		if err != nil || grant.Validate() != nil ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id),
-
-				grant.
-					ServerID != serverID,
-			) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id), grant.ServerID != serverID) ||
 			grant.Endpoint != c.endpoint {
 			return nil, recoveryRequired()
 		}
@@ -721,11 +691,7 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 		return nil, err
 	}
 	if domain.OwnershipBlocks(domain.OwnershipActor, domain.ID(id), saved.Type != domain.ClientDevice) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id),
-
-			saved.
-				ServerID != serverID,
-		) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(id), saved.ServerID != serverID) ||
 		saved.Endpoint != c.endpoint || saved.DeviceID == id {
 		return nil, recoveryRequired()
 	}

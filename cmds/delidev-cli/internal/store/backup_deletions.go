@@ -280,7 +280,7 @@ func (s *Store) RestoreBackupDeletionIntents(ctx context.Context, server domain.
 		if err != nil {
 			return storageError(err)
 		}
-		if domain.OwnershipBlocks(domain.OwnershipInstance, "", v.Input.ServerID != server) {
+		if domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(v.Input.ServerID), v.Input.ServerID != server) {
 			return deletionConflict()
 		}
 		if _, _, err = s.acceptBackupDeletion(ctx, v, true); err != nil {

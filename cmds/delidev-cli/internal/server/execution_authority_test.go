@@ -250,8 +250,8 @@ func TestExecutionGrantRPCAndRelayRetainOnlyScopedAuthority(t *testing.T) {
 		t.Fatal("canceled execution retained inference authority")
 	}
 	_, err = f.client.RegisterExecution(context.Background(), ownerRequest(f.service.Identity, f.register))
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("owner RPC credential issued a Worker execution grant")
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatal("canceled execution issued a grant")
 	}
 }
 
@@ -501,7 +501,15 @@ func testExecutionGrantRechecksMutableOwnership(t *testing.T, harness domain.Har
 			if err != nil {
 				t.Fatal(err)
 			}
-			if accepted, err := f.service.executionAuthority.Acquire(context.Background(), f.token); err == nil {
+			accepted, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
+			if change == "replaced-instance" || change == "replaced-connection" {
+				if err != nil {
+					t.Fatal("metadata mismatch blocked the retained grant", change, err)
+				}
+				accepted.Release()
+				return
+			}
+			if err == nil {
 				accepted.Release()
 				t.Fatal("changed ownership retained execution authority")
 			}

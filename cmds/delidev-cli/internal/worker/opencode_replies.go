@@ -33,7 +33,8 @@ type openCodeClosedInteraction struct {
 func (c *OpenCodeEventPublisher) publishInteractionReply(ctx context.Context, o opencode.Observation) error {
 	n := o.InteractionReply
 	b := c.text.binding
-	if n == nil || n.SessionID != b.thread {
+	if n == nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(n.SessionID), n.SessionID != b.thread) {
 		return publicationUncertain()
 	}
 	original := c.interactions[n.RequestID]

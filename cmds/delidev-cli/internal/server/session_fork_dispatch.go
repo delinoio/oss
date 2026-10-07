@@ -44,7 +44,7 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 	creationJob, err := store.Decode[domain.Job](creation)
 	var seed domain.ForkJobInput
 	if err != nil || creationJob.Type != domain.ForkSessionJob || creationJob.State != domain.JobSucceeded || domain.Decode(creationJob.Input, &seed) != nil || seed.Validate() != nil || seed.ChildSessionID != sr.ID || seed.RuntimeID != f.RuntimeID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", creationJob.MachineID != session.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(creationJob.MachineID), creationJob.MachineID != session.MachineID) {
 		return store.Record{}, forkConflict()
 	}
 	input.Startup, input.Installation = seed.Startup, seed.SourceAssignment.Installation

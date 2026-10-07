@@ -36,6 +36,18 @@ func TestWorkspaceReadsRejectUnavailableStorageBeforePublication(t *testing.T) {
 					query, _ = json.Marshal(domain.WorkspaceReadQuery{Operation: operation})
 				}
 				_, err := client.ReadSessionWorkspace(context.Background(), ownerRequest(f.service.Identity, &pb.ReadSessionWorkspaceRequest{SessionId: string(f.session), QueryJson: query}))
+				if state != domain.WorkspaceStored && operation == domain.WorkspaceRoots {
+					if err != nil {
+						t.Fatal(err)
+					}
+					continue
+				}
+				if state != domain.WorkspaceStored {
+					if err == nil {
+						t.Fatal("unavailable Worker returned a file")
+					}
+					continue
+				}
 				if connect.CodeOf(err) != connect.CodeUnavailable {
 					t.Fatal(operation, "read published without present storage", err)
 				}

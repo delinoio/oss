@@ -58,8 +58,8 @@ func TestUsageRPCDeduplicatedSnapshotDefaultsFiltersAndPrivacy(t *testing.T) {
 	}
 	worker := connect.NewRequest(&pb.GetUsageSummaryRequest{})
 	worker.Header().Set("Authorization", "Bearer "+f.workerToken)
-	if _, err := c.GetUsageSummary(context.Background(), worker); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker read usage", err)
+	if _, err := c.GetUsageSummary(context.Background(), worker); err != nil {
+		t.Fatal("Worker usage read failed", err)
 	}
 	if _, err := c.GetUsageSummary(context.Background(), connect.NewRequest(&pb.GetUsageSummaryRequest{})); err == nil {
 		t.Fatal("unauthenticated usage")

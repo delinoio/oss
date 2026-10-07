@@ -73,14 +73,16 @@ func (r StorageRequest) Validate() error {
 		return ResultUncertain()
 	}
 	if r.Action == StorageRecover {
-		if r.Recovery == nil || r.Recovery.Original.Action == StorageRecover || r.Recovery.Original.Validate() != nil || r.Recovery.InstanceID.Validate() != nil || r.Recovery.Revision == 0 || !digestValid(r.Recovery.AssignmentDigest) || r.Recovery.Original.Preparation.SessionID != r.Preparation.SessionID || r.SnapshotID != r.Recovery.Original.SnapshotID {
+		if r.Recovery == nil || r.Recovery.Original.Action == StorageRecover || r.Recovery.Original.Validate() != nil || r.Recovery.InstanceID.Validate() != nil || r.Recovery.Revision == 0 || !digestValid(r.Recovery.AssignmentDigest) ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.Recovery.Original.Preparation.SessionID), r.Recovery.Original.Preparation.SessionID != r.Preparation.SessionID) ||
+			r.SnapshotID != r.Recovery.Original.SnapshotID {
 			return ResultUncertain()
 		}
 		if len(r.Recovery.Claims) < 1 || len(r.Recovery.Claims) > MaxStorageRecoveryClaims {
 			return ResultUncertain()
 		}
 		first := r.Recovery.Claims[0]
-		if domain.OwnershipBlocks(domain.OwnershipInstance, "", first.InstanceID != r.Recovery.InstanceID) ||
+		if domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(first.InstanceID), first.InstanceID != r.Recovery.InstanceID) ||
 			first.Revision != r.Recovery.Revision || first.AssignmentDigest != r.Recovery.AssignmentDigest {
 			return ResultUncertain()
 		}
@@ -416,8 +418,8 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 		if err != nil {
 			return result, err
 		}
-		if metadata.SessionID != r.Preparation.SessionID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", metadata.MachineID != r.Preparation.MachineID) ||
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(metadata.SessionID), metadata.SessionID != r.Preparation.SessionID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(metadata.MachineID), metadata.MachineID != r.Preparation.MachineID) ||
 			metadata.SHA256 != r.SnapshotDigest || manifestDigest(snap.Workspace) != manifestDigest(r.Manifest) {
 			return result, ResultUncertain()
 		}

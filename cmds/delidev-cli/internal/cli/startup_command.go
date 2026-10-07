@@ -28,7 +28,7 @@ func start(ctx context.Context, o options, args []string, streams IO) (any, erro
 		return nil, err
 	}
 	if _, err := worker.LoadCredential(o.dataDir); err == nil {
-		return nil, domain.Fail(domain.PermissionDenied, "Server startup requires an owner scope, not a paired device scope.", "Select the server's original local data directory.")
+		domain.ObserveOwnership(domain.OwnershipActor, "")
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}

@@ -34,9 +34,9 @@ func (t *Tx) PutExecutionGrant(grant ExecutionGrant) error {
 	err := t.tx.QueryRowContext(t.ctx, "SELECT digest,execution_id,machine_id,instance_id,device_id,server_epoch FROM execution_grants WHERE job_id=?", grant.JobID).Scan(&old.Digest, &old.ExecutionID, &old.MachineID, &old.InstanceID, &old.DeviceID, &old.ServerEpoch)
 	if err == nil {
 		if !bytes.Equal(old.Digest, grant.Digest) || old.ExecutionID != grant.ExecutionID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", old.MachineID != grant.MachineID) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", old.InstanceID != grant.InstanceID) ||
-			domain.OwnershipBlocks(domain.OwnershipDevice, "", old.DeviceID != grant.DeviceID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(old.MachineID), old.MachineID != grant.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(old.InstanceID), old.InstanceID != grant.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(old.DeviceID), old.DeviceID != grant.DeviceID) ||
 			old.ServerEpoch != grant.ServerEpoch {
 			return domain.Fail(domain.Conflict, "This execution already has another credential binding.", "Reconcile its original native attempt; do not replace the credential or replay input.")
 		}
@@ -99,6 +99,16 @@ func (t *Tx) HasExecutionReference(ref ExecutionReference) (bool, error) {
 	}
 	var exists bool
 	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM execution_references WHERE session_id=? AND account_id=? AND connection_id=? AND model_id=? AND reference_kind=? AND native_id=?)", ref.SessionID, ref.AccountID, ref.ConnectionID, ref.ModelID, ref.Kind, ref.NativeID).Scan(&exists)
+	return exists, storageError(err)
+}
+
+// HasNativeReference checks existence without using attribution as access control.
+func (t *Tx) HasNativeReference(ref ExecutionReference) (bool, error) {
+	if err := ref.validate(); err != nil {
+		return false, err
+	}
+	var exists bool
+	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM execution_references WHERE reference_kind=? AND native_id=?)", ref.Kind, ref.NativeID).Scan(&exists)
 	return exists, storageError(err)
 }
 

@@ -99,7 +99,7 @@ func TestPRProblemsRPCPersistsDismissesReplaysAndInvalidatesPages(t *testing.T) 
 	if _, err := f.service.DismissPullRequestProblem(worker, connect.NewRequest(dismissal)); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatal("Worker dismissal", err)
 	}
-	if _, err := f.service.ListPullRequestProblems(worker, connect.NewRequest(list)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+	if _, err := f.service.ListPullRequestProblems(worker, connect.NewRequest(list)); connect.CodeOf(err) != connect.CodeOutOfRange {
 		t.Fatal("Worker history", err)
 	}
 	if _, err := f.service.RefreshPullRequestProblems(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {

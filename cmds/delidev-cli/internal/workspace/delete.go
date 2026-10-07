@@ -94,7 +94,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 			if e != nil {
 				return e
 			}
-			if domain.OwnershipBlocks(domain.OwnershipMachine, "", manifest.MachineID != w.MachineID) ||
+			if domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(manifest.MachineID), manifest.MachineID != w.MachineID) ||
 				domain.OwnershipBlocks(domain.OwnershipResource, w.DeletionID, !slices.Contains(w.PreparationDigests, manifest.InputDigest)) || !manifest.Type.Valid() {
 				return domain.SessionDeletionPending()
 			}
@@ -114,7 +114,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	if proof.Manifest != nil {
 		manifest := *proof.Manifest
 		if domain.OwnershipBlocks(domain.OwnershipResource, w.DeletionID, manifest.SessionID != w.SessionID) ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", manifest.MachineID != w.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(manifest.MachineID), manifest.MachineID != w.MachineID) ||
 			domain.OwnershipBlocks(domain.OwnershipResource, w.DeletionID, !slices.Contains(w.PreparationDigests, manifest.InputDigest)) {
 			return domain.SessionDeletionPending()
 		}

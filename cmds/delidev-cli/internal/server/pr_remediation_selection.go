@@ -43,7 +43,8 @@ func (s *Service) matchPRRemediationWorkspace(ctx context.Context, selected stor
 		matches := 0
 		for _, row := range links {
 			link, err := store.Decode[domain.SessionPullRequest](row)
-			if err != nil || link.Validate() != nil || row.ProjectID != r.ProjectID || row.SessionID != r.ID {
+			if err != nil || link.Validate() != nil || row.ProjectID != r.ProjectID ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(row.SessionID), row.SessionID != r.ID) {
 				return workspace.ResultUncertain()
 			}
 			if link.SamePR(target.Target) && link.RepositoryID == target.Target.RepositoryID && link.RepositoryNodeID == target.Target.RepositoryNodeID && link.PullRequestNodeID == target.Target.PullRequestNodeID && link.Number == target.Target.Number {

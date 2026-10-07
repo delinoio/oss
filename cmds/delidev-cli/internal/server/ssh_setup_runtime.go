@@ -92,7 +92,7 @@ func (s *Service) recoverSSHClaims(ctx context.Context) error {
 		raw, e := security.ReadPrivate(filepath.Join(directory, entry.Name()), 32<<10)
 		var claim sshClaim
 		if e != nil || domain.Decode(raw, &claim) != nil || claim.Version != 1 || claim.ID != id ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.Operation.ServerID != s.Identity.ServerID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(claim.Operation.ServerID), claim.Operation.ServerID != s.Identity.ServerID) ||
 			claim.InputSHA256 != sshOperationDigest(claim.Operation) || claim.Operation.StartRequestID.Validate() != nil {
 			return installationFailure(domain.RecoveryRequired)
 		}
@@ -183,7 +183,7 @@ func (s *Service) runSSHSetups(parent context.Context) {
 func (s *Service) runSSHSetup(parent context.Context, r store.Record) {
 	var o sshOperation
 	if domain.Decode(r.Data, &o) != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", o.ServerID != s.Identity.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(o.ServerID), o.ServerID != s.Identity.ServerID) ||
 		o.StartRequestID != "" && o.StartRequestID.Validate() != nil {
 		return
 	}
@@ -250,8 +250,8 @@ func (s *Service) runSSHSetup(parent context.Context, r store.Record) {
 		}
 		d, e := store.Decode[domain.Device](device)
 		if e != nil || d.Revoked ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", d.MachineID != result.MachineID) ||
-			d.Type != domain.WorkerDevice {
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(d.MachineID), d.MachineID != result.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipActor, d.MachineID, d.Type != domain.WorkerDevice) {
 			return installationFailure(domain.PermissionDenied)
 		}
 		_, machine, e := activeMachine(tx, result.MachineID)
@@ -315,7 +315,7 @@ func (s *Service) performSSHSetup(ctx context.Context, r store.Record, o sshOper
 		raw, e := security.ReadPrivate(path, 32<<10)
 		var claim sshClaim
 		if e != nil || domain.Decode(raw, &claim) != nil || claim.ID != r.ID || claim.Version != 1 ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.Operation.ServerID != s.Identity.ServerID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(claim.Operation.ServerID), claim.Operation.ServerID != s.Identity.ServerID) ||
 			claim.InputSHA256 != sshOperationDigest(o) || claim.InputSHA256 != sshOperationDigest(claim.Operation) {
 			return installationFailure(domain.RecoveryRequired), nil
 		}
@@ -344,7 +344,7 @@ func (s *Service) performSSHSetup(ctx context.Context, r store.Record, o sshOper
 		}
 		defer clear(raw)
 		if domain.Decode(raw, &document) != nil || document.OperationID != r.ID ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", document.ServerID != s.Identity.ServerID) {
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(document.ServerID), document.ServerID != s.Identity.ServerID) {
 			return installationFailure(domain.RecoveryRequired), nil
 		}
 	} else {

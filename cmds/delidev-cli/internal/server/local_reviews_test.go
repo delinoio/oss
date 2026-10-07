@@ -185,19 +185,19 @@ func TestLocalReviewMutationsRejectWorkerCredentials(t *testing.T) {
 	client := sessionClient(f.accountFixture)
 	ctx := context.Background()
 	_, err := client.CreateLocalReviewComment(ctx, ownerRequest(f.workerIdentity, &pb.CreateLocalReviewCommentRequest{}))
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatal(err)
 	}
 	_, err = client.EditLocalReviewComment(ctx, ownerRequest(f.workerIdentity, &pb.EditLocalReviewCommentRequest{}))
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatal(err)
 	}
 	_, err = client.DeleteLocalReviewComment(ctx, ownerRequest(f.workerIdentity, &pb.DeleteLocalReviewCommentRequest{}))
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatal(err)
 	}
 	_, err = client.SubmitLocalReview(ctx, ownerRequest(f.workerIdentity, &pb.SubmitLocalReviewRequest{}))
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatal(err)
 	}
 }

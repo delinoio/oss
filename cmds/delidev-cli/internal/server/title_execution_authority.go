@@ -19,8 +19,10 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 	var empty apiproxy.Scope
 	denied := func() (apiproxy.Scope, error) { return empty, executionDenied() }
 	var input domain.AuxiliaryTitleInput
-	if job.State != domain.JobClaimed || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID || input.ProjectID != record.ProjectID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != grant.MachineID) ||
+	if job.State != domain.JobClaimed || domain.Decode(job.Input, &input) != nil || input.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.SessionID), input.SessionID != record.SessionID) ||
+		input.ProjectID != record.ProjectID ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != grant.MachineID) ||
 		input.OriginalDeviceID != grant.DeviceID || input.OriginalJobID != job.ParentID || input.OriginalExecutionID != grant.ExecutionID {
 		return denied()
 	}
@@ -42,7 +44,7 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 	}
 	device, err := store.Decode[domain.Device](deviceRecord)
 	if err != nil || device.Revoked || domain.OwnershipBlocks(domain.OwnershipActor, "", device.Type != domain.WorkerDevice) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", device.MachineID != grant.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(device.MachineID), device.MachineID != grant.MachineID) {
 		return denied()
 	}
 	_, machine, err := activeMachine(tx, grant.MachineID)
@@ -50,18 +52,19 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 		return denied()
 	}
 	parentRecord, err := tx.Get(domain.JobKind, job.ParentID)
-	if err != nil || parentRecord.SessionID != record.SessionID {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(parentRecord.SessionID), parentRecord.SessionID != record.SessionID) {
 		return denied()
 	}
 	parent, err := store.Decode[domain.Job](parentRecord)
 	var original domain.ExecutionJobInput
 	if err != nil || parent.Type != domain.ExecuteSessionJob || parent.State != domain.JobSucceeded ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", parent.MachineID != grant.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", parent.InstanceID != input.OriginalInstanceID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", parent.AssignedDeviceID != input.OriginalDeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(parent.MachineID), parent.MachineID != grant.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(parent.InstanceID), parent.InstanceID != input.OriginalInstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(parent.AssignedDeviceID), parent.AssignedDeviceID != input.OriginalDeviceID) ||
 		domain.Decode(parent.Input, &original) != nil || original.Validate() != nil || original.ExecutionID != input.OriginalExecutionID || original.Configuration.AgentID != input.AgentID || original.Configuration.Harness != input.Harness || (input.Version == 1 && (original.Installation.Version != input.NativeVersion || original.Installation.ResolvedPath != input.Executable)) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", original.AccountID != input.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", original.ConnectionID != input.ConnectionID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(original.AccountID), original.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(original.ConnectionID), original.ConnectionID != input.ConnectionID) ||
 		original.Configuration.ProviderID != input.ProviderID || original.Configuration.ModelID != input.ModelID || original.Configuration.NativeModel != input.NativeModel {
 		return denied()
 	}
@@ -70,11 +73,11 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 	}
 	originalGrant, err := tx.ExecutionGrantForJob(job.ParentID)
 	if err != nil ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", originalGrant.MachineID != grant.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", originalGrant.InstanceID != input.OriginalInstanceID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", originalGrant.DeviceID != input.OriginalDeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(originalGrant.MachineID), originalGrant.MachineID != grant.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(originalGrant.InstanceID), originalGrant.InstanceID != input.OriginalInstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(originalGrant.DeviceID), originalGrant.DeviceID != input.OriginalDeviceID) ||
 		originalGrant.ServerEpoch != grant.ServerEpoch ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", grant.InstanceID != input.OriginalInstanceID) {
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(grant.InstanceID), grant.InstanceID != input.OriginalInstanceID) {
 		return denied()
 	}
 	var completion domain.ExecutionCompletion
@@ -86,7 +89,8 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 		return denied()
 	}
 	firstRecord, err := tx.Get(domain.QueueKind, session.InitialExecution.InputID)
-	if err != nil || firstRecord.SessionID != sessionRecord.ID {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(firstRecord.SessionID), firstRecord.SessionID != sessionRecord.ID) {
 		return denied()
 	}
 	firstInput, err := store.Decode[domain.QueuedInput](firstRecord)

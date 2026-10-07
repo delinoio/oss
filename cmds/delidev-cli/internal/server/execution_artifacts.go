@@ -25,7 +25,8 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != domain.ArtifactMessage || value.State != domain.MessageStreaming || value.Artifact == nil || value.Artifact.Completed != nil {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != session.ID) ||
+			value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != domain.ArtifactMessage || value.State != domain.MessageStreaming || value.Artifact == nil || value.Artifact.Completed != nil {
 			return executionEventConflict()
 		}
 		revision = r.Revision

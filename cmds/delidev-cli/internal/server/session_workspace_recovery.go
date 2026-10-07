@@ -78,8 +78,9 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
-		if job.State != domain.JobUncertain || job.Type != domain.PrepareWorkspaceJob || original.SessionID != r.ID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != session.MachineID) {
+		if job.State != domain.JobUncertain || job.Type != domain.PrepareWorkspaceJob ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(original.SessionID), original.SessionID != r.ID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(job.MachineID), job.MachineID != session.MachineID) {
 			return nil, workspace.ResultUncertain()
 		}
 		assigned, err := tx.JobAssignment(original.ID)
@@ -90,9 +91,10 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
-		if assigned.SessionID != r.ID || claim.Type != domain.PrepareWorkspaceJob || claim.State != domain.JobClaimed ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != session.MachineID) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != job.InstanceID) {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(assigned.SessionID), assigned.SessionID != r.ID) ||
+			claim.Type != domain.PrepareWorkspaceJob || claim.State != domain.JobClaimed ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != session.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(claim.InstanceID), claim.InstanceID != job.InstanceID) {
 			return nil, workspace.ResultUncertain()
 		}
 		var preparation workspace.PrepareRequest
@@ -134,7 +136,7 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 }
 
 func validateRecoveryPreparation(tx *store.Tx, id domain.ID, session domain.Session, input workspace.PrepareRequest) error {
-	if input.SessionID != id ||
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(id), input.SessionID != id) ||
 		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(id), input.MachineID != session.MachineID) ||
 		input.Type != session.Workspace {
 		return workspace.ResultUncertain()
@@ -178,7 +180,8 @@ func finishWorkspaceRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 	if err != nil {
 		return err
 	}
-	if preparation.State != domain.JobUncertain || original.SessionID != r.ID {
+	if preparation.State != domain.JobUncertain ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(original.SessionID), original.SessionID != r.ID) {
 		return workspace.ResultUncertain()
 	}
 	now := time.Now().UTC()

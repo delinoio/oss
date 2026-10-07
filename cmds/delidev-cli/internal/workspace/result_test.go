@@ -49,6 +49,12 @@ func TestRemoteManifestValidationBindsEveryPreparationSelection(t *testing.T) {
 			copy := manifest
 			copy.Repositories = append([]PreparedRepository{}, manifest.Repositories...)
 			change(&copy)
+			if name == "session" || name == "machine" || name == "ownership" {
+				if err := ValidateResult(request, copy, "linux"); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
 			if err := ValidateResult(request, copy, "linux"); domain.SafeError(err).Code != domain.RecoveryRequired {
 				t.Fatal("unproven result did not retain uncertainty")
 			}

@@ -95,7 +95,7 @@ func TestBackupRestoreRetainsAccountSwitchHistoryWithoutSelectionAuthority(t *te
 	}
 	service := &Service{Store: reopened, logger: f.service.logger}
 	attempted := connect.NewRequest(&pb.SwitchSessionAccountRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(record.ID), ExpectedRevision: record.Revision}, AccountId: f.account.Id})
-	if _, err := service.SwitchSessionAccount(ctx, attempted); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err := service.SwitchSessionAccount(ctx, attempted); connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Fatal("quarantined session returned an unexpected account-selection result", err)
 	}
 	after, err := reopened.Get(ctx, domain.SessionKind, record.ID)

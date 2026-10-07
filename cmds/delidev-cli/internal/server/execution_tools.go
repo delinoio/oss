@@ -32,7 +32,8 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 		if err != nil {
 			return err
 		}
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != domain.ToolMessage || value.State != domain.MessageStreaming || value.Tool == nil || value.Tool.Completed != nil {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != session.ID) ||
+			value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != domain.ToolMessage || value.State != domain.MessageStreaming || value.Tool == nil || value.Tool.Completed != nil {
 			return executionEventConflict()
 		}
 		revision = r.Revision
@@ -155,7 +156,8 @@ func codexApprovalSourceTransition(tx *store.Tx, input domain.ExecutionJobInput,
 		if err != nil {
 			return false, err
 		}
-		if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.Type != domain.NativeApprovalInteraction || value.FirstSequence <= started || value.FirstSequence >= event.Sequence || value.Approval == nil {
+		if r.SessionID != input.SessionID ||
+			value.ExecutionID != input.ExecutionID || value.Type != domain.NativeApprovalInteraction || value.FirstSequence <= started || value.FirstSequence >= event.Sequence || value.Approval == nil {
 			continue
 		}
 		approval := value.Approval

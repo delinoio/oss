@@ -61,7 +61,7 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 			if err != nil {
 				return err
 			}
-			if job.SessionID != refs.SessionID {
+			if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(job.SessionID), job.SessionID != refs.SessionID) {
 				return domain.Fail(domain.RecoveryRequired, "Workspace ownership is inconsistent.", "Preserve the data scope and inspect recovery.")
 			}
 			change.WorkspaceJob = rpc.Resource(job)
@@ -70,7 +70,7 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 				if err != nil {
 					return err
 				}
-				if recovery.SessionID != refs.SessionID {
+				if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(recovery.SessionID), recovery.SessionID != refs.SessionID) {
 					return domain.Fail(domain.RecoveryRequired, "Workspace recovery ownership is inconsistent.", "Preserve the data scope for recovery.")
 				}
 				change.RecoveryJob = rpc.Resource(recovery)
@@ -92,7 +92,8 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 			if err != nil {
 				return err
 			}
-			if recovery.SessionID != refs.SessionID || job.Type != domain.RecoverExecutionJob || change.ExecutionJob == nil || job.ParentID != domain.ID(change.ExecutionJob.Id) || (value.Execution != nil && job.ParentID != value.Execution.JobID) {
+			if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(recovery.SessionID), recovery.SessionID != refs.SessionID) ||
+				job.Type != domain.RecoverExecutionJob || change.ExecutionJob == nil || job.ParentID != domain.ID(change.ExecutionJob.Id) || (value.Execution != nil && job.ParentID != value.Execution.JobID) {
 				return domain.ExecutionRecoveryUncertain()
 			}
 			change.ExecutionRecoveryJob = rpc.Resource(recovery)
@@ -102,7 +103,7 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 			if err != nil {
 				return err
 			}
-			if input.SessionID != refs.SessionID {
+			if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.SessionID), input.SessionID != refs.SessionID) {
 				return domain.Fail(domain.RecoveryRequired, "Queue ownership is inconsistent.", "Preserve the data scope and inspect recovery.")
 			}
 			change.Input = rpc.Resource(input)
@@ -342,7 +343,7 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		if err != nil {
 			return nil, err
 		}
-		if r.SessionID != sessionID {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(sessionID), r.SessionID != sessionID) {
 			return nil, domain.Fail(domain.PermissionDenied, "The input belongs to another session.", "Use its actual owning session.")
 		}
 		if r.Revision != meta.ExpectedRevision {

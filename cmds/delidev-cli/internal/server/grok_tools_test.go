@@ -296,7 +296,14 @@ func TestGrokPublicWriteCompetingWrongKindStopAndRevocation(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := acceptFixtureApproval(f, domain.NewID(), id, revision, input); err == nil {
+			_, err := acceptFixtureApproval(f, domain.NewID(), id, revision, input)
+			if scenario == "revocation" {
+				if err != nil {
+					t.Fatal("instance metadata blocked the authenticated control", err)
+				}
+				return
+			}
+			if err == nil {
 				t.Fatal(fmt.Sprintf("%s granted a response", scenario))
 			}
 			_, value := readPublishedInteraction(t, f, id)

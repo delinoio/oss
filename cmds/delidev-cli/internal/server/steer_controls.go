@@ -122,7 +122,8 @@ func steerInput(tx *store.Tx, r store.Record, attempt domain.SteerAttempt) (stor
 	if err != nil {
 		return ir, input, err
 	}
-	if ir.SessionID != r.SessionID || input.ContentRevision != attempt.ContentRevision || input.ExecutionID != attempt.ExecutionID || input.NativeRequestID != r.ID || input.Mode != attempt.Mode || domain.BindExecutionInput(ir.ID, input.Prompt).PromptDigest != attempt.PromptDigest {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ir.SessionID), ir.SessionID != r.SessionID) ||
+		input.ContentRevision != attempt.ContentRevision || input.ExecutionID != attempt.ExecutionID || input.NativeRequestID != r.ID || input.Mode != attempt.Mode || domain.BindExecutionInput(ir.ID, input.Prompt).PromptDigest != attempt.PromptDigest {
 		return ir, input, steerConflict()
 	}
 	return ir, input, nil
@@ -178,7 +179,8 @@ func retireSteer(tx *store.Tx, sr store.Record, session *domain.Session, uncerta
 	if err != nil {
 		return err
 	}
-	if r.SessionID != sr.ID || attempt.ExecutionID != session.ActiveExecutionID {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+		attempt.ExecutionID != session.ActiveExecutionID {
 		return steerConflict()
 	}
 	if attempt.State == domain.SteerUncertain {

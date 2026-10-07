@@ -97,7 +97,7 @@ func (c *ClaudeContentPublisher) RetainCompletion(ctx context.Context, api *clau
 func verifyClaudeContinuationJournals(root string, credential Credential, input domain.ExecutionJobInput) error {
 	c := input.Continuation
 	if c == nil || input.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", credential.MachineID != input.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(credential.MachineID), credential.MachineID != input.MachineID) {
 		return executionCheckpointUncertain()
 	}
 	path, err := claudeBindingPath(root, c.Previous.JobID)
@@ -106,12 +106,13 @@ func verifyClaudeContinuationJournals(root string, credential Credential, input 
 	}
 	raw, err := security.ReadPrivate(path, 16<<10)
 	var claim claudeBindingJournal
-	if err != nil || domain.Decode(raw, &claim) != nil || claim.Version != 1 || claim.StopClaim != nil || !claim.InputClaimed || claim.JobID != c.Previous.JobID || claim.ExecutionID != c.Previous.ExecutionID || claim.InputID != c.Previous.InputID || claim.SessionID != input.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != input.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.ServerID != credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", claim.DeviceID != credential.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", claim.AccountID != input.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", claim.ConnectionID != input.ConnectionID) ||
+	if err != nil || domain.Decode(raw, &claim) != nil || claim.Version != 1 || claim.StopClaim != nil || !claim.InputClaimed || claim.JobID != c.Previous.JobID || claim.ExecutionID != c.Previous.ExecutionID || claim.InputID != c.Previous.InputID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.SessionID), claim.SessionID != input.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != input.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(claim.ServerID), claim.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(claim.DeviceID), claim.DeviceID != credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.AccountID), claim.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.ConnectionID), claim.ConnectionID != input.ConnectionID) ||
 		claim.ConfigurationDigest != input.ConfigurationDigest || claim.InstanceID.Validate() != nil || claim.ThreadRequestID.Validate() != nil || claim.InputRequestID.Validate() != nil || claim.ThreadRequestID == input.ThreadRequestID || claim.InputRequestID == input.TurnRequestID || claim.Revision == 0 {
 		return executionCheckpointUncertain()
 	}
@@ -123,16 +124,16 @@ func verifyClaudeContinuationJournals(root string, credential Credential, input 
 	var operation journal
 	var completion domain.ExecutionCompletion
 	if err != nil || domain.Decode(raw, &operation) != nil || operation.Version != 1 || operation.JobID != claim.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", operation.InstanceID != claim.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(operation.InstanceID), operation.InstanceID != claim.InstanceID) ||
 		operation.Revision != claim.Revision || operation.Digest != claim.AssignmentDigest || (operation.State != journalFinished && operation.State != journalReported) || operation.Problem != nil || operation.ReportID.Validate() != nil || domain.Decode(operation.Output, &completion) != nil || completion != c.Completion {
 		return executionCheckpointUncertain()
 	}
 	raw, err = security.ReadPrivate(filepath.Join(root, "jobs", string(claim.JobID), "publication.json"), 1<<20)
 	var publication publicationJournal
 	if err != nil || domain.Decode(raw, &publication) != nil || publication.Version != 1 || publication.JobID != claim.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.InstanceID != claim.InstanceID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.ServerID != claim.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", publication.DeviceID != claim.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(publication.InstanceID), publication.InstanceID != claim.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(publication.ServerID), publication.ServerID != claim.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(publication.DeviceID), publication.DeviceID != claim.DeviceID) ||
 		publication.Revision != claim.Revision || publication.AssignmentDigest != claim.AssignmentDigest || publication.Pending != nil || publication.LastSequence != completion.LastSequence {
 		return executionCheckpointUncertain()
 	}

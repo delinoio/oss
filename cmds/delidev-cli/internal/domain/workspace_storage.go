@@ -2,7 +2,7 @@
 package domain
 
 // WorkspaceStorage is independent of Archive and native execution outcome.
-// Reserving an operation closes dispatch until its original result is settled.
+// Unconfirmed storage observations retain metadata without closing admission.
 type WorkspaceStorageState string
 
 const (
@@ -19,5 +19,12 @@ type WorkspaceStorage struct {
 }
 
 func (s Session) WorkspaceAvailable() bool {
-	return s.Storage == nil || s.Storage.State == WorkspacePresent
+	if s.Storage == nil || s.Storage.State == WorkspacePresent {
+		return true
+	}
+	if s.Storage.State == WorkspaceStoragePending || s.Storage.State == WorkspaceStorageUncertain {
+		ObserveOwnership(OwnershipCleanup, s.Storage.JobID)
+		return true
+	}
+	return false
 }

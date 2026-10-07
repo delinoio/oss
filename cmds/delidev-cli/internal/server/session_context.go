@@ -89,7 +89,9 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 					return err
 				}
 				v, err := store.Decode[domain.ExecutionMessage](r)
-				if err != nil || r.SessionID != id || v.ExecutionID != p.ExecutionID || v.ClaudeProgress == nil || v.ClaudeProgress.Kind != ref.kind {
+				if err != nil ||
+					domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != id) ||
+					v.ExecutionID != p.ExecutionID || v.ClaudeProgress == nil || v.ClaudeProgress.Kind != ref.kind {
 					return domain.CompactionUncertain()
 				}
 				*ref.target = contextResource(r, r.Data)
@@ -101,7 +103,9 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 				return err
 			}
 			v, err := store.Decode[domain.ExecutionMessage](r)
-			if err != nil || r.SessionID != id || v.ExecutionID != p.ExecutionID || v.Progress == nil || v.Progress.Compaction == nil || v.Progress.Compaction.Harness != h {
+			if err != nil ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != id) ||
+				v.ExecutionID != p.ExecutionID || v.Progress == nil || v.Progress.Compaction == nil || v.Progress.Compaction.Harness != h {
 				return domain.CompactionUncertain()
 			}
 			view.AutomaticBoundary = contextResource(r, r.Data)
@@ -119,7 +123,9 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 				return err
 			}
 			j, err := store.Decode[domain.Job](r)
-			if err != nil || r.SessionID != id || j.Type != domain.CompactSessionJob {
+			if err != nil ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != id) ||
+				j.Type != domain.CompactSessionJob {
 				return domain.CompactionUncertain()
 			}
 			var input domain.SessionCompactionInput

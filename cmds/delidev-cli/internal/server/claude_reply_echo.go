@@ -18,7 +18,8 @@ func publishClaudeReplyEcho(tx *store.Tx, job store.Record, input domain.Executi
 	if err != nil {
 		return err
 	}
-	if r.SessionID != input.SessionID || v.ExecutionID != input.ExecutionID || v.NativeThreadID != event.NativeThreadID || v.NativeTurnID != event.NativeTurnID || v.NativeItemID != u.NativeItemID || v.Claude == nil || v.Claude.ArrivalID != u.ArrivalID {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+		v.ExecutionID != input.ExecutionID || v.NativeThreadID != event.NativeThreadID || v.NativeTurnID != event.NativeTurnID || v.NativeItemID != u.NativeItemID || v.Claude == nil || v.Claude.ArrivalID != u.ArrivalID {
 		return executionEventConflict()
 	}
 	var claim *domain.QuestionResponseClaim

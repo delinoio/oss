@@ -58,13 +58,15 @@ func (p claudeExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	inputs, err := domain.CheckedExecutionInputs(ref.Completion.InputID, hex.EncodeToString(ref.PromptDigest[:]), ref.AcceptedInputs)
 	// Claude's current native checkpoint has root input boundaries, not Codex
 	// same-turn Steer. Ordered workspace roots remain independently pinned.
-	if err != nil || len(inputs) != 1 || ref.validateForHarness(domain.ClaudeCode) != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", p.MachineID != ref.MachineID) ||
+	if err != nil || len(inputs) != 1 || ref.validateForHarness(domain.ClaudeCode) != nil || p.Version != 1 || p.JobID != ref.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.SessionID), p.SessionID != ref.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(p.MachineID), p.MachineID != ref.MachineID) ||
 		p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.AccountID != ref.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.ConnectionID != ref.ConnectionID) ||
-		p.Completion != terminal || !slices.Equal(p.WorkspaceRoots, ref.WorkspaceRoots) || native.SessionID != ref.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", native.OwnerID != ref.JobID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.AccountID), p.AccountID != ref.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.ConnectionID), p.ConnectionID != ref.ConnectionID) ||
+		p.Completion != terminal || !slices.Equal(p.WorkspaceRoots, ref.WorkspaceRoots) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(native.SessionID), native.SessionID != ref.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(native.OwnerID), native.OwnerID != ref.JobID) ||
 		native.InputID != ref.Completion.InputID || native.InputSHA256 != inputs[0].PromptDigest || native.NativeTurnID != string(ref.Completion.NativeTurnID) || string(native.SessionID) != string(ref.Completion.NativeThreadID) || native.SHA256 != executionInputDigest(p.Native) || len(p.Native) == 0 || len(p.Native) > 8<<20 || !json.Valid(p.Native) || (ref.Completion.Outcome != domain.ExecutionSucceeded && !native.RequiresResume) {
 		return false
 	}
@@ -151,8 +153,9 @@ func ReadClaudeExecutionCheckpoint(ctx context.Context, root string, ref Executi
 		return nil, err
 	}
 	historyRoot := filepath.Join(root, "runtimes", string(ref.HistoryExecutionID))
-	if !slices.Equal(config.WorkspaceRoots, ref.WorkspaceRoots) || config.SessionID != ref.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", config.Process.OwnerID != ref.JobID) ||
+	if !slices.Equal(config.WorkspaceRoots, ref.WorkspaceRoots) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(config.SessionID), config.SessionID != ref.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(config.Process.OwnerID), config.Process.OwnerID != ref.JobID) ||
 		config.Process.Directory != filepath.Join(root, "processes") || config.Process.Cwd != historyRoot || config.Home != filepath.Join(historyRoot, "claude") {
 		return nil, executionCheckpointUncertain()
 	}

@@ -16,7 +16,7 @@ const settled = (resource: Resource) => {
   const data = document(resource), execution = object(data.execution), initial = object(data.initial_execution);
   const harness = text(object(initial.configuration).harness);
   const profile = harness === "codex" || harness === "opencode" && data.workspace === "general-chat" && !Object.keys(object(execution.subagents)).length && !Object.keys(object(execution.native_compactions)).length && !execution.latest_workspace_event_id && !execution.latest_todo_id && !execution.latest_plan_id && object(execution.observed).opencode_agent === "build";
-  return resource.schemaVersion === 1 && (data.storage === undefined || object(data.storage).state === "present") && data.fork === undefined && data.archive === "active" && data.outcome === "succeeded" && !data.active_execution_id && !data.pending_steer_id && !execution.unconfirmed_responses && !object(execution.waiting).user_input && !object(execution.waiting).approval && text(execution.native_turn_id) && profile;
+  return resource.schemaVersion === 1 && (data.storage === undefined || ["present", "pending", "uncertain"].includes(text(object(data.storage).state))) && data.fork === undefined && data.archive === "active" && data.outcome === "succeeded" && !data.active_execution_id && !data.pending_steer_id && !execution.unconfirmed_responses && !object(execution.waiting).user_input && !object(execution.waiting).approval && text(execution.native_turn_id) && profile;
 };
 
 export function SessionForkAction({ source }: { source: Resource }) {

@@ -29,7 +29,7 @@ func requireSidechatParent(tx *store.Tx, child domain.Session) error {
 		return err
 	}
 	if !parent.WorkspaceAvailable() ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", parent.MachineID != child.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(parent.MachineID), parent.MachineID != child.MachineID) ||
 		parent.ProjectID != child.ProjectID || parent.Workspace != child.Workspace || parent.InitialExecution == nil || parent.IsSidechat() {
 		return domain.SidechatUnavailable()
 	}
@@ -65,7 +65,8 @@ func (s *Service) SendSidechatFindings(ctx context.Context, req *connect.Request
 		if err != nil {
 			return nil, err
 		}
-		if cr.Revision != identity.ChildRevision || !child.IsSidechat() || child.Fork.SourceSessionID != identity.Parent {
+		if cr.Revision != identity.ChildRevision || !child.IsSidechat() ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(child.Fork.SourceSessionID), child.Fork.SourceSessionID != identity.Parent) {
 			s.logger.InfoContext(ctx, "sidechat_findings_revision_rejected", "sidechat_session_id", identity.Child, "expected_revision", identity.ChildRevision, "actual_revision", cr.Revision, "code", domain.Conflict)
 			return nil, forkConflict()
 		}
@@ -92,7 +93,9 @@ func (s *Service) SendSidechatFindings(ctx context.Context, req *connect.Request
 				return nil, err
 			}
 			m, err := store.Decode[domain.ExecutionMessage](mr)
-			if err != nil || mr.SessionID != cr.ID || mr.Revision != selection.ExpectedRevision || m.Role != domain.AssistantMessage || m.State != domain.MessageComplete || m.Inherited != nil || m.Tool != nil || m.Artifact != nil || m.Text == "" {
+			if err != nil ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(mr.SessionID), mr.SessionID != cr.ID) ||
+				mr.Revision != selection.ExpectedRevision || m.Role != domain.AssistantMessage || m.State != domain.MessageComplete || m.Inherited != nil || m.Tool != nil || m.Artifact != nil || m.Text == "" {
 				s.logger.InfoContext(ctx, "sidechat_finding_selection_rejected", "sidechat_session_id", identity.Child, "message_id", mr.ID, "revision_match", mr.Revision == selection.ExpectedRevision, "owner_match", mr.SessionID == cr.ID, "complete_assistant", m.Role == domain.AssistantMessage && m.State == domain.MessageComplete, "inherited", m.Inherited != nil, "code", domain.Conflict)
 				return nil, forkConflict()
 			}

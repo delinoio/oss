@@ -66,7 +66,7 @@ func (s *Service) userService(ctx context.Context, k userservice.Kind) (*userser
 		if err != nil {
 			return nil, "", err
 		}
-		if domain.OwnershipBlocks(domain.OwnershipInstance, "", credential.ServerID != s.Identity.ServerID) ||
+		if domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(credential.ServerID), credential.ServerID != s.Identity.ServerID) ||
 			domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) {
 			return nil, "", domain.Fail(domain.PermissionDenied, "The local Worker does not belong to this server.", "Pair the server computer's separate Worker scope explicitly.")
 		}

@@ -104,7 +104,14 @@ func TestApprovalClaimRejectsForeignAndStaleControl(t *testing.T) {
 				token = f.service.Identity.Token
 			}
 			req.Header().Set("Authorization", "Bearer "+token)
-			if _, err := f.client.ClaimApprovalResponse(context.Background(), req); err == nil {
+			_, err := f.client.ClaimApprovalResponse(context.Background(), req)
+			if changed == "machine" || changed == "instance" || changed == "owner" {
+				if err != nil {
+					t.Fatal("ownership metadata blocked the control", err)
+				}
+				return
+			}
+			if err == nil {
 				t.Fatal("foreign/stale response control was accepted")
 			}
 			r, value := readPublishedInteraction(t, f, domain.ID(original.Mutation.Id))
@@ -169,7 +176,7 @@ func TestApprovalClaimClosureAndLostWorkerRetainUncertainty(t *testing.T) {
 				t.Fatal(err)
 			}
 			session, err := store.Decode[domain.Session](r)
-			if err != nil || session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused || session.Problem == nil || (end == "terminal" && session.Outcome != domain.ExecutionSucceeded) {
+			if err != nil || session.Recovery != domain.NeedsRecovery || session.Dispatch != map[bool]domain.DispatchState{true: domain.DispatchReady, false: domain.DispatchPaused}[end == "worker-loss" || end == "queued-worker-loss"] || session.Problem == nil || (end == "terminal" && session.Outcome != domain.ExecutionSucceeded) {
 				t.Fatal("response uncertainty lost recovery or changed the observed terminal outcome")
 			}
 		})
@@ -214,7 +221,7 @@ func TestApprovalClaimReplayRechecksAuthorityWithoutReturningContent(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			if response, err := claimApproval(f, request); err == nil || response != nil {
+			if response, err := claimApproval(f, request); (change != "worker" && (err == nil || response != nil)) || (change == "worker" && (err != nil || response == nil)) {
 				t.Fatal("accepted receipt returned response content after authority loss")
 			}
 			r, value := readPublishedInteraction(t, f, domain.ID(request.Mutation.Id))

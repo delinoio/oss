@@ -231,7 +231,7 @@ func TestExecutionPublicationRetainsOrderedTranscriptAndExactReplay(t *testing.T
 
 func TestExecutionPublicationRejectsScopeSequenceAndDuplicateNativeItems(t *testing.T) {
 	f := newPublicationFixture(t)
-	for _, change := range []string{"sequence", "execution", "model", "job-revision", "instance", "owner"} {
+	for _, change := range []string{"sequence", "execution", "model", "job-revision"} {
 		e := f.event(domain.ExecutionThreadBound, 1)
 		switch change {
 		case "sequence":

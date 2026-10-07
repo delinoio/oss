@@ -136,9 +136,9 @@ func (c *GrokEventPublisher) deliver(ctx, publicationCtx context.Context, identi
 		claim = r.Claim
 	}
 	if claim == nil || claim.ID != j.ClaimID || claim.JobID != identity.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != config.Credential.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != config.Instance) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", claim.DeviceID != config.Credential.DeviceID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != config.Credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(claim.InstanceID), claim.InstanceID != config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(claim.DeviceID), claim.DeviceID != config.Credential.DeviceID) {
 		return b.block()
 	}
 	c.replies[arrival] = value

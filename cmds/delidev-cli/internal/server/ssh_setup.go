@@ -132,7 +132,7 @@ func (s *Service) StartSSHSetup(ctx context.Context, req *connect.Request[pb.Sta
 				return e
 			}
 			if domain.Decode(r.Data, &operation) != nil ||
-				domain.OwnershipBlocks(domain.OwnershipInstance, "", operation.ServerID != s.Identity.ServerID) ||
+				domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(operation.ServerID), operation.ServerID != s.Identity.ServerID) ||
 				operation.State != installationObserved || operation.Identity.Fingerprint != input.Fingerprint {
 				return installationFailure(domain.Conflict)
 			}

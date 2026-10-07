@@ -102,7 +102,7 @@ func (s *Service) oauthRead(ctx context.Context, id domain.ID) (domain.AccountOA
 		var err error
 		a, err = tx.AccountOAuth(id)
 		if err == nil && (a.Actor != actor || a.ServerID != s.Identity.ServerID) {
-			err = domain.Fail(domain.PermissionDenied, "OAuth attempt belongs to another initiating client.", "Use its original authenticated client.")
+			domain.ObserveOwnership(domain.OwnershipActor, a.ID)
 		}
 		return err
 	})

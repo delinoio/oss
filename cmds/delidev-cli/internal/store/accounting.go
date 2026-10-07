@@ -18,7 +18,7 @@ func (t *Tx) PutGrokAccounting(jobID, projectID domain.ID, input domain.Executio
 		return nil
 	}
 	record := domain.GrokAccountingRecord{Kind: domain.GrokClosedInput, SourceReceipt: t.requestID, SourceUsageID: p.LatestUsageID, JobID: jobID, SessionID: input.SessionID, ProjectID: projectID, ExecutionID: input.ExecutionID, InputID: input.InputID, InputRequestID: input.TurnRequestID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, ModelID: input.Configuration.ModelID, Version: input.Installation.Version, Terminal: *p.GrokTerminal, Completion: completion}
-	if record.Validate() != nil || input.Validate() != nil || !p.CleanupVerified || p.GrokStop != nil || p.InputID != input.InputID || p.ExecutionID != input.ExecutionID || p.LastSequence != completion.LastSequence || p.NativeTurnID != string(completion.NativeTurnID) || p.NativeThreadID != string(completion.NativeThreadID) || record.Terminal.Model != input.Configuration.NativeModel || record.Terminal.User.InputDigest != domain.GrokUserInputDigest(input.Input.Prompt) {
+	if record.Validate() != nil || input.Validate() != nil || domain.OwnershipBlocks(domain.OwnershipCleanup, jobID, !p.CleanupVerified) || p.GrokStop != nil || p.InputID != input.InputID || p.ExecutionID != input.ExecutionID || p.LastSequence != completion.LastSequence || p.NativeTurnID != string(completion.NativeTurnID) || p.NativeThreadID != string(completion.NativeThreadID) || record.Terminal.Model != input.Configuration.NativeModel || record.Terminal.User.InputDigest != domain.GrokUserInputDigest(input.Input.Prompt) {
 		return corrupt()
 	}
 	source, err := t.Get(domain.UsageKind, record.SourceUsageID)

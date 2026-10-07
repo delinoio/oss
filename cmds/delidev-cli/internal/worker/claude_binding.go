@@ -86,10 +86,10 @@ func OpenClaudeBindingPublisher(p *ExecutionPublisher) (*ClaudeBindingPublisher,
 	defer p.mu.Unlock()
 	i, state := p.input, p.state
 	if p.closed || p.release == nil || state.Pending != nil || state.LastSequence != 0 || i.Validate() != nil || i.Configuration.Harness != domain.ClaudeCode || (i.Version != 4 && i.Installation.Version != claude.SupportedVersion) || state.JobID != p.job || i.ExecutionID != p.execution ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.InstanceID != p.config.Instance) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", state.ServerID != p.config.Credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", state.DeviceID != p.config.Credential.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", i.MachineID != p.config.Credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(state.InstanceID), state.InstanceID != p.config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(state.ServerID), state.ServerID != p.config.Credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(state.DeviceID), state.DeviceID != p.config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(i.MachineID), i.MachineID != p.config.Credential.MachineID) ||
 		i.ThreadRequestID == i.TurnRequestID {
 		return nil, publicationUncertain()
 	}
@@ -155,9 +155,9 @@ func (c *ClaudeBindingPublisher) verify() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed || p.release == nil || p.state.AssignmentDigest != c.journal.AssignmentDigest || p.state.JobID != c.journal.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", p.state.InstanceID != c.journal.InstanceID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", p.state.ServerID != c.journal.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", p.state.DeviceID != c.journal.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(p.state.InstanceID), p.state.InstanceID != c.journal.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(p.state.ServerID), p.state.ServerID != c.journal.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(p.state.DeviceID), p.state.DeviceID != c.journal.DeviceID) ||
 		p.state.Revision != c.journal.Revision {
 		return c.block()
 	}
@@ -206,7 +206,9 @@ func (c *ClaudeBindingPublisher) BindSession(ctx context.Context, observation cl
 	if c.stage != claudeInputClaimed {
 		return publicationUncertain()
 	}
-	if observation.Kind != claude.SessionInitialized || observation.Initialized == nil || observation.Accepted || observation.SessionID != c.journal.SessionID || observation.InputID != c.journal.InputID || observation.NativeID != observation.TurnID || domain.NativeIdentity(observation.TurnID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || observation.Initialized.Model != applied.Model {
+	if observation.Kind != claude.SessionInitialized || observation.Initialized == nil || observation.Accepted ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(observation.SessionID), observation.SessionID != c.journal.SessionID) ||
+		observation.InputID != c.journal.InputID || observation.NativeID != observation.TurnID || domain.NativeIdentity(observation.TurnID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || observation.Initialized.Model != applied.Model {
 		return c.block()
 	}
 	settings := domain.ObservedExecutionSettings{Model: applied.Model, Permission: domain.PermissionDefault, ClaudePermission: domain.ClaudePermissionMode(observation.Initialized.Permission)}
@@ -234,7 +236,9 @@ func (c *ClaudeBindingPublisher) AcceptInput(ctx context.Context, observation cl
 	if c.stage != claudeSessionBound {
 		return publicationUncertain()
 	}
-	if observation.Kind != claude.InputAccepted || !observation.Accepted || observation.SessionID != c.journal.SessionID || observation.InputID != c.journal.InputID || observation.NativeID != string(c.journal.InputID) || observation.TurnID != c.turn || observation.Initialized != nil {
+	if observation.Kind != claude.InputAccepted || !observation.Accepted ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(observation.SessionID), observation.SessionID != c.journal.SessionID) ||
+		observation.InputID != c.journal.InputID || observation.NativeID != string(c.journal.InputID) || observation.TurnID != c.turn || observation.Initialized != nil {
 		return c.block()
 	}
 	c.sequence, c.stage = c.sequence+1, claudeAcceptancePending

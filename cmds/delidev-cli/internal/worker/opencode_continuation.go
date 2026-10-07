@@ -17,7 +17,7 @@ func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, creden
 	var empty openCodeExecutionCheckpoint
 	c := input.Continuation
 	if c == nil || input.Validate() != nil || input.Configuration.Harness != domain.OpenCode ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", credential.MachineID != input.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(credential.MachineID), credential.MachineID != input.MachineID) ||
 		c.Completion.Version != 2 {
 		return empty, executionCheckpointUncertain()
 	}
@@ -39,12 +39,13 @@ func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, creden
 	r := saved.Reference
 	ref := r.Claim
 	if r.Completion != terminal || r.InputMode != c.InputMode || r.PromptSHA256 != c.PromptDigest || r.AssignmentInputSHA256 != c.AssignmentInputDigest || r.HistoryExecutionID != c.HistoryExecutionID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", ref.ServerID != credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", ref.DeviceID != credential.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", ref.MachineID != input.MachineID) ||
-		ref.SessionID != input.SessionID || ref.ExecutionID != c.Previous.ExecutionID || ref.JobID != c.Previous.JobID || ref.InputID != c.Previous.InputID ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", ref.AccountID != input.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", ref.ConnectionID != input.ConnectionID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(ref.ServerID), ref.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(ref.DeviceID), ref.DeviceID != credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(ref.MachineID), ref.MachineID != input.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ref.SessionID), ref.SessionID != input.SessionID) ||
+		ref.ExecutionID != c.Previous.ExecutionID || ref.JobID != c.Previous.JobID || ref.InputID != c.Previous.InputID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ref.AccountID), ref.AccountID != input.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ref.ConnectionID), ref.ConnectionID != input.ConnectionID) ||
 		ref.ConfigurationDigest != input.ConfigurationDigest || ref.InputRequestID == input.TurnRequestID || ref.ThreadRequestID == input.ThreadRequestID {
 		return empty, executionCheckpointUncertain()
 	}
@@ -54,7 +55,9 @@ func readOpenCodeContinuationCheckpoint(ctx context.Context, root string, creden
 	}
 	claims, err := readOpenCodeClaims(root, ref)
 	claimBytes, encodeErr := json.Marshal(claims)
-	if err != nil || encodeErr != nil || executionInputDigest(claimBytes) != r.ClaimsSHA256 || len(claims) < 2 || claims[1].SessionID != checkpoint.NativeReference.SessionID || claims[1].MessageID != checkpoint.NativeReference.InputID || claims[1].PartID != checkpoint.NativeReference.PartID || claims[1].RequestID != checkpoint.NativeReference.InputRequestID {
+	if err != nil || encodeErr != nil || executionInputDigest(claimBytes) != r.ClaimsSHA256 || len(claims) < 2 ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claims[1].SessionID), claims[1].SessionID != checkpoint.NativeReference.SessionID) ||
+		claims[1].MessageID != checkpoint.NativeReference.InputID || claims[1].PartID != checkpoint.NativeReference.PartID || claims[1].RequestID != checkpoint.NativeReference.InputRequestID {
 		return empty, executionCheckpointUncertain()
 	}
 	if err := verifyOpenCodeContinuationJournals(root, ref, c.Completion); err != nil {
@@ -78,16 +81,16 @@ func verifyOpenCodeContinuationJournals(root string, ref openCodeClaimReference,
 	var operation journal
 	var done domain.ExecutionCompletion
 	if err != nil || domain.Decode(raw, &operation) != nil || operation.Version != 1 || operation.JobID != ref.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", operation.InstanceID != ref.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(operation.InstanceID), operation.InstanceID != ref.InstanceID) ||
 		operation.Revision != ref.Revision || operation.Digest != ref.AssignmentDigest || (operation.State != journalFinished && operation.State != journalReported) || operation.Problem != nil || operation.ReportID.Validate() != nil || domain.Decode(operation.Output, &done) != nil || done != completion {
 		return executionCheckpointUncertain()
 	}
 	raw, err = security.ReadPrivate(filepath.Join(root, "jobs", string(ref.JobID), "publication.json"), 1<<20)
 	var publication publicationJournal
 	if err != nil || domain.Decode(raw, &publication) != nil || publication.Version != 1 || publication.JobID != ref.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.InstanceID != ref.InstanceID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", publication.ServerID != ref.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", publication.DeviceID != ref.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(publication.InstanceID), publication.InstanceID != ref.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(publication.ServerID), publication.ServerID != ref.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(publication.DeviceID), publication.DeviceID != ref.DeviceID) ||
 		publication.Revision != ref.Revision || publication.AssignmentDigest != ref.AssignmentDigest || publication.Pending != nil || publication.LastSequence != completion.LastSequence {
 		return executionCheckpointUncertain()
 	}

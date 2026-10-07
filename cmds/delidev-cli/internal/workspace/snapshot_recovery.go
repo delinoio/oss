@@ -394,7 +394,9 @@ func (m *Manager) confirmRemoval(ctx context.Context, r StorageRequest, path str
 		return ResultUncertain()
 	}
 	var intent storageRemovalIntent
-	if domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action {
+	if domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != r.OperationID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(intent.SessionID), intent.SessionID != r.Preparation.SessionID) ||
+		intent.SnapshotID != r.SnapshotID || intent.Action != r.Action {
 		return ResultUncertain()
 	}
 	if r.Action == StorageCleanup {
@@ -624,8 +626,8 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			if err != nil {
 				return result, err
 			}
-			if metadata.SessionID != r.Preparation.SessionID ||
-				domain.OwnershipBlocks(domain.OwnershipMachine, "", metadata.MachineID != r.Preparation.MachineID) ||
+			if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(metadata.SessionID), metadata.SessionID != r.Preparation.SessionID) ||
+				domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(metadata.MachineID), metadata.MachineID != r.Preparation.MachineID) ||
 				manifestDigest(snapshot.Workspace) != manifestDigest(r.Manifest) || (original.SnapshotDigest != "" && metadata.SHA256 != original.SnapshotDigest) {
 				return result, ResultUncertain()
 			}
@@ -716,7 +718,9 @@ func (m *Manager) recoverStorage(ctx context.Context, r StorageRequest, result S
 			}
 			raw, err := security.ReadPrivate(m.restoreBindingPath(r.Preparation.SessionID), 4096)
 			var binding restoreBinding
-			if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || binding.OperationID != original.OperationID || binding.SessionID != r.Preparation.SessionID || binding.SnapshotID != original.SnapshotID || binding.SnapshotDigest != metadata.SHA256 || binding.ManifestDigest != manifestDigest(snapshot.Workspace) || binding.OriginalIdentity != snapshot.OriginalIdentity {
+			if err != nil || domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || binding.OperationID != original.OperationID ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(binding.SessionID), binding.SessionID != r.Preparation.SessionID) ||
+				binding.SnapshotID != original.SnapshotID || binding.SnapshotDigest != metadata.SHA256 || binding.ManifestDigest != manifestDigest(snapshot.Workspace) || binding.OriginalIdentity != snapshot.OriginalIdentity {
 				return result, ResultUncertain()
 			}
 			// The published binding and workspace identity prove ownership after
@@ -818,7 +822,9 @@ func (m *Manager) RetireStorageRemoval(ctx context.Context, ref StorageRemovalRe
 	intentExists := err == nil
 	if err == nil {
 		var intent storageRemovalIntent
-		if domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != ref.OperationID || intent.SessionID != ref.SessionID || intent.SnapshotID != ref.SnapshotID || intent.Action != ref.Action {
+		if domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != ref.OperationID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(intent.SessionID), intent.SessionID != ref.SessionID) ||
+			intent.SnapshotID != ref.SnapshotID || intent.Action != ref.Action {
 			return ResultUncertain()
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {

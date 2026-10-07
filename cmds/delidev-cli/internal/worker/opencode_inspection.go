@@ -39,7 +39,9 @@ func inspectCompletedOpenCodeCheckpoint(ctx context.Context, root string, ref Co
 		HistoryExecutionID: c.HistoryExecutionID, CreationRequestID: native.CreationRequestID,
 	}
 	saved, err := readOpenCodeExecutionCheckpoint(ctx, root, expected, completion.NativeCheckpointDigest)
-	if err != nil || saved.Version != 2 || claims[1].SessionID != saved.NativeReference.SessionID || claims[1].MessageID != saved.NativeReference.InputID || claims[1].PartID != saved.NativeReference.PartID || claims[1].RequestID != saved.NativeReference.InputRequestID {
+	if err != nil || saved.Version != 2 ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claims[1].SessionID), claims[1].SessionID != saved.NativeReference.SessionID) ||
+		claims[1].MessageID != saved.NativeReference.InputID || claims[1].PartID != saved.NativeReference.PartID || claims[1].RequestID != saved.NativeReference.InputRequestID {
 		return executionCheckpointUncertain()
 	}
 	nativeRoot, err := openCodeWorkspaceRoot(ref.Manifest, cwd)

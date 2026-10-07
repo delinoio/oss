@@ -54,7 +54,7 @@ type SidechatReference struct {
 func validateSidechatPreparation(input PrepareRequest) error {
 	source := input.SidechatSource
 	if input.ForkProfile != CodexSidechatReferenceV1 || source == nil || source.Preparation.SidechatSource != nil || source.Manifest.Reference != nil || source.Preparation.ForkProfile != "" || source.Preparation.ForkSourceID != "" || source.Preparation.ForkSourcePath != "" || source.Preparation.validateStructure() != nil || domain.UniqueIDs([]domain.ID{input.SessionID, source.Preparation.SessionID}) != nil ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != source.Preparation.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != source.Preparation.MachineID) ||
 		input.Type != source.Preparation.Type || input.ForkSourceID != source.Preparation.SessionID || input.ForkSourcePath != "" || input.OriginMachineID != source.Preparation.OriginMachineID || input.PrimaryRepository != source.Preparation.PrimaryRepository {
 		return ResultUncertain()
 	}
@@ -83,9 +83,12 @@ func validateSidechatResult(input PrepareRequest, result Manifest, workerOS stri
 		return ResultUncertain()
 	}
 	r := result.Reference
-	if result.Version != 1 || result.State != Ready || result.SessionID != input.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", result.MachineID != input.MachineID) ||
-		result.Type != input.Type || result.InputDigest != preparationDigest(input) || result.CreatedAt.IsZero() || result.PrimaryPath != source.Manifest.PrimaryPath || r.SessionID != input.ForkSourceID || r.PreparationDigest != source.Manifest.InputDigest || r.ManifestDigest != manifestDigest(source.Manifest) || !digestValid(r.DirectoryIdentity) || !digestValid(r.MetadataIdentity) {
+	if result.Version != 1 || result.State != Ready ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(result.SessionID), result.SessionID != input.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(result.MachineID), result.MachineID != input.MachineID) ||
+		result.Type != input.Type || result.InputDigest != preparationDigest(input) || result.CreatedAt.IsZero() || result.PrimaryPath != source.Manifest.PrimaryPath ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.ForkSourceID) ||
+		r.PreparationDigest != source.Manifest.InputDigest || r.ManifestDigest != manifestDigest(source.Manifest) || !digestValid(r.DirectoryIdentity) || !digestValid(r.MetadataIdentity) {
 		return ResultUncertain()
 	}
 	actual, _ := json.Marshal(result.Repositories)

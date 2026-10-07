@@ -15,7 +15,9 @@ type claudeDenialController interface {
 // independent identities; neither event fills in the missing native result ID.
 func (c *ClaudeContentPublisher) observeDenialBoundary(o claude.LifecycleObservation, command bool) error {
 	b, p := c.binding, c.interruption
-	if p == nil || p.contextID == "" || p.resultID == "" || !c.inputPublished || !c.resultUsage || c.active != "" || !c.toolsComplete() || !c.interactionsSettled() || c.denial != nil || o.SessionID != b.journal.SessionID || o.TurnID != b.turn || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || o.NativeID == string(b.journal.SessionID) || c.seen[o.NativeID] || b.progressSeen[o.NativeID] || c.usageSeen[o.NativeID] || len(c.seen) >= 65536 || o.Result != nil || len(o.Content) != 0 || o.Progress != nil || o.Interaction != nil {
+	if p == nil || p.contextID == "" || p.resultID == "" || !c.inputPublished || !c.resultUsage || c.active != "" || !c.toolsComplete() || !c.interactionsSettled() || c.denial != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		o.TurnID != b.turn || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || o.NativeID == b.turn || o.NativeID == string(b.journal.InputID) || o.NativeID == string(b.journal.SessionID) || c.seen[o.NativeID] || b.progressSeen[o.NativeID] || c.usageSeen[o.NativeID] || len(c.seen) >= 65536 || o.Result != nil || len(o.Content) != 0 || o.Progress != nil || o.Interaction != nil {
 		return b.block()
 	}
 	if command {

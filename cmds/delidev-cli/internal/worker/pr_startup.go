@@ -19,7 +19,7 @@ import (
 func reportPRStartupRejection(config Config, owner domain.ID, job domain.Job, cause error) (json.RawMessage, error) {
 	fail := domain.StartupRejectionUncertain
 	c := config.execution
-	if c == nil || c.Assignment == nil || c.Client == nil || c.Assignment.Kind != pb.EntityKind_ENTITY_KIND_JOB || c.Assignment.SchemaVersion != 1 || domain.ID(c.Assignment.Id) != owner || c.Credential.Validate() != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", c.Credential.Type != domain.WorkerDevice) {
+	if c == nil || c.Assignment == nil || c.Client == nil || c.Assignment.Kind != pb.EntityKind_ENTITY_KIND_JOB || c.Assignment.SchemaVersion != 1 || domain.ID(c.Assignment.Id) != owner || c.Credential.Validate() != nil || domain.OwnershipBlocks(domain.OwnershipActor, domain.ID(owner), c.Credential.Type != domain.WorkerDevice) {
 		return nil, fail()
 	}
 	var original domain.Job

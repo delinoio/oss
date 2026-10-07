@@ -40,7 +40,9 @@ type ForkSnapshot struct {
 }
 
 func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, request PrepareRequest) (*ForkSnapshot, error) {
-	if request.validateStructure() != nil || source.SessionID != request.ForkSourceID || source.State != Ready || m.initialize() != nil {
+	if request.validateStructure() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(source.SessionID), source.SessionID != request.ForkSourceID) ||
+		source.State != Ready || m.initialize() != nil {
 		return nil, ResultUncertain()
 	}
 	git := m.Git

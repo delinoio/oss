@@ -33,7 +33,9 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	}
 	raw, err := security.ReadPrivate(m.removalIntentPath(r.OperationID), maxSnapshotManifest)
 	var intent storageRemovalIntent
-	if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != r.OperationID || intent.SessionID != r.Preparation.SessionID || intent.SnapshotID != r.SnapshotID || intent.Action != r.Action || len(intent.Inventory.Entries) > maxSnapshotRemovalEntries {
+	if err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != r.OperationID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(intent.SessionID), intent.SessionID != r.Preparation.SessionID) ||
+		intent.SnapshotID != r.SnapshotID || intent.Action != r.Action || len(intent.Inventory.Entries) > maxSnapshotRemovalEntries {
 		return ResultUncertain()
 	}
 	stage = "claim-journal"

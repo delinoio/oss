@@ -73,7 +73,7 @@ func (s *Service) readNetworkDeleteIntent() (networkDeleteIntent, bool, error) {
 		return intent, false, domain.SafeError(err)
 	}
 	if domain.Decode(raw, &intent) != nil || intent.Version != 1 ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", intent.ServerID != s.Identity.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(intent.ServerID), intent.ServerID != s.Identity.ServerID) ||
 		intent.RequestID.Validate() != nil || intent.Input.ID.Validate() != nil || intent.Input.Revision == 0 || !hmac.Equal([]byte(intent.Authentication), []byte(s.networkDeleteAuthentication(intent))) {
 		return networkDeleteIntent{}, false, networkDeleteRecovery()
 	}

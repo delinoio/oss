@@ -29,14 +29,16 @@ func serviceScope(root string, kind userservice.Kind) (string, error) {
 		return "", domain.SafeError(err)
 	}
 	if kind == userservice.Server {
-		if _, e := worker.LoadCredential(root); !os.IsNotExist(e) {
-			return "", domain.Fail(domain.PermissionDenied, "Server service control requires its original owner scope.", "Choose the initialized server directory.")
+		if _, e := worker.LoadCredential(root); e == nil {
+			domain.ObserveOwnership(domain.OwnershipActor, "")
+		} else if !os.IsNotExist(e) {
+			return "", e
 		}
 		_, err = security.LoadIdentity(root)
 	} else {
 		var c worker.Credential
 		c, err = worker.LoadCredential(root)
-		if err == nil && c.Type != domain.WorkerDevice {
+		if err == nil && domain.OwnershipBlocks(domain.OwnershipActor, c.DeviceID, c.Type != domain.WorkerDevice) {
 			err = domain.Fail(domain.PermissionDenied, "This is not a Worker scope.", "Choose the original paired Worker directory.")
 		}
 	}

@@ -71,7 +71,9 @@ func (c *ClaudeContentPublisher) ObserveStop(o claude.LifecycleObservation) (boo
 		}
 		return false, nil
 	}
-	if c.verify() != nil || !v.Acknowledged || v.Idle || o.SessionID != b.journal.SessionID || o.TurnID != b.turn || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || o.NativeID == b.turn || o.NativeID == string(b.journal.SessionID) || o.NativeID == string(v.RequestID) || o.NativeID == string(v.InputID) || c.seen[o.NativeID] || c.usageSeen[o.NativeID] || b.progressSeen[o.NativeID] || len(c.seen) >= 65536 {
+	if c.verify() != nil || !v.Acknowledged || v.Idle ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		o.TurnID != b.turn || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || o.NativeID == b.turn || o.NativeID == string(b.journal.SessionID) || o.NativeID == string(v.RequestID) || o.NativeID == string(v.InputID) || c.seen[o.NativeID] || c.usageSeen[o.NativeID] || b.progressSeen[o.NativeID] || len(c.seen) >= 65536 {
 		return true, b.block()
 	}
 	if partial || streamClosed || messageClosed || retry || contextEvent || command {

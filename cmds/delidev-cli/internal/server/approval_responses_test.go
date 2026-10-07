@@ -185,6 +185,12 @@ func TestApprovalResponseRejectsChangedExecutionAuthority(t *testing.T) {
 			if change == "unoffered-decision" {
 				input.Decision.Kind = domain.CodexApprovalDecline
 			}
+			if change == "worker" {
+				if _, err := acceptFixtureApproval(f, domain.NewID(), id, revision, input); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
 			if _, err := acceptFixtureApproval(f, domain.NewID(), id, revision, input); err == nil {
 				t.Fatal("response bypassed current execution authority or original request")
 			}

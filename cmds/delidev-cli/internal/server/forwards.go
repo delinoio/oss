@@ -91,7 +91,9 @@ func ownedForward(tx *store.Tx, actor domain.Principal, id, session domain.ID) (
 	if err != nil {
 		return r, v, err
 	}
-	if r.SessionID != session || actor.Type != v.ClientType ||
+	if r.SessionID !=
+		session ||
+		actor.Type != v.ClientType ||
 
 		actor.
 			DeviceID !=
@@ -316,7 +318,7 @@ func (s *Service) peerForward(tx *store.Tx, actor domain.Principal, peer *pb.For
 	}
 	_, session, err := sessionRecord(tx, r.SessionID)
 	if err != nil || session.Archive != domain.NotArchived || !session.WorkspaceAvailable() ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", session.MachineID != v.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(session.MachineID), session.MachineID != v.MachineID) {
 		return r, v, side, forwardUnavailable()
 	}
 	reader := &workspaceReader{machine: v.MachineID, instance: v.WorkerInstanceID, device: v.WorkerDeviceID}

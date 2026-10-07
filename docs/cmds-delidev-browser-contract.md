@@ -27,11 +27,7 @@ child.
 
 ## Users and Operators
 
-Only a paired client can register or operate its computer's profile identity.
-Owner and Worker credentials cannot substitute a device. Owner and paired clients
-can inspect non-secret account cleanup counts. Repaired or newly paired identities
-cannot silently adopt another device's obligations. Revoked devices remain in
-cleanup inventory; inability to acknowledge never means successful removal.
+Every authenticated server credential and registered paired client or Worker may register, read and confirm profile operations. Original device/account/server fields retain historical attribution, without access restrictions. Revoked credentials remain rejected. Cleanup inventory includes revoked devices; inability to observe native deletion never means successful removal.
 
 ## Interfaces and Contracts
 
@@ -43,16 +39,15 @@ migration version is consumed.
 
 - `RegisterBrowserProfile` binds the exact session UUID/revision, its actual
   selected account, acting paired client and UUID-v7 request. A transaction
-  verifies current session/account ownership and finds or creates one identity
+  verifies current authentication, revision and resource existence and finds or creates one identity
   for the original server/device/account. It never accepts paths or browsing data.
   Selection follows the latest retained continuation account change before Resume,
   otherwise the current/initial execution account. The panel uses that same account
   as its key and registration input, closing the prior presentation on a pending
   switch without rewriting historical execution attribution or the unsent composer.
 - `GetBrowserProfile` and `ListBrowserProfiles` recheck paired authority. Lists
-  filter the original device before pagination (default 50, maximum 200); signed
-  cursors bind server and device. Foreign identities are indistinguishable from
-  absent profiles. The profile inventory is capped at 2,000 records per device.
+  include all tracked devices with bounded pagination (default 50, maximum 200); signed
+  cursors retain their closed server/query format. Original device identity does not restrict access. The profile inventory is capped at 2,000 records per device.
   Generic Device Get/List/Snapshot projections and pairing/revocation responses
   omit the entire browser inventory for every caller. Other device metadata and
   the original stored document remain intact; browser reads use this dedicated
@@ -60,9 +55,9 @@ migration version is consumed.
 - `GetAccountBrowserCleanup` accepts an account UUID even after its configuration
   was removed. Its active/pending/removed counts describe tracked obligations.
   Zero tracked profiles cannot attest to external browser data or unregistered
-  software. Workers cannot inspect this owner/client operation.
+  software. Every authenticated product role may inspect this operation.
 - `ConfirmBrowserProfileRemoval` requires the original profile UUID/revision,
-  original deletion request and owning paired client. Only removal-pending can
+  original deletion request and any authenticated product credential. Only removal-pending can
   advance to removed. An exact receipt returns current state and never performs
   another native deletion or resurrects an active profile.
 
@@ -70,8 +65,7 @@ The CLI equivalents are `browser-profile capabilities`, `register --id SESSION
 --revision N --account-id ACCOUNT`, `status --id PROFILE`, `list --page-size N
 --page-token TOKEN`, `account-status --account-id ACCOUNT`, and `confirm-removal
 --id PROFILE --revision N --deletion-request-id REQUEST`, with the common original
-`--request-id` for mutations. Confirmation is an explicit ownership attestation
-for clients which actually completed native cleanup, not an automatic CLI action.
+`--request-id` for mutations. Confirmation records an actual completed native cleanup observation. An unknown cleanup is logged and subsequent work proceeds without fabricating a removal receipt.
 `browser-storage prepare` only prepares the native client's private cache root.
 
 The session Browser button opens a side panel while retaining the conversation

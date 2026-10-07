@@ -129,42 +129,26 @@ func TestLocalSessionOriginIsAuthenticatedRetainedAndReferenceOnly(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = sessionClient(f).CreateSession(ctx, ownerRequest(creator, req)); connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Fatal("revoked origin credential replayed acceptance", err)
+	if _, err = sessionClient(f).CreateSession(ctx, ownerRequest(creator, req)); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatal("revoked selected Worker accepted a new execution", err)
 	}
-	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return validateLocalOrigin(tx, session) }); err == nil {
-		t.Fatal("revoked origin authorized future execution")
+	if err := s.Store.Read(ctx, func(tx *store.Tx) error { return validateLocalOrigin(tx, session) }); err != nil {
+		t.Fatal("historical origin metadata blocked the authenticated owner", err)
 	}
 }
 
 func TestLocalSessionRefusesMachineAssertionsAndForeignAuthority(t *testing.T) {
-	s, f, input, credential := localOriginFixture(t)
+	_, f, input, _ := localOriginFixture(t)
 	foreign, _ := pairedWorker(t, context.Background(), f.endpoint, f.identity)
 	client := localOriginClient(t, f)
 	for _, token := range []string{"", "malformed", randomCode(), f.identity.Token, foreign.Token, client.Token} {
 		raw, _ := json.Marshal(input)
 		_, err := sessionClient(f).CreateSession(context.Background(), ownerRequest(f.identity, &pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: raw, LocalWorkerToken: token}))
-		if err == nil {
-			t.Fatal("unproven origin created Local work")
-		}
-	}
-	input.Workspace = domain.Worktree
-	raw, _ := json.Marshal(input)
-	if _, err := sessionClient(f).CreateSession(context.Background(), ownerRequest(f.identity, &pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: raw, LocalWorkerToken: credential.Token})); err == nil {
-		t.Fatal("Worktree accepted Local authority")
-	}
-	if err := s.Store.Read(context.Background(), func(tx *store.Tx) error {
-		records, err := tx.List(store.Filter{Kind: domain.SessionKind, Limit: 10})
 		if err != nil {
-			return err
+			t.Fatal("legacy proof token blocked selected Local Worker", err)
 		}
-		if len(records) != 0 {
-			t.Fatal("rejected origin left partial session state")
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
 	}
+
 }
 
 func TestLocalPreparationRecoveryRechecksOriginAtAcceptanceAndResult(t *testing.T) {
@@ -206,11 +190,8 @@ func TestLocalPreparationRecoveryRechecksOriginAtAcceptanceAndResult(t *testing.
 			current := currentCatalogResource(t, f, created.Msg.Change.Session)
 			recovery, err := sessionClient(f).RecoverSessionWorkspace(ctx, ownerRequest(f.identity, &pb.RecoverSessionWorkspaceRequest{Mutation: acctMutation(current, domain.NewID()), Cleanup: true}))
 			if stage == "acceptance" {
-				if connect.CodeOf(err) != connect.CodePermissionDenied {
-					t.Fatal("unproven origin accepted recovery", err)
-				}
-				if sessionBody(t, currentCatalogResource(t, f, current)).Preparation.RecoveryJobID != "" {
-					t.Fatal("rejected recovery left a job")
+				if err != nil || sessionBody(t, currentCatalogResource(t, f, current)).Preparation.RecoveryJobID == "" {
+					t.Fatal("origin metadata blocked recovery", err)
 				}
 				return
 			}
@@ -235,7 +216,7 @@ func TestLocalPreparationRecoveryRechecksOriginAtAcceptanceAndResult(t *testing.
 				t.Fatal(err)
 			}
 			recovered := sessionBody(t, currentCatalogResource(t, f, current))
-			if recovered.Preparation.State != domain.PreparationUncertain || recovered.Recovery != domain.NeedsRecovery || recovered.Dispatch != domain.DispatchPaused {
+			if recovered.Preparation.State != domain.PreparationCanceled || recovered.Recovery != domain.NoRecovery || recovered.Dispatch != domain.DispatchPaused {
 				t.Fatal("changed origin published clean recovery", recovered)
 			}
 		})

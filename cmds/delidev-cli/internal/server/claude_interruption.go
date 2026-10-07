@@ -20,7 +20,8 @@ func publishClaudeInterruption(tx *store.Tx, input domain.ExecutionJobInput, sr 
 		return err
 	}
 	proof := request.ClaudeSettlement
-	if r.SessionID != sr.ID || request.ExecutionID != input.ExecutionID || request.NativeThreadID != event.NativeThreadID || request.NativeTurnID != event.NativeTurnID || request.Claude == nil || request.Claude.ArrivalID != v.ArrivalID || request.Claude.Tool.ID != v.ToolMessageID || request.Closure != domain.InteractionNativeClosed || request.ClaudeCancellation != nil || proof == nil || proof.ArrivalID != v.ArrivalID || proof.ToolMessageID != v.ToolMessageID || proof.ResultNativeID != v.ToolResultNativeID || proof.Evidence != domain.ClaudeInterruptedDenialProcessed || proof.Sequence >= event.Sequence {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+		request.ExecutionID != input.ExecutionID || request.NativeThreadID != event.NativeThreadID || request.NativeTurnID != event.NativeTurnID || request.Claude == nil || request.Claude.ArrivalID != v.ArrivalID || request.Claude.Tool.ID != v.ToolMessageID || request.Closure != domain.InteractionNativeClosed || request.ClaudeCancellation != nil || proof == nil || proof.ArrivalID != v.ArrivalID || proof.ToolMessageID != v.ToolMessageID || proof.ResultNativeID != v.ToolResultNativeID || proof.Evidence != domain.ClaudeInterruptedDenialProcessed || proof.Sequence >= event.Sequence {
 		return executionEventConflict()
 	}
 	var reply *domain.ClaudePermissionResponse
@@ -40,7 +41,8 @@ func publishClaudeInterruption(tx *store.Tx, input domain.ExecutionJobInput, sr 
 	if err != nil {
 		return err
 	}
-	if toolRow.SessionID != sr.ID || tool.ExecutionID != input.ExecutionID || tool.NativeThreadID != event.NativeThreadID || tool.NativeTurnID != event.NativeTurnID || tool.State != domain.MessageComplete || tool.ClaudeTool == nil || tool.ClaudeTool.Result == nil || tool.ClaudeTool.Result.NativeEventID != v.ToolResultNativeID || tool.LastSequence >= proof.Sequence {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(toolRow.SessionID), toolRow.SessionID != sr.ID) ||
+		tool.ExecutionID != input.ExecutionID || tool.NativeThreadID != event.NativeThreadID || tool.NativeTurnID != event.NativeTurnID || tool.State != domain.MessageComplete || tool.ClaudeTool == nil || tool.ClaudeTool.Result == nil || tool.ClaudeTool.Result.NativeEventID != v.ToolResultNativeID || tool.LastSequence >= proof.Sequence {
 		return executionEventConflict()
 	}
 	if evidence, err := domain.ClaudeCallbackResultEvidence(request, *reply, *tool.ClaudeTool); err != nil || evidence != proof.Evidence {
@@ -67,7 +69,8 @@ func publishClaudeInterruption(tx *store.Tx, input domain.ExecutionJobInput, sr 
 			return err
 		}
 		c := context.ClaudeInterruption
-		if contextRow.SessionID != sr.ID || context.ExecutionID != input.ExecutionID || context.NativeThreadID != event.NativeThreadID || context.NativeTurnID != event.NativeTurnID || context.State != domain.MessageComplete || context.LastSequence <= proof.Sequence || context.LastSequence >= event.Sequence || c == nil || c.Validate() != nil || c.Kind != domain.ClaudeDenialContext || c.NativeEventID == v.NativeEventID || c.InteractionID != v.InteractionID || c.ArrivalID != v.ArrivalID || c.ToolMessageID != v.ToolMessageID || c.ToolResultNativeID != v.ToolResultNativeID {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(contextRow.SessionID), contextRow.SessionID != sr.ID) ||
+			context.ExecutionID != input.ExecutionID || context.NativeThreadID != event.NativeThreadID || context.NativeTurnID != event.NativeTurnID || context.State != domain.MessageComplete || context.LastSequence <= proof.Sequence || context.LastSequence >= event.Sequence || c == nil || c.Validate() != nil || c.Kind != domain.ClaudeDenialContext || c.NativeEventID == v.NativeEventID || c.InteractionID != v.InteractionID || c.ArrivalID != v.ArrivalID || c.ToolMessageID != v.ToolMessageID || c.ToolResultNativeID != v.ToolResultNativeID {
 			return executionEventConflict()
 		}
 		complete, err := tx.ExecutionMessagesComplete(input.ExecutionID)

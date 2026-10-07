@@ -34,7 +34,9 @@ func (c *ClaudeContentPublisher) PublishUsageObservation(ctx context.Context, o 
 			// The runner also visits this root adapter after child publication.
 			// Ignore only the exact acknowledged child usage; a child tag alone
 			// cannot bypass original ownership or turn root content into a child.
-			if !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || !c.seen[o.NativeID] {
+			if !c.inputPublished ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+				o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || !c.seen[o.NativeID] {
 				return true, b.block()
 			}
 			for _, child := range c.children {
@@ -79,7 +81,9 @@ func (c *ClaudeContentPublisher) PublishUsageObservation(ctx context.Context, o 
 	} else {
 		return false, nil
 	}
-	if !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || c.usageSeen[o.NativeID] || len(c.usageSeen) >= 65536 || value.Validate() != nil {
+	if !c.inputPublished ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || c.usageSeen[o.NativeID] || len(c.usageSeen) >= 65536 || value.Validate() != nil {
 		return true, b.block()
 	}
 	c.usageSeen[o.NativeID] = true

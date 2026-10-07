@@ -157,9 +157,9 @@ func (c *CodexEventPublisher) deliverQuestionResponse(ctx, publicationCtx contex
 	saved := value.Response
 	claim := saved.Claim
 	if saved.ID != identity.ResponseID || saved.State != domain.QuestionResponseClaimed || saved.Delivery != nil || claim == nil || claim.ID != journal.ClaimID || claim.JobID != identity.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != config.Credential.MachineID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != config.Instance) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", claim.DeviceID != config.Credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != config.Credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(claim.InstanceID), claim.InstanceID != config.Instance) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(claim.DeviceID), claim.DeviceID != config.Credential.DeviceID) ||
 		saved.Input.Validate(value.Questions) != nil {
 		return publicationUncertain()
 	}

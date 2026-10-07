@@ -53,30 +53,30 @@ func TestDesktopRecoveryPreservesStopAndReservedAdmission(t *testing.T) {
 }
 
 func TestDesktopRecoveryRequiresExactOriginalExitAndPreservesHistory(t *testing.T) {
-	root, credential := lifecycleFixture(t)
-	first, _, err := PrepareStart(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := enterLifecycle(root, credential, first.Lifecycle.Generation); err != nil {
-		t.Fatal(err)
-	}
 	for _, exited := range []domain.ID{"", domain.NewID()} {
-		if _, launch, err := PrepareDesktopStart(root, false, exited); err == nil || launch {
-			t.Fatal("unknown exit authorized recovery")
-		}
-	}
-	second, launch, err := PrepareDesktopStart(root, false, first.Lifecycle.Generation)
-	if err != nil || !launch || second.Lifecycle.Generation == first.Lifecycle.Generation {
-		t.Fatal(second, err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "worker-lifecycle-history", string(first.Lifecycle.Generation)+".json")); err != nil {
-		t.Fatal("original uncertainty erased", err)
-	}
-	if _, launch, err := PrepareDesktopStart(root, false, first.Lifecycle.Generation); err != nil || launch {
-		t.Fatal("old native exit replayed", err)
+		t.Run(string(exited), func(t *testing.T) {
+			root, credential := lifecycleFixture(t)
+			first, _, err := PrepareStart(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := enterLifecycle(root, credential, first.Lifecycle.Generation); err != nil {
+				t.Fatal(err)
+			}
+			second, launch, err := PrepareDesktopStart(root, false, exited)
+			if err != nil || !launch || second.Lifecycle.Generation == first.Lifecycle.Generation {
+				t.Fatal("unconfirmed exit blocked admission", second, err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "worker-lifecycle-history", string(first.Lifecycle.Generation)+".json")); err != nil {
+				t.Fatal("original uncertainty erased", err)
+			}
+			if _, launch, err := PrepareDesktopStart(root, false, first.Lifecycle.Generation); err != nil || launch {
+				t.Fatal("pending admission replayed", err)
+			}
+		})
 	}
 }
+
 func TestLifecycleCancelReservedChildAndKeepOriginalGeneration(t *testing.T) {
 	root, _ := lifecycleFixture(t)
 	first, launch, err := PrepareStart(root)

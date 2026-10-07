@@ -15,8 +15,9 @@ import (
 // blocked. The journal independently checks the four original input records.
 func (c *GrokBindingPublisher) Stop(ctx context.Context, claim grok.StopClaim) error {
 	if c == nil || c.journal == nil || !c.accepted.Load() || c.mode != domain.GrokDefaultMode || claim.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", claim.OwnerID != c.reference.JobID) ||
-		claim.ProductSessionID != c.reference.SessionID || claim.InputRequestID != c.reference.InputRequestID || !c.stopClaim.CompareAndSwap(nil, &claim) {
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.OwnerID), claim.OwnerID != c.reference.JobID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.ProductSessionID), claim.ProductSessionID != c.reference.SessionID) ||
+		claim.InputRequestID != c.reference.InputRequestID || !c.stopClaim.CompareAndSwap(nil, &claim) {
 		return publicationUncertain()
 	}
 	return c.journal.Stop(ctx, claim)

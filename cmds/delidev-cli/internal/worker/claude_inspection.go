@@ -26,9 +26,9 @@ func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref Comp
 	}
 	credential, err := LoadCredential(root)
 	if err != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", credential.ServerID != ref.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", credential.DeviceID != ref.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", credential.MachineID != c.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(credential.ServerID), credential.ServerID != ref.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(credential.DeviceID), credential.DeviceID != ref.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(credential.MachineID), credential.MachineID != c.MachineID) {
 		return executionCheckpointUncertain()
 	}
 	path, err := claudeBindingPath(root, c.JobID)
@@ -38,13 +38,15 @@ func inspectCompletedClaudeCheckpoint(ctx context.Context, root string, ref Comp
 	raw, err := security.ReadPrivate(path, 16<<10)
 	var claim claudeBindingJournal
 	if err != nil || domain.Decode(raw, &claim) != nil || claim.Version != 1 || claim.StopClaim != nil || !claim.InputClaimed || claim.JobID != c.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.InstanceID != ref.InstanceID) ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", claim.ServerID != ref.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", claim.DeviceID != ref.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != c.MachineID) ||
-		claim.ExecutionID != completion.ExecutionID || claim.SessionID != c.SessionID || claim.InputID != completion.InputID ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", claim.AccountID != c.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", claim.ConnectionID != c.ConnectionID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(claim.InstanceID), claim.InstanceID != ref.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(claim.ServerID), claim.ServerID != ref.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(claim.DeviceID), claim.DeviceID != ref.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != c.MachineID) ||
+		claim.ExecutionID != completion.ExecutionID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.SessionID), claim.SessionID != c.SessionID) ||
+		claim.InputID != completion.InputID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.AccountID), claim.AccountID != c.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.ConnectionID), claim.ConnectionID != c.ConnectionID) ||
 		claim.ThreadRequestID != native.BindingRequestID || claim.InputRequestID != native.InputRequestID || claim.Revision != ref.AssignmentRevision || claim.AssignmentDigest != ref.AssignmentDigest || claim.ConfigurationDigest != c.ConfigurationDigest {
 		return executionCheckpointUncertain()
 	}

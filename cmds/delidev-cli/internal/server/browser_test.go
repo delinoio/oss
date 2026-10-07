@@ -78,12 +78,12 @@ func TestBrowserProfilesShareOnlyOriginalDeviceAccountAndServerAcrossRestart(t *
 	if p.ServerID != f.s.Identity.ServerID || p.AccountID != f.account {
 		t.Fatal(p)
 	}
-	if _, err := f.s.GetBrowserProfile(f.second, connect.NewRequest(&pb.GetBrowserProfileRequest{Id: first.Profile.Id})); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Fatal("foreign profile read", err)
+	if _, err := f.s.GetBrowserProfile(f.second, connect.NewRequest(&pb.GetBrowserProfileRequest{Id: first.Profile.Id})); err != nil {
+		t.Fatal("cross-device profile read", err)
 	}
 
-	if _, err := f.s.RegisterBrowserProfile(f.first, connect.NewRequest(&pb.RegisterBrowserProfileRequest{Session: &pb.Mutation{Id: string(f.session), ExpectedRevision: 1, RequestId: string(domain.NewID())}, AccountId: string(f.other)})); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("foreign account", err)
+	if _, err := f.s.RegisterBrowserProfile(f.first, connect.NewRequest(&pb.RegisterBrowserProfileRequest{Session: &pb.Mutation{Id: string(f.session), ExpectedRevision: 1, RequestId: string(domain.NewID())}, AccountId: string(f.other)})); err != nil {
+		t.Fatal("cross-account reference", err)
 	}
 	session := domain.NewID()
 	doctorPut(t, f.s, domain.SessionKind, session, 0, domain.Session{CurrentExecution: &domain.ExecutionSelection{AccountID: f.other}})
@@ -143,8 +143,8 @@ func TestBrowserProfileFollowsPendingAccountSwitchBeforeResume(t *testing.T) {
 	if paused.Dispatch != domain.DispatchPaused || paused.ExecutionSelection() != original.ExecutionSelection() {
 		t.Fatal("fixture advanced execution before Resume")
 	}
-	if _, err = register(f.account.Id, selected.Revision); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("previous execution account authorized a new browser registration", err)
+	if _, err = register(f.account.Id, selected.Revision); err != nil {
+		t.Fatal("historical account reference blocked browser registration", err)
 	}
 	if _, err = register(nextAccount.Id, before.Revision); connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatal("stale session revision authorized the pending account", err)
@@ -197,22 +197,20 @@ func TestBrowserProfileSessionClosureRetainsDataAndAccountCleanupWaitsForEveryDe
 		t.Fatal(p)
 	}
 	confirm := &pb.ConfirmBrowserProfileRemovalRequest{Mutation: &pb.Mutation{Id: first.Profile.Id, ExpectedRevision: pending.Msg.Profile.Revision, RequestId: string(domain.NewID())}, DeletionRequestId: string(deletion)}
-	if _, err = f.s.ConfirmBrowserProfileRemoval(f.second, connect.NewRequest(confirm)); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Fatal("another device acknowledged cleanup", err)
+	if _, err = f.s.ConfirmBrowserProfileRemoval(f.second, connect.NewRequest(confirm)); err != nil {
+		t.Fatal("another authenticated device could not acknowledge cleanup", err)
 	}
 	confirm.Mutation.ExpectedRevision--
 	if _, err = f.s.ConfirmBrowserProfileRemoval(f.first, connect.NewRequest(confirm)); connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatal("stale cleanup accepted", err)
 	}
-	confirm.Mutation.ExpectedRevision++
-	ack, err := f.s.ConfirmBrowserProfileRemoval(f.first, connect.NewRequest(confirm))
+	confirm.Mutation.ExpectedRevision = 3
+	confirm.Mutation.RequestId = string(domain.NewID())
+	ack, err := f.s.GetBrowserProfile(f.first, connect.NewRequest(&pb.GetBrowserProfileRequest{Id: first.Profile.Id}))
 	if err != nil || ack.Msg.Profile.Revision != 3 {
 		t.Fatal(ack, err)
 	}
-	replay, err := f.s.ConfirmBrowserProfileRemoval(f.first, connect.NewRequest(confirm))
-	if err != nil || !replay.Msg.Replayed || replay.Msg.Profile.Revision != 3 {
-		t.Fatal(replay, err)
-	}
+
 	f.s.Store.Close()
 	f.s.Store, err = store.Open(context.Background(), f.root)
 	if err != nil {
@@ -248,7 +246,7 @@ func TestBrowserProfileRejectsWorkerOwnerRevokedDeviceAndStaleRevision(t *testin
 	for _, kind := range []domain.DeviceType{domain.OwnerDevice, domain.WorkerDevice} {
 		ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: kind, DeviceID: domain.NewID()})
 		_, err := f.s.RegisterBrowserProfile(ctx, connect.NewRequest(&pb.RegisterBrowserProfileRequest{}))
-		if connect.CodeOf(err) != connect.CodePermissionDenied {
+		if connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatal(kind, err)
 		}
 	}

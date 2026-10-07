@@ -23,15 +23,16 @@ func recoverPRStartup(ctx context.Context, config Config, request domain.Executi
 	defer cancel()
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(request.Preparation, &preparation) != nil || domain.Decode(request.Manifest, &manifest) != nil || preparation.SessionID != request.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", preparation.MachineID != request.MachineID) {
+	if domain.Decode(request.Preparation, &preparation) != nil || domain.Decode(request.Manifest, &manifest) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(preparation.SessionID), preparation.SessionID != request.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(preparation.MachineID), preparation.MachineID != request.MachineID) {
 		return nil, domain.StartupRejectionUncertain()
 	}
 	path := filepath.Join(config.Root, "jobs", string(request.JobID)+".json")
 	raw, err := security.ReadPrivate(path, 2<<20)
 	var original journal
 	if err != nil || domain.Decode(raw, &original) != nil || original.Version != 1 || original.JobID != request.JobID ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", original.InstanceID != request.InstanceID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(original.InstanceID), original.InstanceID != request.InstanceID) ||
 		original.Revision != request.AssignmentRevision || original.Digest != request.AssignmentDigest || original.ReportID.Validate() != nil {
 		return nil, domain.StartupRejectionUncertain()
 	}

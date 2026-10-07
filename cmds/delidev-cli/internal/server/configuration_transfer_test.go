@@ -584,7 +584,7 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 	if err != nil {
 		t.Fatal(err)
 	}
-	if outcome == "success" {
+	if outcome == "success" || outcome == "revoked-client" {
 		if job.State != domain.JobSucceeded || len(rows) != 1 {
 			t.Fatal("not applied", job.State)
 		}

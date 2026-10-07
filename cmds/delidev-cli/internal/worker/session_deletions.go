@@ -49,9 +49,9 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 			for _, raw := range r.Msg.WorkJson {
 				var w domain.SessionDeletionWork
 				if domain.DecodeWithLimit(raw, &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil ||
-					domain.OwnershipBlocks(domain.OwnershipInstance, w.DeletionID, w.ServerID != credential.ServerID) ||
-					domain.OwnershipBlocks(domain.OwnershipDevice, w.DeletionID, w.DeviceID != credential.DeviceID) ||
-					domain.OwnershipBlocks(domain.OwnershipMachine, w.DeletionID, w.MachineID != credential.MachineID) {
+					w.ServerID != credential.ServerID ||
+					w.DeviceID != credential.DeviceID ||
+					w.MachineID != credential.MachineID {
 					config.Logger.WarnContext(ctx, "session_deletion_invalid_work", "code", domain.RecoveryRequired)
 					continue
 				}
@@ -207,7 +207,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 			var j journal
 			if domain.Decode(raw, &j) != nil || j.Version != 1 || j.JobID != copy.JobID ||
-				domain.OwnershipBlocks(domain.OwnershipInstance, "", j.InstanceID != copy.InstanceID) ||
+				domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(j.InstanceID), j.InstanceID != copy.InstanceID) ||
 				j.Revision != copy.Revision || j.Digest != copy.Digest || j.ReportID.Validate() != nil {
 				return proof, domain.SessionDeletionPending()
 			}
@@ -410,9 +410,9 @@ func retiringAssignment(ctx context.Context, config Config, client delidevv1conn
 	}
 	var w domain.SessionDeletionWork
 	if domain.DecodeWithLimit(r.Msg.WorkJson[0], &w, domain.MaxSessionDeletionBytes) != nil || w.Validate() != nil ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", w.ServerID != credential.ServerID) ||
-		domain.OwnershipBlocks(domain.OwnershipDevice, "", w.DeviceID != credential.DeviceID) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", w.MachineID != credential.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(w.ServerID), w.ServerID != credential.ServerID) ||
+		domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(w.DeviceID), w.DeviceID != credential.DeviceID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(w.MachineID), w.MachineID != credential.MachineID) ||
 		string(w.SessionID) != resource.SessionId {
 		return false
 	}

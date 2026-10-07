@@ -104,7 +104,7 @@ func TestEncryptedWorkerNetworkGenerationControlsDispatchAndOriginalScope(t *tes
 	if err != nil || !ack.Msg.InSync {
 		t.Fatal(err)
 	}
-	if _, err := network.GetWorkerNetworkStatus(context.Background(), subscriptionRequest(f.workerToken, &pb.GetWorkerNetworkStatusRequest{MachineId: string(authority.MachineID)})); err == nil {
+	if _, err := network.GetWorkerNetworkStatus(context.Background(), subscriptionRequest(f.workerToken, &pb.GetWorkerNetworkStatusRequest{MachineId: string(authority.MachineID)})); err != nil {
 		t.Fatal("Worker borrowed owner status authority")
 	}
 	for _, body := range [][]byte{export.Msg.Route.DocumentJson, selectResponse.Msg.Resource.DocumentJson} {

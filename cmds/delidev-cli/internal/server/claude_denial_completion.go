@@ -34,7 +34,8 @@ func publishClaudeDenialCompletion(tx *store.Tx, input domain.ExecutionJobInput,
 			return err
 		}
 		r := message.ClaudeInterruption
-		if row.SessionID != input.SessionID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.InputID != "" || message.State != domain.MessageComplete || message.LastSequence >= event.Sequence || r == nil || r.Validate() != nil || r.InteractionID != v.InteractionID || r.ArrivalID != v.ArrivalID {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(row.SessionID), row.SessionID != input.SessionID) ||
+			message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.InputID != "" || message.State != domain.MessageComplete || message.LastSequence >= event.Sequence || r == nil || r.Validate() != nil || r.InteractionID != v.InteractionID || r.ArrivalID != v.ArrivalID {
 			return executionEventConflict()
 		}
 		if id == v.ContextID {
@@ -55,7 +56,8 @@ func publishClaudeDenialCompletion(tx *store.Tx, input domain.ExecutionJobInput,
 		return err
 	}
 	settlement := request.ClaudeSettlement
-	if row.SessionID != input.SessionID || request.ExecutionID != input.ExecutionID || request.NativeThreadID != event.NativeThreadID || request.NativeTurnID != event.NativeTurnID || request.Claude == nil || request.Claude.ArrivalID != v.ArrivalID || request.Closure != domain.InteractionNativeClosed || request.ClaudeCancellation != nil || settlement == nil || settlement.Evidence != domain.ClaudeInterruptedDenialProcessed || settlement.ArrivalID != v.ArrivalID || settlement.ToolMessageID != contextObservation.ToolMessageID || settlement.ResultNativeID != contextObservation.ToolResultNativeID || settlement.Sequence >= contextSequence {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(row.SessionID), row.SessionID != input.SessionID) ||
+		request.ExecutionID != input.ExecutionID || request.NativeThreadID != event.NativeThreadID || request.NativeTurnID != event.NativeTurnID || request.Claude == nil || request.Claude.ArrivalID != v.ArrivalID || request.Closure != domain.InteractionNativeClosed || request.ClaudeCancellation != nil || settlement == nil || settlement.Evidence != domain.ClaudeInterruptedDenialProcessed || settlement.ArrivalID != v.ArrivalID || settlement.ToolMessageID != contextObservation.ToolMessageID || settlement.ResultNativeID != contextObservation.ToolResultNativeID || settlement.Sequence >= contextSequence {
 		return executionEventConflict()
 	}
 	var reply *domain.ClaudePermissionResponse

@@ -60,7 +60,9 @@ func (m *Manager) readExecutionClaim(session domain.ID) (executionClaim, error) 
 	if err != nil {
 		return claim, err
 	}
-	if domain.Decode(raw, &claim) != nil || (claim.Version != 1 && claim.Version != 2) || claim.SessionID != session || domain.UniqueIDs([]domain.ID{claim.SessionID, claim.JobID, claim.ExecutionID}) != nil || len(claim.ManifestDigest) != 64 || !canonicalCommit(claim.ManifestDigest) || (claim.State != executionClaimActive && claim.State != executionClaimClosed) {
+	if domain.Decode(raw, &claim) != nil || (claim.Version != 1 && claim.Version != 2) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.SessionID), claim.SessionID != session) ||
+		domain.UniqueIDs([]domain.ID{claim.SessionID, claim.JobID, claim.ExecutionID}) != nil || len(claim.ManifestDigest) != 64 || !canonicalCommit(claim.ManifestDigest) || (claim.State != executionClaimActive && claim.State != executionClaimClosed) {
 		return claim, ResultUncertain()
 	}
 	if claim.Version == 1 {
@@ -210,7 +212,7 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 	// Retired execution IDs remain unusable even when a caller supplies a fresh
 	// job ID. The current closed predecessor is checked separately above.
 	if _, err := os.Lstat(m.executionHistoryPath(input.SessionID, executionID)); !errors.Is(err, os.ErrNotExist) {
-		return nil, ResultUncertain()
+		return nil, domain.Fail(domain.Conflict, "The execution ID has already been used.", "Create a new execution without changing the historical record.")
 	}
 	manifest, err := m.Read(input.SessionID)
 	if err != nil {
@@ -291,14 +293,8 @@ func (l *ExecutionLease) WorkingDirectory() string { return l.cwd }
 // active workspace claim and lock for independent post-native observations.
 // Missing or changed process evidence cannot become a cleanup barrier.
 func (l *ExecutionLease) ReconcileNative(ctx context.Context) error {
-	retained, err := l.manager.readExecutionClaim(l.claim.SessionID)
-	if err != nil || retained != l.claim {
-		return ResultUncertain()
-	}
-	if err := process.ReconcileOwnerContext(ctx, l.manager.Git.ProcessRoot, l.claim.JobID); err != nil {
-		return ResultUncertain()
-	}
-	return nil
+	_, err := l.observeNative(ctx)
+	return err
 }
 
 // CleanupConfirmed reports observation separately from permission to proceed.

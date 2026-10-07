@@ -95,7 +95,9 @@ func (m *Manager) DiscardInterruptedSidechatFork(ctx context.Context, job, paren
 		}
 		return nil
 	}
-	if err != nil || claim.Preparation.SessionID != child || claim.Preparation.ForkSourceID != parent {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.Preparation.SessionID), claim.Preparation.SessionID != child) ||
+		claim.Preparation.ForkSourceID != parent {
 		return ResultUncertain()
 	}
 	return m.DiscardUnpublishedSidechatReference(ctx, job, claim.Preparation, claim.Manifest)
@@ -111,7 +113,8 @@ func (m *Manager) RetirePublishedSidechatFork(ctx context.Context, job, child do
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	if err != nil || claim.Preparation.SessionID != child {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.Preparation.SessionID), claim.Preparation.SessionID != child) {
 		return ResultUncertain()
 	}
 	if _, err := os.Lstat(filepath.Join(m.Root, "workspaces", string(child))); !errors.Is(err, os.ErrNotExist) {

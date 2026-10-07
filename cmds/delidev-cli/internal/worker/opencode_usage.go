@@ -81,7 +81,8 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 	case o.Kind == opencode.MessagePartUpdatedEvent && o.Part != nil && o.Part.Kind == opencode.StepStartPartKind:
 		p := o.Part
 		owner := t.messages[p.MessageID]
-		if p.SessionID != b.thread || owner == nil || owner.role != domain.AssistantMessage || p.Step == nil || domain.NativeIdentity(p.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.SessionID), p.SessionID != b.thread) ||
+			owner == nil || owner.role != domain.AssistantMessage || p.Step == nil || domain.NativeIdentity(p.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 			return true, publicationUncertain()
 		}
 		if revision := t.revisions[p.ID]; revision != nil && (revision.parent != p.MessageID || revision.kind != p.Kind) {
@@ -102,7 +103,8 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 	case o.Kind == opencode.MessagePartUpdatedEvent && o.Part != nil && o.Part.Kind == opencode.StepFinishPartKind:
 		p := o.Part
 		owner := t.messages[p.MessageID]
-		if p.SessionID != b.thread || owner == nil || owner.role != domain.AssistantMessage || p.Step == nil || p.Step.Usage == nil || p.Step.Cost == nil || p.Step.Reason == nil {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.SessionID), p.SessionID != b.thread) ||
+			owner == nil || owner.role != domain.AssistantMessage || p.Step == nil || p.Step.Usage == nil || p.Step.Cost == nil || p.Step.Reason == nil {
 			return true, publicationUncertain()
 		}
 		if revision := t.revisions[p.ID]; revision != nil && (revision.parent != p.MessageID || revision.kind != p.Kind) {
@@ -112,7 +114,9 @@ func (c *OpenCodeUsagePublisher) PublishObservation(ctx context.Context, o openc
 		counts = *p.Step.Usage
 	case o.Kind == opencode.MessageUpdatedEvent && o.MessageFinalized:
 		m := o.Message
-		if m == nil || !t.seen[publicationKey] || m.SessionID != b.thread || m.Assistant == nil || m.User != nil || m.Assistant.ParentID != b.turn && !t.contextUsers[m.Assistant.ParentID] || m.Assistant.Completed == nil {
+		if m == nil || !t.seen[publicationKey] ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(m.SessionID), m.SessionID != b.thread) ||
+			m.Assistant == nil || m.User != nil || m.Assistant.ParentID != b.turn && !t.contextUsers[m.Assistant.ParentID] || m.Assistant.Completed == nil {
 			return true, publicationUncertain()
 		}
 		owner := t.messages[m.ID]

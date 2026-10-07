@@ -45,7 +45,7 @@ func (t *Tx) grokAccountingSummary(f domain.UsageSelection, result *domain.Usage
 		}
 		var record domain.GrokAccountingRecord
 		if len(body) > 16<<10 || domain.Decode(body, &record) != nil || record.Validate() != nil || index.SourceReceipt != record.SourceReceipt || index.Kind != record.Kind || index.SessionID != record.SessionID || index.ProjectID != record.ProjectID || index.ExecutionID != record.ExecutionID || index.InputID != record.InputID ||
-			domain.OwnershipBlocks(domain.OwnershipResource, "", index.AccountID != record.AccountID) ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(index.AccountID), index.AccountID != record.AccountID) ||
 			index.ProviderID != record.ProviderID || index.ModelID != record.ModelID {
 			return corrupt()
 		}

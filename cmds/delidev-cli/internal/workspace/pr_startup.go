@@ -120,7 +120,9 @@ func (m *Manager) beginPRStartup(job, execution domain.ID, input PrepareRequest,
 	existing, err := security.ReadPrivate(path, 4096)
 	if err == nil {
 		var prior prStartupRecord
-		if domain.Decode(existing, &prior) != nil || prior.validate() != nil || prior.JobID != job || prior.ExecutionID != execution || prior.SessionID != input.SessionID || prior.PreparationDigest != value.PreparationDigest || prior.ManifestDigest != value.ManifestDigest || prior.TargetDigest != value.TargetDigest {
+		if domain.Decode(existing, &prior) != nil || prior.validate() != nil || prior.JobID != job || prior.ExecutionID != execution ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(prior.SessionID), prior.SessionID != input.SessionID) ||
+			prior.PreparationDigest != value.PreparationDigest || prior.ManifestDigest != value.ManifestDigest || prior.TargetDigest != value.TargetDigest {
 			return nil, ResultUncertain()
 		}
 		if prior.Phase == prStartupRejected {
@@ -177,7 +179,9 @@ func (m *Manager) requireClosedPRStartups(session, job domain.ID) error {
 			}
 			raw, err := security.ReadPrivate(filepath.Join(directory, entry.Name()), 4096)
 			var prior prStartupRecord
-			if err != nil || domain.Decode(raw, &prior) != nil || prior.validate() != nil || prior.ExecutionID != id || prior.SessionID != session || prior.JobID == job || prior.Phase != prStartupRejected {
+			if err != nil || domain.Decode(raw, &prior) != nil || prior.validate() != nil || prior.ExecutionID != id ||
+				domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(prior.SessionID), prior.SessionID != session) ||
+				prior.JobID == job || prior.Phase != prStartupRejected {
 				return ResultUncertain()
 			}
 		}

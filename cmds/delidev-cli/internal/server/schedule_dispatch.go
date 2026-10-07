@@ -245,8 +245,10 @@ func scheduleSessionResult(tx *store.Tx, record store.Record, value domain.Sessi
 			return "", nil, err
 		}
 		expected := map[domain.PreparationState]domain.JobState{domain.PreparationFailed: domain.JobFailed, domain.PreparationCanceled: domain.JobCanceled, domain.PreparationReady: domain.JobSucceeded}[value.Preparation.State]
-		if expected == "" || r.SessionID != record.ID || job.Type != domain.PrepareWorkspaceJob ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != value.MachineID) ||
+		if expected == "" ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != record.ID) ||
+			job.Type != domain.PrepareWorkspaceJob ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(job.MachineID), job.MachineID != value.MachineID) ||
 			job.State != expected || job.FinishedAt == nil {
 			return "", nil, nativeCompletionUncertain()
 		}
@@ -282,7 +284,9 @@ func scheduleSessionResult(tx *store.Tx, record store.Record, value domain.Sessi
 		return "", nil, nativeCompletionUncertain()
 	}
 	var assignment domain.ExecutionJobInput
-	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || assignment.SessionID != record.ID || !value.OwnsExecution(assignment) {
+	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(assignment.SessionID), assignment.SessionID != record.ID) ||
+		!value.OwnsExecution(assignment) {
 		return "", nil, nativeCompletionUncertain()
 	}
 	if err := checkContinuationInputs(tx, record.ID, assignment, *progress); err != nil {

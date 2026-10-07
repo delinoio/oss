@@ -80,14 +80,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		if err != nil {
 			return client{}, domain.Fail(domain.Unauthenticated, "The private owner credential is unavailable.", "Restore the selected server's owner credential.")
 		}
-		if domain.OwnershipBlocks(domain.OwnershipInstance,
-			"",
-
-			identity.
-				ServerID !=
-				saved.
-					ServerID,
-		) {
+		if domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(identity.ServerID), identity.ServerID != saved.ServerID) {
 			return client{}, domain.Fail(domain.RecoveryRequired, "The endpoint and owner identity disagree.", "Inspect the selected data scope without overwriting it.")
 		}
 		endpoint = saved.URL

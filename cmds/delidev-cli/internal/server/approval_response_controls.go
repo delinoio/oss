@@ -147,7 +147,8 @@ func (s *Service) pendingApprovalResponses(tx *store.Tx, record store.Record, jo
 			}
 			return nil, err
 		}
-		if r.SessionID != record.SessionID || grant.JobID != record.ID || response.ID.Validate() != nil || response.Claim != nil {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != record.SessionID) ||
+			grant.JobID != record.ID || response.ID.Validate() != nil || response.Claim != nil {
 			return nil, executionEventConflict()
 		}
 		controls = append(controls, &pb.ApprovalResponseControl{JobId: string(record.ID), InteractionId: string(id), ResponseId: string(response.ID), Revision: r.Revision})
@@ -172,7 +173,8 @@ func invalidateApprovalResponses(tx *store.Tx, input domain.ExecutionJobInput) e
 		if err != nil {
 			return err
 		}
-		if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+			value.ExecutionID != input.ExecutionID {
 			return executionEventConflict()
 		}
 		if value.ApprovalResponse == nil {

@@ -113,7 +113,9 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 			}
 		}
 		var input domain.AuxiliaryTitleInput
-		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID || input.ProjectID != record.ProjectID ||
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(jobID), input.SessionID != record.SessionID) ||
+			input.ProjectID != record.ProjectID ||
 			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(jobID), input.MachineID != machine) ||
 			input.OriginalJobID != job.ParentID {
 			updated, err := retireQueuedTitle(tx, record, job, domain.JobFailed, domain.TitleFailed, domain.TitleReasonInvalidOutput, domain.Fail(domain.InvalidArgument, "The immutable title assignment is inconsistent.", "Preserve the accepted session and inspect its original execution."))

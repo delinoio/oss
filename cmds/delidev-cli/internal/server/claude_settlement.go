@@ -18,7 +18,8 @@ func publishClaudeCallbackSettlement(tx *store.Tx, job store.Record, input domai
 	if err != nil {
 		return err
 	}
-	if r.SessionID != input.SessionID || v.ExecutionID != input.ExecutionID || v.NativeThreadID != event.NativeThreadID || v.NativeTurnID != event.NativeTurnID || v.NativeItemID != u.NativeItemID || v.Claude == nil || v.Claude.ArrivalID != u.ArrivalID || v.Claude.Tool.ID != u.ToolMessageID || v.Closure != domain.InteractionOpen || v.ClaudeCancellation != nil || v.ClaudeSettlement != nil {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+		v.ExecutionID != input.ExecutionID || v.NativeThreadID != event.NativeThreadID || v.NativeTurnID != event.NativeTurnID || v.NativeItemID != u.NativeItemID || v.Claude == nil || v.Claude.ArrivalID != u.ArrivalID || v.Claude.Tool.ID != u.ToolMessageID || v.Closure != domain.InteractionOpen || v.ClaudeCancellation != nil || v.ClaudeSettlement != nil {
 		return executionEventConflict()
 	}
 	var claim *domain.QuestionResponseClaim
@@ -59,7 +60,8 @@ func publishClaudeCallbackSettlement(tx *store.Tx, job store.Record, input domai
 	if err != nil {
 		return err
 	}
-	if toolRow.SessionID != input.SessionID || tool.ExecutionID != input.ExecutionID || tool.NativeThreadID != event.NativeThreadID || tool.NativeTurnID != event.NativeTurnID || tool.NativeID != u.NativeItemID || tool.Role != domain.ToolMessage || tool.State != domain.MessageComplete || tool.ClaudeTool == nil || tool.ClaudeTool.Result == nil || tool.ClaudeTool.Result.NativeEventID != u.ResultNativeID || tool.LastSequence <= echo.Sequence || tool.LastSequence >= event.Sequence {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(toolRow.SessionID), toolRow.SessionID != input.SessionID) ||
+		tool.ExecutionID != input.ExecutionID || tool.NativeThreadID != event.NativeThreadID || tool.NativeTurnID != event.NativeTurnID || tool.NativeID != u.NativeItemID || tool.Role != domain.ToolMessage || tool.State != domain.MessageComplete || tool.ClaudeTool == nil || tool.ClaudeTool.Result == nil || tool.ClaudeTool.Result.NativeEventID != u.ResultNativeID || tool.LastSequence <= echo.Sequence || tool.LastSequence >= event.Sequence {
 		return executionEventConflict()
 	}
 	evidence, err := domain.ClaudeCallbackResultEvidence(v, *reply, *tool.ClaudeTool)

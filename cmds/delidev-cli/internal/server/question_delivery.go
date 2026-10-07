@@ -19,7 +19,8 @@ func publishQuestionDelivery(tx *store.Tx, job store.Record, input domain.Execut
 		return false, err
 	}
 	response := value.Response
-	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.UserQuestionInteraction || value.Closure != domain.InteractionOpen || response == nil || response.ID != u.ResponseID || response.State != domain.QuestionResponseClaimed || response.Delivery != nil || response.Claim == nil {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+		value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.UserQuestionInteraction || value.Closure != domain.InteractionOpen || response == nil || response.ID != u.ResponseID || response.State != domain.QuestionResponseClaimed || response.Delivery != nil || response.Claim == nil {
 		return false, executionEventConflict()
 	}
 	_, err = store.Decode[domain.Job](job)
@@ -72,7 +73,8 @@ func publishQuestionAcceptance(tx *store.Tx, job store.Record, input domain.Exec
 		return err
 	}
 	response := value.Response
-	if r.SessionID != input.SessionID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.UserQuestionInteraction || response == nil || response.ID != u.ResponseID || response.Claim == nil || response.Delivery == nil || response.Acceptance != nil || (response.State != domain.QuestionResponseTransmitted && response.State != domain.QuestionResponseUncertain) || (response.Delivery.State != domain.QuestionTransmitted && response.Delivery.State != domain.QuestionDeliveryUncertain) || response.Delivery.Sequence >= event.Sequence || progress.UnconfirmedResponses == 0 {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != input.SessionID) ||
+		value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeItemID != u.NativeItemID || value.Type != domain.UserQuestionInteraction || response == nil || response.ID != u.ResponseID || response.Claim == nil || response.Delivery == nil || response.Acceptance != nil || (response.State != domain.QuestionResponseTransmitted && response.State != domain.QuestionResponseUncertain) || (response.Delivery.State != domain.QuestionTransmitted && response.Delivery.State != domain.QuestionDeliveryUncertain) || response.Delivery.Sequence >= event.Sequence || progress.UnconfirmedResponses == 0 {
 		return executionEventConflict()
 	}
 	if value.OpenCode != nil && ((response.Input.OpenCode.Reject && u.Evidence != domain.NativeOpenCodeQuestionRejected) || (!response.Input.OpenCode.Reject && u.Evidence != domain.NativeOpenCodeQuestionReply)) {

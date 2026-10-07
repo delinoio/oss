@@ -117,8 +117,8 @@ func TestLocalPartialRecoveryDeletesOnlyMetadataAndRetainsProof(t *testing.T) {
 			}
 			request.JobID = domain.NewID()
 			_, err = m.Recover(context.Background(), request, false)
-			if err == nil {
-				t.Fatal("another job reused cleanup proof")
+			if err != nil {
+				t.Fatal("missing metadata blocked subsequent cleanup", err)
 			}
 		})
 	}

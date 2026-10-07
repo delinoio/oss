@@ -24,7 +24,7 @@ func continuationDigest(raw []byte) string {
 // initial snapshot/route; the successor retains the exact preceding progress.
 // There is no native, credential or filesystem operation inside this transaction.
 func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, explicit bool) (store.Record, error) {
-	if session.Recovery != domain.NoRecovery || session.Execution == nil || !session.Execution.CleanupVerified {
+	if session.Recovery != domain.NoRecovery || session.Execution == nil || !session.Execution.CleanupVerified || session.CompactionJobID != "" {
 		return queueUnconfirmedSuccessor(tx, sr, session, explicit)
 	}
 	if session.CompactionJobID != "" {
@@ -62,6 +62,9 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	}
 	assignment, completion, assignmentDigest, err := checkedContinuationPredecessor(tx, sr, session)
 	if err != nil {
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			return queueUnconfirmedSuccessor(tx, sr, session, explicit)
+		}
 		return store.Record{}, err
 	}
 	// Recheck current authority against the immutable selection even when Resume
@@ -102,7 +105,8 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if err != nil {
 		return store.Record{}, err
 	}
-	if ir.SessionID != sr.ID || next.Delivery != domain.InputQueued || next.ExecutionID != "" || next.NativeRequestID != "" || next.Sequence <= queued.Sequence || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(next.Prompt)) {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ir.SessionID), ir.SessionID != sr.ID) ||
+		next.Delivery != domain.InputQueued || next.ExecutionID != "" || next.NativeRequestID != "" || next.Sequence <= queued.Sequence || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(next.Prompt)) {
 		return store.Record{}, continuationConflict()
 	}
 	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: next.Prompt, Mode: next.Mode}
@@ -148,7 +152,8 @@ func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domai
 		if err != nil {
 			return err
 		}
-		if record.SessionID != sessionID || input.Delivery != domain.InputAccepted || input.ExecutionID != assignment.ExecutionID || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || domain.BindExecutionInput(record.ID, input.Prompt) != binding {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(sessionID), record.SessionID != sessionID) ||
+			input.Delivery != domain.InputAccepted || input.ExecutionID != assignment.ExecutionID || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || domain.BindExecutionInput(record.ID, input.Prompt) != binding {
 			return nativeCompletionUncertain()
 		}
 		requests[input.NativeRequestID] = true
@@ -174,8 +179,9 @@ func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domai
 	}
 	var assignment domain.ExecutionJobInput
 	var completion domain.ExecutionCompletion
-	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) || assignment.SessionID != sr.ID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != session.MachineID) ||
+	if domain.Decode(job.Input, &assignment) != nil || assignment.Validate() != nil || !session.OwnsExecution(assignment) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(assignment.SessionID), assignment.SessionID != sr.ID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(job.MachineID), job.MachineID != session.MachineID) ||
 		domain.Decode(job.Output, &completion) != nil || completion.Version != 2 || completion.ValidateForHarness(assignment.Configuration.Harness) != nil || session.Execution.JobID != previous.ID {
 		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", nativeCompletionUncertain()
 	}
@@ -191,7 +197,8 @@ func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domai
 	if err != nil {
 		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", err
 	}
-	if priorInput.SessionID != sr.ID || queued.Delivery != domain.InputAccepted || queued.ExecutionID != assignment.ExecutionID || queued.NativeRequestID != assignment.TurnRequestID || queued.Prompt != assignment.Input.Prompt || queued.Mode != assignment.Input.Mode {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(priorInput.SessionID), priorInput.SessionID != sr.ID) ||
+		queued.Delivery != domain.InputAccepted || queued.ExecutionID != assignment.ExecutionID || queued.NativeRequestID != assignment.TurnRequestID || queued.Prompt != assignment.Input.Prompt || queued.Mode != assignment.Input.Mode {
 		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", nativeCompletionUncertain()
 	}
 	if err := checkContinuationInputs(tx, sr.ID, assignment, *session.Execution); err != nil {
@@ -221,19 +228,38 @@ func continuationAssignment(session domain.Session, assignment domain.ExecutionJ
 }
 
 // An unconfirmed predecessor remains historical. A fresh attempt consumes only a
-// new queued input; it never replays a claimed input or manufactures a checkpoint.
+// new queued input or an explicit Resume attempt, without manufacturing a checkpoint.
 func queueUnconfirmedSuccessor(tx *store.Tx, sr store.Record, session domain.Session, explicit bool) (store.Record, error) {
 	if session.InitialExecution == nil || !session.WorkspaceAvailable() || session.Archive != domain.NotArchived || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || (session.Dispatch == domain.DispatchPaused && !explicit) {
 		return store.Record{}, continuationConflict()
 	}
 	domain.ObserveOwnership(domain.OwnershipCleanup, session.ExecutionSelection().ID)
 	ir, err := tx.OldestQueuedInput(sr.ID)
-	if err != nil {
-		if explicit && domain.SafeError(err).Code == domain.MissingInput {
-			session.Dispatch, session.NextExecutionIntent = domain.DispatchReady, domain.ContinueExplicitly
-			_, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
-			return store.Record{}, err
+	if err != nil && explicit && domain.SafeError(err).Code == domain.MissingInput {
+		// Explicit Resume authorizes a distinct attempt, even if the previous
+		// attempt has no cleanup proof. Its accepted input/history stay intact.
+		prior, e := tx.SessionExecutionJob(sr.ID, session.ExecutionSelection().ID)
+		if e != nil {
+			return store.Record{}, e
 		}
+		job, e := store.Decode[domain.Job](prior)
+		if e != nil {
+			return store.Record{}, e
+		}
+		var old domain.ExecutionJobInput
+		if e = domain.Decode(job.Input, &old); e != nil {
+			return store.Record{}, e
+		}
+		if e = old.Validate(); e != nil {
+			return store.Record{}, e
+		}
+		id, e := appendSessionInput(tx, sr.ID, &session, old.Input)
+		if e != nil {
+			return store.Record{}, e
+		}
+		ir, err = tx.Get(domain.QueueKind, id)
+	}
+	if err != nil {
 		return store.Record{}, err
 	}
 	next, err := store.Decode[domain.QueuedInput](ir)

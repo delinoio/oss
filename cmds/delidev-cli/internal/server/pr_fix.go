@@ -493,7 +493,8 @@ func (s *Service) prFixResponse(ctx context.Context, req *connect.Request[pb.Req
 		if err != nil {
 			return err
 		}
-		if v.SessionID != receipt.SessionID || v.SetID != input.SetID {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(v.SessionID), v.SessionID != receipt.SessionID) ||
+			v.SetID != input.SetID {
 			return workspace.ResultUncertain()
 		}
 		session, err := tx.Get(domain.SessionKind, receipt.SessionID)
@@ -681,7 +682,8 @@ func requirePRFixLink(tx *store.Tx, sr store.Record, target domain.PRGitTarget) 
 	matches := 0
 	for _, row := range links {
 		link, err := store.Decode[domain.SessionPullRequest](row)
-		if err != nil || link.Validate() != nil || row.ProjectID != sr.ProjectID || row.SessionID != sr.ID {
+		if err != nil || link.Validate() != nil || row.ProjectID != sr.ProjectID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(row.SessionID), row.SessionID != sr.ID) {
 			return workspace.ResultUncertain()
 		}
 		if link.SamePR(target.Target) && link.RepositoryID == target.Target.RepositoryID && link.RepositoryNodeID == target.Target.RepositoryNodeID && link.PullRequestNodeID == target.Target.PullRequestNodeID {

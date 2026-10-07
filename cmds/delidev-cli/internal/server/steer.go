@@ -71,7 +71,8 @@ func (s *Service) SteerQueuedInput(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		if ir.SessionID != sr.ID || ir.Revision != identity.Revision || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.NativeRequestID != "" || input.ContentRevision == 0 || input.Mode != assignment.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(input.Prompt)) {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ir.SessionID), ir.SessionID != sr.ID) ||
+			ir.Revision != identity.Revision || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.NativeRequestID != "" || input.ContentRevision == 0 || input.Mode != assignment.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(input.Prompt)) {
 			return nil, steerConflict()
 		}
 		binding := domain.BindExecutionInput(ir.ID, input.Prompt)
@@ -110,7 +111,8 @@ func (s *Service) SteerQueuedInput(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return err
 		}
-		if r.SessionID != identity.Session || attempt.InputID != identity.Input || attempt.ExecutionID != identity.Execution || attempt.NativeTurnID != identity.Turn {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != identity.Session) ||
+			attempt.InputID != identity.Input || attempt.ExecutionID != identity.Execution || attempt.NativeTurnID != identity.Turn {
 			return steerConflict()
 		}
 		sr, session, err := sessionRecord(tx, r.SessionID)

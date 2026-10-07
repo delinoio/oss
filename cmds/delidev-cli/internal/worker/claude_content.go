@@ -143,7 +143,9 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 	if handled, err := c.publishChildContent(ctx, o); handled {
 		return true, err
 	}
-	if c.resultUsage || !c.inputPublished || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 || len(o.Content) == 0 || len(o.Content) > 128 {
+	if c.resultUsage || !c.inputPublished ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || domain.NativeIdentity(o.NativeID).Validate(domain.ClaudeCode, domain.NativeTurnIdentity) != nil || c.seen[o.NativeID] || len(c.seen) >= 65536 || len(o.Content) == 0 || len(o.Content) > 128 {
 		return true, b.block()
 	}
 	if o.Content[0].Kind == claude.ToolResultObserved {

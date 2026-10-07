@@ -19,7 +19,8 @@ func publishClaudeTool(tx *store.Tx, input domain.ExecutionJobInput, session sto
 	if err != nil {
 		return err
 	}
-	if provider.SessionID != session.ID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.NativeID != u.NativeMessageID || message.Role != domain.AssistantMessage || message.NativeParentID != "" || message.Claude == nil || int(u.Index) >= len(message.Claude.Blocks) {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(provider.SessionID), provider.SessionID != session.ID) ||
+		message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.NativeID != u.NativeMessageID || message.Role != domain.AssistantMessage || message.NativeParentID != "" || message.Claude == nil || int(u.Index) >= len(message.Claude.Blocks) {
 		return executionEventConflict()
 	}
 	block := message.Claude.Blocks[u.Index]
@@ -52,7 +53,8 @@ func publishClaudeTool(tx *store.Tx, input domain.ExecutionJobInput, session sto
 		if err != nil {
 			return err
 		}
-		if row.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != u.Reference.NativeID || value.NativeParentID != u.NativeMessageID || value.Role != domain.ToolMessage || value.Text != "" || value.InputID != "" || value.Phase != nil || value.Tool != nil || value.Artifact != nil || value.Progress != nil || value.Claude != nil || value.ClaudeTool == nil {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(row.SessionID), row.SessionID != session.ID) ||
+			value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != u.Reference.NativeID || value.NativeParentID != u.NativeMessageID || value.Role != domain.ToolMessage || value.Text != "" || value.InputID != "" || value.Phase != nil || value.Tool != nil || value.Artifact != nil || value.Progress != nil || value.Claude != nil || value.ClaudeTool == nil {
 			return executionEventConflict()
 		}
 		revision = row.Revision

@@ -46,7 +46,9 @@ func (c *OpenCodeEventPublisher) Complete(ctx context.Context) (domain.Execution
 	if err != nil {
 		return fail(err)
 	}
-	if history.RequestID != b.reference.InputRequestID || history.SessionID != b.thread || history.InputID != b.turn || history.AssistantID != c.final || !c.completeHistory(history) {
+	if history.RequestID != b.reference.InputRequestID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(history.SessionID), history.SessionID != b.thread) ||
+		history.InputID != b.turn || history.AssistantID != c.final || !c.completeHistory(history) {
 		return fail(publicationUncertain())
 	}
 	// Recheck retained authority after potentially slow owned process cleanup.

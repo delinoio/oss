@@ -57,7 +57,7 @@ func sessionPRRecord(tx *store.Tx, session, id domain.ID) (store.Record, domain.
 	if err != nil {
 		return r, v, err
 	}
-	if r.SessionID != session {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(id), r.SessionID != session) {
 		return r, v, domain.Fail(domain.Conflict, "The PR association belongs to another session.", "Select its original session.")
 	}
 	return r, v, v.Validate()
@@ -151,7 +151,9 @@ func (s *Service) LinkSessionPullRequest(ctx context.Context, req *connect.Reque
 		}
 	}
 	var refs sessionPRReceipt
-	if domain.Decode(result.Data, &refs) != nil || refs.Deleted || refs.SessionID != session || refs.AssociationID != requestID {
+	if domain.Decode(result.Data, &refs) != nil || refs.Deleted ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(refs.SessionID), refs.SessionID != session) ||
+		refs.AssociationID != requestID {
 		return fail(domain.Fail(domain.NotFound, "The original PR association is no longer retained.", "An old request cannot recreate an unlinked association."))
 	}
 	var association store.Record
@@ -208,7 +210,9 @@ func (s *Service) UnlinkSessionPullRequest(ctx context.Context, req *connect.Req
 		return nil, rpc.Error(err, correlation)
 	}
 	var refs sessionPRReceipt
-	if domain.Decode(result.Data, &refs) != nil || !refs.Deleted || refs.SessionID != session || refs.AssociationID != identity.Association {
+	if domain.Decode(result.Data, &refs) != nil || !refs.Deleted ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(refs.SessionID), refs.SessionID != session) ||
+		refs.AssociationID != identity.Association {
 		return nil, rpc.Error(domain.Fail(domain.NotFound, "The original unlink result is no longer retained.", "Inspect current session associations; no link was recreated."), correlation)
 	}
 	s.logger.InfoContext(ctx, "session_pull_request_unlinked", "session_id", session, "association_id", refs.AssociationID, "replayed", result.Replayed, "correlation_id", correlation)

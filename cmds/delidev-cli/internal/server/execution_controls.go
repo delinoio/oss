@@ -125,7 +125,7 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			if job.Type == domain.CompactSessionJob {
 				var input domain.SessionCompactionInput
 				if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil ||
-					domain.OwnershipBlocks(domain.OwnershipResource, "", input.Assignment.AccountID != account) {
+					domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.Assignment.AccountID), input.Assignment.AccountID != account) {
 					return domain.CompactionUncertain()
 				}
 				sr, session, err := sessionRecord(tx, r.SessionID)
@@ -145,7 +145,7 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			if err != nil {
 				return err
 			}
-			if domain.OwnershipBlocks(domain.OwnershipResource, "", input.AccountID != account) {
+			if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.AccountID), input.AccountID != account) {
 				return executionEventConflict()
 			}
 			if err := tx.RequestJobCancellation(r.ID); err != nil {

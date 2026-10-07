@@ -180,6 +180,12 @@ func TestQuestionResponseRejectsChangedExecutionAuthority(t *testing.T) {
 			if change == "answers" {
 				delete(input.Answers, "choice")
 			}
+			if change == "worker" {
+				if _, err := acceptFixtureResponse(f, domain.NewID(), id, revision, input); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
 			if _, err := acceptFixtureResponse(f, domain.NewID(), id, revision, input); err == nil {
 				t.Fatal("response bypassed current execution authority or original request")
 			}

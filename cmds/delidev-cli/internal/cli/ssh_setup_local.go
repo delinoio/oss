@@ -108,39 +108,15 @@ func localSSHSetup(ctx context.Context, o options, args []string, input io.Reade
 		// another pair, lifecycle admission or process spawn.
 		credential, e := worker.LoadCredential(*root)
 		if e != nil || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance,
-				"",
-
-				credential.
-					ServerID !=
-					document.ServerID,
-			) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(credential.ServerID), credential.ServerID != document.ServerID) ||
 			credential.Endpoint != document.Grant.Endpoint || intent.Device != "" && intent.Device != credential.DeviceID || intent.Machine != "" && intent.Machine != credential.MachineID || intent.Device == "" && credential.PairingID != document.Grant.PairingID {
 			return nil, sshLocalFailure()
 		}
 		status, e := worker.Status(*root)
 		if e != nil || status.State != worker.StateRunning || intent.Generation == "" || status.Lifecycle.Generation != intent.Generation ||
-			domain.OwnershipBlocks(domain.OwnershipInstance,
-				"",
-
-				status.Lifecycle.
-					ServerID !=
-					document.
-						ServerID) ||
-			domain.OwnershipBlocks(domain.OwnershipDevice,
-				"",
-				status.
-					Lifecycle.
-					DeviceID !=
-					credential.
-						DeviceID) ||
-			domain.OwnershipBlocks(domain.OwnershipMachine,
-				"",
-
-				status.Lifecycle.
-					MachineID !=
-					credential.
-						MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(status.Lifecycle.ServerID), status.Lifecycle.ServerID != document.ServerID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(status.Lifecycle.DeviceID), status.Lifecycle.DeviceID != credential.DeviceID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(status.Lifecycle.MachineID), status.Lifecycle.MachineID != credential.MachineID) ||
 			(!intent.Reused && status.Lifecycle.WorkerVersion != rpc.Version) {
 			return nil, sshLocalFailure()
 		}
@@ -160,13 +136,7 @@ func localSSHSetup(ctx context.Context, o options, args []string, input io.Reade
 	}
 	credential, e := worker.LoadCredential(*root)
 	if e == nil {
-		if domain.OwnershipBlocks(domain.OwnershipInstance,
-			"",
-
-			credential.
-				ServerID !=
-				document.ServerID,
-		) ||
+		if domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(credential.ServerID), credential.ServerID != document.ServerID) ||
 			credential.Endpoint != document.Grant.Endpoint || domain.OwnershipBlocks(domain.OwnershipActor, "", credential.Type != domain.WorkerDevice) {
 			return nil, sshLocalFailure()
 		}

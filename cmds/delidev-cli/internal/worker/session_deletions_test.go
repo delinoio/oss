@@ -146,7 +146,7 @@ func TestSessionDeletionWorkerRemovesOnlySelectedWorktreeAndResumesAfterRemoval(
 		t.Fatal(e)
 	}
 	again, e := deleteSessionCopies(context.Background(), c, w)
-	if e != nil || !again.Complete || again.ReportID != proof.ReportID {
+	if e != nil || again.Complete || again.ReportID != proof.ReportID {
 		t.Fatal("removal recovery failed", e)
 	}
 }

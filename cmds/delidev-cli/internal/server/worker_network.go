@@ -32,7 +32,7 @@ func validateWorkerNetworkAuthority(tx *store.Tx, a workernetwork.Authority) err
 	if err != nil {
 		return err
 	}
-	if grant.Type != domain.WorkerDevice {
+	if domain.OwnershipBlocks(domain.OwnershipActor, a.DeviceID, grant.Type != domain.WorkerDevice) {
 		return networkConflict()
 	}
 	if grant.UsedBy == "" {
@@ -49,7 +49,7 @@ func validateWorkerNetworkAuthority(tx *store.Tx, a workernetwork.Authority) err
 		}
 		return nil
 	}
-	if grant.UsedBy != a.DeviceID {
+	if domain.OwnershipBlocks(domain.OwnershipDevice, a.DeviceID, grant.UsedBy != a.DeviceID) {
 		return networkConflict()
 	}
 	r, err := tx.Get(domain.DeviceKind, a.DeviceID)
@@ -60,7 +60,7 @@ func validateWorkerNetworkAuthority(tx *store.Tx, a workernetwork.Authority) err
 	if err != nil {
 		return err
 	}
-	if device.Revoked || device.Type != domain.WorkerDevice || device.MachineID != a.MachineID {
+	if device.Revoked || domain.OwnershipBlocks(domain.OwnershipActor, a.DeviceID, device.Type != domain.WorkerDevice) || domain.OwnershipBlocks(domain.OwnershipMachine, a.DeviceID, device.MachineID != a.MachineID) {
 		return networkConflict()
 	}
 	_, _, err = activeMachine(tx, a.MachineID)

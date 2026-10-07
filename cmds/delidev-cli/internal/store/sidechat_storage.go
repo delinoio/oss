@@ -135,7 +135,7 @@ func (s *Store) BeginSidechatStorageRetirement(ctx context.Context, operation, s
 				return err
 			}
 			if child.SidechatParentID != r.SessionID ||
-				domain.OwnershipBlocks(domain.OwnershipInstance, "", child.ServerID != server) ||
+				domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(child.ServerID), child.ServerID != server) ||
 				len(child.Dependents) != 0 {
 				return domain.SessionDeletionPending()
 			}
@@ -160,7 +160,7 @@ func (s *Store) BeginSidechatStorageRetirement(ctx context.Context, operation, s
 		return domain.SessionDeletionPending()
 	}
 	if plan.Version != 1 || plan.JobID != operation || plan.JobDigest != deletionInputDigest(j.Input) || plan.Parent.SessionID != r.SessionID || plan.Parent.ID != operation ||
-		domain.OwnershipBlocks(domain.OwnershipInstance, "", plan.Parent.ServerID != server) ||
+		domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(plan.Parent.ServerID), plan.Parent.ServerID != server) ||
 		domain.OwnershipBlocks(domain.OwnershipActor, "", plan.Parent.Actor != *input.SidechatActor) ||
 		plan.Parent.validate() != nil || len(plan.Parent.Dependents) != len(input.SidechatDependents) {
 		return domain.SessionDeletionPending()

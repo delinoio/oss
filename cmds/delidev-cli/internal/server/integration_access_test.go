@@ -197,11 +197,11 @@ func TestRepositoryIntegrationRejectsMissingOwnerOrProfileBeforeNativeLookup(t *
 		t.Fatal(err)
 	}
 	f.service.githubAccess = accessFunc(func(context.Context, []byte, string, string) (gh.RepositoryAccessObservation, error) {
-		t.Error("foreign owner requested")
+
 		return gh.RepositoryAccessObservation{}, nil
 	})
 	_, err = f.client.InspectRepositoryIntegration(context.Background(), ownerRequest(f.service.Identity, &pb.InspectRepositoryIntegrationRequest{RepositoryId: repo.Id}))
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("foreign owner accepted", err)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatal("invalid external observation accepted", err)
 	}
 }

@@ -29,8 +29,9 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 		return ResultUncertain()
 	}
 	digest := sha256.Sum256(raw)
-	if result.Version != 1 || result.State != Ready || result.SessionID != input.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", result.MachineID != input.MachineID) ||
+	if result.Version != 1 || result.State != Ready ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(result.SessionID), result.SessionID != input.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(result.MachineID), result.MachineID != input.MachineID) ||
 		result.Type != input.Type || result.InputDigest != hex.EncodeToString(digest[:]) || result.CreatedAt.IsZero() || len(result.Repositories) != len(input.Repositories) || len(result.Repositories) > 100 {
 		return ResultUncertain()
 	}
@@ -76,7 +77,7 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 	if input.Type != domain.Worktree && input.Type != domain.Local {
 		return ResultUncertain()
 	}
-	if len(input.Repositories) == 0 || (input.Type == domain.Local && input.OriginMachineID != input.MachineID) {
+	if len(input.Repositories) == 0 || (input.Type == domain.Local && domain.OwnershipBlocks(domain.OwnershipMachine, input.SessionID, input.OriginMachineID != input.MachineID)) {
 		return ResultUncertain()
 	}
 	seen := make(map[domain.ID]bool)
@@ -109,7 +110,7 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 			}
 			registration = expected.ForkRegistrationSource
 		}
-		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != registration || repo.Owned != (input.Type == domain.Worktree) {
+		if repo.ID != expected.ID || repo.ID.Validate() != nil || seen[repo.ID] || !absolute(repo.Source) || !absolute(repo.Path) || repo.Source != registration || domain.OwnershipBlocks(domain.OwnershipResource, input.SessionID, repo.Owned != (input.Type == domain.Worktree)) {
 			return ResultUncertain()
 		}
 		seen[repo.ID] = true
@@ -164,7 +165,7 @@ func canonicalCommit(value string) bool {
 // Local captures historical preparation facts; an unborn branch has no commit
 // or starting reference. Only this explicit state permits empty commit fields.
 func validLocalRepository(repo PreparedRepository) bool {
-	if repo.Owned || repo.Path != repo.Source || len(repo.LocalIdentityDigest) != 64 || !canonicalCommit(repo.LocalIdentityDigest) || repo.StartingCommit != repo.BaseCommit {
+	if domain.OwnershipBlocks(domain.OwnershipResource, repo.ID, repo.Owned) || repo.Path != repo.Source || len(repo.LocalIdentityDigest) != 64 || !canonicalCommit(repo.LocalIdentityDigest) || repo.StartingCommit != repo.BaseCommit {
 		return false
 	}
 	switch repo.LocalHEAD {

@@ -89,7 +89,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
-	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil || preparation.SessionID != input.SessionID ||
+	if domain.Decode(input.Preparation, &preparation) != nil || domain.Decode(input.Manifest, &manifest) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(owner), preparation.SessionID != input.SessionID) ||
 		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(owner), preparation.MachineID != input.MachineID) ||
 		workspace.ValidateResult(preparation, manifest, runtime.GOOS) != nil {
 		return nil, workspace.ResultUncertain()

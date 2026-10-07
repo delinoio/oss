@@ -76,7 +76,14 @@ func TestClaudeDenialCompletionRejectsMixedForeignOrMissingFactsAtomically(t *te
 				e = claudeProgressEvent(f, e.Sequence, true)
 			}
 			before, _ := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
-			if _, err := f.call(f.requestEvent(t, e)); err == nil {
+			_, err := f.call(f.requestEvent(t, e))
+			if scenario == "cleanup" {
+				if err != nil {
+					t.Fatal("unconfirmed cleanup blocked the native observation", err)
+				}
+				return
+			}
+			if err == nil {
 				t.Fatal("invalid denial acquired completion")
 			}
 			after, _ := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)

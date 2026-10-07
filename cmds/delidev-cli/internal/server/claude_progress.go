@@ -109,7 +109,9 @@ func validateClaudeProgressTool(tx *store.Tx, input domain.ExecutionJobInput, se
 		return err
 	}
 	message, err := store.Decode[domain.ExecutionMessage](r)
-	if err != nil || r.SessionID != session.ID || message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.Role != domain.ToolMessage || message.ClaudeTool == nil || message.ClaudeTool.Reference != ref || message.NativeID != ref.NativeID || message.NativeParentID != message.ClaudeTool.NativeMessageID || message.LastSequence >= event.Sequence || (message.State != domain.MessageStreaming && message.State != domain.MessageComplete) {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != session.ID) ||
+		message.ExecutionID != input.ExecutionID || message.NativeThreadID != event.NativeThreadID || message.NativeTurnID != event.NativeTurnID || message.Role != domain.ToolMessage || message.ClaudeTool == nil || message.ClaudeTool.Reference != ref || message.NativeID != ref.NativeID || message.NativeParentID != message.ClaudeTool.NativeMessageID || message.LastSequence >= event.Sequence || (message.State != domain.MessageStreaming && message.State != domain.MessageComplete) {
 		return executionEventConflict()
 	}
 	if running && (message.State != domain.MessageStreaming || message.ClaudeTool.Proposal == nil || message.ClaudeTool.Result != nil) {

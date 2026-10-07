@@ -48,7 +48,9 @@ func publishClaudeTerminal(tx *store.Tx, input domain.ExecutionJobInput, p *doma
 		return err
 	}
 	u, err := store.Decode[domain.ClaudeUsageRecord](record)
-	if err != nil || record.SessionID != input.SessionID || u.ExecutionID != input.ExecutionID || u.ThreadID != event.NativeThreadID || u.TurnID != event.NativeTurnID || u.Sequence >= event.Sequence || u.Usage.Source != domain.ClaudeInputResultUsage || u.Usage.NativeEventID != v.ResultNativeID || u.Usage.Validate() != nil {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(record.SessionID), record.SessionID != input.SessionID) ||
+		u.ExecutionID != input.ExecutionID || u.ThreadID != event.NativeThreadID || u.TurnID != event.NativeTurnID || u.Sequence >= event.Sequence || u.Usage.Source != domain.ClaudeInputResultUsage || u.Usage.NativeEventID != v.ResultNativeID || u.Usage.Validate() != nil {
 		return executionEventConflict()
 	}
 	copy := *v

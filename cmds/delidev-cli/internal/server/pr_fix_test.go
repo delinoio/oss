@@ -242,8 +242,8 @@ func TestManualPRFixRPCExactAcceptanceReplayAndPausedExclusion(t *testing.T) {
 				t.Fatal("second owner accepted", err)
 			}
 			worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice})
-			if _, err := f.service.RequestPullRequestFix(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodePermissionDenied {
-				t.Fatal("Worker business mutation", err)
+			if _, err := f.service.RequestPullRequestFix(worker, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+				t.Fatal("Unregistered Worker business mutation", err)
 			}
 			if kind == "ci" {
 				assertManualPRFixDispatchBackoff(t, f, attempt.SessionID)

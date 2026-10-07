@@ -28,7 +28,9 @@ func (c *ClaudeContentPublisher) PublishInteractionObservation(ctx context.Conte
 		return false, nil
 	}
 	n := o.Interaction
-	if c.resultUsage || !c.inputPublished || n == nil || o.SessionID != b.journal.SessionID || o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || n.InputID != o.InputID || n.TurnID != o.TurnID || n.ArrivalID.Validate() != nil {
+	if c.resultUsage || !c.inputPublished || n == nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(o.SessionID), o.SessionID != b.journal.SessionID) ||
+		o.InputID != b.journal.InputID || o.TurnID != b.turn || !o.Accepted || n.InputID != o.InputID || n.TurnID != o.TurnID || n.ArrivalID.Validate() != nil {
 		return true, b.block()
 	}
 	if n.Kind == claude.InteractionReplyEchoed {

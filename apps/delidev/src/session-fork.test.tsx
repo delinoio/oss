@@ -249,7 +249,7 @@ it.each([true, false])("gates native Sidechat on the original Runner Device and 
  expect(fork.mock.calls[0]?.[0]).toMatchObject({purpose:ForkPurpose.SIDECHAT,workspace:ForkWorkspace.UNSPECIFIED,mutation:{id:source.id,expectedRevision:8n}});
 });
 
-it.each(["pending", "uncertain", "stored"])("hides native fork and Sidechat while the parent workspace is %s", async (state) => {
+it.each(["pending", "uncertain", "stored"])("keeps fork actions available during unconfirmed storage %s", async (state) => {
  const source=create(ResourceSchema,{kind:EntityKind.SESSION,id:newRequestId(),revision:8n,schemaVersion:1,documentJson:encode({name:"Parent",machine_id:newRequestId(),workspace:"general-chat",archive:"active",recovery:"none",outcome:"succeeded",storage:{state},initial_execution:{configuration:{harness:"codex"}},execution:{native_turn_id:newRequestId(),cleanup_verified:true}})});
  const machine=create(ResourceSchema,{kind:EntityKind.MACHINE,id:newRequestId(),revision:1n,schemaVersion:1,documentJson:encode({worker_capabilities:["codex-read-only-sidechat-v1"]})});
  const fork=vi.fn();
@@ -257,5 +257,5 @@ it.each(["pending", "uncertain", "stored"])("hides native fork and Sidechat whil
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source}/></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
  await waitFor(()=>expect(client.isFetching()).toBe(0));
- expect(screen.queryByRole("button",{name:"Open Sidechat"})).toBeNull();expect(screen.queryByRole("button",{name:"Fork session"})).toBeNull();expect(fork).not.toHaveBeenCalled();
+ expect(Boolean(screen.queryByRole("button",{name:"Open Sidechat"}))).toBe(state !== "stored");expect(Boolean(screen.queryByRole("button",{name:"Fork session"}))).toBe(state !== "stored");expect(fork).not.toHaveBeenCalled();
 });

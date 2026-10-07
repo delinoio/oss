@@ -137,7 +137,11 @@ func TestClaudeContinuationRequiresOriginalSettledPermissionAndReport(t *testing
 						t.Fatal("changed permission acquired continuation relay")
 					}
 				} else {
-					if s.Dispatch != domain.DispatchPaused || s.Recovery != domain.NeedsRecovery || s.NextExecutionIntent != "" {
+					dispatch := domain.DispatchPaused
+					if outcome == domain.ExecutionSucceeded && scenario != "prior-recovery" {
+						dispatch = domain.DispatchReady
+					}
+					if s.Dispatch != dispatch || s.Recovery != domain.NeedsRecovery || s.NextExecutionIntent != "" {
 						t.Fatal("unproved boundary granted FIFO")
 					}
 					if scenario != "prior-recovery" && s.Execution.CleanupVerified {

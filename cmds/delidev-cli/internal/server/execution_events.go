@@ -58,8 +58,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 			return nil, executionEventConflict()
 		}
 		var input domain.ExecutionJobInput
-		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != event.ExecutionID || input.SessionID != jobRecord.SessionID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != identity.Machine) {
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != event.ExecutionID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.SessionID), input.SessionID != jobRecord.SessionID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != identity.Machine) {
 			return nil, executionEventConflict()
 		}
 		sr, session, err := sessionRecord(tx, input.SessionID)
@@ -83,7 +84,8 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		if ir.SessionID != sr.ID || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted && queued.Delivery != domain.InputUncertain) {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(ir.SessionID), ir.SessionID != sr.ID) ||
+			queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted && queued.Delivery != domain.InputUncertain) {
 			return nil, executionEventConflict()
 		}
 		if input.Version == 4 && event.Kind != domain.ExecutionThreadBound {
@@ -606,7 +608,8 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 			return err
 		}
 		phaseMatches := value.Phase == nil || (update.Phase != nil && *value.Phase == *update.Phase)
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != update.Role || value.InputID != update.InputID || !phaseMatches || value.State != domain.MessageStreaming {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != session.ID) ||
+			value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != update.Role || value.InputID != update.InputID || !phaseMatches || value.State != domain.MessageStreaming {
 			return executionEventConflict()
 		}
 		revision = r.Revision

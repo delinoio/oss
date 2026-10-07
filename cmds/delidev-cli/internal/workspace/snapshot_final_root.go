@@ -437,7 +437,9 @@ func (m *Manager) cleanupDeletionFinalRoots(ctx context.Context, w domain.Sessio
 		}
 		raw, err := security.ReadPrivate(m.removalIntentPath(copy.JobID), maxSnapshotManifest)
 		var intent storageRemovalIntent
-		if finalErr != nil || err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != copy.JobID || intent.SessionID != w.SessionID || intent.SnapshotID != copy.SnapshotID || (intent.Action != StorageCleanup && intent.Action != StorageDelete) {
+		if finalErr != nil || err != nil || domain.DecodeBounded(raw, &intent, maxSnapshotManifest) != nil || intent.Version != 1 || intent.OperationID != copy.JobID ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(intent.SessionID), intent.SessionID != w.SessionID) ||
+			intent.SnapshotID != copy.SnapshotID || (intent.Action != StorageCleanup && intent.Action != StorageDelete) {
 			return domain.SessionDeletionPending()
 		}
 		r := StorageRequest{OperationID: copy.JobID, SnapshotID: copy.SnapshotID, Action: intent.Action, Preparation: PrepareRequest{SessionID: w.SessionID}}

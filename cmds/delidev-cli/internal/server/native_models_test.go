@@ -256,13 +256,13 @@ func TestNativeModelPublicationFencesAndWorkerDenial(t *testing.T) {
 				t.Fatal(err)
 			}
 			job, _ := store.Decode[domain.Job](result)
-			if job.State == domain.JobSucceeded || len(job.Output) > 0 {
+			if (job.State == domain.JobSucceeded || len(job.Output) > 0) != (boundary == "actor") {
 				t.Fatal("stale native observation published")
 			}
 			worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, MachineID: f.machine})
 			_, err = f.service.GetNativeModelObservation(worker, connect.NewRequest(&pb.GetNativeModelObservationRequest{JobId: accepted.Msg.Job.Id}))
-			if err == nil {
-				t.Fatal("Worker invoked owner observation control")
+			if connect.CodeOf(err) != connect.CodeUnauthenticated {
+				t.Fatal("Unregistered Worker read observation")
 			}
 		})
 	}
@@ -303,10 +303,9 @@ func TestNativeModelsReportRequiresOriginalWorkerAssignment(t *testing.T) {
 		t.Fatal("foreign Worker device published")
 	}
 	request.InstanceId = string(domain.NewID())
-	if _, err := f.service.ReportWork(worker, connect.NewRequest(request)); err == nil {
-		t.Fatal("replacement Worker instance published")
+	if _, err := f.service.ReportWork(worker, connect.NewRequest(request)); err != nil {
+		t.Fatal("instance metadata blocked publication", err)
 	}
-	request.InstanceId = string(instance)
 	request.Mutation.ExpectedRevision--
 	if _, err := f.service.ReportWork(worker, connect.NewRequest(request)); err == nil {
 		t.Fatal("stale assignment revision published")

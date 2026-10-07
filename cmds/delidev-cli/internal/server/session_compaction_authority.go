@@ -12,7 +12,8 @@ import (
 func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGrant, r store.Record, j domain.Job) (apiproxy.Scope, error) {
 	denied := func() (apiproxy.Scope, error) { return apiproxy.Scope{}, executionDenied() }
 	var i domain.SessionCompactionInput
-	if g.ServerEpoch != a.epoch || j.State != domain.JobClaimed || domain.DecodeCompactionInput(j.Input, &i) != nil || i.Validate() != nil || g.ExecutionID != i.ActionID || i.Assignment.SessionID != r.SessionID {
+	if g.ServerEpoch != a.epoch || j.State != domain.JobClaimed || domain.DecodeCompactionInput(j.Input, &i) != nil || i.Validate() != nil || g.ExecutionID != i.ActionID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(i.Assignment.SessionID), i.Assignment.SessionID != r.SessionID) {
 		return denied()
 	}
 	canceled, err := tx.JobCancellationRequested(r.ID)
@@ -29,7 +30,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	}
 	device, err := store.Decode[domain.Device](dr)
 	if err != nil || device.Revoked || domain.OwnershipBlocks(domain.OwnershipActor, "", device.Type != domain.WorkerDevice) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", device.MachineID != g.MachineID) {
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(device.MachineID), device.MachineID != g.MachineID) {
 		return denied()
 	}
 	_, machine, err := activeMachine(tx, g.MachineID)
@@ -60,9 +61,9 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		}
 		state, lease := account.Subscription, account.Subscription.Lease
 		if lease.Action != domain.SubscriptionExecute || lease.OperationID != g.JobID ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", lease.MachineID != g.MachineID) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", lease.InstanceID != g.InstanceID) ||
-			domain.OwnershipBlocks(domain.OwnershipDevice, "", lease.DeviceID != g.DeviceID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(lease.MachineID), lease.MachineID != g.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(lease.InstanceID), lease.InstanceID != g.InstanceID) ||
+			domain.OwnershipBlocks(domain.OwnershipDevice, domain.ID(lease.DeviceID), lease.DeviceID != g.DeviceID) ||
 			lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
 			return denied()
 		}

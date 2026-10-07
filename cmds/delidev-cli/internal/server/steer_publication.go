@@ -17,7 +17,9 @@ func publishSteer(tx *store.Tx, job store.Record, assignment domain.ExecutionJob
 	}
 	claim := attempt.Claim
 	var original domain.Job
-	if domain.Decode(job.Data, &original) != nil || r.SessionID != sr.ID || session.PendingSteerID != r.ID || attempt.JobID != job.ID || attempt.ExecutionID != assignment.ExecutionID || attempt.InputID != u.InputID || string(attempt.NativeThreadID) != event.NativeThreadID || string(attempt.NativeTurnID) != event.NativeTurnID || (attempt.State != domain.SteerClaimed && attempt.State != domain.SteerUncertain) || claim == nil || claim.ID != u.ClaimID {
+	if domain.Decode(job.Data, &original) != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+		session.PendingSteerID != r.ID || attempt.JobID != job.ID || attempt.ExecutionID != assignment.ExecutionID || attempt.InputID != u.InputID || string(attempt.NativeThreadID) != event.NativeThreadID || string(attempt.NativeTurnID) != event.NativeTurnID || (attempt.State != domain.SteerClaimed && attempt.State != domain.SteerUncertain) || claim == nil || claim.ID != u.ClaimID {
 		return steerConflict()
 	}
 	resolving := attempt.Observation != nil

@@ -783,8 +783,8 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		if err := job.Validate(); err != nil {
 			return err
 		}
-		if domain.OwnershipBlocks(domain.OwnershipMachine, "", job.MachineID != credential.MachineID) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", job.InstanceID != instance) ||
+		if domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(job.MachineID), job.MachineID != credential.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(job.InstanceID), job.InstanceID != instance) ||
 			job.State != domain.JobClaimed {
 			return domain.Fail(domain.PermissionDenied, "The received job belongs to another machine or process.", "Inspect the paired server and job ownership.")
 		}
@@ -872,28 +872,28 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	if job.Type == domain.ForkSessionJob {
 		var input domain.ForkJobInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SourceSessionID) != resource.SessionId ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.SourceAssignment.MachineID != job.MachineID) {
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.SourceAssignment.MachineID), input.SourceAssignment.MachineID != job.MachineID) {
 			return journal{}, publicationUncertain()
 		}
 	}
 	if job.Type == domain.ExecuteSessionJob {
 		var input domain.ExecutionJobInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != resource.SessionId ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) {
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != job.MachineID) {
 			return journal{}, publicationUncertain()
 		}
 	}
 	if job.Type == domain.WorkspaceStorageJob {
 		var input workspace.StorageRequest
 		if workspace.DecodeStorageRequest(job.Input, &input) != nil || input.Validate() != nil || input.OperationID != domain.ID(resource.Id) || input.Preparation.SessionID != domain.ID(resource.SessionId) ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.Preparation.MachineID != job.MachineID) {
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.Preparation.MachineID), input.Preparation.MachineID != job.MachineID) {
 			return journal{}, workspace.ResultUncertain()
 		}
 	}
 	if job.Type == domain.CompactSessionJob {
 		var input domain.SessionCompactionInput
 		if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.Assignment.MachineID != job.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.Assignment.MachineID), input.Assignment.MachineID != job.MachineID) ||
 			input.SourceJobID != job.ParentID {
 			return journal{}, domain.CompactionUncertain()
 		}
@@ -904,14 +904,14 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, err
 		}
 		if string(input.SessionID) != resource.SessionId ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) {
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != job.MachineID) {
 			return journal{}, domain.Fail(domain.RecoveryRequired, "The workspace assignment has inconsistent ownership.", "Reconcile the accepted session and job before executing work.")
 		}
 	}
 	if job.Type == domain.RecoverExecutionJob {
 		var input domain.ExecutionRecoveryRequest
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SessionID) != resource.SessionId ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != job.MachineID) ||
 			input.JobID != job.ParentID {
 			return journal{}, domain.ExecutionRecoveryUncertain()
 		}
@@ -922,7 +922,7 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, err
 		}
 		if string(input.Preparation.SessionID) != resource.SessionId ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.Preparation.MachineID != job.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.Preparation.MachineID), input.Preparation.MachineID != job.MachineID) ||
 			input.JobID != job.ParentID {
 			return journal{}, workspace.ResultUncertain()
 		}
@@ -930,7 +930,7 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	if job.Type == domain.GenerateSessionTitleJob {
 		var input domain.AuxiliaryTitleInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != domain.ID(resource.SessionId) ||
-			domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) ||
+			domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != job.MachineID) ||
 			input.OriginalJobID != job.ParentID {
 			return journal{}, publicationUncertain()
 		}
@@ -946,7 +946,7 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, err
 		}
 		if result.Version != 1 || result.JobID != domain.ID(resource.Id) ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", result.InstanceID != instance) ||
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(result.InstanceID), result.InstanceID != instance) ||
 			result.Revision != resource.Revision || result.Digest != digest {
 			return journal{}, domain.Fail(domain.RecoveryRequired, "A Worker journal conflicts with the assigned operation.", "Preserve the journal and reconcile the original accepted execution.")
 		}

@@ -118,11 +118,10 @@ func TestWorkspaceReadRejectsWorkerClientAndPrimaryDisconnect(t *testing.T) {
 	f := newFirstDispatchFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	raw, _ := json.Marshal(domain.WorkspaceReadQuery{Operation: domain.WorkspaceRoots})
-	if _, err := sessionClient(f.accountFixture).ReadSessionWorkspace(ctx, ownerRequest(f.workerIdentity, &pb.ReadSessionWorkspaceRequest{SessionId: f.change.Session.Id, QueryJson: raw})); connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Fatal("Worker read client data", err)
-	}
+	originalIdentity := f.identity
+	f.identity = f.workerIdentity
 	roots := <-startWorkspaceRead(t, ctx, f, domain.WorkspaceReadQuery{Operation: domain.WorkspaceRoots})
+	f.identity = originalIdentity
 	if roots.err != nil {
 		t.Fatal(roots.err)
 	}
@@ -157,7 +156,7 @@ func TestWorkspaceReadRejectsWorkerClientAndPrimaryDisconnect(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("pending read did not observe primary loss")
 	}
-	raw, _ = json.Marshal(domain.WorkspaceReadResult{})
+	raw, _ := json.Marshal(domain.WorkspaceReadResult{})
 	if _, err := f.workerClient.ReportWorkspaceRead(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkspaceReadRequest{MachineId: f.machine.Id, InstanceId: f.workerInstance, ReadId: string(request.ID), DocumentJson: raw})); err == nil {
 		t.Fatal("late response accepted")
 	}

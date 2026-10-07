@@ -13,7 +13,7 @@ import (
 func (m *Manager) retainSnapshotPublication(r StorageRequest, metadata SnapshotMetadata) error {
 	claim, err := m.readStagingClaim(r.OperationID)
 	if err != nil || claim.Reference != removalReference(r) ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != r.Preparation.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != r.Preparation.MachineID) ||
 		claim.PreparationDigest != r.Manifest.InputDigest || claim.RequestDigest != storageRequestDigest(r) || claim.PublishedSnapshotDigest != "" {
 		return ResultUncertain()
 	}
@@ -31,8 +31,9 @@ func (m *Manager) retainSnapshotPublication(r StorageRequest, metadata SnapshotM
 
 func (m *Manager) verifySnapshotPublication(snapshot snapshotManifest, digest string) (storageStagingClaim, error) {
 	claim, err := m.readStagingClaim(snapshot.OperationID)
-	if err != nil || (claim.Reference.Action != StorageCreate && claim.Reference.Action != StorageCleanup) || claim.Reference.SnapshotID != snapshot.ID || claim.Reference.SessionID != snapshot.Workspace.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", claim.MachineID != snapshot.Workspace.MachineID) ||
+	if err != nil || (claim.Reference.Action != StorageCreate && claim.Reference.Action != StorageCleanup) || claim.Reference.SnapshotID != snapshot.ID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.Reference.SessionID), claim.Reference.SessionID != snapshot.Workspace.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(claim.MachineID), claim.MachineID != snapshot.Workspace.MachineID) ||
 		claim.PreparationDigest != snapshot.Workspace.InputDigest || claim.PublishedSnapshotDigest != digest || !digestValid(digest) {
 		return claim, ResultUncertain()
 	}

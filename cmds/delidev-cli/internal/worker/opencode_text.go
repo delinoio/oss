@@ -162,7 +162,9 @@ func (c *OpenCodeTextPublisher) PublishObservation(ctx context.Context, observat
 
 func (c *OpenCodeTextPublisher) observeMessage(ctx context.Context, observation opencode.Observation) error {
 	b, native := c.binding, observation.Message
-	if native == nil || native.SessionID != b.thread || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil {
+	if native == nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(native.SessionID), native.SessionID != b.thread) ||
+		domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil {
 		return publicationUncertain()
 	}
 	role := domain.AssistantMessage
@@ -223,7 +225,8 @@ func (c *OpenCodeTextPublisher) observeMessage(ctx context.Context, observation 
 func (c *OpenCodeTextPublisher) observePart(ctx context.Context, native opencode.NativePart) error {
 	b := c.binding
 	owner := c.messages[native.MessageID]
-	if native.SessionID != b.thread || owner == nil || c.revisions[native.ID] != nil || c.tools[native.ID] != nil || native.Text == nil || (native.Kind != opencode.TextPartKind && native.Kind != opencode.ReasoningPartKind) || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
+	if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(native.SessionID), native.SessionID != b.thread) ||
+		owner == nil || c.revisions[native.ID] != nil || c.tools[native.ID] != nil || native.Text == nil || (native.Kind != opencode.TextPartKind && native.Kind != opencode.ReasoningPartKind) || domain.NativeIdentity(native.ID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil {
 		return publicationUncertain()
 	}
 	text := native.Text

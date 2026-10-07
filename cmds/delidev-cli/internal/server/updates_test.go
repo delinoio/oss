@@ -168,8 +168,8 @@ func TestWorkerUpdateInspectionRetainsExactOriginalAndDeviceScope(t *testing.T) 
 	if e != nil || r.Msg.Update == nil || r.Msg.Update.Id != string(original) || r.Msg.Idle {
 		t.Fatal("Exact original observation acquired latest/idle authority", e)
 	}
-	if _, e = read(foreign); connect.CodeOf(e) != connect.CodePermissionDenied {
-		t.Fatal("Foreign device update exposed", e)
+	if _, e = read(foreign); e != nil {
+		t.Fatal("Device metadata blocked update inspection", e)
 	}
 	if _, e = read("invalid"); connect.CodeOf(e) != connect.CodeInvalidArgument {
 		t.Fatal("Malformed original ID accepted", e)

@@ -20,7 +20,9 @@ func publishGrokTerminal(tx *store.Tx, input domain.ExecutionJobInput, sr store.
 		return err
 	}
 	usage, err := store.Decode[domain.GrokUsageRecord](r)
-	if err != nil || r.SessionID != sr.ID || usage.ExecutionID != input.ExecutionID || usage.Harness != domain.GrokBuild || usage.Version != input.Installation.Version || usage.ThreadID != event.NativeThreadID || usage.TurnID != event.NativeTurnID || usage.Usage.Ordinal != 1 || usage.Usage.Counts != v.Counts {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+		usage.ExecutionID != input.ExecutionID || usage.Harness != domain.GrokBuild || usage.Version != input.Installation.Version || usage.ThreadID != event.NativeThreadID || usage.TurnID != event.NativeTurnID || usage.Usage.Ordinal != 1 || usage.Usage.Counts != v.Counts {
 		return executionEventConflict()
 	}
 	complete, err := tx.ExecutionMessagesComplete(input.ExecutionID)
@@ -55,7 +57,9 @@ func publishGrokUser(tx *store.Tx, input domain.ExecutionJobInput, sr store.Reco
 		return err
 	}
 	assistant, err := store.Decode[domain.ExecutionMessage](r)
-	if err != nil || r.SessionID != sr.ID || r.ID <= p.GrokUserMessageID || assistant.ExecutionID != input.ExecutionID || assistant.NativeThreadID != event.NativeThreadID || assistant.NativeTurnID != event.NativeTurnID || assistant.Role != domain.AssistantMessage || assistant.State != domain.MessageComplete || assistant.GrokText == nil || len(assistant.GrokText.Chunks) == 0 || assistant.NativeID != assistant.GrokText.Chunks[0].EventID {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != sr.ID) ||
+		r.ID <= p.GrokUserMessageID || assistant.ExecutionID != input.ExecutionID || assistant.NativeThreadID != event.NativeThreadID || assistant.NativeTurnID != event.NativeTurnID || assistant.Role != domain.AssistantMessage || assistant.State != domain.MessageComplete || assistant.GrokText == nil || len(assistant.GrokText.Chunks) == 0 || assistant.NativeID != assistant.GrokText.Chunks[0].EventID {
 		return executionEventConflict()
 	}
 	first, e1 := domain.GrokEventIndex(assistant.NativeID, event.NativeThreadID)

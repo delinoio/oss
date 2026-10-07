@@ -86,6 +86,10 @@ func TestExecutionClaimSurvivesWorkerLossAndMissingWorkspace(t *testing.T) {
 	if _, err := replacement.Recover(context.Background(), recoveryInput(input), true); err != nil {
 		t.Fatal("uncertain execution blocked recovery", err)
 	}
+	manifest, err = replacement.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := replacement.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest); err != nil {
 		t.Fatal("uncertain native ownership blocked a fresh execution", err)
 	}

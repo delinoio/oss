@@ -235,7 +235,9 @@ func (m *Manager) newCleanupClaim(jobID domain.ID, root string, manifest Manifes
 }
 func (m *Manager) validateCleanupClaim(input RecoveryRequest, root string, proof cleanupProof, rootPresent bool) error {
 	claim := proof.Claim
-	if claim == nil || claim.Version != 1 || claim.JobID != input.JobID || claim.SessionID != input.Preparation.SessionID || !digestValid(claim.RootIdentity) || claim.ManifestDigest != manifestDigest(proof.Manifest) {
+	if claim == nil || claim.Version != 1 || claim.JobID != input.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(claim.SessionID), claim.SessionID != input.Preparation.SessionID) ||
+		!digestValid(claim.RootIdentity) || claim.ManifestDigest != manifestDigest(proof.Manifest) {
 		return ResultUncertain()
 	}
 	if proof.Manifest.ManagedRootDigest != "" && proof.Manifest.ManagedRootDigest != claim.RootIdentity {
@@ -250,8 +252,9 @@ func (m *Manager) validateCleanupClaim(input RecoveryRequest, root string, proof
 	return nil
 }
 func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error {
-	if manifest.Version != 1 || manifest.SessionID != input.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", manifest.MachineID != input.MachineID) ||
+	if manifest.Version != 1 ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(manifest.SessionID), manifest.SessionID != input.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(manifest.MachineID), manifest.MachineID != input.MachineID) ||
 		manifest.Type != input.Type || manifest.InputDigest != preparationDigest(input) || (manifest.State != Preparing && manifest.State != CleanupPending) || len(manifest.Repositories) > len(input.Repositories) {
 		return ResultUncertain()
 	}
@@ -369,7 +372,9 @@ func (m *Manager) verifyWorkspaceIdentityForOwner(ctx context.Context, input Pre
 	var restored *restoreBinding
 	if raw, err := security.ReadPrivate(m.restoreBindingPath(input.SessionID), 4096); err == nil {
 		var binding restoreBinding
-		if domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || binding.OperationID.Validate() != nil || !digestValid(binding.SnapshotDigest) || binding.SessionID != input.SessionID || binding.SnapshotID.Validate() != nil || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || input.Type == domain.Local {
+		if domain.Decode(raw, &binding) != nil || binding.Version != 2 || !binding.Published || !digestValid(binding.DirectoryIdentity) || binding.OperationID.Validate() != nil || !digestValid(binding.SnapshotDigest) ||
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(owner), binding.SessionID != input.SessionID) ||
+			binding.SnapshotID.Validate() != nil || binding.ManifestDigest != manifestDigest(manifest) || !digestValid(binding.OriginalIdentity) || input.Type == domain.Local {
 			return "", ResultUncertain()
 		}
 		current, err := restoredDirectoryIdentity(root, manifest)

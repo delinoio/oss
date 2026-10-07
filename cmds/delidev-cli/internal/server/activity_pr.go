@@ -117,7 +117,8 @@ func validatePRActivitySource(tx *store.Tx, activity store.Record, v domain.PRAc
 		if err != nil {
 			return err
 		}
-		if r.Revision < v.SourceRevision || attempt.SetID != v.SetID || !slices.Equal(attempt.Problems, v.Problems) || attempt.Mode != v.Mode || v.ExecutionID != "" && v.ExecutionID != attempt.ExecutionID || v.AttemptState != domain.PRRemediationReserved && activity.SessionID != attempt.SessionID {
+		if r.Revision < v.SourceRevision || attempt.SetID != v.SetID || !slices.Equal(attempt.Problems, v.Problems) || attempt.Mode != v.Mode || v.ExecutionID != "" && v.ExecutionID != attempt.ExecutionID || v.AttemptState != domain.PRRemediationReserved &&
+			domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(activity.SessionID), activity.SessionID != attempt.SessionID) {
 			return invalidActivity()
 		}
 		return nil

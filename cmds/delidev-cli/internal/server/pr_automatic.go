@@ -58,7 +58,9 @@ func automaticPRScope(tx *store.Tx, original store.Record) (domain.SessionPullRe
 	if err != nil {
 		return link, domain.RemediationPolicy{}, err
 	}
-	if row.Revision != original.Revision || row.SessionID != original.SessionID || row.ProjectID != original.ProjectID || link.Validate() != nil {
+	if row.Revision != original.Revision ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(row.SessionID), row.SessionID != original.SessionID) ||
+		row.ProjectID != original.ProjectID || link.Validate() != nil {
 		return link, domain.RemediationPolicy{}, prObservationConflict()
 	}
 	sr, session, err := sessionRecord(tx, row.SessionID)

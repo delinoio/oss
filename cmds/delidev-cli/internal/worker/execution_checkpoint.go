@@ -120,12 +120,15 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	inputs, err := ref.nativeInputs()
-	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", p.MachineID != ref.MachineID) ||
+	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.SessionID), p.SessionID != ref.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(p.MachineID), p.MachineID != ref.MachineID) ||
 		p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.AccountID != ref.AccountID) ||
-		domain.OwnershipBlocks(domain.OwnershipResource, "", p.ConnectionID != ref.ConnectionID) ||
-		p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !slices.Equal(p.Native.Inputs, inputs) {
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.AccountID), p.AccountID != ref.AccountID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.ConnectionID), p.ConnectionID != ref.ConnectionID) ||
+		p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(p.Native.SessionID), p.Native.SessionID != p.Native.ThreadID) ||
+		string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !slices.Equal(p.Native.Inputs, inputs) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]

@@ -44,7 +44,9 @@ func (c *OpenCodeEventPublisher) RequestStop(ctx context.Context, request domain
 	claims, claimErr := b.readClaims()
 	valid = claimErr == nil && b.validPublicationClaims(claims) && b.stopClaim != nil && *b.stopClaim == expected
 	b.mu.Unlock()
-	if !valid || receipt.RequestID != request || receipt.InputRequestID != b.reference.InputRequestID || receipt.SessionID != b.thread || receipt.MessageID != b.turn || !receipt.NativeAttempted {
+	if !valid || receipt.RequestID != request || receipt.InputRequestID != b.reference.InputRequestID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(receipt.SessionID), receipt.SessionID != b.thread) ||
+		receipt.MessageID != b.turn || !receipt.NativeAttempted {
 		return receipt, c.fail(publicationUncertain())
 	}
 	if b.publisher.config.Logger != nil {
@@ -83,7 +85,11 @@ func (c *OpenCodeEventPublisher) finishStoppedPublication(ctx context.Context) (
 	if err != nil {
 		return opencode.HistoryObservation{}, err
 	}
-	if !validClaims() || r.RequestID != c.stopRequest || r.InputRequestID != b.reference.InputRequestID || r.SessionID != b.thread || r.MessageID != b.turn || !r.NativeAttempted || r.RepliesUncertain || h.RequestID != r.InputRequestID || h.SessionID != r.SessionID || h.InputID != r.MessageID {
+	if !validClaims() || r.RequestID != c.stopRequest || r.InputRequestID != b.reference.InputRequestID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(r.SessionID), r.SessionID != b.thread) ||
+		r.MessageID != b.turn || !r.NativeAttempted || r.RepliesUncertain || h.RequestID != r.InputRequestID ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(h.SessionID), h.SessionID != r.SessionID) ||
+		h.InputID != r.MessageID {
 		return opencode.HistoryObservation{}, publicationUncertain()
 	}
 	observation := domain.OpenCodeStopObservation{RequestID: r.RequestID, InputRequestID: r.InputRequestID, InputPartID: b.inputClaim.PartID, AssistantID: h.AssistantID, HistoryDigest: h.Digest, HTTPAccepted: r.HTTPAccepted, InterruptedObserved: r.InterruptedObserved, TerminalObserved: r.TerminalObserved, IdleObserved: r.IdleObserved, PendingCleared: r.PendingCleared, CleanupVerified: r.CleanupVerified}

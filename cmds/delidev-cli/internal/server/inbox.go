@@ -79,7 +79,8 @@ func currentInboxView(tx *store.Tx, record store.Record) (*pb.InboxView, error) 
 		if err != nil {
 			return nil, err
 		}
-		if original.SessionID != record.SessionID || original.ProjectID != record.ProjectID {
+		if domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(original.SessionID), original.SessionID != record.SessionID) ||
+			original.ProjectID != record.ProjectID {
 			return nil, domain.Fail(domain.RecoveryRequired, "The inbox source belongs to another retained scope.", "Reconcile the original request before responding; do not substitute another source.")
 		}
 		view.Interaction = rpc.Resource(original)

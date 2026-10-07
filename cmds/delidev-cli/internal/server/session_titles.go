@@ -85,13 +85,14 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 	sourceJob, err := store.Decode[domain.Job](sourceRecord)
 	sourceStateValid := sourceJob.State == domain.JobClaimed || (recovered && (sourceJob.State == domain.JobUncertain || sourceJob.State.Terminal()))
 	if err != nil || sourceJob.Type != domain.ExecuteSessionJob || !sourceStateValid ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", sourceJob.MachineID != input.MachineID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(sourceJob.MachineID), sourceJob.MachineID != input.MachineID) ||
 		sourceJob.AssignedDeviceID.Validate() != nil || sourceJob.InstanceID.Validate() != nil {
 		session.TitleState, session.TitleReason = domain.TitleFailed, domain.TitleReasonInvalidOutput
 		return nil
 	}
 	firstRecord, err := tx.Get(domain.QueueKind, session.InitialExecution.InputID)
-	if err != nil || firstRecord.SessionID != sr.ID {
+	if err != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(firstRecord.SessionID), firstRecord.SessionID != sr.ID) {
 		session.TitleState, session.TitleReason = domain.TitleFailed, domain.TitleReasonInvalidOutput
 		return nil
 	}
@@ -274,8 +275,9 @@ func finishLostSessionTitle(tx *store.Tx, record store.Record) error {
 
 func finishSessionTitle(tx *store.Tx, record store.Record, job domain.Job, expectedRevision uint64, output json.RawMessage, reported *domain.Error) (store.Record, error) {
 	var input domain.AuxiliaryTitleInput
-	if job.Type != domain.GenerateSessionTitleJob || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.SessionID != record.SessionID ||
-		domain.OwnershipBlocks(domain.OwnershipMachine, "", input.MachineID != job.MachineID) ||
+	if job.Type != domain.GenerateSessionTitleJob || domain.Decode(job.Input, &input) != nil || input.Validate() != nil ||
+		domain.OwnershipBlocks(domain.OwnershipResource, domain.ID(input.SessionID), input.SessionID != record.SessionID) ||
+		domain.OwnershipBlocks(domain.OwnershipMachine, domain.ID(input.MachineID), input.MachineID != job.MachineID) ||
 		input.OriginalJobID != job.ParentID {
 		return store.Record{}, domain.Fail(domain.RecoveryRequired, "The auxiliary title assignment does not match its original execution.", "Preserve the job and inspect its immutable parent before retrying.")
 	}

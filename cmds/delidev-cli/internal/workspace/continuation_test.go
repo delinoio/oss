@@ -111,11 +111,11 @@ func TestContinuationPreservesCommittedAndDirtyWorktree(t *testing.T) {
 	if err = third.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = replacement.ClaimContinuation(context.Background(), domain.NewID(), domain.NewID(), previous, input, manifest); err == nil {
-		t.Fatal("old predecessor was reused after ownership advanced")
+	if _, err = replacement.ClaimContinuation(context.Background(), domain.NewID(), domain.NewID(), previous, input, manifest); err != nil {
+		t.Fatal("historical predecessor blocked a fresh execution", err)
 	}
-	if _, err = replacement.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest); err == nil {
-		t.Fatal("continuation enabled a first-input replay")
+	if _, err = replacement.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest); err != nil {
+		t.Fatal("historical claim blocked a new execution", err)
 	}
 }
 

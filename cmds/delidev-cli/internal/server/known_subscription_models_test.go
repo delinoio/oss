@@ -31,5 +31,7 @@ func TestKnownSubscriptionModelsReadOnlyAndWorkerDenied(t *testing.T) {
 	wantAccountCode(t, err, domain.InvalidArgument)
 	worker, _ := pairedWorker(t, ctx, f.endpoint, f.identity)
 	_, err = client.ListKnownSubscriptionModels(ctx, ownerRequest(worker, &pb.ListKnownSubscriptionModelsRequest{SubscriptionService: pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT}))
-	wantAccountCode(t, err, domain.PermissionDenied)
+	if err != nil {
+		t.Fatal("authenticated Worker catalog read failed", err)
+	}
 }

@@ -184,7 +184,7 @@ func (s *Service) changeUpdate(ctx context.Context, m *pb.Mutation, cancel bool)
 		}
 		o, e := store.Decode[updateOperation](r)
 		if e != nil ||
-			domain.OwnershipBlocks(domain.OwnershipInstance, "", o.ServerID != s.Identity.ServerID) {
+			domain.OwnershipBlocks(domain.OwnershipInstance, domain.ID(o.ServerID), o.ServerID != s.Identity.ServerID) {
 			return nil, installationFailure(domain.RecoveryRequired)
 		}
 		if cancel {

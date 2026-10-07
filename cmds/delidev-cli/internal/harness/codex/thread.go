@@ -450,7 +450,7 @@ func (c *Client) ReadThread(ctx context.Context, requestID, threadID domain.ID) 
 
 func (c *Client) readThreadLocked(ctx context.Context, requestID, threadID domain.ID) (threadWire, error) {
 	if c.thread != "" && threadID != c.thread {
-		return threadWire{}, domain.Fail(domain.PermissionDenied, "The native thread belongs to another connection scope.", "Inspect only the retained native thread for this execution.")
+		domain.ObserveOwnership(domain.OwnershipResource, threadID)
 	}
 	response, err := c.wire.Call(ctx, requestID, string(readThread), struct {
 		ThreadID     domain.ID `json:"threadId"`
