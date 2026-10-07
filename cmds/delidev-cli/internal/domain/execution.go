@@ -116,6 +116,9 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if err := c.validateNativeOptions(); err != nil {
+		return err
+	}
 	if err := c.ValidateSidechat(); err != nil {
 		return err
 	}
@@ -130,9 +133,6 @@ func (c ExecutionConfiguration) Validate() error {
 	}
 	if c.Subscription && c.Harness != Codex {
 		return Fail(Unsupported, "Only Codex has a managed subscription execution profile.", "Keep other harnesses on their separately supported API profiles.")
-	}
-	if c.Subscription && c.Options.Permission != PermissionReadOnly && c.Options.Permission != PermissionWorkspaceWrite {
-		return Fail(Unsupported, "Managed subscription execution requires an explicit bounded native sandbox.", "Choose read-only or workspace-write permissions; default and full-access execution cannot protect the managed authentication file from native tools.")
 	}
 	if c.OpenCodeContext != nil && (c.Harness != OpenCode || c.OpenCodeContext.Validate() != nil) {
 		return Fail(RecoveryRequired, "The retained OpenCode context metadata is invalid.", "Preserve the original model selection and metadata provenance.")

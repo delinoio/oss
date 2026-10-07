@@ -11,7 +11,7 @@ const exact = (v: Document, fields: string[]) => Object.keys(v).length === field
 const bounded = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max && !v.includes("\0") && !/[\uD800-\uDFFF]/u.test(v) && new TextEncoder().encode(v).length <= max;
 const label = (v: unknown, max: number): v is string => bounded(v, max) && v.trim().length > 0;
 const optionalText = (v: unknown) => v === null || bounded(v, 4096);
-const modes = ["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"];
+const modes = ["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions", "auto"];
 function suggestion(value: unknown) {
   const p = object(value);
   if (!Object.keys(p).every((k) => ["type", "rules", "behavior", "mode", "directories", "destination"].includes(k)) || (p.destination !== undefined && !["userSettings", "projectSettings", "localSettings", "session"].includes(text(p.destination)))) return false;

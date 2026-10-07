@@ -164,6 +164,9 @@ func (a *executionStartupAttempt) finish(original error) error {
 	if o.Validate() != nil {
 		o.ProblemCode = domain.Unavailable
 	}
+	if a.config.Logger != nil {
+		a.config.Logger.Warn("execution_startup_failed", "job_id", a.job, "stage", o.Phase, "options", a.input.Configuration.SelectedNativeOptionNames(), "code", o.ProblemCode, "input_delivery", o.InputDelivery, "cleanup", o.Cleanup)
+	}
 	if err := a.report(context.Background(), "failure", o); err != nil {
 		if a.config.Logger != nil {
 			a.config.Logger.Warn("execution_startup_report_uncertain", "job_id", a.job, "code", domain.SafeError(err).Code)

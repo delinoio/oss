@@ -469,3 +469,18 @@ account ownership, same-account history and actual execution checks remain intac
 
 Reservations and policy do not establish implementation or native/account
 acceptance. Record validation in PRs and CI, never repository evidence documents.
+
+## Native execution option selection
+
+Saved Agent options retain bounded exact values, including selections that lack a native execution adapter. Saving or changing harnesses never deletes or converts those values. Execution validates adapter availability before admission and reports the exact unavailable option name. The editor disables unavailable controls, explains why below the field and offers explicit clearing of a retained value.
+
+| Harness | Forwarded native settings | Unavailable settings |
+| --- | --- | --- |
+| Codex API and subscription | All four permission modes; bounded exact root effort, approval policy, service tier, same-account child model/effort and uint32 concurrency | Approval-review model and Claude permission |
+| Claude | Native permission modes, including auto, and bounded exact effort | Codex sandbox, approval policy, service tier and Codex child overrides |
+| OpenCode | Native Build/Plan primary-agent policy and exact model `options.reasoningEffort` | Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
+| Grok Build | Existing default permission and native Execute/Plan selection | Effort without an applied-setting observation adapter, Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
+
+Forwarded settings are not restricted by advertised model/effort lists or a DeliDev concurrency maximum of 64. Preserve format/size bounds, canonical model/account references and immutable execution digests. Unselected values omit native overrides and retain native defaults. Native initialization must independently verify actual applied settings before input; drift is an error, never permission to normalize or retry with a default. Native rejection uses the existing execution error path. Positive no-send and cleanup proof remain necessary for any retry; uncertain input delivery retains original recovery ownership.
+
+Codex subscription default/full-access do not waive managed authentication ownership, canonical non-overlapping private homes, original-process verification, final credential comparison or independent cleanup. Full-access may let native tools access managed authentication files. Structured failure logs contain the stage and closed option names, never credentials, selected values or raw native output. Public RPC, stored document formats and historical execution records remain unchanged; add no migration or format conversion.

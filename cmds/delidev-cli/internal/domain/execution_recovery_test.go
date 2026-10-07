@@ -116,7 +116,7 @@ func TestClaudeRecoveryRequiresExplicitOriginalComparison(t *testing.T) {
 			case "model":
 				native.Model = ""
 			case "effort":
-				native.Effort = "unknown"
+				native.Effort = "invalid\x00effort"
 			case "permission":
 				native.Permission = "unknown"
 			case "instructions":

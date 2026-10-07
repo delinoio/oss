@@ -132,9 +132,7 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 			return false
 		}
 	}
-	switch p.Native.Effective.ApprovalPolicy {
-	case codex.ApprovalUntrusted, codex.ApprovalOnRequest, codex.ApprovalNever:
-	default:
+	if domain.Text(string(p.Native.Effective.ApprovalPolicy), "retained approval policy", 256, true) != nil {
 		return false
 	}
 	switch p.Native.Effective.Sandbox.Type {
