@@ -986,3 +986,20 @@ it("focuses legacy account choices when a valid source has no selected account",
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
 });
+
+
+it.each([false, true])("keeps resolved edit source collapsed unless explicitly revealed (reveal=%s)", async reveal => {
+  const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport: Transport = { ...value.transport, async unary(...args) { if (args[0].name === "GetResource") await pending; return value.transport.unary(...args); } };
+  await start(value, true, transport); confirmHarness();
+  const change = screen.getByRole("button", { name: "Change source" });
+  expect(change.getAttribute("aria-expanded")).toBe("false");
+  if (reveal) fireEvent.click(change);
+  await act(async () => release());
+  await screen.findByRole("checkbox", { name: "Select Personal API" });
+  expect(change.getAttribute("aria-expanded")).toBe(String(reveal));
+  expect(Boolean(screen.queryByRole("combobox", { name: "Account source 1" }))).toBe(reveal);
+  expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
