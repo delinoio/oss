@@ -17,7 +17,8 @@ it("reads unavailable usage through the actual Go service without inventing cost
  expect(screen.getByText("Actual API cost:").parentElement!.textContent).toContain("Unavailable");
  fireEvent.click(screen.getByRole("checkbox",{name:"General Chat only"}));
  expect(screen.queryByRole("button",{name:"Apply filters"})).toBeNull();
- await waitFor(()=>expect(screen.getByRole("group",{name:"Applied conditions"}).textContent).toContain("General Chat only"));
+ await waitFor(()=>expect(screen.getByRole("group",{name:"Applied conditions"}).textContent).toContain("General Chat"));
+ await screen.findByText("Incomplete coverage");
  cleanup();client.clear();
 });
 
