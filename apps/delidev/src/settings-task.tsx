@@ -134,10 +134,14 @@ function SettingsTaskWindow({ title, size = SettingsDialogSize.Form, focus = Set
       if (!closeRequested.current && !committed.current) return;
       // A retained operation is hidden, not dismissed. Keep its background
       // locked and leave focus on the retained-operation destination.
-      if (retained || signals.current.size > 0) return;
+      if (retained) return;
       // A category departure or replacement dialog cannot restore a stale opener.
       if (anotherModal(node)) return;
       const restoreFocus = () => {
+        // On accepted completion, child layout cleanups release their pending
+        // signals after this parent's cleanup. Recheck on the restoration frame;
+        // a hidden, still-retained operation keeps its signals and cannot restore.
+        if (signals.current.size > 0) return;
         if (anotherModal(node)) return;
         const focused = document.activeElement;
         if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return;

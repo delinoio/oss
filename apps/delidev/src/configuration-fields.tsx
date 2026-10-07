@@ -13,6 +13,7 @@ import { JobState, TrackedJob } from "./jobs";
 import { providerInventoryReady } from "./provider-model-settings";
 import { CodexSubagentConfiguration } from "./codex-subagent-configuration";
 import { ReasoningEffortField, claudeEffortSuggestions, codexEffortSuggestions } from "./reasoning-effort-field";
+import { useProjectRepositoryNames } from "./project-repositories";
 
 export enum Harness { Codex = "codex", Claude = "claude-code", OpenCode = "opencode", Grok = "grok-build" }
 export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Anthropic = "anthropic-messages", Subscription = "native-subscription" }
@@ -135,13 +136,13 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   </div>;
 }
 
-function OrderedLinks({ label, kind, links, change, active, weighted = false, explanation }: { label: string; kind: EntityKind; links: unknown[]; change: (values: unknown[]) => void; active: boolean; weighted?: boolean; explanation?: string }) {
+function OrderedLinks({ label, kind, links, change, active, weighted = false, explanation, names }: { label: string; kind: EntityKind; links: unknown[]; change: (values: unknown[]) => void; active: boolean; weighted?: boolean; explanation?: string; names?: ReadonlyMap<string, string> }) {
   useLocale();
   const [selected, setSelected] = useState("");
   const id = (value: unknown) => weighted ? text(object(value).id) : text(value);
   return <fieldset><legend>{label}</legend><p><LocalizedText id="configuration-fields.orderIsPreserved_62a111" components={{ s0: <>{explanation ?? (weighted ? copy("configuration-fields.weightsAreRelativeValuesFrom1_08eeb6") : copy("configuration-fields.instructionsAreAppendedInThisOrder_659f26"))}</> }} /></p>
     <ResourceChoice label={copy("configuration-fields.add_b69dce", { v0: kindNames[kind] })} kind={kind} value={selected} change={setSelected} active={active} /><button type="button" disabled={!selected || links.some((value) => id(value) === selected) || links.length >= 1000} onClick={() => { change([...links, weighted ? { id: selected, weight: 1 } : selected]); setSelected(""); }}>{copy("configuration-fields.addSelected_967e2a")}</button>
-    <ol>{links.map((link, index) => <li key={id(link)}><code>{id(link)}</code>{weighted ? <label>{copy("configuration-fields.relativeWeight_e91886")}<input type="number" min={1} max={1000} value={Number(object(link).weight)} onChange={(event) => change(links.map((value, i) => i === index ? { ...object(value), weight: Number(event.target.value) } : value))} /></label> : null}<div className="actions"><button type="button" aria-label={copy("configuration-fields.moveEntryUp_b22154", { v0: index + 1 })} disabled={index === 0} onClick={() => { const next = [...links]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; change(next); }}>{copy("configuration-fields.up_55490a")}</button><button type="button" aria-label={copy("configuration-fields.removeEntry_8a2d73", { v0: index + 1 })} onClick={() => change(links.filter((_, i) => i !== index))}>{copy("configuration-fields.remove_c3812f")}</button></div></li>)}</ol>
+    <ol>{links.map((link, index) => <li key={id(link)}>{names ? <><span>{names.get(id(link)) ?? copy("project-creation.nameUnavailable")}</span><RepositoryIdentity id={id(link)} /></> : <code>{id(link)}</code>}{weighted ? <label>{copy("configuration-fields.relativeWeight_e91886")}<input type="number" min={1} max={1000} value={Number(object(link).weight)} onChange={(event) => change(links.map((value, i) => i === index ? { ...object(value), weight: Number(event.target.value) } : value))} /></label> : null}<div className="actions"><button type="button" aria-label={copy("configuration-fields.moveEntryUp_b22154", { v0: index + 1 })} disabled={index === 0} onClick={() => { const next = [...links]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; change(next); }}>{copy("configuration-fields.up_55490a")}</button><button type="button" aria-label={copy("configuration-fields.removeEntry_8a2d73", { v0: index + 1 })} onClick={() => change(links.filter((_, i) => i !== index))}>{copy("configuration-fields.remove_c3812f")}</button></div></li>)}</ol>
   </fieldset>;
 }
 
@@ -190,19 +191,29 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   return null;
 }
 
-function RestrictionFields({ label, kind, value, change, active }: { label: string; kind: EntityKind; value: unknown; change: (value: Document) => void; active: boolean }) {
+export function RestrictionFields({ label, kind, value, change, active }: { label: string; kind: EntityKind; value: unknown; change: (value: Document) => void; active: boolean }) {
   useLocale();
   const restriction = object(value);
   return <fieldset className="project-field-group"><legend>{label}</legend><Check label={copy("configuration-fields.restrict_b3faa2", { v0: label.toLowerCase() })} value={restriction.configured} change={(configured) => change({ configured, ids: configured ? items(restriction.ids) : [] })} />{restriction.configured === true ? <><p>{copy("configuration-fields.anEmptySelectionPermitsNoneTurning_60a4d7")}</p><OrderedLinks label={copy("configuration-fields.allowed_54fcb8", { v0: label.toLowerCase() })} kind={kind} links={items(restriction.ids)} active={active} explanation="Only these explicitly selected entries are allowed." change={(ids) => change({ ...restriction, ids })} /></> : <p>{copy("configuration-fields.everyOtherwiseEligibleEntryIsAllowed_67c17b")}</p>}</fieldset>;
 }
+export function RepositoryIdentity({ id }: { id: string }) {
+  return <details className="project-repository-identity"><summary>{copy("project-creation.repositoryDetails")}</summary><code>{id}</code></details>;
+}
+export function projectRepositoryOption(id: string, index: number, names: ReadonlyMap<string, string>) {
+  const name = names.get(id) ?? copy("project-creation.nameUnavailable");
+  return [...names.values()].filter(value => value === name).length > 1 || !names.has(id) ? copy("project-creation.distinctRepository", { name, position: index + 1 }) : name;
+}
 function ProjectFields({ data, change, active }: FieldsProps) {
   useLocale();
   const repositories = items(data.repositories).map(text);
+  const { names, loading, error, retry } = useProjectRepositoryNames(repositories, active);
   return <>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.repositories_1e32af")}</legend>
-      <OrderedLinks label={copy("configuration-fields.orderedRepositories_f1a12d")} kind={EntityKind.REPOSITORY} links={repositories} active={active} explanation="All selected repositories form one workspace." change={(values) => change({ ...data, repositories: values, primary_repository: values.includes(data.primary_repository) ? data.primary_repository : "" })} />
-      <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{repositories.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>
+      <OrderedLinks label={copy("configuration-fields.orderedRepositories_f1a12d")} kind={EntityKind.REPOSITORY} links={repositories} active={active} names={names} explanation={copy("project-creation.workspaceHelp")} change={(values) => change({ ...data, repositories: values, primary_repository: values.includes(data.primary_repository) ? data.primary_repository : "" })} />
+      {loading ? <p role="status">{copy("project-creation.loadingNames")}</p> : null}<Problem error={error} />
+      {error ? <button type="button" disabled={loading} onClick={retry}>{copy("project-creation.retryRead")}</button> : null}
+      <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{repositories.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>
       <p>{copy("configuration-fields.theHarnessStartsInThisRepository_8c3af5")}</p>
     </fieldset>
     <RestrictionFields label={copy("configuration-fields.agentWorkers_e60c23")} kind={EntityKind.AGENT} value={data.agents} active={active} change={(agents) => change({ ...data, agents })} />
