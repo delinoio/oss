@@ -53,3 +53,21 @@ it.each(["failed", "unsupported"])("keeps authentication %s and retained catalog
 it("ignores mismatched connection evidence and disables Check again for cleanup state", async () => {
   const f = fixture({ validation: { connection_id: newRequestId(), state: "observed", authentication: "credential-accepted" }, removal: { request_id: newRequestId() } }); render(f.view()); expect(screen.queryByText("API authentication verified")).toBeNull(); expect(screen.getByText("Credential cleanup is pending.")).toBeTruthy(); expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", true);
 });
+
+it("reconciles an old validation replay without discovering the replacement connection", async () => {
+  const f = fixture();
+  f.validate.mockRejectedValueOnce(new ConnectError("lost acknowledgment", Code.Unavailable));
+  const view = render(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByRole("button", { name: "Retry original authentication check" });
+  const original = f.validate.mock.calls[0][0];
+  const replacement = create(ResourceSchema, { ...f.row, revision: 5n, documentJson: encode({ ...document(f.row), connection: { id: newRequestId() } }) });
+  view.rerender(f.view(replacement));
+  f.validate.mockResolvedValueOnce({ account: replacement, requestId: original.mutation!.requestId, validationJson: encode({ request_id: original.mutation!.requestId, connection_id: f.connection, state: "observed", authentication: "credential-accepted" }) });
+  fireEvent.click(screen.getByRole("button", { name: "Retry original authentication check" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original authentication check" })).toBeNull());
+  expect(f.validate.mock.calls[1][0]).toEqual(original);
+  expect(f.discover).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false);
+  expect(screen.queryByText("API authentication verified")).toBeNull();
+});

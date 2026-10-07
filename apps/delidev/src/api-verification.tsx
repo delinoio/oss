@@ -27,6 +27,11 @@ export function ApiVerification({ row, provider, active, changed }: { row: Resou
     // uncertain validation retains its exact request and never reaches here.
     if (!next || !now.active || !now.provider || providerData.discovery !== true || providerData.enabled === false || !supportsResourceSchema(now.provider) || !supportsResourceSchema(next)) return;
     const nextData = document(next);
+    const receipt = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.validationJson)));
+    const published = object(nextData.validation);
+    // Replay returns the immutable old receipt alongside a mutable current account.
+    // Only the same published validation can admit the next discovery.
+    if (receipt.request_id !== result.requestId || published.request_id !== receipt.request_id || published.connection_id !== receipt.connection_id || receipt.connection_id !== text(object(nextData.connection).id)) return;
     if (text(object(nextData.connection).id) !== text(object(document(now.row).connection).id) || nextData.provider_id !== document(now.row).provider_id || nextData.removal || nextData.enabled !== true) return;
     const input = { mutation: { id: next.id, expectedRevision: next.revision, requestId: newRequestId() } };
     const connectionId = text(object(nextData.connection).id);
