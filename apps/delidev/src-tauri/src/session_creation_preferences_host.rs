@@ -21,15 +21,11 @@ fn scope(
             device_id: saved.device_id.clone(),
         }
     } else {
-        let value = windows
-            .local_preference_scope
+        windows
+            .registry
             .lock()
-            .map_err(|_| NativeFailure::Busy)?;
-        let (revision, scope) = value.as_ref().ok_or(NativeFailure::InvalidEvidence)?;
-        if *revision != authority.local_revision {
-            return Err(NativeFailure::InvalidEvidence);
-        }
-        scope.clone()
+            .map_err(|_| NativeFailure::Busy)?
+            .local_preference_scope_at(authority.local_revision)?
     };
     super::recheck_authority(window, authority)?;
     if !scope.valid() {

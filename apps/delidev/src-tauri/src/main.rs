@@ -465,8 +465,6 @@ struct SavedBinding {
 }
 #[derive(Default)]
 struct ProductWindows {
-    local_preference_scope:
-        Mutex<Option<(u64, delidev_desktop::session_creation_preferences::Scope)>>,
     bindings: Mutex<BTreeMap<String, SavedBinding>>,
     registry: Mutex<delidev_desktop::window_registry::Registry>,
     removals: Mutex<BTreeMap<String, SavedBinding>>,
@@ -590,31 +588,21 @@ fn adopt_local(
     }
     recheck_authority(window, original)?;
     let windows = window.state::<Arc<ProductWindows>>();
-    let changed = {
+    let (changed, revision) = {
         let mut registry = windows.registry.lock().map_err(|_| NativeFailure::Busy)?;
         let current = registry.admitted(window.label())?;
         if current.instance != original.entry.instance || current.role != original.entry.role {
             return Err(NativeFailure::InvalidEvidence);
         }
-        registry.adopt_local_at(digest.finalize().into(), original.local_revision)?
-    };
-    {
-        let revision = windows
-            .registry
-            .lock()
-            .map_err(|_| NativeFailure::Busy)?
-            .local_revision;
-        *windows
-            .local_preference_scope
-            .lock()
-            .map_err(|_| NativeFailure::Busy)? = Some((
-            revision,
+        registry.adopt_local_scope_at(
+            digest.finalize().into(),
+            original.local_revision,
             delidev_desktop::session_creation_preferences::Scope {
                 server_id: connection.server_id.clone(),
                 device_id: connection.device_id.clone(),
             },
-        ));
-    }
+        )?
+    };
     if changed {
         // The event carries no identity or credential. Each sibling re-reads
         // the native-owned observation and authenticates its own transport.
@@ -642,11 +630,6 @@ fn adopt_local(
             }
         }
     }
-    let revision = windows
-        .registry
-        .lock()
-        .map_err(|_| NativeFailure::Busy)?
-        .local_revision;
     Ok(revision)
 }
 fn saved_binding(
