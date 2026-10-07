@@ -14,7 +14,7 @@ import { encode, type Document } from "./documents";
 import { NotificationProvider } from "./toast-notifications";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
+function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -26,7 +26,7 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
     router.service(SystemService, { getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1] }); } });
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
-    router.service(ResourceService, { listResources: list, getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
+    router.service(ResourceService, { listResources: list, getResource: (request) => options.readResource?.(request.id) ?? ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
     router.service(ProviderService, {
       listProviderPresets: () => ({ presetsJson: encode(options.presets ?? [{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
@@ -994,4 +994,32 @@ it("pauses the containing Settings inventory while its original Network settings
   await act(async () => { await value.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS)).toHaveLength(reads);
   expect(form.isConnected).toBe(true); expect(value.save).not.toHaveBeenCalled();
+});
+
+
+it.each([true, false])("blocks configuration submit until an exact picker read accepts the choice while preserving sibling edits (prior selection: %s)", async hasPrior => {
+  const oldProfile = resource(EntityKind.INTEGRATION, { name: "Previous profile" });
+  const newProfile = resource(EntityKind.INTEGRATION, { name: "Chosen profile" });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", integration_id: hasPrior ? oldProfile.id : "", checkouts: [] });
+  let resolve!: (value: { resource: Resource }) => void;
+  const pending = new Promise<{ resource: Resource }>(done => { resolve = done; });
+  const value = fixture([repository, oldProfile, newProfile], { readResource: id => id === newProfile.id ? pending : { resource: [repository, oldProfile].find(row => row.id === id) } });
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  const picker = screen.getByRole("combobox", { name: "GitHub profile" });
+  fireEvent.click(picker);
+  fireEvent.click(await screen.findByRole("option", { name: "Chosen profile" }));
+  const save = screen.getByRole("button", { name: "Save Repository" });
+  const form = save.closest("form")!;
+  fireEvent.submit(form);
+  expect(value.save).not.toHaveBeenCalled();
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  expect(picker.dataset.value).toBe(hasPrior ? oldProfile.id : "");
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Edited while reading" } });
+  fireEvent.submit(form);
+  expect(value.save).not.toHaveBeenCalled();
+  await act(async () => { resolve({ resource: newProfile }); await pending; fireEvent.submit(form); expect(value.save).not.toHaveBeenCalled(); });
+  await waitFor(() => expect(picker.dataset.value).toBe(newProfile.id));
+  fireEvent.submit(form);
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toMatchObject({ name: "Edited while reading", integration_id: newProfile.id });
 });
