@@ -58,7 +58,12 @@ function ShortcutHelp({ store, platform, close }: { store: ShortcutStore; platfo
     const node = dialog.current!;
     node.showModal();
     closeButton.current?.focus();
-    return () => { node.close(); const target = availableShortcutTarget(opener) ? opener : document.querySelector<HTMLElement>("#main"); if (availableShortcutTarget(target)) target?.focus({ preventScroll: true }); };
+    return () => {
+      node.close();
+      const usableOpener = availableShortcutTarget(opener) && (opener!.tabIndex >= 0 || opener!.hasAttribute("tabindex") || opener!.isContentEditable);
+      const target = usableOpener ? opener : document.querySelector<HTMLElement>("#main");
+      if (availableShortcutTarget(target)) target?.focus({ preventScroll: true });
+    };
   }, []);
   const groups = [definitions.filter(item => item.scope === ShortcutScope.Global), definitions.filter(item => item.scope !== ShortcutScope.Global)];
   return createPortal(<DialogSurface ref={dialog} className="shortcut-help" aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-screen`} onCancel={event => { event.stopPropagation(); close(); }} onKeyDown={event => {

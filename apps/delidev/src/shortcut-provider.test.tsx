@@ -32,6 +32,13 @@ it("falls back to main when the original opener is removed", () => {
   view.rerender(<ShortcutProvider><Consumer opener={false} /></ShortcutProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Close keyboard shortcuts" })); expect(document.activeElement).toBe(document.getElementById("main"));
 });
+it("restores main after help opens without a usable focused control", () => {
+  render(<ShortcutProvider><Consumer /></ShortcutProvider>);
+  expect(document.activeElement).toBe(document.body);
+  fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Close keyboard shortcuts" }));
+  expect(document.activeElement).toBe(document.getElementById("main"));
+});
 it("has no inactive screen entries and neither typing nor another modal opens help", () => {
   render(<ShortcutProvider><Consumer surface={Surface.Usage} /></ShortcutProvider>);
   fireEvent.keyDown(screen.getByRole("textbox"), { key: "?" }); expect(screen.queryByRole("dialog")).toBeNull();
