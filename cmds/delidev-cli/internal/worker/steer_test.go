@@ -165,11 +165,11 @@ func TestSteerControllerOwnsOneAttemptAndInspectsUncertainty(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			f := newSteerControllerFixture(t, mode)
 			err := f.mapper.deliverSteer(context.Background(), context.Background(), f.steer, f)
-			wantSuccess := mode == "accepted" || mode == "history-accepted" || mode == "rejected" || mode == "stale-control"
+			wantSuccess := mode == "accepted" || mode == "history-accepted" || mode == "rejected" || mode == "foreign-claim" || mode == "stale-control"
 			if (err == nil) != wantSuccess {
 				t.Fatal("unexpected Steer controller result", err)
 			}
-			noSend := mode == "claim-ack-lost" || mode == "foreign-claim" || mode == "changed-prompt" || mode == "stale-control"
+			noSend := mode == "claim-ack-lost" || mode == "changed-prompt" || mode == "stale-control"
 			if f.claims != 1 || (f.sends == 0) != noSend {
 				t.Fatal("ambiguous/foreign claim reached native input")
 			}

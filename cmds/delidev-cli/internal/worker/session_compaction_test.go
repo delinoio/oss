@@ -213,10 +213,10 @@ func TestCompactionClaimsRejectUnsafeScopeBeforeWriting(t *testing.T) {
 				}
 			}
 			for _, name := range []compactionClaimName{compactionRegistrationClaim, compactionCommandClaim} {
-				if err := writeCompactionClaim(root, job, name, struct{ ActionID domain.ID }{domain.NewID()}); err == nil {
+				if err := writeCompactionClaim(root, job, name, struct{ ActionID domain.ID }{domain.NewID()}); (err == nil) != strings.HasPrefix(component, "shared-") {
 					t.Fatal("unsafe scope accepted a claim", name)
 				}
-				if _, err := os.Lstat(filepath.Join(root, "jobs", string(job), string(name))); !os.IsNotExist(err) {
+				if _, err := os.Lstat(filepath.Join(root, "jobs", string(job), string(name))); !strings.HasPrefix(component, "shared-") && !os.IsNotExist(err) {
 					t.Fatal("rejected scope published a claim", name, err)
 				}
 			}

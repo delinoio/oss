@@ -170,12 +170,9 @@ func TestExecutionCheckpointRejectsChangedPredecessor(t *testing.T) {
 	for _, change := range []func(*ExecutionCheckpointRef){
 		func(r *ExecutionCheckpointRef) { r.JobID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.SessionID = domain.NewID() },
-		func(r *ExecutionCheckpointRef) { r.MachineID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.HistoryExecutionID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.AssignmentInputDigest = strings.Repeat("a", 64) },
 		func(r *ExecutionCheckpointRef) { r.ConfigurationDigest = strings.Repeat("b", 64) },
-		func(r *ExecutionCheckpointRef) { r.AccountID = domain.NewID() },
-		func(r *ExecutionCheckpointRef) { r.ConnectionID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.Completion.ExecutionID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.Completion.InputID = domain.NewID() },
 		func(r *ExecutionCheckpointRef) { r.Completion.NativeThreadID = domain.NativeIdentity(domain.NewID()) },
@@ -296,12 +293,10 @@ func TestExecutionCheckpointDigestPinsOriginalNativeDefaults(t *testing.T) {
 
 func TestExecutionCheckpointRequiresExactAssignmentAndConfirmedCleanup(t *testing.T) {
 	for _, change := range []func(*checkpointFixture){
-		func(f *checkpointFixture) { f.completion.CleanupVerified = false },
 		func(f *checkpointFixture) { f.completion.Outcome = domain.ExecutionRunning },
 		func(f *checkpointFixture) { f.completion.NativeThreadID = domain.NativeIdentity(domain.NewID()) },
 		func(f *checkpointFixture) { f.input.Input.Prompt = "changed" },
 		func(f *checkpointFixture) { f.job.Input = json.RawMessage(`{}`) },
-		func(f *checkpointFixture) { f.job.MachineID = domain.NewID() },
 		func(f *checkpointFixture) { f.bound.Effective = nil },
 		func(f *checkpointFixture) { f.bound.Thread = nil },
 		func(f *checkpointFixture) { f.bound.RequestID = domain.NewID() },
@@ -436,5 +431,28 @@ func TestExecutionCheckpointBindsAllOriginalWorkspaceRoots(t *testing.T) {
 				t.Fatal("checkpoint lost original workspace roots", err)
 			}
 		})
+	}
+}
+
+func TestCheckpointOwnershipMetadataDoesNotReplaceHistoricalAttribution(t *testing.T) {
+	f := newCheckpointFixture(t)
+	f.completion.CleanupVerified = false
+	if err := f.retain(); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := executionCheckpointPath(f.root, f.input.ExecutionID)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := f.ref
+	ref.MachineID, ref.AccountID, ref.ConnectionID = domain.NewID(), domain.NewID(), domain.NewID()
+	checkpoint, err := ReadCodexExecutionCheckpoint(f.root, ref)
+	if err != nil || checkpoint.Completion.CleanupVerified {
+		t.Fatal("metadata mismatch blocked access or invented cleanup", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("read replaced historical checkpoint", err)
 	}
 }

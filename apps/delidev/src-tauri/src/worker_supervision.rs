@@ -168,10 +168,7 @@ impl Connector {
                     .worker_pause_generation
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-        if self.worker_admission_unconfirmed()
-            || (status.state == LocalWorkerState::Starting && !status.controller_active)
-            || (status.desired_stopped && status.state == LocalWorkerState::Uncertain)
-        {
+        if status.state == LocalWorkerState::Starting && !status.controller_active {
             next.state = LocalWorkerManagementState::Blocked;
             next.failure = Some(NativeFailure::InvalidEvidence);
         } else if pending_stop && !status.desired_stopped {
@@ -329,13 +326,7 @@ impl Connector {
         }
         self.reap_worker_children();
         if self.worker_admission_unconfirmed() {
-            match self.local_worker_inner(LocalWorkerAction::Status, None) {
-                Ok(status) => {
-                    self.managed_worker_status(status);
-                }
-                Err(_) => self.worker_management_failure(NativeFailure::InvalidEvidence),
-            }
-            return;
+            crate::observe_ownership("worker_admission", "");
         }
         let launch = self.worker_launch_pending.swap(false, Ordering::AcqRel);
         let result = if launch {

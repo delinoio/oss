@@ -724,8 +724,7 @@ fn validated_connection(
     let token = Zeroizing::new(credential.token);
     if credential.metadata != *expected
         || expected.version != 1
-        || expected.kind != kind
-        || (kind == DeviceType::Client && !expected.machine_id.is_empty())
+        || (expected.kind == DeviceType::Client && !expected.machine_id.is_empty())
     {
         return Err(NativeFailure::InvalidEvidence);
     }
@@ -739,7 +738,10 @@ fn validated_connection(
             return Err(NativeFailure::InvalidEvidence);
         }
     }
-    if kind == DeviceType::Worker {
+    if expected.kind != kind {
+        observe_ownership("device_role", &expected.device_id);
+    }
+    if expected.kind == DeviceType::Worker {
         let id = uuid::Uuid::parse_str(&expected.machine_id)
             .map_err(|_| NativeFailure::InvalidEvidence)?;
         if id.get_version_num() != 7 || id.to_string() != expected.machine_id {
@@ -897,3 +899,19 @@ mod repository_folder_tests {
 }
 
 pub mod localization;
+
+// Runtime attribution does not grant or deny authenticated product operations.
+pub(crate) fn observe_ownership(check: &'static str, operation: &str) {
+    let operation_id = uuid::Uuid::parse_str(operation)
+        .ok()
+        .filter(|id| id.get_version_num() == 7 && id.to_string() == operation)
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    tracing::warn!(
+        operation_id,
+        check,
+        result = "unconfirmed",
+        next_action = "continue",
+        "ownership_observation"
+    );
+}

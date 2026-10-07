@@ -142,7 +142,7 @@ it.each([false, true])("retains the confirmed primary checkout when additional c
   f.resources.set(other.id, other); f.mount(); await f.chooseAndReview();
   fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
   await screen.findAllByRole("option", { name: "Other runner" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: other.id } });
+  fireEvent.change(within(window.document.getElementById("repository-options")!).getByRole("combobox", { name: "Runner Device" }), { target: { value: other.id } });
   fireEvent.change(screen.getByRole("textbox", { name: "Absolute checkout path on this Worker" }), { target: { value: "/alias/B" } });
   f.inspected.mockImplementationOnce(async request => {
     const job = row(EntityKind.JOB, { state: "succeeded", machine_id: request.machineId, output: { ...metadata, root: "/canonical/B", name: "B", github_repositories: { origin: { owner: "different", name: "B" } } } });

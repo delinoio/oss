@@ -436,7 +436,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	state := domain.SubscriptionFailed
 	if success {
 		state = domain.SubscriptionSucceeded
-	} else if parent.Err() != nil || !cleanup || domain.SafeError(nativeErr).Code == domain.OwnershipBlocks(domain.OwnershipCleanup, "", domain.RecoveryRequired) {
+	} else if parent.Err() != nil || !cleanup || domain.SafeError(nativeErr).Code == domain.RecoveryRequired {
 		state = domain.SubscriptionRecovery
 		if parent.Err() != nil && cleanup && operation.Action == domain.SubscriptionLogin {
 			state = domain.SubscriptionCanceled

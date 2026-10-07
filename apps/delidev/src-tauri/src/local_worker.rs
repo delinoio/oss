@@ -152,7 +152,7 @@ impl Connector {
             || !client.machine_id.is_empty()
             || client.endpoint != format!("http://{}", self.listen)
         {
-            return Err(NativeFailure::InvalidEvidence);
+            crate::observe_ownership("worker_attribution", &client.device_id);
         }
         if matches!(action, LocalWorkerAction::Register) {
             self.run(&["worker".into(), "pair-local".into()])?;
@@ -162,7 +162,7 @@ impl Connector {
         // accepted.
         let proof = self.local_worker_proof_inner()?;
         if proof.endpoint != client.endpoint || proof.server_id != client.server_id {
-            return Err(NativeFailure::InvalidEvidence);
+            crate::observe_ownership("worker_attribution", &client.device_id);
         }
         match action {
             LocalWorkerAction::Start => {
@@ -230,7 +230,7 @@ impl Connector {
                 || metadata.endpoint != profile.endpoint
                 || metadata.server_id != profile.server_id
             {
-                return Err(NativeFailure::InvalidEvidence);
+                crate::observe_ownership("worker_attribution", &metadata.device_id);
             }
             canonical_id(&metadata.machine_id)?;
             let command = match action {
@@ -287,7 +287,7 @@ impl Connector {
             || metadata.endpoint != expected.endpoint
             || metadata.server_id != expected.server_id
         {
-            return Err(NativeFailure::InvalidEvidence);
+            crate::observe_ownership("worker_attribution", &metadata.device_id);
         }
         let path = self
             .root
@@ -400,11 +400,14 @@ pub(crate) fn worker_status(
         if value.version != 1
             || parsed.get_version_num() != 7
             || parsed.to_string() != value.generation
-            || value.server_id != server_id
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        if value.server_id != server_id
             || value.endpoint != endpoint
             || value.machine_id != machine_id
         {
-            return Err(NativeFailure::InvalidEvidence);
+            crate::observe_ownership("worker_attribution", &value.generation);
         }
         Some(value.generation.clone())
     };

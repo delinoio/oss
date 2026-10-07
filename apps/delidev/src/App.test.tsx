@@ -198,7 +198,7 @@ it("retains separate Local and General Chat drafts through Settings, language an
   fireEvent.change(original.getByLabelText("First message"), { target: { value: "Keep this Local task" } });
   fireEvent.click(original.getByRole("button", { name: "Options" }));
   fireEvent.click(original.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((original.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true));
+  await waitFor(() => expect((original.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "New general chat" }));
   const general = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
   const message = general.getByRole("textbox", { name: "First message" });
@@ -228,7 +228,7 @@ it("retains separate Local and General Chat drafts through Settings, language an
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
   expect((original.getByLabelText("Project") as HTMLSelectElement).value).toBe(project.id);
   expect((original.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("Keep this Local task");
-  expect((original.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true);
+  expect((original.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(false);
   expect(value.creates).not.toHaveBeenCalled();
   view.rerender(<App transport={value.transport} {...props} currentDeviceId={newRequestId()} />);
   fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));

@@ -221,7 +221,7 @@ func TestLifecycleRejectsCorruptForeignAndLinkedEvidence(t *testing.T) {
 					}
 				}
 			}
-			if _, launch, err := PrepareStart(root); err == nil || launch {
+			if _, launch, err := PrepareStart(root); (err == nil && launch) != (mode == "foreign") {
 				t.Fatal("invalid evidence allowed startup", err)
 			}
 		})

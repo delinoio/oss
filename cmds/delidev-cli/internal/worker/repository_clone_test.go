@@ -39,7 +39,7 @@ func TestRepositoryCloneJournalNeverReexecutesAfterCapabilityChangeOrRestart(t *
 	if err != nil || interrupted.Problem == nil || interrupted.Problem.Code != domain.RecoveryRequired {
 		t.Fatal("interrupted clone reran", err)
 	}
-	if _, err := runJob(context.Background(), Config{Root: root, repositoryClone: true}, domain.NewID(), resource, job); domain.SafeError(err).Code != domain.RecoveryRequired {
+	if result, err := runJob(context.Background(), Config{Root: root, repositoryClone: true}, domain.NewID(), resource, job); err != nil || result.ReportID != interrupted.ReportID || result.Problem.Code != domain.RecoveryRequired {
 		t.Fatal("replacement Worker adopted original clone", err)
 	}
 }

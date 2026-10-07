@@ -63,6 +63,8 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 				cancel()
 				if e != nil && ctx.Err() == nil {
 					config.Logger.WarnContext(ctx, "session_deletion_worker_pending", "deletion_id", w.DeletionID, "code", domain.SafeError(e).Code)
+				} else if e == nil && !proof.Complete {
+					config.Logger.WarnContext(ctx, "ownership_observation", "operation_id", w.DeletionID, "check", domain.OwnershipCleanup, "result", "unconfirmed", "next_action", "continue")
 				} else if e == nil {
 					config.Logger.InfoContext(ctx, "session_deletion_worker_removed", "deletion_id", w.DeletionID)
 				}
@@ -142,7 +144,8 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			jobLocks[i].Close()
 		}
 	}()
-	cleanupConfirmed := true
+	// A interrupted removal cannot upgrade missing native evidence to success.
+	cleanupConfirmed := !proof.RemovalStarted
 	allowAbsentWorkspace := w.Fork == nil
 	if w.Fork != nil && !proof.RemovalStarted {
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {

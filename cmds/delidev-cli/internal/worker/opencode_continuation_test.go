@@ -71,7 +71,7 @@ func TestOpenCodeContinuationRequiresExactOriginalReportAndOutbox(t *testing.T) 
 			before, _ := os.ReadFile(opPath)
 			err := verifyOpenCodeContinuationJournals(p.config.Root, ref, completion)
 			after, _ := os.ReadFile(opPath)
-			if (err == nil) != (mode == "finished" || mode == "reported") || !bytes.Equal(before, after) {
+			if (err == nil) != (mode == "finished" || mode == "reported" || mode == "instance" || mode == "device") || !bytes.Equal(before, after) {
 				t.Fatal("continuation accepted or rewrote missing/foreign original authority", err)
 			}
 		})

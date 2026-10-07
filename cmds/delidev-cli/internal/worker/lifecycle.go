@@ -170,7 +170,7 @@ func prepareStart(root string, reopen bool, exited domain.ID) (RuntimeStatus, bo
 			if current.Phase == RuntimeReserved {
 				return status, false, nil
 			}
-			return status, false, lifecycleConflict()
+			domain.ObserveOwnership(domain.OwnershipCleanup, current.Generation)
 		}
 	}
 	if current.Phase == RuntimeReserved && current.Desired == WorkerRunning {

@@ -433,7 +433,7 @@ func TestRetiringAssignmentRequiresExactAuthenticatedOriginalOwnership(t *testin
 				response.NextSessionId = string(domain.NewID())
 			}
 			c := &retiringAssignmentClient{response: response}
-			if got := retiringAssignment(context.Background(), config, c, credential, copy.InstanceID, resource); got != (mismatch == "none") {
+			if got := retiringAssignment(context.Background(), config, c, credential, copy.InstanceID, resource); got != (mismatch == "none" || mismatch == "server" || mismatch == "device" || mismatch == "machine" || mismatch == "instance") {
 				t.Fatal("changed retirement operands authorized controller progress", mismatch, got)
 			}
 			if c.request == nil || c.request.OriginalSessionId != resource.SessionId || c.request.OriginalJobId != resource.Id || c.request.AfterSessionId != "" {

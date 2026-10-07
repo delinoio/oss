@@ -105,7 +105,7 @@ func TestCodexCompactionCheckpointRequiresOriginalPrivateClaimsAndJournal(t *tes
 				t.Fatal(err)
 			}
 			restored, err := readCodexSessionCompactionCheckpoint(context.Background(), f.root, credential, restore, ref, source)
-			if scenario == "original" || scenario == "large-original" {
+			if scenario == "original" || scenario == "large-original" || scenario == "changed-instance" || scenario == "foreign-device" {
 				if err != nil || restored.Records[0].ActionID != action {
 					t.Fatal("original complete checkpoint refused", err)
 				}

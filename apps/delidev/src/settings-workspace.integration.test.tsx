@@ -102,7 +102,8 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   changeNewSession("Project", (await within(newSession.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
   fireEvent.click(newSession.getByRole("button", { name: "Options" }));
   fireEvent.click(newSession.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((newSession.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true));
+  await waitFor(() => expect((newSession.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(false));
+  changeNewSession("Runs on", (await newSession.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   changeNewSession("Agent Worker", (await newSession.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
   changeNewSession("First message", "Local proof fixture without inference");
   fireEvent.click(newSession.getByText("Optional estimated-cost budget"));
@@ -154,7 +155,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
   change("Runner Device", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
-  await waitFor(() => expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true));
+  await waitFor(() => expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(false));
   change("Frequency", "custom"); change("Scheduled prompt", "Private schedule fixture prompt"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   fireEvent.click(await screen.findByRole("button", { name: "Resume future runs" }));

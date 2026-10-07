@@ -149,14 +149,14 @@ func TestClaudeResponseFailsClosedWithoutAnotherNativeSend(t *testing.T) {
 				}
 				delete(c.responses, o.Interaction.ArrivalID)
 			}
-			if err := c.DeliverApprovalResponse(ctx, ctx, control, native); err == nil {
-				t.Fatal("invalid response acquired native authority")
+			if err := c.DeliverApprovalResponse(ctx, ctx, control, native); (err == nil) != (change == "foreign-claim") {
+				t.Fatal("response result does not match input validation", err)
 			}
-			if err := c.DeliverApprovalResponse(ctx, ctx, control, native); err == nil {
-				t.Fatal("uncertain response allowed another send")
+			if err := c.DeliverApprovalResponse(ctx, ctx, control, native); (err == nil) != (change == "foreign-claim") {
+				t.Fatal("duplicate response changed its retained outcome", err)
 			}
 			want := 0
-			if change == "send-loss" || change == "retained-journal" {
+			if change == "send-loss" || change == "foreign-claim" || change == "retained-journal" {
 				want = 1
 			}
 			if native.sends != want || rpc.claims != 1 {

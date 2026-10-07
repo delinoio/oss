@@ -275,7 +275,16 @@ func (p *managedProcess) terminate() error {
 		return scopeError()
 	}
 }
-func (p *managedProcess) close() { _ = p.terminate(); _ = p.conn.Close() }
+func (p *managedProcess) close() {
+	_ = p.terminate()
+	_ = p.conn.Close()
+	// A failed output consumer may finish before its supervisor journals exit.
+	// Observe that original process only; a missing handle never permits a signal.
+	deadline := time.Now().Add(10 * time.Second)
+	for ProcessAlive(p.identity) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
 type frameWriter struct {
 	mu   sync.Mutex

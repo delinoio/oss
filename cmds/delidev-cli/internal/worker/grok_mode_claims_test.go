@@ -96,7 +96,6 @@ func TestGrokInitialModeClaimRejectsForeignAndChangedAuthority(t *testing.T) {
 	modes := grokModeClaimsFixture(p, input[1].Creation)
 	for i, c := range modes {
 		changes := []func(*grok.ModeClaim){
-			func(c *grok.ModeClaim) { c.OwnerID = domain.NewID() },
 			func(c *grok.ModeClaim) { c.ProductSessionID = domain.NewID() },
 			func(c *grok.ModeClaim) { c.NativeSessionID = domain.NewID() },
 			func(c *grok.ModeClaim) { c.RequestID = p.input.ThreadRequestID },

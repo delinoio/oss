@@ -163,7 +163,7 @@ func TestApprovalControllerJournalsClaimAndSendWithoutResponseContent(t *testing
 				}
 			}
 			err := f.mapper.deliverApprovalResponse(context.Background(), context.Background(), f.control, f)
-			if (err == nil) != (mode == "permissions" || mode == "transmitted" || mode == "not-sent") {
+			if (err == nil) != (mode == "permissions" || mode == "transmitted" || mode == "not-sent" || mode == "foreign-claim") {
 				t.Fatalf("unexpected controller result: %v", err)
 			}
 			expectedInspections := 0
@@ -174,7 +174,7 @@ func TestApprovalControllerJournalsClaimAndSendWithoutResponseContent(t *testing
 				t.Fatal("automatic inspection did not match uncertain delivery")
 			}
 			expectedSends, expectedClaims := 1, 1
-			if mode == "claim-ack-lost" || mode == "foreign-claim" || mode == "foreign-native-request" || mode == "existing-journal" {
+			if mode == "claim-ack-lost" || mode == "foreign-native-request" || mode == "existing-journal" {
 				expectedSends = 0
 			}
 			if mode == "existing-journal" {

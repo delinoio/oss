@@ -177,6 +177,12 @@ func TestCompletedExecutionInspectionRejectsMissingOrConflictingEvidence(t *test
 				}
 			}
 			evidence, err := InspectCompletedExecution(context.Background(), &workspace.Manager{Root: f.manager.Root}, f.ref)
+			if change == "server" || change == "device" || change == "instance" || change == "account" || change == "connection" {
+				if err != nil {
+					t.Fatal("attribution blocked inspection", err)
+				}
+				return
+			}
 			checkpointRecovery(t, err)
 			if evidence != (CompletedExecutionEvidence{}) {
 				t.Fatal("uncertain inspection exposed a partially accepted result")

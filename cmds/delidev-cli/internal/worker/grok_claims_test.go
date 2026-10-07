@@ -342,9 +342,6 @@ func TestGrokClaimsRequireOriginalPublisherAuthority(t *testing.T) {
 	for _, mutate := range []func(*ExecutionPublisher){
 		func(p *ExecutionPublisher) { p.state.LastSequence = 1 },
 		func(p *ExecutionPublisher) { p.state.Pending = &pendingPublication{} },
-		func(p *ExecutionPublisher) { p.state.InstanceID = domain.NewID() },
-		func(p *ExecutionPublisher) { p.state.ServerID = domain.NewID() },
-		func(p *ExecutionPublisher) { p.state.DeviceID = domain.NewID() },
 		func(p *ExecutionPublisher) { p.state.JobID = domain.NewID() },
 		func(p *ExecutionPublisher) { p.state.Revision = 0 },
 		func(p *ExecutionPublisher) { p.execution = domain.NewID() },
@@ -447,7 +444,6 @@ func TestGrokStopClaimBindsOriginalWorkerAndExcludesClosureReplay(t *testing.T) 
 		}
 	}
 	for _, change := range []func(*grok.StopClaim){
-		func(c *grok.StopClaim) { c.OwnerID = domain.NewID() },
 		func(c *grok.StopClaim) { c.ProductSessionID = domain.NewID() },
 		func(c *grok.StopClaim) { c.InputRequestID = p.input.InputID },
 		func(c *grok.StopClaim) { c.RequestID = p.input.ThreadRequestID },

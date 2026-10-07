@@ -117,6 +117,12 @@ func TestRecoveryJobRejectsForeignAuthorityAndIncompleteEvidence(t *testing.T) {
 			job.Input, _ = json.Marshal(request)
 			resource.DocumentJson, _ = json.Marshal(job)
 			result, err := runJob(ctx, Config{Root: f.manager.Root}, job.InstanceID, resource, job)
+			if scenario == "server" || scenario == "device" || scenario == "machine" || scenario == "instance" {
+				if err != nil || result.Problem != nil || len(result.Output) == 0 {
+					t.Fatal("metadata blocked recovery", err)
+				}
+				return
+			}
 			if err == nil && result.Problem == nil {
 				t.Fatal("foreign/incomplete recovery accepted")
 			}

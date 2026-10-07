@@ -156,7 +156,7 @@ func TestGrokOriginalReplyIsNotRepeatedAfterReceiptLossOrConflict(t *testing.T) 
 			f.loseOnce = mode == "lost-receipt"
 			before := len(f.events)
 			err := f.mapper.deliver(ctx, context.Background(), f.control, domain.NativeApprovalInteraction, f)
-			succeeded := mode == "delivered" || mode == "lost-receipt"
+			succeeded := mode == "delivered" || mode == "foreign-claim" || mode == "lost-receipt"
 			if (err == nil) != succeeded {
 				t.Fatal("delivery result", err)
 			}

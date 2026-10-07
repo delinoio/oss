@@ -69,7 +69,7 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
   };
   const management = status?.management;
   const automatic = Boolean(control.automatic || management);
-  const canStart = status && !status.controller_active && [LocalWorkerState.NotStarted, LocalWorkerState.Exited, LocalWorkerState.Uncertain].includes(status.state) && (!automatic || (status.state !== LocalWorkerState.Uncertain && management?.state === LocalWorkerManagementState.Paused));
+  const canStart = status && !status.controller_active && [LocalWorkerState.NotStarted, LocalWorkerState.Exited, LocalWorkerState.Uncertain].includes(status.state) && (!automatic || (management?.state === LocalWorkerManagementState.Paused || status.state === LocalWorkerState.Uncertain));
   const stale = confirmation && status?.generation !== confirmation;
   const runnerDevices = presentation === LocalWorkerPresentation.RunnerDevices;
   const blocked = management?.state === LocalWorkerManagementState.Blocked;

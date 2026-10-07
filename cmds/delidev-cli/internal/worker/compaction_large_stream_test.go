@@ -58,7 +58,7 @@ func TestLargeCompactionStreamDecodesBeforeOriginalOwnershipGuard(t *testing.T) 
 	// Scope rejection occurs before input/native use. The storage fixture is
 	// byte-bound metadata only; no native path or preparation is authorized.
 	err := watch(ctx, Config{Root: root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, client, Credential{MachineID: domain.NewID(), Token: "isolated-large-stream"}, job.InstanceID)
-	if domain.SafeError(err).Code != domain.PermissionDenied {
+	if domain.SafeError(err).Code != domain.RecoveryRequired {
 		t.Fatal("large stream failed before its scope guard", domain.SafeError(err).Code)
 	}
 }
