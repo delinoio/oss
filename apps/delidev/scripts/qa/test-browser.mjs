@@ -92,6 +92,7 @@ try {
   const taskPage = pages[0], environment = run.environments[0];
   await category(taskPage, "Instructions");
   for (const dismissal of ["X", "Escape", "Cancel"]) {
+    stage = `settings-task-disposal-${dismissal}`;
     let admitted = false, settled = false, requests = 0, release;
     const responseGate = new Promise(resolve => { release = resolve; });
     // The real Go server accepts this write. Delay only its browser response so
@@ -108,6 +109,8 @@ try {
     await taskPage.route(routePattern, routeHandler);
     try {
       await taskPage.getByRole("button", { name: "New Instructions", exact: true }).click();
+      // Settle the modal's initial focus before driving rapid scripted edits.
+      await until(() => taskPage.getByLabel("Name", { exact: true }).evaluate(node => node === document.activeElement));
       await taskPage.getByLabel("Name", { exact: true }).fill(`Closed ${dismissal} task`);
       await taskPage.getByLabel("Instructions", { exact: true }).fill("Synthetic task lifecycle fixture.");
       await taskPage.getByRole("button", { name: "Save Instructions", exact: true }).click();
