@@ -1,5 +1,19 @@
 # DeliDev Portable Configuration
 
+## API format bundle version 4
+
+Version 4 preserves Provider `api_formats` and Account `api_protocol` under the
+[catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection).
+Current exports and reviewed import plans use version 4. Versions 1–3 remain
+importable with their original API/native/source-route semantics and reject the
+new fields rather than treating them as legacy defaults. Profile declarations
+and account selections use the existing complete relationship validation and
+atomic publication. Accounts start disconnected; connection pins, credential
+references, keyless cleanup proof state, validation/catalog/quota observations,
+routing state and session/Usage history are never exported. Existing target
+accounts cannot be reused or reconnected by import. No SQLite migration is added.
+
+
 ## Scope
 
 `cmds/delidev-cli` owns portable configuration validation, consistent export, change previews and atomic import. `apps/delidev` presents these owner/client operations through generated Connect Query bindings. Version 2 covers the eight existing editable configuration kinds: providers, models, account preferences, instruction templates, Agent Workers, repositories, projects and server preferences. Schedules, historical pricing versions, device-specific notification preferences, integration authentication and Worker installation settings are separate contracts, not silently included in this format. This increment does not complete the remaining issue #964 requirements.
@@ -93,11 +107,11 @@ account reference, policy and weight. Remap all route references before complete
 relationship validation and reuse comparisons. Export/import never transports
 routing state, quota observations, connections or execution history. Version 1
 API-only and version 2 service-native bundles remain accepted with their existing
-limits; either rejects source-route Agents that require version 3. Current import
-previews use version 3 and preserve their exact bytes through acceptance/publication.
+limits; either rejects source-route Agents that require version 3. Before API-format version 4, current import
+previews used version 3 and preserve their exact bytes through acceptance/publication.
 
 ## Inline Worker models and endpoint-only completion reservation
 
-Current portable bundle 4 embeds exact route model IDs and required settings in Workers, with no independent Model entries or model UUID remapping. Keep atomic graph validation, explicit machine/source bindings and credential exclusion. Earlier portable formats are unsupported on complete current-only reset activation.
+On complete current-only reset and inline-model activation, the reserved portable profile embeds exact route model IDs and required settings in Workers, with no independent Model entries or model UUID remapping. Keep atomic graph validation, explicit machine/source bindings and credential exclusion. Earlier portable formats are unsupported only after complete current-only reset activation. Until then, the active API-format version 4 retains independent Model entries and imports versions 1–3; this reservation cannot change those runtime semantics.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

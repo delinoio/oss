@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { APIFormatId, ConfigurationService, EntityKind, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { accountPreferencesDocument } from "./account-preferences";
 import { MutationIntents } from "./mutation";
 import { ConfigurationEditor } from "./settings";
@@ -28,6 +28,14 @@ it("preserves escaped keys, nested strings, arrays and numeric spellings, and ad
   const raw = '{"ali\\u0061s":"Original","unknown":[{"alias":"nested","text":"braces } ], and \\\" quotes","n":-1.2300e+40},null,true],"lease":18446744073709551615}';
   const saved = decode(accountPreferencesDocument(resource(raw), { alias: "Changed", enabled: true, recovery_notifications: false }));
   expect(saved).toBe(raw.replace('"Original"', '"Changed"').slice(0, -1) + ',"enabled":true,"recovery_notifications":false}');
+});
+
+it("patches a closed API format without rounding protected uint64 tokens", () => {
+  const raw = '{"alias":"Original","type":"api","api_protocol":"openai-chat","health":"disconnected","quota":[{"revision":18446744073709551615}]}';
+  const account = create(ResourceSchema, { ...resource(raw), schemaVersion: 3 });
+  expect(decode(accountPreferencesDocument(account, { api_protocol: APIFormatId.Responses }))).toBe(raw.replace('"openai-chat"', '"openai-responses"'));
+  expect(() => accountPreferencesDocument(account, { api_protocol: "unknown" as never })).toThrow("Invalid account API format");
+  expect(() => accountPreferencesDocument(account, { api_protocol: "" as never })).toThrow("Invalid account API format");
 });
 
 it.each([

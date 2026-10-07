@@ -339,7 +339,19 @@ func providerPresetDefaults(id domain.ProviderPresetID) (domain.Provider, bool) 
 }
 
 func sameProviderPresetDefaults(provider, canonical domain.Provider) bool {
-	return provider.Name == canonical.Name && provider.Endpoint == canonical.Endpoint && provider.Protocol == canonical.Protocol && provider.Authentication == canonical.Authentication && provider.Discovery == canonical.Discovery
+	return provider.Name == canonical.Name && provider.Endpoint == canonical.Endpoint && provider.Protocol == canonical.Protocol && provider.Authentication == canonical.Authentication && provider.Discovery == canonical.Discovery && (provider.APIFormats == nil || slices.Equal(provider.APIFormats, canonical.APIFormats))
+}
+
+func accountAPIProvider(tx configurationView, account domain.Account) (domain.Provider, error) {
+	record, err := tx.Get(domain.ProviderKind, account.ProviderID)
+	if err != nil {
+		return domain.Provider{}, err
+	}
+	provider, err := store.Decode[domain.Provider](record)
+	if err != nil {
+		return provider, err
+	}
+	return providers.ResolveAccountProfile(provider, account)
 }
 
 func providerDisabled() *domain.Error {
@@ -455,6 +467,18 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 				if !model.MatchesAccount(account, v.Harness) {
 					return domain.Fail(domain.InvalidArgument, "An account is incompatible with the Agent Worker model.", "Choose accounts from the configured model provider.")
 				}
+				if account.Type == domain.APIAccount {
+					provider, err := accountAPIProvider(tx, account)
+					if err != nil {
+						return err
+					}
+					// Legacy documents remain writable/importable with their original
+					// configuration semantics; execution still enforces the resolved
+					// protocol. Explicit selections reject incompatible Worker saves.
+					if account.APIProtocol != "" && !providers.HarnessMatches(v.Harness, provider.Protocol) {
+						return domain.Fail(domain.Unsupported, "The account API format does not match the Agent Worker.", "Choose Responses for Codex, Messages for Claude Code or Chat Completions for OpenCode and Grok.")
+					}
+				}
 			}
 		}
 		return mustExist(tx, domain.TemplateKind, v.Templates...)
@@ -477,6 +501,9 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if err != nil {
 				return err
 			}
+			if len(providers.WithAPIFormats(previous).APIFormats) != 0 && len(v.APIFormats) == 0 {
+				return domain.Fail(domain.Unsupported, "API format profiles require a current client.", "Keep schema 3 and all declared API format profiles when editing this provider.")
+			}
 			if previous.PresetID != nil && (v.PresetID == nil || *v.PresetID != *previous.PresetID) || previous.PresetID == nil && v.PresetID != nil {
 				return domain.Fail(domain.Conflict, "Provider preset identity is immutable.", "Keep the managed provider identity or create a new custom copy.")
 			}
@@ -484,7 +511,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if previous.SubscriptionHarness != nil && v.SubscriptionHarness != nil {
 				harnessChanged = *previous.SubscriptionHarness != *v.SubscriptionHarness
 			}
-			if previous.Endpoint != v.Endpoint || previous.Protocol != v.Protocol || previous.Authentication != v.Authentication || harnessChanged {
+			if previous.LegacyAPIFormat() != v.LegacyAPIFormat() || !slices.Equal(providers.APIFormats(previous), providers.APIFormats(*v)) || harnessChanged {
 				accounts, err := all(tx, domain.AccountKind)
 				if err != nil {
 					return err
@@ -495,7 +522,12 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 						return err
 					}
 					if account.ProviderID == id {
-						return domain.Fail(domain.Conflict, "A connected provider's authority cannot be replaced through configuration.", "Disconnect and remove its account references before changing authority.")
+						before, beforeErr := providers.ResolveAccountProfile(previous, account)
+						after, afterErr := providers.ResolveAccountProfile(*v, account)
+						removedDeclaredProfile := slices.Contains(providers.APIFormats(previous), before.LegacyAPIFormat()) && !slices.Contains(providers.APIFormats(*v), before.LegacyAPIFormat())
+						if beforeErr != nil || afterErr != nil || before.LegacyAPIFormat() != after.LegacyAPIFormat() || removedDeclaredProfile || harnessChanged {
+							return domain.Fail(domain.Conflict, "An account-referenced API profile cannot be replaced or removed.", "Keep its original URL and authentication; create a new provider or remove all references first.")
+						}
 					}
 				}
 			}
@@ -550,16 +582,8 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 	case *domain.Account:
 		if v.Type == domain.APIAccount {
-			record, err := tx.Get(domain.ProviderKind, v.ProviderID)
-			if err != nil {
+			if _, err := accountAPIProvider(tx, *v); err != nil {
 				return err
-			}
-			provider, err := store.Decode[domain.Provider](record)
-			if err != nil {
-				return err
-			}
-			if provider.Protocol == domain.NativeSubscription {
-				return domain.Fail(domain.InvalidArgument, "API accounts require an API provider.", "Select an API endpoint or create an independent subscription account.")
 			}
 		}
 		if expected == 0 {
@@ -574,6 +598,25 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			old, err := store.Decode[domain.Account](previous)
 			if err != nil {
 				return err
+			}
+			if old.APIProtocol != v.APIProtocol {
+				if !v.APIProtocol.API() {
+					return domain.Fail(domain.Unsupported, "The account API format cannot be cleared.", "Keep its explicit API format with schema 3.")
+				}
+				if old.Connection != nil || old.Removal != nil || old.Health != domain.AccountDisconnected {
+					return domain.Fail(domain.Conflict, "The account API format is still in use.", "Disconnect and finish credential cleanup before changing its format.")
+				}
+				before, e := accountAPIProvider(tx, old)
+				if e != nil {
+					return e
+				}
+				after, e := accountAPIProvider(tx, *v)
+				if e != nil {
+					return e
+				}
+				if (before.Authentication == domain.KeylessAuth) != (after.Authentication == domain.KeylessAuth) {
+					return domain.Fail(domain.Conflict, "An account cannot change whether it owns credentials.", "Create a new account for a keyless or key-required profile.")
+				}
 			}
 			oldObservations, _ := json.Marshal(struct {
 				Health       domain.AccountHealth

@@ -6,6 +6,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -98,6 +99,9 @@ func (a *executionAuthority) titleScope(tx *store.Tx, grant store.ExecutionGrant
 		return denied()
 	}
 	provider, err := store.Decode[domain.Provider](providerRecord)
+	if err == nil {
+		provider, err = providers.ResolveAccountProfile(provider, account)
+	}
 	if err != nil || provider.Protocol != domain.OpenAIResponses || provider.Authentication != account.Connection.Authentication {
 		return denied()
 	}

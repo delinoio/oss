@@ -83,6 +83,9 @@ func inspectionPreflight(tx *store.Tx, input disconnectAccountInput, operation i
 	}
 	provider, err := store.Decode[domain.Provider](record)
 	if err == nil {
+		provider, err = providers.ResolveAccountProfile(provider, account)
+	}
+	if err == nil {
 		err = provider.Validate()
 	}
 	if err == nil && operation == catalogInspection && !provider.Discovery {

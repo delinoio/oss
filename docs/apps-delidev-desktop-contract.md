@@ -1,5 +1,34 @@
 # DeliDev desktop client
 
+## API key format selection
+
+The manual Add AI API key task requires Entry name, API format and API key in that
+order. Format labels are OpenAI Responses, OpenAI Chat Completions and Anthropic
+Messages, restricted to the selected provider's offered profiles and requiring an
+explicit choice. Responses help identifies Codex compatibility. The existing
+provider summary, key guidance, advanced preferences and secure-storage/validation
+notes remain. Lists and connection details show the account's selected format;
+Agent Worker account choices and compatibility checks resolve that format rather
+than the provider default. Legacy accounts display the original default.
+
+Custom Provider tasks replace the single protocol selector with three format
+cards. Checked cards expose their own URL/authentication, at least one is required,
+and account-referenced profiles are locked. Editing an Account format requires
+completed Disconnect and credential cleanup. Keyless/key-required transitions
+require a new account. Capability 7, current profile reads and reference reads gate
+new saves; loading, permission refusal, unsupported servers and changed profiles
+show a reason and block saving. Accepted uncertain requests retry only their
+original bytes; profile changes dispose secret handoffs under the existing key
+lifetime rules. Account preference edits preserve protected numeric tokens.
+
+Both tasks retain the shared 768px Form dialog, fixed header/footer, scrolling
+body, 40px controls, 8px corners, existing focus/Escape and English/Korean behavior.
+At narrow widths and effective 200% zoom, footer actions stack and the body scrolls.
+The approved desktop design previews remain outside the repository. Browser and
+HTTP fixtures do not establish actual account/native platform acceptance. See the
+[catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection)
+for schema-3 compatibility, original-generation authority and portable version 4.
+
 ## Screen shortcuts and help
 
 The connection-owned `ShortcutProvider` and `useShortcuts()` register stable enum action IDs, a Surface or global scope, logical key bindings, typed localization keys, active/enabled conditions, an unavailable reason, input policy and an existing action callback or explicit native behavior. Registration is memory-only. One document listener serves the connection; Strict Mode and connection replacement remove the original listener/registrations. Surface navigation and same-identity reconnect preserve original drafts, queries and mutation receipts. The lightweight Surface module retains the existing enum values and the existing views export.

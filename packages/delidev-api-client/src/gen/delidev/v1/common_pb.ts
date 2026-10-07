@@ -10,7 +10,34 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/common.proto.
  */
 export const file_delidev_v1_common: GenFile = /*@__PURE__*/
-  fileDesc("ChdkZWxpZGV2L3YxL2NvbW1vbi5wcm90bxIKZGVsaWRldi52MSLNAQoIUmVzb3VyY2USCgoCaWQYASABKAkSJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIQCghyZXZpc2lvbhgDIAEoBBISCgpzZXNzaW9uX2lkGAQgASgJEhIKCnByb2plY3RfaWQYBSABKAkSFgoOc2NoZW1hX3ZlcnNpb24YBiABKA0SFQoNZG9jdW1lbnRfanNvbhgHIAEoDBISCgpjcmVhdGVkX2F0GAggASgJEhIKCnVwZGF0ZWRfYXQYCSABKAkiRQoITXV0YXRpb24SEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJpZBgCIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgDIAEoBCJICg1Gb3J3YXJkQ2hhbmdlEiUKB2ZvcndhcmQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhAKCHJlcGxheWVkGAIgASgIIowCChJTZXNzaW9uRGVsZXRpb25Kb2ISCgoCaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIQCghyZXZpc2lvbhgDIAEoBBIvCgVzdGF0ZRgEIAEoDjIgLmRlbGlkZXYudjEuU2Vzc2lvbkRlbGV0aW9uU3RhdGUSEwoLYWNjZXB0ZWRfYXQYBSABKAkSEwoLZmluaXNoZWRfYXQYBiABKAkSFwoPd29ya2Vyc19wZW5kaW5nGAcgASgNEhgKEGRhdGFiYXNlX3JlbW92ZWQYCCABKAgSFwoPYmFja3Vwc19yZW1vdmVkGAkgASgIEh0KFXJlY2xhaW1lZF9ieXRlc19rbm93bhgKIAEoCCr5BgoKRW50aXR5S2luZBIbChdFTlRJVFlfS0lORF9VTlNQRUNJRklFRBAAEhcKE0VOVElUWV9LSU5EX1BST0pFQ1QQARIaChZFTlRJVFlfS0lORF9SRVBPU0lUT1JZEAISFQoRRU5USVRZX0tJTkRfQUdFTlQQAxIXChNFTlRJVFlfS0lORF9BQ0NPVU5UEAQSGAoURU5USVRZX0tJTkRfUFJPVklERVIQBRIVChFFTlRJVFlfS0lORF9NT0RFTBAGEhcKE0VOVElUWV9LSU5EX01BQ0hJTkUQBxIXChNFTlRJVFlfS0lORF9TRVNTSU9OEAgSGAoURU5USVRZX0tJTkRfVEVNUExBVEUQCRIYChRFTlRJVFlfS0lORF9TRVRUSU5HUxAKEhgKFEVOVElUWV9LSU5EX1NDSEVEVUxFEAsSGgoWRU5USVRZX0tJTkRfT0NDVVJSRU5DRRAMEhcKE0VOVElUWV9LSU5EX01FU1NBR0UQDRIVChFFTlRJVFlfS0lORF9RVUVVRRAOEhsKF0VOVElUWV9LSU5EX0lOVEVSQUNUSU9OEA8SFgoSRU5USVRZX0tJTkRfUkVWSUVXEBASGAoURU5USVRZX0tJTkRfU05BUFNIT1QQERIWChJFTlRJVFlfS0lORF9ERVZJQ0UQEhIbChdFTlRJVFlfS0lORF9JTlRFR1JBVElPThATEhwKGEVOVElUWV9LSU5EX1BVTExfUkVRVUVTVBAUEhcKE0VOVElUWV9LSU5EX1BST0JMRU0QFRIVChFFTlRJVFlfS0lORF9JTkJPWBAWEhUKEUVOVElUWV9LSU5EX1VTQUdFEBcSEwoPRU5USVRZX0tJTkRfSk9CEBgSFwoTRU5USVRZX0tJTkRfUEFJUklORxAZEhUKEUVOVElUWV9LSU5EX1NURUVSEBoSFwoTRU5USVRZX0tJTkRfRk9SV0FSRBAbEhgKFEVOVElUWV9LSU5EX1RFUk1JTkFMEB8SHwobRU5USVRZX0tJTkRfTkVUV09SS19QUk9GSUxFEBwSHQoZRU5USVRZX0tJTkRfTkVUV09SS19ST1VURRAdEhgKFEVOVElUWV9LSU5EX1NVQkFHRU5UEB4SFgoSRU5USVRZX0tJTkRfVVBEQVRFECESGQoVRU5USVRZX0tJTkRfU1NIX1NFVFVQECIqjgEKDVVzYWdlQ292ZXJhZ2USHgoaVVNBR0VfQ09WRVJBR0VfVU5TUEVDSUZJRUQQABIqCiZVU0FHRV9DT1ZFUkFHRV9PQlNFUlZFRF9ST09UX1JFU1BPTlNFUxABEjEKLVVTQUdFX0NPVkVSQUdFX09CU0VSVkVEX1JPT1RfQUNDT1VOVElOR19VTklUUxACKogBChRTZXNzaW9uRGVsZXRpb25TdGF0ZRImCiJTRVNTSU9OX0RFTEVUSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASIgoeU0VTU0lPTl9ERUxFVElPTl9TVEFURV9QRU5ESU5HEAESJAogU0VTU0lPTl9ERUxFVElPTl9TVEFURV9TVUNDRUVERUQQAirJAQobU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5Ei0KKVNVQlNDUklQVElPTl9TRVJWSUNFX0lERU5USVRZX1VOU1BFQ0lGSUVEEAASKQolU1VCU0NSSVBUSU9OX1NFUlZJQ0VfSURFTlRJVFlfQ0hBVEdQVBABEigKJFNVQlNDUklQVElPTl9TRVJWSUNFX0lERU5USVRZX0NMQVVERRACEiYKIlNVQlNDUklQVElPTl9TRVJWSUNFX0lERU5USVRZX0dST0sQA0I8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM");
+  fileDesc("ChdkZWxpZGV2L3YxL2NvbW1vbi5wcm90bxIKZGVsaWRldi52MSKHAQoRUHJvdmlkZXJBcGlGb3JtYXQSKQoIcHJvdG9jb2wYASABKA4yFy5kZWxpZGV2LnYxLkFwaVByb3RvY29sEhAKCGVuZHBvaW50GAIgASgJEjUKDmF1dGhlbnRpY2F0aW9uGAMgASgOMh0uZGVsaWRldi52MS5BcGlBdXRoZW50aWNhdGlvbiLNAQoIUmVzb3VyY2USCgoCaWQYASABKAkSJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIQCghyZXZpc2lvbhgDIAEoBBISCgpzZXNzaW9uX2lkGAQgASgJEhIKCnByb2plY3RfaWQYBSABKAkSFgoOc2NoZW1hX3ZlcnNpb24YBiABKA0SFQoNZG9jdW1lbnRfanNvbhgHIAEoDBISCgpjcmVhdGVkX2F0GAggASgJEhIKCnVwZGF0ZWRfYXQYCSABKAkiRQoITXV0YXRpb24SEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJpZBgCIAEoCRIZChFleHBlY3RlZF9yZXZpc2lvbhgDIAEoBCJICg1Gb3J3YXJkQ2hhbmdlEiUKB2ZvcndhcmQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhAKCHJlcGxheWVkGAIgASgIIowCChJTZXNzaW9uRGVsZXRpb25Kb2ISCgoCaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIQCghyZXZpc2lvbhgDIAEoBBIvCgVzdGF0ZRgEIAEoDjIgLmRlbGlkZXYudjEuU2Vzc2lvbkRlbGV0aW9uU3RhdGUSEwoLYWNjZXB0ZWRfYXQYBSABKAkSEwoLZmluaXNoZWRfYXQYBiABKAkSFwoPd29ya2Vyc19wZW5kaW5nGAcgASgNEhgKEGRhdGFiYXNlX3JlbW92ZWQYCCABKAgSFwoPYmFja3Vwc19yZW1vdmVkGAkgASgIEh0KFXJlY2xhaW1lZF9ieXRlc19rbm93bhgKIAEoCCqRAQoLQXBpUHJvdG9jb2wSHAoYQVBJX1BST1RPQ09MX1VOU1BFQ0lGSUVEEAASIQodQVBJX1BST1RPQ09MX09QRU5BSV9SRVNQT05TRVMQARIcChhBUElfUFJPVE9DT0xfT1BFTkFJX0NIQVQQAhIjCh9BUElfUFJPVE9DT0xfQU5USFJPUElDX01FU1NBR0VTEAMqlgEKEUFwaUF1dGhlbnRpY2F0aW9uEiIKHkFQSV9BVVRIRU5USUNBVElPTl9VTlNQRUNJRklFRBAAEh0KGUFQSV9BVVRIRU5USUNBVElPTl9CRUFSRVIQARIeChpBUElfQVVUSEVOVElDQVRJT05fQVBJX0tFWRACEh4KGkFQSV9BVVRIRU5USUNBVElPTl9LRVlMRVNTEAMq+QYKCkVudGl0eUtpbmQSGwoXRU5USVRZX0tJTkRfVU5TUEVDSUZJRUQQABIXChNFTlRJVFlfS0lORF9QUk9KRUNUEAESGgoWRU5USVRZX0tJTkRfUkVQT1NJVE9SWRACEhUKEUVOVElUWV9LSU5EX0FHRU5UEAMSFwoTRU5USVRZX0tJTkRfQUNDT1VOVBAEEhgKFEVOVElUWV9LSU5EX1BST1ZJREVSEAUSFQoRRU5USVRZX0tJTkRfTU9ERUwQBhIXChNFTlRJVFlfS0lORF9NQUNISU5FEAcSFwoTRU5USVRZX0tJTkRfU0VTU0lPThAIEhgKFEVOVElUWV9LSU5EX1RFTVBMQVRFEAkSGAoURU5USVRZX0tJTkRfU0VUVElOR1MQChIYChRFTlRJVFlfS0lORF9TQ0hFRFVMRRALEhoKFkVOVElUWV9LSU5EX09DQ1VSUkVOQ0UQDBIXChNFTlRJVFlfS0lORF9NRVNTQUdFEA0SFQoRRU5USVRZX0tJTkRfUVVFVUUQDhIbChdFTlRJVFlfS0lORF9JTlRFUkFDVElPThAPEhYKEkVOVElUWV9LSU5EX1JFVklFVxAQEhgKFEVOVElUWV9LSU5EX1NOQVBTSE9UEBESFgoSRU5USVRZX0tJTkRfREVWSUNFEBISGwoXRU5USVRZX0tJTkRfSU5URUdSQVRJT04QExIcChhFTlRJVFlfS0lORF9QVUxMX1JFUVVFU1QQFBIXChNFTlRJVFlfS0lORF9QUk9CTEVNEBUSFQoRRU5USVRZX0tJTkRfSU5CT1gQFhIVChFFTlRJVFlfS0lORF9VU0FHRRAXEhMKD0VOVElUWV9LSU5EX0pPQhAYEhcKE0VOVElUWV9LSU5EX1BBSVJJTkcQGRIVChFFTlRJVFlfS0lORF9TVEVFUhAaEhcKE0VOVElUWV9LSU5EX0ZPUldBUkQQGxIYChRFTlRJVFlfS0lORF9URVJNSU5BTBAfEh8KG0VOVElUWV9LSU5EX05FVFdPUktfUFJPRklMRRAcEh0KGUVOVElUWV9LSU5EX05FVFdPUktfUk9VVEUQHRIYChRFTlRJVFlfS0lORF9TVUJBR0VOVBAeEhYKEkVOVElUWV9LSU5EX1VQREFURRAhEhkKFUVOVElUWV9LSU5EX1NTSF9TRVRVUBAiKo4BCg1Vc2FnZUNvdmVyYWdlEh4KGlVTQUdFX0NPVkVSQUdFX1VOU1BFQ0lGSUVEEAASKgomVVNBR0VfQ09WRVJBR0VfT0JTRVJWRURfUk9PVF9SRVNQT05TRVMQARIxCi1VU0FHRV9DT1ZFUkFHRV9PQlNFUlZFRF9ST09UX0FDQ09VTlRJTkdfVU5JVFMQAiqIAQoUU2Vzc2lvbkRlbGV0aW9uU3RhdGUSJgoiU0VTU0lPTl9ERUxFVElPTl9TVEFURV9VTlNQRUNJRklFRBAAEiIKHlNFU1NJT05fREVMRVRJT05fU1RBVEVfUEVORElORxABEiQKIFNFU1NJT05fREVMRVRJT05fU1RBVEVfU1VDQ0VFREVEEAIqyQEKG1N1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eRItCilTVUJTQ1JJUFRJT05fU0VSVklDRV9JREVOVElUWV9VTlNQRUNJRklFRBAAEikKJVNVQlNDUklQVElPTl9TRVJWSUNFX0lERU5USVRZX0NIQVRHUFQQARIoCiRTVUJTQ1JJUFRJT05fU0VSVklDRV9JREVOVElUWV9DTEFVREUQAhImCiJTVUJTQ1JJUFRJT05fU0VSVklDRV9JREVOVElUWV9HUk9LEANCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z");
+
+/**
+ * @generated from message delidev.v1.ProviderApiFormat
+ */
+export type ProviderApiFormat = Message<"delidev.v1.ProviderApiFormat"> & {
+  /**
+   * @generated from field: delidev.v1.ApiProtocol protocol = 1;
+   */
+  protocol: ApiProtocol;
+
+  /**
+   * @generated from field: string endpoint = 2;
+   */
+  endpoint: string;
+
+  /**
+   * @generated from field: delidev.v1.ApiAuthentication authentication = 3;
+   */
+  authentication: ApiAuthentication;
+};
+
+/**
+ * Describes the message delidev.v1.ProviderApiFormat.
+ * Use `create(ProviderApiFormatSchema)` to create a new message.
+ */
+export const ProviderApiFormatSchema: GenMessage<ProviderApiFormat> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_common, 0);
 
 /**
  * Resource documents are versioned, strictly validated UTF-8 JSON. Their closed
@@ -72,7 +99,7 @@ export type Resource = Message<"delidev.v1.Resource"> & {
  * Use `create(ResourceSchema)` to create a new message.
  */
 export const ResourceSchema: GenMessage<Resource> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_common, 0);
+  messageDesc(file_delidev_v1_common, 1);
 
 /**
  * @generated from message delidev.v1.Mutation
@@ -99,7 +126,7 @@ export type Mutation = Message<"delidev.v1.Mutation"> & {
  * Use `create(MutationSchema)` to create a new message.
  */
 export const MutationSchema: GenMessage<Mutation> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_common, 1);
+  messageDesc(file_delidev_v1_common, 2);
 
 /**
  * @generated from message delidev.v1.ForwardChange
@@ -121,7 +148,7 @@ export type ForwardChange = Message<"delidev.v1.ForwardChange"> & {
  * Use `create(ForwardChangeSchema)` to create a new message.
  */
 export const ForwardChangeSchema: GenMessage<ForwardChange> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_common, 2);
+  messageDesc(file_delidev_v1_common, 3);
 
 /**
  * @generated from message delidev.v1.SessionDeletionJob
@@ -185,7 +212,69 @@ export type SessionDeletionJob = Message<"delidev.v1.SessionDeletionJob"> & {
  * Use `create(SessionDeletionJobSchema)` to create a new message.
  */
 export const SessionDeletionJobSchema: GenMessage<SessionDeletionJob> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_common, 3);
+  messageDesc(file_delidev_v1_common, 4);
+
+/**
+ * @generated from enum delidev.v1.ApiProtocol
+ */
+export enum ApiProtocol {
+  /**
+   * @generated from enum value: API_PROTOCOL_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: API_PROTOCOL_OPENAI_RESPONSES = 1;
+   */
+  OPENAI_RESPONSES = 1,
+
+  /**
+   * @generated from enum value: API_PROTOCOL_OPENAI_CHAT = 2;
+   */
+  OPENAI_CHAT = 2,
+
+  /**
+   * @generated from enum value: API_PROTOCOL_ANTHROPIC_MESSAGES = 3;
+   */
+  ANTHROPIC_MESSAGES = 3,
+}
+
+/**
+ * Describes the enum delidev.v1.ApiProtocol.
+ */
+export const ApiProtocolSchema: GenEnum<ApiProtocol> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_common, 0);
+
+/**
+ * @generated from enum delidev.v1.ApiAuthentication
+ */
+export enum ApiAuthentication {
+  /**
+   * @generated from enum value: API_AUTHENTICATION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: API_AUTHENTICATION_BEARER = 1;
+   */
+  BEARER = 1,
+
+  /**
+   * @generated from enum value: API_AUTHENTICATION_API_KEY = 2;
+   */
+  API_KEY = 2,
+
+  /**
+   * @generated from enum value: API_AUTHENTICATION_KEYLESS = 3;
+   */
+  KEYLESS = 3,
+}
+
+/**
+ * Describes the enum delidev.v1.ApiAuthentication.
+ */
+export const ApiAuthenticationSchema: GenEnum<ApiAuthentication> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_common, 1);
 
 /**
  * @generated from enum delidev.v1.EntityKind
@@ -366,7 +455,7 @@ export enum EntityKind {
  * Describes the enum delidev.v1.EntityKind.
  */
 export const EntityKindSchema: GenEnum<EntityKind> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_common, 0);
+  enumDesc(file_delidev_v1_common, 2);
 
 /**
  * @generated from enum delidev.v1.UsageCoverage
@@ -396,7 +485,7 @@ export enum UsageCoverage {
  * Describes the enum delidev.v1.UsageCoverage.
  */
 export const UsageCoverageSchema: GenEnum<UsageCoverage> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_common, 1);
+  enumDesc(file_delidev_v1_common, 3);
 
 /**
  * Irrevocable deletion remains pending until every managed resource is confirmed.
@@ -424,7 +513,7 @@ export enum SessionDeletionState {
  * Describes the enum delidev.v1.SessionDeletionState.
  */
 export const SessionDeletionStateSchema: GenEnum<SessionDeletionState> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_common, 2);
+  enumDesc(file_delidev_v1_common, 4);
 
 /**
  * Native subscription identity is independent of API providers.
@@ -457,5 +546,5 @@ export enum SubscriptionServiceIdentity {
  * Describes the enum delidev.v1.SubscriptionServiceIdentity.
  */
 export const SubscriptionServiceIdentitySchema: GenEnum<SubscriptionServiceIdentity> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_common, 3);
+  enumDesc(file_delidev_v1_common, 5);
 

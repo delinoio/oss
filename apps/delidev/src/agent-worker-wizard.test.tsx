@@ -15,8 +15,8 @@ import { i18n } from "./localization";
 
 function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1]) {
   const row = (kind: EntityKind, data: Record<string, unknown>, schemaVersion = 1) => create(ResourceSchema, { kind, schemaVersion, id: newRequestId(), revision: 1n, documentJson: encode(data) });
-  const provider = row(EntityKind.PROVIDER, { name: "OpenAI API", enabled: true, discovery: true, protocol: "openai-responses" });
-  const otherProvider = row(EntityKind.PROVIDER, { name: "Other API", enabled: true, discovery: true, protocol: "openai-responses" });
+  const provider = row(EntityKind.PROVIDER, { name: "OpenAI API", enabled: true, discovery: true, protocol: "openai-responses", endpoint: "https://api.example.test/v1", authentication: "keyless" });
+  const otherProvider = row(EntityKind.PROVIDER, { name: "Other API", enabled: true, discovery: true, protocol: "openai-responses", endpoint: "https://api.example.test/v1", authentication: "keyless" });
   const accounts = ["Personal API", "Team API", "Backup API"].map((alias, i) => row(EntityKind.ACCOUNT, { alias, type: "api", provider_id: provider.id, enabled: true, health: i === 2 ? "disconnected" : "unverified", ...(i < 2 ? { connection: { authentication: "keyless" } } : {}) }));
   const subscription = row(EntityKind.ACCOUNT, { alias: "ChatGPT account", type: "subscription", subscription_service: "chatgpt", enabled: true, health: "ready", connection: { id: newRequestId() } }, 2);
   const models = ["Example A", "Example B"].map((name, i) => row(EntityKind.MODEL, { name, native_id: `example-${i}`, provider_id: provider.id, harnesses: [], hidden: i === 1, manual: false, new: true }));
@@ -141,8 +141,9 @@ it("preserves edit selections on harness reselection and clears them only on a c
   expect(screen.getByText("0 accounts selected")).toBeTruthy();
   expect(screen.queryByRole("option", { name: "ChatGPT subscription" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Account source"), { target: { value: `api:${value.provider.id}` } });
-  fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ })); next();
-  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("");
+  await waitFor(() => expect(screen.queryByRole("checkbox", { name: /Personal API/ })).toBeNull());
+  next();
+  expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
 

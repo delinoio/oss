@@ -10,6 +10,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
@@ -236,6 +237,9 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 			return empty, err
 		}
 		provider, err := store.Decode[domain.Provider](pr)
+		if err == nil {
+			provider, err = providers.ResolveAccountProfile(provider, account)
+		}
 		if err != nil {
 			return empty, err
 		}

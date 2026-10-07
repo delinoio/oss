@@ -67,7 +67,7 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 5 {
+	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 6 {
 		t.Fatalf("fresh inventory was not capability-complete: %+v", initial.Msg)
 	}
 	accountTypeFilterAdvertised := false
@@ -112,7 +112,7 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	ollama.SetEnabled(true)
 	raw, _ := json.Marshal(ollama)
 	save := func(request domain.ID) (*connect.Response[pb.SaveConfigurationResponse], error) {
-		return f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(request)}, Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, SchemaVersion: 1, DocumentJson: raw}))
+		return f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(request)}, Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, SchemaVersion: rpc.ResourceSchemaVersion(domain.ProviderKind, raw), DocumentJson: raw}))
 	}
 	type activation struct {
 		resource *pb.Resource
@@ -170,9 +170,14 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 		t.Fatalf("preset activation created a model: models=%v err=%v", models, err)
 	}
 
-	// Legacy writes that omit enabled or preset_id retain both stored values.
+	// Older clients cannot discard the managed provider format profiles.
 	legacyUpdate := []byte(`{"name":"Ollama","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":true,"enabled":false}`)
-	updated, err := f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(created, domain.NewID()), Kind: created.Kind, SchemaVersion: 1, DocumentJson: legacyUpdate}))
+	_, err = f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(created, domain.NewID()), Kind: created.Kind, SchemaVersion: 1, DocumentJson: legacyUpdate}))
+	wantAccountCode(t, err, domain.Unsupported)
+	// Current writes retain profiles and immutable activation provenance.
+	canonicalOllama.SetEnabled(false)
+	currentUpdate, _ := json.Marshal(canonicalOllama)
+	updated, err := f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(created, domain.NewID()), Kind: created.Kind, SchemaVersion: 3, DocumentJson: currentUpdate}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +231,7 @@ func catalogBody(t *testing.T, r *pb.Resource) domain.Model {
 }
 func replaceCatalogResource(f *accountFixture, r *pb.Resource, body any) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	raw, _ := json.Marshal(body)
-	return f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(r, domain.NewID()), Kind: r.Kind, SchemaVersion: 1, DocumentJson: raw}))
+	return f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(r, domain.NewID()), Kind: r.Kind, SchemaVersion: rpc.ResourceSchemaVersion(domain.ProviderKind, raw), DocumentJson: raw}))
 }
 func currentCatalogResource(t *testing.T, f *accountFixture, r *pb.Resource) *pb.Resource {
 	t.Helper()

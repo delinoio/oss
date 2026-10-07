@@ -15,6 +15,12 @@ function resource(kind: EntityKind, value: Document, revision = 1n) {
   return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) });
 }
 
+async function chooseAPIFormat(protocol?: string) {
+  const select = screen.getByLabelText("API format") as HTMLSelectElement;
+  await waitFor(() => expect(select.matches(":disabled")).toBe(false));
+  fireEvent.change(select, { target: { value: protocol ?? select.options[1].value } });
+}
+
 function requestId(value: unknown): string {
   return (value as { mutation?: { requestId?: string } }).mutation?.requestId ?? "";
 }
@@ -56,6 +62,7 @@ function fixture(args: { resources?: Resource[]; save?: (request: unknown) => Pr
     section={section}
     active
     accountTypeFilteringReady
+    apiFormatSelectingReady
     clearProviderFilter={callbacks.clearProviderFilter}
     providers={[providerOption]}
     eligibleProviders={[providerOption]}
@@ -149,6 +156,7 @@ it.each(["account inventory", "picker inventory"])("keeps direct-entry fields un
   view.rerender(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, { ...props, accountTypeFilteringReady: true, providerPicker: { ...picker, ready: true } }))}</StrictMode>);
   expect(name.matches(":disabled")).toBe(false);
   expect(key.matches(":disabled")).toBe(false);
+  await chooseAPIFormat("openai-responses");
   fireEvent.change(name, { target: { value: "Explicit draft" } });
   fireEvent.change(key, { target: { value: "fixture-only-key" } });
   view.rerender(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, props))}</StrictMode>);
@@ -167,14 +175,14 @@ it.each([Authentication.Key, Authentication.Keyless])("keeps the clicked %s cont
   const staleProvider = create(ResourceSchema, { ...provider, revision: 1n, documentJson: encode({ name: "Stale provider", protocol: "openai-chat", authentication: keyless ? Authentication.Key : Authentication.Keyless, endpoint: "https://stale.example.test/v1", enabled: false }) });
   const selected: AccountProviderSummary = { providerId, displayName: "Clicked provider", enabled: true, provider, keyGuidance: "", documentationUrl: "" };
   const stale: AccountProviderSummary = { ...selected, displayName: "Stale provider", enabled: false, provider: staleProvider };
-  const account = resource(EntityKind.ACCOUNT, { alias: "Exact clicked provider", provider_id: providerId, type: "api", enabled: true, health: "disconnected" }, 2n);
-  const connected = create(ResourceSchema, { ...account, revision: 3n, documentJson: encode({ alias: "Exact clicked provider", provider_id: providerId, type: "api", enabled: true, health: "unverified", connection: { id: newRequestId(), authentication } }) });
+  const account = resource(EntityKind.ACCOUNT, { alias: "Exact clicked provider", provider_id: providerId, type: "api", api_protocol: "openai-chat", enabled: true, health: "disconnected" }, 2n);
+  const connected = create(ResourceSchema, { ...account, revision: 3n, documentJson: encode({ alias: "Exact clicked provider", provider_id: providerId, type: "api", api_protocol: "openai-chat", enabled: true, health: "unverified", connection: { id: newRequestId(), authentication } }) });
   const value = fixture({ providerId, currentProvider: provider, save: async (request) => ({ resource: account, requestId: requestId(request) }), connect: async (request) => ({ account: connected, requestId: requestId(request) }) });
   const view = render(value.view(value.settings(AccountSettingsSection.Api, { providers: [stale], eligibleProviders: [selected] })));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: `Clicked provider ${keyless ? "Local endpoint" : "API key"}` }));
   expect(screen.getByText("Clicked provider")).toBeTruthy();
-  expect(screen.queryByLabelText("API key") === null).toBe(keyless);
+  await chooseAPIFormat();
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Exact clicked provider" } });
   if (!keyless) fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-key" } });
   view.rerender(value.view(value.settings(AccountSettingsSection.Api, { providers: [stale], eligibleProviders: [stale] })));
@@ -192,7 +200,7 @@ it.each([Authentication.Key, Authentication.Keyless])("keeps the clicked %s cont
 
 it("creates an API account once, clears the key at submit, connects without auto-validation, and retries the exact uncertain connection", async () => {
   const providerId = newRequestId(), connectionId = newRequestId();
-  const created = resource(EntityKind.ACCOUNT, { alias: "Work key", provider_id: providerId, type: "api", enabled: true, exclude_automatic: false, recovery_notifications: true, health: "disconnected", quota: [] }, 4n);
+  const created = resource(EntityKind.ACCOUNT, { alias: "Work key", provider_id: providerId, type: "api", api_protocol: "openai-responses", enabled: true, exclude_automatic: false, recovery_notifications: true, health: "disconnected", quota: [] }, 4n);
   const connected = create(ResourceSchema, { ...created, revision: 5n, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(created.documentJson)), connection: { id: connectionId, authentication: "api-key" }, health: "unverified" }) });
   const save = vi.fn(async (request: unknown) => ({ resource: created, requestId: requestId(request) }));
   const connect = vi.fn(async (request: unknown) => ({ account: connected, requestId: requestId(request) })).mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable));
@@ -200,6 +208,7 @@ it("creates an API account once, clears the key at submit, connects without auto
   render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
+  await chooseAPIFormat();
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Work key" } });
   const key = screen.getByLabelText("API key");
   fireEvent.change(key, { target: { value: "fixture-only-secret" } });
@@ -222,7 +231,7 @@ it("creates an API account once, clears the key at submit, connects without auto
 
 it("accepts current disconnected metadata on a replay without restoring the old connection or revision", async () => {
   const providerId = newRequestId(), connectionId = newRequestId();
-  const created = resource(EntityKind.ACCOUNT, { alias: "Peer changed", provider_id: providerId, type: "api", enabled: true, health: "disconnected" }, 4n);
+  const created = resource(EntityKind.ACCOUNT, { alias: "Peer changed", provider_id: providerId, type: "api", api_protocol: "openai-responses", enabled: true, health: "disconnected" }, 4n);
   const peerDisconnected = create(ResourceSchema, { ...created, revision: 8n, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(created.documentJson)), health: "disconnected" }) });
   const reconnected = create(ResourceSchema, { ...created, revision: 9n, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(created.documentJson)), health: "unverified", connection: { id: connectionId, authentication: "api-key" } }) });
   const save = vi.fn(async (request: unknown) => ({ resource: created, requestId: requestId(request) }));
@@ -233,6 +242,7 @@ it("accepts current disconnected metadata on a replay without restoring the old 
   render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
+  await chooseAPIFormat();
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Peer changed" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
@@ -259,6 +269,7 @@ it.each([
   render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
+  await chooseAPIFormat();
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Current provider only" } });
   const key = screen.getByLabelText("API key");
   fireEvent.change(key, { target: { value: "fixture-only-secret" } });
@@ -271,13 +282,14 @@ it.each([
 
 it("retries a lost account-create acknowledgment exactly and requires key re-entry before connecting", async () => {
   const providerId = newRequestId();
-  const created = resource(EntityKind.ACCOUNT, { alias: "Replayed create", provider_id: providerId, type: "api", enabled: true, health: "disconnected" }, 2n);
+  const created = resource(EntityKind.ACCOUNT, { alias: "Replayed create", provider_id: providerId, type: "api", api_protocol: "openai-responses", enabled: true, health: "disconnected" }, 2n);
   const save = vi.fn(async (request: unknown) => ({ resource: created, requestId: requestId(request) }))
     .mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable));
   const value = fixture({ save, providerId });
   render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
+  await chooseAPIFormat();
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Replayed create" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
@@ -294,7 +306,7 @@ it("uses explicit keyless connection, sends no key bytes, and keeps subscription
   const providerId = newRequestId();
   const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Loopback", protocol: "openai-chat", authentication: "keyless", endpoint: "http://127.0.0.1:11434/v1" }), id: providerId });
   const summary = { providerId, displayName: "Loopback", enabled: true, provider, keyGuidance: "", documentationUrl: "" } satisfies AccountProviderSummary;
-  const account = resource(EntityKind.ACCOUNT, { alias: "Local endpoint", provider_id: providerId, type: "api", enabled: true, health: "disconnected" }, 3n);
+  const account = resource(EntityKind.ACCOUNT, { alias: "Local endpoint", provider_id: providerId, type: "api", api_protocol: "openai-chat", enabled: true, health: "disconnected" }, 3n);
   const connected = create(ResourceSchema, { ...account, revision: 4n, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(account.documentJson)), health: "unverified", connection: { id: newRequestId(), authentication: "keyless" } }) });
   const save = vi.fn(async (request: unknown) => ({ resource: account, requestId: requestId(request) }));
   const connect = vi.fn(async (request: unknown) => ({ account: connected, requestId: requestId(request) }));
@@ -302,8 +314,10 @@ it("uses explicit keyless connection, sends no key bytes, and keeps subscription
   render(value.view(value.settings(AccountSettingsSection.Api, { providers: [summary], eligibleProviders: [summary] })));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "Loopback Local endpoint" }));
+  await chooseAPIFormat("openai-chat");
   expect(screen.queryByLabelText("API key")).toBeNull();
   expect(screen.getByText("Connect to this local endpoint on the selected server.")).toBeTruthy();
+  await chooseAPIFormat();
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Local endpoint" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
   await screen.findByRole("heading", { name: "Local endpoint" });
@@ -323,6 +337,7 @@ it("does not auto-connect after a hidden keyed create completes late", async () 
   const view = render(value.view(value.settings(AccountSettingsSection.Api)));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "API provider API key" }));
+  await chooseAPIFormat();
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Late key" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
@@ -475,12 +490,13 @@ it("offers a local endpoint retry after a keyless connection failure without req
   const providerId = newRequestId();
   const provider = create(ResourceSchema, { ...resource(EntityKind.PROVIDER, { name: "Loopback", protocol: "openai-chat", authentication: "keyless", endpoint: "http://127.0.0.1:11434/v1" }), id: providerId });
   const summary = { providerId, displayName: "Loopback", enabled: true, provider, keyGuidance: "", documentationUrl: "" } satisfies AccountProviderSummary;
-  const entry = resource(EntityKind.ACCOUNT, { alias: "Local endpoint", provider_id: providerId, type: "api", enabled: true, health: "disconnected" }, 3n);
+  const entry = resource(EntityKind.ACCOUNT, { alias: "Local endpoint", provider_id: providerId, type: "api", api_protocol: "openai-chat", enabled: true, health: "disconnected" }, 3n);
   const value = fixture({ resources: [provider], providerId, save: async (request) => ({ resource: entry, requestId: requestId(request) }), connect: async () => { throw new ConnectError("fixture endpoint failure", Code.InvalidArgument); } });
   render(value.view(value.settings(AccountSettingsSection.Api, { providers: [summary], eligibleProviders: [summary] })));
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "Loopback Local endpoint" }));
   expect(screen.getByRole("heading", { name: "Connect your entry" })).toBeTruthy();
+  await chooseAPIFormat();
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Local endpoint" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
   await screen.findByText("Entry created; connection failed. Retry the local endpoint connection when ready.");

@@ -21,7 +21,11 @@ it("configures a real Go server through the settings forms and explicitly valida
   const create = await screen.findByRole("button", { name: "Custom provider" });
   await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(create);
-  change("Name", "Owned local API"); change("API base URL", providerOrigin); change("API protocol", "openai-chat"); change("Authentication", "keyless");
+  change("Name", "Owned local API");
+  const responses = screen.getByRole("checkbox", { name: "OpenAI Responses" });
+  await waitFor(() => expect(responses.matches(":disabled")).toBe(false));
+  fireEvent.click(responses);
+  change("API base URL", providerOrigin); change("Authentication", "keyless");
   fireEvent.click(screen.getByRole("checkbox", { name: "Discover models automatically for connected entries" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
   await screen.findByRole("heading", { name: "Owned local API" });
@@ -31,6 +35,8 @@ it("configures a real Go server through the settings forms and explicitly valida
   fireEvent.click(addAccount);
   fireEvent.click(await screen.findByRole("button", { name: "Owned local API Local endpoint" }));
   change("Entry name", "Owned keyless account");
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "API format" }).matches(":disabled")).toBe(false));
+  change("API format", "openai-responses");
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
   await screen.findByRole("heading", { name: "Owned keyless account" });
   const manageAccount = await screen.findByRole("button", { name: "Manage connection" });
@@ -57,4 +63,3 @@ it("configures a real Go server through the settings forms and explicitly valida
   expect(agents.resources).toHaveLength(1);
   expect(document(agents.resources[0])).toMatchObject({ name: "Configured agent", harness: "codex", accounts: [{ weight: 1 }], options: { permission: "default" } });
 }, 30000);
-

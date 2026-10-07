@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, SubscriptionServiceId, SubscriptionServiceIdentity, subscriptionService, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { APIFormatId, accountAPIProfile, apiFormatMatchesHarness, apiFormatToWire, ApiProtocol, EntityKind, ResourceQuery, SubscriptionServiceId, SubscriptionServiceIdentity, subscriptionService, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, text } from "./documents";
 import { Problem } from "./ui";
 import { copy, useLocale } from "./localization";
@@ -9,6 +9,13 @@ import { copy, useLocale } from "./localization";
 export enum SourceKind { Api = "api", Subscription = "subscription" }
 export interface Source { kind: SourceKind; id: string }
 export const sourceKey = (source?: Source) => source ? `${source.kind}:${source.id}` : "";
+export function accountFormatMatches(row: Resource, provider: Resource | undefined, harness: string): boolean {
+  const data = document(row);
+  return data.type === "subscription" || apiFormatMatchesHarness(accountAPIProfile(document(provider), data)?.protocol, harness);
+}
+export function harnessAPIProtocol(harness: string): ApiProtocol {
+  return apiFormatToWire(harness === "codex" ? APIFormatId.Responses : harness === "claude-code" ? APIFormatId.Messages : APIFormatId.ChatCompletions);
+}
 export function fromKey(value: string): Source | undefined {
   const [kind, id] = value.split(":");
   return id && (kind === SourceKind.Api || kind === SourceKind.Subscription && subscriptionService(id)) ? { kind: kind as SourceKind, id } : undefined;
