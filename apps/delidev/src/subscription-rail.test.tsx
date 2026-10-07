@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { remainingBadge, railAccount, type RailWindow } from "./subscription-rail-data";
+import { freshWindow, remainingBadge, railAccount, type RailWindow } from "./subscription-rail-data";
 import { SubscriptionRail } from "./subscription-rail";
 const now = Date.now();
 const window = (remaining: number, extra: Partial<RailWindow> = {}): RailWindow => ({ id: "weekly", remaining, state: "observed", observedAt: new Date(now).toISOString(), resetAt: "", comparisonGroup: "weekly", blocking: true, ...extra });
@@ -57,4 +57,16 @@ it("refreshes reached pages atomically without discovering an unseen tail",async
 it("refreshes saved reads at sixty seconds only while visible",async()=>{
  vi.useFakeTimers({toFake:["setInterval","clearInterval"]});const f=mount(()=>({resources:[resource("Personal")]}));await screen.findByRole("button",{name:/Personal/});expect(f.requests).toHaveBeenCalledOnce();await act(async()=>{await vi.advanceTimersByTimeAsync(59999);});expect(f.requests).toHaveBeenCalledOnce();await act(async()=>{await vi.advanceTimersByTimeAsync(1);});expect(f.requests).toHaveBeenCalledTimes(2);
  const visibility=vi.spyOn(document,"visibilityState","get").mockReturnValue("hidden");fireEvent(document,new Event("visibilitychange"));await act(async()=>{await vi.advanceTimersByTimeAsync(120000);});expect(f.requests).toHaveBeenCalledTimes(2);visibility.mockRestore();
+});
+it("keeps retained badges unconfirmed during a deferred retry",async()=>{
+ const first=resource("Personal");let stage=0;let finish!:(value:{resources:Resource[]})=>void;
+ const f=mount(()=>{if(stage===1)throw new ConnectError("read failed",Code.Unavailable);if(stage===2)return new Promise(done=>finish=done);return{resources:[first]};});await screen.findByRole("button",{name:/28% remaining/});stage=1;fireEvent(windowThis(),new Event("focus"));await screen.findByRole("button",{name:/Personal · Quota unavailable/});stage=2;fireEvent.click(screen.getByRole("button",{name:"Retry"}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(3));expect(screen.queryByRole("button",{name:/28% remaining/})).toBeNull();expect(screen.getByRole("button",{name:/Personal · Quota unavailable/})).toBeTruthy();await act(async()=>finish({resources:[first]}));await screen.findByRole("button",{name:/28% remaining/});
+});
+it("rejects unknown blocking membership and malformed reset evidence",()=>{
+ const quota=(extra:Record<string,unknown>)=>({id:"weekly",state:"observed",remaining:.28,observed_at:new Date(now).toISOString(),blocking:true,comparison_group:"weekly",...extra});
+ for(const extra of [{blocking:"true"},{blocking:1},{blocking:null},{blocking:undefined},{reset_at:"not-a-date"},{reset_at:123},{reset_at:null},{observed_at:123},{comparison_group:123},{remaining:"0.28"}]){
+ const projected=railAccount(resource("Malformed","chatgpt",{quota:[quota({}),quota(extra)]}));expect(remainingBadge(projected.windows,now)).toBeUndefined();expect(freshWindow(projected.windows[1]!,now)).toBe(false);
+ }
+ const nonblocking=railAccount(resource("Nonblocking","chatgpt",{quota:[quota({}),quota({blocking:false,reset_at:"bad"})]}));expect(remainingBadge(nonblocking.windows,now)).toBe(28);expect(freshWindow(nonblocking.windows[1]!,now)).toBe(false);
+ for(const reset of [undefined,""]){expect(remainingBadge(railAccount(resource("Valid","chatgpt",{quota:[quota({reset_at:reset})]})).windows,now)).toBe(28);}
 });

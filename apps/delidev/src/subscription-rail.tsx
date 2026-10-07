@@ -27,6 +27,14 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
   const query = usePaginationChain<RailAccount>(`subscription-rail:${enabled}:${authenticationLost}`, allowed, reader);
   useEffect(() => { if (!enabled) setAuthenticationLost(false); }, [enabled]);
   useEffect(() => { if (query.error?.failure.code === FailureCode.Unauthenticated || enabled && !status.isFetching && status.error && clientFailure(status.error).code === FailureCode.Unauthenticated) { setAuthenticationLost(true); setSelection(undefined); } }, [query.error, status.error, status.isFetching, enabled]);
+  // Pagination clears transient errors at retry admission. Retained quota remains
+  // unconfirmed until a complete accepted range replaces the failed snapshot.
+  const [unconfirmedRead, setUnconfirmedRead] = useState(false);
+  const failedRows = useRef<readonly RailAccount[] | undefined>(undefined);
+  useEffect(() => {
+    if (query.error) { failedRows.current = query.rows; setUnconfirmedRead(true); }
+    else if (query.loaded && !query.loading && query.rows !== failedRows.current) { failedRows.current = undefined; setUnconfirmedRead(false); }
+  }, [query.error, query.loaded, query.loading, query.rows]);
   const root = useRef<HTMLDivElement>(null), fallback = useRef<HTMLButtonElement>(null);
   const [selection, setSelection] = useState<{ id: string; opener: HTMLButtonElement }>();
   const popup = useRef<HTMLDivElement>(null);
@@ -61,7 +69,7 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
     return () => { window.removeEventListener("resize", place); document.removeEventListener("pointerdown", dismiss); };
   }, [selection, close]);
   const accounts = enabled && !authenticationLost && capable && !status.error ? query.rows.filter(row => row.connected) : [];
-  const unavailable = !allowed || Boolean(query.error);
+  const unavailable = !allowed || Boolean(query.error) || unconfirmedRead;
   const limited = query.pages.length >= 200 && Boolean(query.nextPageToken);
   const brand = (value: RailAccount) => subscriptionCatalog.find(item => item.brand === value.service)!;
   if (!enabled) return null;
@@ -84,7 +92,7 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
       {unavailable ? <p role="status">{copy("subscription-rail.readFailed")}</p> : null}
       <p>{copy("subscription-rail.explanation")}</p>
       {!unavailable && remainingBadge(account.windows, now) === undefined ? <p>{copy("subscription-rail.incomplete")}</p> : null}
-      {account.windows.length ? account.windows.map((window, index) => <section key={`${window.id}:${index}`}><strong>{window.id || copy("subscription-rail.window", { index: index + 1 })}</strong><p>{typeof window.remaining === "number" && Number.isFinite(window.remaining) && window.remaining >= 0 && window.remaining <= 1 ? copy("subscription-rail.remaining", { percent: Math.round(window.remaining * 100) }) : copy("subscription-rail.unavailable")}</p><p>{copy(!freshWindow(window, now) && window.state === "observed" ? "subscription-rail.stale" : window.state === "observed" ? "subscription-rail.observed" : window.state === "failed" ? "subscription-rail.failed" : window.state === "unsupported" ? "subscription-rail.unsupportedQuota" : "subscription-rail.unknown")}</p><small>{copy("subscription-rail.observation", { time: window.observedAt || "—" })}<br />{copy("subscription-rail.reset", { time: window.resetAt || "—" })}</small></section>) : <p>{copy("subscription-rail.unknown")}</p>}
+      {account.windows.length ? account.windows.map((window, index) => <section key={`${window.id}:${index}`}><strong>{window.id || copy("subscription-rail.window", { index: index + 1 })}</strong><p>{window.valid !== false && typeof window.blocking === "boolean" && typeof window.remaining === "number" && Number.isFinite(window.remaining) && window.remaining >= 0 && window.remaining <= 1 ? copy("subscription-rail.remaining", { percent: Math.round(window.remaining * 100) }) : copy("subscription-rail.unavailable")}</p><p>{copy(window.valid === false || typeof window.blocking !== "boolean" ? "subscription-rail.unknown" : !freshWindow(window, now) && window.state === "observed" ? "subscription-rail.stale" : window.state === "observed" ? "subscription-rail.observed" : window.state === "failed" ? "subscription-rail.failed" : window.state === "unsupported" ? "subscription-rail.unsupportedQuota" : "subscription-rail.unknown")}</p><small>{copy("subscription-rail.observation", { time: window.observedAt || "—" })}<br />{copy("subscription-rail.reset", { time: window.resetAt || "—" })}</small></section>) : <p>{copy("subscription-rail.unknown")}</p>}
       <details><summary>{copy("subscription-rail.identity")}</summary><p>{account.id}</p></details>
       <button type="button" onClick={() => { close(); manage(); }}>{copy("subscription-rail.manage")}</button>
     </div>, document.body) : null}
