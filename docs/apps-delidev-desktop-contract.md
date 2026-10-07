@@ -2279,3 +2279,5 @@ Retained native-model observations remain read-only reinspectable while uncertai
 Empty successful native-model observations retain the selected immutable observation, account, installation generation and time independently of model entries.
 
 Foreign session-deletion status cannot stop original-session polling, display cleanup proof or enable Finish. Read-only retry retains the original session query.
+
+Backup tracking and dismissal accessible names distinguish creation from deletion for the same backup resource, without exposing operation UUIDs.
