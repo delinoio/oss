@@ -100,7 +100,7 @@ it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps
   if (state === "removed repository") f.removeRepository();
   f.back();
   if (state !== "removed repository") {
-    if (state === "removed PR row") fireEvent.change(screen.getByLabelText("State"), { target: { value: "all" } });
+    if (state === "removed PR row") fireEvent.click(screen.getByRole("radio", { name: "All" }));
     fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
     if (state === "failed GitHub reload") await within(screen.getByRole("region", { name: "GitHub query results" })).findByRole("alert");
     else await screen.findByText("No pull requests on this returned page.");
