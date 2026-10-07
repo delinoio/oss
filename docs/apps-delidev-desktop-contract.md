@@ -291,6 +291,8 @@ independent exceptions and bounds. Files retain directory metadata only, their
 separately bounded. A changed digest requires explicit list reload.
 
 
+Claude subscription Runner continuation retains exact ID/revision, display labels and advisory eligibility only; an independent selected-Runner read governs the existing human Start and original fixed-Runner recovery. Failed cleanup status keeps the original public receipt and polling owner, while expanded terminal result continuation retains only account ID/revision, alias, outcome and reason. Neither reader can initiate login, cleanup or a terminal retry.
+
 The synthetic `test-scroll-pagination-layout.mjs` browser check exercises the actual shared chain, continuation, payload window and picker in English/Korean, both themes and narrow effective 200% reflow. Its five-page fixtures verify explicit first Load, bounded payload eviction, original-token restoration and keyboard/focus continuity. Keep generated bundles and screenshots outside the checkout; effective CSS reflow does not establish actual browser chrome zoom, real account or packaged CEF acceptance.
 
 ### Project-grouped Home navigation
