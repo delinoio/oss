@@ -757,3 +757,10 @@ user codes remain Start-only; later provider implementations retain their gates.
   expected attempt revision 1. Cancellation keeps its own mutation receipt.
   Public Complete cannot supply a Device callback or initiate polling. These
   semantics reuse the main-reserved fields and grant no unregistered capability.
+## Pre-release protocol reset reservation
+
+The [pre-release reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
+reserves protocol 2 and `AttachWorkerRequest.protocol_version = 10` on main.
+The field is absent from active schemas until complete implementation. The
+reset removes historical forwarding imports/reflection and obsolete API
+surfaces; retained field and enum numbers preserve their original meanings.

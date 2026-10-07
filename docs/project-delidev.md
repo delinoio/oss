@@ -202,3 +202,7 @@ accounts; only confirmed complete quota exhaustion can advance a new session,
 and observed recovery restores priority for later sessions. Existing executions
 and historical Usage attribution remain immutable. Reservation PR #1371 precedes
 activation; schema-3 Agents and portable version 3 add no SQLite migration.
+
+The owner-approved [pre-release compatibility reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
+reserves database baseline 32, protocol 2 and Worker attach field 10 before its
+complete implementation. Reservations leave current runtime behavior unchanged.
