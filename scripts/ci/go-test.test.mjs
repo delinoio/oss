@@ -30,7 +30,7 @@ const fixtures = {
 const packages = Object.values(fixtures).flat();
 const inventory = `${packages.toReversed().join("\r\n")}\r\n`;
 
-test("Windows shards cover the entire discovered inventory once, including new packages and path boundaries", () => {
+test("Package shards cover the entire discovered inventory once, including new packages and path boundaries", () => {
   const selected = Object.entries(fixtures).flatMap(([shard, expected]) => {
     const actual = selectPackages(inventory, shard);
     assert.deepEqual(actual, expected.toSorted());
@@ -71,7 +71,7 @@ function runner(discovery, result = { status: 0 }, compilation = { status: 0 }) 
 test("each Windows invocation discovers native packages and runs its whole shard without a shell", async () => {
   for (const shard of Object.keys(fixtures)) {
     const fixture = runner({ status: 0, stdout: inventory });
-    assert.equal(await runGoTests(shard, fixture.options), 0);
+    assert.equal(await runGoTests(shard, { ...fixture.options, platform: "win32" }), 0);
     assert.equal(fixture.calls.length, 3);
     const [discovery, compilation, execution] = fixture.calls;
     assert.equal(discovery.command, "go");
@@ -79,7 +79,7 @@ test("each Windows invocation discovers native packages and runs its whole shard
     assert.equal(discovery.options.shell, false);
     assert.deepEqual(discovery.options.stdio, ["ignore", "pipe", "inherit"]);
     assert.deepEqual(compilation, {
-      command: "go", args: ["test", "-c", "-o", process.platform === "win32" ? "NUL" : "/dev/null", ...fixtures[shard].toSorted()],
+      command: "go", args: ["test", "-c", "-o", "NUL", ...fixtures[shard].toSorted()],
       options: { shell: false, stdio: "inherit" },
     });
     assert.deepEqual(execution, {
@@ -119,7 +119,7 @@ test("discovery failures never start tests, even with partial output", async () 
     assert.equal(fixture.events[0].event, "ci_go_test_discovery_failed");
   }
   const fixture = runner({ error: new Error("spawn failed") });
-  await assert.rejects(() => runGoTests(GoTestShard.Core, fixture.options), /spawn failed/u);
+  await assert.rejects(() => runGoTests(GoTestShard.Core, { ...fixture.options, platform: "win32" }), /spawn failed/u);
   assert.equal(fixture.calls.length, 1);
 });
 
@@ -146,19 +146,19 @@ test("test failures, signals and spawn errors cannot become success", async () =
     assert.equal(fixture.events.at(-1).exitCode, failure.status ?? 1);
   }
   const fixture = runner({ status: 0, stdout: inventory }, { error: new Error("spawn failed") });
-  await assert.rejects(() => runGoTests(GoTestShard.Core, fixture.options), /spawn failed/u);
+  await assert.rejects(() => runGoTests(GoTestShard.Core, { ...fixture.options, platform: "win32" }), /spawn failed/u);
 });
 
 test("compilation failures stop before any test binary can run", async () => {
   for (const failure of [{ status: 9 }, { status: null, signal: "SIGTERM" }]) {
     const fixture = runner({ status: 0, stdout: inventory }, { status: 0 }, failure);
-    assert.equal(await runGoTests(GoTestShard.Core, fixture.options), failure.status ?? 1);
+    assert.equal(await runGoTests(GoTestShard.Core, { ...fixture.options, platform: "win32" }), failure.status ?? 1);
     assert.equal(fixture.calls.length, 2);
     assert.equal(fixture.events.at(-1).event, "ci_go_test_compile");
     assert.equal(fixture.events.at(-1).exitCode, failure.status ?? 1);
   }
   const fixture = runner({ status: 0, stdout: inventory }, { status: 0 }, { error: new Error("compiler spawn failed") });
-  await assert.rejects(() => runGoTests(GoTestShard.Core, fixture.options), /compiler spawn failed/u);
+  await assert.rejects(() => runGoTests(GoTestShard.Core, { ...fixture.options, platform: "win32" }), /compiler spawn failed/u);
   assert.equal(fixture.calls.length, 2);
 });
 
@@ -169,5 +169,15 @@ test("the CLI rejects malformed arguments before invoking Go", () => {
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "");
     assert.equal(JSON.parse(result.stderr).event, "ci_go_test_failed");
+  }
+});
+
+test("Ubuntu PR shards run complete native partitions at default parallelism with 20-minute watchdogs", async () => {
+  for (const shard of Object.keys(fixtures)) {
+    const fixture = runner({ status: 0, stdout: inventory });
+    assert.equal(await runGoTests(shard, { ...fixture.options, platform: "linux" }), 0);
+    assert.equal(fixture.calls.length, 2);
+    assert.deepEqual(fixture.calls[1].args, ["test", "-count=1", "-json", "-timeout=20m", ...fixtures[shard].toSorted()]);
+    assert.equal(fixture.events.some((event) => event.event === "ci_go_test_compile"), false);
   }
 });
