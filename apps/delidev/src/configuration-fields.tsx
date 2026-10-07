@@ -196,8 +196,8 @@ export function RestrictionFields({ label, kind, value, change, active }: { labe
   const restriction = object(value);
   return <fieldset className="project-field-group"><legend>{label}</legend><Check label={copy("configuration-fields.restrict_b3faa2", { v0: label.toLowerCase() })} value={restriction.configured} change={(configured) => change({ configured, ids: configured ? items(restriction.ids) : [] })} />{restriction.configured === true ? <><p>{copy("configuration-fields.anEmptySelectionPermitsNoneTurning_60a4d7")}</p><OrderedLinks label={copy("configuration-fields.allowed_54fcb8", { v0: label.toLowerCase() })} kind={kind} links={items(restriction.ids)} active={active} explanation="Only these explicitly selected entries are allowed." change={(ids) => change({ ...restriction, ids })} /></> : <p>{copy("configuration-fields.everyOtherwiseEligibleEntryIsAllowed_67c17b")}</p>}</fieldset>;
 }
-export function RepositoryIdentity({ id }: { id: string }) {
-  return <details className="project-repository-identity"><summary>{copy("project-creation.repositoryDetails")}</summary><code>{id}</code></details>;
+export function RepositoryIdentity({ id, descriptionId }: { id: string; descriptionId?: string }) {
+  return <><details className="project-repository-identity"><summary>{copy("project-creation.repositoryDetails")}</summary><code>{id}</code></details>{descriptionId ? <span id={descriptionId} className="project-repository-id"><code>{id}</code></span> : null}</>;
 }
 export function projectRepositoryOption(id: string, index: number, names: ReadonlyMap<string, string>) {
   const name = names.get(id) ?? copy("project-creation.nameUnavailable");
