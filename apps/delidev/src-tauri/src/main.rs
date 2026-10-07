@@ -1624,10 +1624,7 @@ fn run() -> Result<(), NativeFailure> {
             language::{LanguagePreference, resolve},
             localization::{Message, text_in},
         };
-        let locale = resolve(
-            LanguagePreference::System,
-            sys_locale::get_locale().into_iter(),
-        );
+        let locale = resolve(LanguagePreference::System, sys_locale::get_locale());
         let message = match *code {
             NativeFailure::Busy | NativeFailure::ServiceManaged => Message::StartupConflict,
             NativeFailure::Incompatible => Message::StartupIncompatible,
