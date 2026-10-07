@@ -90,7 +90,7 @@ func TestForkStartupRetainsOriginalExecutableAfterCreationJournalDeletion(t *tes
 	if err := security.PrivateDir(root); err != nil {
 		t.Fatal(err)
 	}
-	executable := filepath.Join(root, "original-codex")
+	executable := filepath.Join(root, "original-codex.exe")
 	if err := os.WriteFile(executable, []byte("private executable fixture"), 0700); err != nil {
 		t.Fatal(err)
 	}
