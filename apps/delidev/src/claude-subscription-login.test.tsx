@@ -124,10 +124,11 @@ function fixture(dialog = false) {
       _url: string,
     ) => ({ generation: browser }),
   );
+  const list = vi.fn((_request: { filter?: { pageToken: string } }) => ({ resources: [machine], nextPageToken: "" }));
   const transport = createRouterTransport((router) => {
     router.service(ConfigurationService, { saveConfiguration: save });
     router.service(ResourceService, {
-      listResources: () => ({ resources: [machine] }),
+      listResources: list,
       getResource: (request) => ({
         resource: request.id === machine.id ? machine : current,
       }),
@@ -183,6 +184,7 @@ function fixture(dialog = false) {
   return {
     view,
     client,
+    list,
     save,
     login,
     progress,
@@ -214,13 +216,13 @@ async function start(f: ReturnType<typeof fixture>) {
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
   const runner = await screen.findByRole("combobox", { name: "Runner Device" });
-  await waitFor(() =>
-    expect(screen.getByRole("option", { name: "Remote Linux" })).toBeTruthy(),
-  );
+  fireEvent.click(runner);
+  await screen.findByRole("option", { name: "Remote Linux" });
   expect(f.save).not.toHaveBeenCalled();
   expect(f.login).not.toHaveBeenCalled();
-  fireEvent.change(runner, { target: { value: f.machine.id } });
+  fireEvent.click(screen.getByRole("option", { name: "Remote Linux" }));
   const button = screen.getByRole("button", { name: "Start sign-in" });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(button);
   fireEvent.click(button);
   await screen.findByLabelText("Approval code", {}, { timeout: 4000 });
@@ -333,4 +335,20 @@ it("rejects a substituted browser profile", () => {
   expect(
     claudeLoginURL(originalURL.replace("claude.com", "other.invalid")),
   ).toBe(false);
+});
+
+it("appends Runner display choices without clearing the selected exact machine or starting sign-in", async () => {
+  const f = fixture();
+  const second = create(ResourceSchema, { ...f.machine, id: newRequestId(), documentJson: encode({ ...document(f.machine), name: "Second Runner" }) });
+  f.list.mockImplementation(request => ({ resources: request.filter?.pageToken ? [second] : [f.machine], nextPageToken: request.filter?.pageToken ? "" : "original-next" }));
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
+  const picker = await screen.findByRole("combobox", { name: "Runner Device" });
+  fireEvent.click(picker); fireEvent.click(await screen.findByRole("option", { name: "Remote Linux" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Start sign-in" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(picker); fireEvent.click(screen.getByRole("button", { name: "Load more Runner Device" }));
+  await screen.findByRole("option", { name: "Second Runner" });
+  expect(screen.getByRole("option", { name: "Remote Linux" })).toBeTruthy();
+  expect(picker.getAttribute("data-value")).toBe(f.machine.id);
+  expect(f.list.mock.calls.map(([request]) => request.filter?.pageToken)).toEqual(["", "original-next"]);
+  expect(f.save).not.toHaveBeenCalled(); expect(f.login).not.toHaveBeenCalled();
 });
