@@ -149,7 +149,8 @@ it("starts General Chat with explicit execution selections and no project or Loc
   const value = fixture([], [], [], false, true);
   const proof = vi.fn();
   render(<App transport={value.transport} readLocalWorker={proof} />);
-  fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));
+  await screen.findByRole("button", { name: "General Chat" });
+  fireEvent.click(within(document.querySelector(".sidebar-general-chat") as HTMLElement).getByRole("button", { name: "New general chat" }));
   const page = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
   const firstMessage = page.getByRole("textbox", { name: "First message" });
   expect(document.activeElement).toBe(firstMessage);
@@ -158,7 +159,7 @@ it("starts General Chat with explicit execution selections and no project or Loc
   expect(scrollChoiceValue(page.getByRole("combobox", { name: "Agent Worker" }))).toBe("");
   expect(scrollChoiceValue(page.getByRole("combobox", { name: "Runs on" }))).toBe("");
   expect((page.getByRole("button", { name: "Start general chat" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByRole("button", { name: "New general chat" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getAllByRole("button", { name: "New general chat" })[0].getAttribute("aria-current")).toBe("page");
   expect(screen.getByRole("button", { name: "New session" }).getAttribute("aria-current")).toBeNull();
   const ids = [...document.querySelectorAll(".new-session-page [id]")].map((element) => element.id);
   expect(new Set(ids).size).toBe(ids.length);
@@ -200,7 +201,7 @@ it("retains separate Local and General Chat drafts through Settings, language an
   fireEvent.click(original.getByRole("button", { name: "Options" }));
   fireEvent.click(original.getByRole("button", { name: "Use this computer's Local checkouts" }));
   await waitFor(() => expect((original.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).disabled).toBe(true));
-  fireEvent.click(screen.getByRole("button", { name: "New general chat" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "New general chat" })[0]);
   const general = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
   const message = general.getByRole("textbox", { name: "First message" });
   fireEvent.change(message, { target: { value: "Keep my conversation idea" } });
@@ -216,7 +217,7 @@ it("retains separate Local and General Chat drafts through Settings, language an
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   view.rerender(<App transport={{ ...value.transport }} {...props} connectionEpoch={1} />);
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
-  fireEvent.click(screen.getByRole("button", { name: "New general chat" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "New general chat" })[1]);
   expect(general.getByRole("textbox", { name: "First message" })).toBe(message);
   expect((message as HTMLTextAreaElement).value).toBe("Keep my conversation idea");
   expect(scrollChoiceValue(general.getByRole("combobox", { name: "Agent Worker" }))).toBe(value.agent.id);
@@ -232,7 +233,7 @@ it("retains separate Local and General Chat drafts through Settings, language an
   expect((original.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).disabled).toBe(true);
   expect(value.creates).not.toHaveBeenCalled();
   view.rerender(<App transport={value.transport} {...props} currentDeviceId={newRequestId()} />);
-  fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));
+  fireEvent.click((await screen.findAllByRole("button", { name: "New general chat" }))[0]);
   const fresh = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
   expect((fresh.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("");
   expect(scrollChoiceValue(fresh.getByRole("combobox", { name: "Agent Worker" }))).toBe("");
@@ -244,7 +245,7 @@ it("isolates pending General Chat from an uncertain project request and never st
   let finish!: (result: { change: { session: Resource } }) => void;
   value.creates.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
   render(<App transport={value.transport} />);
-  fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));
+  fireEvent.click((await screen.findAllByRole("button", { name: "New general chat" }))[0]);
   const general = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
   await waitScrollChoices(general.getByRole("combobox", { name: "Agent Worker" }));
   await chooseScrollOption(general.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
@@ -268,7 +269,7 @@ it("isolates pending General Chat from an uncertain project request and never st
   const requests = value.creates.mock.calls as unknown as [unknown][];
   expect(requests[1][0]).toEqual(requests[2][0]);
   expect(requests[0][0]).not.toEqual(requests[1][0]);
-  fireEvent.click(await screen.findByRole("button", { name: "New general chat" }));
+  fireEvent.click((await screen.findAllByRole("button", { name: "New general chat" }))[0]);
   expect((general.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("");
   expect(scrollChoiceValue(general.getByRole("combobox", { name: "Agent Worker" }))).toBe(value.agent.id);
   expect(general.getByRole("button", { name: "Open conversation" })).toBeTruthy();
