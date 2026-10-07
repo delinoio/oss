@@ -141,3 +141,7 @@ Desktop runtime selection uses `tauri_runtime_cef::CefRuntime` and `Cef` attribu
 Linux Debian packages require the XDG portal service, an installed portal implementation, and `zenity` so the new dialog backend is available after installation. AppImage hosts must provide these services and `zenity`; the archive does not supply a system D-Bus portal service.
 
 AppImage updater dry runs use the verified helper staging defined in `repository-prebuilt-dependencies-contract.md`. The pinned CEF bundler copies native binaries directly into `bin`; the earlier Debian share-directory copy workaround must not be used because its duplicate ELF lacks adjacent CEF libraries. Packaging inspection does not establish native AppImage runtime acceptance.
+
+## Resident sidecar protocol compatibility
+
+The desktop and resident CLI ship from the same package/source revision with private control protocol version 2. Runtime handshake rejects mismatches without spawning short compatibility controllers. Packaging/architecture checks do not prove actual macOS parent monitoring, Windows kill-on-close Job behavior, Linux parent-death behavior or CEF Quit acceptance; record those results separately with source revision and commands.

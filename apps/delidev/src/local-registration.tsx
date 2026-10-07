@@ -1,10 +1,11 @@
+import { validateDesktopRuntime } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
 import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { Modal } from "./ui";
 
-export interface NativeConnection { endpoint: string; token: string; server_id: string; device_id: string }
+export interface NativeConnection { endpoint: string; token: string; server_id: string; device_id: string; runtime_generation?: string; runtime_key?: string }
 export enum RegistrationState { Authorized = "authorized", Revoked = "revoked", Recovering = "recovering" }
 export interface DesktopRegistration { state: RegistrationState; server_id: string; device_id: string; revision: string; request_id?: string }
 interface RecoveryRequest { serverId: string; deviceId: string; revision: string; requestId: string }
@@ -57,7 +58,8 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
     operating.current = true; setPending(original); setBusy(true); setError(undefined);
     try {
       const connection = await invoke<NativeConnection>("recover_local_registration", { deviceId: original.deviceId, revision: original.revision, requestId: original.requestId });
-      if (!id.test(connection.device_id) || connection.device_id === original.deviceId || connection.server_id !== status.server_id || connection.endpoint !== "http://127.0.0.1:46310") throw "invalid-evidence";
+      validateDesktopRuntime(connection);
+      if (!id.test(connection.device_id) || connection.device_id === original.deviceId || connection.server_id !== status.server_id) throw "invalid-evidence";
       await recovered(connection);
       setPending(undefined); setConfirm(false); setStatus(undefined);
     } catch (reason) { setError(reason); }

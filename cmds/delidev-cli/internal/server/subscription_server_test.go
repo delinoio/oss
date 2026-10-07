@@ -418,7 +418,7 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 				awaitServerFixture(t, f.serverRun(n))
 			}
 			p := f.progressFor(op.OperationId)
-			if p.Diagnostic == nil || p.Diagnostic.DetectedVersion != scenario.version || p.Diagnostic.MinimumVersion != domain.CodexMinimumVersion || p.Diagnostic.Code != string(scenario.code) || p.Diagnostic.CorrelationId != op.OperationId || p.Url != "" || p.UserCode != "" {
+			if p.Diagnostic == nil || p.Diagnostic.DetectedVersion != scenario.version || p.Diagnostic.MinimumVersion != "" || p.Diagnostic.Code != string(scenario.code) || p.Diagnostic.CorrelationId != op.OperationId || p.Url != "" || p.UserCode != "" {
 				t.Fatalf("incorrect safe progress: %#v", p.Diagnostic)
 			}
 			_, a := f.record()
@@ -447,7 +447,8 @@ func TestServerSubscriptionSafeDurableDiagnostics(t *testing.T) {
 					t.Fatal("subscription log was not structured JSON")
 				}
 				if record["msg"] == "server_subscription_native_failed" {
-					observed = record["version"] == scenario.version && record["minimum_version"] == domain.CodexMinimumVersion && record["phase"] == string(scenario.phase) && record["code"] == string(scenario.code) && record["correlation_id"] == op.OperationId
+					minimumVersion, _ := record["minimum_version"].(string)
+					observed = record["version"] == scenario.version && minimumVersion == "" && record["phase"] == string(scenario.phase) && record["code"] == string(scenario.code) && record["correlation_id"] == op.OperationId
 				}
 			}
 			if !observed {

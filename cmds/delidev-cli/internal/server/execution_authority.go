@@ -359,7 +359,21 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				if err != nil || job.Type != domain.CompactSessionJob || job.InstanceID != grant.InstanceID || job.AssignedDeviceID != grant.DeviceID || domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.ActionID != scope.ExecutionID || input.Completion.NativeTurnID != scope.CompactionSourceTurn {
 					return nil, executionDenied()
 				}
-				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: input.Assignment.Installation.Version, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
+				version := input.Assignment.Installation.Version
+				if input.Assignment.Version == 4 {
+					// Read the completed source's retained readiness, not current
+					// discovery or the compaction process's independent identity.
+					source, err := tx.Get(domain.JobKind, input.SourceJobID)
+					if err != nil {
+						return nil, err
+					}
+					sourceJob, err := store.Decode[domain.Job](source)
+					if err != nil || source.SessionID != scope.SessionID || sourceJob.Startup == nil || sourceJob.Startup.JobID != input.SourceJobID || sourceJob.Startup.ExecutionID != input.Assignment.ExecutionID || sourceJob.Startup.Ready == nil || sourceJob.Startup.Ready.Validate() != nil {
+						return nil, executionDenied()
+					}
+					version = sourceJob.Startup.Ready.NativeVersion
+				}
+				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: version, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
 				id, replayed, err := tx.PutResponseUsage(request, record)
 				return struct {
 					ID       domain.ID

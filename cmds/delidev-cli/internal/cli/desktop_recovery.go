@@ -19,7 +19,6 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -313,7 +312,7 @@ func desktopOwner(ctx context.Context, o options) (client, domain.ID, error) {
 	if err != nil {
 		return client{}, "", err
 	}
-	endpoint, err := server.LoadEndpoint(o.dataDir)
+	endpoint, err := localEndpoint(o)
 	if err != nil {
 		return client{}, "", err
 	}
@@ -324,7 +323,7 @@ func desktopOwner(ctx context.Context, o options) (client, domain.ID, error) {
 	if endpoint.Version != rpc.Version || endpoint.ProtocolVersion != rpc.ProtocolVersion {
 		return client{}, "", domain.Fail(domain.Unsupported, "The local server is incompatible.", "Use its matching desktop client.")
 	}
-	c, err := connectClient(options{dataDir: o.dataDir, server: endpoint.URL, tokenStdin: true}, strings.NewReader(identity.Token))
+	c, err := connectClient(options{dataDir: o.dataDir, server: endpoint.URL, tokenStdin: true, desktop: o.desktop}, strings.NewReader(identity.Token))
 	if err != nil {
 		return client{}, "", err
 	}
@@ -394,8 +393,11 @@ func desktopRecoveryCommand(ctx context.Context, o options, args []string) (any,
 	if err != nil {
 		return nil, err
 	}
-	if record != nil && (record.ServerID != serverID || record.Endpoint != c.endpoint) {
+	if record != nil && (record.ServerID != serverID || !localEndpointMatches(o, record.ServerID, record.Endpoint, c.endpoint)) {
 		return nil, recoveryRequired()
+	}
+	if record != nil && o.desktop != nil {
+		c.endpoint = record.Endpoint
 	}
 	root := filepath.Join(o.dataDir, "desktop-client")
 	if id == nil {
@@ -413,7 +415,7 @@ func desktopRecoveryCommand(ctx context.Context, o options, args []string) (any,
 		if err != nil {
 			return nil, err
 		}
-		if saved.Type != domain.ClientDevice || saved.ServerID != serverID || saved.Endpoint != c.endpoint {
+		if saved.Type != domain.ClientDevice || saved.ServerID != serverID || !localEndpointMatches(o, saved.ServerID, saved.Endpoint, c.endpoint) {
 			return nil, recoveryRequired()
 		}
 		if record != nil {
@@ -493,7 +495,7 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 		if err != nil {
 			return nil, err
 		}
-		if saved.Type != domain.ClientDevice || saved.ServerID != serverID || saved.Endpoint != c.endpoint || saved.DeviceID != id {
+		if saved.Type != domain.ClientDevice || saved.ServerID != serverID || !localEndpointMatches(o, saved.ServerID, saved.Endpoint, c.endpoint) || saved.DeviceID != id {
 			return nil, recoveryRequired()
 		}
 		if err := verifyOriginalDesktopPairing(o.dataDir, root, saved); err != nil {
@@ -676,7 +678,7 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 	if err != nil {
 		return nil, err
 	}
-	if saved.Type != domain.ClientDevice || saved.ServerID != serverID || saved.Endpoint != c.endpoint || saved.DeviceID == id {
+	if saved.Type != domain.ClientDevice || saved.ServerID != serverID || !localEndpointMatches(o, saved.ServerID, saved.Endpoint, c.endpoint) || saved.DeviceID == id {
 		return nil, recoveryRequired()
 	}
 	// A successful PairDevice receipt alone cannot restore a subsequently revoked
@@ -739,7 +741,7 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 }
 
 func verifyDesktopCredential(ctx context.Context, o options, saved worker.Credential) error {
-	paired, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true}, strings.NewReader(saved.Token))
+	paired, err := connectClient(options{dataDir: o.dataDir, server: saved.Endpoint, tokenStdin: true, desktop: o.desktop}, strings.NewReader(saved.Token))
 	if err != nil {
 		return err
 	}

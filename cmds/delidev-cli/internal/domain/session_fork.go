@@ -6,19 +6,20 @@ import "encoding/json"
 // ForkOrigin is a retained boundary, never an executable copy of source input.
 // Snapshot remains immutable even before the child's first explicit input.
 type ForkOrigin struct {
-	SidechatParentSnapshot *InitialExecution `json:"sidechat_parent_snapshot,omitempty"`
-	SourceSessionID        ID                `json:"source_session_id"`
-	SourceRevision         uint64            `json:"source_revision"`
-	SourceExecutionID      ID                `json:"source_execution_id"`
-	SourceTurnID           NativeIdentity    `json:"source_turn_id"`
-	JobID                  ID                `json:"job_id"`
-	RuntimeID              ID                `json:"runtime_id"`
-	NativeThreadID         NativeIdentity    `json:"native_thread_id"`
-	NativeTurnID           NativeIdentity    `json:"native_turn_id,omitempty"`
-	CheckpointDigest       string            `json:"checkpoint_digest"`
-	Snapshot               InitialExecution  `json:"snapshot"`
-	WorkerDeviceID         ID                `json:"worker_device_id"`
-	JobInputDigest         string            `json:"job_input_digest"`
+	Startup                *ExecutionStartupSelection `json:"startup,omitempty"`
+	SidechatParentSnapshot *InitialExecution          `json:"sidechat_parent_snapshot,omitempty"`
+	SourceSessionID        ID                         `json:"source_session_id"`
+	SourceRevision         uint64                     `json:"source_revision"`
+	SourceExecutionID      ID                         `json:"source_execution_id"`
+	SourceTurnID           NativeIdentity             `json:"source_turn_id"`
+	JobID                  ID                         `json:"job_id"`
+	RuntimeID              ID                         `json:"runtime_id"`
+	NativeThreadID         NativeIdentity             `json:"native_thread_id"`
+	NativeTurnID           NativeIdentity             `json:"native_turn_id,omitempty"`
+	CheckpointDigest       string                     `json:"checkpoint_digest"`
+	Snapshot               InitialExecution           `json:"snapshot"`
+	WorkerDeviceID         ID                         `json:"worker_device_id"`
+	JobInputDigest         string                     `json:"job_input_digest"`
 }
 
 type ForkJobInput struct {
@@ -135,6 +136,9 @@ func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 
 // Validate checks the child-owned publication seed without reopening its parent.
 func (f ForkOrigin) Validate() error {
+	if f.Startup != nil && (f.Startup.Validate(f.Snapshot.Configuration.Harness) != nil || f.Startup.ExecutableSHA256 == "") {
+		return Fail(RecoveryRequired, "The child lost its original executable selection.", "Preserve the child-owned Fork seed.")
+	}
 	if f.Snapshot.Configuration.SidechatPolicy != "" || f.SidechatParentSnapshot != nil {
 		if f.SidechatParentSnapshot == nil || f.SidechatParentSnapshot.Configuration.SidechatPolicy != "" {
 			return SidechatUnavailable()

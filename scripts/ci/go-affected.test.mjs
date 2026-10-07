@@ -111,7 +111,7 @@ func TestHelper(t *testing.T) {
         return result;
       } });
       assert.deepEqual(events.find((event) => event.event === "ci_go_affected").packages, selected);
-      if (shard === GoTestShard.Core) {
+      if (shard === GoTestShard.Core && process.platform === "win32") {
         const compilation = calls.find((call) => call.args.includes("-c"));
         assert.equal(compilation.result.status, 0, compilation.result.stderr);
         assert.deepEqual(compilation.args, ["test", "-c", "-o", process.platform === "win32" ? "NUL" : "/dev/null", ...selected]);
@@ -142,9 +142,13 @@ func TestHelper(t *testing.T) {
     }
   }
 
-  // A warm compile-only call still reuses Go's compiled objects. -x exposes
-  // tool execution without changing source or deleting any cached objects.
-  const compilation = go(["test", "-x", "-c", "-o", process.platform === "win32" ? "NUL" : "/dev/null", ...selected]);
+  // Unix shards no longer precompile. Seed the compile-only test-main artifact
+  // explicitly before checking that repeated compilation reuses its objects.
+  // -x exposes tool execution without changing source or deleting cache entries.
+  const compileArgs = ["test", "-c", "-o", process.platform === "win32" ? "NUL" : "/dev/null", ...selected];
+  const seedCompilation = go(compileArgs);
+  assert.equal(seedCompilation.status, 0, seedCompilation.stderr);
+  const compilation = go(["test", "-x", ...compileArgs.slice(1)]);
   assert.equal(compilation.status, 0, compilation.stderr);
   assert.doesNotMatch(compilation.stderr, /[/\\]compile(?:\.exe)?(?:"|\s)/u);
 });
@@ -298,7 +302,7 @@ test("empty affected Windows shards succeed without compiling or running fixture
   assert.equal(await runGoTests(GoTestShard.Workspace, emptyWorkspace.options), 0);
   assert.ok(!emptyWorkspace.calls.some((call) => call.args[0] === "test"));
   const workspace = mock({}, "cmds/delidev-cli/internal/workspace/claim_test.go");
-  assert.equal(await runGoTests(GoTestShard.Workspace, workspace.options), 0);
+  assert.equal(await runGoTests(GoTestShard.Workspace, { ...workspace.options, platform: "win32" }), 0);
   assert.deepEqual(workspace.calls.at(-1).args, ["test", "-count=1", "-json", "-p=1", "-timeout=45m", path("cmds/delidev-cli/internal/workspace")]);
   const worker = mock();
   assert.equal(await runGoTests(GoTestShard.Worker, { ...worker.options, platform: "win32" }), 0);
@@ -440,4 +444,49 @@ func TestExpected(t *testing.T) { if expected == "" { t.Fatal("empty expected") 
   write(`${harness}/opencode/testdata/moved.json`, "bad");
   const head = commit();
   assert.deepEqual(affectedGoPackages({ base, head, cwd, log() {} }).packages, [path(harness), path(`${harness}/grok`), path(`${harness}/opencode`)].sort());
+});
+
+test("exact AGENTS.md metadata does not widen Go selection, including deletions and shared CI directories", () => {
+  for (const name of ["AGENTS.md", ".github/AGENTS.md", "scripts/ci/AGENTS.md", "cmds/delidev-cli/internal/worker/AGENTS.md"]) {
+    for (const status of ["A", "M", "D", "T"]) assert.deepEqual(affected(name, status), []);
+    const source = changes("cmds/delidev-cli/internal/apiproxy/proxy.go");
+    assert.deepEqual(selectAffected(inventory, [...source, ...changes(name)]).packages, selectAffected(inventory, source).packages);
+  }
+  assert.deepEqual(affected("cmds/delidev-cli/internal/worker/OTHER.md"), inventory.slice(0, 6).map((item) => item.path).sort());
+});
+
+test("actual AGENTS.md embeds retain production and test ownership", () => {
+  const name = "cmds/delidev-cli/internal/worker/AGENTS.md";
+  const embedded = inventory.map((item) => ({ ...item, embedFiles: item.directory.endsWith("/apiproxy") ? [name] : [] }));
+  assert.deepEqual(selectAffected(embedded, changes(name)).packages, affected("cmds/delidev-cli/internal/apiproxy/proxy.go"));
+  const testEmbedded = inventory.map((item) => ({ ...item, testEmbedFiles: item.directory.endsWith("/apiproxy") ? [name] : [] }));
+  assert.deepEqual(selectAffected(testEmbedded, changes(name)).packages, [path("cmds/delidev-cli/internal/apiproxy")]);
+  assert.deepEqual(selectAffected(embedded, changes(name, "D")).packages, inventory.slice(0, 6).map((item) => item.path).sort());
+});
+
+test("Ubuntu affected and forced shards execute the selection exactly once and report empty shards", async () => {
+  const shards = Object.values(GoTestShard).filter((shard) => shard !== GoTestShard.All);
+  for (const selectedPath of ["cmds/delidev-cli/internal/apiproxy/proxy.go", "go.mod", "cmds/delidev-cli/internal/worker/AGENTS.md"]) {
+    const selected = affected(selectedPath);
+    const executed = [];
+    for (const shard of shards) {
+      const fixture = mock({}, selectedPath);
+      const reports = [];
+      assert.equal(await runGoTests(shard, { ...fixture.options, platform: "linux", saveReport: (_, report) => reports.push(report) }), 0);
+      const tests = fixture.calls.filter((call) => call.command === "go" && call.args[0] === "test");
+      const expected = selected.filter((name) => shardForPackage(name) === shard);
+      assert.equal(reports.length, 1);
+      assert.equal(reports[0].exitCode, 0);
+      if (expected.length === 0) {
+        assert.equal(tests.length, 0);
+        assert.equal(fixture.events.at(-1).event, "ci_go_test_empty");
+      } else {
+        assert.equal(tests.length, 1);
+        assert.deepEqual(tests[0].args, ["test", "-count=1", "-json", "-timeout=20m", ...expected]);
+        executed.push(...tests[0].args.slice(4));
+      }
+    }
+    assert.deepEqual(executed.sort(), selected);
+    assert.equal(new Set(executed).size, executed.length);
+  }
 });

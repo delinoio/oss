@@ -63,7 +63,7 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 		t.Fatal("PR planning lost exact head/fork, companion policy, primary cwd or account selection")
 	}
 	rollback := domain.Fail(domain.Conflict, "Discard negative planning fixture.", "No test changes are committed.")
-	for _, name := range []string{"missing-agent", "missing-machine", "foreign-project", "project-agent-denied", "project-account-denied", "missing-remote-url", "disabled-worker", "disconnected-worker", "missing-validation", "wrong-native-version", "read-only-agent"} {
+	for _, name := range []string{"missing-agent", "missing-machine", "foreign-project", "project-agent-denied", "project-account-denied", "missing-remote-url", "disabled-worker", "disconnected-worker", "missing-validation", "read-only-agent"} {
 		t.Run(name, func(t *testing.T) {
 			_, err := f.service.Store.Mutate(owner, domain.NewID(), "fixture.rejected-pr-plan", name, func(tx *store.Tx) (any, error) {
 				selected, original := policy, target
@@ -104,7 +104,7 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 					if _, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", v); err != nil {
 						return nil, err
 					}
-				case "disabled-worker", "wrong-native-version":
+				case "disabled-worker":
 					r, err := tx.Get(domain.MachineKind, policy.MachineID)
 					if err != nil {
 						return nil, err
@@ -113,13 +113,7 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 					if err != nil {
 						return nil, err
 					}
-					if name == "disabled-worker" {
-						v.Disabled = true
-					} else {
-						for i := range v.Installations {
-							v.Installations[i].Version = "unverified"
-						}
-					}
+					v.Disabled = true
 					if _, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", v); err != nil {
 						return nil, err
 					}

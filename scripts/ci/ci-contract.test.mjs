@@ -639,8 +639,8 @@ test("Go validation consumes the planned event matrix and retains five native Wi
   const embeds = namedStep(job, "Generate and verify embedded administrator assets");
   for (const name of ["devhud-admin", "async-commit-hook"]) assert.ok(jobTaskGraph(job).has(`${name}#build:embedded`));
   assert.ok(job.steps.indexOf(embeds) < job.steps.indexOf(namedStep(job, "Run go test")));
-  assert.equal(step(job, "ci-go").with["cache-scope"], "${{ format('go-test-{0}', matrix.shard) }}");
-  assert.equal(step(job, "ci-go").with["cache-fallback-scope"], "${{ matrix.shard == 'workspace' && 'go-test-worker' || '' }}");
+  assert.equal(step(job, "ci-go").with["cache-scope"], "${{ matrix.os == 'ubuntu-latest' && 'go-test-all' || format('go-test-{0}', matrix.shard) }}");
+  assert.equal(step(job, "ci-go").with["cache-fallback-scope"], "${{ matrix.os == 'windows-latest' && matrix.shard == 'workspace' && 'go-test-worker' || '' }}");
   const summary = namedStep(job, "Summarize Go test timings");
   assert.ok(summary.if.includes("always()"));
   assert.ok(summary.run.includes("go-test-report.mjs --summary"));
@@ -667,7 +667,6 @@ test("scoped Go caches preserve default keys and restore shared main caches on f
   assert.equal(action.outputs["cache-key"].value, "${{ steps.restore.outputs.cache-primary-key }}");
 });
 
-
 test("Forge retains three-platform interoperability and mandatory Linux rendering", () => {
   assert.deepEqual(workflow.jobs["forge-test"].strategy.matrix.os, ["ubuntu-latest", "macos-latest", "windows-latest"]);
   const testCommands = jobCommands(workflow.jobs["forge-test"]);
@@ -676,7 +675,6 @@ test("Forge retains three-platform interoperability and mandatory Linux renderin
   assert.match(renderCommands, /libreoffice-impress poppler-utils/u);
   assert.match(renderCommands, /--test render -- --ignored/u);
 });
-
 
 test("React Forge validates its supported runtime without scene-specific CI tests", () => {
   const job = workflow.jobs["react-forge"];
@@ -764,7 +762,6 @@ test("Rust CI consumes one verified prebuilt selection and gates native preparat
   assert.ok(jobCommands(workflow.jobs["rust-fmt"]).includes("cargo fmt --all --check"));
 });
 
-
 test("Go selection preserves exact comparisons and keeps quality validation unchanged", () => {
   for (const id of ["go-test", "go-quality"]) {
     const job = workflow.jobs[id];
@@ -837,4 +834,17 @@ test("DeliDev desktop phases partition all tests and preserve uncached executabl
   for (const name of ["test:unit:1", "test:unit:2", "test:integration:1", "test:integration:2", "typecheck", "test:widget", "ci:qa", "build:frontend"]) assert.ok(phases.has(`delidev-desktop#${name}`), name);
   for (const id of ["delidev-client", "delidev-frontend"]) assert.ok(jobCommands(workflow.jobs[id]).includes("ci:delidev:fixture"));
 
+});
+
+test("PR Ubuntu shards reuse the main all cache and Windows alone restores the workspace fallback", () => {
+  const inputs = step(workflow.jobs["go-test"], "ci-go").with;
+  for (const event of Object.values(Event)) {
+    for (const matrix of matricesForEvent(event).goTestMatrix.include) {
+      const evaluate = (value) => runInNewContext(value.slice(3, -2), {
+        matrix, format: (pattern, value) => pattern.replace("{0}", value),
+      });
+      assert.equal(evaluate(inputs["cache-scope"]), matrix.os === "ubuntu-latest" ? "go-test-all" : `go-test-${matrix.shard}`);
+      assert.equal(evaluate(inputs["cache-fallback-scope"]), matrix.os === "windows-latest" && matrix.shard === "workspace" ? "go-test-worker" : "");
+    }
+  }
 });
