@@ -140,6 +140,53 @@ it("labels a new applied time scope while its result is still loading", async ()
   expect(screen.getByRole("status").textContent).toBe("Loading token usage…");
 });
 
+function emptyTotals() {
+  const empty = { knownTotal: "", measuredResponses: 0, unavailableResponses: 0 };
+  return create(UsageTotalsSchema, { responses: 0, total: empty, input: empty, output: empty, cachedInput: empty, cacheWriteInput: empty, reasoningOutput: empty });
+}
+
+it.each([[0, 0], [12, 0], [0, 3]])("shows six empty recorded summary zeros while preserving missing execution=%s and compaction=%s coverage", async (executions, compactions) => {
+  const f = fixture();
+  f.data.groups = [];
+  f.data.totals = emptyTotals();
+  f.data.acceptedExecutionsWithoutResponse = executions;
+  f.data.acceptedCompactionsWithoutResponse = compactions;
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  const summary = screen.getByRole("region", { name: "Known token totals" });
+  expect([...summary.querySelectorAll("dd")].map((value) => value.textContent)).toEqual(Array(6).fill("0"));
+  expect(within(summary).getAllByText("0 measured · 0 unavailable responses")).toHaveLength(6);
+  expect(screen.getByText(new RegExp(`${executions} accepted executions`))).toBeTruthy();
+  expect(screen.getByText(new RegExp(`${compactions} native context actions`))).toBeTruthy();
+  expect(f.data.totals.total!.knownTotal).toBe("");
+  expect(f.data.totals.total!.measuredResponses).toBe(0);
+  f.read.mockRejectedValueOnce(new ConnectError("Fixture unavailable", Code.Unavailable));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByText(/These are the last successfully retrieved values/);
+  expect([...summary.querySelectorAll("dd")].map((value) => value.textContent)).toEqual(Array(6).fill("0"));
+  expect(screen.getByText(/Stale values from the last successful/)).toBeTruthy();
+});
+
+it.each(["missing measure", "unavailable count", "measured count", "nonempty subtotal", "malformed subtotal", "recorded response"])("does not apply the empty summary exception with %s", async (invalid) => {
+  const f = fixture();
+  f.data.groups = [];
+  const totals = emptyTotals();
+  if (invalid === "missing measure") totals.reasoningOutput = undefined;
+  if (invalid === "unavailable count") totals.reasoningOutput!.unavailableResponses = 1;
+  if (invalid === "measured count") totals.reasoningOutput!.measuredResponses = 1;
+  if (invalid === "nonempty subtotal") totals.reasoningOutput!.knownTotal = "0";
+  if (invalid === "malformed subtotal") totals.reasoningOutput!.knownTotal = "invalid";
+  if (invalid === "recorded response") {
+    totals.responses = 1;
+    for (const key of ["total", "input", "output", "cachedInput", "cacheWriteInput", "reasoningOutput"] as const) totals[key]!.unavailableResponses = 1;
+  }
+  f.data.totals = totals;
+  render(f.view());
+  await screen.findByText("Incomplete coverage");
+  const summary = screen.getByRole("region", { name: "Known token totals" });
+  expect([...summary.querySelectorAll("dd")].map((value) => value.textContent)).toEqual(Array(6).fill("Unavailable"));
+});
+
 it("does not invent zero for empty telemetry and marks retained data stale after a failed refresh", async () => {
   const f = fixture(); f.data.groups = []; f.data.totals = undefined;
   render(f.view());
@@ -172,6 +219,10 @@ it("renders daily zero, unavailable and empty evidence with keyboard detail and 
   render(f.view());
   await screen.findByRole("group", { name: /Daily usage chart/ });
   const daily = screen.getByRole("group", { name: /Daily usage chart/ });
+  const points = daily.querySelectorAll("circle");
+  expect(points).toHaveLength(2); // No marker for the empty third day.
+  expect(points[0].getAttribute("cy")).toBe(points[1].getAttribute("cy")); // Measured zero is on the baseline.
+  expect(points[0].classList.contains("usage-point-unavailable")).toBe(false);
   fireEvent.focus(daily);
   expect(screen.getByText(/0 known tokens/)).toBeTruthy();
   fireEvent.keyDown(daily, { key: "ArrowRight" });
