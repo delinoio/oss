@@ -37,7 +37,7 @@ const readReactForgeRecovery = (file) => file === "packages/react-forge/package.
 const bot = { name: "delino-release-bot[bot]", email: "123+delino-release-bot[bot]@users.noreply.github.com" };
 const revision = "1".repeat(40);
 const identity = { project: Project.Binpm, revision, tag: "binpm@v1.2.3" };
-const absent = async () => ({ status: 404 });
+const absent = async (route) => route.includes("/releases?") ? { status: 200, body: [] } : { status: 404 };
 
 for (const project of Object.values(Project)) for (const bump of Object.values(Bump)) {
   test(`${project} ${bump} changes only the selected version sources`, () => {
@@ -299,6 +299,7 @@ test("Preflight rejects existing releases, tags and uncertain API results", asyn
   await preflightVersion(identity, absent);
   for (const status of [200, 403, 500]) await assert.rejects(preflightVersion(identity, async (route) => route.includes("/git/") ? { status: 404 } : { status }));
   await assert.rejects(preflightVersion(identity, async () => ({ status: 200, body: { object: { type: "commit", sha: revision } } })), /already exists/u);
+  await assert.rejects(preflightVersion(identity, async (route) => route.includes("/git/") || route.includes("/releases/tags/") ? { status: 404 } : { status: 200, body: [{ id: 1, tag_name: identity.tag }] }), /already exists/u);
   await assert.rejects(tagRevision(identity.tag, async () => ({ status: 403 })), /ownership/u);
   assert.equal(await tagRevision(identity.tag, async (route) => ({ status: 200, body: { object: { type: route.includes("/git/tags/") ? "commit" : "tag", sha: revision } } })), revision);
 });

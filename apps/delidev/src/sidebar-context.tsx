@@ -6,13 +6,14 @@ interface SidebarOutlet {
   target: HTMLElement | null;
   closeDrawer: () => void;
   drawerOpen: boolean;
+  openDrawer?: () => void;
 }
 
 const SidebarOutletContext = createContext<SidebarOutlet>({ target: null, closeDrawer: () => undefined, drawerOpen: false });
 
-export function SidebarOutletProvider({ target, closeDrawer, drawerOpen, children }: SidebarOutlet & { children: ReactNode }) {
+export function SidebarOutletProvider({ target, closeDrawer, drawerOpen, openDrawer, children }: SidebarOutlet & { children: ReactNode }) {
   useLocale();
-  return <SidebarOutletContext.Provider value={{ target, closeDrawer, drawerOpen }}>{children}</SidebarOutletContext.Provider>;
+  return <SidebarOutletContext.Provider value={{ target, closeDrawer, drawerOpen, openDrawer }}>{children}</SidebarOutletContext.Provider>;
 }
 
 export function SidebarSurface({ active, title, children, className = "" }: { active: boolean; title: string; children: ReactNode; className?: string }) {
@@ -32,3 +33,4 @@ export function useCloseSidebarDrawer() {
 export function useSidebarDrawerOpen() {
   return useContext(SidebarOutletContext).drawerOpen;
 }
+export function useOpenSidebarDrawer() { return useContext(SidebarOutletContext).openDrawer ?? (() => undefined); }

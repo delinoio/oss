@@ -8,7 +8,7 @@ export interface SettingsTaskPresentation { title: string; size: SettingsDialogS
 export interface SettingsTaskContextValue {
   visible: boolean;
   dismiss: () => void;
-  dismissWithClose: (idleClose: () => void) => void;
+  dismissWithClose: (idleClose: () => void, force?: boolean) => void;
   actions: HTMLElement | null;
   stepTarget: HTMLElement | null;
   activeStep?: string;

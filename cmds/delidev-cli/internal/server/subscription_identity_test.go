@@ -12,7 +12,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-func TestSubscriptionConfigurationRPCV2HasNoProviderDependency(t *testing.T) {
+func TestSubscriptionConfigurationRPCHasNoProviderDependency(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	ctx := transferOwner()
 	save := func(kind domain.Kind, value any, version uint32) *pb.Resource {

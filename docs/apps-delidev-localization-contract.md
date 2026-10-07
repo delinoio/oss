@@ -18,7 +18,8 @@ native presentation. Swift/Foundation and WidgetKit own widget rendering.
 
 ## Users and Operators
 
-Users select System, English or 한국어 in Settings → Appearance → Language.
+Users select Follow system, English - English or Korean - 한국어 in
+Settings → Appearance → Language. The system entry uses the current UI language.
 The fresh-install default is System. The preference belongs to this computer,
 independent of account, selected server, connection state and Settings visits.
 Every authorized live app window updates immediately; newly opened windows and
@@ -68,8 +69,38 @@ never replaces original evidence or creates retry permission.
 
 The Appearance category retains all 17 existing categories, theme choices,
 colors, navigation and visit lifetime. A divider below Theme introduces Language.
-Use a native select at most 320 CSS pixels wide and at least 40 pixels tall, with
-full available width below 640 pixels. Korean help is “기본값은 시스템 언어입니다.
+Use an editable search combobox at most 320 CSS pixels wide and at least 40 pixels
+tall, with 8-pixel corners and full available width below 640 pixels. Keep System
+first, then sort languages by their stable English names, independently of UI
+language. Show each language as “English name - native name”, including
+“English - English” and “Korean - 한국어”. System is “Follow system” in English and
+“시스템 설정 따르기” in Korean.
+
+The closed input shows the committed label. Opening the input or its chevron
+starts an empty search with the complete ordered list. Match English and native
+name substrings after trimming and case folding; filtering retains the same
+order. Typing highlights the first match but grants no save. Arrow navigation
+stops at either end; click or Enter confirms one supported enum. Reselecting the
+committed value performs no write. Escape, Tab, outside pointer interaction and
+blur discard search without saving. Ignore confirmation/navigation keys during
+IME composition, including legacy key code 229. An unmatched query shows a
+localized status and cannot become a preference.
+
+Keep DOM focus on the labeled input with combobox/listbox/option semantics,
+`aria-autocomplete="list"`, expansion/control relationships and active-descendant
+navigation. The list and chevron do not add Tab stops. Mark the committed option
+with a decorative check and accessible saved-value description. Search help is
+available to assistive technology. Place the list 4 pixels below the input in
+document flow, at the same width, with 40-pixel minimum rows and a 280-pixel
+scrolling cap. Use existing semantic theme colors and ordinary input boundaries;
+the shared input focus treatment remains unchanged.
+
+Search/open/highlight state belongs only to the mounted Appearance presentation.
+A newer native revision closes the local search and displays the latest committed
+label without remounting or taking focus. Reads and saves lock both input and
+chevron and discard search. A pending save makes the input read-only and
+ARIA-disabled to retain browser focus; reads and recovery failures disable it.
+Korean scope help is “기본값은 시스템 언어입니다.
 변경하면 모든 DeliDev 창에 바로 적용됩니다.” Selection auto-saves; there is no
 Save button. Reading/saving locks selection and announces status. Failure retains
 the last committed value and an explicit Reload action; uncertain writes never
