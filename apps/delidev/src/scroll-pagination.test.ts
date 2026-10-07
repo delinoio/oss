@@ -95,3 +95,26 @@ it("rehydrates the prior bounded payload window after suspended scope returns", 
   expect(chain.getSnapshot().payloadPages.map(page => page.token)).toEqual(window);
   expect(chain.getSnapshot().payloadPages).toHaveLength(3);
 });
+
+it("resumes a failed refresh atomically from its exact failed accepted token", async () => {
+  const chain = new PaginationChain<Row, Payload>(); chain.activate();
+  await chain.refresh(reader); await chain.append(reader); await chain.append(reader);
+  const previous = chain.getSnapshot();
+  const refresh = vi.fn<PaginationReader<Row, Payload>>(async (token, signal) => {
+    if (token === "1") throw new ConnectError("offline", Code.Unavailable);
+    const batch = await reader(token, signal); return { ...batch, rows: batch.rows.map(row => ({ ...row, revision: 2n })) };
+  });
+  await chain.refresh(refresh);
+  expect(chain.getSnapshot().rows).toBe(previous.rows);
+  expect(chain.getSnapshot().payloadPages).toBe(previous.payloadPages);
+  const retry = vi.fn<PaginationReader<Row, Payload>>(async (token, signal) => {
+    const batch = await reader(token, signal); return { ...batch, rows: batch.rows.map(row => ({ ...row, revision: 2n })) };
+  });
+  await chain.retry(retry);
+  expect(retry.mock.calls.map(([token]) => token)).toEqual(["1", "2"]);
+  expect(chain.getSnapshot().rows.map(row => row.revision)).toEqual([2n, 2n, 2n]);
+  expect(chain.getSnapshot().payloadPages.some(page => page.token === "")).toBe(false);
+  await chain.restore("", retry);
+  expect(retry.mock.calls.at(-1)?.[0]).toBe("");
+  expect(chain.getSnapshot().payloadPages.length).toBeLessThanOrEqual(3);
+});

@@ -41,6 +41,9 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
   private active = false;
   private protectedToken?: string;
   private retainedPayloadTokens: string[] = [];
+  // Failed refresh retains only its staged display projections. Full staged
+  // responses are discarded; earlier refreshed payloads restore by exact token.
+  private pendingRefresh?: { pages: PaginationPage<Row>[]; window: string[] };
   protect(token?: string) { this.protectedToken = token; }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.snapshot;
@@ -55,7 +58,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
     this.controller = undefined;
     if (this.snapshot.loading || this.snapshot.payloadPages.length) this.publish({ ...this.snapshot, payloadPages: [], loading: undefined });
   }
-  reset() { this.suspend(); this.retainedPayloadTokens = []; this.publish(emptySnapshot<Row, Payload>()); }
+  reset() { this.suspend(); this.pendingRefresh = undefined; this.retainedPayloadTokens = []; this.publish(emptySnapshot<Row, Payload>()); }
   refresh(reader: PaginationReader<Row, Payload>) {
     if (this.snapshot.error) return Promise.resolve();
     return this.run(this.snapshot.loaded ? ReadStage.Refresh : ReadStage.Initial, "", reader);
@@ -93,18 +96,23 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
     this.publish({ ...previous, loading: stage, error: undefined });
     let currentToken = token;
     try {
-      const pages: PaginationPage<Row>[] = stage === ReadStage.Additional || retryOnly ? [...previous.pages] : [];
+      const refreshing = stage === ReadStage.Refresh;
+      const resumed = refreshing && retryOnly ? this.pendingRefresh : undefined;
+      const start = resumed?.pages.length ?? 0;
+      const pages: PaginationPage<Row>[] = resumed ? [...resumed.pages] : stage === ReadStage.Additional || retryOnly && !refreshing ? [...previous.pages] : [];
+      if (stage === ReadStage.Reload || stage === ReadStage.Initial) this.pendingRefresh = undefined;
       const payloads = new Map(previous.payloadPages.map(page => [page.token, page.payload]));
-      const refreshWindow = new Set(previous.payloadPages.length ? previous.payloadPages.map(page => page.token) : this.retainedPayloadTokens.length ? this.retainedPayloadTokens : previous.pages.slice(-3).map(page => page.token));
+      const refreshWindow = new Set(resumed?.window ?? (previous.payloadPages.length ? previous.payloadPages.map(page => page.token) : this.retainedPayloadTokens.length ? this.retainedPayloadTokens : previous.pages.slice(-3).map(page => page.token)));
       if (stage === ReadStage.Reload || stage === ReadStage.Initial) payloads.clear();
+      if (resumed) for (const page of resumed.pages) payloads.delete(page.token);
+      if (refreshing) this.pendingRefresh = { pages: [...pages], window: [...refreshWindow] };
       const retryIndex = retryOnly ? pages.findIndex((page) => page.token === token) : -1;
-      const seen = new Set((retryOnly ? pages.slice(0, Math.max(0, retryIndex)) : pages).map((page) => page.token));
+      const seen = new Set((refreshing ? pages : retryOnly ? pages.slice(0, Math.max(0, retryIndex)) : pages).map((page) => page.token));
       // Refresh the accepted request tokens verbatim. Changed boundaries,
       // including a formerly exhausted tail, require explicit Reload list.
-      const refreshing = stage === ReadStage.Refresh && !retryOnly;
-      const count = refreshing ? previous.pages.length : 1;
+      const count = refreshing ? previous.pages.length - start : 1;
       for (let index = 0; index < count; index++) {
-        const acceptedPage = refreshing ? previous.pages[index] : retryOnly ? pages[retryIndex] : undefined;
+        const acceptedPage = refreshing ? previous.pages[start + index] : retryOnly ? pages[retryIndex] : undefined;
         if (refreshing) currentToken = acceptedPage!.token;
         const batch = await reader(currentToken, controller.signal);
         if (!this.active || generation !== this.generation || controller.signal.aborted) return;
@@ -115,6 +123,7 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
         const boundaryChanged = restoredRangeChanged || acceptedPage && (Boolean(batch.nextPageToken) !== Boolean(acceptedPage.nextPageToken)
           || Boolean(acceptedPage.nextPageToken) && batch.rows.at(-1)?.id !== acceptedPage.rows.at(-1)?.id);
         if ((refreshing || retryOnly) && (!acceptedPage || boundaryChanged)) {
+          this.pendingRefresh = undefined;
           console.warn("delidev.pagination.read_failed", { stage, classification: FailureCode.CursorExpired });
           this.publish({ ...previous, loading: undefined, error: { stage, token: currentToken, failure: { code: FailureCode.CursorExpired, message: "The loaded list boundaries changed.", guidance: "Reload this list to accept a new chain." } } });
           return;
@@ -136,11 +145,13 @@ export class PaginationChain<Row extends PaginationRow, Payload = never> {
         const keep = new Set([currentToken, ...closest, ...(this.protectedToken !== undefined ? [this.protectedToken] : [])]);
         for (const key of payloads.keys()) if (!keep.has(key)) payloads.delete(key);
         }
-        if (retryOnly) pages[retryIndex] = acceptedBatch;
+        if (retryOnly && !refreshing) pages[retryIndex] = acceptedBatch;
         else pages.push(acceptedBatch);
+        if (refreshing) this.pendingRefresh = { pages: [...pages], window: [...refreshWindow] };
         if (!batch.nextPageToken) break;
         currentToken = batch.nextPageToken;
       }
+      this.pendingRefresh = undefined;
       this.retainedPayloadTokens = [...payloads.keys()];
       for (const page of pages) page.height = this.snapshot.pages.find(previousPage => previousPage.token === page.token)?.height ?? page.height;
       this.publish({ rows: uniqueRows(pages), pages, payloadPages: [...payloads].map(([token, payload]) => ({ token, payload })), loaded: true, nextPageToken: pages.at(-1)?.nextPageToken ?? "" });
