@@ -9,6 +9,12 @@ import { defaultRemediationPolicy } from "./remediation-policy";
 
 type FixRequest = MessageShape<typeof PullRequestFixQuery.requestPullRequestFix.input>;
 
+// These full-shell navigation fixtures can exceed Vitest's default on a
+// shared CI worker under concurrent frontend/build load. Keep the larger
+// deadline local to this file so product and unrelated test deadlines remain
+// unchanged.
+vi.setConfig({ testTimeout: 15000 });
+
 function fixture() {
   const repositoryId = newRequestId(), projectId = newRequestId();
   const repository = create(ResourceSchema, { id: repositoryId, kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture repository", integration_id: newRequestId(), github_owner: "fixture-owner", github_name: "repo" }) });
