@@ -930,17 +930,30 @@ mod tests {
         let root = directory.path().canonicalize().unwrap();
         let hidden = root.join("hidden");
         fs::create_dir(&hidden).unwrap();
+        symlink(root.join("missing"), hidden.join("link")).unwrap();
         fs::set_permissions(&hidden, fs::Permissions::from_mode(0o000)).unwrap();
         let target = hidden.join("input.txt");
         let denied = fs::canonicalize(&target)
             .is_err_and(|error| error.kind() == io::ErrorKind::PermissionDenied);
+        let observations: Vec<_> = [target, hidden.join("link")]
+            .into_iter()
+            .flat_map(|path| {
+                [FinalSymlink::Follow, FinalSymlink::NoFollow]
+                    .into_iter()
+                    .map(move |policy| (path.clone(), policy))
+            })
+            .map(|(path, policy)| access_path(&root, path, None, policy))
+            .collect();
+        fs::set_permissions(&hidden, fs::Permissions::from_mode(0o700)).unwrap();
         if denied {
-            for policy in [FinalSymlink::Follow, FinalSymlink::NoFollow] {
-                assert!(access_path(&root, target.clone(), None, policy)
-                    .unwrap()
-                    .is_none());
+            for observed in observations {
+                assert!(observed.unwrap().is_none());
             }
         }
-        fs::set_permissions(&hidden, fs::Permissions::from_mode(0o700)).unwrap();
+        let restored = access_path(&root, hidden.join("link"), None, FinalSymlink::NoFollow)
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.class, PathClass::Project);
+        assert!(restored.identity.is_some());
     }
 }
