@@ -7,6 +7,5 @@
   "pagination.retry": "다시 시도",
   "pagination.loadMore": "더 불러오기",
   "pagination.loadMoreLabel": "{{label}} 더 불러오기",
-  "pagination.exhausted": "불러온 {{label}}을(를) 모두 표시합니다.",
   "pagination.restore": "이전에 불러온 항목 복원"
 }

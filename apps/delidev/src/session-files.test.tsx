@@ -51,7 +51,7 @@ it("pages directory observations, exposes failures and discards content when clo
   const f = fixture(); render(<f.View />);
   await screen.findByRole("button", { name: "note.txt 42 bytes" });
   fireEvent.click(screen.getByRole("button", { name: "Load more Directory pages" }));
-  await screen.findByText("All loaded Directory pages are shown.");
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Directory pages" })).toBeNull());
   expect(screen.getByRole("button", { name: "note.txt 42 bytes" })).toBeTruthy();
   expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).page_token).toBe("page-two");
   await screen.findByRole("button", { name: "note.txt 42 bytes" });

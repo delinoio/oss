@@ -10,6 +10,7 @@ import { ResourceQuery, EntityKind } from "@delinoio/delidev-api-client";
 import { createRouterTransport } from "@connectrpc/connect";
 import { usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { type PaginationReader } from "./scroll-pagination";
+import { i18n, SupportedLanguage } from "./localization";
 
 type Row = { id: string; revision: bigint };
 afterEach(() => vi.restoreAllMocks());
@@ -30,12 +31,29 @@ it("fills an underfilled viewport serially and stops at exhaustion", async () =>
     max = Math.max(max, ++concurrent); await Promise.resolve(); concurrent--;
     return { rows: [{ id: token || "first", revision: 1n }], nextPageToken: token === "second" ? "" : "second" };
   });
-  renderValue(<List read={read} />);
+  const view = renderValue(<List read={read} />);
   await screen.findByText("second");
   expect(read.mock.calls.map(([token]) => token)).toEqual(["", "second"]);
   expect(max).toBe(1);
   expect(screen.getByText("first")).toBeTruthy();
-  expect(screen.getByText("All loaded items are shown.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Load more items" })).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(view.container.querySelector("[data-continuation=items]")).toBeTruthy();
+  fireEvent.scroll(view.container.firstElementChild!);
+  await act(async () => { await Promise.resolve(); });
+  expect(read.mock.calls.map(([token]) => token)).toEqual(["", "second"]);
+});
+it.each([SupportedLanguage.English, SupportedLanguage.Korean].flatMap(language => [true, false].map(empty => ({ language, empty }))))("retains the exhausted anchor without a completion announcement ($language, empty=$empty)", async ({ language, empty }) => {
+  await i18n.changeLanguage(language);
+  const read = vi.fn<PaginationReader<Row>>(async () => ({ rows: empty ? [] : [{ id: "accepted", revision: 1n }], nextPageToken: "" }));
+  const view = renderValue(<List read={read} />);
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  const anchor = view.container.querySelector("[data-continuation=items]");
+  expect(anchor).toBeTruthy();
+  expect(anchor?.textContent).toBe("");
+  expect(anchor?.querySelector("button")).toBeNull();
+  expect(screen.queryByText("accepted") !== null).toBe(!empty);
 });
 it("never starts an explicit read on mount or scroll", async () => {
   viewport(); const read = vi.fn<PaginationReader<Row>>(async () => ({ rows: [], nextPageToken: "" }));

@@ -62,7 +62,6 @@ export function ScrollContinuation({ query, label, root, active, showErrors = tr
     {loading && (showInitial || loading === ReadStage.Additional) ? <span role="status">{copy(loading === ReadStage.Additional ? "pagination.loadingMore" : "pagination.loading", { label })}</span> : null}
     {showErrors && error ? <><span role="status">{copy(loaded ? "pagination.previousData" : "pagination.readFailed", { label })}</span><button type="button" disabled={!active || !documentVisible || Boolean(loading)} onClick={reloadRequired ? query.reload : query.retry}>{copy(reloadRequired ? "pagination.reload" : "pagination.retry")}</button></> : null}
     {loaded && nextPageToken && !error ? <button type="button" aria-label={copy("pagination.loadMoreLabel", { label })} disabled={!allowed} onClick={append}>{copy("pagination.loadMore")}</button> : null}
-    {loaded && !nextPageToken && !loading && !error ? <span role="status">{copy("pagination.exhausted", { label })}</span> : null}
   </div>;
 }
 
