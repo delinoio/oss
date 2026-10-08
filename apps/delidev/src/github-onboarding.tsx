@@ -36,7 +36,7 @@ function replyProblem(raw: Uint8Array): Document | undefined {
   try { return object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw))); } catch { return { message: copy("github-onboarding.inspect") }; }
 }
 
-export function GitHubOnboarding({ active, close, connected }: { active: boolean; close: () => void; connected: (profile: Resource, retry?: GitHubTokenRetry, problem?: Document) => void }) {
+export function GitHubOnboarding({ active, canStart, close, connected }: { active: boolean; canStart: boolean; close: () => void; connected: (profile: Resource, retry?: GitHubTokenRetry, problem?: Document) => void }) {
   useLocale();
   const transport = useTransport(), opening = useSettingsOpening();
   const client = useMemo(() => createClient(IntegrationService, transport), [transport]);
@@ -69,7 +69,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
   }, [active, busy, stage]);
 
   const verify = async () => {
-    if (!active || working.current || saveUncertain || !tokenValid(token)) return;
+    if (!active || !canStart || working.current || saveUncertain || !tokenValid(token)) return;
     working.current = true; setBusy(true); setError(undefined); setMessage(""); clearSecrets();
     const original = ++epoch.current, requestId = newRequestId(), controller = new AbortController();
     request.current = controller;
@@ -102,7 +102,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
   const nameBytes = new TextEncoder().encode(name).length;
   const nameValid = Boolean(name.trim()) && nameBytes <= 160;
   const save = async (retry = false) => {
-    if (!active || working.current || (retry ? !originalSave.current : saveUncertain || !secret.current || !identity || !ownerValid || !nameValid)) return;
+    if (!active || working.current || (retry ? !originalSave.current : !canStart || saveUncertain || !secret.current || !identity || !ownerValid || !nameValid)) return;
     working.current = true; setBusy(true); setError(undefined); setMessage("");
     const original = ++epoch.current;
     const bytes = secret.current;
@@ -146,9 +146,9 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
       <form onSubmit={event => { event.preventDefault(); void verify(); }}>
         <fieldset disabled={busy}><label>{copy("github-onboarding.token")}<input ref={tokenInput} type="password" autoComplete="off" spellCheck={false} maxLength={512} value={token} onChange={event => setToken(event.target.value)} placeholder={copy("github-onboarding.placeholder")} /></label><p>{copy("github-onboarding.help")}</p></fieldset>
         {busy ? <p role="status">{copy("github-onboarding.verifying")}</p> : null}{message ? <p role="alert">{message}</p> : null}<Problem error={error} />
-        <div className="actions"><button className="primary" disabled={busy || !tokenValid(token)}>{copy("github-onboarding.verify")}</button><SettingsTaskDismissButton type="button" onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
+        <div className="actions"><button className="primary" disabled={!canStart || busy || !tokenValid(token)}>{copy("github-onboarding.verify")}</button><SettingsTaskDismissButton type="button" onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
       </form>
-      <GitHubDraftTokenForm changeKind={setKind} active={active} disabled={busy} />
+      <GitHubDraftTokenForm changeKind={setKind} active={active} disabled={!canStart || busy} />
       <p className="integration-storage-note">{copy("github-onboarding.savedOnly")}</p>
     </> : <form onSubmit={event => { event.preventDefault(); void save(); }}>
       <p className="integration-verified">{copy("github-onboarding.authenticated")} <strong>{identity?.login}</strong></p>
@@ -161,7 +161,7 @@ export function GitHubOnboarding({ active, close, connected }: { active: boolean
       </fieldset>
       {busy ? <p role="status">{copy("github-onboarding.saving")}</p> : null}<Problem error={error} />
       {saveUncertain ? <p role="status">{copy("github-onboarding.uncertain")}</p> : null}
-      <div className="actions"><button className="primary" disabled={busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>{copy("github-onboarding.save")}</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>{copy("github-onboarding.retry")}</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>{copy("github-onboarding.back")}</button><SettingsTaskDismissButton type="button" disabled={busy || saveUncertain} onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
+      <div className="actions"><button className="primary" disabled={!canStart || busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>{copy("github-onboarding.save")}</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>{copy("github-onboarding.retry")}</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>{copy("github-onboarding.back")}</button><SettingsTaskDismissButton type="button" disabled={busy || saveUncertain} onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
       <p className="integration-storage-note">{copy("github-onboarding.storage")}</p>
     </form>}
     <p className="integration-access-note">{copy("github-onboarding.access")}</p>

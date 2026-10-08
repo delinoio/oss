@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
+import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -7,6 +8,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest";
 import { EntityKind, GitHubTokenIdentityState as State, GitHubTokenKind, IntegrationService, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type InspectGitHubTokenRequest, type SaveIntegrationProfileRequest, type ReplaceIntegrationTokenRequest } from "@delinoio/delidev-api-client";
 import { Integrations } from "./integrations";
+import { App } from "./App";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 import { githubDraftTokenFormURL } from "./github-opening";
@@ -22,8 +24,9 @@ function fixture() {
   const inspect = vi.fn(async (request: InspectGitHubTokenRequest): Promise<{ requestId: string; state: State; identity?: { id: string; nodeId: string; login: string }; problemJson: Uint8Array }> => ({ requestId: request.requestId, state: State.VERIFIED, identity: { id: "17", nodeId: "U_17", login: "fixture-user" }, problemJson: new Uint8Array() }));
   const save = vi.fn(async (request: SaveIntegrationProfileRequest) => { saved = true; profile = create(ResourceSchema, { ...profile, documentJson: request.documentJson }); return { requestId: request.mutation!.requestId, profile }; });
   const replace = vi.fn(async (request: ReplaceIntegrationTokenRequest) => ({ requestId: request.mutation!.requestId, profile, problemJson: new Uint8Array() }));
+  const status = vi.fn(async () => ({ capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] }));
   const router = createRouterTransport(r => {
-    r.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] }) });
+    r.service(SystemService, { getStatus: status });
     r.service(ResourceService, { listResources: () => ({ resources: saved ? [profile] : [] }), getResource: () => ({ resource: profile }) });
     r.service(IntegrationService, {
       inspectGitHubToken: inspect, saveIntegrationProfile: save, replaceIntegrationToken: replace,
@@ -42,8 +45,157 @@ function fixture() {
   const verify = async () => { fireEvent.change(screen.getByLabelText("GitHub personal access token"), { target: { value: "fixture-pat" } }); fireEvent.click(screen.getByRole("button", { name: "Verify token" })); return await screen.findByLabelText("Profile name") as HTMLInputElement; };
   const owner = () => fireEvent.change(screen.getByLabelText("Resource owner"), { target: { value: "example-org" } });
   const erased = () => { for (const bytes of buffers) expect([...bytes]).toEqual(Array(bytes.length).fill(0)); };
-  return { inspect, save, replace, client, view, enter, verify, owner, erased, buffers };
+  return { inspect, save, replace, status, transport, client, view, enter, verify, owner, erased, buffers };
 }
+
+it("retains a verified draft and focus across failed support reads and explicit read recovery", async () => {
+  const f = fixture(); render(<StrictMode>{f.view()}</StrictMode>); await f.enter(); const name = await f.verify(); f.owner();
+  fireEvent.change(name, { target: { value: "Retained team" } });
+  const owner = screen.getByLabelText("Resource owner") as HTMLInputElement;
+  owner.focus();
+  f.status.mockRejectedValue(new ConnectError("private-support-text", Code.Unavailable));
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  await screen.findByRole("button", { name: "Retry current read" });
+  expect(screen.getByLabelText("Profile name")).toBe(name); expect(name.value).toBe("Retained team");
+  expect(owner.value).toBe("example-org"); expect(document.activeElement).toBe(owner);
+  expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+  expect(screen.queryByText("private-support-text")).toBeNull();
+  expect((screen.getByRole("button", { name: "Save and connect" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(f.save).not.toHaveBeenCalled(); expect(f.inspect).toHaveBeenCalledTimes(1);
+  let release!: () => void;
+  f.status.mockImplementation(async () => { await new Promise<void>(resolve => { release = resolve; }); return { capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] }; });
+  fireEvent.click(screen.getByRole("button", { name: "Retry current read" }));
+  await waitFor(() => expect(release).toBeTypeOf("function")); owner.focus();
+  await act(async () => { release(); });
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry current read" })).toBeNull());
+  expect(screen.getByLabelText("Profile name")).toBe(name); expect(document.activeElement).toBe(owner);
+  expect((screen.getByRole("button", { name: "Save and connect" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(f.save).not.toHaveBeenCalled(); expect(f.replace).not.toHaveBeenCalled(); expect(f.inspect).toHaveBeenCalledTimes(1);
+});
+
+it("keeps one pending save through failed and changed capability observations", async () => {
+  const f = fixture(); let release!: () => void; const save = f.save.getMockImplementation()!;
+  f.save.mockImplementationOnce(async request => { await new Promise<void>(resolve => { release = resolve; }); return save(request); });
+  render(f.view()); await f.enter(); await f.verify(); f.owner();
+  fireEvent.click(screen.getByRole("button", { name: "Save and connect" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1)); const original = f.save.mock.calls[0][0];
+  f.status.mockRejectedValue(new ConnectError("Lost status", Code.Unavailable));
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  await screen.findByRole("button", { name: "Retry current read" });
+  expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+  f.status.mockResolvedValue({ capabilities: [] });
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  expect(screen.getByRole("button", { name: "Save and connect" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+  await act(async () => { release(); }); await screen.findByRole("button", { name: "Manage fixture-user" });
+  expect(f.save).toHaveBeenCalledTimes(1); expect(f.save.mock.calls[0][0]).toEqual(original);
+  expect(f.replace).toHaveBeenCalledTimes(1); f.erased();
+});
+
+it("disposes a pending save on dialog close without late token work or abandoned retry", async () => {
+  const f = fixture(); let release!: () => void; const save = f.save.getMockImplementation()!;
+  f.save.mockImplementationOnce(async request => { await new Promise<void>(resolve => { release = resolve; }); return save(request); });
+  render(f.view()); await f.enter(); await f.verify(); f.owner();
+  fireEvent.click(screen.getByRole("button", { name: "Save and connect" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  f.status.mockRejectedValue(new ConnectError("Lost status", Code.Unavailable));
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  await screen.findByRole("button", { name: "Retry current read" });
+  fireEvent.click(screen.getByRole("button", { name: "Close New GitHub profile" }));
+  expect(screen.queryByRole("button", { name: "Save and connect" })).toBeNull(); f.erased();
+  await act(async () => { release(); });
+  expect(f.save).toHaveBeenCalledTimes(1); expect(f.replace).not.toHaveBeenCalled();
+  f.status.mockResolvedValue({ capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] });
+  const token = await f.enter(); expect(token.value).toBe("");
+  expect(screen.queryByRole("button", { name: "Retry the same profile save" })).toBeNull();
+  expect(screen.queryByLabelText("Profile name")).toBeNull();
+});
+
+it("retries only the original uncertain save despite failed or unsupported capability reads", async () => {
+  const f = fixture(); f.save.mockRejectedValueOnce(new ConnectError("Lost save", Code.Unavailable));
+  render(f.view()); await f.enter(); const name = await f.verify(); f.owner();
+  fireEvent.change(name, { target: { value: "Original uncertain team" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save and connect" }));
+  await screen.findByRole("button", { name: "Retry the same profile save" }); const original = f.save.mock.calls[0][0];
+  const requestId = original.mutation!.requestId, bytes = original.documentJson.slice(); f.erased();
+  f.status.mockRejectedValue(new ConnectError("Lost status", Code.Unavailable));
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  expect(screen.getByRole("button", { name: "Retry the same profile save" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+  f.status.mockResolvedValue({ capabilities: [] });
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same profile save" }));
+  await screen.findByRole("heading", { name: "Connect a token" });
+  expect(f.save).toHaveBeenCalledTimes(2); expect(f.save.mock.calls[1][0]).toEqual(original);
+  expect(f.save.mock.calls[1][0].mutation!.requestId).toBe(requestId);
+  expect(f.save.mock.calls[1][0].mutation!.expectedRevision).toBe(0n);
+  expect(f.save.mock.calls[1][0].documentJson).toEqual(bytes); expect(f.replace).not.toHaveBeenCalled();
+  expect((screen.getByLabelText("GitHub personal access token") as HTMLInputElement).value).toBe("");
+});
+
+it.each([
+  [], [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1, SystemCapability.GITHUB_TOKEN_ONBOARDING_V1],
+  [999 as SystemCapability], [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1, 999 as SystemCapability],
+  [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1, SystemCapability.UNSPECIFIED], undefined,
+])("retains the initial metadata fallback across subsequent reads: %j", async capabilities => {
+  const f = fixture();
+  if (capabilities) f.status.mockResolvedValue({ capabilities }); else f.status.mockRejectedValue(new ConnectError("Initial status failure", Code.Unavailable));
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+  const name = await screen.findByLabelText("Profile name") as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "Legacy draft" } }); f.owner();
+  expect(screen.queryByLabelText("GitHub personal access token")).toBeNull(); expect(f.inspect).not.toHaveBeenCalled();
+  f.status.mockRejectedValue(new ConnectError("Refresh failure", Code.Unavailable));
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  expect(screen.getByLabelText("Profile name")).toBe(name); expect(name.value).toBe("Legacy draft");
+  f.save.mockRejectedValueOnce(new ConnectError("Lost legacy save", Code.Unavailable));
+  fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
+  await screen.findByRole("button", { name: "Retry the same profile save" }); const original = f.save.mock.calls[0][0];
+  f.status.mockResolvedValue({ capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] });
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  expect(screen.getByLabelText("Profile name")).toBe(name); expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same profile save" }));
+  await screen.findByRole("button", { name: "Manage Legacy draft" });
+  expect(f.save.mock.calls[1][0]).toEqual(original); expect(f.inspect).not.toHaveBeenCalled(); expect(f.replace).not.toHaveBeenCalled();
+});
+
+it("does not inspect a new token after support becomes unavailable", async () => {
+  const f = fixture(); render(f.view()); const token = await f.enter();
+  fireEvent.change(token, { target: { value: "fixture-pat" } });
+  f.status.mockRejectedValue(new ConnectError("Support read failed", Code.Unavailable));
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  expect(screen.getByLabelText("GitHub personal access token")).toBe(token); expect(token.value).toBe("fixture-pat");
+  await waitFor(() => expect((screen.getByRole("button", { name: "Verify token" }) as HTMLButtonElement).disabled).toBe(true));
+  fireEvent.submit(token.closest("form")!); expect(f.inspect).not.toHaveBeenCalled();
+  f.status.mockResolvedValue({ capabilities: [] });
+  await act(async () => { await f.client.invalidateQueries({ refetchType: "active" }); });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Verify token" }) as HTMLButtonElement).disabled).toBe(true));
+  fireEvent.submit(token.closest("form")!); expect(f.inspect).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+});
+
+it("retains the opening on same-identity App reconnect and disposes on Settings or identity departure", async () => {
+  const f = fixture();
+  const view = render(<StrictMode><App transport={f.transport} connectionEpoch={0} /></StrictMode>);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" })); fireEvent.click(screen.getByRole("button", { name: "Git Profiles" }));
+  await f.enter(); const name = await f.verify(); f.owner();
+  fireEvent.change(name, { target: { value: "Reconnect draft" } });
+  f.status.mockRejectedValue(new ConnectError("Reconnect read failure", Code.Unavailable));
+  const reads = f.status.mock.calls.length;
+  view.rerender(<StrictMode><App transport={f.transport} connectionEpoch={1} /></StrictMode>);
+  await waitFor(() => expect(f.status.mock.calls.length).toBeGreaterThan(reads));
+  await screen.findByRole("button", { name: "Retry current read" });
+  expect(screen.getByLabelText("Profile name")).toBe(name); expect(name.value).toBe("Reconnect draft");
+  expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Close New GitHub profile" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" })); f.erased();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" })); fireEvent.click(screen.getByRole("button", { name: "Git Profiles" }));
+  f.status.mockResolvedValue({ capabilities: [SystemCapability.GITHUB_TOKEN_ONBOARDING_V1] });
+  await f.enter(); expect(screen.queryByLabelText("Profile name")).toBeNull();
+  const replacement = fixture();
+  view.rerender(<StrictMode><App transport={replacement.transport} connectionEpoch={0} /></StrictMode>);
+  expect(screen.queryByLabelText("GitHub personal access token")).toBeNull();
+  expect(f.save).not.toHaveBeenCalled(); expect(replacement.inspect).not.toHaveBeenCalled();
+}, 60_000);
 
 it("focuses token first, verifies without an owner, then saves the explicit organization and editable name", async () => {
   const f = fixture(); render(f.view()); const token = await f.enter();

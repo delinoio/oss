@@ -83,5 +83,6 @@
   "integrations.extra.59b5da9c12c7": "Tokens are stored in the selected server's OS credential store. Saved tokens cannot be displayed.",
   "integrations.extra.3aeb00246038": "github.com",
   "integrations.checkingSupport": "Checking GitHub connection support…",
-  "integrations.onboardingUnsupported": "Update the selected server to verify a token before creating a profile. You can still create a profile first below."
+  "integrations.onboardingUnsupported": "Update the selected server to verify a token before creating a profile. You can still create a profile first below.",
+  "integrations.onboardingSupportChanged": "GitHub token verification support changed. Retry the support check or close this form and reopen it. Your original save can still be reconciled."
 }

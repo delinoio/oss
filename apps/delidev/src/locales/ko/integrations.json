@@ -83,5 +83,6 @@
   "integrations.extra.59b5da9c12c7": "토큰은 선택한 서버의 운영체제 자격 증명 저장소에 보관됩니다. 저장된 토큰은 표시할 수 없습니다.",
   "integrations.extra.3aeb00246038": "github.com",
   "integrations.checkingSupport": "GitHub 연결 지원 확인 중…",
-  "integrations.onboardingUnsupported": "프로필을 만들기 전에 토큰을 확인하려면 선택한 서버를 업데이트하세요. 아래에서 프로필을 먼저 만들 수도 있습니다."
+  "integrations.onboardingUnsupported": "프로필을 만들기 전에 토큰을 확인하려면 선택한 서버를 업데이트하세요. 아래에서 프로필을 먼저 만들 수도 있습니다.",
+  "integrations.onboardingSupportChanged": "GitHub 토큰 검증 지원이 변경되었습니다. 지원 확인을 재시도하거나 이 양식을 닫고 다시 열어 주세요. 기존 저장 요청은 계속 확인할 수 있습니다."
 }

@@ -93,12 +93,19 @@ function IntegrationCreation({ active, close, connected }: { active: boolean; cl
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active, retry: false });
   const negotiated = useRef<boolean | undefined>(undefined);
   const capabilities = status.data?.capabilities;
-  const supported = !status.error && capabilities?.includes(SystemCapability.GITHUB_TOKEN_ONBOARDING_V1) && new Set(capabilities).size === capabilities.length && capabilities.every(value => value !== SystemCapability.UNSPECIFIED && Object.values(SystemCapability).includes(value));
-  // Keep a settled older-server editor mounted across inactive query states so
-  // its exact metadata retry cannot be replaced by the negotiation placeholder.
-  if (!status.isPending) negotiated.current = Boolean(supported);
+  const supported = status.isSuccess && !status.isFetching && capabilities?.includes(SystemCapability.GITHUB_TOKEN_ONBOARDING_V1) && new Set(capabilities).size === capabilities.length && capabilities.every(value => value !== SystemCapability.UNSPECIFIED && Object.values(SystemCapability).includes(value));
+  // Admission chooses one controller for this opening. Later reads can revoke
+  // new token work, but cannot discard drafts or replace an original save.
+  // Initial read failure keeps the existing metadata-first fallback.
+  if (negotiated.current === undefined && !status.isPending && !status.isFetching) negotiated.current = Boolean(supported);
   if (negotiated.current === undefined) return <><SettingsLoading label={copy("integrations.checkingSupport")} /><SettingsTaskDismissButton onClick={close}>{copy("integrations.cancelEdit_6fa271")}</SettingsTaskDismissButton></>;
-  return negotiated.current ? <GitHubOnboarding active={active} close={close} connected={connected} /> : <>{status.error ? <Problem error={status.error} actions={<button type="button" disabled={!active || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} /> : <p role="status">{copy("integrations.onboardingUnsupported")}</p>}<IntegrationEditor active={active} close={close} /></>;
+  const retryStatus = <button type="button" disabled={!active || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>;
+  return <>
+    <Problem error={status.error} actions={retryStatus} />
+    {negotiated.current && status.isSuccess && !status.isFetching && !supported ? <p role="status">{copy("integrations.onboardingSupportChanged")} {retryStatus}</p> : null}
+    {!negotiated.current && !status.error ? <p role="status">{copy("integrations.onboardingUnsupported")}</p> : null}
+    {negotiated.current ? <GitHubOnboarding active={active} canStart={Boolean(supported)} close={close} connected={connected} /> : <IntegrationEditor active={active} close={close} />}
+  </>;
 }
 function IntegrationConnection({ initial, active, close, initialRetry, initialProblem }: { initial: Resource; active: boolean; close: () => void; initialRetry?: GitHubTokenRetry; initialProblem?: Document }) {
   useLocale();
