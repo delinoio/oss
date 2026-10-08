@@ -31,7 +31,7 @@ function fixture() {
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
   const renderInbox = (props: { active?: boolean; notificationId?: string; notificationActivation?: number } = {}) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Inbox active={props.active ?? true} open={() => {}} notificationId={props.notificationId} notificationActivation={props.notificationActivation} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { entry, interaction, questionView, session, terminalEntry, list, get, setRead, answer, readSignals, resourceList, resourceGet, renderInbox };
+  return { entry, interaction, questionView, session, terminalEntry, terminalView, list, get, setRead, answer, readSignals, resourceList, resourceGet, renderInbox };
 }
 
 describe("selected Inbox background refresh", () => {
@@ -449,4 +449,49 @@ it("retains failed filtered-read conditions for explicit retry instead of restor
   expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ readState: InboxReadState.UNREAD, pageToken: "" });
   expect(value.setRead).not.toHaveBeenCalled();
   expect(value.answer).not.toHaveBeenCalled();
+});
+
+
+describe("Inbox detail presentation", () => {
+ it.each(["succeeded", "failed", "stopped"])("separates original %s outcome, resource heading and read state", async outcome => {
+  const value = fixture();
+  const metadata = { job_id: newRequestId(), input_id: newRequestId(), execution_id: newRequestId(), native_thread_id: "original-native-thread", native_turn_id: "original-native-turn", sequence: 17, outcome };
+  value.terminalEntry.documentJson = encode({ source: "execution-terminal", source_id: metadata.execution_id, read_state: "unread", terminal: metadata });
+  value.session.documentJson = encode({ ...document(value.session), outcome: outcome === "failed" ? "succeeded" : "failed" });
+  render(value.renderInbox());
+  fireEvent.click(await screen.findByRole("button", { name: /Execution (succeeded|failed|stopped), Refactor authentication, Unread/ }));
+  await screen.findByText("Original terminal observation");
+  expect(screen.getByRole("heading", { name: "Refactor authentication", level: 3 })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: /Execution (succeeded|failed|stopped)/ })).toBeNull();
+  const disclosure = screen.getByText("Execution metadata").closest("details")!;
+  expect(disclosure.open).toBe(false);
+  expect(screen.getByText("Original identifiers and outcome")).toBeTruthy();
+  expect(screen.getByText("Recorded time is the Inbox record time. It does not establish process cleanup or the current session outcome.")).toBeTruthy();
+  const reads = value.get.mock.calls.length, lists = value.list.mock.calls.length;
+  fireEvent.click(disclosure.querySelector("summary")!);
+  expect(disclosure.open).toBe(true);
+  expect(JSON.parse(disclosure.querySelector("pre")!.textContent!)).toEqual(metadata);
+  expect(value.get).toHaveBeenCalledTimes(reads); expect(value.list).toHaveBeenCalledTimes(lists);
+  expect(value.setRead).not.toHaveBeenCalled(); expect(value.answer).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Open session" }).classList.contains("primary")).toBe(true);
+  expect(screen.getByRole("button", { name: "Mark read" }).classList.contains("primary")).toBe(false);
+ });
+ it("retains metadata expansion on refresh and resets it for a new entry", async () => {
+  const value = fixture();
+  const second = create(InboxViewSchema, { entry: create(ResourceSchema, { ...value.terminalEntry, id: newRequestId() }), session: create(ResourceSchema, { ...value.session, documentJson: encode({ ...document(value.session), name: "Second retained session" }) }) });
+  value.list.mockResolvedValue({ entries: [value.terminalView, second], nextPageToken: "" });
+  value.get.mockImplementation(async request => ({ view: request.id === second.entry!.id ? second : value.terminalView }));
+  render(value.renderInbox());
+  fireEvent.click(await screen.findByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
+  await screen.findByText("Original terminal observation");
+  const disclosure = screen.getByText("Execution metadata").closest("details")!;
+  fireEvent.click(disclosure.querySelector("summary")!); expect(disclosure.open).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(value.get.mock.calls.length).toBeGreaterThan(1));
+  expect(screen.getByText("Execution metadata").closest("details")).toBe(disclosure); expect(disclosure.open).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /Execution succeeded, Second retained session, Read/ }));
+  await screen.findByRole("heading", { name: "Second retained session", level: 3 });
+  expect(screen.getByText("Execution metadata").closest("details")!.open).toBe(false);
+  expect(value.setRead).not.toHaveBeenCalled(); expect(value.answer).not.toHaveBeenCalled();
+ });
 });
