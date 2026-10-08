@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -92,9 +93,26 @@ func TestQueuedAutomaticTitleBudgetRetiresWithoutClaim(t *testing.T) {
 		t.Fatal("fixture did not queue title")
 	}
 	seedTitleBudget(t, f, "0.0000975")
-	record, err := claimTitleJob(context.Background(), f.service, f.input.MachineID, f.instance, f.device, session.TitleJobID)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	stream, err := f.client.WatchAuxiliaryWork(ctx, ownerRequest(security.Identity{Token: f.workerToken}, &pb.WatchAuxiliaryWorkRequest{MachineId: string(f.input.MachineID), InstanceId: string(f.instance)}))
 	if err != nil {
-		t.Fatal("budget retirement failed", err)
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	// The first heartbeat admits the lane; the next proves budget retirement did
+	// not terminate it or assign the skipped inference.
+	for n := 0; n < 2; n++ {
+		if !stream.Receive() {
+			t.Fatal("budget terminated original auxiliary stream", stream.Err())
+		}
+		if !stream.Msg().Heartbeat || stream.Msg().Job != nil {
+			t.Fatal("budget assigned title inference", stream.Msg())
+		}
+	}
+	record, err := f.service.Store.Get(context.Background(), domain.JobKind, session.TitleJobID)
+	if err != nil {
+		t.Fatal(err)
 	}
 	job, err := store.Decode[domain.Job](record)
 	if err != nil || job.State != domain.JobCanceled || job.FinishedAt == nil || job.Problem == nil || job.Problem.Code != domain.BudgetReached || job.InstanceID != "" {
@@ -135,5 +153,30 @@ func TestAutomaticTitleBudgetPreservesSuccessfulCompletionReceipt(t *testing.T) 
 	job, err := store.Decode[domain.Job](record)
 	if err != nil || job.State != domain.JobSucceeded || job.FinishedAt == nil {
 		t.Fatal("original job failed settlement", err)
+	}
+}
+
+func TestQueuedAutomaticTitleCapacityKeepsResourceExhausted(t *testing.T) {
+	f := recoveredAutomaticTitleFixture(t)
+	_, change := acceptRecovery(t, f)
+	completeRecovery(t, f, change.ExecutionRecoveryJob)
+	session := readTitleBudgetSession(t, f)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.full-title-lane", nil, func(tx *store.Tx) (any, error) {
+		for i := 0; i < maxActiveTitleJobs; i++ {
+			if _, err := tx.PutJob(domain.NewID(), 0, f.input.SessionID, "", domain.Job{Type: domain.GenerateSessionTitleJob, State: domain.JobClaimed, MachineID: f.input.MachineID, Input: []byte(`{}`), AcceptedAt: time.Now().UTC()}); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claimTitleJob(context.Background(), f.service, f.input.MachineID, f.instance, f.device, session.TitleJobID); domain.SafeError(err).Code != domain.ResourceExhausted {
+		t.Fatal("capacity no longer waits as ResourceExhausted", err)
+	}
+	current := readTitleBudgetSession(t, f)
+	if current.TitleState != domain.TitleQueued || current.TitleOperationID != session.TitleOperationID {
+		t.Fatal("capacity retired original queued title")
 	}
 }
