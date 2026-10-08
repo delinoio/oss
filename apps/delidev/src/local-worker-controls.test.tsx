@@ -182,3 +182,13 @@ it("keeps saved connection presentation expanded without Runner Devices disclosu
   expect(screen.queryByText("Details")).toBeNull();
   expect(screen.getByText(/Worker controller running/).closest("details")).toBeNull();
 });
+
+it("does not infer borrowed Quit ownership when Running management metadata has not arrived", async () => {
+ const control: ControlLocalWorker = Object.assign(vi.fn(async () => running()), { automatic: true });
+ render(<LocalWorkerControls presentation={LocalWorkerPresentation.RunnerDevices} control={control} active changed={() => {}} />);
+ await screen.findByText("Process running · Readiness checked separately");
+ expect(screen.queryByText("Keeps running after you quit DeliDev.")).toBeNull();
+ expect(screen.queryByText("Stops when you quit DeliDev.")).toBeNull();
+ expect(screen.getByText(/automatically starts and maintains/).closest("details")).toBeTruthy();
+ expect(screen.getByRole("button", { name: "Stop local Worker" })).toBeTruthy();
+});

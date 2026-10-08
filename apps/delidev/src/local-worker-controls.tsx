@@ -101,7 +101,7 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
       <div className="settings-runner-worker-summary">
         <div className="settings-runner-worker-overview">
           <div className="settings-runner-worker-heading"><h2>{copy("local-worker-controls.thisComputerSWorker_80a5ac")}</h2>{badge ? <span className="settings-runner-badge">{badge}</span> : null}</div>
-          {compactRunning ? <><p role="status">{copy("local-worker-controls.compactRunning")}</p><p>{management?.owned_by_app ? copy("local-worker-controls.quitOwnedSummary") : copy("local-worker-controls.quitBorrowedSummary")}</p></> : stateGuidance}
+          {compactRunning ? <><p role="status">{copy("local-worker-controls.compactRunning")}</p>{management?.state === LocalWorkerManagementState.Running ? <p>{management.owned_by_app ? copy("local-worker-controls.quitOwnedSummary") : copy("local-worker-controls.quitBorrowedSummary")}</p> : null}</> : stateGuidance}
         </div>
         {actions}
       </div>

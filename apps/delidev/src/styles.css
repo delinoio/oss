@@ -720,7 +720,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .settings-runner-column button.primary { border-color: var(--accent); background: var(--accent); }
 .settings-runner-column:focus-visible { outline-color: var(--accent); }
 .settings-runner-column .actions { min-width: 0; margin: 0; gap: 16px; }
-.settings-runner-column .settings-runner-worker { display: flex; flex-direction: column; align-items: stretch; gap: 16px; margin-bottom: 32px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; box-shadow: none; }
+.settings-runner-column .settings-runner-worker { display: flex; flex-direction: column; align-items: stretch; gap: 16px; margin-bottom: 24px; padding: 20px; border: 1px solid var(--border); border-radius: 12px; box-shadow: none; }
 .settings-runner-worker-summary { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; min-width: 0; }
 .settings-runner-worker-overview { display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
 .settings-runner-worker-summary > .actions { flex-wrap: wrap; justify-content: flex-end; }
