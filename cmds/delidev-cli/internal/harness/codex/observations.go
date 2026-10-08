@@ -11,14 +11,28 @@ import (
 type MetadataKind string
 
 const (
-	ThreadIdentityChecked   MetadataKind = "thread-identity-checked"
-	ThreadSettingsChecked   MetadataKind = "thread-settings-checked"
-	RemoteControlDisabled   MetadataKind = "remote-control-disabled"
-	QuotaUnavailable        MetadataKind = "quota-unavailable"
-	RawSupplementDiscarded  MetadataKind = "raw-supplement-discarded"
-	NativeGoalAbsent        MetadataKind = "native-goal-absent"
-	ModelVerificationAbsent MetadataKind = "model-verification-absent"
+	ThreadIdentityChecked    MetadataKind = "thread-identity-checked"
+	ThreadSettingsChecked    MetadataKind = "thread-settings-checked"
+	RemoteControlDisabled    MetadataKind = "remote-control-disabled"
+	QuotaUnavailable         MetadataKind = "quota-unavailable"
+	RawSupplementDiscarded   MetadataKind = "raw-supplement-discarded"
+	NativeGoalAbsent         MetadataKind = "native-goal-absent"
+	ModelVerificationAbsent  MetadataKind = "model-verification-absent"
+	CodexAppsStartupObserved MetadataKind = "codex-apps-startup-observed"
 )
+
+type nativeMCPStartupState string
+
+const (
+	nativeMCPStarting  nativeMCPStartupState = "starting"
+	nativeMCPReady     nativeMCPStartupState = "ready"
+	nativeMCPFailed    nativeMCPStartupState = "failed"
+	nativeMCPCancelled nativeMCPStartupState = "cancelled"
+)
+
+type nativeMCPFailureReason string
+
+const nativeMCPReauthentication nativeMCPFailureReason = "reauthenticationRequired"
 
 type tokenCountsWire struct {
 	Input      *int64 `json:"inputTokens"`
@@ -66,6 +80,36 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "mcpServer/startupStatus/updated":
+		var params struct {
+			ThreadID      *domain.ID              `json:"threadId"`
+			Name          string                  `json:"name"`
+			Status        nativeMCPStartupState   `json:"status"`
+			Error         *string                 `json:"error"`
+			FailureReason *nativeMCPFailureReason `json:"failureReason"`
+		}
+		if domain.Decode(native.Params, &params) != nil || domain.Text(params.Name, "native MCP server", 1024, true) != nil || (params.ThreadID != nil && params.ThreadID.Validate() != nil) || (params.Error != nil && domain.Text(*params.Error, "native MCP diagnostic", nativewire.MaxFrame, false) != nil) {
+			return Event{}, incompatible()
+		}
+		switch params.Status {
+		case nativeMCPStarting, nativeMCPReady, nativeMCPCancelled:
+			if params.Error != nil || params.FailureReason != nil {
+				return Event{}, incompatible()
+			}
+		case nativeMCPFailed:
+			if params.FailureReason != nil && *params.FailureReason != nativeMCPReauthentication {
+				return Event{}, incompatible()
+			}
+		default:
+			return Event{}, incompatible()
+		}
+		// Official Codex injects this connector for ChatGPT accounts. Its passive
+		// startup status is independent of account authentication and tool calls;
+		// preserve the dedicated boundaries for all other MCP activity.
+		if c.managedHome == "" || params.Name != "codex_apps" || params.ThreadID == nil || *params.ThreadID != c.thread {
+			return privateNative(native), nil
+		}
+		return c.metadata(CodexAppsStartupObserved), nil
 	case "model/verification":
 		var params struct {
 			ThreadID      domain.ID `json:"threadId"`

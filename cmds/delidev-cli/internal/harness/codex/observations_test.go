@@ -71,6 +71,65 @@ func TestPrivateExtensionClassificationCannotReflectNativeContent(t *testing.T) 
 	}
 }
 
+func TestManagedCodexAppsStartupIsPrivatePassiveMetadata(t *testing.T) {
+	for _, status := range []nativeMCPStartupState{nativeMCPStarting, nativeMCPReady, nativeMCPFailed, nativeMCPCancelled} {
+		c, turn := observationClient()
+		c.managedHome = "/fixture-managed-home"
+		paused := c.execution.paused
+		params := map[string]any{"threadId": c.thread, "name": "codex_apps", "status": status, "error": nil, "failureReason": nil}
+		if status == nativeMCPFailed {
+			params["error"], params["failureReason"] = "private-native-mcp-diagnostic", nativeMCPReauthentication
+		}
+		event, err := observeFixture(c, "mcpServer/startupStatus/updated", params)
+		if err != nil || event.Kind != MetadataEvent || event.Metadata != CodexAppsStartupObserved || !event.Correlated || event.Native != nil || c.execution.active != turn || c.execution.paused != paused {
+			t.Fatal("connector metadata changed account/input authority", err)
+		}
+		raw, _ := json.Marshal(event)
+		if strings.Contains(string(raw), "private-native-mcp-diagnostic") || strings.Contains(string(raw), "reauthenticationRequired") || strings.Contains(string(raw), "codex_apps\"") {
+			t.Fatal("private connector descriptor or error escaped")
+		}
+		params["name"] = "foreign-server"
+		event, err = observeFixture(c, "mcpServer/startupStatus/updated", params)
+		if err != nil || event.Kind != NativeExtensionEvent {
+			t.Fatal("external MCP server gained support", err)
+		}
+	}
+	for _, scenario := range []string{"api", "unscoped", "foreign", "unknown-field", "unknown-state", "unknown-reason", "unexpected-error", "missing-name"} {
+		c, _ := observationClient()
+		c.managedHome = "/fixture-managed-home"
+		params := map[string]any{"threadId": c.thread, "name": "codex_apps", "status": nativeMCPReady}
+		private := false
+		switch scenario {
+		case "api":
+			c.managedHome = ""
+			private = true
+		case "unscoped":
+			params["threadId"] = nil
+			private = true
+		case "foreign":
+			params["threadId"] = domain.NewID()
+			private = true
+		case "unknown-field":
+			params["token"] = "private"
+		case "unknown-state":
+			params["status"] = "healthy"
+		case "unknown-reason":
+			params["status"], params["failureReason"] = nativeMCPFailed, "unknown"
+		case "unexpected-error":
+			params["error"] = "private"
+		case "missing-name":
+			delete(params, "name")
+		}
+		event, err := observeFixture(c, "mcpServer/startupStatus/updated", params)
+		if private && (err != nil || event.Kind != NativeExtensionEvent) {
+			t.Fatal("foreign profile lost private boundary", scenario)
+		}
+		if !private && err == nil {
+			t.Fatal("malformed connector metadata accepted", scenario)
+		}
+	}
+}
+
 func TestNativeResumeGoalAbsenceHasNoExecutionAuthority(t *testing.T) {
 	c, turn := observationClient()
 	c.execution.paused = true

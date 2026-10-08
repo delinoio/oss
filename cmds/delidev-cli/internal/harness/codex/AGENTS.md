@@ -1,5 +1,7 @@
 # Codex harness ownership
 
+- Managed ChatGPT may discard only the original root's built-in codex_apps MCP startup status through its closed typed passive profile. Retain private errors/descriptors, unknown-field/state/reason rejection and other server/API/unscoped/OAuth/event-stream/tool boundaries. Connector status never changes account health, enables tools or grants input/authentication authority.
+
 - Empty native model verification is discarded metadata only for the original known root turn. Populated/foreign verification remains a private extension; missing/null/malformed arrays or unknown fields fail. Closed extension classifications provide diagnostics without logging native methods or payloads. Installed thread fixtures must reject unhandled extensions.
 
 - Ordinary native closure uses a three-second stdin EOF window with fenced writes and joined original input/process handles before forced cancellation. Preserve immediate failure/cancellation termination, independent credential scans, symlink refusal and all existing recovery fences. Native temporary helper destructor cleanup never authorizes an account recovery or altered completion receipt.
