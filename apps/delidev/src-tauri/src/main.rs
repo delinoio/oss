@@ -1908,6 +1908,7 @@ fn run() -> Result<(), NativeFailure> {
     let exiting_browser = Arc::clone(&browser);
     let exiting_updates = Arc::clone(app.state::<Arc<UpdateHost>>().inner());
     let returning_updates = Arc::clone(&exiting_updates);
+    let returning_connector = Arc::clone(&connector);
     let window_actions = Arc::clone(app.state::<Arc<window_host::WindowActions>>().inner());
     let quit_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let quit_task = Arc::new(Mutex::new(None));
@@ -1991,7 +1992,7 @@ fn run() -> Result<(), NativeFailure> {
         let _ = task.join();
     }
     supervision.stop();
-    returning_updates.join(&connector);
+    returning_updates.join(&returning_connector);
     returning_oauth.stop();
     browser.stop();
     notifications.stop();
