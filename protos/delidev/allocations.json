@@ -9594,6 +9594,13 @@
       "member": "replayed",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 1854,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2",
+      "number": 50
     }
   ],
   "rpcReservations": [

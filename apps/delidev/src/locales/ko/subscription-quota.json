@@ -5,9 +5,9 @@
   "subscription-quota.noResetCreditWasAvailable_648345": "사용 가능한 리셋권이 없었습니다",
   "subscription-quota.nativeQuotaAndResetCredits_8a07a3": "네이티브 할당량 및 리셋권",
   "subscription-quota.quota_6c105c": "할당량",
-  "subscription-quota.updateTheServerAndRunnerDevice_57363b": "네이티브 할당량 관측을 사용하려면 서버 및 실행 장치를 업데이트하세요.",
+  "subscription-quota.updateTheServerAndRunnerDevice_57363b": "구독 할당량을 새로 고치려면 선택한 서버를 업데이트하세요.",
   "subscription-quota.theLatestRefreshFailedTheLast_78f81e": "최근 새로 고침에 실패했습니다; 마지막 성공 값이 유지됩니다.",
-  "subscription-quota.quotaIsObservedByTheOriginal_16d486": "연결 중에는 원래 Codex 소유자가 5분마다 할당량을 관측합니다.",
+  "subscription-quota.quotaIsObservedByTheOriginal_16d486": "선택한 서버는 실행 중에도 5분마다 할당량을 새로 고칩니다.",
   "subscription-quota.lastSuccessfulObservation_836238": "마지막 성공 관측: <s0/>. <s1/>",
   "subscription-quota.refreshQuota_3e8708": "할당량 새로고침",
   "subscription-quota.notifyMeOfObservedQuotaRecovery_b8f166": "관측된 할당량 복구 시 알림 받기",
@@ -34,7 +34,7 @@
   "subscription-quota.retryOriginalRecoveryPreference_fa3cb3": "기존 복구 환경설정 다시 시도",
   "subscription-quota.extra.ca1844969742": "확인할 수 없음",
   "subscription-quota.accountPreferencesCouldNotBeSavedReload_0d91a4": "계정 환경설정을 저장할 수 없습니다. 현재 계정을 새로 고친 후 저장하세요.",
-  "subscription-quota.serverQuotaUnsupported": "실행 장치가 없는 계정의 할당량을 새로 고치려면 서버를 업데이트하세요.",
+  "subscription-quota.serverQuotaUnsupported": "실행 장치와 관계없이 할당량을 새로 고치려면 선택한 서버를 업데이트하세요.",
   "subscription-quota.serverCreditsUnavailable": "실행 장치가 없는 계정의 리셋권을 사용하려면 서버를 업데이트하세요.",
   "subscription-quota.useCredit": "사용",
   "subscription-quota.hideDetails": "상세 접기",
@@ -57,5 +57,7 @@
   "subscription-quota.noCredits": "사용 가능한 리셋권이 없습니다.",
   "subscription-quota.creditInventoryStale": "현재 리셋권 목록을 검토하려면 계정을 새로 고치세요.",
   "subscription-quota.creditDetailsMalformed": "개별 리셋권 상세 정보가 없거나 올바르지 않습니다.",
-  "subscription-quota.noEligibleCredits": "반환된 리셋권 중 선택 가능한 항목이 없습니다."
+  "subscription-quota.noEligibleCredits": "반환된 리셋권 중 선택 가능한 항목이 없습니다.",
+  "subscription-quota.serverNativeQuotaUnavailable": "선택한 서버의 Codex 설치와 네이티브 라우팅을 확인한 뒤 할당량을 다시 요청하세요.",
+  "subscription-quota.serverQuotaAuthenticationUnavailable": "선택한 서버 연결을 확인하세요. 계정 인증이 만료되었다면 명시적으로 갱신한 뒤 할당량을 다시 요청하세요."
 }

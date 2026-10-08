@@ -183,3 +183,87 @@ func logSubscriptionCleanup(logger *slog.Logger, owner domain.ID, stage subscrip
 			"byte_limit", subscription.RuntimeByteLimit, "code", domain.RecoveryRequired)
 	}
 }
+
+// Quota-only runtimes accept no managed bundle and cannot access login or
+// consumption methods through this interface.
+type serverQuotaNative interface {
+	ReadExternalQuota(context.Context, domain.ID, codex.QuotaAuthentication) (domain.SubscriptionQuotaObservation, error)
+	Close() error
+}
+type serverQuotaOpener func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error)
+type serverQuotaRuntime struct {
+	*codex.Client
+	home     string
+	original os.FileInfo
+	owner    domain.ID
+	logger   *slog.Logger
+}
+
+func (r *serverQuotaRuntime) Close() error {
+	if err := r.Client.Close(); err != nil {
+		return subscriptionDenied()
+	}
+	if _, err := os.Lstat(filepath.Join(r.home, "codex", "auth.json")); !os.IsNotExist(err) {
+		return subscriptionDenied()
+	}
+	return subscription.CleanupRuntime(r.home, r.original)
+}
+
+func openServerQuota(ctx context.Context, root string, owner domain.ID, auth codex.QuotaAuthentication, logger *slog.Logger) (returned serverQuotaNative, err error) {
+	version, phase := "", domain.CodexRuntime
+	defer func() { err = domain.WithCodexDiagnostic(version, phase, err) }()
+	runtimeRoot := filepath.Join(root, "subscription-runtime")
+	home := filepath.Join(runtimeRoot, "quota", string(owner))
+	if _, e := os.Lstat(home); !errors.Is(e, os.ErrNotExist) {
+		return nil, subscriptionDenied()
+	}
+	env, e := harness.PrivateRuntimeEnvironment(home)
+	if e != nil {
+		return nil, subscriptionDenied()
+	}
+	info, e := security.StableStat(home)
+	if e != nil {
+		return nil, subscriptionDenied()
+	}
+	defer func() {
+		if err != nil && domain.SafeError(err).Code != domain.RecoveryRequired {
+			if cleanupErr := subscription.CleanupRuntime(home, info); cleanupErr != nil {
+				logSubscriptionRuntimeCleanup(logger, owner, cleanupErr)
+				err = domain.CodexRecoveryFailure(version, phase, err, subscriptionDenied())
+			}
+		}
+	}()
+	phase = domain.CodexDiscovery
+	installation, e := harness.DiscoverCodex(ctx, harness.DiscoveryConfig{Root: runtimeRoot, OwnerID: owner, Logger: logger})
+	if e != nil {
+		return nil, e
+	}
+	version = installation.Version
+	if installation.State != domain.InstallationDetected {
+		if installation.State == domain.InstallationIncompatible || installation.State == domain.InstallationFailed {
+			phase = domain.CodexVersion
+		}
+		return nil, domain.InstallationProblem(installation.State)
+	}
+	if !domain.CodexVersionAllowed(version) {
+		return nil, domain.CodexVersionFailure(version)
+	}
+	if !installation.ProtocolVerified || installation.ExecutableSHA256 == "" {
+		if installation.Protocol != nil && installation.Protocol.Diagnostic != nil {
+			return nil, domain.RestoreCodexDiagnostic(*installation.Protocol.Diagnostic)
+		}
+		phase = domain.CodexProfile
+		return nil, domain.Fail(domain.Unsupported, "The installed Codex protocol is unavailable.", "Refresh native discovery.")
+	}
+	phase = domain.CodexProfile
+	digest, e := harness.InspectExecutable(ctx, installation.ResolvedPath)
+	if e != nil || digest != installation.ExecutableSHA256 {
+		return nil, subscriptionDenied()
+	}
+	nativeHome := filepath.Join(home, "codex")
+	native, e := codex.Open(ctx, codex.Config{Version: installation.Version, Mode: codex.QuotaProtocol, Home: nativeHome, Process: process.Config{Directory: filepath.Join(runtimeRoot, "processes"), OwnerID: owner, Executable: installation.ResolvedPath, Cwd: home, Env: env, ProtectedValues: []string{auth.Access}, Logger: logger}})
+	if e != nil {
+		return nil, e
+	}
+	return &serverQuotaRuntime{Client: native, home: home, original: info, owner: owner, logger: logger}, nil
+}

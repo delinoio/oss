@@ -350,3 +350,5 @@ installed-platform, WidgetKit or account acceptance. Operational credential
 registration and first publication remain separate from repository configuration.
 
 - Ordinary session tools may use the executing machine’s existing gh login through the bounded Worker-owned selector in the [harness contract](cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context). Server integrations, native provider credentials, remote machine identity, Sidechat restrictions and user-owned configuration cleanup remain separate.
+
+Server quota V2 uses System 50 under the [subscription contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2--issue-1854). It independently reads an access-token-only server profile before, during and after Worker execution while retaining original writer/reference/cleanup authority. Explicit Worker quota and reset-credit ownership remain separate; no migration or Worker protocol change.

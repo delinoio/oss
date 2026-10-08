@@ -102,6 +102,7 @@ type Service struct {
 	terminalOutputOrder           list.List
 	prFixRequests                 prFixRequestTracker
 	subscriptionOpen              serverSubscriptionOpener
+	quotaOpen                     serverQuotaOpener
 	subscriptionCallbackTransport http.RoundTripper
 	subscriptionOnce              sync.Once
 	subscriptionEpoch             domain.ID

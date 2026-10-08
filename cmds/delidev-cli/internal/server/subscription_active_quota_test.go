@@ -70,6 +70,13 @@ func TestActiveQuotaWithoutSavedInstallationUsesOriginalLease(t *testing.T) {
 				if replay, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, request)); err != nil || !replay.Msg.Replayed {
 					t.Fatal("acceptance replay changed owner", err)
 				}
+				if omitted {
+					_, a := f.record()
+					if a.Subscription.ServerQuota == nil || !a.Subscription.ServerQuota.AccessOnly || a.Subscription.Observation != nil || !reflect.DeepEqual(*a.Subscription.Lease, original) {
+						t.Fatal("omitted quota did not retain independent server ownership")
+					}
+					return
+				}
 				lease := &pb.TakeSubscriptionResponse{LeaseId: string(original.ID), LeaseRevision: original.Revision, GenerationId: string(original.Generation)}
 				claim := f.claimObservation(response.Msg.OperationId, lease)
 				if _, err := f.client.ClaimSubscriptionObservation(context.Background(), subscriptionRequest(f.workerToken, claim)); rpc.ClientError(err).Code != domain.RecoveryRequired {
@@ -103,7 +110,7 @@ func TestActiveQuotaBatchAndMaintenanceShareEligibility(t *testing.T) {
 				}
 			}
 			_, a := f.record()
-			if a.Subscription.Observation == nil || a.Subscription.Observation.MachineID != original.MachineID || !reflect.DeepEqual(*a.Subscription.Lease, original) {
+			if a.Subscription.ServerQuota == nil || !a.Subscription.ServerQuota.AccessOnly || a.Subscription.Observation != nil || !reflect.DeepEqual(*a.Subscription.Lease, original) {
 				t.Fatal("batch replaced original owner")
 			}
 		})
@@ -184,8 +191,8 @@ func TestActiveQuotaAdmissionRejectsChangedAuthority(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if kind != "machine" && kind != "generation" && kind != "connection" && len(candidates) != 0 {
-				t.Fatal("batch ignored same authority failure")
+			if len(candidates) != 1 {
+				t.Fatal("server quota incorrectly depends on Worker authority")
 			}
 			_, a := f.record()
 			if a.Subscription.Observation != nil {

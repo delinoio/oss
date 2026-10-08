@@ -482,7 +482,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if state == nil || state.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
-		if state.ServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
+		if state.ExclusiveServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
 			return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
@@ -852,7 +852,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			} else if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
 				return nil, rpc.Error(err, c)
 			}
 		}
@@ -982,7 +982,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
 				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}
@@ -1019,7 +1019,7 @@ func uniqueSubscriptionIdentity(tx *store.Tx, owner domain.ID, identity string) 
 	return nil
 }
 
-func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, owner, keep domain.ID) error {
+func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, owner, keep domain.ID, protected ...domain.ID) error {
 	refs, err := vault.UnremovedReferences(ctx, owner)
 	if err != nil {
 		return err
@@ -1031,7 +1031,7 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin {
 			return subscriptionDenied()
 		}
-		if ref.ID != keep {
+		if ref.ID != keep && !slices.Contains(protected, ref.ID) {
 			if err := vault.Delete(ctx, ref); err != nil {
 				return err
 			}
@@ -1162,4 +1162,13 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 		return nil, err
 	}
 	return &fork, nil
+}
+
+// A quota reader owns its captured reference independently of the writer's
+// current generation. Rotation may retire it only after joined observer cleanup.
+func quotaProtectedGeneration(st *domain.SubscriptionState) domain.ID {
+	if st != nil && st.ServerQuota != nil && st.ServerQuota.Active() {
+		return st.ServerQuota.Generation
+	}
+	return ""
 }

@@ -12,7 +12,9 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -62,6 +64,9 @@ func newServerQuotaFixture(t *testing.T) (*subscriptionFixture, *serverQuotaFixt
 	n := &serverQuotaFixture{serverLoginFixture: login, observed: domain.SubscriptionQuotaObservation{ObservedAt: now, Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &primary}, {ID: "codex:secondary", Remaining: &secondary}}}}
 	f.service.subscriptionOpen = func(context.Context, string, domain.ID, []byte, *slog.Logger) (serverSubscriptionNative, error) {
 		return n, nil
+	}
+	f.service.quotaOpen = func(context.Context, string, domain.ID, codex.QuotaAuthentication, *slog.Logger) (serverQuotaNative, error) {
+		return quotaNativeFixture{n}, nil
 	}
 	return f, n
 }
@@ -144,7 +149,7 @@ func TestServerQuotaFailurePreservesSuccessAndCleanupFence(t *testing.T) {
 				t.Fatal("failure erased last success")
 			}
 			if uncertain {
-				if !a.Subscription.RecoveryRequired || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationUncertain {
+				if a.Subscription.RecoveryRequired || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationUncertain {
 					t.Fatal("uncertain cleanup lost fence")
 				}
 			} else {
@@ -178,12 +183,18 @@ func TestServerQuotaFencesWorkerLifecycleAndChangedGeneration(t *testing.T) {
 	// Publication must not inherit another connection or generation, even after
 	// independent native cleanup of the original read.
 	n.duringRead = func() {
+		replacement := domain.NewID()
+		raw := subscriptionTestBundle("quota-server-account", "replacement", time.Now().UTC())
+		defer clear(raw)
+		if _, err := f.secrets.Put(ctx, credentials.Ref{Owner: f.input.AccountID, ID: replacement, Purpose: credentials.AccountLogin}, raw); err != nil {
+			t.Fatal(err)
+		}
 		_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.server.quota.rotation", nil, func(tx *store.Tx) (any, error) {
 			r, a, err := subscriptionAccount(tx, f.input.AccountID, 0)
 			if err != nil {
 				return nil, err
 			}
-			a.Subscription.Generation = domain.NewID()
+			a.Subscription.Generation = replacement
 			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 			return nil, err
 		})
@@ -233,7 +244,7 @@ func TestServerQuotaRestartNeverReplaysClaims(t *testing.T) {
 				if n.reads.Load() != 0 {
 					t.Fatal("restart replayed original native claim")
 				}
-				wantRecovery := phase == domain.SubscriptionObservationSending && !cleanup
+				wantRecovery := false
 				if a.Subscription.RecoveryRequired != wantRecovery {
 					t.Fatal("restart confused cleanup evidence")
 				}
@@ -300,7 +311,7 @@ func TestServerQuotaUpgradeRequiresOriginalSettledGeneration(t *testing.T) {
 	}
 }
 
-func TestServerQuotaOmittedMachineUsesOriginalActiveWorker(t *testing.T) {
+func TestServerQuotaOmittedMachineUsesIndependentServer(t *testing.T) {
 	f := newQuotaFixture(t)
 	lease := takeSubscriptionExecutionFixture(t, f)
 	req := requestServerQuota(f)
@@ -309,10 +320,12 @@ func TestServerQuotaOmittedMachineUsesOriginalActiveWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, a := f.record()
-	if a.Subscription.ServerQuota != nil || a.Subscription.Observation.MachineID != f.input.MachineID || a.Subscription.Lease.ID != domain.ID(lease.LeaseId) {
-		t.Fatal("omitted selector invented a second owner")
+	if a.Subscription.ServerQuota == nil || !a.Subscription.ServerQuota.AccessOnly || a.Subscription.Observation != nil || a.Subscription.Lease.ID != domain.ID(lease.LeaseId) {
+		t.Fatal("omitted selector lost independent quota ownership")
 	}
-	f.claimObservation(accepted.Msg.OperationId, lease)
+	if a.Subscription.ServerQuota.ID != domain.ID(accepted.Msg.OperationId) {
+		t.Fatal("quota operation changed")
+	}
 }
 func TestServerQuotaRevokedActorCannotPublishWindows(t *testing.T) {
 	f, n := newServerQuotaFixture(t)
@@ -441,3 +454,13 @@ func TestServerQuotaProjectionFailureSettlesCleanedOwner(t *testing.T) {
 		})
 	}
 }
+
+type quotaNativeFixture struct{ n *serverQuotaFixture }
+
+func (q quotaNativeFixture) ReadExternalQuota(ctx context.Context, id domain.ID, auth codex.QuotaAuthentication) (domain.SubscriptionQuotaObservation, error) {
+	if auth.Access == "" || auth.Account == "" {
+		return domain.SubscriptionQuotaObservation{}, subscriptionDenied()
+	}
+	return q.n.ReadManagedQuota(ctx, id)
+}
+func (q quotaNativeFixture) Close() error { return q.n.closeError }

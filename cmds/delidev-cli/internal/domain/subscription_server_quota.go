@@ -6,6 +6,8 @@ import "time"
 // Server quota owns a distinct credential fence. It cannot represent a Worker
 // claim, reset-credit consumption, login or execution authority.
 type ServerQuotaOperation struct {
+	// AccessOnly separates V2 observations from historical managed-auth owners.
+	AccessOnly       bool                         `json:"access_only,omitempty"`
 	ID               ID                           `json:"id"`
 	Epoch            ID                           `json:"epoch"`
 	FinishID         ID                           `json:"finish_id"`
@@ -42,4 +44,13 @@ func (o ServerQuotaOperation) Validate() error {
 		return InvalidSubscriptionObservation()
 	}
 	return nil
+}
+
+// AccessOnlyQuota is independent of the credential writer but retains deletion fences.
+func (s SubscriptionState) AccessOnlyQuota() bool {
+	return s.ServerQuota != nil && s.ServerQuota.AccessOnly
+}
+
+func (s SubscriptionState) ExclusiveServerObservationActive() bool {
+	return s.ServerCreditActive() || s.ServerQuotaActive() && !s.AccessOnlyQuota()
 }

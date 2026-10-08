@@ -92,7 +92,10 @@ func (s SubscriptionState) Validate(account Account) error {
 	if s.ServerQuotaGeneration != "" && s.ServerQuotaGeneration.Validate() != nil || s.ServerQuota != nil && s.ServerQuota.Validate() != nil {
 		return invalid()
 	}
-	if s.ServerObservationActive() && (s.Lease != nil || s.ServerOperation != nil && s.ServerOperation.NativeStarted) {
+	if (s.ServerCreditActive() || s.ServerQuotaActive() && !s.ServerQuota.AccessOnly) && (s.Lease != nil || s.ServerOperation != nil && s.ServerOperation.NativeStarted) {
+		return invalid()
+	}
+	if s.ServerQuotaActive() && s.AccessOnlyQuota() && s.Lease != nil && s.Lease.Action != SubscriptionExecute {
 		return invalid()
 	}
 	if s.OwnerMachineID != "" && s.OwnerMachineID.Validate() != nil || s.Observation != nil && s.Observation.Validate() != nil || s.ResetCredits != nil && s.ResetCredits.Validate() != nil {

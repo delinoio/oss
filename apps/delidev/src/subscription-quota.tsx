@@ -22,8 +22,13 @@ export function quotaObservationMachine(state: Record<string, unknown>, preferre
   return Object.keys(lease).length ? text(lease.action) === "execute" ? text(lease.machine_id) : "" : preferred || text(state.owner_machine_id);
 }
 
-export function serverQuotaAvailable(state: Record<string, unknown>, supported: boolean): boolean {
+export function serverCreditAvailable(state: Record<string, unknown>, supported: boolean): boolean {
   return supported && !text(state.owner_machine_id) && !Object.keys(object(state.lease)).length && text(state.server_quota_generation) === text(state.generation) && isEntityId(text(state.generation));
+}
+
+export function serverQuotaAvailable(state: Record<string, unknown>, supported: boolean): boolean {
+ const lease=object(state.lease);
+ return supported && isEntityId(text(state.generation)) && (!Object.keys(lease).length || text(lease.action)==="execute");
 }
 
 export function quotaAccountAvailable(data: Record<string, unknown>): boolean {
@@ -35,7 +40,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   useLocale();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const workerQuotaSupported = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1) === true;
-  const serverSupported = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V1) === true;
+  const serverSupported = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2) === true;
   const quotaSupported = workerQuotaSupported || serverSupported;
   const workerCreditsSupported = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1) === true;
   const serverCreditsSupported = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1) === true;
@@ -46,8 +51,8 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const serverObservation = object(state.server_quota), serverCredit = object(state.server_credit);
   const creditObservation = observation.action === "reset-credit" && observation.phase === "uncertain" ? observation : text(serverCredit.id) ? serverCredit : observation;
   const reconcilingServer = creditObservation === serverCredit;
-  const serverCreditAvailable = serverQuotaAvailable(state, serverCreditsSupported);
-  const creditLaneAvailable = isEntityId(ownerMachine) ? workerCreditsSupported : serverCreditAvailable;
+  const serverCreditReady = serverCreditAvailable(state, serverCreditsSupported);
+  const creditLaneAvailable = isEntityId(ownerMachine) ? workerCreditsSupported : serverCreditReady;
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
   const [expanded, setExpanded] = useState(false);
   const sectionHeading = useRef<HTMLHeadingElement>(null), detailsHeading = useRef<HTMLHeadingElement>(null), confirmationHeading = useRef<HTMLHeadingElement>(null);
@@ -62,7 +67,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const busy = observe.busy || observe.uncertain || reconcile.busy || reconcile.uncertain || preferences.busy || preferences.uncertain;
   useEffect(() => { busyChanged(busy); return () => busyChanged(false); }, [busy, busyChanged]);
   const originalActive = ["queued", "sending", "uncertain"].includes(text(observation.phase)) || ["queued", "sending", "uncertain"].includes(text(serverObservation.phase)) || ["queued", "sending", "uncertain"].includes(text(serverCredit.phase));
-  const ready = active && quotaSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && data.health === "ready" && isEntityId(connection) && isEntityId(generation) && (isEntityId(ownerMachine) && workerQuotaSupported || serverAvailable) && state.recovery_required !== true && !text(object(state.pending).id) && !data.removal && !busy;
+  const ready = active && quotaSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && data.health === "ready" && isEntityId(connection) && isEntityId(generation) && serverAvailable && state.recovery_required !== true && !text(object(state.pending).id) && !data.removal && !busy;
   const creditReady = active && creditLaneAvailable && serviceAccount(current) && data.subscription_service === "chatgpt" && data.health === "ready" && isEntityId(connection) && isEntityId(generation) && state.recovery_required !== true && !state.pending && !data.removal && !busy;
   const count = text(inventory.available_count);
   const countValid = /^(?:0|[1-9][0-9]{0,18})$/.test(count) && BigInt(count) <= 9223372036854775807n;
@@ -74,7 +79,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const confirmCredit = (creditId: string, next: boolean, opener: HTMLElement) => {
     if (!creditReady || originalActive || !creditsSupported || !countValid || BigInt(count) <= 0n || !inventoryFresh) return;
     selectionOpener.current = opener; focusConfirmation.current = true;
-    setConfirmation({ machine: serverCreditAvailable ? "" : ownerMachine, account: current, creditId, next, inventoryId: text(inventory.observation_id), connection, generation });
+    setConfirmation({ machine: serverCreditReady ? "" : ownerMachine, account: current, creditId, next, inventoryId: text(inventory.observation_id), connection, generation });
   };
   const useAvailable = creditReady && !originalActive && inventoryAvailable && (details === null || selectable.length > 0);
   const creditReason = status.isPending ? copy("subscription-quota.loadingCredits") : status.error ? copy("subscription-quota.creditReadFailed") : !creditsSupported ? copy("subscription-quota.resetCreditConsumptionIsUnavailableOn_9c9ea3") : originalActive || busy ? copy("subscription-quota.creditPending") : !creditLaneAvailable || !creditReady ? copy("subscription-quota.creditOwnerUnavailable") : !countValid ? copy("subscription-quota.availableCreditCountUnknown_4e840a") : count === "0" ? copy("subscription-quota.noCredits") : !inventoryFresh ? copy("subscription-quota.creditInventoryStale") : details !== null && !credits ? copy("subscription-quota.creditDetailsMalformed") : details !== null && selectable.length === 0 ? copy("subscription-quota.noEligibleCredits") : "";
@@ -88,7 +93,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
     const opener = selectionOpener.current;
     if (opener?.isConnected && !opener.matches(":disabled") && !opener.closest("[hidden], [inert]")) opener.focus(); else sectionHeading.current?.focus();
   };
-  const exactConfirmation = confirmation && confirmation.account.id === current.id && confirmation.account.revision === current.revision && confirmation.connection === connection && confirmation.generation === generation && confirmation.inventoryId === inventory.observation_id && confirmation.machine === (serverCreditAvailable ? "" : ownerMachine);
+  const exactConfirmation = confirmation && confirmation.account.id === current.id && confirmation.account.revision === current.revision && confirmation.connection === connection && confirmation.generation === generation && confirmation.inventoryId === inventory.observation_id && confirmation.machine === (serverCreditReady ? "" : ownerMachine);
   const saveRecoveryNotifications = (enabled: boolean) => {
     let documentJson: Uint8Array;
     try { documentJson = accountPreferencesDocument(current, { recovery_notifications: enabled }); }
@@ -98,8 +103,8 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   };
   return <section aria-label={copy("subscription-quota.nativeQuotaAndResetCredits_8a07a3")}>
     <h3>{copy("subscription-quota.quota_6c105c")}</h3>
-    {!quotaSupported ? <p role="status">{copy("subscription-quota.updateTheServerAndRunnerDevice_57363b")}</p> : <><p><LocalizedText id="subscription-quota.lastSuccessfulObservation_836238" components={{ s0: <><Timestamp value={text(state.quota_observed_at)} fallback={copy("subscription-quota.extra.ca1844969742")} /></>, s1: <>{state.quota_state === "failed" ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e") : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}</> }} /></p><button type="button" disabled={!ready || originalActive} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: serverAvailable ? "" : ownerMachine, action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation })}>{copy("subscription-quota.refreshQuota_3e8708")}</button></>}
-    {quotaSupported && !isEntityId(ownerMachine) && !serverSupported ? <p role="status">{copy("subscription-quota.serverQuotaUnsupported")}</p> : null}
+    {!quotaSupported ? <p role="status">{copy("subscription-quota.updateTheServerAndRunnerDevice_57363b")}</p> : <><p><LocalizedText id="subscription-quota.lastSuccessfulObservation_836238" components={{ s0: <><Timestamp value={text(state.quota_observed_at)} fallback={copy("subscription-quota.extra.ca1844969742")} /></>, s1: <>{state.quota_state === "failed" ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e") : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}</> }} /></p><button type="button" disabled={!ready || originalActive} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: "", action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation })}>{copy("subscription-quota.refreshQuota_3e8708")}</button></>}
+    {quotaSupported && !serverSupported ? <p role="status">{copy("subscription-quota.serverQuotaUnsupported")}</p> : null}
     <label className="checkbox"><input type="checkbox" checked={data.recovery_notifications === true} disabled={!active || !quotaSupported || busy} onChange={(event) => saveRecoveryNotifications(event.target.checked)} />{copy("subscription-quota.notifyMeOfObservedQuotaRecovery_b8f166")}</label>
     {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
     <section className="reset-credit-section" aria-labelledby={detailsHeadingId + "-section"}>
@@ -130,6 +135,8 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
         <div className="actions"><button type="button" className="primary" disabled={!creditReady || originalActive || !exactConfirmation || !inventoryAvailable} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: confirmation.account.id, expectedRevision: confirmation.account.revision }, machineId: confirmation.machine, action: SubscriptionObservationAction.RESET_CREDIT, connectionId: confirmation.connection, generationId: confirmation.generation, creditsObservationId: confirmation.inventoryId, creditId: confirmation.creditId, nextCredit: confirmation.next, confirmed: true })}>{copy("subscription-quota.confirmCreditConsumption_251822")}</button><button type="button" disabled={busy} onClick={keepCredit}>{copy("subscription-quota.keepCredit_53e67f")}</button></div>
       </section> : null}
     </section>
+    {serverSupported && text(serverObservation.error_code) === "unsupported" ? <p role="status">{copy("subscription-quota.serverNativeQuotaUnavailable")}</p> : null}
+    {serverSupported && text(serverObservation.error_code) === "unavailable" ? <p role="status">{copy("subscription-quota.serverQuotaAuthenticationUnavailable")}</p> : null}
     {text(serverObservation.id) ? <p role="status">{statusLabel(text(serverObservation.phase))}</p> : null}
     {text(serverCredit.id) ? <p role="status">{statusLabel(text(serverCredit.phase))}{outcomeLabels[text(serverCredit.outcome)] ? copy("subscription-quota.message_2fa20b", { v0: outcomeLabels[text(serverCredit.outcome)] }) : ""}</p> : null}
     {text(observation.id) ? <p role="status">{text(observation.action)} · {statusLabel(text(observation.phase))}{outcomeLabels[text(observation.outcome)] ? copy("subscription-quota.message_2fa20b", { v0: outcomeLabels[text(observation.outcome)] }) : ""}</p> : null}

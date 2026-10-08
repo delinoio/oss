@@ -32,6 +32,7 @@ func init() {
 		}
 	}
 	initialized, notified := false, false
+	var externalQuotaRequest json.RawMessage
 	threads := &threadFixture{mode: mode}
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), 1<<20)
@@ -44,6 +45,7 @@ func init() {
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
 			Result json.RawMessage `json:"result"`
+			Error  json.RawMessage `json:"error"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
 			os.Exit(3)
@@ -58,7 +60,7 @@ func init() {
 				ClientInfo   struct{ Name, Title, Version string }
 				Capabilities struct{ ExperimentalAPI bool }
 			}
-			if json.Unmarshal(request.Params, &params) != nil || params.ClientInfo.Name != "delidev" || params.Capabilities.ExperimentalAPI != strings.HasPrefix(mode, "thread-") {
+			if json.Unmarshal(request.Params, &params) != nil || params.ClientInfo.Name != "delidev" || params.Capabilities.ExperimentalAPI != (strings.HasPrefix(mode, "thread-") || strings.HasPrefix(mode, "quota-")) {
 				os.Exit(5)
 			}
 			platform, family := runtime.GOOS, "unix"
@@ -99,6 +101,71 @@ func init() {
 			}
 			write(request.ID, map[string]any{"data": threads, "nextCursor": nil})
 		default:
+
+			if strings.HasPrefix(mode, "quota-") {
+				switch request.Method {
+				case "config/read":
+					store := "ephemeral"
+					if mode == "quota-foreign-store" {
+						store = "file"
+					}
+					write(request.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}}, "origins": nil, "layers": nil})
+					continue
+				case "account/login/start":
+					var auth struct {
+						Type    string `json:"type"`
+						Access  string `json:"accessToken"`
+						Account string `json:"chatgptAccountId"`
+						Plan    string `json:"chatgptPlanType"`
+					}
+					if domain.Decode(request.Params, &auth) != nil || auth.Type != "chatgptAuthTokens" || auth.Access != "synthetic-access-only" || auth.Account != "synthetic-account" || auth.Plan != "plus" {
+						os.Exit(55)
+					}
+					write(request.ID, map[string]any{"type": "chatgptAuthTokens"})
+					completion := map[string]any{"loginId": nil, "success": true, "error": nil, "onboardingEntrypoint": nil}
+					switch mode {
+					case "quota-completion-failed":
+						completion["success"] = false
+					case "quota-completion-foreign":
+						completion["loginId"] = "foreign-login"
+					case "quota-completion-error":
+						completion["error"] = "synthetic failure"
+					case "quota-completion-onboarding":
+						completion["onboardingEntrypoint"] = "foreign"
+					case "quota-completion-unknown":
+						completion["foreign"] = true
+					case "quota-completion-missing-success":
+						delete(completion, "success")
+					case "quota-completion-malformed-success":
+						completion["success"] = "true"
+					}
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/login/completed", "params": completion})
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/updated", "params": map[string]any{"authMode": "chatgptAuthTokens", "planType": "plus"}})
+					continue
+				case "account/rateLimits/read":
+					if len(request.Params) != 0 {
+						os.Exit(56)
+					}
+					if os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "quota-read"), []byte("once"), 0600) != nil {
+						os.Exit(57)
+					}
+					if mode == "quota-refresh" {
+						externalQuotaRequest = request.ID
+						_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": 913, "method": "account/chatgptAuthTokens/refresh", "params": map[string]any{"reason": "unauthorized", "previousAccountId": "synthetic-account"}})
+						continue
+					}
+					write(request.ID, map[string]any{"rateLimits": map[string]any{"limitId": "codex", "primary": map[string]any{"usedPercent": 20, "windowDurationMins": 300, "resetsAt": 1900000000}}})
+					continue
+				case "":
+					if mode == "quota-refresh" && string(request.ID) == "913" && len(request.Error) > 0 && len(request.Result) == 0 {
+						if os.WriteFile(filepath.Join(os.Getenv("CODEX_HOME"), "quota-refused"), []byte("refused"), 0600) != nil {
+							os.Exit(58)
+						}
+						_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": json.RawMessage(externalQuotaRequest), "error": map[string]any{"code": -32000, "message": "fixture rejected access"}})
+						continue
+					}
+				}
+			}
 			if request.Method == "experimentalFeature/list" && !strings.HasPrefix(mode, "thread-") {
 				enabled := strings.HasSuffix(mode, "plugins-enabled")
 				data := []any{map[string]any{"name": "plugins", "stage": "stable", "displayName": nil, "description": nil, "announcement": nil, "enabled": enabled, "defaultEnabled": true}}

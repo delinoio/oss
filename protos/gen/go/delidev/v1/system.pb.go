@@ -26,6 +26,7 @@ type SystemCapability int32
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                          SystemCapability = 0
 	SystemCapability_SYSTEM_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1       SystemCapability = 51
+	SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2         SystemCapability = 50
 	SystemCapability_SYSTEM_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1            SystemCapability = 47
 	SystemCapability_SYSTEM_CAPABILITY_PROJECT_PROMPT_HISTORY_V1            SystemCapability = 48
 	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SKILLS_V1                     SystemCapability = 44
@@ -84,6 +85,7 @@ var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
 		51: "SYSTEM_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1",
+		50: "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2",
 		47: "SYSTEM_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
 		48: "SYSTEM_CAPABILITY_PROJECT_PROMPT_HISTORY_V1",
 		44: "SYSTEM_CAPABILITY_NATIVE_SKILLS_V1",
@@ -134,6 +136,7 @@ var (
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                          0,
 		"SYSTEM_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1":       51,
+		"SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2":         50,
 		"SYSTEM_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":            47,
 		"SYSTEM_CAPABILITY_PROJECT_PROMPT_HISTORY_V1":            48,
 		"SYSTEM_CAPABILITY_NATIVE_SKILLS_V1":                     44,
@@ -2944,10 +2947,11 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xa3\x12\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xd7\x12\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x124\n" +
-	"0SYSTEM_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1\x103\x12/\n" +
+	"0SYSTEM_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1\x103\x122\n" +
+	".SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2\x102\x12/\n" +
 	"+SYSTEM_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1\x10/\x12/\n" +
 	"+SYSTEM_CAPABILITY_PROJECT_PROMPT_HISTORY_V1\x100\x12&\n" +
 	"\"SYSTEM_CAPABILITY_NATIVE_SKILLS_V1\x10,\x12%\n" +
