@@ -352,6 +352,26 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 			err = runAndReportJob(ctx, config, client, credential, f.job.InstanceID, assignment{context: ctx, cancel: func() {}}, resource, f.job)
 			if fault == managedFixtureInspectionActivity || fault == managedFixtureInspectionCompletion {
 				assertInspectionFailureLog(t, logs.Bytes(), f.jobID, f.input.ExecutionID, f.input.SessionID, f.input.Input.Prompt, f.input.Configuration.Instructions, f.root)
+				// Inspection refusal with independently verified cleanup keeps its
+				// original failed report; it is not an uncertain authentication Finish.
+				if err != nil || !client.reported {
+					t.Fatal("inspection refusal lost original failed report", err)
+				}
+				raw, readErr := security.ReadPrivate(filepath.Join(f.root, "jobs", string(f.jobID)+".json"), 2<<20)
+				var retained journal
+				if readErr != nil || domain.Decode(raw, &retained) != nil || retained.State != journalReported || retained.Problem == nil || len(retained.Output) != 0 {
+					t.Fatal("inspection refusal changed original failure settlement", readErr)
+				}
+				select {
+				case finish := <-authentication.finished:
+					defer clear(finish.Bundle)
+					if finish.Succeeded || !finish.CleanupConfirmed {
+						t.Fatal("inspection refusal fabricated success or lost joined authentication cleanup")
+					}
+				default:
+					t.Fatal("inspection refusal omitted original authentication cleanup")
+				}
+				return
 			}
 			var uncertain *managedExecutionUncertain
 			if !errors.As(err, &uncertain) || client.reported {
