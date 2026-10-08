@@ -453,6 +453,13 @@ func waitStopped(ctx context.Context, c Config, pool string) error {
 		}
 		active := false
 		if pool == "" {
+			// Global shutdown retains managed preparation and cleanup ownership,
+			// matching the manager's allTerminated boundary in live/offline status.
+			for _, artifact := range resp.Status.Artifacts {
+				if artifact.Reserved || artifact.Phase == ArtifactRemoving {
+					active = true
+				}
+			}
 			for _, im := range resp.Status.Images {
 				if im.Phase == ImageOpen || im.Phase == ImageRemoving {
 					active = true
