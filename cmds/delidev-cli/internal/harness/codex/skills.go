@@ -105,3 +105,31 @@ func (c *Client) SkillInputProofs(ctx context.Context) ([]HistoricalInput, error
 	}
 	return out, nil
 }
+
+// Native skill parts are authenticated separately from text and image digests.
+// Remove only structured parts, retaining the exact text/image order and bytes.
+func nativeInputSkills(parts []json.RawMessage) ([]json.RawMessage, []nativeTextInput, error) {
+	plain := []json.RawMessage{}
+	selected := []nativeTextInput{}
+	if len(parts) > domain.MaxInputImages+17 {
+		return nil, nil, incompatible()
+	}
+	for _, raw := range parts {
+		var kind struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(raw, &kind) != nil {
+			return nil, nil, incompatible()
+		}
+		if kind.Type != "skill" {
+			plain = append(plain, raw)
+			continue
+		}
+		var part nativeTextInput
+		if domain.Decode(raw, &part) != nil || part.Name == "" || part.Path == "" || part.Text != "" || len(selected) >= 16 {
+			return nil, nil, incompatible()
+		}
+		selected = append(selected, part)
+	}
+	return plain, selected, nil
+}

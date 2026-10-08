@@ -377,6 +377,9 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 		}
 		return tx.PutJob(r.ID, revision, r.SessionID, r.ProjectID, job)
 	}
+	if err := tx.InheritForkImages(input); err != nil {
+		return nil, err
+	}
 	// Publish the preparation, child and successful original job together. No
 	// source queue, transcript, interaction, routing or session record is written.
 	preparationID := domain.NewID()

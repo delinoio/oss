@@ -166,3 +166,10 @@ it("retains automatic selections after a deadline failure but clears a subsequen
  f.get.mockImplementation(request=>{if(request.kind===EntityKind.AGENT)throw new ConnectError("Timed out",Code.DeadlineExceeded);return original(request);});await act(async()=>{await f.client.invalidateQueries();});expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id);
  f.get.mockImplementation(request=>{if(request.kind===EntityKind.AGENT)throw new ConnectError("Missing",Code.NotFound);return original(request);});await act(async()=>{await f.client.invalidateQueries();});await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(""));expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(f.machine.id);expect(f.bridge.update).not.toHaveBeenCalled();expect(f.createSession).not.toHaveBeenCalled();
 });
+it("retains the full 256 KiB UTF-8 first-message budget and preserves the draft on overflow", async () => {
+ const value=fixture(); render(value.view()); await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Runs on"}))).toBe(value.machine.id)); const input=screen.getByRole("textbox",{name:"First message"});
+ const accepted="a".repeat(256 << 10); fireEvent.change(input,{target:{value:accepted}}); expect(input).toHaveProperty("value",accepted);
+ fireEvent.change(input,{target:{value:accepted+"한"}}); expect(input).toHaveProperty("value",accepted); await screen.findByRole("alert");
+ fireEvent.change(input,{target:{value:"a".repeat(300)}}); await submitCreation(); await waitFor(()=>expect(value.createSession).toHaveBeenCalledOnce());
+ expect(JSON.parse(new TextDecoder().decode(value.createSession.mock.calls[0][0].documentJson)).prompt).toBe("a".repeat(300));
+});

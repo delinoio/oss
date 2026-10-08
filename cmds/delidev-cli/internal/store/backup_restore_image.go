@@ -62,6 +62,12 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	// current descriptor can recover an old credential generation.
 	const connectedOAuthAccounts = `SELECT e.id FROM current_state.entities e JOIN current_state.account_oauth_attempts a ON e.id=json_extract(a.body,'$.account_id') WHERE e.kind='account' AND a.state='connected' AND json_type(e.body,'$.connection')='object' AND COALESCE(json_extract(e.body,'$.connection.credential_id'),json_extract(e.body,'$.connection.id'))=json_extract(a.body,'$.connect_request_id')`
 	queries := []string{
+		// Current image ownership and completed removals cannot roll back.
+		// Historical image bytes are never part of a database backup.
+		"DELETE FROM entities WHERE kind='job' AND json_extract(body,'$.type')='image-attachment'",
+		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind='job' AND json_extract(body,'$.type')='image-attachment'",
+		"DELETE FROM jobs WHERE id NOT IN (SELECT id FROM entities WHERE kind='job')",
+		"INSERT OR REPLACE INTO jobs SELECT j.* FROM current_state.jobs j JOIN current_state.entities e ON e.id=j.id WHERE json_extract(e.body,'$.type')='image-attachment'",
 		// A historical image cannot replace current once-only OAuth dispatch or
 		// cleanup evidence. Eligibility already excludes every unresolved attempt.
 		// Installation state is current once-only authority, never historical configuration.
@@ -195,6 +201,19 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			if err := domain.Decode(raw, &v); err != nil {
 				rows.Close()
 				return err
+			}
+			if v.Type == domain.ImageAttachmentJob {
+				var upload domain.ImageUpload
+				if domain.Decode(v.Input, &upload) != nil || validateImageUpload(upload) != nil {
+					rows.Close()
+					return domain.InvalidImageInput()
+				}
+				upload.Quarantined = true
+				v.Input, err = json.Marshal(upload)
+				if err != nil {
+					rows.Close()
+					return storageError(err)
+				}
 			}
 			if v.Type == domain.DeleteBackupJob {
 				continue

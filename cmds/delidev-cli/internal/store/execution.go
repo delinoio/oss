@@ -73,7 +73,7 @@ func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, 
 	if ir.SessionID != sessionID || ir.Revision != inputRevision || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.NativeRequestID != "" {
 		return empty, domain.Fail(domain.Conflict, "The input no longer matches the queued selection.", "Read its current ownership, content revision and delivery state.")
 	}
-	if err := (domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode}).Validate(); err != nil {
+	if err := (domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Attachments: input.Attachments}).Validate(); err != nil {
 		return empty, err
 	}
 	var head domain.ID

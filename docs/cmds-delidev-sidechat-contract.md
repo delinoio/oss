@@ -161,3 +161,7 @@ retirement releases its index. SQL purge alone cannot free its frozen outer-plan
 obligation. Text-only input remains usable, and rejected preparation retains its
 original durable cleanup owner. Do not enlarge the 4 MiB synchronized deletion
 envelope, evict accepted references, add RPCs or add a migration.
+
+## Inherited image references
+
+Sidechat adds no image deletion owner. Readback requires the current nondeleting parent owner and exact original succeeded Fork job prefix. Validate its input digest, session, machine, Worker device and runtime. Later parent images, changed jobs and restored quarantined metadata grant no access. Parent deletion joins dependent cleanup before last-owner image removal.

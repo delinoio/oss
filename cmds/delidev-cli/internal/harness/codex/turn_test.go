@@ -113,9 +113,12 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 		}
 		write(id, response)
 		f.notify("turn/started", map[string]any{"threadId": f.thread["id"], "turn": fixtureTurn(f.turn, TurnRunning)})
-		content := []any{map[string]any{"type": "text", "text": params["input"].([]any)[0].(map[string]any)["text"], "text_elements": []any{}}}
-		for _, part := range params["input"].([]any)[1:] {
-			content = append(content, part)
+		content := params["input"].([]any)
+		for _, rawPart := range content {
+			part := rawPart.(map[string]any)
+			if part["type"] == "text" {
+				part["text_elements"] = []any{}
+			}
 		}
 		item := map[string]any{"type": "userMessage", "id": "native-user-item", "clientId": f.turnInput, "content": content}
 		f.notify("item/completed", map[string]any{"threadId": f.thread["id"], "turnId": f.turn, "completedAtMs": 1, "item": item})

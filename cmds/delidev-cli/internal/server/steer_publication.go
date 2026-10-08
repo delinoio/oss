@@ -34,7 +34,7 @@ func publishSteer(tx *store.Tx, job store.Record, assignment domain.ExecutionJob
 	switch u.Delivery {
 	case domain.SteerNativeAccepted:
 		progress := session.Execution
-		primary := domain.BindExecutionInput(assignment.InputID, assignment.Input.Prompt)
+		primary := domain.BindSessionInput(assignment.InputID, assignment.Input)
 		bindings, err := domain.CheckedExecutionInputs(primary.InputID, primary.PromptDigest, progress.AcceptedInputs)
 		if err != nil {
 			return err

@@ -77,7 +77,7 @@ func queueExecutionStartupRetry(tx *store.Tx, sr store.Record, session domain.Se
 		return store.Record{}, err
 	}
 	old, err := store.Decode[domain.QueuedInput](ir)
-	if err != nil || old.Delivery != domain.InputRejected || old.ExecutionID != input.ExecutionID || old.NativeRequestID != input.TurnRequestID || old.Prompt != input.Input.Prompt || old.Mode != input.Input.Mode {
+	if err != nil || old.Delivery != domain.InputRejected || old.ExecutionID != input.ExecutionID || old.NativeRequestID != input.TurnRequestID || !queuedSessionInput(old).Equal(input.Input) {
 		return store.Record{}, domain.StartupRejectionUncertain()
 	}
 	_, machine, err := activeMachine(tx, session.MachineID)

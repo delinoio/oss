@@ -195,7 +195,7 @@ func appendSessionInput(tx *store.Tx, id domain.ID, session *domain.Session, inp
 	if len(names) > 0 {
 		skillNames = names[0]
 	}
-	_, err := tx.Put(domain.QueueKind, itemID, 0, id, session.ProjectID, domain.QueuedInput{Sequence: session.LastInputSequence, ContentRevision: 1, Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills, SkillNames: skillNames, Delivery: domain.InputQueued})
+	_, err := tx.Put(domain.QueueKind, itemID, 0, id, session.ProjectID, domain.QueuedInput{Sequence: session.LastInputSequence, ContentRevision: 1, Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills, Attachments: input.Attachments, SkillNames: skillNames, Delivery: domain.InputQueued})
 	return itemID, err
 }
 
@@ -225,6 +225,14 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 	}
 	input.Skills = bindings
 
+	if err := rejectDocumentAttachments(req.Msg.Attachments, input.Attachments); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	var attachmentError error
+	input.Attachments, attachmentError = requestImageAttachments(req.Msg.Attachments)
+	if attachmentError != nil {
+		return nil, rpc.Error(attachmentError, correlation)
+	}
 	input.ApplyDefaults()
 	if err := input.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
@@ -276,6 +284,9 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 				return nil, localOriginRequired()
 			}
 		}
+		if err := checkImageRoute(tx, input.AgentID, input.MachineID, input.Attachments); err != nil {
+			return nil, err
+		}
 		if err := validateSessionSelection(tx, input); err != nil {
 			return nil, err
 		}
@@ -288,8 +299,11 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		if err := queueSessionWorkspace(tx, id, &value, preparation); err != nil {
 			return nil, err
 		}
-		itemID, err := appendSessionInput(tx, id, &value, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills}, preparedSkillNames)
+		itemID, err := appendSessionInput(tx, id, &value, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills, Attachments: input.Attachments}, preparedSkillNames)
 		if err != nil {
+			return nil, err
+		}
+		if err := claimInputImages(tx, actor, domain.ID(req.Msg.RequestId), id, itemID, input.MachineID, input.Attachments, true); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Put(domain.SessionKind, id, 0, id, input.ProjectID, value); err != nil {
@@ -325,6 +339,14 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 	}
 	input.Skills = bindings
 
+	if err := rejectDocumentAttachments(req.Msg.Attachments, input.Attachments); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	var attachmentError error
+	input.Attachments, attachmentError = requestImageAttachments(req.Msg.Attachments)
+	if attachmentError != nil {
+		return nil, rpc.Error(attachmentError, correlation)
+	}
 	input.ApplyDefaults()
 	if err := input.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
@@ -384,8 +406,17 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if value.Archive != domain.NotArchived {
 			return nil, domain.Fail(domain.Conflict, "Archived or archiving sessions cannot accept new input.", "Restore the session first; restoration keeps execution paused.")
 		}
+		if value.IsSidechat() && len(input.Attachments) > 0 {
+			return nil, domain.UnsupportedImageInput()
+		}
+		if err := checkSessionImageRoute(tx, value, input.Attachments); err != nil {
+			return nil, err
+		}
 		itemID, err := appendSessionInput(tx, r.ID, &value, input, preparedSkillNames)
 		if err != nil {
+			return nil, err
+		}
+		if err := claimInputImages(tx, func() domain.Principal { actor, _ := domain.PrincipalFrom(ctx); return actor }(), domain.ID(req.Msg.RequestId), r.ID, itemID, value.MachineID, input.Attachments, false); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Put(domain.SessionKind, r.ID, r.Revision, r.ID, r.ProjectID, value); err != nil {
@@ -416,7 +447,7 @@ func validateSessionMutation(meta *pb.Mutation) error {
 	return domain.ID(meta.RequestId).Validate()
 }
 
-func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sessionID domain.ID, prompt string, remove bool, selections *pb.SkillSelectionList) (*pb.SessionChange, error) {
+func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sessionID domain.ID, prompt string, remove bool, selections *pb.SkillSelectionList, attachments []domain.ImageAttachment) (*pb.SessionChange, error) {
 	if err := validateSessionMutation(meta); err != nil {
 		return nil, err
 	}
@@ -424,19 +455,20 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		return nil, err
 	}
 	if !remove {
-		if err := domain.Text(prompt, "session input", domain.MaxPromptBytes, true); err != nil {
+		if err := domain.Text(prompt, "session input", domain.MaxPromptBytes, false); err != nil {
 			return nil, err
 		}
 	}
 	identity := struct {
-		ID        domain.ID
-		SessionID domain.ID
-		Revision  uint64
-		Prompt    string
-		Remove    bool
-		Skills    *pb.SkillSelectionList `json:",omitempty"`
-		Actor     *domain.Principal      `json:",omitempty"`
-	}{ID: domain.ID(meta.Id), SessionID: sessionID, Revision: meta.ExpectedRevision, Prompt: prompt, Remove: remove, Skills: selections}
+		ID          domain.ID
+		SessionID   domain.ID
+		Revision    uint64
+		Prompt      string
+		Remove      bool
+		Attachments []domain.ImageAttachment `json:",omitempty"`
+		Skills      *pb.SkillSelectionList   `json:",omitempty"`
+		Actor       *domain.Principal        `json:",omitempty"`
+	}{ID: domain.ID(meta.Id), SessionID: sessionID, Revision: meta.ExpectedRevision, Prompt: prompt, Remove: remove, Skills: selections, Attachments: attachments}
 	var preparedScope *domain.SkillReadRequest
 	var nextBindings []domain.SkillBinding
 	var nextNames map[domain.ID]string
@@ -543,6 +575,9 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		if err != nil {
 			return nil, err
 		}
+		if len(attachments) > 0 && !slices.Equal(attachments, value.Attachments) {
+			return nil, domain.Fail(domain.Conflict, "Accepted image references cannot change.", "Preserve the original ordered attachments when editing queued text.")
+		}
 		fixRow, fix, hasFix, err := tx.PRRemediationForInput(r.ID)
 		if err != nil {
 			return nil, err
@@ -578,6 +613,9 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 			value.Skills = nextBindings
 			value.SkillNames = nextNames
 		}
+		if !remove && (domain.SessionInput{Prompt: prompt, Mode: value.Mode, Attachments: value.Attachments}).Validate() != nil {
+			return nil, domain.InvalidImageInput()
+		}
 		value.Prompt = prompt
 		value.ContentRevision++
 		if remove {
@@ -607,7 +645,11 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 }
 
 func (s *Service) EditQueuedInput(ctx context.Context, req *connect.Request[pb.EditQueuedInputRequest]) (*connect.Response[pb.EditQueuedInputResponse], error) {
-	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), req.Msg.Prompt, false, req.Msg.Skills)
+	attachments, err := requestImageAttachments(req.Msg.Attachments)
+	if err != nil {
+		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+	}
+	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), req.Msg.Prompt, false, req.Msg.Skills, attachments)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -616,7 +658,7 @@ func (s *Service) EditQueuedInput(ctx context.Context, req *connect.Request[pb.E
 	return response, nil
 }
 func (s *Service) RemoveQueuedInput(ctx context.Context, req *connect.Request[pb.RemoveQueuedInputRequest]) (*connect.Response[pb.RemoveQueuedInputResponse], error) {
-	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), "", true, nil)
+	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), "", true, nil, nil)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}

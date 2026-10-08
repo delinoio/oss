@@ -23,13 +23,15 @@ const maxForkRollout = 64 << 20
 // ForkSource is in-memory evidence from the exact original Worker runtime.
 // Its private path is never supplied by a product client or serialized publicly.
 type ForkSource struct {
-	packageHome string
-	packages    map[string]string
-	original    *ForkSource
-	home, path  string
-	checkpoint  ContinuationCheckpoint
-	fileDigest  [sha256.Size]byte
-	turns       []json.RawMessage
+	imageRoot    string
+	imageMachine domain.ID
+	packageHome  string
+	packages     map[string]string
+	original     *ForkSource
+	home, path   string
+	checkpoint   ContinuationCheckpoint
+	fileDigest   [sha256.Size]byte
+	turns        []json.RawMessage
 }
 
 func unsupportedFork() error {
@@ -62,7 +64,7 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 	if err != nil {
 		return nil, err
 	}
-	last, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]))
+	last, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]), c.nativeImageInput)
 	if err != nil || last.ID != checkpoint.TurnID || last.Status != TurnCompleted || !slices.Equal(inputs, checkpoint.Inputs) {
 		return nil, continuationUncertain()
 	}
@@ -78,7 +80,7 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 	if err != nil || !forkableMetadata(again, checkpoint) || string(again.Path) != string(wire.Path) || *again.UpdatedAt != *wire.UpdatedAt {
 		return nil, continuationUncertain()
 	}
-	return &ForkSource{home: c.home, path: path, checkpoint: checkpoint, fileDigest: digest, turns: turns}, nil
+	return &ForkSource{imageRoot: c.imageRoot, imageMachine: c.imageMachine, home: c.home, path: path, checkpoint: checkpoint, fileDigest: digest, turns: turns}, nil
 }
 
 func forkableMetadata(wire threadWire, checkpoint ContinuationCheckpoint) bool {
@@ -156,7 +158,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 			return nil, unsupportedFork()
 		}
 		for _, raw := range page.Data {
-			turn, _, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{raw}))
+			turn, _, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{raw}), c.nativeImageInput)
 			if err != nil || turn.Status != TurnCompleted || seen[string(turn.ID)] {
 				return nil, unsupportedFork()
 			}

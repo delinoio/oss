@@ -279,6 +279,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	sessionDeletionsDone := make(chan struct{})
 	go func() { defer close(sessionDeletionsDone); service.runSessionDeletions(sessionDeletionsCtx) }()
 	defer func() { stopSessionDeletions(); <-sessionDeletionsDone }()
+	imageCleanupCtx, stopImageCleanup := context.WithCancel(child)
+	imageCleanupDone := make(chan struct{})
+	go func() { defer close(imageCleanupDone); service.runImageDraftCleanups(imageCleanupCtx) }()
+	defer func() { stopImageCleanup(); <-imageCleanupDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
 	if ready != nil {
 		ready(service.Endpoint)

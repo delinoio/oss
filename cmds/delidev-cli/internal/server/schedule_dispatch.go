@@ -286,7 +286,7 @@ func scheduleSessionResult(tx *store.Tx, record store.Record, value domain.Sessi
 	if err := checkContinuationInputs(tx, record.ID, assignment, *progress); err != nil {
 		return "", nil, err
 	}
-	bindings, err := domain.CheckedExecutionInputs(assignment.InputID, continuationDigest([]byte(assignment.Input.Prompt)), progress.AcceptedInputs)
+	bindings, err := domain.CheckedExecutionInputs(assignment.InputID, domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest, progress.AcceptedInputs)
 	if err != nil {
 		return "", nil, err
 	}

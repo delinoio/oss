@@ -124,7 +124,7 @@ func (s *ForkSource) RehomeSkills(ctx context.Context, childHome string) (*ForkS
 		}
 		result.turns[i] = raw
 	}
-	_, inputs, err := decodeLatestTurnInputs(marshalForkPage(result.turns[len(result.turns)-1:]))
+	_, inputs, err := decodeLatestTurnInputs(marshalForkPage(result.turns[len(result.turns)-1:]), (&Client{imageRoot: s.imageRoot, imageMachine: s.imageMachine}).nativeImageInput)
 	if err != nil || len(inputs) != len(s.checkpoint.Inputs) {
 		return nil, continuationUncertain()
 	}

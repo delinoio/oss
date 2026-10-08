@@ -30,6 +30,7 @@ import (
 )
 
 type Config struct {
+	imageClient              delidevv1connect.AttachmentServiceClient
 	startup                  *executionStartupAttempt
 	nativeClaudeInstallation *domain.Installation
 	network                  *workerNetworkRuntime
@@ -236,12 +237,13 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	}
 	config.network = transport.runtime
 	defer transport.CloseIdleConnections()
+	config.imageClient = delidevv1connect.NewAttachmentServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
 	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2*workspace.MaxStorageRecoveryJobBytes), connect.WithSendMaxBytes(2<<20))
 	if err := retireStorageReports(ctx, config); err != nil {
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
-	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -363,7 +365,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
-			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
 			}
@@ -782,6 +784,14 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			cancel(err)
 		}
 	}()
+	imagesDone := make(chan struct{})
+	imageClient := config.imageClient
+	go func() {
+		defer close(imagesDone)
+		if imageClient != nil {
+			watchImageTransfers(ctx, config, imageClient, credential, instance)
+		}
+	}()
 	readsDone := make(chan struct{})
 	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
 	defer func() {
@@ -789,6 +799,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		_ = stream.Close()
 		<-received
 		<-readsDone
+		<-imagesDone
 		<-forwardsDone
 		<-terminalsDone
 	}()

@@ -75,7 +75,7 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 	if queued.Delivery != domain.InputQueued || queued.ExecutionID != "" || queued.NativeRequestID != "" || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 		return store.Record{}, forkConflict()
 	}
-	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode, Skills: queued.Skills}
+	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode, Skills: queued.Skills, Attachments: queued.Attachments}
 	input, err = checkedExecutionAssignment(tx, sr, session, machine, input)
 	if err != nil {
 		return store.Record{}, err

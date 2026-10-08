@@ -62,6 +62,9 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	delidevv1connect.UnimplementedAttachmentServiceHandler
+	imageTransfersMu      sync.Mutex
+	imageTransferReaders  map[domain.ID]*imageTransferReader
 	skillPreparationsOnce sync.Once
 	skillPreparationsWake chan struct{}
 	knownModelsOnce       sync.Once

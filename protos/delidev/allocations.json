@@ -8703,6 +8703,625 @@
       "member": "selections",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_IMAGE_INPUTS_V1",
+      "number": 45
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_IMAGE_INPUTS_V1",
+      "number": 25
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "CreateSessionRequest",
+      "member": "attachments",
+      "number": 5
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "EnqueueInputRequest",
+      "member": "attachments",
+      "number": 5
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "ImageMediaType",
+      "member": "IMAGE_MEDIA_TYPE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "ImageMediaType",
+      "member": "IMAGE_MEDIA_TYPE_PNG",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "ImageMediaType",
+      "member": "IMAGE_MEDIA_TYPE_JPEG",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "ImageMediaType",
+      "member": "IMAGE_MEDIA_TYPE_WEBP",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentState",
+      "member": "ATTACHMENT_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentState",
+      "member": "ATTACHMENT_STATE_UPLOADING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentState",
+      "member": "ATTACHMENT_STATE_READY",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentState",
+      "member": "ATTACHMENT_STATE_CLAIMED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentState",
+      "member": "ATTACHMENT_STATE_DELETING",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentState",
+      "member": "ATTACHMENT_STATE_DELETED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ImageAttachment",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ImageAttachment",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ImageAttachment",
+      "member": "media_type",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ImageAttachment",
+      "member": "byte_length",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ImageAttachment",
+      "member": "sha256",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentUpload",
+      "member": "attachment",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentUpload",
+      "member": "state",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentUpload",
+      "member": "uploaded_bytes",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentUpload",
+      "member": "draft_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentUpload",
+      "member": "operation_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "draft_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "operation_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "machine_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "machine_revision",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "session_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "media_type",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "byte_length",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadRequest",
+      "member": "sha256",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadResponse",
+      "member": "upload",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "BeginUploadResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WriteChunkRequest",
+      "member": "attachment_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WriteChunkRequest",
+      "member": "offset",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WriteChunkRequest",
+      "member": "data",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WriteChunkRequest",
+      "member": "sha256",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WriteChunkResponse",
+      "member": "upload",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "FinishUploadRequest",
+      "member": "attachment_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "FinishUploadResponse",
+      "member": "upload",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "GetUploadRequest",
+      "member": "attachment_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "GetUploadResponse",
+      "member": "upload",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReadAttachmentRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReadAttachmentRequest",
+      "member": "attachment_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReadAttachmentRequest",
+      "member": "offset",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReadAttachmentRequest",
+      "member": "limit",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReadAttachmentResponse",
+      "member": "data",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReadAttachmentResponse",
+      "member": "sha256",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReadAttachmentResponse",
+      "member": "complete",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "DeleteDraftAttachmentRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "DeleteDraftAttachmentRequest",
+      "member": "attachment_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "DeleteDraftAttachmentResponse",
+      "member": "upload",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "DeleteDraftAttachmentResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentTransferOperation",
+      "member": "ATTACHMENT_TRANSFER_OPERATION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentTransferOperation",
+      "member": "ATTACHMENT_TRANSFER_OPERATION_WRITE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentTransferOperation",
+      "member": "ATTACHMENT_TRANSFER_OPERATION_FINISH",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentTransferOperation",
+      "member": "ATTACHMENT_TRANSFER_OPERATION_READ",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "enum",
+      "declaration": "AttachmentTransferOperation",
+      "member": "ATTACHMENT_TRANSFER_OPERATION_DELETE",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentTransfer",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentTransfer",
+      "member": "attachment",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentTransfer",
+      "member": "operation",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentTransfer",
+      "member": "offset",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentTransfer",
+      "member": "data",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentTransfer",
+      "member": "sha256",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "AttachmentTransfer",
+      "member": "limit",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WatchAttachmentTransfersRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WatchAttachmentTransfersRequest",
+      "member": "instance_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WatchAttachmentTransfersResponse",
+      "member": "transfer",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "WatchAttachmentTransfersResponse",
+      "member": "heartbeat",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReportAttachmentTransferRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReportAttachmentTransferRequest",
+      "member": "instance_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReportAttachmentTransferRequest",
+      "member": "transfer_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReportAttachmentTransferRequest",
+      "member": "data",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReportAttachmentTransferRequest",
+      "member": "sha256",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "ReportAttachmentTransferRequest",
+      "member": "problem_code",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "EditQueuedInputRequest",
+      "member": "attachments",
+      "number": 5
     }
   ],
   "rpcReservations": [
@@ -8712,6 +9331,78 @@
       "method": "ListSkills",
       "input": "ListSkillsRequest",
       "output": "ListSkillsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "BeginUpload",
+      "input": "BeginUploadRequest",
+      "output": "BeginUploadResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "WriteChunk",
+      "input": "WriteChunkRequest",
+      "output": "WriteChunkResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "FinishUpload",
+      "input": "FinishUploadRequest",
+      "output": "FinishUploadResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "GetUpload",
+      "input": "GetUploadRequest",
+      "output": "GetUploadResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "ReadAttachment",
+      "input": "ReadAttachmentRequest",
+      "output": "ReadAttachmentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "DeleteDraftAttachment",
+      "input": "DeleteDraftAttachmentRequest",
+      "output": "DeleteDraftAttachmentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "WatchAttachmentTransfers",
+      "input": "WatchAttachmentTransfersRequest",
+      "output": "WatchAttachmentTransfersResponse",
+      "clientStreaming": false,
+      "serverStreaming": true
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "ReportAttachmentTransfer",
+      "input": "ReportAttachmentTransferRequest",
+      "output": "ReportAttachmentTransferResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

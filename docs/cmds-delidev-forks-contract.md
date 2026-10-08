@@ -343,3 +343,7 @@ OpenCode source and child checkpoint readers use the strict 9 MiB private checkp
 Permanent deletion reads original OpenCode fork-completion metadata with the strict 9 MiB checkpoint decoder and the legacy Codex profile with its declared decoder bound. The original digest, canonical bytes and job/runtime/session/machine bindings remain required; larger valid private checkpoints do not strand deletion and replacements grant no cleanup authority.
 
 The same pre-copy eligibility reserves the complete child native checkpoint under its 8 MiB ceiling: original histories, two cloned-history copies, the complete message/part identity proof, metadata bounds and every original file descriptor. The fresh copied SQLite runtime has a separate 64 KiB serialized file-inventory profile. Capacity rejection preserves the source before workspace copying, runtime creation or native claims. Unexpected native auxiliary growth remains unsupported uncertainty and cannot enlarge this admitted profile.
+
+## Image ownership at the Fork boundary
+
+Independent Fork publication atomically adds child ownership for images in the original accepted prefix through the completed native boundary. Later source inputs grant no child ownership. Child references survive source deletion. Last-owner deletion retains the original Worker device and joined native cleanup. Follow the image-input and storage contracts.

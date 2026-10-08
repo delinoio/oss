@@ -102,3 +102,23 @@ it.each(["two packages","earlier literal"])("blocks ambiguous restored token spa
  for(const value of ["$other $same","$same $other","plain text"]){fireEvent.change(input,{target:{value,selectionStart:0}});expect((screen.getByRole("button",{name:"Save input"}) as HTMLButtonElement).disabled).toBe(true);fireEvent.submit(input.closest("form")!);expect(f.edit).not.toHaveBeenCalled();}
  fireEvent.click(screen.getByRole("button",{name:"Clear selected skills"}));fireEvent.click(screen.getByRole("button",{name:"Save input"}));await waitFor(()=>expect(f.edit).toHaveBeenCalledTimes(1));expect(f.edit.mock.calls[0]![0]).toMatchObject({skills:{selections:[]}});
 });
+
+it("disables image Steer and verifies immutable images before accepting an empty text edit", async () => {
+  const value = fixture();
+  const image = { id: newRequestId(), machine_id: newRequestId(), media_type: "image/png", byte_length: 24, sha256: "a".repeat(64) };
+  const input = create(ResourceSchema, { ...value.resource, documentJson: encode({ prompt: "Caption", delivery: "queued", attachments: [image] }) });
+  value.edit.mockImplementation(async () => ({ change: { input: create(ResourceSchema, { ...input, revision: 7n, documentJson: encode({ prompt: "", delivery: "queued", attachments: [] }) }) } }));
+  render(value.view(input));
+  expect(screen.getByRole("button", { name: "Steer with this input" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Edited input" }), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save input" }));
+  await screen.findByRole("button", { name: "Retry the same edit" });
+  expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty("value", "");
+  const request = value.edit.mock.calls[0][0] as { mutation: { requestId: string } };
+  value.edit.mockImplementation(async () => ({ change: { requestId: request.mutation.requestId, session: value.session, input: create(ResourceSchema, { ...input, revision: 7n, documentJson: encode({ prompt: "", delivery: "queued", attachments: [image] }) }) } }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same edit" }));
+  await waitFor(() => expect(screen.queryByRole("textbox", { name: "Edited input" })).toBeNull());
+  expect(value.edit.mock.calls[1][0]).toEqual(value.edit.mock.calls[0][0]);
+  expect(value.steer).not.toHaveBeenCalled();
+});

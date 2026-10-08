@@ -87,6 +87,16 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
+	if len(i.Input.Attachments) > 0 {
+		if i.Configuration.Harness != Codex || !i.Configuration.ImageInputDeclared || i.Configuration.SidechatPolicy != "" {
+			return UnsupportedImageInput()
+		}
+		for _, ref := range i.Input.Attachments {
+			if ref.MachineID != i.MachineID {
+				return InvalidImageInput()
+			}
+		}
+	}
 	if i.Remediation != nil && (i.Remediation.Validate() != nil || i.Input.Mode != ExecuteMode || i.Configuration.Harness != Codex || (i.Configuration.Options.Permission != PermissionWorkspaceWrite && i.Configuration.Options.Permission != PermissionFullAccess)) {
 		return Fail(Unsupported, "This assignment lacks the verified manual Git profile.", "Select the Codex execution profile with explicit write permission for manual PR fixes.")
 	}

@@ -1,5 +1,7 @@
 # Codex harness ownership
 
+- Image inputs use the pinned V2 localImage primitive under `docs/cmds-delidev-image-input-contract.md`. Require the exact immutable model to advertise image modality before send, resolve only original validated private Worker bytes, and bind ordered refs into acknowledgment/history/recovery digests. Never publish native paths, convert images to text, omit image parts or enable image-bound Steer without a separate complete profile.
+
 - Managed ChatGPT may discard only the original root's built-in codex_apps MCP startup status through its closed typed passive profile. Retain private errors/descriptors, unknown-field/state/reason rejection and other server/API/unscoped/OAuth/event-stream/tool boundaries. Connector status never changes account health, enables tools or grants input/authentication authority.
 
 - Empty native model verification is discarded metadata only for the original known root turn. Populated/foreign verification remains a private extension; missing/null/malformed arrays or unknown fields fail. Closed extension classifications provide diagnostics without logging native methods or payloads. Installed thread fixtures must reject unhandled extensions.

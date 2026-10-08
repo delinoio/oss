@@ -164,13 +164,14 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 }
 
 type ExecutionMessageUpdate struct {
-	ID             ID            `json:"id"`
-	NativeID       string        `json:"native_id"`
-	NativeParentID string        `json:"native_parent_id,omitempty"`
-	Role           MessageRole   `json:"role"`
-	Phase          *MessagePhase `json:"phase,omitempty"`
-	InputID        ID            `json:"input_id,omitempty"`
-	Text           string        `json:"text"`
+	Attachments    []ImageAttachment `json:"attachments,omitempty"`
+	ID             ID                `json:"id"`
+	NativeID       string            `json:"native_id"`
+	NativeParentID string            `json:"native_parent_id,omitempty"`
+	Role           MessageRole       `json:"role"`
+	Phase          *MessagePhase     `json:"phase,omitempty"`
+	InputID        ID                `json:"input_id,omitempty"`
+	Text           string            `json:"text"`
 }
 
 // ExecutionEvent is a closed normalized Worker publication, not a native wire
@@ -387,6 +388,9 @@ func (e ExecutionEvent) Validate() error {
 		if err := Text(m.Text, "native message text", MaxMessageText, false); err != nil {
 			return err
 		}
+		if ValidateImageAttachments(m.Attachments) != nil || len(m.Attachments) > 0 && m.Role != UserMessage {
+			return InvalidImageInput()
+		}
 		if m.Role != UserMessage && m.Role != AssistantMessage {
 			return Fail(Unsupported, "Unknown message role.", "Use a supported native message adapter.")
 		}
@@ -519,6 +523,7 @@ type ForkMessageOrigin struct {
 }
 
 type ExecutionMessage struct {
+	Attachments        []ImageAttachment          `json:"attachments,omitempty"`
 	Inherited          *ForkMessageOrigin         `json:"inherited,omitempty"`
 	GrokTool           *GrokToolEvent             `json:"grok_tool,omitempty"`
 	GrokUser           *GrokUserHistory           `json:"grok_user,omitempty"`

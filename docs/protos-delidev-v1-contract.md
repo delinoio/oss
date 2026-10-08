@@ -958,3 +958,8 @@ activation exception is defined in the sessions contract's Explicit native skill
 section; remaining allocation policy is unchanged.
 
 The allocation ledger retains the complete #1748 enum/message field closure and the SkillService.ListSkills input/output and nonstreaming profile. The repository descriptor checks enforce numeric ownership and closed RPC method profiles.
+## Image input declarations
+
+Issue #1746 owns `AttachmentService`, its closed image/transfer/upload declarations, System 45, Worker 25 and typed creation/enqueue/queued-edit attachment field 5. Follow the [image input contract](cmds-delidev-image-input-contract.md). The owner permits these declarations and complete activation in the same feature PR. Byte chunks remain bounded at 256 KiB outside generic resource and assignment JSON; old peers retain text-only behavior. No migration is added.
+
+The image input allocation ledger includes every AttachmentService method with its exact request, response and streaming profile. Queued edits preserve original accepted references; explicit typed references must match the complete ordered original selection. Omission retains old-client text edits.

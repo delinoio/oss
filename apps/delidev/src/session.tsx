@@ -1,4 +1,7 @@
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
+import { acknowledgeImages } from "./image-input";
+import { ImageAttachmentInput, RetainedImages, imageEntryHandlers } from "./image-attachments";
+import { useImageDraft, useImageRoute } from "./image-drafts";
 import { RunnerTaskRemediation } from "./session-runner-remediation";
 import { sessionControlEligibility, useSessionControl } from "./session-control";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
@@ -154,7 +157,7 @@ export function interactionRows(base: readonly Resource[], live: ReadonlyMap<str
   return appendedRows(base, live, removed, arrivals, sessionId, lastPage, EntityKind.INTERACTION);
 }
 
-export const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
+export const TranscriptItem = memo(function TranscriptItem({ resource, active = true }: { resource: Resource; active?: boolean }) {
   useLocale();
   const data = readDocument(resource);
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
@@ -195,6 +198,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource }: { resou
   return <article className={`message${roleClass}`} aria-label={copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
+    <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
     {toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <details><summary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></summary>
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
       {text(command.cwd) ? <p><LocalizedText id="session.directory_369f13" components={{ s0: <>{text(command.cwd)}</> }} /></p> : null}
@@ -284,12 +288,23 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     return messageRows(messages.data?.resources ?? [], live.resources, live.removed, live.newMessageIds, id, !!messages.data && !messages.data.nextPageToken);
   }, [messages.data, live.resources, live.removed, live.newMessageIds, id]);
   useEffect(() => { if (live.generation > 1) { void messages.refresh(); void queue.refresh(); void interactions.refresh(); } }, [live.generation]);
-  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); skills.clearAccepted(); void queue.refresh(); });
-  const locked = send.busy || send.uncertain;
+  const images = useImageDraft(`session:${id}`);
+  const [imageTextLimit, setImageTextLimit] = useState(false);
+  const imageRoute = useImageRoute(text(data.machine_id), text(data.agent_id), active, images.images.length > 0, object(data.fork).sidechat_parent_snapshot ? "sidechat" : text(object(object(data.initial_execution).configuration).harness) || text(object(object(object(data.fork).snapshot).configuration).harness));
+  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, (_result, request) => { images.controller.accepted(request.requestId, request.attachments.map(image => image.id)); setDraft(""); skills.clearAccepted(); void queue.refresh(); });
+  useEffect(() => { if (send.error && !send.uncertain && !send.busy) images.controller.operationId = undefined; }, [send.error, send.uncertain, send.busy, images.controller]);
+  const locked = send.busy || send.uncertain || images.busy;
   const composer = useRef<HTMLTextAreaElement>(null);
-  const skills = useSkillCompletion({ value: draft, change: (value, bindings) => setDraft(value, bindings), textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active, disabled: locked });
-  const canSend = !locked && !skills.blocked && Boolean(draft.trim()) && text(data.archive) === "active";
-  const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }), skills: skills.selections.length ? { selections: skills.selections } : undefined }); };
+  const skills = useSkillCompletion({ value: draft, change: (value, bindings) => { if (new TextEncoder().encode(value).byteLength > (256 << 10)) { setImageTextLimit(true); return false; } setImageTextLimit(false); return setDraft(value, bindings); }, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active, disabled: locked });
+  const canSend = !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
+  const enqueue = async () => {
+    if (!canSend) return;
+    const requestId = images.images.length ? images.controller.operationId ?? newRequestId() : newRequestId();
+    const original = encode({ prompt: draft, mode });
+    let attachments;
+    try { attachments = images.images.length && imageRoute.machine ? await images.controller.prepare(imageRoute.machine, requestId) : []; } catch { return; }
+    void send.send({ requestId, sessionId: id, documentJson: original, skills: skills.selections.length ? { selections: skills.selections } : undefined, attachments }, attachments.length ? (result, request) => acknowledgeImages(result.change, request.requestId, request.attachments, request.sessionId) : undefined);
+  };
   const shortcuts = useShortcuts([
     { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
     { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
@@ -376,7 +391,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={messages} root={transcriptRoot} active={true}>{payload => messageRows(payload, live.resources, live.removed, [], id, false).map(row => <TranscriptItem key={row.id} resource={row} />)}</ScrollPayloadWindow>{!messages.nextPageToken ? messageRows([], live.resources, live.removed, live.newMessageIds, id, true).filter(row => !messages.rows.some(known => known.id === row.id)).map(row => <TranscriptItem key={row.id} resource={row} />) : null}</> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={messages} root={transcriptRoot} active={true}>{payload => messageRows(payload, live.resources, live.removed, [], id, false).map(row => <TranscriptItem key={row.id} resource={row} active={active} />)}</ScrollPayloadWindow>{!messages.nextPageToken ? messageRows([], live.resources, live.removed, live.newMessageIds, id, true).filter(row => !messages.rows.some(known => known.id === row.id)).map(row => <TranscriptItem key={row.id} resource={row} active={active} />) : null}</> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
         <ScrollContinuation query={messages} root={transcriptRoot} active={live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
         {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
       </div>
@@ -389,15 +404,17 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </details>
         <details className="queue" onToggle={event => setQueueOpen(event.currentTarget.open)}><summary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.filter(r => text(readDocument(r).delivery) === "queued").length}</> }} />}</summary>
           <div ref={queueRoot} className="session-tray-content"><Failure failure={queue.error?.failure} />
-            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(row => text(readDocument(row).delivery) !== "removed").map(row => <QueuedInput key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(row => text(readDocument(row).delivery) !== "removed").map(row => <QueuedInput active={active && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput active={active && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
             <ScrollContinuation query={queue} root={queueRoot} active={queueOpen} label={copy("session.queuePages_1acdd8")} />
           </div>
         </details>
       </div>
-      <form className="composer" onSubmit={event => { event.preventDefault(); enqueue(); }}>
+      <form className="composer" {...imageEntryHandlers(images, locked || !imageRoute.systemSupported)} onSubmit={event => { event.preventDefault(); enqueue(); }}>
         <label className="sidebar-sr-only" htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label>
         <textarea ref={composer} onKeyDown={event => { if (!skills.onKeyDown(event) && !event.nativeEvent.isComposing) shortcuts.onKeyDown(event); }} onSelect={skills.onSelect} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={event => skills.onChange(event.target.value,event.target.selectionStart)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
         {skills.list}{skills.warning}
+        {imageTextLimit ? <p role="alert">{copy("image-input.textLimit")}</p> : null}
+        <ImageAttachmentInput draft={images} disabled={locked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={text(data.machine_id)} />
         <div className="composer-actions">
           <label>{copy("session.mode_cd20bc")}<select value={mode} disabled={locked} onChange={event => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("session.plan_fa8ed0")}</option></select></label>
           <button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}>{copy("session.queueMessage_891d4e")}</button>
