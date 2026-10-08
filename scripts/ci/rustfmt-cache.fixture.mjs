@@ -38,8 +38,8 @@ for (const directory of ["", "crates/example/", "crates/example/src/", "crates/e
       write("pnpm-workspace.yaml", "packages:\n  - scripts/ci\n");
       write("pnpm-lock.yaml", "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  scripts/ci: {}\n");
       write("turbo.json", JSON.stringify({ tasks: {} }));
-      // Turbo's failure presentation can finish before it forwards every task log.
-      // Record the exact production formatter command before reporting its status
+      // Hosted failure logs have omitted formatter output; the forwarding cause
+      // is unproved. Record the exact command before reporting its status
       // to Turbo, so an unrelated task failure cannot satisfy this regression.
       const formatterArgs = manifest.scripts["ci:rust:fmt"].split(" ");
       assert.equal(formatterArgs.shift(), "node");
