@@ -1116,40 +1116,46 @@ fn caller_marker_cannot_disable_root_descendant_cleanup() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("caller-marker-descendant-pid");
     let assignment = format!("MARKER={}", marker.display());
-    let output = command(
+    let mut command = command(
         home.path(),
         &[
             "run",
             "with-timeout",
             "--timeout",
-            "50ms",
+            "30s",
             "--kill-after",
             "0",
             &assignment,
             "--",
             "sh",
             "-c",
-            "sleep 30 & echo $! > \"$MARKER\"; wait",
+            "sleep 30 & pid=$!; printf '%s %s\\n' \"$pid\" \"$(ps -o pgid= -p \"$pid\")\" > \
+             \"$MARKER\"; wait",
         ],
-    )
-    .env("CLIBOX_RUN_PARENT_WRAPPER", "1")
-    .output()
-    .unwrap();
-    assert_eq!(output.status.code(), Some(124));
-    let pid = fs::read_to_string(marker)
-        .unwrap()
-        .trim()
-        .parse::<i32>()
-        .unwrap();
-    for _ in 0..50 {
-        if unsafe { libc::kill(pid, 0) } == -1
-            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-        {
-            return;
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    panic!("caller marker disabled owned descendant cleanup");
+    );
+    command.env("CLIBOX_RUN_PARENT_WRAPPER", "1");
+    let mut fixture = NestedProcessFixture::new(command, &marker);
+    // This tests ownership, not startup speed. Observe the live descendant
+    // before triggering cleanup; a short overall deadline can legitimately
+    // expire before a busy CI host schedules its PID publication.
+    let (workload, group) = fixture.workload(Duration::from_secs(8)).unwrap_or_else(|| {
+        panic!(
+            "caller-marker workload did not start; wrapper status: {:?}; stderr: {}",
+            fixture.child.try_wait(),
+            fixture.stderr()
+        )
+    });
+    assert_process_chain_in_group(fixture.child.id(), workload, group);
+    assert_eq!(
+        unsafe { libc::kill(fixture.child.id() as i32, libc::SIGTERM) },
+        0,
+        "could not cancel caller-marker wrapper"
+    );
+    let status = fixture
+        .wait(Duration::from_secs(5))
+        .expect("caller-marker wrapper did not return after SIGTERM");
+    assert_eq!(status.code(), Some(143));
+    assert_process_group_stopped(group);
 }
 
 #[test]
