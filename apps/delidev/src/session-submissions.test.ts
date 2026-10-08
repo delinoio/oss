@@ -63,3 +63,12 @@ it("bounds retained prompts atomically and retires only native-settled records",
   for (let index = 0; index < 16; index++) store.freeze(newRequestId(), sessionId, "x".repeat(256 << 10), Mode.Execute, 0);
   expect(() => store.freeze(newRequestId(), sessionId, "overflow", Mode.Execute, 0)).toThrow(); expect(store.snapshot()).toHaveLength(16);
 });
+
+it("keeps failed original observations unavailable until matching current or newer evidence", () => {
+  const f = fixture(); f.store.accepted(f.key, f.request, f.receipt); f.store.observationFailed(f.receipt.change!.input!.id);
+  expect(f.store.snapshot()[0].observationUnavailable).toBe(true);
+  f.store.observe(f.sessionId, [f.queue("queued", 1n)]); expect(f.store.snapshot()[0].observationUnavailable).toBe(true);
+  f.store.observe(f.sessionId, [f.queue("queued", 1n, "Changed without revision")], true); expect(f.store.snapshot()[0]).toMatchObject({ observationUnavailable: true, prompt: "Duplicate text" });
+  f.store.observe(f.sessionId, [f.queue("queued", 1n)], true); expect(f.store.snapshot()[0].observationUnavailable).toBe(false);
+  f.store.observationFailed(f.receipt.change!.input!.id); f.store.observe(f.sessionId, [f.queue("queued", 2n, "Current edit")]); expect(f.store.snapshot()[0]).toMatchObject({ observationUnavailable: false, prompt: "Current edit" });
+});

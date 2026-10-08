@@ -28,6 +28,8 @@ function queueEvidence(resource: Resource): QueueEvidence | undefined {
   if (typeof data.prompt !== "string" || bytes(data.prompt) > 256 << 10 || ![Mode.Execute, Mode.Plan].includes(data.mode as Mode) || !attachments) return;
   return { id: resource.id, sessionId: resource.sessionId, revision: resource.revision, prompt: data.prompt, attachments, phase: phases[text(data.delivery)] ?? SubmissionPhase.Uncertain };
 }
+export function submissionQueueReadable(resource: Resource): boolean { return Boolean(queueEvidence(resource)); }
+
 /** Only an original user MESSAGE with its exact input identity replaces a projection. */
 export function nativeSubmissionInput(resource: Resource): string | undefined {
   if (resource.kind !== EntityKind.MESSAGE || !isEntityId(resource.id) || resource.revision < 1n || !supportsResourceSchema(resource)) return;
@@ -132,7 +134,16 @@ export class SessionSubmissions {
           if ((current || this.queues.size < maximumCount) && used + bytes(queue.prompt) <= maximumBytes) this.queues.set(queue.id, queue);
         }
         for (const row of this.records.values()) if (row.sessionId === sessionId && row.queueId === queue.id && (queue.revision > row.queueRevision || queue.revision === row.queueRevision && row.observationUnavailable && reinspection)) {
-          this.records.set(row.requestId, this.withQueue(row, queue)); changed = true;
+          if (queue.revision > row.queueRevision) {
+            this.records.set(row.requestId, this.withQueue(row, queue)); changed = true;
+          } else if (queue.prompt === row.prompt && queue.phase === row.phase && queue.attachments.length === row.attachments.length && queue.attachments.every((image, index) => {
+            const original = row.attachments[index];
+            return image.id === original.id && image.machineId === original.machineId && image.sha256 === original.sha256 && image.byteLength === original.byteLength && image.mediaType === original.mediaType;
+          })) {
+            // A current reread clears failed observation without allowing an
+            // unchanged revision to rewrite its already accepted content.
+            this.records.set(row.requestId, { ...row, observationUnavailable: false }); changed = true;
+          }
         }
       } else if (resource.kind === EntityKind.MESSAGE && resource.revision > 0n && supportsResourceSchema(resource)) {
         const inputId = nativeSubmissionInput(resource);

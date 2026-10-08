@@ -1,5 +1,5 @@
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
-import { acknowledgeSessionSubmission, nativeSubmissionInput, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
+import { acknowledgeSessionSubmission, nativeSubmissionInput, submissionQueueReadable, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
 import { imageMime } from "./image-input";
 import { ImageAttachmentInput, RetainedImages, imageEntryHandlers } from "./image-attachments";
 import { useImageDraft, useImageRoute } from "./image-drafts";
@@ -249,7 +249,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
           const result = await client.getResource({ kind: EntityKind.QUEUE, id: original.queueId! }, { signal: controller.signal });
           if (controller.signal.aborted || !submissions.store.alive) return;
           const row = result.resource;
-          if (!row || row.id !== original.queueId || row.sessionId !== id || row.kind !== EntityKind.QUEUE || row.revision < 1n || !supportsResourceSchema(row)) throw new ConnectError("The original input status could not be verified.", Code.DataLoss);
+          if (!row || row.id !== original.queueId || row.sessionId !== id || row.kind !== EntityKind.QUEUE || row.revision < 1n || !supportsResourceSchema(row) || !submissionQueueReadable(row)) throw new ConnectError("The original input status could not be verified.", Code.DataLoss);
           submissions.store.observe(id, [row], true);
         } catch (error) {
           if (controller.signal.aborted || !submissions.store.alive) return;
