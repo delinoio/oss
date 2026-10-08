@@ -40,6 +40,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Validate Linux terminal fixtures
+        if: runner.os == 'Linux'
+        run: |
+          cargo test --locked -p clibox --test run -- --test-threads=4
+          for attempt in 1 2 3 4 5; do
+            cargo test --locked -p clibox --test run interactive_workload_keeps_foreground_terminal_access -- --exact --nocapture
+          done
       - name: Validate complete native fspy library
         run: cargo test --locked -p clibox-fspy --lib -- --test-threads=4
       - name: Validate watch fixture lifecycle and event boundary
