@@ -246,7 +246,7 @@ it("starts General Chat with explicit execution selections and no project or Loc
   await waitScrollChoices(page.getByRole("combobox", { name: "Agent Worker" }));
   await chooseScrollOption(page.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
   await chooseScrollOption(page.getByRole("combobox", { name: "Runs on" }), value.machine.id);
-  fireEvent.change(page.getByLabelText("Mode"), { target: { value: "plan" } });
+  fireEvent.click(page.getByRole("checkbox", { name: "Plan Mode" }));
   fireEvent.change(firstMessage, { target: { value: "Help me think through an idea" } });
   fireEvent.keyDown(firstMessage, { key: "Enter", shiftKey: true });
   fireEvent.keyDown(firstMessage, { key: "Enter", isComposing: true, keyCode: 229 });
@@ -258,6 +258,25 @@ it("starts General Chat with explicit execution selections and no project or Loc
   expect(request.localWorkerToken).toBe("");
   expect(proof).not.toHaveBeenCalled();
   expect(await screen.findByRole("heading", { name: "Retained session" })).toBeTruthy();
+}, fullShellTimeoutMs);
+
+it.each([false, true])("submits unchecked Execute, checked Plan and unchecked Execute from creation (General Chat %s)", async generalChat => {
+  const value = fixture([], [], [], false, true); render(<App transport={value.transport} />);
+  for (const [index, expected] of ["execute", "plan", "execute"].entries()) {
+    fireEvent.click((await screen.findAllByRole("button", { name: generalChat ? "New general chat" : "New session" }))[0]);
+    const page = within(screen.getByRole("region", { name: generalChat ? "What would you like to talk about?" : "What would you like to work on?" }));
+    const mode = page.getByRole("checkbox", { name: "Plan Mode" });
+    if (!index) expect(mode).toHaveProperty("checked", false);
+    else { fireEvent.click(mode); expect(value.creates).toHaveBeenCalledTimes(index); }
+    await waitScrollChoices(page.getByRole("combobox", { name: "Agent Worker" }));
+    if (!index) { await chooseScrollOption(page.getByRole("combobox", { name: "Agent Worker" }), value.agent.id); await chooseScrollOption(page.getByRole("combobox", { name: "Runs on" }), value.machine.id); }
+    fireEvent.change(page.getByLabelText("First message"), { target: { value: `Explicit draft ${index}` } });
+    fireEvent.click(page.getByRole("button", { name: generalChat ? "Start general chat" : "Create session" }));
+    await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(index + 1));
+    const request = (value.creates.mock.calls as unknown as [{ documentJson: Uint8Array }][])[index][0];
+    expect(JSON.parse(new TextDecoder().decode(request.documentJson)).mode).toBe(expected);
+    await screen.findByRole("heading", { name: "Retained session" });
+  }
 }, fullShellTimeoutMs);
 
 it("retains separate Local and General Chat drafts through Settings, language and same-identity reconnect", async () => {
@@ -283,7 +302,7 @@ it("retains separate Local and General Chat drafts through Settings, language an
   await waitScrollChoices(general.getByRole("combobox", { name: "Agent Worker" }));
   await chooseScrollOption(general.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
   await chooseScrollOption(general.getByRole("combobox", { name: "Runs on" }), value.machine.id);
-  fireEvent.change(general.getByLabelText("Mode"), { target: { value: "plan" } });
+  fireEvent.click(general.getByRole("checkbox", { name: "Plan Mode" }));
   fireEvent.click(general.getByRole("button", { name: "Options" }));
   fireEvent.click(general.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
   fireEvent.change(general.getByLabelText("Budget currency"), { target: { value: "USD" } });
@@ -299,15 +318,17 @@ it("retains separate Local and General Chat drafts through Settings, language an
   expect(general.getByRole("textbox", { name: "First message" })).toBe(message);
   expect((message as HTMLTextAreaElement).value).toBe("Keep my conversation idea");
   expect(scrollChoiceValue(general.getByRole("combobox", { name: "Agent Worker" }))).toBe(value.agent.id);
-  expect((general.getByLabelText("Mode") as HTMLSelectElement).value).toBe("plan");
+  expect(general.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
   expect((general.getByLabelText("Estimated-cost threshold") as HTMLInputElement).value).toBe("2");
   await act(async () => { await i18n.changeLanguage("ko"); });
   expect(screen.getByRole("heading", { name: "어떤 이야기를 나누고 싶으신가요?" })).toBeTruthy();
+  expect(general.getByRole("checkbox", { name: "계획 모드" })).toHaveProperty("checked", true);
   expect((general.getByRole("textbox", { name: "첫 메시지" }) as HTMLTextAreaElement).value).toBe("Keep my conversation idea");
   await act(async () => { await i18n.changeLanguage("en"); });
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
   expect(scrollChoiceValue(original.getByRole("combobox", { name: "Project" }))).toBe(project.id);
   expect((original.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("Keep this Local task");
+  expect(original.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", false);
   expect((original.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).disabled).toBe(true);
   expect(value.creates).not.toHaveBeenCalled();
   view.rerender(<App transport={value.transport} {...props} currentDeviceId={newRequestId()} />);
@@ -316,6 +337,7 @@ it("retains separate Local and General Chat drafts through Settings, language an
   expect((fresh.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("");
   expect(scrollChoiceValue(fresh.getByRole("combobox", { name: "Agent Worker" }))).toBe("");
   expect(fresh.getByRole("button", { name: "Options" }).getAttribute("aria-expanded")).toBe("false");
+  expect(fresh.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", false);
 }, fullShellTimeoutMs);
 
 it("isolates pending General Chat from an uncertain project request and never steals its activation", async () => {
@@ -332,6 +354,7 @@ it("isolates pending General Chat from an uncertain project request and never st
   fireEvent.click(general.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
   fireEvent.change(general.getByLabelText("Budget currency"), { target: { value: "USD" } });
   fireEvent.change(general.getByLabelText("Estimated-cost threshold"), { target: { value: "2" } });
+  fireEvent.click(general.getByRole("checkbox", { name: "Plan Mode" }));
   fireEvent.change(general.getByLabelText("First message"), { target: { value: "Original general conversation" } });
   fireEvent.click(general.getByRole("button", { name: "Start general chat" }));
   await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
@@ -340,6 +363,8 @@ it("isolates pending General Chat from an uncertain project request and never st
   expect(general.getByLabelText("Budget currency").matches(":disabled")).toBe(true);
   expect(general.getByLabelText("Estimated-cost threshold").matches(":disabled")).toBe(true);
   expect(general.getByRole("button", { name: "Options" }).matches(":disabled")).toBe(true);
+  expect(general.getByRole("checkbox", { name: "Plan Mode" }).matches(":disabled")).toBe(true);
+  expect(general.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
   const original = within(screen.getByRole("region", { name: "What would you like to work on?" }));
   await chooseScrollOption(original.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
@@ -404,7 +429,7 @@ it.each([false, true])("selects a project once, retains the draft, and focuses t
   await waitScrollChoices(screen.getByRole("combobox", { name: "Agent Worker" }));
   await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
   await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }), value.machine.id);
-  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Mode"), { target: { value: "plan" } });
+  fireEvent.click(within(document.querySelector(".new-session-page")!).getByRole("checkbox", { name: "Plan Mode" }));
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByText("Optional estimated-cost budget"));
   fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
@@ -420,7 +445,7 @@ it.each([false, true])("selects a project once, retains the draft, and focuses t
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }))).toBe("");
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }))).toBe("");
   expect(screen.getByRole("button", { name: "Use separate Worktrees" }).getAttribute("aria-pressed")).toBe("true");
-  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Mode")).toHaveProperty("value", "plan");
+  expect(within(document.querySelector(".new-session-page")!).getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
   expect(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold")).toHaveProperty("value", "1.25");
   expect(screen.getByRole("button", { name: "Options" }).getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByRole("textbox", { name: "First message" })).toBe(prompt);

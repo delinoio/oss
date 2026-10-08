@@ -416,7 +416,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         {imageTextLimit ? <p role="alert">{copy("image-input.textLimit")}</p> : null}
         <ImageAttachmentInput draft={images} disabled={locked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={text(data.machine_id)} />
         <div className="composer-actions">
-          <label>{copy("session.mode_cd20bc")}<select value={mode} disabled={locked} onChange={event => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("session.plan_fa8ed0")}</option></select></label>
+          <label className="plan-mode"><input type="checkbox" checked={mode === Mode.Plan} disabled={locked} onChange={event => setMode(event.target.checked ? Mode.Plan : Mode.Execute)} />{copy("session.planMode")}</label>
           <button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}>{copy("session.queueMessage_891d4e")}</button>
           {send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
         </div>

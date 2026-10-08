@@ -56,7 +56,7 @@ try {
     assert.equal(await chat.locator('.new-session-options').count(), 0);
     await chat.locator('textarea').fill('Retained synthetic draft');
     await selectResource(chat, 0); await selectResource(chat, 1);
-    await chat.locator('select').selectOption('plan');
+    await chat.getByRole('checkbox', { name: language === 'en' ? 'Plan Mode' : '계획 모드', exact: true }).check();
     await normalize(); const before = await geometry();
     if (screenshots && theme !== 'system' && size.width !== 480) {
       await mkdir(screenshots, { recursive: true });
@@ -94,7 +94,7 @@ try {
       if (destination === 'Fixture Settings') await page.getByRole('button', { name: 'Fixture General Chat', exact: true }).click();
       await chat.locator('textarea').waitFor(); await frame();
       assert.equal(await chat.locator('textarea').inputValue(), 'Retained synthetic draft');
-      assert.equal(await chat.locator('select').inputValue(), 'plan'); assert(await enabled.isChecked());
+      assert(await chat.getByRole('checkbox', { name: language === 'en' ? 'Plan Mode' : '계획 모드', exact: true }).isChecked()); assert(await enabled.isChecked());
       assert.equal(await fields.nth(0).inputValue(), 'USD'); assert.equal(await fields.nth(1).inputValue(), '2');
       await anchored(before);
     }
@@ -112,7 +112,7 @@ try {
     assert.deepEqual(JSON.parse(await page.locator('output').textContent()).estimated_cost_budget, { currency: 'USD', threshold: '2' });
     // A fresh identity remounts both draft controllers; navigation alone above does not.
     await page.getByRole('button', { name: 'Fixture identity', exact: true }).click(); await frame();
-    assert.equal(await chat.locator('textarea').inputValue(), ''); assert.equal(await chat.locator('select').inputValue(), 'execute');
+    assert.equal(await chat.locator('textarea').inputValue(), ''); assert.equal(await chat.getByRole('checkbox', { name: language === 'en' ? 'Plan Mode' : '계획 모드', exact: true }).isChecked(), false);
     assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
     await chat.locator('textarea').fill('No budget draft'); await selectResource(chat, 0); await selectResource(chat, 1);
     await chat.locator('.new-session-submit').click();

@@ -55,5 +55,6 @@
   "new-session.preferencesOutcomeUnknown": "The save outcome is unknown",
   "new-session.preferencesChanged": "Saved choices changed elsewhere",
   "new-session.preferencesCapacity": "Saved choices have reached the device storage limit",
-  "new-session.preferencesResolving": "Checking the saved Agent Worker and Runner Device…"
+  "new-session.preferencesResolving": "Checking the saved Agent Worker and Runner Device…",
+  "new-session.planMode": "Plan Mode"
 }
