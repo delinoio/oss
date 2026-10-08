@@ -111,6 +111,7 @@ func (m *Manager) acceptWithValidatedReload(c Config, restart, validatedReload b
 		if err := checkDockerArtifactEndpoint(*s, endpoint); err != nil {
 			return err
 		}
+		initializeRunnerQuarantines(s)
 		stopping := s.Stopping
 		if validatedReload {
 			recordValidatedManagedRecovery(s, c)
@@ -868,8 +869,10 @@ func applyMessage(s *Snapshot, poolID, session string, msg *scaleset.RunnerScale
 	}
 	for _, job := range msg.JobCompletedMessages {
 		if r := match(job.RunnerName, job.RunnerID); r != nil && r.Phase != Completed {
-			r.Phase = Cleaning
 			r.CompletedJob = true
+			if r.Phase != Quarantined || runnerQuarantineCause(*s, r.ID) == QuarantineRegistrationAbsent {
+				r.Phase = Cleaning
+			}
 		}
 	}
 	return nil
@@ -1014,6 +1017,11 @@ func (m *Manager) runnerProblem(id string, err error, quarantine bool) {
 		}
 		r.Problem = p
 		if quarantine || p.Code == ErrOwnership {
+			cause := QuarantineUnknown
+			if p.Code == ErrOwnership {
+				cause = QuarantineIdentityConflict
+			}
+			recordRunnerQuarantine(s, id, cause)
 			r.Phase = Quarantined
 		}
 		return nil
@@ -1115,6 +1123,7 @@ func (m *Manager) inspect(ctx context.Context, id string) {
 			if !runnerInspectionPending(r) || r.Forced {
 				return nil
 			}
+			recordRunnerQuarantine(s, id, QuarantineRegistrationAbsent)
 			r.Problem, r.Phase = q, Quarantined
 			applied = true
 			return nil
@@ -1272,6 +1281,7 @@ func (m *Manager) cleanup(ctx context.Context, id string) {
 		r.Phase = Completed
 		r.CompletedAt = nowUTC()
 		r.Problem = nil
+		delete(s.RunnerQuarantines, id)
 		return nil
 	}); e != nil {
 		m.runnerProblem(id, e, false)
