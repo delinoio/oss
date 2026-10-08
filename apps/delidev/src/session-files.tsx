@@ -25,20 +25,24 @@ function useWorkspaceReader(sessionId: string): WorkspaceReader {
     const pending = (filesReadBarriers.get(client) ?? Promise.resolve()).then(async () => {
     const options = createQueryOptions(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode(query) }, { transport });
     const queryKey = [...options.queryKey, { filesObservation: newRequestId() }];
-    const abort = () => { void client.cancelQueries({ queryKey, exact: true }); };
-    signal.addEventListener("abort", abort, { once: true });
+    // Connect abort rejects its client promise before an ignored-abort handler
+    // has settled. Files cancellation therefore fences publication in the
+    // controller, but never aborts this already dispatched read-only RPC. A
+    // queued canceled observation still exits before dispatch below. Keep a
+    // dedicated signal so QueryClient disposal cannot vacate the read barrier.
+    const settlement = new AbortController();
     let original: Promise<{ documentJson: Uint8Array }> | undefined;
     try {
       if (signal.aborted) throw new DOMException("Workspace observation canceled", "AbortError");
       return await client.fetchQuery({ queryKey, retry: false, gcTime: 0, staleTime: 0, queryFn: async context => {
-        original = Promise.resolve(options.queryFn({ ...context, queryKey: options.queryKey }));
+        original = Promise.resolve(options.queryFn({ ...context, signal: settlement.signal, queryKey: options.queryKey }));
         return observation((await original).documentJson);
       } });
     } finally {
       // TanStack cancellation can reject before its underlying read settles.
       // Retain the scheduler slot until that original promise finishes.
       if (original) await original.catch(() => undefined);
-      signal.removeEventListener("abort", abort); client.removeQueries({ queryKey, exact: true });
+      client.removeQueries({ queryKey, exact: true });
     }
     });
     filesReadBarriers.set(client, pending.then(() => undefined, () => undefined));

@@ -149,3 +149,27 @@ it("uses tree navigation and keeps symbolic links inert", async () => {
   fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" }); expect(document.activeElement).toBe(folder);
   fireEvent.keyDown(folder, { key: "ArrowLeft" }); expect(folder.getAttribute("aria-expanded")).toBe("false"); expect(screen.queryByRole("treeitem", { name: "nested.txt 2 bytes" })).toBeNull();
 });
+
+it("joins an ignored-abort Connect handler before preview after directory cancellation", async () => {
+  const sessionId = newRequestId(), root = newRequestId(); let busy = 0, maximum = 0, finishPage = () => {};
+  const held = new Promise<void>(resolve => { finishPage = resolve; }); const calls: string[] = [];
+  const transport = createRouterTransport(router => router.service(SessionService, { readSessionWorkspace: async request => {
+    const query = JSON.parse(new TextDecoder().decode(request.queryJson)); calls.push(query.operation + (query.page_token ? ":next" : "")); maximum = Math.max(maximum, ++busy);
+    try {
+      if (query.operation === "roots") return { documentJson: encode({ size: "0", binary: false, truncated: false, roots: [{ repository_id: root, name: "Workspace", primary: true }] }) };
+      if (query.operation === "file") return { documentJson: encode({ size: "4", binary: false, truncated: false, text: "safe" }) };
+      if (query.page_token) { await held; return { documentJson: encode({ size: "0", binary: false, truncated: false, entries: [{ name: "late.txt", kind: "file", size: "1" }] }) }; }
+      return { documentJson: encode({ size: "0", binary: false, truncated: false, entries: [{ name: "note.txt", kind: "file", size: "4" }], next_page_token: "next" }) };
+    } finally { busy--; }
+  } }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><TransportProvider transport={transport}><SessionFiles sessionId={sessionId} close={() => {}} /></TransportProvider></QueryClientProvider>);
+  const note = await screen.findByRole("treeitem", { name: "note.txt 4 bytes" });
+  fireEvent.click(screen.getByRole("button", { name: "Load more Directory pages" })); await waitFor(() => expect(calls.at(-1)).toBe("directory:next"));
+  fireEvent.click(note); await screen.findByText("Reading file…");
+  await new Promise(resolve => setTimeout(resolve, 50));
+  expect(calls).toEqual(["roots", "directory", "directory:next"]); expect(busy).toBe(1);
+  finishPage(); await screen.findByText("safe"); expect(maximum).toBe(1);
+  fireEvent.click(screen.getByRole("button", { name: "Back to files" })); expect(screen.queryByText("late.txt")).toBeNull();
+  await waitFor(() => expect(client.getQueryCache().getAll()).toHaveLength(0));
+});
