@@ -85,3 +85,33 @@ test("closed preference snapshots reject malformed storage and unknown fields", 
   const valid = { revision: 1, date_format: "system", problem: null };
   for (const value of [null, {}, { ...valid, revision: -1 }, { ...valid, revision: 1.5 }, { ...valid, date_format: "custom" }, { ...valid, problem: "path" }, { ...valid, extra: true }]) expect(() => parseDateFormat(value)).toThrow();
 });
+
+test("an unrelated event before a rejected save cannot clear original save uncertainty", async () => {
+  const value = fixture();
+  let reject!: (error: Error) => void;
+  vi.mocked(value.bridge.update).mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+  render(<DateFormatProvider bridge={value.bridge}><DateFormatSettings /></DateFormatProvider>);
+  const radio = screen.getByRole("radio", { name: /YYYY-MM-DD/ });
+  await waitFor(() => expect(radio).not.toHaveProperty("disabled", true));
+  fireEvent.click(radio);
+  expect(value.bridge.update).toHaveBeenCalledExactlyOnceWith(DateFormatPreference.Ymd, 1);
+  act(() => value.publish({ revision: 2, date_format: DateFormatPreference.Dmy, problem: null }));
+  await act(async () => reject(new Error("private rejected-save diagnostic")));
+  const reload = await screen.findByRole("button", { name: "Reload date format" });
+  expect(screen.getByRole("radio", { name: /DD\/MM\/YYYY/ })).toHaveProperty("checked", true);
+  expect(radio.closest("fieldset")?.getAttribute("aria-disabled")).toBe("true");
+  expect(screen.getByText("Date format is not saved. Inspect the original preference before trying again.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("radio", { name: /MM\/DD\/YYYY/ }));
+  fireEvent.focus(window);
+  act(() => value.publish({ revision: 3, date_format: DateFormatPreference.Ymd, problem: null }));
+  expect(value.bridge.update).toHaveBeenCalledTimes(1);
+  expect(value.bridge.read).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("radio", { name: /DD\/MM\/YYYY/ })).toHaveProperty("checked", true);
+  expect(screen.getByRole("button", { name: "Reload date format" })).toBeTruthy();
+  expect(screen.queryByText(/private rejected-save diagnostic/)).toBeNull();
+  fireEvent.click(reload);
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Reload date format" })).toBeNull());
+  expect(radio).toHaveProperty("checked", true);
+  expect(value.bridge.read).toHaveBeenCalledTimes(2);
+  expect(value.bridge.update).toHaveBeenCalledTimes(1);
+});

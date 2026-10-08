@@ -108,7 +108,9 @@ export function DateFormatProvider({ children, bridge = nativeBridge }: { childr
       const value = date_format === undefined ? await bridge.read() : await bridge.update(date_format, current.current.revision);
       if (generation.current === owned) accept(value);
     } catch {
-      if (generation.current === owned && current.current.revision <= before) failed(date_format === undefined ? DateFormatProblem.ReadFailed : DateFormatProblem.OutcomeUnknown);
+      // A newer event has no correlation with this save. Its revision cannot
+      // settle a rejected original write or admit another save.
+      if (generation.current === owned && (date_format !== undefined || current.current.revision <= before)) failed(date_format === undefined ? DateFormatProblem.ReadFailed : DateFormatProblem.OutcomeUnknown);
     } finally {
       if (generation.current === owned) { running.current = false; setOperation(undefined); }
     }
