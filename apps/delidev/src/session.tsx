@@ -188,7 +188,8 @@ export const TranscriptItem = memo(function TranscriptItem({ resource }: { resou
   const started = object(artifact.started);
   const progress = object(data.progress);
   const plan = object(progress.plan);
-  const textRole = data.tool == null && data.artifact == null && data.progress == null;
+  const textRole = data.tool == null && data.artifact == null && data.progress == null &&
+    ["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
   const roleClass = textRole && data.role === "user" ? " message-user" : textRole && data.role === "assistant" ? " message-assistant" : "";
   return <article className={`message${roleClass}`} aria-label={copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>

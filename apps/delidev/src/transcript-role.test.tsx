@@ -27,6 +27,7 @@ it("keeps unknown roles, non-text records and invalid native roots outside role 
     { role: "assistant", state: "complete", text: "Original progress", progress: {} },
     { ...data.grokUser, native_id: "foreign" }, { ...data.grokText, role: "user" },
     { ...data.claude, claude: { invalid: true } }, { ...data.claude, role: "tool" },
+    ...["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].map(key => ({ role: "assistant", state: "complete", text: `Retained null ${key}`, [key]: null })),
   ];
   const { container } = render(<>{rows.map((value, index) => <TranscriptItem key={index} resource={transcriptResource(value, index + 2)} />)}</>);
   expect(container.querySelectorAll(".message-user, .message-assistant, .native-claude-message-content")).toHaveLength(0);
@@ -34,6 +35,8 @@ it("keeps unknown roles, non-text records and invalid native roots outside role 
   expect(screen.getByLabelText("Grok user input unavailable")).toBeTruthy();
   expect(screen.getByLabelText("Grok text unavailable")).toBeTruthy();
   expect(screen.getAllByLabelText("Claude message unavailable")).toHaveLength(2);
+  expect(screen.getByText("Retained null grok_text")).toBeTruthy();
+  expect(screen.getByText("Retained null claude")).toBeTruthy();
 });
 it("replaces a live revision in its original ordering slot without changing role or duplicating text", () => {
   const data = transcriptRoleFixtures(), history = transcriptResource(data.user);
