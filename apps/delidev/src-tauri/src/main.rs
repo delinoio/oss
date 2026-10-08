@@ -611,9 +611,12 @@ fn adopt_local(
         // the native-owned observation and authenticates its own transport.
         for sibling in window.app_handle().webview_windows().into_values() {
             if is_local(&sibling) {
-                sibling
+                if let Err(code) = sibling
                     .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
-                    .close_window(sibling.label());
+                    .close_window(sibling.label())
+                {
+                    tracing::warn!(operation = "oauth_window_close", ?code);
+                }
                 sibling
                     .state::<Arc<NotificationHost>>()
                     .remove(sibling.label());
@@ -1823,9 +1826,12 @@ fn run() -> Result<(), NativeFailure> {
                         let _ = registry.begin_close(window.label(), false);
                     }
                 }
-                window
+                if let Err(code) = window
                     .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
-                    .close_window(window.label());
+                    .close_window(window.label())
+                {
+                    tracing::warn!(operation = "oauth_window_close", ?code);
+                }
                 if let Err(code) = window
                     .state::<Arc<browser_host::BrowserHost>>()
                     .close_window(window.label())
@@ -1837,9 +1843,12 @@ fn run() -> Result<(), NativeFailure> {
                     tracing::warn!(operation = "browser_window_close", ?code);
                 }
             } else if matches!(event, WindowEvent::Destroyed) {
-                window
+                if let Err(code) = window
                     .state::<Arc<delidev_desktop::oauth::OAuthHost>>()
-                    .close_window(window.label());
+                    .close_window(window.label())
+                {
+                    tracing::warn!(operation = "oauth_window_close", ?code);
+                }
                 if let Err(code) = window
                     .state::<Arc<browser_host::BrowserHost>>()
                     .close_window(window.label())
