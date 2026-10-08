@@ -224,6 +224,10 @@ func SendControl(ctx context.Context, c Config, req ControlRequest) (ControlResp
 // The peer PID ties a legacy manager's response to its native user service
 // without adding fields that older control servers would reject.
 func sendControlPeer(ctx context.Context, c Config, req ControlRequest, expectedPID int, inspectPeer bool) (ControlResponse, int, error) {
+	return sendControlIdentity(ctx, c, req, expectedPID, "", inspectPeer)
+}
+
+func sendControlIdentity(ctx context.Context, c Config, req ControlRequest, expectedPID int, expectedStart string, inspectPeer bool) (ControlResponse, int, error) {
 	var out ControlResponse
 	peerPID := 0
 	path := filepath.Join(c.Storage.State, "control.sock")
@@ -237,6 +241,12 @@ func sendControlPeer(ctx context.Context, c Config, req ControlRequest, expected
 			peerPID, err = controlPeerPID(conn)
 			if err == nil && expectedPID != 0 && peerPID != expectedPID {
 				err = problem(ErrControl, "The manager changed during reload.", "Inspect status and retry reload.")
+			}
+			if err == nil && expectedStart != "" {
+				start, startErr := tartRunProcessStartIdentity(peerPID)
+				if startErr != nil || start != expectedStart {
+					err = serviceManagerUnavailable()
+				}
 			}
 			if err != nil {
 				conn.Close()

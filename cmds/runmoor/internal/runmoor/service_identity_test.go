@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -236,6 +237,7 @@ func TestSystemdDefinitionRejectsNonCanonicalExecutablePaths(t *testing.T) {
 }
 
 type serviceCommandRecorder struct {
+	pid   int
 	calls []string
 	onRun func(name string, args []string)
 }
@@ -243,8 +245,11 @@ type serviceCommandRecorder struct {
 func (r *serviceCommandRecorder) Run(_ context.Context, name string, args, _ []string, _ io.Reader) ([]byte, error) {
 	call := name + " " + strings.Join(args, " ")
 	if name == "launchctl" && len(args) == 1 && args[0] == "list" {
-		// These service fixtures model a definition not loaded in launchd.
-		return []byte("PID\tStatus\tLabel\n"), nil
+		output := "PID\tStatus\tLabel\n"
+		if r.pid > 0 {
+			output += strconv.Itoa(r.pid) + "\t0\t" + serviceLabel + "\n"
+		}
+		return []byte(output), nil
 	}
 	if name == "systemctl" &&
 		len(args) == 5 &&
@@ -253,8 +258,7 @@ func (r *serviceCommandRecorder) Run(_ context.Context, name string, args, _ []s
 		args[2] == "--property=MainPID" &&
 		args[3] == "--value" &&
 		args[4] == systemdServiceName {
-		// These service fixtures model an installed but inactive unit.
-		return []byte("0\n"), nil
+		return []byte(strconv.Itoa(r.pid) + "\n"), nil
 	}
 	r.calls = append(r.calls, call)
 	if r.onRun != nil {
@@ -538,9 +542,9 @@ func TestMatchingServiceUninstallWaitsForJobsAndImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Close()
-	commands := &serviceCommandRecorder{}
+	commands := &serviceCommandRecorder{pid: os.Getpid()}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	err = Service(ctx, "uninstall", configPath, config, commands)
+	err = serviceWithManagerAdapter(ctx, "uninstall", configPath, config, commands, matchingServiceManagerAdapter(t, binary, configPath))
 	cancel()
 	requireCode(t, err, ErrControl)
 	if len(commands.calls) != 0 {
@@ -558,7 +562,7 @@ func TestMatchingServiceUninstallWaitsForJobsAndImages(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := Service(context.Background(), "uninstall", configPath, config, commands); err != nil {
+	if err := serviceWithManagerAdapter(context.Background(), "uninstall", configPath, config, commands, matchingServiceManagerAdapter(t, binary, configPath)); err != nil {
 		t.Fatalf("uninstall after work drained failed: %v", err)
 	}
 	if _, err := os.Stat(unit); !os.IsNotExist(err) {
@@ -621,11 +625,13 @@ func TestServiceUninstallRevalidatesDefinitionAfterDrain(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Close()
-	commands := &serviceCommandRecorder{}
+	commands := &serviceCommandRecorder{pid: os.Getpid()}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	result := make(chan error, 1)
-	go func() { result <- Service(ctx, "uninstall", configPath, config, commands) }()
+	go func() {
+		result <- serviceWithManagerAdapter(ctx, "uninstall", configPath, config, commands, matchingServiceManagerAdapter(t, binary, configPath))
+	}()
 
 	deadline := time.Now().Add(time.Second)
 	for !manager.Store.View().Stopping && time.Now().Before(deadline) {
@@ -703,12 +709,12 @@ func TestServiceUninstallPreservesDefinitionReplacedDuringUnload(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Close()
-	commands := &serviceCommandRecorder{onRun: func(_ string, _ []string) {
+	commands := &serviceCommandRecorder{pid: os.Getpid(), onRun: func(_ string, _ []string) {
 		if err := os.WriteFile(unit, []byte(replacement), 0600); err != nil {
 			t.Errorf("replace service definition during unload: %v", err)
 		}
 	}}
-	err = Service(context.Background(), "uninstall", configPath, config, commands)
+	err = serviceWithManagerAdapter(context.Background(), "uninstall", configPath, config, commands, matchingServiceManagerAdapter(t, binary, configPath))
 	requireCode(t, err, ErrConfig)
 	if len(commands.calls) == 0 {
 		t.Fatal("service unload was not reached")
@@ -792,4 +798,18 @@ func TestServiceDefinitionMustBePrivateAndUnambiguous(t *testing.T) {
 			requireCode(t, err, ErrConfig)
 		}
 	}
+}
+
+// The in-process control fixture represents the admitted native service here,
+// not an unrelated foreground manager beside an inactive user service.
+func matchingServiceManagerAdapter(t *testing.T, binary, path string) *serviceReloader {
+	t.Helper()
+	adapter := newServiceReloader(io.Discard)
+	adapter.ProcessArgs = func(pid int) ([]string, error) {
+		if pid != os.Getpid() {
+			t.Fatal("unexpected service PID")
+		}
+		return []string{binary, "run", "--config", path}, nil
+	}
+	return adapter
 }
