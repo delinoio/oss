@@ -841,9 +841,10 @@ fn foreground_completion_reaps_the_interrupt_relay_without_grace_delay() {
 
 #[test]
 #[cfg(target_os = "linux")]
-fn node_launcher_counts_terminal_service_startup_interrupt_once() {
+fn node_launcher_terminal_service_interrupt_obeys_acknowledgement_window() {
     let home = tempfile::tempdir().unwrap();
     let service_started = home.path().join("node-launcher-service-started");
+    let observations = home.path().join("launcher-interrupt-events");
     let service_marker = format!("SERVICE_STARTED={}", service_started.display());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -857,7 +858,21 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
         &launcher,
         concat!(
             "const { launch } = require(process.env.CLIBOX_LAUNCHER);\n",
-            "launch(process.env.CLIBOX_TEST_BINARY, process.argv.slice(2)).then(({ code }) => {\n",
+            "const { spawn } = require('node:child_process');\n",
+            "const { appendFileSync } = require('node:fs');\n",
+            "const observe = event => appendFileSync(process.env.CLIBOX_TEST_EVENTS, event + \
+             '\\n');\n",
+            "process.on('SIGINT', () => observe('interrupt'));\n",
+            "const spawnChild = (...args) => {\n",
+            "  const child = spawn(...args);\n",
+            "  child.stdio[3].on('data', bytes => { if (bytes.length) observe('ack'); });\n",
+            "  const kill = child.kill.bind(child);\n",
+            "  child.kill = signal => { if (signal === 'SIGINT') observe('forward'); return \
+             kill(signal); };\n",
+            "  return child;\n",
+            "};\n",
+            "launch(process.env.CLIBOX_TEST_BINARY, process.argv.slice(2), { spawnChild \
+             }).then(({ code }) => {\n",
             "  process.exitCode = code ?? 1;\n",
             "});\n",
         ),
@@ -877,7 +892,8 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
             &service_marker,
             "sh",
             "-c",
-            "trap '' TERM; : > \"$SERVICE_STARTED\"; while :; do :; done",
+            "trap '' TERM; printf '%s %s\\n' \"$$\" \"$(ps -o pgid= -p $$)\" > \
+             \"$SERVICE_STARTED\"; while :; do :; done",
             "--",
             "sh",
             "-c",
@@ -885,24 +901,36 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
         ])
         .env("HOME", home.path())
         .env("XDG_STATE_HOME", home.path().join("state"))
+        .env("CLIBOX_TEST_EVENTS", &observations)
         .env("CLIBOX_LAUNCHER", clibox_launcher)
         .env("CLIBOX_TEST_BINARY", env!("CARGO_BIN_EXE_clibox"));
     let (launcher, mut terminal) = terminal_process_command(node, false);
     let mut launcher = spawn_terminal(launcher);
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    let early_status = loop {
-        if service_started.is_file() {
-            break None;
+    let (service_group, early_status) = loop {
+        let service_group = fs::read_to_string(&service_started)
+            .ok()
+            .and_then(|identity| {
+                if !identity.ends_with('\n') {
+                    return None;
+                }
+                let mut fields = identity.split_whitespace();
+                let pid = fields.next()?.parse::<i32>().ok()?;
+                let group = fields.next()?.parse::<i32>().ok()?;
+                (pid > 0 && group > 0 && fields.next().is_none()).then_some(group)
+            });
+        if service_group.is_some() {
+            break (service_group, None);
         }
         if let Some(status) = launcher.try_wait().unwrap() {
-            break Some(status);
+            break (None, Some(status));
         }
         if std::time::Instant::now() >= deadline {
-            break None;
+            break (None, None);
         }
         thread::sleep(Duration::from_millis(10));
     };
-    if !service_started.is_file() {
+    if service_group.is_none() {
         let status = early_status.unwrap_or_else(|| {
             let _ = unsafe { libc::kill(-(launcher.id() as libc::pid_t), libc::SIGKILL) };
             launcher.wait().unwrap()
@@ -913,15 +941,73 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
         );
     }
 
+    let service_group = service_group.unwrap();
     let interrupted_at = std::time::Instant::now();
     terminal.write_all(&[3]).unwrap();
-    let status = launcher.wait().unwrap();
+    let status = loop {
+        if let Some(status) = launcher.try_wait().unwrap() {
+            break status;
+        }
+        if interrupted_at.elapsed() >= Duration::from_secs(5) {
+            // Both process groups belong solely to this fixture. Bound failure
+            // cleanup as well as the successful acknowledgement branches.
+            unsafe {
+                libc::kill(-(launcher.id() as libc::pid_t), libc::SIGKILL);
+                libc::kill(-service_group, libc::SIGKILL);
+            }
+            launcher.wait().unwrap();
+            assert_process_group_stopped(service_group);
+            panic!("terminal interrupt did not finish within the fixture budget");
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
 
     assert_eq!(status.code(), Some(130), "{status:?}");
-    assert!(
-        interrupted_at.elapsed() >= Duration::from_millis(350),
-        "one terminal Ctrl+C skipped the configured service cleanup grace"
+    // Kernel terminal delivery reaches Node and the native handler
+    // independently. The ACK may arrive before Node opens its 10ms pending
+    // window, or after its timer expires. Both are intentionally uncredited:
+    // a recorded fallback forwards SIGINT and may skip native cleanup grace.
+    // Never require scheduling order or reintroduce stale ACK credits here.
+    let events = fs::read_to_string(&observations).unwrap();
+    let events: Vec<_> = events.lines().collect();
+    assert_eq!(
+        events.iter().filter(|event| **event == "interrupt").count(),
+        1,
+        "{events:?}"
     );
+    let interrupt = events
+        .iter()
+        .position(|event| *event == "interrupt")
+        .unwrap();
+    if let Some(forward) = events.iter().position(|event| *event == "forward") {
+        assert!(
+            forward > interrupt,
+            "fallback preceded the Node interrupt: {events:?}"
+        );
+        assert!(
+            !events[interrupt + 1..forward].contains(&"ack"),
+            "an ACK inside the pending window was not credited: {events:?}"
+        );
+        assert_eq!(
+            events.iter().filter(|event| **event == "forward").count(),
+            1,
+            "{events:?}"
+        );
+    } else {
+        assert!(
+            events[interrupt + 1..].contains(&"ack"),
+            "missing early ACK: {events:?}"
+        );
+        assert!(
+            interrupted_at.elapsed() >= Duration::from_millis(350),
+            "acknowledged interrupt skipped service cleanup grace: {events:?}"
+        );
+    }
+    assert!(
+        interrupted_at.elapsed() < Duration::from_secs(5),
+        "cleanup exceeded fixture budget: {events:?}"
+    );
+    assert_process_group_stopped(service_group);
 }
 
 #[test]
