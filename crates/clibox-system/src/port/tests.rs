@@ -237,3 +237,186 @@ fn native_termination_rechecks_birth_and_endpoint_before_killing_owned_child() {
     child.0.wait().unwrap();
     assert!(!backend.terminate(pid, &rows).unwrap());
 }
+
+fn windows_udp_projection(addresses: Vec<(windows_projection::Address, u32)>) -> Report {
+    let mut report = Report::default();
+    for (address, pid) in addresses {
+        windows_projection::add_endpoint(
+            &mut report,
+            &[5353].into(),
+            pid,
+            Protocol::Udp,
+            address,
+            u32::from(5353u16.to_be()),
+        );
+    }
+    windows_projection::diagnose_unavailable_udp_owners(&mut report);
+    report.normalize();
+    report
+}
+
+#[test]
+fn windows_udp_unavailable_owners_remain_partial_in_every_list_mode() {
+    use windows_projection::Address;
+    for (address, expected) in [
+        (Address::V4(u32::from_ne_bytes([127, 0, 0, 1])), "127.0.0.1"),
+        (
+            Address::V6(std::net::Ipv6Addr::LOCALHOST.octets(), 0),
+            "::1",
+        ),
+    ] {
+        let report = windows_udp_projection(vec![(address, 0)]);
+        assert_eq!(report.results.len(), 1);
+        let entry = &report.results[0];
+        assert_eq!(entry.address, expected);
+        assert_eq!(entry.port, 5353);
+        assert!(entry.pid.is_none() && entry.name.is_none() && entry.identity.is_none());
+        assert_eq!(report.errors.len(), 1);
+        let error = &report.errors[0];
+        assert_eq!(error.code, Code::IdentityUnverifiable);
+        assert_eq!(error.port, Some(5353));
+        assert_eq!(error.pid, None);
+        assert_eq!(
+            error.message,
+            "Socket owner is unavailable; port enumeration is incomplete."
+        );
+        for mode in [
+            OutputMode::Human,
+            OutputMode::Json,
+            OutputMode::Quiet,
+            OutputMode::Pids,
+        ] {
+            let mut out = Vec::new();
+            assert_eq!(finish_report(&report, mode, false, &mut out).unwrap(), 1);
+            match mode {
+                OutputMode::Quiet | OutputMode::Pids => assert!(out.is_empty()),
+                OutputMode::Human => assert!(String::from_utf8(out).unwrap().contains(expected)),
+                OutputMode::Json => {
+                    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+                    assert!(json["results"][0]["pid"].is_null());
+                    assert!(json["results"][0]["name"].is_null());
+                    assert_eq!(json["errors"][0]["code"], "identity-unverifiable");
+                    assert_eq!(json["errors"][0]["port"], 5353);
+                }
+            }
+        }
+        let mut report = report;
+        let mut backend = Fake::default();
+        kill(&mut report, &mut backend, &mut Time::default());
+        assert!(backend.calls.is_empty());
+        assert_eq!(report.results[0].status, Some(Status::Skipped));
+    }
+}
+
+#[test]
+fn windows_udp_mixed_empty_and_known_owner_controls() {
+    use windows_projection::Address;
+    for unknown in [false, true] {
+        let mut rows = vec![(Address::V4(u32::from_ne_bytes([127, 0, 0, 1])), 42)];
+        if unknown {
+            rows.push((Address::V6(std::net::Ipv6Addr::LOCALHOST.octets(), 0), 0));
+        }
+        let mut report = windows_udp_projection(rows);
+        // Supply the successful metadata result that the native adapter obtains
+        // for a known PID; unknown PIDs never enter that process lookup.
+        let known = report
+            .results
+            .iter_mut()
+            .find(|r| r.pid == Some(42))
+            .unwrap();
+        known.name = Some("fixture".into());
+        known.identity = Some(Identity {
+            birth: 123,
+            socket: 0,
+        });
+        assert_eq!(report.results.len(), if unknown { 2 } else { 1 });
+        assert_eq!(report.errors.len(), usize::from(unknown));
+        for mode in [
+            OutputMode::Human,
+            OutputMode::Json,
+            OutputMode::Quiet,
+            OutputMode::Pids,
+        ] {
+            let mut out = Vec::new();
+            assert_eq!(
+                finish_report(&report, mode, false, &mut out).unwrap(),
+                i32::from(unknown)
+            );
+            if matches!(mode, OutputMode::Pids) {
+                assert_eq!(out, b"42\n");
+            }
+            if matches!(mode, OutputMode::Quiet) {
+                assert!(out.is_empty());
+            }
+        }
+        let mut backend = Fake::default();
+        kill(&mut report, &mut backend, &mut Time::default());
+        assert_eq!(backend.calls, vec![42]);
+        assert_eq!(
+            report
+                .results
+                .iter()
+                .find(|r| r.pid == Some(42))
+                .unwrap()
+                .status,
+            Some(Status::Killed)
+        );
+    }
+    let report = windows_udp_projection(vec![]);
+    assert!(report.results.is_empty() && report.errors.is_empty());
+    for mode in [
+        OutputMode::Human,
+        OutputMode::Json,
+        OutputMode::Quiet,
+        OutputMode::Pids,
+    ] {
+        assert_eq!(
+            finish_report(&report, mode, false, &mut Vec::new()).unwrap(),
+            0
+        );
+    }
+}
+
+#[test]
+fn windows_projection_filters_ports_and_preserves_raw_revalidation_rows() {
+    use windows_projection::{add_endpoint, diagnose_unavailable_udp_owners, Address};
+    let mut report = Report::default();
+    add_endpoint(
+        &mut report,
+        &[5353].into(),
+        0,
+        Protocol::Udp,
+        Address::V4(u32::from_ne_bytes([127, 0, 0, 1])),
+        u32::from(9999u16.to_be()),
+    );
+    assert!(report.results.is_empty() && report.errors.is_empty());
+    add_endpoint(
+        &mut report,
+        &[5353].into(),
+        0,
+        Protocol::Udp,
+        Address::V6(std::net::Ipv6Addr::LOCALHOST.octets(), 7),
+        u32::from(5353u16.to_be()),
+    );
+    assert_eq!(report.results[0].address, "::1%7");
+    assert!(
+        report.errors.is_empty(),
+        "raw revalidation rows must not block unrelated verified owners"
+    );
+    diagnose_unavailable_udp_owners(&mut report);
+    assert_eq!(report.errors.len(), 1);
+    let mut tcp = Report::default();
+    add_endpoint(
+        &mut tcp,
+        &[5353].into(),
+        0,
+        Protocol::Tcp,
+        Address::V4(u32::from_ne_bytes([127, 0, 0, 1])),
+        u32::from(5353u16.to_be()),
+    );
+    diagnose_unavailable_udp_owners(&mut tcp);
+    assert!(
+        tcp.errors.is_empty(),
+        "UDP owner policy must not expand TCP behavior"
+    );
+}
