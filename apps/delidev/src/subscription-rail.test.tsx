@@ -25,8 +25,8 @@ it("projects safe independent identities and excludes disconnected/removal/recov
  expect(Object.keys(railAccount(a)).sort()).toEqual(["alias","connected","disabled","id","revision","service","windows"]);
 });
 function mount(read: (token:string)=>{resources:Resource[];nextPageToken?:string}|Promise<{resources:Resource[];nextPageToken?:string}>, capable=true) {
- const requests=vi.fn(read), manage=vi.fn(); const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:capable?[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1]:[]})});router.service(ResourceService,{listResources:r=>{expect(r.accountType).toBe(2);expect(r.filter?.pageSize).toBe(50);return requests(r.filter!.pageToken);}});});
- const client=new QueryClient({defaultOptions:{queries:{retry:false}}}); const view=(enabled=true)=><QueryClientProvider client={client}><TransportProvider transport={transport}><SubscriptionRail enabled={enabled} manage={manage}/></TransportProvider></QueryClientProvider>; return {...render(view()),view,requests,manage,client};
+ const requests=vi.fn(read), manage=vi.fn(), focusFallback=vi.fn(); const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:capable?[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1]:[]})});router.service(ResourceService,{listResources:r=>{expect(r.accountType).toBe(2);expect(r.filter?.pageSize).toBe(50);return requests(r.filter!.pageToken);}});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}}); const view=(enabled=true)=><QueryClientProvider client={client}><TransportProvider transport={transport}><SubscriptionRail enabled={enabled} manage={manage} focusFallback={focusFallback}/></TransportProvider></QueryClientProvider>; return {...render(view()),view,requests,manage,focusFallback,client};
 }
 it("shows separate accounts, read-only selected details, manages and restores opener focus",async()=>{
  const values=[resource("Personal"),resource("Work"),resource("Claude","claude"),resource("Grok","grok"),resource("Disconnected","chatgpt",{connection:{}})];const f=mount(()=>({resources:values}));
@@ -123,3 +123,38 @@ it.each([
  expect(f.requests).toHaveBeenCalledTimes(1);
  expect(f.manage).not.toHaveBeenCalled();
 });
+
+
+it.each(["focus", "timer"])("retains exhausted account nodes without a refresh-only anchor on %s", async trigger => {
+ if(trigger==="timer")vi.useFakeTimers({toFake:["setInterval","clearInterval"]});
+ const rows=[resource("Personal"),resource("Work")]; let finish!:(value:{resources:Resource[]})=>void; let refreshing=false;
+ const f=mount(()=>refreshing?new Promise(done=>finish=done):{resources:rows});
+ const opener=await screen.findByRole("button",{name:/Personal · 28%/}); const image=opener.querySelector("img");
+ expect(screen.queryByRole("button",{name:"Reload list"})).toBeNull(); expect(f.container.querySelector(".sidebar-continuation")).toBeNull();
+ fireEvent.click(opener); await act(async()=>{await new Promise(done=>setTimeout(done,0));}); refreshing=true;
+ if(trigger==="focus")fireEvent(windowThis(),new Event("focus"));else await act(async()=>vi.advanceTimersByTimeAsync(60000));
+ await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(2));
+ expect(screen.getByRole("button",{name:/Personal · 28%/})).toBe(opener); expect(opener.querySelector("img")).toBe(image); expect(opener.getAttribute("aria-expanded")).toBe("true");
+ expect(f.container.querySelector(".sidebar-continuation")).toBeNull();
+ await act(async()=>finish({resources:rows})); expect(screen.getByRole("button",{name:/Personal · 28%/})).toBe(opener);
+});
+it("retains an accepted continuation without refresh text and disables admission",async()=>{
+ const first=resource("Personal"); let finish!:(value:{resources:Resource[];nextPageToken:string})=>void;let refreshing=false;
+ const f=mount(()=>refreshing?new Promise(done=>finish=done):{resources:[first],nextPageToken:"tail"});
+ await screen.findByRole("button",{name:/Personal/});const anchor=f.container.querySelector(".sidebar-continuation");const more=screen.getByRole("button",{name:/Load more Subscriptions/});
+ await act(async()=>{await new Promise(done=>setTimeout(done,0));}); refreshing=true;fireEvent(windowThis(),new Event("focus"));await waitFor(()=>expect(more.hasAttribute("disabled")).toBe(true));
+ expect(f.container.querySelector(".sidebar-continuation")).toBe(anchor);expect(anchor?.querySelector('[role="status"]')).toBeNull();expect(f.requests.mock.calls.map(call=>call[0])).toEqual(["",""]);
+ await act(async()=>finish({resources:[first],nextPageToken:"renewed"}));await waitFor(()=>expect(more.hasAttribute("disabled")).toBe(false));
+});
+it("restores navigation fallback when an accepted refresh removes the popover opener",async()=>{
+ const first=resource("Personal");let removed=false;const f=mount(()=>({resources:removed?[]:[first]}));
+ fireEvent.click(await screen.findByRole("button",{name:/Personal/}));removed=true;fireEvent(windowThis(),new Event("focus"));
+ await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());expect(f.focusFallback).toHaveBeenCalledOnce();expect(screen.queryByRole("button",{name:"Reload list"})).toBeNull();
+});
+it("keeps explicit restart at the accepted 200-page limit",async()=>{
+ const first=resource("Personal");const f=mount(token=>({resources:token?[]:[first],nextPageToken:String(token?Number(token)+1:1)}));
+ await screen.findByRole("button",{name:/Personal/});
+ for(let page=1;page<200;page++){fireEvent.click(screen.getByRole("button",{name:/Load more Subscriptions/}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(page+1));if(page<199)await waitFor(()=>expect(screen.getByRole("button",{name:/Load more Subscriptions/}).hasAttribute("disabled")).toBe(false));}
+ const reload=await screen.findByRole("button",{name:"Reload list"});expect(screen.queryByRole("button",{name:/Load more Subscriptions/})).toBeNull();fireEvent.click(reload);
+ await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(201));expect(f.requests.mock.calls.at(-1)?.[0]).toBe("");
+},30000);

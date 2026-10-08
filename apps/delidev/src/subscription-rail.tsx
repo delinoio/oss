@@ -8,6 +8,7 @@ import { copy, useLocale } from "./localization";
 import { subscriptionCatalog } from "./subscription-catalog";
 import { useConnectPaginationReader, usePaginationChain } from "./scroll-pagination-query";
 import { ScrollContinuation } from "./scroll-continuation";
+import { ReadStage } from "./scroll-pagination";
 import { freshWindow, railAccount, remainingBadge, type RailAccount } from "./subscription-rail-data";
 import "./subscription-rail.css";
 import { Failure, InlineRemediation } from "./ui";
@@ -39,13 +40,13 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
     if (query.error) { retainedReadFailure.current = query.error.failure; failedRows.current = query.rows; setUnconfirmedRead(true); }
     else if (query.loaded && !query.loading && query.rows !== failedRows.current) { retainedReadFailure.current = undefined; failedRows.current = undefined; setUnconfirmedRead(false); }
   }, [query.error, query.loaded, query.loading, query.rows]);
-  const root = useRef<HTMLDivElement>(null), fallback = useRef<HTMLButtonElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{ id: string; opener: HTMLButtonElement }>();
   const popup = useRef<HTMLDivElement>(null);
   const fallbackFocus = useRef(focusFallback);
   fallbackFocus.current = focusFallback;
   const account = query.rows.find(row => row.id === selection?.id && row.connected);
-  const close = useCallback(() => { setSelection(current => { if (current?.opener.isConnected) current.opener.focus(); else if (fallback.current?.isConnected) fallback.current.focus(); else fallbackFocus.current(); return undefined; }); }, []);
+  const close = useCallback(() => { setSelection(current => { if (current?.opener.isConnected) current.opener.focus(); else fallbackFocus.current(); return undefined; }); }, []);
   useEffect(() => {
     const visibility = () => setVisible(document.visibilityState !== "hidden");
     document.addEventListener("visibilitychange", visibility);
@@ -85,10 +86,11 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
     <div ref={root} className="subscription-rail-scroll">
       {!query.loaded && !query.error ? <span role="status">{copy("subscription-rail.loading")}</span> : null}
       {accounts.map(row => { const percent = unavailable ? undefined : remainingBadge(row.windows, now); const label = `${brand(row).name} · ${row.alias} · ${percent === undefined ? copy("subscription-rail.unavailable") : copy("subscription-rail.remaining", { percent })}`; return <button type="button" key={row.id} className="sidebar-rail-button subscription-rail-account" aria-label={`${label} · ${row.id}`} title={label} aria-haspopup="dialog" aria-expanded={selection?.id === row.id} onClick={event => { if (selection?.id === row.id) close(); else setSelection({ id: row.id, opener: event.currentTarget }); }}><img src={brand(row).mark} alt="" width="24" height="24" /><span className="subscription-rail-badge" aria-hidden="true">{percent === undefined ? "—" : `${percent}%`}</span></button>; })}
-      {query.nextPageToken || query.error || query.loading ? <ScrollContinuation showErrors={false} query={{ ...query, nextPageToken: limited ? "" : query.nextPageToken }} root={root} active={allowed} label={copy("subscription-rail.title")} /> : null}
+      {/* Retained refreshes keep their accepted anchor without adding loading height. */}
+      {query.nextPageToken || query.error || query.loading && query.loading !== ReadStage.Refresh ? <ScrollContinuation showErrors={false} query={{ ...query, loading: query.loading === ReadStage.Refresh ? undefined : query.loading, nextPageToken: limited ? "" : query.nextPageToken }} root={root} active={allowed && query.loading !== ReadStage.Refresh} label={copy("subscription-rail.title")} /> : null}
       {query.error || unconfirmedRead ? <RailReadProblem summary={copy("account-connection.inline.railPartial")} failure={query.error?.failure ?? retainedReadFailure.current} retry={query.error?.stalled || query.error?.failure.code === FailureCode.CursorExpired ? query.reload : query.retry} reload={query.error?.stalled || query.error?.failure.code === FailureCode.CursorExpired} busy={!allowed || Boolean(query.loading)} /> : null}
       {limited ? <p role="status">{copy("subscription-rail.limit")}</p> : null}
-      <button ref={fallback} type="button" className="subscription-rail-reload" onClick={query.reload} disabled={!allowed || Boolean(query.loading)}>{copy("pagination.reload")}</button>
+      {limited ? <button type="button" className="subscription-rail-reload" onClick={query.reload} disabled={!allowed || Boolean(query.loading)}>{copy("pagination.reload")}</button> : null}
     </div>
     {selection && account ? createPortal(<div ref={popup} popover="manual" role="dialog" aria-label={`${brand(account).name} · ${account.alias}`} tabIndex={-1} className="subscription-rail-popover" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } }}>
       <header><strong>{brand(account).name} · {account.alias}</strong><button type="button" onClick={close} aria-label={copy("subscription-rail.close")}>×</button></header>
