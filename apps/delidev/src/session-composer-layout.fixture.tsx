@@ -30,7 +30,7 @@ const enqueue = async (request: { requestId: string; documentJson: Uint8Array; a
   events.push({ requestId: request.requestId, prompt: data.prompt, mode: data.mode, images: request.attachments.map(image => image.id) });
   if (args.get("state") === "pending") await new Promise(() => {});
   if (args.get("state") === "uncertain" && attempt++ === 0) throw new ConnectError("Synthetic unavailable receipt", Code.Unavailable);
-  const input = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.QUEUE, revision: 1n, schemaVersion: 1, documentJson: encode({ ...data, attachments: request.attachments.map(image => ({ id: image.id, machine_id: image.machineId, media_type: ["", "image/png", "image/jpeg", "image/webp"][image.mediaType], byte_length: Number(image.byteLength), sha256: image.sha256 })) }) });
+  const input = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.QUEUE, revision: 1n, schemaVersion: 1, documentJson: encode({ ...data, delivery: "queued", attachments: request.attachments.map(image => ({ id: image.id, machine_id: image.machineId, media_type: ["", "image/png", "image/jpeg", "image/webp"][image.mediaType], byte_length: Number(image.byteLength), sha256: image.sha256 })) }) });
   return { change: { requestId: request.requestId, session, input } };
 };
 const uploads = new Map<string, ReturnType<typeof create<typeof AttachmentUploadSchema>>>();
