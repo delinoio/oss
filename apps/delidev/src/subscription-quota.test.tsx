@@ -25,7 +25,7 @@ function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLim
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  function Harness() {
     const [current, setCurrent] = useState(account), [, setBusy] = useState(false);
-    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button></MutationIntents></TransportProvider></QueryClientProvider>;
+    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: [{id:"credit_2",reset_type:"codexRateLimits",status:"available"}] } } }) }); setCurrent(account); }}>Replace fixture credit</button></MutationIntents></TransportProvider></QueryClientProvider>;
   }
   return { Harness, request, reconcile, account, machine, connection, generation, inventory };
 }
@@ -225,5 +225,19 @@ it.each(["2030", "2030-02-30T00:00:00Z", "", true, 0])("rejects malformed expiry
 it.each([undefined,null,"2999-01-01T00:00:00Z"])("preserves omitted and valid future expiry selection (%s)",async expires_at=>{
  const value=fixture([{id:"credit_1",reset_type:"codexRateLimits",status:"available",expires_at}]);render(<value.Harness />);await selectExactCredit();
  expect((screen.getByRole("button",{name:"Confirm credit consumption"}) as HTMLButtonElement).disabled).toBe(false);
+ expect(value.request).not.toHaveBeenCalled();
+});
+
+it("restores the heading after another credit replaces the selected row", async () => {
+ const value=fixture();render(<value.Harness />);await selectExactCredit();
+ const original=screen.getByRole("button",{name:"Select credit credit_1"});
+ fireEvent.click(screen.getByRole("button",{name:"Replace fixture credit"}));
+ const replacement=screen.getByRole("button",{name:"Select credit credit_2"});
+ expect((replacement as HTMLButtonElement).disabled).toBe(false);
+ expect(original.isConnected).toBe(false);
+ expect((screen.getByRole("button",{name:"Confirm credit consumption"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
+ expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));
+ expect(globalThis.document.activeElement).not.toBe(replacement);
  expect(value.request).not.toHaveBeenCalled();
 });
