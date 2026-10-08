@@ -95,6 +95,27 @@ Managed Docker artifacts retain one private resolved local Unix endpoint, persis
 
 ### Service operation
 
+Uninstall retains the original parsed definition checks through drain and native
+unload. Before filesystem removal, it durably records the authorized device/inode
+identity and SHA-256 digest in an owner-only private uninstall journal. It claims
+the canonical definition into a unique same-directory name with a no-replace
+rename, syncs that directory, verifies the claimed identity and bytes, and deletes
+only the verified private claim. It never unlinks the canonical definition path.
+A concurrent canonical writer survives and prevents a claim of complete uninstall.
+
+Typed claim, restoration and deletion checkpoints retain private recovery intent
+across interruption. A matching original claim can finish deletion on an explicit
+uninstall retry under the service-operation lock. An observed mismatching claim
+may be restored only by no-replace rename into a vacant canonical path. Unknown,
+unsafe or changed claims and conflicting canonical definitions remain untouched;
+recovery stores only identities, references and digests, never external bytes.
+Uninstall recovery preserves the original configuration-path checks. Pending
+intent blocks install, start, stop and reload before native mutations. A later
+explicit retry can retire a proven completed restoration, but returns an error
+and grants no deletion or native authority for the replacement. A subsequent
+fresh operation must validate and authorize that definition independently.
+No public schema or SQLite migration changes.
+
 launchd and systemd user services invoke the same foreground manager and drain control path. Definitions contain executable/config references only, never copied credential values. File credential references are recommended for restart persistence. A manager-only failure must not implicitly kill detached live work. Install does not overwrite existing definitions; uninstall preserves configuration, images and unresolved state.
 
 Every Linux `systemctl --user` invocation, including installation's `daemon-reload` and the validated reload before service start, stop, or uninstall, receives the normal minimal command environment plus `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS` only when the caller supplied them. Runmoor does not invent session selectors or inherit other caller variables for service commands. Missing or unreachable user-session context remains a safe dependency failure without exposing environment values or subprocess stderr. The shared `minimalEnv` remains unchanged for Tart, guests, and unrelated subprocesses.

@@ -184,7 +184,15 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 
 func serviceWithManagerAdapter(ctx context.Context, action, path string, c Config, exec CommandExecutor, admission *serviceReloader) error {
 	unit := servicePath()
-	if action == "install" {
+	pending, pendingErr := readUninstallJournal(unit)
+	if pendingErr != nil {
+		return pendingErr
+	}
+	if pending != nil {
+		if action != "uninstall" || requireUninstallConfig(pending, runtime.GOOS, path) != nil {
+			return uninstallFailure()
+		}
+	} else if action == "install" {
 		if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
 			return err
 		}
@@ -201,6 +209,26 @@ func serviceWithManagerAdapter(ctx context.Context, action, path string, c Confi
 		return err
 	}
 	defer unlockState(lock)
+	// Re-read under admission ownership: an interrupted claim may leave the
+	// canonical definition vacant, so recovery must precede normal parsing.
+	pending, pendingErr = readUninstallJournal(unit)
+	if pendingErr != nil {
+		return pendingErr
+	}
+	if pending != nil {
+		if action != "uninstall" || requireUninstallConfig(pending, runtime.GOOS, path) != nil {
+			return uninstallFailure()
+		}
+		if err := (&serviceUninstaller{unit: unit}).resume(pending); err != nil {
+			return err
+		}
+		if runtime.GOOS == "linux" {
+			if _, err := exec.Run(ctx, "systemctl", []string{"--user", "daemon-reload"}, serviceCommandEnv(runtime.GOOS, "systemctl"), nil); err != nil {
+				return uninstallFailure()
+			}
+		}
+		return nil
+	}
 	uid := strconv.Itoa(os.Getuid())
 	domain := "gui/" + uid
 	var definitionSnapshot *serviceDefinitionSnapshot
@@ -311,14 +339,13 @@ func serviceWithManagerAdapter(ctx context.Context, action, path string, c Confi
 			if e := admission.checkServiceManager(ctx, manager); e != nil {
 				return e
 			}
-			if definitionSnapshot != nil {
-				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
-					return e
-				}
-			} else if _, e := readPrivate(unit, 64<<10); e != nil {
+			if definitionSnapshot == nil {
+				return uninstallFailure()
+			}
+			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
 				return e
 			}
-			if e := os.Remove(unit); e != nil {
+			if e := (&serviceUninstaller{unit: unit}).begin(runtime.GOOS, path, *definitionSnapshot); e != nil {
 				return e
 			}
 			if runtime.GOOS == "linux" {
@@ -333,6 +360,9 @@ func serviceWithManagerAdapter(ctx context.Context, action, path string, c Confi
 
 // The caller holds the service-operation lock through recovery and native Start.
 func (r *serviceReloader) start(ctx context.Context, path string, c Config) error {
+	if j, err := readUninstallJournal(r.Unit); err != nil || j != nil {
+		return uninstallFailure()
+	}
 	var definitionSnapshot *serviceDefinitionSnapshot
 	domain := "gui/" + strconv.Itoa(os.Getuid())
 	run := func(name string, args ...string) error {
