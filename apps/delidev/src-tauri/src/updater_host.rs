@@ -509,6 +509,95 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn retained_original_uncertainty_settles_through_inspect_and_quit() {
+        use std::os::unix::fs::PermissionsExt;
+        for quit in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path().canonicalize().unwrap();
+            let sidecar = root.join("sidecar");
+            std::fs::write(
+                &sidecar,
+                r#"#!/bin/sh
+printf x >> "$2/calls"
+case "$4" in
+native-begin) exec /bin/cat "$2/begin.json" ;;
+native-outcome) exec /bin/cat "$2/outcome.json" ;;
+esac
+exit 1
+"#,
+            )
+            .unwrap();
+            std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let connector = Arc::new(Connector::new(sidecar, root.clone()).unwrap());
+            let id = uuid::Uuid::now_v7().to_string();
+            let server = uuid::Uuid::now_v7().to_string();
+            let generation = uuid::Uuid::now_v7().to_string();
+            let target = format!(
+                "{}-{}",
+                std::env::consts::OS,
+                if cfg!(target_arch = "aarch64") {
+                    "arm64"
+                } else {
+                    "amd64"
+                }
+            )
+            .replace("macos-", "darwin-");
+            let extension = if cfg!(target_os = "macos") {
+                ".dmg"
+            } else {
+                ".AppImage"
+            };
+            let mut value = serde_json::json!({"version":1,"operation_id":id,"server_id":server,"generation":generation,"release_version":"0.2.0","target":target,"phase":"installing","artifact_path":root.join("desktop-updates/downloads").join(format!("{}{}","a".repeat(64),extension)),"artifact_sha256":"a".repeat(64),"artifact_size":8,"manifest_sha256":"b".repeat(64)});
+            std::fs::write(
+                root.join("begin.json"),
+                serde_json::to_vec(&serde_json::json!({"version":1,"result":value})).unwrap(),
+            )
+            .unwrap();
+            value["phase"] = serde_json::json!("uncertain");
+            std::fs::write(
+                root.join("outcome.json"),
+                serde_json::to_vec(&serde_json::json!({"version":1,"result":value})).unwrap(),
+            )
+            .unwrap();
+            let accepted = connector
+                .begin_desktop_installation(
+                    None,
+                    DesktopUpdateRequest {
+                        server: &server,
+                        id: &id,
+                        revision: 7,
+                        generation: &generation,
+                        action: "native-begin",
+                        outcome: None,
+                    },
+                )
+                .unwrap();
+            let host = Arc::new(UpdateHost::default());
+            let task = host
+                .start(move |task| {
+                    *task.pending.lock().unwrap() = Some((accepted, Phase::Uncertain));
+                    Err(NativeFailure::Busy)
+                })
+                .unwrap();
+            assert!(matches!(task.wait(), Err(NativeFailure::Busy)));
+            assert!(task.pending.lock().unwrap().is_some());
+            if quit {
+                host.join(&connector);
+            } else {
+                host.settle_retained(&connector, &server, &id, 7).unwrap();
+            }
+            assert!(task.pending.lock().unwrap().is_none());
+            host.join(&connector);
+            assert_eq!(
+                std::fs::read(root.join("calls")).unwrap(),
+                b"xx",
+                "only original begin and same-phase outcome; no installer replay"
+            );
+        }
+    }
+
     #[test]
     fn native_task_panic_releases_waiter_without_fabricating_success() {
         let host = Arc::new(UpdateHost::default());

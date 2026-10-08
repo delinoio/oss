@@ -136,7 +136,15 @@ impl AcceptedInstallation {
         if let Some(phase) = *outcome {
             return phase;
         }
-        let phase = if stopping { Phase::Failed } else { installer() };
+        let phase = if stopping {
+            Phase::Failed
+        } else {
+            // Catch at the effect boundary while the original outcome and
+            // host pending guards remain valid. An installer panic proves no
+            // safe terminal effect; retain uncertainty without replay.
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(installer))
+                .unwrap_or(Phase::Uncertain)
+        };
         *outcome = Some(phase);
         phase
     }
@@ -814,7 +822,12 @@ mod tests {
     #[test]
     fn original_outcomes_settle_offline_after_quit_and_contention_without_reinstallation() {
         use std::os::unix::fs::PermissionsExt;
-        for phase in [Phase::Installed, Phase::Failed, Phase::Uncertain] {
+        for (phase, installer_panic) in [
+            (Phase::Installed, false),
+            (Phase::Failed, false),
+            (Phase::Uncertain, false),
+            (Phase::Uncertain, true),
+        ] {
             let temp = tempfile::tempdir().unwrap();
             let sidecar = temp.path().join("sidecar");
             fs::write(
@@ -863,6 +876,9 @@ mod tests {
             assert_eq!(
                 accepted.install_with(false, || {
                     effects.fetch_add(1, Ordering::AcqRel);
+                    if installer_panic {
+                        panic!("original installer effect became uncertain");
+                    }
                     phase
                 }),
                 phase
