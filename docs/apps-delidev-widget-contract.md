@@ -90,6 +90,10 @@ successful timestamp or fabricated counters. Freshness expires after 45 seconds,
 including future-dated observations after a clock correction. Explicit desktop
 exit marks snapshots stale without replacing their successful timestamps.
 Abrupt termination naturally expires the last observation.
+The view uses the shared pure presentation-time boundary: validate each successful
+overview and quota observation against the actual wall clock before allowing the
+scheduled timeline date to force expiry. A future timeline date cannot mask a
+backward clock correction or change the retained successful timestamp.
 
 Timelines schedule the known stale transition and request another local read
 after five minutes. `WidgetCenter.reloadTimelines` follows publication; both
