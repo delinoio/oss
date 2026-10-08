@@ -44,9 +44,14 @@ export function SettingsSearch({ categories, select }: { categories: readonly Se
 }
 /** A navigation generation owns one presentation-only focus; polling cannot repeat it. */
 export function SettingsSearchFocus({request,category,root}:{request?:SettingsSearchRequest;category:Category;root:RefObject<HTMLElement|null>}) {
- useLocale(); const [unavailable,setUnavailable]=useState(false);
+ const locale=useLocale(); const [unavailable,setUnavailable]=useState(false);
+ const handled=useRef<string>(undefined);
  useEffect(()=>{
-  setUnavailable(false); if(!request||request.category!==category||!root.current)return;
+  if(!request){handled.current=undefined;setUnavailable(false);return;}
+  // Locale changes clean up an armed wait without replaying this generation.
+  if(handled.current===request.generation)return;
+  handled.current=request.generation;setUnavailable(false);
+  if(request.category!==category||!root.current)return;
   const scope=root.current; let pending=true,frame=0;
   const cancel=()=>{pending=false;observer.disconnect();cancelAnimationFrame(frame);};
   const intent=(event:Event)=>{if(event.type==="keydown"&&!['Tab','Enter',' ','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes((event as KeyboardEvent).key))return;cancel();};
@@ -66,9 +71,9 @@ export function SettingsSearchFocus({request,category,root}:{request?:SettingsSe
   };
   const observer=new MutationObserver(()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(attempt);});
   observer.observe(scope,{subtree:true,childList:true,attributes:true,attributeFilter:['data-settings-search-pending','inert','hidden']});
-  document.addEventListener('pointerdown',intent,true);document.addEventListener('keydown',intent,true);document.addEventListener('focusin',intent,true);
+  document.addEventListener('pointerdown',intent,true);document.addEventListener('keydown',intent,true);document.addEventListener('focusin',intent,true);window.addEventListener('resize',cancel);
   frame=requestAnimationFrame(attempt);
-  return()=>{cancel();document.removeEventListener('pointerdown',intent,true);document.removeEventListener('keydown',intent,true);document.removeEventListener('focusin',intent,true);};
- },[request?.generation,category,root]);
+  return()=>{cancel();document.removeEventListener('pointerdown',intent,true);document.removeEventListener('keydown',intent,true);document.removeEventListener('focusin',intent,true);window.removeEventListener('resize',cancel);};
+ },[request?.generation,category,root,locale]);
  return unavailable?<p className="settings-search-unavailable" role="status">{copy("settings.search.unavailable")}</p>:null;
 }
