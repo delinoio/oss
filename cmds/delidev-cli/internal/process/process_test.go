@@ -19,6 +19,11 @@ func init() {
 		return
 	}
 	switch os.Args[2] {
+	case "marker":
+		if err := os.WriteFile(os.Getenv("DELIDEV_TEST_MARKER"), []byte("native side effect"), 0600); err != nil {
+			os.Exit(10)
+		}
+		os.Exit(0)
 	case "streams":
 		raw, err := io.ReadAll(os.Stdin)
 		if err != nil {
