@@ -11,6 +11,8 @@ import (
 func TestOrdinaryGhPrivateRuntimeRetainsAuxiliaryIsolation(t *testing.T) {
 	original := t.TempDir()
 	t.Setenv("GH_CONFIG_DIR", original)
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/synthetic/user-bus")
+	t.Setenv("XDG_RUNTIME_DIR", "/synthetic/user-runtime")
 	t.Setenv("GH_TOKEN", "synthetic-ambient-token")
 	t.Setenv("GITHUB_TOKEN", "synthetic-ambient-token")
 	context := executionenv.Current()
@@ -19,7 +21,7 @@ func TestOrdinaryGhPrivateRuntimeRetainsAuxiliaryIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(env, "\n")
-	for _, denied := range []string{"GH_CONFIG_DIR=", "GH_TOKEN=", "GITHUB_TOKEN=", original, "synthetic-ambient-token"} {
+	for _, denied := range []string{"DBUS_SESSION_BUS_ADDRESS=", "XDG_RUNTIME_DIR=", "GH_CONFIG_DIR=", "GH_TOKEN=", "GITHUB_TOKEN=", original, "synthetic-ambient-token"} {
 		if strings.Contains(joined, denied) {
 			t.Fatal("shared discovery/login/auxiliary runtime inherited gh authority")
 		}

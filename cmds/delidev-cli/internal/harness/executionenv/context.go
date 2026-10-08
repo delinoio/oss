@@ -12,7 +12,11 @@ import (
 
 // Ordinary is an in-memory context supplied only by an executing Worker.
 // Its zero value grants no user configuration access; never serialize it.
-type Ordinary struct{ ghDirectory string }
+type Ordinary struct {
+	ghDirectory       string
+	sessionBusAddress string
+	runtimeDirectory  string
+}
 
 // Current resolves the original Worker environment and process directory.
 // A missing or invalid directory retains gh's ordinary unauthenticated failure.
@@ -58,22 +62,41 @@ func Resolve(goos string, env []string, cwd string) Ordinary {
 	if !filepath.IsAbs(directory) {
 		directory = filepath.Join(cwd, directory)
 	}
-	return Ordinary{filepath.Clean(directory)}
+	context := Ordinary{ghDirectory: filepath.Clean(directory)}
+	if goos == "linux" {
+		// These selectors connect gh to the Worker user's existing Secret Service.
+		// They carry no credentials and grant no ownership of the bus or store.
+		bounded := func(value string) string {
+			if len(value) > 4096 || strings.ContainsAny(value, "\x00\r\n") {
+				return ""
+			}
+			return value
+		}
+		context.sessionBusAddress = bounded(get("DBUS_SESSION_BUS_ADDRESS"))
+		context.runtimeDirectory = bounded(get("XDG_RUNTIME_DIR"))
+	}
+	return context
 }
 
 // Apply runs after each adapter rebuilds its private environment. It copies
-// only a directory selector; gh itself owns configuration and OS-store access.
+// only configuration and Linux session selectors; gh owns OS-store access.
 func (c Ordinary) Apply(env []string) []string {
 	result := make([]string, 0, len(env)+1)
 	for _, entry := range env {
 		key, _, _ := strings.Cut(entry, "=")
-		if strings.EqualFold(key, "GH_CONFIG_DIR") || strings.EqualFold(key, "GH_TOKEN") || strings.EqualFold(key, "GITHUB_TOKEN") {
+		if strings.EqualFold(key, "DBUS_SESSION_BUS_ADDRESS") || strings.EqualFold(key, "XDG_RUNTIME_DIR") || strings.EqualFold(key, "GH_CONFIG_DIR") || strings.EqualFold(key, "GH_TOKEN") || strings.EqualFold(key, "GITHUB_TOKEN") {
 			continue
 		}
 		result = append(result, entry)
 	}
 	if c.ghDirectory != "" {
 		result = append(result, "GH_CONFIG_DIR="+c.ghDirectory)
+	}
+	if c.ghDirectory != "" && c.sessionBusAddress != "" {
+		result = append(result, "DBUS_SESSION_BUS_ADDRESS="+c.sessionBusAddress)
+	}
+	if c.ghDirectory != "" && c.runtimeDirectory != "" {
+		result = append(result, "XDG_RUNTIME_DIR="+c.runtimeDirectory)
 	}
 	return result
 }

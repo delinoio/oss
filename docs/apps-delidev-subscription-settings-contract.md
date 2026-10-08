@@ -226,10 +226,15 @@ credit. Only explicitly null details with a valid positive fresh count permit th
 original native-next confirmation. Missing or malformed details grant no selector.
 The returned detail count remains separate from the authoritative available count.
 Rows show inert IDs, availability and valid supplied expiry timestamps.
+Selection uses the same strict RFC3339 calendar validation as expiry presentation.
+Omitted/null expiry retains ordinary eligibility; malformed or expired supplied
+expiry grants no selection or confirmation authority.
 
 Confirmation names the original account and selection, explains that consumption
 spends a credit, and keeps quota recovery separate. Keep dismisses it without a
-request and restores its selection opener or the section heading. Collapse,
+request and restores its original selection opener or the section heading.
+Credit identity participates in the row key, so a different credit at the same
+position cannot inherit the original opener DOM node or focus. Collapse,
 locale changes, resize and background updates retain the mounted controller,
 original selection, request IDs and account/revision/connection/generation,
 inventory and owner bindings. Only explicit confirmation sends consumption.

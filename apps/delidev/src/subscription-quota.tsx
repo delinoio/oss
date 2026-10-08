@@ -75,7 +75,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const credits = Array.isArray(details) && details.length <= 100 ? details.map(object) : undefined;
   const inventoryFresh = isEntityId(text(inventory.observation_id)) && Number.isFinite(Date.parse(text(inventory.observed_at))) && Date.now() - Date.parse(text(inventory.observed_at)) >= 0 && Date.now() - Date.parse(text(inventory.observed_at)) <= 300000;
   const inventoryAvailable = countValid && BigInt(count) > 0n && inventoryFresh;
-  const selectable = (credits ?? []).filter((credit) => /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(text(credit.id)) && credit.reset_type === "codexRateLimits" && credit.status === "available" && (!credit.expires_at || Date.parse(text(credit.expires_at)) > Date.now()));
+  const selectable = (credits ?? []).filter((credit) => /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(text(credit.id)) && credit.reset_type === "codexRateLimits" && credit.status === "available" && (credit.expires_at == null || (timestampInstant(text(credit.expires_at)) ?? -Infinity) > Date.now()));
   const confirmCredit = (creditId: string, next: boolean, opener: HTMLElement) => {
     if (!creditReady || originalActive || !creditsSupported || !countValid || BigInt(count) <= 0n || !inventoryFresh) return;
     selectionOpener.current = opener; focusConfirmation.current = true;
@@ -120,7 +120,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
         <h4 ref={detailsHeading} id={detailsHeadingId} tabIndex={-1}>{copy("subscription-quota.creditDetails")}</h4>
         <p className="reset-credit-secondary">{details === null ? copy("subscription-quota.detailsUnavailable") : credits ? copy("subscription-quota.returnedDetailCount", { v0: credits.length }) : copy("subscription-quota.creditDetailsMalformed")}</p>
         <div className="reset-credit-rows">
-          {credits?.map((credit, index) => <div className="reset-credit-row" key={index}>
+          {credits?.map((credit, index) => <div className="reset-credit-row" key={text(credit.id) + ":" + index}>
             <div><span>{text(credit.id) || copy("subscription-quota.extra.ca1844969742")}</span><span className="reset-credit-secondary">{copy(credit.status === "available" ? "subscription-quota.creditAvailable" : "subscription-quota.creditUnavailable")}</span>{timestampInstant(text(credit.expires_at)) !== undefined ? <span className="reset-credit-secondary">{copy("subscription-quota.creditExpiry")} <Timestamp value={text(credit.expires_at)} /></span> : null}</div>
             {selectable.includes(credit) ? <button type="button" disabled={!creditReady || originalActive || !inventoryAvailable} onClick={event => confirmCredit(text(credit.id), false, event.currentTarget)} aria-label={copy("subscription-quota.selectCreditName", { v0: text(credit.id) })}>{copy("subscription-quota.selectCredit")}</button> : null}
           </div>)}
