@@ -111,6 +111,9 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if event.Kind == NativeExtensionEvent {
+			t.Fatalf("native execution requires an additional typed adapter: %s", event.ExtensionStage)
+		}
 		if event.Kind != TurnCompletedEvent {
 			continue
 		}
@@ -120,6 +123,17 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 		break
 	}
 	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := filepath.WalkDir(cfg.Home, func(_ string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("native helper alias remained after joined shutdown")
+		}
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	cfg.Process.OwnerID = domain.NewID()
@@ -159,6 +173,9 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if event.Kind == NativeExtensionEvent {
+			t.Fatalf("native continuation requires an additional typed adapter: %s", event.ExtensionStage)
+		}
 		if event.Kind != TurnCompletedEvent {
 			continue
 		}
@@ -173,7 +190,7 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 	if requests.Load() != 2 {
 		t.Fatalf("unexpected local fixture request count %d", requests.Load())
 	}
-	t.Logf("%s/%s Codex %s: resumed exact native thread, verified retained terminal input and continued once in Plan mode; two local scripted model responses; no external provider or user account", runtime.GOOS, runtime.GOARCH, SupportedVersion)
+	t.Logf("%s/%s Codex %s: resumed exact native thread, verified retained terminal input and continued once in Plan mode; two local scripted model responses; no external provider or user account", runtime.GOOS, runtime.GOARCH, first.Version())
 }
 
 func nativeFixtureConfig(t *testing.T, binary, providerURL string) Config {

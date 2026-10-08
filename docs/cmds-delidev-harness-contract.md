@@ -34,6 +34,39 @@ legacy minimum fields remain readable but new diagnostics do not invent a minimu
 Keep the first failure separate from later cleanup/recovery. Raw native/provider
 text, URLs, secrets and user paths never enter presentation or logs.
 
+The installed Codex 0.159.2 protocol emits additional observation fields even on
+stable operations. Thread Start/Resume/read accepts nullable `daybreakEnabled`,
+`environments`, `model`, `originator` and `reasoningEffort`; binding responses
+also accept `disabledPluginIds` and Resume's `collaborationMode`. Settings
+notifications accept the saved disabled-plugin list. These observations are
+discarded and cannot replace the independently validated effective settings,
+enable plugins, select environments or grant Daybreak execution authority.
+Agent-message `questions` may be omitted, null or empty for ordinary text;
+populated questions retain the private extension boundary. Quota snapshots accept
+the advisory `normalModelSlug` without selecting a model. Response-usage
+`usageMetadata.metadata` stays opaque and excluded from publication, cost and
+logs; original counters and amount-evidence classification remain unchanged.
+The installed schema also declares scoped `model/verification` notifications.
+Accept only a required empty verification array bound to the original known root
+turn as discarded metadata. Populated verification remains a private extension;
+the empty observation cannot establish model eligibility or account readiness.
+Managed ChatGPT execution also consumes the original root's passive
+`mcpServer/startupStatus/updated` notifications for the built-in `codex_apps`
+connector. Validate the closed starting/ready/failed/cancelled states, nullable
+private error and `reauthenticationRequired` failure reason; discard descriptors
+and diagnostics without changing account health, configuration or input/tool
+authority. [Official native connector registration](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/core/src/mcp.rs)
+and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/bespoke_event_handling.rs)
+keep this status separate from tool execution and authentication. Other server
+names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
+streams and tool calls retain their existing private adapter boundaries.
+Unsupported native families log only a closed classification, never a raw method
+or payload. The installed scripted thread smoke rejects private extensions so
+parser-level success cannot conceal an unsupported Worker event family.
+Unknown fields, immutable history and managed-account recovery fences remain
+strict. Event validation logs retain only closed stages, original owner and safe
+code, without raw native methods or payloads.
+
 ### Codex model observation profile
 
 The [native model contract](cmds-delidev-native-models-contract.md) owns the separate

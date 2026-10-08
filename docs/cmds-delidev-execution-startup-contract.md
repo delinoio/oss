@@ -58,6 +58,11 @@ The negotiated v4 assignment replaces mandatory pre-inspected installation
 evidence with an immutable startup selection. Historical v1/v2/v3 assignments
 retain their exact attribution and remain readable. Adapter capabilities report
 implemented code, independently of installed executable or account readiness.
+Codex completion checkpoints compare against the original accepted assignment,
+including its original installation representation. Locally resolved executable
+and observed version metadata stay in the original startup evidence; they never
+rewrite the assignment or its digest. Checkpoint retention failures log a closed
+stage and error code without native content or credentials.
 Workers lacking the new capability receive no new execution assignment; clients receive an
 update requirement rather than an instruction to run manual inspection.
 

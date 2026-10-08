@@ -11,13 +11,28 @@ import (
 type MetadataKind string
 
 const (
-	ThreadIdentityChecked  MetadataKind = "thread-identity-checked"
-	ThreadSettingsChecked  MetadataKind = "thread-settings-checked"
-	RemoteControlDisabled  MetadataKind = "remote-control-disabled"
-	QuotaUnavailable       MetadataKind = "quota-unavailable"
-	RawSupplementDiscarded MetadataKind = "raw-supplement-discarded"
-	NativeGoalAbsent       MetadataKind = "native-goal-absent"
+	ThreadIdentityChecked    MetadataKind = "thread-identity-checked"
+	ThreadSettingsChecked    MetadataKind = "thread-settings-checked"
+	RemoteControlDisabled    MetadataKind = "remote-control-disabled"
+	QuotaUnavailable         MetadataKind = "quota-unavailable"
+	RawSupplementDiscarded   MetadataKind = "raw-supplement-discarded"
+	NativeGoalAbsent         MetadataKind = "native-goal-absent"
+	ModelVerificationAbsent  MetadataKind = "model-verification-absent"
+	CodexAppsStartupObserved MetadataKind = "codex-apps-startup-observed"
 )
+
+type nativeMCPStartupState string
+
+const (
+	nativeMCPStarting  nativeMCPStartupState = "starting"
+	nativeMCPReady     nativeMCPStartupState = "ready"
+	nativeMCPFailed    nativeMCPStartupState = "failed"
+	nativeMCPCancelled nativeMCPStartupState = "cancelled"
+)
+
+type nativeMCPFailureReason string
+
+const nativeMCPReauthentication nativeMCPFailureReason = "reauthenticationRequired"
 
 type tokenCountsWire struct {
 	Input      *int64 `json:"inputTokens"`
@@ -65,6 +80,57 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "mcpServer/startupStatus/updated":
+		var params struct {
+			ThreadID      *domain.ID              `json:"threadId"`
+			Name          string                  `json:"name"`
+			Status        nativeMCPStartupState   `json:"status"`
+			Error         *string                 `json:"error"`
+			FailureReason *nativeMCPFailureReason `json:"failureReason"`
+		}
+		if domain.Decode(native.Params, &params) != nil || domain.Text(params.Name, "native MCP server", 1024, true) != nil || (params.ThreadID != nil && params.ThreadID.Validate() != nil) || (params.Error != nil && domain.Text(*params.Error, "native MCP diagnostic", nativewire.MaxFrame, false) != nil) {
+			return Event{}, incompatible()
+		}
+		switch params.Status {
+		case nativeMCPStarting, nativeMCPReady, nativeMCPCancelled:
+			if params.Error != nil || params.FailureReason != nil {
+				return Event{}, incompatible()
+			}
+		case nativeMCPFailed:
+			if params.FailureReason != nil && *params.FailureReason != nativeMCPReauthentication {
+				return Event{}, incompatible()
+			}
+		default:
+			return Event{}, incompatible()
+		}
+		// Official Codex injects this connector for ChatGPT accounts. Its passive
+		// startup status is independent of account authentication and tool calls;
+		// preserve the dedicated boundaries for all other MCP activity.
+		if c.managedHome == "" || params.Name != "codex_apps" || params.ThreadID == nil || *params.ThreadID != c.thread {
+			return privateNative(native), nil
+		}
+		return c.metadata(CodexAppsStartupObserved), nil
+	case "model/verification":
+		var params struct {
+			ThreadID      domain.ID `json:"threadId"`
+			TurnID        domain.ID `json:"turnId"`
+			Verifications []string  `json:"verifications"`
+		}
+		if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil || params.TurnID.Validate() != nil || params.Verifications == nil {
+			return Event{}, incompatible()
+		}
+		if params.ThreadID != c.thread || len(params.Verifications) != 0 {
+			return privateNative(native), nil
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known {
+			return Event{}, incompatible()
+		}
+		// Empty hosted verification metadata grants neither model availability
+		// nor account readiness. Populated verification remains a private profile.
+		event := c.metadata(ModelVerificationAbsent)
+		event.TurnID, event.Late = params.TurnID, turn.Turn.Status.terminal()
+		return event, nil
 	case "thread/goal/cleared":
 		var params struct {
 			ThreadID domain.ID `json:"threadId"`
@@ -125,7 +191,7 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 			return Event{}, incompatible()
 		}
 		for key, value := range params.Limits {
-			if !slices.Contains([]string{"limitId", "limitName", "primary", "secondary", "credits", "planType", "individualLimit", "spendControlReached", "rateLimitReachedType"}, key) {
+			if !slices.Contains([]string{"limitId", "limitName", "normalModelSlug", "primary", "secondary", "credits", "planType", "individualLimit", "spendControlReached", "rateLimitReachedType"}, key) {
 				return Event{}, incompatible()
 			}
 			if string(value) != "null" {
@@ -193,19 +259,20 @@ func (c *Client) observeSettingsLocked(native nativewire.Event) (Event, error) {
 	var params struct {
 		ThreadID domain.ID `json:"threadId"`
 		Settings *struct {
-			Model          string            `json:"model"`
-			Provider       string            `json:"modelProvider"`
-			Effort         *string           `json:"effort"`
-			Tier           *string           `json:"serviceTier"`
-			Cwd            string            `json:"cwd"`
-			Approval       ApprovalPolicy    `json:"approvalPolicy"`
-			Reviewer       string            `json:"approvalsReviewer"`
-			Sandbox        Sandbox           `json:"sandboxPolicy"`
-			Collaboration  collaborationMode `json:"collaborationMode"`
-			MultiAgentMode string            `json:"multiAgentMode"`
-			Profile        json.RawMessage   `json:"activePermissionProfile"`
-			Personality    *string           `json:"personality"`
-			Summary        *string           `json:"summary"`
+			Model             string            `json:"model"`
+			Provider          string            `json:"modelProvider"`
+			Effort            *string           `json:"effort"`
+			Tier              *string           `json:"serviceTier"`
+			Cwd               string            `json:"cwd"`
+			Approval          ApprovalPolicy    `json:"approvalPolicy"`
+			Reviewer          string            `json:"approvalsReviewer"`
+			Sandbox           Sandbox           `json:"sandboxPolicy"`
+			Collaboration     collaborationMode `json:"collaborationMode"`
+			MultiAgentMode    string            `json:"multiAgentMode"`
+			Profile           json.RawMessage   `json:"activePermissionProfile"`
+			Personality       *string           `json:"personality"`
+			Summary           *string           `json:"summary"`
+			DisabledPluginIDs []string          `json:"disabledPluginIds,omitempty"`
 		} `json:"threadSettings"`
 	}
 	if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil || params.Settings == nil {

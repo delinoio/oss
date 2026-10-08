@@ -12,7 +12,7 @@ import (
 
 func TestResponseUsagePreservesExactCountersWithoutPrivateMetadata(t *testing.T) {
 	c, turn := observationClient()
-	params := map[string]any{"threadId": c.thread, "turnId": turn, "responseId": "private-response", "usage": usageCounts(20), "usageMetadata": map[string]any{"amount": "private-amount"}}
+	params := map[string]any{"threadId": c.thread, "turnId": turn, "responseId": "private-response", "usage": usageCounts(20), "usageMetadata": map[string]any{"amount": "private-amount", "metadata": map[string]any{"private-billing": "private-value"}}}
 	event, err := observeFixture(c, "rawResponse/completed", params)
 	digest := sha256.Sum256([]byte("private-response"))
 	if err != nil || event.Kind != ResponseUsageEvent || !event.Correlated || event.Late || event.Native != nil || event.Usage != nil || event.ResponseUsage == nil {

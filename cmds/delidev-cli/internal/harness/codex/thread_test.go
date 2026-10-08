@@ -124,6 +124,14 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 	}
 	result["activePermissionProfile"] = nil
 	result["multiAgentMode"] = "explicitRequestOnly"
+	if fixtureVersion() == "0.159.2" {
+		f.thread["daybreakEnabled"] = nil
+		f.thread["environments"] = []any{}
+		f.thread["model"] = params["model"]
+		f.thread["originator"] = "fixture"
+		f.thread["reasoningEffort"] = effort
+		result["disabledPluginIds"] = []string{}
+	}
 	switch f.mode {
 	case "thread-model":
 		result["model"] = "foreign"

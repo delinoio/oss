@@ -14,6 +14,80 @@ import (
 
 type EventKind string
 
+type eventValidationStage string
+
+const (
+	validationOther          eventValidationStage = "other"
+	validationSettings       eventValidationStage = "thread-settings"
+	validationItem           eventValidationStage = "message-item"
+	validationUsage          eventValidationStage = "response-usage"
+	validationQuota          eventValidationStage = "account-quota"
+	validationVerification   eventValidationStage = "model-verification"
+	validationAuthRecovery   eventValidationStage = "provider-auth-recovery"
+	validationModeration     eventValidationStage = "turn-moderation"
+	validationBuffering      eventValidationStage = "model-safety-buffering"
+	validationDeprecation    eventValidationStage = "deprecation"
+	validationThreadIdentity eventValidationStage = "thread-identity"
+	validationRawItem        eventValidationStage = "raw-item"
+	validationQueue          eventValidationStage = "thread-queue"
+	validationApps           eventValidationStage = "app-inventory"
+	validationGateway        eventValidationStage = "account-gateway"
+	validationSkills         eventValidationStage = "skills-inventory"
+	validationMCP            eventValidationStage = "mcp-startup"
+	validationHook           eventValidationStage = "native-hook"
+	validationThreadMetadata eventValidationStage = "thread-metadata"
+	validationLegacy         eventValidationStage = "legacy-notification"
+	validationStatus         eventValidationStage = "thread-status"
+)
+
+// Log a closed classification instead of untrusted native method or content.
+func validationStage(method string) eventValidationStage {
+	switch method {
+	case "thread/settings/updated":
+		return validationSettings
+	case "item/started", "item/completed":
+		return validationItem
+	case "rawResponse/completed":
+		return validationUsage
+	case "account/rateLimits/updated":
+		return validationQuota
+	case "model/verification":
+		return validationVerification
+	case "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
+		return validationAuthRecovery
+	case "turn/moderationMetadata":
+		return validationModeration
+	case "model/safetyBuffering/updated":
+		return validationBuffering
+	case "deprecationNotice":
+		return validationDeprecation
+	case "thread/started":
+		return validationThreadIdentity
+	case "rawResponseItem/completed":
+		return validationRawItem
+	case "thread/queue/changed":
+		return validationQueue
+	case "app/list/updated":
+		return validationApps
+	case "account/gatewayOAuth/changed":
+		return validationGateway
+	case "skills/changed":
+		return validationSkills
+	case "mcpServer/startupStatus/updated", "mcpServer/event/stream/notification", "mcpServer/oauthLogin/completed":
+		return validationMCP
+	case "hook/started", "hook/completed":
+		return validationHook
+	case "thread/name/updated", "thread/attachment/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/project/updated":
+		return validationThreadMetadata
+	case "thread/status/changed":
+		return validationStatus
+	case "codex/event/session_configured", "codex/event/task_started", "codex/event/mcp_startup_complete", "codex/event/mcp_startup_update", "codex/event/token_count":
+		return validationLegacy
+	default:
+		return validationOther
+	}
+}
+
 const (
 	CompactionEvent           EventKind = "compaction"
 	SubagentEvent             EventKind = "subagent"
@@ -104,7 +178,8 @@ type Event struct {
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
-	Native *nativewire.Event `json:"-"`
+	Native         *nativewire.Event    `json:"-"`
+	ExtensionStage eventValidationStage `json:"-"`
 }
 
 // NextEvent preserves wire order even with concurrent consumers. If cancellation
@@ -171,7 +246,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 			c.execution.paused = true
 		}
 		if c.logger != nil {
-			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "code", c.problem.Code)
+			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
 		}
 		return Event{}, c.problem
 	}
@@ -188,7 +263,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	return event, nil
 }
 func privateNative(event nativewire.Event) Event {
-	return Event{Kind: NativeExtensionEvent, Native: &event}
+	return Event{Kind: NativeExtensionEvent, Native: &event, ExtensionStage: validationStage(event.Method)}
 }
 func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 	if native.Kind == nativewire.LateResponse {
@@ -542,12 +617,13 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		}
 	case "agentMessage":
 		var item struct {
-			Type           string          `json:"type"`
-			ID             string          `json:"id"`
-			Text           *string         `json:"text"`
-			Phase          *MessagePhase   `json:"phase"`
-			Delivery       json.RawMessage `json:"delivery"`
-			MemoryCitation json.RawMessage `json:"memoryCitation"`
+			Type           string            `json:"type"`
+			ID             string            `json:"id"`
+			Text           *string           `json:"text"`
+			Phase          *MessagePhase     `json:"phase"`
+			Delivery       json.RawMessage   `json:"delivery"`
+			MemoryCitation json.RawMessage   `json:"memoryCitation"`
+			Questions      []json.RawMessage `json:"questions,omitempty"`
 		}
 		if domain.Decode(params.Item, &item) != nil || item.Text == nil {
 			return Event{}, incompatible()
@@ -555,7 +631,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		if item.Phase != nil && *item.Phase != CommentaryPhase && *item.Phase != FinalAnswerPhase {
 			return Event{}, incompatible()
 		}
-		if (len(item.Delivery) > 0 && string(item.Delivery) != "null") || (len(item.MemoryCitation) > 0 && string(item.MemoryCitation) != "null") {
+		if len(item.Questions) != 0 || (len(item.Delivery) > 0 && string(item.Delivery) != "null") || (len(item.MemoryCitation) > 0 && string(item.MemoryCitation) != "null") {
 			return privateNative(native), nil
 		}
 		message.ID = item.ID

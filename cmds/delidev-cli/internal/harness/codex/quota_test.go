@@ -15,6 +15,7 @@ import (
 func TestPinnedNativeQuotaProjectionPreservesSparseAndCreditInventory(t *testing.T) {
 	raw := `{"rateLimits":{"limitId":"codex","limitName":"private display","primary":{"usedPercent":80,"windowDurationMins":300,"resetsAt":1900000000},"secondary":{"usedPercent":20,"windowDurationMins":10080,"resetsAt":1900000000},"credits":{"hasCredits":true,"unlimited":false,"balance":"private balance"},"individualLimit":null,"spendControlReached":null,"planType":"pro","rateLimitReachedType":null},"rateLimitsByLimitId":null,"rateLimitResetCredits":{"availableCount":2,"credits":[{"id":"credit_1","resetType":"codexRateLimits","status":"available","grantedAt":1700000000,"expiresAt":null,"title":"private title","description":"private description"}]}}`
 	var native nativeQuotaRead
+	raw = strings.Replace(raw, `"limitName":"private display"`, `"limitName":"private display","normalModelSlug":"private model"`, 1)
 	if err := domain.Decode([]byte(raw), &native); err != nil {
 		t.Fatal(err)
 	}

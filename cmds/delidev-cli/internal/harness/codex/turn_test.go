@@ -175,7 +175,7 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 			thread = domain.NewID()
 		}
 		f.notify("item/agentMessage/delta", map[string]any{"threadId": thread, "turnId": f.turn, "itemId": "native-agent-item", "delta": "한글 🐦"})
-		f.notify("item/completed", map[string]any{"threadId": thread, "turnId": f.turn, "completedAtMs": 1, "item": map[string]any{"type": "agentMessage", "id": "native-agent-item", "text": "한글 🐦", "phase": "final_answer", "delivery": nil, "memoryCitation": nil}})
+		f.notify("item/completed", map[string]any{"threadId": thread, "turnId": f.turn, "completedAtMs": 1, "item": map[string]any{"type": "agentMessage", "id": "native-agent-item", "text": "한글 🐦", "phase": "final_answer", "delivery": nil, "memoryCitation": nil, "questions": nil}})
 		write(id, map[string]any{})
 	default:
 		os.Exit(33)

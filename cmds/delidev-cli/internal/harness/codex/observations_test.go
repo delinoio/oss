@@ -30,6 +30,106 @@ func usageCounts(total int64) map[string]any {
 	return map[string]any{"inputTokens": int64(11), "cachedInputTokens": int64(4), "outputTokens": int64(7), "reasoningOutputTokens": int64(3), "totalTokens": total}
 }
 
+func TestEmptyModelVerificationPreservesOriginalTurnAndAuthority(t *testing.T) {
+	c, turn := observationClient()
+	paused := c.execution.paused
+	params := map[string]any{"threadId": c.thread, "turnId": turn, "verifications": []string{}}
+	event, err := observeFixture(c, "model/verification", params)
+	if err != nil || event.Kind != MetadataEvent || event.Metadata != ModelVerificationAbsent || !event.Correlated || event.TurnID != turn || c.execution.active != turn || c.execution.paused != paused {
+		t.Fatal("empty verification changed execution authority", err)
+	}
+	for _, value := range []any{nil, map[string]any{}, map[string]any{"threadId": c.thread, "turnId": turn, "verifications": nil}, map[string]any{"threadId": c.thread, "turnId": domain.NewID(), "verifications": []string{}}, map[string]any{"threadId": c.thread, "turnId": turn, "verifications": []string{}, "unknown": true}} {
+		if _, err := observeFixture(c, "model/verification", value); err == nil {
+			t.Fatal("unowned or malformed verification accepted")
+		}
+	}
+	params["verifications"] = []string{"trustedAccessForCyber"}
+	event, err = observeFixture(c, "model/verification", params)
+	if err != nil || event.Kind != NativeExtensionEvent || event.ExtensionStage != validationVerification {
+		t.Fatal("populated verification gained product authority", err)
+	}
+	params["threadId"], params["verifications"] = domain.NewID(), []string{}
+	event, err = observeFixture(c, "model/verification", params)
+	if err != nil || event.Kind != NativeExtensionEvent {
+		t.Fatal("foreign verification attributed to root", err)
+	}
+}
+
+func TestPrivateExtensionClassificationCannotReflectNativeContent(t *testing.T) {
+	for _, method := range []string{"app/list/updated", "account/gatewayOAuth/changed", "mcpServer/startupStatus/updated", "private-native-method-sentinel"} {
+		event := privateNative(nativewire.Event{Kind: nativewire.Notification, Method: method, Params: json.RawMessage(`{"private":"native-payload-sentinel"}`)})
+		raw, err := json.Marshal(event)
+		if err != nil || strings.Contains(string(raw), method) || strings.Contains(string(raw), "native-payload-sentinel") {
+			t.Fatal("private native observation entered serialized diagnostic")
+		}
+		if method == "private-native-method-sentinel" && event.ExtensionStage != validationOther {
+			t.Fatal("unknown method changed the closed log vocabulary")
+		}
+		if method != "private-native-method-sentinel" && event.ExtensionStage == validationOther {
+			t.Fatal("known private startup family lost its diagnostic classification")
+		}
+	}
+}
+
+func TestManagedCodexAppsStartupIsPrivatePassiveMetadata(t *testing.T) {
+	for _, status := range []nativeMCPStartupState{nativeMCPStarting, nativeMCPReady, nativeMCPFailed, nativeMCPCancelled} {
+		c, turn := observationClient()
+		c.managedHome = "/fixture-managed-home"
+		paused := c.execution.paused
+		params := map[string]any{"threadId": c.thread, "name": "codex_apps", "status": status, "error": nil, "failureReason": nil}
+		if status == nativeMCPFailed {
+			params["error"], params["failureReason"] = "private-native-mcp-diagnostic", nativeMCPReauthentication
+		}
+		event, err := observeFixture(c, "mcpServer/startupStatus/updated", params)
+		if err != nil || event.Kind != MetadataEvent || event.Metadata != CodexAppsStartupObserved || !event.Correlated || event.Native != nil || c.execution.active != turn || c.execution.paused != paused {
+			t.Fatal("connector metadata changed account/input authority", err)
+		}
+		raw, _ := json.Marshal(event)
+		if strings.Contains(string(raw), "private-native-mcp-diagnostic") || strings.Contains(string(raw), "reauthenticationRequired") || strings.Contains(string(raw), "codex_apps\"") {
+			t.Fatal("private connector descriptor or error escaped")
+		}
+		params["name"] = "foreign-server"
+		event, err = observeFixture(c, "mcpServer/startupStatus/updated", params)
+		if err != nil || event.Kind != NativeExtensionEvent {
+			t.Fatal("external MCP server gained support", err)
+		}
+	}
+	for _, scenario := range []string{"api", "unscoped", "foreign", "unknown-field", "unknown-state", "unknown-reason", "unexpected-error", "missing-name"} {
+		c, _ := observationClient()
+		c.managedHome = "/fixture-managed-home"
+		params := map[string]any{"threadId": c.thread, "name": "codex_apps", "status": nativeMCPReady}
+		private := false
+		switch scenario {
+		case "api":
+			c.managedHome = ""
+			private = true
+		case "unscoped":
+			params["threadId"] = nil
+			private = true
+		case "foreign":
+			params["threadId"] = domain.NewID()
+			private = true
+		case "unknown-field":
+			params["token"] = "private"
+		case "unknown-state":
+			params["status"] = "healthy"
+		case "unknown-reason":
+			params["status"], params["failureReason"] = nativeMCPFailed, "unknown"
+		case "unexpected-error":
+			params["error"] = "private"
+		case "missing-name":
+			delete(params, "name")
+		}
+		event, err := observeFixture(c, "mcpServer/startupStatus/updated", params)
+		if private && (err != nil || event.Kind != NativeExtensionEvent) {
+			t.Fatal("foreign profile lost private boundary", scenario)
+		}
+		if !private && err == nil {
+			t.Fatal("malformed connector metadata accepted", scenario)
+		}
+	}
+}
+
 func TestNativeResumeGoalAbsenceHasNoExecutionAuthority(t *testing.T) {
 	c, turn := observationClient()
 	c.execution.paused = true
@@ -119,6 +219,7 @@ func TestNativeSettingsNotificationsCannotReplaceAcceptedAuthority(t *testing.T)
 		t.Run(changed, func(t *testing.T) {
 			c, _ := observationClient()
 			settings := nativeSettingsFixture(c)
+			settings["disabledPluginIds"] = []string{"private-plugin-reference"}
 			if changed != "" {
 				settings[changed] = "changed"
 				if changed == "sandboxPolicy" {
@@ -140,6 +241,34 @@ func TestNativeSettingsNotificationsCannotReplaceAcceptedAuthority(t *testing.T)
 				t.Fatalf("metadata exposed internal settings or lost validation: %v", err)
 			}
 		})
+	}
+}
+
+func TestAgentMessageQuestionsRemainPrivate(t *testing.T) {
+	for _, questions := range []any{nil, []any{}, []any{map[string]any{"private-question": "private-content"}}, true} {
+		c, turn := observationClient()
+		item := map[string]any{"type": "agentMessage", "id": "message", "text": "fixture", "questions": questions}
+		event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "item": item, "completedAtMs": 1})
+		switch value := questions.(type) {
+		case bool:
+			if err == nil {
+				t.Fatal("malformed questions accepted")
+			}
+		case []any:
+			if len(value) != 0 {
+				if err != nil || event.Kind != NativeExtensionEvent || event.Message != nil {
+					t.Fatal("populated questions became ordinary output", err)
+				}
+				continue
+			}
+			if err != nil || event.Kind != MessageCompletedEvent || event.Message == nil {
+				t.Fatal("empty questions rejected ordinary text", err)
+			}
+		default:
+			if err != nil || event.Kind != MessageCompletedEvent || event.Message == nil {
+				t.Fatal("empty questions rejected ordinary text", err)
+			}
+		}
 	}
 }
 

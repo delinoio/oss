@@ -97,7 +97,60 @@ func init() {
 			write(map[string]any{"id": request.ID, "result": map[string]bool{"ok": true}})
 		}
 	}
+	if os.Args[2] == "ignore-eof" {
+		for {
+			time.Sleep(time.Second)
+		}
+	}
+	if os.Args[2] == "observe-eof" {
+		if os.WriteFile("fixture-eof-marker", []byte("closed"), 0600) != nil {
+			os.Exit(6)
+		}
+	}
 	os.Exit(0)
+}
+
+func TestGracefulCloseJoinsNativeEOFBeforeReturning(t *testing.T) {
+	c, config, _ := startFixture(t, "observe-eof")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.Call(ctx, domain.NewID(), "ready", struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	var joined sync.WaitGroup
+	for range 3 {
+		joined.Add(1)
+		go func() {
+			defer joined.Done()
+			if err := c.CloseGracefully(time.Second); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	joined.Wait()
+	if raw, err := os.ReadFile(filepath.Join(config.Cwd, "fixture-eof-marker")); err != nil || string(raw) != "closed" {
+		t.Fatal("native EOF cleanup did not finish", err)
+	}
+	if err := c.Notify(ctx, "late", struct{}{}); err == nil {
+		t.Fatal("closed connection accepted another write")
+	}
+}
+
+func TestGracefulCloseFallsBackToJoinedOriginalStop(t *testing.T) {
+	c, _, _ := startFixture(t, "ignore-eof")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.Call(ctx, domain.NewID(), "ready", struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CloseGracefully(20 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-c.Done():
+	default:
+		t.Fatal("timeout returned without joining original process")
+	}
 }
 func startFixture(t *testing.T, mode string, protected ...string) (*Connection, process.Config, *bytes.Buffer) {
 	t.Helper()
@@ -404,6 +457,13 @@ func TestNativeWireProtocolFailuresAndBoundsStopOwnedScope(t *testing.T) {
 	}
 }
 func TestNativeWireBlockedInputIsBounded(t *testing.T) {
+	for _, graceful := range []bool{false, true} {
+		t.Run(fmt.Sprintf("graceful=%t", graceful), func(t *testing.T) {
+			testNativeWireBlockedInput(t, graceful)
+		})
+	}
+}
+func testNativeWireBlockedInput(t *testing.T, graceful bool) {
 	c, config, _ := startFixture(t, "blocked-input")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -431,7 +491,20 @@ func TestNativeWireBlockedInputIsBounded(t *testing.T) {
 		case <-time.After(time.Millisecond):
 		}
 	}
-	cancel()
+	if graceful {
+		closed := make(chan error, 1)
+		go func() { closed <- c.CloseGracefully(20 * time.Millisecond) }()
+		select {
+		case err := <-closed:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("graceful timeout did not join blocked input and original process")
+		}
+	} else {
+		cancel()
+	}
 	select {
 	case err := <-result:
 		if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired {
