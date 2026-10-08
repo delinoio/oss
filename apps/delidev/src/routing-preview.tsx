@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Timestamp } from "./timestamp-display";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { useMemo, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, isEntityId, type Resource, EntityKind } from "@delinoio/delidev-api-client";
-import { copy, formatTimestamp, useLocale, type MessageKey } from "./localization";
+import { copy, useLocale, type MessageKey } from "./localization";
 import { items, object, resourceName, text, type Document } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { Routing } from "./configuration-fields";
@@ -63,7 +64,7 @@ function Candidates({ route, metadata }: { route: Route; metadata: Map<string, R
   return route.candidates.length ? <ul className="routing-candidates">{route.candidates.map(candidate => <li key={candidate.id} className="routing-candidate" data-selected={route.selected === candidate.id}>
     <div className="routing-candidate-heading"><AccountIdentity metadata={metadata.get(candidate.id)} /><span className="routing-eligibility" data-warning={candidate.eligibility !== "eligible"}>{eligibilityLabel(candidate.eligibility)}</span></div>
     {route.selected === candidate.id ? <p className="routing-selected-label">{copy("routing-preview.selectedAccount")}</p> : null}
-    <dl className="routing-candidate-evidence"><div><dt>{copy("routing-preview.weight")}</dt><dd>{candidate.weight}</dd></div><div><dt>{copy("routing-preview.quota")}</dt><dd>{statusLabel(candidate.quota_state)}</dd></div>{typeof candidate.score === "number" ? <div><dt>{copy("routing-preview.score")}</dt><dd>{candidate.score}</dd></div> : null}{candidate.reset_at ? <div><dt>{copy("routing-preview.reset")}</dt><dd>{formatTimestamp(candidate.reset_at)}</dd></div> : null}</dl>
+    <dl className="routing-candidate-evidence"><div><dt>{copy("routing-preview.weight")}</dt><dd>{candidate.weight}</dd></div><div><dt>{copy("routing-preview.quota")}</dt><dd>{statusLabel(candidate.quota_state)}</dd></div>{typeof candidate.score === "number" ? <div><dt>{copy("routing-preview.score")}</dt><dd>{candidate.score}</dd></div> : null}{candidate.reset_at ? <div><dt>{copy("routing-preview.reset")}</dt><dd>{<Timestamp value={candidate.reset_at} />}</dd></div> : null}</dl>
     <AccountId id={candidate.id} />
   </li>)}</ul> : <p className="routing-empty">{copy("routing-preview.noCandidates")}</p>;
 }

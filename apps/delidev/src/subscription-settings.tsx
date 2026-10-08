@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
@@ -110,15 +112,15 @@ function ProviderMark({ brand }: { brand?: SubscriptionBrand }) {
   </span>;
 }
 
-function QuotaWindow({ window, now }: { window: SubscriptionQuotaWindow; now: number }) {
+function QuotaWindow({ window, now, active }: { window: SubscriptionQuotaWindow; now: number; active: boolean }) {
   useLocale();
   const label = window.label || window.id || copy("subscription-settings.extra.dab02c29147d");
   const presentation = quotaPresentation(window, now);
   return <div className="subscription-quota" data-state={presentation.state}>
     <div className="subscription-quota-heading"><strong>{label}</strong><span>{presentation.percent === undefined ? copy("subscription-settings.remainingUnknown_e49e1a") : copy("subscription-settings.remaining_fe6b6b", { v0: presentation.percent })}</span></div>
     {presentation.percent !== undefined ? <progress max="100" value={presentation.percent} aria-label={copy("subscription-settings.remaining_f33475", { v0: label })} /> : null}
-    <small>{quotaLabels[presentation.state]}{window.observedAt ? <><LocalizedText id="subscription-settings.observed_c0c869" components={{ s0: <time dateTime={window.observedAt}>{window.observedAt}</time> }} /></> : copy("subscription-settings.noObservationTime_02689f")}</small>
-    {window.resetAt ? <small><LocalizedText id="subscription-settings.reset_22f04d" components={{ s0: <time dateTime={window.resetAt}>{window.resetAt}</time>, s1: <>{Date.parse(window.resetAt) <= now ? copy("subscription-settings.elapsedRecoveryUnconfirmed_4f7d23") : ""}</> }} /></small> : null}
+    <small>{quotaLabels[presentation.state]}{window.observedAt ? <><LocalizedText id="subscription-settings.observed_c0c869" components={{ s0: <Timestamp active={active} value={window.observedAt} /> }} /></> : copy("subscription-settings.noObservationTime_02689f")}</small>
+    {window.resetAt ? <small><LocalizedText id="subscription-settings.reset_22f04d" components={{ s0: <Timestamp active={active} value={window.resetAt} />, s1: <>{Date.parse(window.resetAt) <= now ? copy("subscription-settings.elapsedRecoveryUnconfirmed_4f7d23") : ""}</> }} /></small> : null}
   </div>;
 }
 
@@ -136,7 +138,7 @@ function OperationNotice({ label, operation, retryBlocked = false }: { label: st
   </div>;
 }
 
-export function SubscriptionRow({ account, now, unavailable, actionsBlocked = false }: { account: SubscriptionAccountRow; now: number; unavailable: string; actionsBlocked?: boolean }) {
+export function SubscriptionRow({ account, now, unavailable, actionsBlocked = false, active = true }: { account: SubscriptionAccountRow; now: number; unavailable: string; actionsBlocked?: boolean; active?: boolean }) {
   useLocale();
   const [menu, setMenu] = useState(false);
   const [details, setDetails] = useState(false);
@@ -153,7 +155,7 @@ export function SubscriptionRow({ account, now, unavailable, actionsBlocked = fa
   return <article className="subscription-row" aria-label={account.alias}>
     <div className="subscription-row-main">
       <div className="subscription-identity"><ProviderMark brand={account.brand} /><div><h3>{account.alias}</h3><p>{account.providerName}{account.maskedIdentity ? copy("subscription-settings.message_2fa20b", { v0: account.maskedIdentity }) : ""}</p><span className="subscription-connection" data-state={account.connection}>{connectionLabels[account.connection]}</span>{["expired", "revoked", "failed"].includes(account.health) ? <span className="subscription-health"> · {account.health === "expired" ? copy("subscription-settings.authenticationExpired_032edd") : account.health === "revoked" ? copy("subscription-settings.authenticationRevoked_e049fb") : copy("subscription-settings.accountFailed_d5a3c3")}</span> : null}</div></div>
-      <div className="subscription-quota-grid">{account.windows.length ? account.windows.slice(0, 2).map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} now={now} />) : <p className="subscription-no-quota">{copy("subscription-settings.noQuotaObservation_d9e3af")}</p>}</div>
+      <div className="subscription-quota-grid">{account.windows.length ? account.windows.slice(0, 2).map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} now={now} active={active} />) : <p className="subscription-no-quota">{copy("subscription-settings.noQuotaObservation_d9e3af")}</p>}</div>
       <div className="subscription-row-actions">
         <button type="button" disabled={!canRefresh} title={!account.refresh ? unavailable : undefined} aria-label={copy("subscription-settings.refresh_525a40", { v0: account.alias })} onClick={account.refresh}>{copy("subscription-settings.refresh_0e9161")}</button>
         {account.connect ? <button type="button" disabled={blocked} aria-label={copy("subscription-settings.manageLoginFor_e2d832", { v0: account.alias })} onClick={account.connect}>{account.connection === SubscriptionConnectionState.Disconnected ? copy("subscription-settings.logIn_c18984") : copy("subscription-settings.manageLogin_4b4e31")}</button> : null}
@@ -177,7 +179,7 @@ export function SubscriptionRow({ account, now, unavailable, actionsBlocked = fa
       <div className="actions"><button type="button" disabled={!canDisconnect} onClick={() => { setConfirm(false); account.disconnect?.(); disconnectButton.current?.focus(); }}>{copy("subscription-settings.confirmDisconnection_d61f53")}</button><button type="button" onClick={closeConfirm}>{copy("subscription-settings.keepAccountConnected_00ae06")}</button></div>
     </div> : null}
     {details ? <div id={detailsId} className="subscription-details"><h4>{copy("subscription-settings.accountDetails_17be95")}</h4><dl><div><dt>{copy("subscription-settings.health_558984")}</dt><dd>{account.health || copy("subscription-settings.extra.b764cdc0eab7")}</dd></div><div><dt>{copy("subscription-settings.account_7e1b0d")}</dt><dd>{account.enabled ? copy("subscription-settings.enabled_92c1cd") : copy("subscription-settings.disabled_75081b")}</dd></div><div><dt>{copy("subscription-settings.serviceStatus_cce5ed")}</dt><dd>{account.providerState}</dd></div><div><dt>{copy("subscription-settings.exhaustion_c52628")}</dt><dd>{account.confirmedExhausted ? copy("subscription-settings.confirmedExhausted_763851") : copy("subscription-settings.notConfirmedExhausted_a80dbe")}</dd></div></dl>
-      {account.windows.length > 2 ? <div className="subscription-quota-grid">{account.windows.slice(2).map((window, index) => <QuotaWindow key={`${window.id}:${index + 2}`} window={window} now={now} />)}</div> : null}
+      {account.windows.length > 2 ? <div className="subscription-quota-grid">{account.windows.slice(2).map((window, index) => <QuotaWindow key={`${window.id}:${index + 2}`} window={window} now={now} active={active} />)}</div> : null}
       <div className="actions"><button type="button" disabled={!account.metadataAvailable || actionsBlocked} onClick={account.details}>{copy("subscription-settings.manageMetadata_ddc14e")}</button><button type="button" onClick={() => { setDetails(false); menuButton.current?.focus(); }}>{copy("subscription-settings.closeAccountDetails_c62a46")}</button></div>
     </div> : null}
   </article>;
@@ -216,7 +218,7 @@ export function SubscriptionSettingsView({ accounts, accountList, completeEmpty 
       <p id={cleanupId} className="subscription-cleanup-help">{copy("subscription-settings.cleanupHelp")}{cleanupUnavailable ? <> {cleanupUnavailable}</> : null}</p>
       {cleanupStatus}
       {state !== SubscriptionReadState.Ready ? <div role={state === SubscriptionReadState.Loading ? undefined : state === SubscriptionReadState.Failed || state === SubscriptionReadState.PermissionDenied || state === SubscriptionReadState.AuthenticationExpired ? "alert" : "status"}>{state === SubscriptionReadState.Loading ? <SettingsLoading label={copy("subscription-settings.loadingSubscriptions_d98d84")} /> : <p>{readLabels[state]}</p>}{accounts.length && state !== SubscriptionReadState.Loading ? <p>{copy("subscription-settings.showingTheLastSuccessfullyLoadedSubscriptions_3cc29c")}</p> : null}{problem}{retryRead && state !== SubscriptionReadState.Loading && state !== SubscriptionReadState.Unsupported ? <button type="button" onClick={retryRead}>{copy("subscription-settings.retrySubscriptionRead_3772f6")}</button> : null}</div> : null}
-      {accountList ? accountList(presentationNow) : accounts.length ? <div className="subscription-list">{accounts.map((account) => <SubscriptionRow key={account.id} account={account} now={presentationNow} unavailable={lifecycleUnavailable} actionsBlocked={actionsBlocked} />)}</div> : state === SubscriptionReadState.Ready && completeEmpty ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}
+      {accountList ? accountList(presentationNow) : accounts.length ? <div className="subscription-list">{accounts.map((account) => <SubscriptionRow key={account.id} account={account} now={presentationNow} active={active} unavailable={lifecycleUnavailable} actionsBlocked={actionsBlocked} />)}</div> : state === SubscriptionReadState.Ready && completeEmpty ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}
       <OperationNotice label={copy("subscription-settings.refreshAll_3c128b")} operation={refreshAllOperation} />
       {pagination}
     </section>

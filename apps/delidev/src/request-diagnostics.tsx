@@ -1,3 +1,4 @@
+import { Timestamp } from "./timestamp-display";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
 import { Surface } from "./surface";
@@ -67,7 +68,7 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
       <dt>{copy("request-diagnostics.request_59f03d")}</dt><dd>{value.id}</dd><dt>{copy("request-diagnostics.revision_2e516d")}</dt><dd>{value.revision.toString()}</dd><dt>{copy("request-diagnostics.execution_a45cd4")}</dt><dd>{value.executionId}</dd>
       <dt>{copy("request-diagnostics.accountAtRequestTime_3521b7")}</dt><dd>{value.accountId}</dd><dt>{copy("request-diagnostics.connection_639a40")}</dt><dd>{value.connectionId}</dd>
       <dt>{value.subscriptionService ? copy("request-diagnostics.subscriptionService_0e16df") : copy("request-diagnostics.provider_472590")}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : value.providerId}</dd><dt>{copy("request-diagnostics.model_5e2c61")}</dt><dd>{value.modelId}</dd><dt>{copy("request-diagnostics.purpose_d4e883")}</dt><dd>{value.purpose}</dd>
-      <dt>{copy("request-diagnostics.observed_64fa8a")}</dt><dd>{value.observedAt}</dd><dt>{copy("request-diagnostics.finished_7804f7")}</dt><dd>{value.finishedAt ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
+      <dt>{copy("request-diagnostics.observed_64fa8a")}</dt><dd><Timestamp value={value.observedAt} /></dd><dt>{copy("request-diagnostics.finished_7804f7")}</dt><dd><Timestamp value={value.finishedAt} fallback={copy("request-diagnostics.unavailable_ca1844")} /></dd>
       <dt>{copy("request-diagnostics.httpLatency_4cebf1")}</dt><dd>{value.durationMs === undefined ? copy("request-diagnostics.unavailable_ca1844") : copy("request-diagnostics.ms_d659ce", { v0: value.durationMs.toString() })}</dd>
       <dt>{copy("request-diagnostics.httpAttempt_4a264f")}</dt><dd>{value.httpAttempted === undefined ? copy("request-diagnostics.unavailable_ca1844") : value.httpAttempted ? copy("request-diagnostics.sendClaimedProviderAcceptanceIsUnconfirmed_0370a9") : copy("request-diagnostics.noHttpAttempt_56754e")}</dd>
       <dt>{copy("request-diagnostics.httpStatus_0f7cf9")}</dt><dd>{value.httpStatus ?? copy("request-diagnostics.unavailable_ca1844")}</dd><dt>{copy("request-diagnostics.error_54a0e8")}</dt><dd>{value.errorCode || copy("request-diagnostics.extra.7b563836dc50")}</dd>

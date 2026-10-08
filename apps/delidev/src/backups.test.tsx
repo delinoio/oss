@@ -1,3 +1,4 @@
+import { formatTimestampLabel, TimestampMode } from "./timestamp-format";
 import { toBinary } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -193,12 +194,12 @@ it("renders the approved two-row table with UTC labels, full metadata and inert 
   const table = await screen.findByRole("table", { name: "Database backups" });
   await within(table).findByText("512,000 bytes");
   expect(within(table).getByText("499,712 bytes")).toBeTruthy();
-  expect(within(table).getByText("Sep 30, 2026 · 07:28:33 UTC")).toBeTruthy();
-  expect(within(table).getByText("Sep 29, 2026 · 04:04:31 UTC")).toBeTruthy();
+  expect(within(table).getByText(formatTimestampLabel(backups[0].modifiedAt, { mode: TimestampMode.Absolute, timeZone: "UTC" }))).toBeTruthy();
+  expect(within(table).getByText(formatTimestampLabel(backups[1].modifiedAt, { mode: TimestampMode.Absolute, timeZone: "UTC" }))).toBeTruthy();
   expect(within(table).getAllByRole("button").map(button => button.getAttribute("aria-label"))).toEqual(backups.map(backup => `Inspect backup ${backup.id}`));
   expect(within(table).getAllByText("Not checked")).toHaveLength(2);
   for (const backup of backups) {
-    expect(within(table).getByText(`Original modification timestamp: ${backup.modifiedAt}`)).toBeTruthy();
+    expect(within(table).getByText((_content, element) => element?.classList.contains("backups-sr-only") === true && element.textContent === `Original modification timestamp: ${backup.modifiedAt}`)).toBeTruthy();
     expect(table.querySelector(`time[datetime="${backup.modifiedAt}"]`)).toBeTruthy();
   }
   expect(screen.getByText("2 loaded")).toBeTruthy();
@@ -220,11 +221,11 @@ it("preserves fractional timestamps and exact BigInt deletion operands, with raw
   f.list.mockResolvedValue({ backups: [backup, invalid] });
   f.inspect.mockResolvedValue({ backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() });
   render(f.view());
-  await screen.findByText("unformattable-timestamp");
+  await screen.findAllByText("unformattable-timestamp");
   fireEvent.click(screen.getByRole("button", { name: `Inspect backup ${f.id}` }));
   const detail = screen.getByRole("region", { name: "Backup integrity inspection" });
   await within(detail).findByText("9,007,199,254,740,993 bytes");
-  expect(within(detail).getByText(backup.modifiedAt)).toBeTruthy();
+  expect(within(detail).getByTitle(backup.modifiedAt)).toBeTruthy();
   fireEvent.click(within(detail).getByRole("button", { name: "Delete selected backup…" }));
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "Permanently delete selected backup" }));

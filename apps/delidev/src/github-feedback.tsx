@@ -1,4 +1,5 @@
-import { formatTimestamp } from "./localization";
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp, TimestampText } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object, text, type Document } from "./documents";
 import { actorValid, bounded, date, positive } from "./github-query-model";
@@ -75,7 +76,7 @@ export function PRFeedback({ value }: { value: Document }) {
       return <article className="result" key={text(entry.node_id)}>
         <h5>{kind} · {text(author.login) || copy("github-feedback.extra.a326f4758492")}</h5>
         {entry.author != null ? <p>{text(author.native_type)} · {text(author.id) || copy("github-feedback.extra.de4e3fe5f1d2")} · <code>{text(author.node_id)}</code></p> : null}
-        <p><LocalizedText id="github-feedback.published_3e1d2d" components={{ s0: <>{formatTimestamp(text(entry.published_at))}</>, s1: <>{entry.last_edited_at ? copy("github-feedback.edited_01b606", { v0: formatTimestamp(text(entry.last_edited_at)) }) : ""}</>, s2: <>{entry.native_state ? copy("github-feedback.message_2fa20b", { v0: text(entry.native_state) }) : ""}</>, s3: <>{entry.review_state ? copy("github-feedback.review_741980", { v0: text(entry.review_state) }) : ""}</> }} /></p>
+        <p><LocalizedText id="github-feedback.published_3e1d2d" components={{ s0: <><Timestamp value={text(entry.published_at)} /></>, s1: <>{entry.last_edited_at ? <TimestampText id={"github-feedback.edited_01b606"} values={{ v0: <Timestamp value={text(entry.last_edited_at)} /> }} /> : ""}</>, s2: <>{entry.native_state ? copy("github-feedback.message_2fa20b", { v0: text(entry.native_state) }) : ""}</>, s3: <>{entry.review_state ? copy("github-feedback.review_741980", { v0: text(entry.review_state) }) : ""}</> }} /></p>
         {thread ? <p>{thread.resolved ? copy("github-feedback.threadResolvedOnGithub_0cf45e") : copy("github-feedback.threadUnresolvedOnGithub_2d3df9")}{thread.outdated ? copy("github-feedback.outdatedCodePosition_881964") : ""}</p> : null}
         <pre>{text(entry.body) || copy("github-feedback.extra.b8e6ea915c53")}</pre>
         {entry.code != null ? <details><summary><LocalizedText id="github-feedback.codeContext_df3a2f" components={{ s0: <>{text(code.path)}</> }} /></summary><p><LocalizedText id="github-feedback.currentLineOriginalLine_72e6d7" components={{ s0: <>{code.line == null ? copy("github-feedback.unavailable_ca1844") : String(code.line)}</>, s1: <>{code.original_line == null ? copy("github-feedback.unavailable_ca1844") : String(code.original_line)}</> }} /></p><pre>{text(code.diff_hunk)}</pre></details> : null}

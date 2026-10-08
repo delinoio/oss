@@ -1,0 +1,22 @@
+{
+  "date-format.title": "Date format",
+  "date-format.system": "Language default",
+  "date-format.scope": "Saved on this computer. Times use this computer’s timezone.",
+  "date-format.reading": "Reading date format…",
+  "date-format.saving": "Saving date format…",
+  "date-format.saved": "Date format saved.",
+  "date-format.notSaved": "Date format is not saved. Inspect the original preference before trying again.",
+  "date-format.reload": "Reload date format",
+  "date-format.unavailable": "Date-format storage is unavailable. Open a trusted product window to inspect it.",
+  "date-format.readFailed": "The saved date format could not be read. Reload date format to inspect it.",
+  "date-format.invalidDocument": "The saved date format is invalid. Language default is shown; the original file remains unchanged.",
+  "date-format.unsupportedVersion": "The saved date format uses an unsupported version. The original file remains unchanged.",
+  "date-format.writeFailed": "The date format could not be saved. The committed selection remains active. Reload before trying again.",
+  "date-format.outcomeUnknown": "The save outcome is unknown. Reload date format before making another selection.",
+  "date-format.changed": "Date format changed elsewhere. Reload before choosing again.",
+  "timestamp.now": "now",
+  "timestamp.minute": "1 minute ago",
+  "timestamp.minutes": "{{count}} minutes ago",
+  "timestamp.hour": "1 hour ago",
+  "timestamp.hours": "{{count}} hours ago"
+}

@@ -44,7 +44,7 @@ it("renders original CI output inertly and labels the workflow attempt as aggreg
   expect(view.container.querySelector("script")).toBeNull();
   expect(screen.getByText(/observed workflow attempt 2/)).toBeTruthy();
   expect(screen.getByText(/does not prove that each retained check ran again/)).toBeTruthy();
-  expect(screen.getByText("2026-09-28T00:01:00Z")).toBeTruthy();
+  expect(screen.getByTitle("2026-09-28T00:01:00Z")).toBeTruthy();
 });
 
 it("rejects missing or mixed lifecycle proof, impossible attempts and oversized original output", () => {

@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp, TimestampText } from "./timestamp-display";
 import { LocalConnectionHelp } from "./local-connection-presentation";
 import { SettingsTaskDismissButton } from "./settings-task";
-import { formatTimestamp } from "./localization";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
@@ -19,7 +20,7 @@ import "./api-account.css";
 function Observation({ label, value }: { label: string; value: unknown }) {
   useLocale();
   const observation = object(value), problem = object(observation.problem);
-  return <div><p>{label}: {statusLabel(text(observation.state)) || copy("account-connection.extra.b764cdc0eab7")}{text(observation.observed_at) ? copy("account-connection.message_2fa20b", { v0: formatTimestamp(text(observation.observed_at)) }) : ""}</p>{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}</div>;
+  return <div><p>{label}: {statusLabel(text(observation.state)) || copy("account-connection.extra.b764cdc0eab7")}{text(observation.observed_at) ? <TimestampText id={"account-connection.message_2fa20b"} values={{ v0: <Timestamp value={text(observation.observed_at)} /> }} /> : ""}</p>{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}</div>;
 }
 export function AccountConnection(props: { initial: Resource; active: boolean; close: () => void }) {
   useLocale();

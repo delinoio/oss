@@ -12,6 +12,7 @@
     "account-oauth",
     "provider-guidance",
     "device-appearance",
+    "device-date-format",
     "session-creation-preferences",
     "device-language",
     "browser-presentation",

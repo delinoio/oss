@@ -1,3 +1,5 @@
+import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
+import type { ReactNode } from "react";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { useId, useState } from "react";
 import type { UsageEntry } from "./usage-entry";
@@ -49,16 +51,16 @@ function Measures({ value }: { value?: UsageTotals }) {
   return <dl className="usage-row-measures">{[...primaryMeasures(), ...secondaryMeasures()].map(([label, key]) => <MeasureCard key={key} label={label} value={value?.[key]} />)}</dl>;
 }
 
-function formatAppliedTime(milliseconds: bigint, timeZone: string): string {
-  return new Intl.DateTimeFormat(displayLocale(), { timeZone, year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "shortOffset" }).format(new Date(Number(milliseconds)));
+function formatAppliedTime(milliseconds: bigint, timeZone: string) {
+  return <Timestamp value={new Date(Number(milliseconds)).toISOString()} mode={TimestampMode.Absolute} timeZone={timeZone} />;
 }
 
-function pendingRange(selection: UsageSelection): string {
+function pendingRange(selection: UsageSelection): ReactNode {
   if (selection.fromUnixMs === 0n && selection.untilUnixMs === 0n) return copy("usage.extra.5f5f75f8e14c");
   const from = selection.fromUnixMs || (selection.untilUnixMs ? selection.untilUnixMs - 30n * 86_400_000n : 0n);
   const start = from ? formatAppliedTime(from, selection.timeZone) : copy("usage.pendingStart");
   const end = selection.untilUnixMs ? formatAppliedTime(selection.untilUnixMs, selection.timeZone) : copy("usage.extra.ca936ad0748f");
-  return copy("usage.range", { from: start, until: end });
+  return <TimestampText id="usage.range" values={{ from: start, until: end }} />;
 }
 
 function appliedFilters(selection: UsageSelection): string[] {
@@ -121,7 +123,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
     <section hidden={!active} className="page usage-page" aria-busy={result.isFetching}>
     {detail ? <SettingsLifetime key={detail}>{() => <MutationIntents><UsageModelDetail id={detail} active={active} close={() => setDetail("")} /></MutationIntents>}</SettingsLifetime> : null}
     <header className="usage-header"><div><h1>{copy("usage.tokenUsage_00f594")}</h1><p>{copy("usage.delidevActivityOnlyArchivedSessionsIncluded_09c1fa")}</p></div><div className="usage-header-actions"><button type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("usage.refresh_0e9161")}</button></div></header>
-    <div className="usage-applied" role="group" aria-label={copy("usage.appliedConditions_bc3af3")}><strong>{copy("usage.appliedConditions_bc3af3")}</strong><span>{data ? copy("usage.exclusive_fd9e0a", { v0: formatAppliedTime(data.fromUnixMs, appliedZone), v1: formatAppliedTime(data.untilUnixMs, appliedZone) }) : pendingRange(selection)}</span><span><LocalizedText id="usage.timezone_9229e0" components={{ s0: <>{appliedZone}</> }} /></span><span>{copy("usage.responseTimesShowWhenTheServer_c28198")}</span>{conditions.length ? <span>{conditions.join(" · ")}</span> : <span>{copy("usage.allSessionsAccountsApisAndModels_d7b7c7")}</span>}{draftChanged ? <span className="usage-draft-state">{copy(invalid ? "usage.invalidFiltersRetained" : "usage.waitingForDateInput")}</span> : null}</div>
+    <div className="usage-applied" role="group" aria-label={copy("usage.appliedConditions_bc3af3")}><strong>{copy("usage.appliedConditions_bc3af3")}</strong><span>{data ? <TimestampText id="usage.exclusive_fd9e0a" values={{ v0: formatAppliedTime(data.fromUnixMs, appliedZone), v1: formatAppliedTime(data.untilUnixMs, appliedZone) }} /> : pendingRange(selection)}</span><span><LocalizedText id="usage.timezone_9229e0" components={{ s0: <>{appliedZone}</> }} /></span><span>{copy("usage.responseTimesShowWhenTheServer_c28198")}</span>{conditions.length ? <span>{conditions.join(" · ")}</span> : <span>{copy("usage.allSessionsAccountsApisAndModels_d7b7c7")}</span>}{draftChanged ? <span className="usage-draft-state">{copy(invalid ? "usage.invalidFiltersRetained" : "usage.waitingForDateInput")}</span> : null}</div>
     {draftChanged ? <p className="usage-draft-state" role="status">{copy(invalid ? "usage.invalidFiltersRetained" : "usage.waitingForDateInput")}</p> : null}<Problem error={result.error} summary={copy("usage.readHelp")} />
     {result.isFetching ? <p className="usage-loading" role="status">{data ? copy("usage.refreshingThisAppliedRange_349e6c") : copy("usage.loadingTokenUsage_ded2ab")}</p> : null}
     {data && result.error ? <p className="notice">{copy("usage.theRefreshFailedTheseAreThe_a67de1")}</p> : null}

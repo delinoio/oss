@@ -5,6 +5,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { NetworkService, BudgetState, SubscriptionService, FailedSubscriptionCleanupState, FailedSubscriptionCleanupOutcome, FailedSubscriptionCleanupReason, AccountService, AccountTypeFilter, BackupCreationState, ConfigurationService, EntityKind, GitHubTokenIdentityState, InboxService, IntegrationService, ProviderInventoryCapability, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageService, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
 import { App } from "./App";
+import { DateFormatProvider, DateFormatPreference, type DateFormatBridge, type DateFormatSnapshot } from "./date-format";
 import { AppearanceProvider, Theme } from "./appearance";
 import { LanguagePreference, LanguageProblem, LanguageProvider, type LanguageBridge, type LanguageSnapshot } from "./language";
 import { document as resourceDocument, object, text, encode } from "./documents";
@@ -57,6 +58,19 @@ const languageBridge: LanguageBridge = {
     return languageSnapshot;
   },
   subscribe: async changed => { languageListeners.add(changed); return () => { languageListeners.delete(changed); }; },
+};
+// Synthetic device preference: no native storage, account or server effects.
+let dateFormatSnapshot: DateFormatSnapshot = { revision: 1, date_format: DateFormatPreference.System, problem: null };
+const dateFormatListeners = new Set<(value: unknown) => void>();
+const dateFormatBridge: DateFormatBridge = {
+  read: async () => dateFormatSnapshot,
+  update: async (date_format, revision) => {
+    if (revision !== dateFormatSnapshot.revision) throw new Error("Stale fixture preference");
+    dateFormatSnapshot = { revision: revision + 1, date_format, problem: null };
+    dateFormatListeners.forEach(changed => changed(dateFormatSnapshot));
+    return dateFormatSnapshot;
+  },
+  subscribe: async changed => { dateFormatListeners.add(changed); return () => { dateFormatListeners.delete(changed); }; },
 };
 const serverId = newRequestId(), currentDeviceId = newRequestId(), machineId = newRequestId();
 const automaticWorker = args.get("automaticWorker");
@@ -153,4 +167,4 @@ const fixtureTransport = createRouterTransport(router => {
   }) : [], more_machines: false, more_credentials: false }) }; } });
 });
 const transport = fixtureTransport;
-createRoot(document.getElementById("root")!).render(<LanguageProvider bridge={languageBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} pairingAuthority={networkFixture ? { endpoint: "https://fixture.example", serverId } : undefined} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={Object.assign(async () => fixtureWorker, { automatic: Boolean(automaticWorker) })} /></AppearanceProvider></LanguageProvider>);
+createRoot(document.getElementById("root")!).render(<LanguageProvider bridge={languageBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><DateFormatProvider bridge={dateFormatBridge}><App transport={transport} pairingAuthority={networkFixture ? { endpoint: "https://fixture.example", serverId } : undefined} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={Object.assign(async () => fixtureWorker, { automatic: Boolean(automaticWorker) })} /></DateFormatProvider></AppearanceProvider></LanguageProvider>);

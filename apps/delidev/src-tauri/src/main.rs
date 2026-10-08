@@ -4,6 +4,7 @@ use tauri_runtime_cef::{CefRuntime, WebviewCefExt};
 
 mod appearance_host;
 mod browser_host;
+mod date_format_host;
 mod notification_host;
 mod oauth_host;
 mod session_creation_preferences_host;
@@ -44,6 +45,7 @@ impl Drop for DesktopLifetime {
 }
 
 use appearance_host::{read_appearance, update_appearance};
+use date_format_host::{read_date_format, update_date_format};
 use session_creation_preferences_host::{
     read_runner_device_preferences, read_session_creation_preferences,
     update_runner_device_preferences, update_session_creation_preferences,
@@ -1740,6 +1742,8 @@ fn run() -> Result<(), NativeFailure> {
             desktop_credential_access,
             choose_repository_folder,
             read_appearance,
+            read_date_format,
+            update_date_format,
             read_runner_device_preferences,
             update_runner_device_preferences,
             read_session_creation_preferences,
@@ -1864,6 +1868,9 @@ fn run() -> Result<(), NativeFailure> {
             app.manage(Arc::new(delidev_desktop::appearance::AppearanceStore::new(
                 config_dir.clone(),
             )));
+            app.manage(Arc::new(
+                delidev_desktop::date_format::DateFormatStore::new(config_dir.clone()),
+            ));
             let language = Arc::new(delidev_desktop::language::LanguageStore::new(config_dir));
             let initial = language.read();
             delidev_desktop::language::activate(initial.resolved_language);

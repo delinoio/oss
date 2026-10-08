@@ -1,3 +1,6 @@
+import type { ReactNode } from "react";
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { SubscriptionServiceIdentity, subscriptionServiceLabel } from "@delinoio/delidev-api-client";
 import { useState, type KeyboardEvent } from "react";
@@ -31,16 +34,16 @@ function axisTotal(value: bigint): string {
   return `${whole.toLocaleString(displayLocale())}${decimal ? `.${decimal}` : ""}${unit.suffix}`;
 }
 
-function fullTime(value: bigint, timeZone: string): string {
-  return new Intl.DateTimeFormat(displayLocale(), { timeZone, year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "shortOffset" }).format(new Date(Number(value)));
+function fullTime(value: bigint, timeZone: string) {
+  return <Timestamp value={new Date(Number(value)).toISOString()} mode={TimestampMode.Absolute} timeZone={timeZone} />;
 }
 
 function shortDay(value: bigint, timeZone: string): string {
   return new Intl.DateTimeFormat(displayLocale(), { timeZone, month: "short", day: "numeric" }).format(new Date(Number(value)));
 }
 
-function dateInterval(value: UsageAnalyticsDay, timeZone: string): string {
-  return copy("usage.range", { from: fullTime(value.fromUnixMs, timeZone), until: fullTime(value.untilUnixMs, timeZone) });
+function dateInterval(value: UsageAnalyticsDay, timeZone: string): ReactNode {
+  return <TimestampText id="usage.range" values={{ from: fullTime(value.fromUnixMs, timeZone), until: fullTime(value.untilUnixMs, timeZone) }} />;
 }
 
 function evidence(value?: UsageTotals): string {
@@ -82,8 +85,8 @@ function ViewData({ id, open, change }: { id: string; open: boolean; change: (va
 function DailyViewData({ days, timeZone, id, open }: { days: UsageAnalyticsDay[]; timeZone: string; id: string; open: boolean }) {
   useLocale();
   return <div id={id} className="usage-chart-table" role="region" aria-label={copy("usage-chart.dailyUsageDataTableScrollHorizontally_3f2b6c")} tabIndex={0} hidden={!open}><table><caption><LocalizedText id="usage-chart.allCalendarDayIntervalsAndExact_a9c769" components={{ s0: <>{timeZone}</> }} /></caption><thead><tr><th scope="col">{copy("usage-chart.from_218197")}</th><th scope="col">{copy("usage-chart.until_7caf85")}</th><th scope="col">{copy("usage-chart.responses_9b4c6d")}</th>{measureColumns().map(([label, key]) => <th scope="col" key={key}>{label}</th>)}</tr></thead><tbody>{days.map((day) => <tr key={`${day.fromUnixMs}:${day.untilUnixMs}`}>
-    <td><time dateTime={new Date(Number(day.fromUnixMs)).toISOString()}>{fullTime(day.fromUnixMs, timeZone)}</time></td>
-    <td><time dateTime={new Date(Number(day.untilUnixMs)).toISOString()}>{fullTime(day.untilUnixMs, timeZone)} <span>{copy("usage-chart.exclusive_b71bef")}</span></time></td>
+    <td><Timestamp value={new Date(Number(day.fromUnixMs)).toISOString()} mode={TimestampMode.Absolute} timeZone={timeZone} /></td>
+    <td><><Timestamp value={new Date(Number(day.untilUnixMs)).toISOString()} mode={TimestampMode.Absolute} timeZone={timeZone} /><span>{copy("usage-chart.exclusive_b71bef")}</span></></td>
     <td>{day.totals?.responses ?? 0}</td><MeasureCells totals={day.totals} />
   </tr>)}</tbody></table></div>;
 }

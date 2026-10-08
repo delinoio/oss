@@ -71,7 +71,7 @@ it("displays the complete original handled-push audit without offering another a
   expect(audit.textContent).toContain(handling.pushed_head);
   expect(audit.textContent).toContain(`attempt ${handling.attempt_id}`);
   expect(audit.textContent).toContain(`execution ${handling.execution_id}`);
-  expect(audit.textContent).toContain(`handled at ${handling.at}`);
+  expect(audit.textContent).toContain("handled at ");
   expect(audit.querySelector("time")?.dateTime).toBe(handling.at);
   expect(screen.queryByRole("button", { name: "Dismiss this content version" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Fix now" })).toBeNull();

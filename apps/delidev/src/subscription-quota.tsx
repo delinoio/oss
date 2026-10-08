@@ -1,5 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp } from "./timestamp-display";
 import { statusLabel } from "./product-status";
-import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useState } from "react";
@@ -60,7 +61,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   };
   return <section aria-label={copy("subscription-quota.nativeQuotaAndResetCredits_8a07a3")}>
     <h3>{copy("subscription-quota.quota_6c105c")}</h3>
-    {!quotaSupported ? <p role="status">{copy("subscription-quota.updateTheServerAndRunnerDevice_57363b")}</p> : <><p><LocalizedText id="subscription-quota.lastSuccessfulObservation_836238" components={{ s0: <>{formatTimestamp(text(state.quota_observed_at)) || copy("subscription-quota.extra.ca1844969742")}</>, s1: <>{state.quota_state === "failed" ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e") : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}</> }} /></p><button type="button" disabled={!ready || originalActive} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: ownerMachine, action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation })}>{copy("subscription-quota.refreshQuota_3e8708")}</button></>}
+    {!quotaSupported ? <p role="status">{copy("subscription-quota.updateTheServerAndRunnerDevice_57363b")}</p> : <><p><LocalizedText id="subscription-quota.lastSuccessfulObservation_836238" components={{ s0: <><Timestamp value={text(state.quota_observed_at)} fallback={copy("subscription-quota.extra.ca1844969742")} /></>, s1: <>{state.quota_state === "failed" ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e") : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}</> }} /></p><button type="button" disabled={!ready || originalActive} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: ownerMachine, action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation })}>{copy("subscription-quota.refreshQuota_3e8708")}</button></>}
     <label className="checkbox"><input type="checkbox" checked={data.recovery_notifications === true} disabled={!active || !quotaSupported || busy} onChange={(event) => saveRecoveryNotifications(event.target.checked)} />{copy("subscription-quota.notifyMeOfObservedQuotaRecovery_b8f166")}</label>
     {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
     <h3>{copy("subscription-quota.resetCredits_321f63")}</h3>

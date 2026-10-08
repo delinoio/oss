@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Timestamp, TimestampText } from "./timestamp-display";
 import { useQuery } from "@connectrpc/connect-query";
 import { useRef, useState } from "react";
 import { AccountQuery, ProviderQuery, ResourceQuery, EntityKind, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
-import { copy, formatNumber, formatTimestamp, useLocale } from "./localization";
+import { copy, formatNumber, useLocale } from "./localization";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 
@@ -67,8 +68,8 @@ export function ApiVerification({ row, provider: providedProvider, active, chang
   const observedAt = [text(validation.observed_at), text(catalog.observed_at)].filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   return <section className="api-verification" aria-label={copy("api-verification.heading")}>
     <div role="status"><p>{copy(authLabel)}</p><p>{copy(modelsLabel)}{catalog.state === "observed" && typeof catalog.received === "number" && Number.isSafeInteger(catalog.received) && catalog.received >= 0 ? copy("api-verification.count", { count: catalog.received, v0: formatNumber(catalog.received) }) : null}</p>
-      {observedAt ? <p>{copy("api-verification.checked", { v0: formatTimestamp(observedAt) })}</p> : null}
-      {catalog.state !== "observed" && text(catalog.last_success_at) ? <p>{copy("api-verification.retained", { v0: formatTimestamp(text(catalog.last_success_at)) })}</p> : null}
+      {observedAt ? <p>{<TimestampText id={"api-verification.checked"} values={{ v0: <Timestamp value={observedAt} /> }} />}</p> : null}
+      {catalog.state !== "observed" && text(catalog.last_success_at) ? <p>{<TimestampText id={"api-verification.retained"} values={{ v0: <Timestamp value={text(catalog.last_success_at)} /> }} />}</p> : null}
       {busy ? <p>{copy("api-verification.checking")}</p> : null}
       {uncertain ? <p>{copy("api-verification.uncertain")}</p> : null}
     </div>

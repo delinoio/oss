@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { formatTimestampLabel } from "./timestamp-format";
 import { createInstance } from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
 import { Fragment, useState, type Dispatch, type SetStateAction, type ReactElement } from "react";
@@ -92,14 +93,10 @@ export function formatDate(value: Date, options?: Intl.DateTimeFormatOptions): s
   return new Intl.DateTimeFormat(displayLocale(), options ?? { dateStyle: "medium", timeStyle: "medium" }).format(value);
 }
 
-/** Localize an ISO observation without changing its original offset or fractional precision. */
+/** String-only compatibility for non-React inspection. Human-facing labels use
+ * Timestamp so device presets and display-clock changes remain reactive. */
 export function formatTimestamp(value: string): string {
-  const parts = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
-  if (!parts || displayLocale() === "en-US") return value;
-  const wall = new Date(`${parts[1]}T${parts[2]}Z`);
-  if (!Number.isFinite(wall.getTime()) || wall.toISOString().slice(0, 19) !== `${parts[1]}T${parts[2]}` || !Number.isFinite(Date.parse(value))) return value;
-  const date = new Intl.DateTimeFormat(displayLocale(), { timeZone: "UTC", year: "numeric", month: "long", day: "numeric" }).format(wall);
-  return `${date} ${parts[2]}${parts[3] ?? ""} UTC${parts[4] === "Z" ? "" : parts[4]}`;
+  return formatTimestampLabel(value);
 }
 
 /** Group an exact decimal string without rounding, currency conversion or Number coercion. */

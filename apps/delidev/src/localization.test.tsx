@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { Failure } from "./ui";
 import { FailureCode } from "@delinoio/delidev-api-client";
+import { formatTimestampLabel, TimestampMode } from "./timestamp-format";
 import { LocalizedText, copy, formatDecimal, formatNumber, formatTimestamp, i18n, ownedMessage, useProductMessage, type MessageKey } from "./localization";
 import { statusLabel } from "./product-status";
 
@@ -74,10 +75,10 @@ test("exact decimal display preserves every fractional digit and independent cur
 test("presentation retains source offsets, submillisecond precision and unknown identifiers", async () => {
   const original = "2026-10-06T23:59:59.123456789+09:00";
   await i18n.changeLanguage("en");
-  expect(formatTimestamp(original)).toBe(original);
+  expect(formatTimestampLabel(original, { mode: TimestampMode.Exact })).toBe(original);
   expect(statusLabel("WAITING_FOR_IDLE")).toBe("WAITING_FOR_IDLE");
   await i18n.changeLanguage("ko");
-  expect(formatTimestamp(original)).toBe("2026년 10월 6일 23:59:59.123456789 UTC+09:00");
+  expect(formatTimestampLabel(original, { mode: TimestampMode.Absolute, timeZone: "UTC" })).toBe("2026년 10월 6일, 14:59:59.123456789 UTC");
   expect(formatTimestamp("2026-02-30T23:59:59Z")).toBe("2026-02-30T23:59:59Z");
   expect(statusLabel("WAITING_FOR_IDLE")).toBe("유휴 상태 대기 중");
   expect(statusLabel("external-future-state")).toBe("external-future-state");
