@@ -119,6 +119,14 @@ func dockerLabels(s Snapshot, r Runner, role string) map[string]string {
 func ownedDocker(labels map[string]string, s Snapshot, r Runner) bool {
 	return labels[ownerKey] == s.Installation && labels[runnerKey] == r.ID
 }
+func ownedDockerVolume(name string, labels map[string]string, s Snapshot, r Runner, role string) bool {
+	switch role {
+	case "work", "socket", "externals", "docker":
+		return name == r.Name+"-"+role && labels[roleKey] == role && ownedDocker(labels, s, r)
+	default:
+		return false
+	}
+}
 func limits(r Resources) container.Resources {
 	return container.Resources{NanoCPUs: int64(r.CPU) * 1e9, Memory: r.MemoryMiB * 1024 * 1024, MemorySwap: r.MemoryMiB * 1024 * 1024}
 }
@@ -155,6 +163,12 @@ func (d *DockerDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, 
 		created, e := cli.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name, Labels: dockerLabels(s, r, suffix)})
 		if e != nil {
 			return dockerProblem()
+		}
+		// Create can return an existing same-name volume with its original labels.
+		// Its response must prove ownership before publication or initialization.
+		// Docker name-based mounting still cannot exclude a later replacement.
+		if !ownedDockerVolume(created.Volume.Name, created.Volume.Labels, s, r, suffix) {
+			return problem(ErrOwnership, "Docker volume creation returned an unverified execution volume.", "Preserve the volume and resolve its name and ownership labels before retrying preparation.")
 		}
 		h.Volumes = append(h.Volumes, created.Volume.Name)
 		if e = publish(h); e != nil {
@@ -532,7 +546,7 @@ func (d *DockerDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapsh
 			return dockerProblem()
 		}
 		role := current.Volume.Labels[roleKey]
-		if !ownedDocker(current.Volume.Labels, s, r) || current.Volume.Name != v.Name || v.Name != r.Name+"-"+role || (role != "work" && role != "socket" && role != "externals" && role != "docker") {
+		if current.Volume.Name != v.Name || !ownedDockerVolume(current.Volume.Name, current.Volume.Labels, s, r, role) {
 			return problem(ErrOwnership, "Docker volume ownership is ambiguous during cleanup.", "Preserve the volume and inspect its execution name and ownership labels before retrying cleanup.")
 		}
 		if _, e = cli.VolumeRemove(ctx, v.Name, client.VolumeRemoveOptions{Force: false}); e != nil && !errdefs.IsNotFound(e) {
