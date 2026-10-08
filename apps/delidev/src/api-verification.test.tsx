@@ -131,3 +131,20 @@ it("pauses referenced provider reads with the background verification owner", as
   expect(f.validate).not.toHaveBeenCalled();
   expect(f.discover).not.toHaveBeenCalled();
 });
+
+
+it("keeps complete observations in distinct groups and the disclaimer outside the band", () => {
+  const f = fixture();
+  const row = create(ResourceSchema, { ...f.row, documentJson: encode({ ...document(f.row), validation: { connection_id: f.connection, state: "observed", authentication: "credential-accepted", observed_at: "2026-10-08T00:08:14Z" }, catalog: { connection_id: f.connection, state: "observed", received: 467, observed_at: "2026-10-08T00:08:14Z" } }) });
+  render(f.view(row));
+  const band = window.document.querySelector(".api-verification-band")!;
+  expect(band.querySelectorAll(".api-verification-group")).toHaveLength(3);
+  expect(screen.getByText("API authentication verified").closest(".api-verification-group")).not.toBeNull();
+  expect(screen.getByText("Models synced · 467 models").closest(".api-verification-group")).not.toBeNull();
+  expect(screen.getByText(/Last checked/).closest(".api-verification-times")).not.toBeNull();
+  const disclaimer = screen.getByText("Verification does not establish model inference permission, harness readiness, usage or quota recovery.");
+  expect(band.contains(disclaimer)).toBe(false);
+  expect(band.querySelectorAll('[aria-hidden="true"]')).toHaveLength(2);
+  expect(f.validate).not.toHaveBeenCalled();
+  expect(f.discover).not.toHaveBeenCalled();
+});

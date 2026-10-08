@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { StrictMode } from "react";
+import { StrictMode, useEffect, type ReactNode } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -20,7 +20,8 @@ function fixture() {
   const transport = createRouterTransport(router => router.service(UsageService, { getUsageSummary: read }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const callbacks = { manage: vi.fn(), edit: vi.fn(), remove: vi.fn(), openUsage: vi.fn() };
-  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsTasks><SettingsTaskBackground><ApiEntryRow row={row} provider={{ displayName: "OpenRouter", enabled: true }} active={active} {...callbacks} /></SettingsTaskBackground></SettingsTasks></QueryClientProvider></TransportProvider>;
+  const view = (active = true, verification?: ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsTasks><SettingsTaskBackground><ApiEntryRow row={row} provider={{ displayName: "OpenRouter", enabled: true }} active={active} verification={verification} {...callbacks} /></SettingsTaskBackground></SettingsTasks></QueryClientProvider></TransportProvider>;
+
   return { id, row, data, read, client, callbacks, view };
 }
 function emptyFixture() {
@@ -243,4 +244,20 @@ it("keeps unknown schemas read-only while allowing their full Details identity",
  const f=fixture(); f.row.schemaVersion=4; render(f.view()); const opener=screen.getByRole("button",{name:"More actions for Unnamed"}); fireEvent.click(opener);
  expect(screen.getByRole("button",{name:"Edit preferences"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"Delete entry"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"Manage connection"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"View usage"})).toHaveProperty("disabled",true);
  fireEvent.click(screen.getByRole("button",{name:"Details"})); expect(within(screen.getByRole("dialog",{name:"Details"})).getByText(f.id)).toBeTruthy(); expect(f.read).not.toHaveBeenCalled();
+});
+
+it("places the retained verification owner after the full summary without remounting it", async () => {
+  const f = fixture(), mounted = vi.fn(), disposed = vi.fn();
+  function RetainedVerification() { useEffect(() => { mounted(); return disposed; }, []); return <section aria-label="Retained verification">Complete verification evidence</section>; }
+  const verification = <RetainedVerification />;
+  const view = render(f.view(true, verification));
+  const section = screen.getByRole("region", { name: "Retained verification" });
+  const summary = window.document.querySelector(".api-usage-main")!;
+  expect(summary.contains(section)).toBe(false);
+  expect(summary.nextElementSibling).toBe(section);
+  expect(mounted).toHaveBeenCalledTimes(1);
+  view.rerender(f.view(false, verification));
+  expect(screen.getByRole("region", { name: "Retained verification" })).toBe(section);
+  expect(mounted).toHaveBeenCalledTimes(1);
+  expect(disposed).not.toHaveBeenCalled();
 });

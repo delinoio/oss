@@ -67,18 +67,28 @@ export function ApiVerification({ row, provider: providedProvider, active, chang
   const modelsLabel = metadata.discovery === false ? "api-verification.discoveryDisabled" : catalog.state === "failed" || catalog.state === "unsupported" ? "api-verification.modelsFailed" : catalog.state === "observed" ? catalog.received === 0 ? "api-verification.modelsEmpty" : "api-verification.modelsSynced" : "api-verification.modelsAwaiting";
   const observedAt = [text(validation.observed_at), text(catalog.observed_at)].filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   return <section className="api-verification" aria-label={copy("api-verification.heading")}>
-    <div role="status"><p>{copy(authLabel)}</p><p>{copy(modelsLabel)}{catalog.state === "observed" && typeof catalog.received === "number" && Number.isSafeInteger(catalog.received) && catalog.received >= 0 ? copy("api-verification.count", { count: catalog.received, v0: formatNumber(catalog.received) }) : null}</p>
-      {observedAt ? <p>{<TimestampText id={"api-verification.checked"} values={{ v0: <Timestamp value={observedAt} /> }} />}</p> : null}
-      {catalog.state !== "observed" && text(catalog.last_success_at) ? <p>{<TimestampText id={"api-verification.retained"} values={{ v0: <Timestamp value={text(catalog.last_success_at)} /> }} />}</p> : null}
-      {busy ? <p>{copy("api-verification.checking")}</p> : null}
-      {uncertain ? <p>{copy("api-verification.uncertain")}</p> : null}
+    <div className="api-verification-band">
+      <div className="api-verification-status" role="status">
+        <div className="api-verification-group"><span className="api-verification-icon" aria-hidden="true">{authLabel === "api-verification.verified" || authLabel === "api-verification.keyless" ? "✓" : "·"}</span><p>{copy(authLabel)}</p></div>
+        <div className="api-verification-group"><span className="api-verification-icon" aria-hidden="true">{modelsLabel === "api-verification.modelsSynced" || modelsLabel === "api-verification.modelsEmpty" ? "✓" : "·"}</span><p>{copy(modelsLabel)}{catalog.state === "observed" && typeof catalog.received === "number" && Number.isSafeInteger(catalog.received) && catalog.received >= 0 ? copy("api-verification.count", { count: catalog.received, v0: formatNumber(catalog.received) }) : null}</p></div>
+        <div className="api-verification-group api-verification-times">
+          {observedAt ? <p><TimestampText id="api-verification.checked" values={{ v0: <Timestamp value={observedAt} /> }} /></p> : null}
+          {catalog.state !== "observed" && text(catalog.last_success_at) ? <p><TimestampText id="api-verification.retained" values={{ v0: <Timestamp value={text(catalog.last_success_at)} /> }} /></p> : null}
+        </div>
+        {busy ? <p className="api-verification-progress">{copy("api-verification.checking")}</p> : null}
+        {uncertain ? <p className="api-verification-progress">{copy("api-verification.uncertain")}</p> : null}
+      </div>
+      <div className="api-verification-actions">
+        <button type="button" disabled={!available || busy || uncertain} onClick={check}>{copy("api-verification.check")}</button>
+        {validate.uncertain ? <button type="button" disabled={!active || busy} onClick={validate.retry}>{copy("api-verification.retryAuth")}</button> : null}
+        {discover.uncertain ? <button type="button" disabled={!active || busy} onClick={discover.retry}>{copy("api-verification.retryModels")}</button> : null}
+      </div>
+      <div className="api-verification-problems">
+        <Problem error={validate.error ?? discover.error} />
+        {resolveProvider ? <><Problem error={providerRead.error} />{providerRead.error || providerRead.data && !provider ? <button type="button" disabled={!active || providerRead.isFetching} onClick={() => void providerRead.refetch()}>{copy("api-verification.retryProvider")}</button> : null}</> : null}
+        {!authority ? <small>{copy("api-verification.unavailable")}</small> : null}
+      </div>
     </div>
-    <button type="button" disabled={!available || busy || uncertain} onClick={check}>{copy("api-verification.check")}</button>
-    {validate.uncertain ? <button type="button" disabled={!active || busy} onClick={validate.retry}>{copy("api-verification.retryAuth")}</button> : null}
-    {discover.uncertain ? <button type="button" disabled={!active || busy} onClick={discover.retry}>{copy("api-verification.retryModels")}</button> : null}
-    <Problem error={validate.error ?? discover.error} />
-    {resolveProvider ? <><Problem error={providerRead.error} />{providerRead.error || providerRead.data && !provider ? <button type="button" disabled={!active || providerRead.isFetching} onClick={() => void providerRead.refetch()}>{copy("api-verification.retryProvider")}</button> : null}</> : null}
-    {!authority ? <small>{copy("api-verification.unavailable")}</small> : null}
-    <small>{copy("api-verification.limit")}</small>
+    <small className="api-verification-disclaimer">{copy("api-verification.limit")}</small>
   </section>;
 }

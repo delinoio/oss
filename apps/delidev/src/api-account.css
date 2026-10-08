@@ -129,11 +129,27 @@
 
 .api-format-choice output { display: block; min-height: 40px; padding: 10px 12px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--surface); }
 
-.api-verification { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; margin-top: 12px; min-width: 0; overflow-wrap: anywhere; }
-.api-verification > div { flex: 1 1 180px; min-width: 0; }
-.api-verification p { margin: 0 0 4px; }
-.api-verification small { flex-basis: 100%; color: var(--muted); }
+.api-verification { margin-top: 16px; min-width: 0; overflow-wrap: anywhere; }
+.api-verification-band { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; padding: 12px; border-radius: 8px; background: var(--surface-subtle); }
+.api-verification-status { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 8px 16px; flex: 1 1 600px; min-width: 0; }
+.api-verification-group { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.api-verification-icon { flex-shrink: 0; width: 14px; color: var(--muted); text-align: center; }
+.api-verification-times { display: block; }
+.api-verification-progress { grid-column: 1 / -1; }
+.api-verification-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-inline-start: auto; max-width: 100%; }
+.api-verification-problems { flex-basis: 100%; min-width: 0; }
+.api-verification-problems:empty { display: none; }
+.api-verification p { margin: 0; }
+.api-verification small { display: block; color: var(--muted); }
+.api-verification-disclaimer { margin-top: 8px; }
 .api-verification button { min-height: 40px; white-space: normal; }
 
 .api-entry-details dl { display: grid; gap: 12px; margin: 0; }
 .api-entry-details dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+@container (max-width: 899px) {
+  .api-verification-status { flex-basis: 100%; }
+}
+@container (max-width: 639px) {
+  .api-verification-status { grid-template-columns: minmax(0, 1fr); }
+  .api-verification-actions { margin-inline-start: 0; }
+}
