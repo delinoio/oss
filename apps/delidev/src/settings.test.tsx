@@ -157,7 +157,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   expect(panel.querySelectorAll(".settings-agent-row")).toHaveLength(2);
   const row = within(heading.closest("article")!);
   expect(row.getByText(agent.id)).toBeTruthy();
-  expect(row.getByText("Harness: codex")).toBeTruthy(); expect(row.getByText("Status: saved")).toBeTruthy();
+  expect(row.getByText("Codex")).toBeTruthy(); expect(row.getByText("Status: saved")).toBeTruthy();
   expect(heading.querySelector("b")).toBeNull();
   expect(row.getAllByRole("button").map((button) => button.textContent)).toEqual(["Edit", "Preview routing", "Delete"]);
   const futureRow = within(screen.getByRole("heading", { name: "Future Agent" }).closest("article")!);

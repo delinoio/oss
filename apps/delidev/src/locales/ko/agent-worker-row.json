@@ -1,0 +1,7 @@
+{
+  "agent-worker-row.configuredModel": "설정된 모델",
+  "agent-worker-row.configuredModels": "저장된 순서의 설정된 모델",
+  "agent-worker-row.moreModels": "+{{count}}개 더 보기",
+  "agent-worker-row.loadingModel": "모델 불러오는 중…",
+  "agent-worker-row.unavailableModel": "모델을 사용할 수 없음"
+}

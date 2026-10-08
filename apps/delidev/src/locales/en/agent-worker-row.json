@@ -1,0 +1,7 @@
+{
+  "agent-worker-row.configuredModel": "Configured model",
+  "agent-worker-row.configuredModels": "Configured models in saved order",
+  "agent-worker-row.moreModels": "+{{count}} more",
+  "agent-worker-row.loadingModel": "Loading model…",
+  "agent-worker-row.unavailableModel": "Model unavailable"
+}

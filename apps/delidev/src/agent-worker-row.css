@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.settings-agent-row { container-type: inline-size; }
+.settings-agent-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.settings-agent-heading h3 { margin: 0; }
+.settings-agent-heading > span:last-child { font-size: 12px; color: var(--muted); }
+.settings-agent-heading .worker-harness-mark { width: 32px; height: 32px; flex-basis: 32px; margin: 0; }
+.agent-model-summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+.agent-model-native { background: var(--surface-selected); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+.agent-model-name { color: var(--muted); overflow-wrap: anywhere; }
+.agent-model-routes { padding-inline-start: 24px; margin-block: 8px; }
+.agent-model-routes li { padding-block: 8px; overflow-wrap: anywhere; }
+.agent-model-routes .agent-model-name { margin-inline-start: 8px; }
+@container (width < 640px) { .settings-agent-actions { flex-basis: 100%; } }
