@@ -19,7 +19,8 @@ class IntentRegistry {
   entries = new Map<string, Intent>();
   listeners = new Set<() => void>();
   acceptedListeners = new Map<string, Set<() => void>>();
-  acceptedObservers = new Set<(key: string, request: object) => void>();
+  acceptedObservers = new Set<(key: string, request: object, result: unknown) => void>();
+  outcomeObservers = new Set<(key: string, request: object, phase: RetainedMutationPhase) => void>();
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   observeAccepted(key: string, listener: () => void) {
     const listeners = this.acceptedListeners.get(key) ?? new Set<() => void>();
@@ -30,11 +31,18 @@ class IntentRegistry {
       if (!listeners.size) this.acceptedListeners.delete(key);
     };
   }
-  notifyAccepted(key: string, request: object) {
+  notifyAcceptedResult(key: string, request: object, result: unknown) {
     for (const observer of this.acceptedObservers) {
-      try { observer(key, request); } catch (error) { console.warn("delidev.mutation.accepted_observer_failed", { classification: clientFailure(error).code }); }
+      try { observer(key, request, result); } catch (error) { console.warn("delidev.mutation.accepted_observer_failed", { classification: clientFailure(error).code }); }
     }
+  }
+  notifyAccepted(key: string) {
     for (const listener of [...(this.acceptedListeners.get(key) ?? [])]) listener();
+  }
+  notifyOutcome(key: string, request: object, phase: RetainedMutationPhase) {
+    for (const observer of this.outcomeObservers) {
+      try { observer(key, request, phase); } catch (error) { console.warn("delidev.mutation.outcome_observer_failed", { classification: clientFailure(error).code }); }
+    }
   }
   put(key: string, value: Intent) {
     this.entries.set(key, value);
@@ -65,7 +73,7 @@ export function MutationIntents({ children }: { children: ReactNode }) {
   const opening = useSettingsOpening();
   const [registry] = useState(() => new IntentRegistry());
   useEffect(() => {
-    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); };
+    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); registry.outcomeObservers.clear(); };
     registry.alive = !opening?.disposed;
     opening?.controller.signal.addEventListener("abort", dispose, { once: true });
     return () => { opening?.controller.signal.removeEventListener("abort", dispose); dispose(); };
@@ -75,11 +83,24 @@ export function MutationIntents({ children }: { children: ReactNode }) {
 
 // Connection-owned attachment drafts observe the exact accepted request even
 // after its submitting conversation leaves the mounted surface.
-export function useRetainedMutationNotifications(accepted: (key: string, request: object) => void) {
+export function useRetainedMutationNotifications(accepted: (key: string, request: object, result: unknown) => void) {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
   const callback = useRef(accepted); callback.current = accepted;
-  useEffect(() => { const observer = (key: string, request: object) => callback.current(key, request); registry.acceptedObservers.add(observer); return () => { registry.acceptedObservers.delete(observer); }; }, [registry]);
+  useEffect(() => { const observer = (key: string, request: object, result: unknown) => callback.current(key, request, result); registry.acceptedObservers.add(observer); return () => { registry.acceptedObservers.delete(observer); }; }, [registry]);
+}
+
+export enum RetainedMutationPhase { Sending = "sending", Uncertain = "uncertain", Rejected = "rejected" }
+/** Outcomes belong to the original connection even after the sender unmounts. */
+export function useRetainedMutationOutcomes(observe: (key: string, request: object, phase: RetainedMutationPhase) => void) {
+  const registry = useContext(Context);
+  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  const callback = useRef(observe); callback.current = observe;
+  useEffect(() => {
+    const observer = (key: string, request: object, phase: RetainedMutationPhase) => callback.current(key, request, phase);
+    registry.outcomeObservers.add(observer);
+    return () => { registry.outcomeObservers.delete(observer); };
+  }, [registry]);
 }
 
 // Acceptance belongs to the retained request, not to the component that
@@ -127,12 +148,14 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       bytes = wire.byteLength;
       registry.reserve(key, bytes);
       retained = fromBinary(method.input, wire);
-    } catch (error) { setLocalError({ key, error }); return; }
+    } catch (error) { setLocalError({ key, error }); registry.notifyOutcome(key, current.input ?? input!, RetainedMutationPhase.Rejected); return; }
     // Recovery views must use the original request's validation authority even
     // when the submitting view has gone away or its current selection changed.
-    const verify = current.acknowledge ?? (retainedAcknowledgement ? bindAcknowledgement<I, O>(retainedAcknowledgement, retained) : undefined);
+    const originalAcknowledgement = retainedAcknowledgement ?? acknowledge;
+    const verify = current.acknowledge ?? (originalAcknowledgement ? bindAcknowledgement<I, O>(originalAcknowledgement, retained) : undefined);
     setLocalError(undefined);
     registry.put(key, { ...current, input: retained, bytes, acknowledge: verify, busy: true, error: undefined });
+    registry.notifyOutcome(key, retained, RetainedMutationPhase.Sending);
     let result: MessageShape<O>;
     try {
       result = await mutation.mutateAsync(retained);
@@ -145,6 +168,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       // was admitted. Keep opt-in original verification until a matching receipt.
       const uncertain = retainOnError || Boolean(current.uncertain && current.acknowledge) || [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
       registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, acknowledge: uncertain ? verify : undefined, error });
+      registry.notifyOutcome(key, retained, uncertain ? RetainedMutationPhase.Uncertain : RetainedMutationPhase.Rejected);
       return;
     }
     if (!registry.alive || opening?.disposed) return;
@@ -153,11 +177,14 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
         if (!(verify ? verify(result) : acknowledge!(result, retained))) throw new ConnectError("The accepted response could not be verified. Retry only the original request or inspect retained attempts.", Code.Internal);
       } catch (error) {
         registry.put(key, { busy: false, uncertain: true, input: retained, bytes, acknowledge: verify, error });
+        registry.notifyOutcome(key, retained, RetainedMutationPhase.Uncertain);
         return;
       }
     }
+    // Publish verified result ownership before clearing the original intent.
+    registry.notifyAcceptedResult(key, retained, result);
     registry.put(key, empty);
-    registry.notifyAccepted(key, retained);
+    registry.notifyAccepted(key);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
     if (!mounted.current || !registry.alive || opening?.disposed) return;

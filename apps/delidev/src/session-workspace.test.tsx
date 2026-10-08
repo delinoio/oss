@@ -1,3 +1,4 @@
+import { sessionInputReceipt } from "./test-session-input";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -18,7 +19,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     ...extra,
     ...(problem ? { problem: { code: "unsupported", message: "Original installation evidence", guidance: "Original verification guidance" } } : {}),
   }) });
-  const enqueue = vi.fn(async (_request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => ({ change: { session } }));
+  const enqueue = vi.fn(async (request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => sessionInputReceipt(session,request));
   const rename = vi.fn(async () => ({ change: { session } }));
   const recover = vi.fn(async (_request: unknown) => ({ change: { session } }));
   const control = vi.fn(async () => ({ change: { session } }));
@@ -83,7 +84,7 @@ it("submits Execute, Plan and Execute again only through the explicit composer a
 });
 
 it("locks the checked mode while its original enqueue request is pending", async () => {
-  const f = fixture(); let finish!: (result: { change: { session: typeof f.session } }) => void;
+  const f = fixture(); let finish!: (result: ReturnType<typeof sessionInputReceipt>) => void;
   f.enqueue.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   render(f.view()); await screen.findByRole("heading", { name: "Original session" });
   const mode = screen.getByRole("checkbox", { name: "Plan Mode" }); fireEvent.click(mode);
@@ -92,7 +93,7 @@ it("locks the checked mode while its original enqueue request is pending", async
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(1));
   expect(mode).toHaveProperty("checked", true); expect(mode).toHaveProperty("disabled", true);
   expect(JSON.parse(new TextDecoder().decode(f.enqueue.mock.calls[0][0].documentJson)).mode).toBe(Mode.Plan);
-  await act(async () => finish({ change: { session: f.session } }));
+  await act(async () => finish(sessionInputReceipt(f.session, f.enqueue.mock.calls[0][0])));
   await waitFor(() => expect(mode).toHaveProperty("disabled", false)); expect(mode).toHaveProperty("checked", true);
 });
 
