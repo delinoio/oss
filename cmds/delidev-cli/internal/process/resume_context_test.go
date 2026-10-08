@@ -48,10 +48,10 @@ func TestResumeRefusesPreparedCancellationAndDeadlineBeforeNativeEffect(t *testi
 			expected := domain.Canceled
 			if deadline {
 				cancel()
-				var expires time.Time
 				ctx, cancel = context.WithTimeout(context.Background(), time.Second)
-				expires, _ = ctx.Deadline()
-				prepared = func() { time.Sleep(max(time.Until(expires), 0) + time.Millisecond) }
+				// Observe the original timer cancellation, rather than elapsed wall
+				// time: one scheduled P may delay the context timer goroutine.
+				prepared = func() { <-ctx.Done() }
 				expected = domain.Unavailable
 			}
 			defer cancel()
