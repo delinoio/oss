@@ -307,3 +307,55 @@ func TestForkFinalVerificationRejectsLateGitAlias(t *testing.T) {
 		})
 	}
 }
+
+func TestPreparedProjectForkRejectsNestedNativeGitAlias(t *testing.T) {
+	for _, kind := range []domain.WorkspaceType{domain.Worktree, domain.Local} {
+		for _, pointer := range []bool{false, true} {
+			t.Run(string(kind)+"/"+map[bool]string{false: "directory", true: "pointer"}[pointer], func(t *testing.T) {
+				m := manager(t)
+				request, _ := requestFor(repository(t))
+				if kind == domain.Local {
+					request.Type, request.OriginMachineID = domain.Local, request.MachineID
+					request.Repositories[0].Starting = domain.Reference{}
+				}
+				source, err := m.Prepare(context.Background(), request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				parent := filepath.Join(source.PrimaryPath, "nested")
+				if err := os.Mkdir(parent, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if pointer {
+					admin, err := filepath.EvalSymlinks(filepath.Join(repository(t), ".git"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(parent, ".GIT"), []byte("gitdir: "+admin+"\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					gitTest(t, parent, "init", "-b", "main")
+					if err := os.Rename(filepath.Join(parent, ".git"), filepath.Join(parent, ".GIT")); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := os.Lstat(filepath.Join(parent, ".git")); os.IsNotExist(err) {
+					t.Skip("native filesystem distinguishes case")
+				}
+				childID := domain.NewID()
+				fork, err := m.ForkPreparation(context.Background(), source, childID, domain.Worktree)
+				if err != nil {
+					t.Fatal(err)
+				}
+				snapshot, err := m.InspectForkSnapshot(context.Background(), source, fork)
+				if domain.SafeError(err).Code != domain.Unsupported || snapshot != nil {
+					t.Fatal("nested alias admitted", err)
+				}
+				if child, err := m.Read(childID); err == nil && child.State == Ready {
+					t.Fatal("rejected child published")
+				}
+			})
+		}
+	}
+}
