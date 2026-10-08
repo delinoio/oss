@@ -19,6 +19,7 @@ func TestExtendedUnaryBudgetsKeepReadAndNativeControls(t *testing.T) {
 		{"account", []string{"oauth", "status"}, 0}, {"account", []string{"oauth", "start"}, 0}, {"account", []string{"oauth", "cancel"}, 0},
 		{"account", []string{"connect"}, 0}, {"account", []string{"status"}, 0}, {"account", []string{"login"}, 0},
 		{"account", []string{"refresh"}, 0}, {"account", []string{"logout"}, 0},
+		{"provider", []string{"inventory"}, 0},
 		{"provider", []string{"list"}, 0}, {"provider", []string{"presets"}, 0},
 		{"model", []string{"native-discover"}, 0}, {"update", []string{"get"}, 0},
 		{"update", []string{"worker-request"}, 0}, {"update", []string{"cancel"}, 0},
