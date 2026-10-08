@@ -30,18 +30,17 @@ function fixture() {
 
 it("browses the actual selected root and retains inert bounded previews with exact file size", async () => {
   const f = fixture(); const { container } = render(<f.View />);
-  await screen.findByRole("button", { name: "note.txt 42 bytes" });
+  await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
   expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls[1][0].queryJson))).toMatchObject({ operation: "directory", repository_id: f.primary, path: "." });
   expect(screen.getByText("Symbolic link · Preview unavailable")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /symlink/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "note.txt 42 bytes" }));
+  fireEvent.click(screen.getByRole("treeitem", { name: "note.txt 42 bytes" }));
   expect(await screen.findByText("<script>globalThis.unsafe = true</script>")).toBeTruthy();
   expect(screen.getByText("9007199254740993 bytes · Preview limited to 64 KiB")).toBeTruthy();
   expect(container.querySelector("script, iframe, a")).toBeNull();
   expect(document.activeElement?.textContent).toBe("note.txt");
-  expect((screen.getByLabelText("Relative directory") as HTMLInputElement).value).toBe(".");
-  fireEvent.click(screen.getByRole("button", { name: "Up" }));
-  fireEvent.click(await screen.findByRole("button", { name: "folder Folder" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
+  fireEvent.click(await screen.findByRole("treeitem", { name: "folder Folder" }));
   await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).path).toBe("folder"));
   fireEvent.change(screen.getByLabelText("Workspace repository"), { target: { value: f.first } });
   await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson))).toMatchObject({ repository_id: f.first, path: "." }));
@@ -49,12 +48,12 @@ it("browses the actual selected root and retains inert bounded previews with exa
 
 it("pages directory observations, exposes failures and discards content when closed", async () => {
   const f = fixture(); render(<f.View />);
-  await screen.findByRole("button", { name: "note.txt 42 bytes" });
+  await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
   fireEvent.click(screen.getByRole("button", { name: "Load more Directory pages" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Directory pages" })).toBeNull());
-  expect(screen.getByRole("button", { name: "note.txt 42 bytes" })).toBeTruthy();
+  expect(screen.getByRole("treeitem", { name: "note.txt 42 bytes" })).toBeTruthy();
   expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).page_token).toBe("page-two");
-  await screen.findByRole("button", { name: "note.txt 42 bytes" });
+  await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
   f.read.mockRejectedValueOnce(new ConnectError("Worker unavailable", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Refresh files" }));
   await screen.findByText("Refresh failed. The last observation is shown below.");
@@ -62,15 +61,15 @@ it("pages directory observations, exposes failures and discards content when clo
   expect(screen.queryByRole("complementary")).toBeNull();
   await waitFor(() => expect(f.client.getQueryCache().getAll().length).toBe(0));
   fireEvent.click(screen.getByRole("button", { name: "Reopen files" }));
-  await screen.findByRole("button", { name: "note.txt 42 bytes" });
+  await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
   expect(f.read.mock.calls.filter(([request]) => JSON.parse(new TextDecoder().decode(request.queryJson)).operation === "roots")).toHaveLength(2);
 });
 
 it("renders binary data as unavailable and malformed observations as errors", async () => {
   const f = fixture(); render(<f.View />);
-  await screen.findByRole("button", { name: "note.txt 42 bytes" });
+  await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
   f.read.mockResolvedValueOnce({ documentJson: encode({ size: "42", binary: true, truncated: false }) });
-  fireEvent.click(screen.getByRole("button", { name: "note.txt 42 bytes" }));
+  fireEvent.click(screen.getByRole("treeitem", { name: "note.txt 42 bytes" }));
   await screen.findByText("This file has no UTF-8 text preview.");
   f.read.mockResolvedValueOnce({ documentJson: encode({ size: 42, binary: false, truncated: false, text: "invalid" }) });
   fireEvent.click(screen.getByRole("button", { name: "Refresh files" }));
@@ -80,7 +79,7 @@ it("renders binary data as unavailable and malformed observations as errors", as
 
 it("keeps keyboard focus inside the panel after opening a file so Escape can close it", async () => {
   const f = fixture(); render(<f.View />);
-  fireEvent.click(await screen.findByRole("button", { name: "note.txt 42 bytes" }));
+  fireEvent.click(await screen.findByRole("treeitem", { name: "note.txt 42 bytes" }));
   await screen.findByText("<script>globalThis.unsafe = true</script>");
   expect(document.activeElement?.textContent).toBe("note.txt");
   fireEvent.keyDown(document.activeElement!, { key: "Escape" });
@@ -89,14 +88,14 @@ it("keeps keyboard focus inside the panel after opening a file so Escape can clo
 
 it("retains directory metadata on a digest-bound cursor failure and requires explicit reload", async () => {
   const f = fixture(); render(<f.View />);
-  await screen.findByRole("button", { name: "note.txt 42 bytes" });
+  await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
   f.read.mockRejectedValueOnce(new ConnectError("Directory changed", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "conflict" }) }]));
   fireEvent.click(screen.getByRole("button", { name: "Load more Directory pages" }));
   await screen.findByRole("button", { name: "Reload list" });
-  expect(screen.getByRole("button", { name: "note.txt 42 bytes" })).toBeTruthy();
+  expect(screen.getByRole("treeitem", { name: "note.txt 42 bytes" })).toBeTruthy();
   expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).page_token).toBe("page-two");
   const before = f.read.mock.calls.length;
-  fireEvent.scroll(screen.getByRole("button", { name: "note.txt 42 bytes" }).closest(".conversation-page-scroll")!);
+  fireEvent.scroll(screen.getByRole("treeitem", { name: "note.txt 42 bytes" }).closest(".conversation-page-scroll")!);
   expect(f.read).toHaveBeenCalledTimes(before);
   fireEvent.click(screen.getByRole("button", { name: "Reload list" }));
   await screen.findByRole("button", { name: "Load more Directory pages" });
@@ -106,17 +105,47 @@ it("retains directory metadata on a digest-bound cursor failure and requires exp
 
 it.each(["continuation", "refresh"])("rejects a whole directory page with duplicate entry names during %s", async stage => {
  const f = fixture(); render(<f.View />);
- await screen.findByRole("button", { name: "note.txt 42 bytes" });
+ await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
  const prior = f.read.mock.calls.length;
  f.read.mockResolvedValueOnce({ documentJson: encode({ size: "0", binary: false, truncated: false, entries: [{ name: "duplicate.txt", kind: "file", size: "1" }, { name: "duplicate.txt", kind: "directory", size: "0" }, { name: "poison.txt", kind: "file", size: "2" }] }) });
  fireEvent.click(screen.getByRole("button", { name: stage === "continuation" ? "Load more Directory pages" : "Refresh files" }));
  await screen.findByText("Refresh failed. The last observation is shown below.");
- expect(screen.getByRole("button", { name: "note.txt 42 bytes" })).toBeTruthy();
+ expect(screen.getByRole("treeitem", { name: "note.txt 42 bytes" })).toBeTruthy();
  expect(screen.queryByText("duplicate.txt")).toBeNull(); expect(screen.queryByText("poison.txt")).toBeNull();
  expect(f.read).toHaveBeenCalledTimes(prior + 1);
  const query = JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson));
  expect(query).toMatchObject({ operation: "directory", repository_id: f.primary, path: ".", page_token: stage === "continuation" ? "page-two" : "" });
- fireEvent.scroll(screen.getByRole("button", { name: "note.txt 42 bytes" }).closest(".conversation-page-scroll")!);
+ fireEvent.scroll(screen.getByRole("treeitem", { name: "note.txt 42 bytes" }).closest(".conversation-page-scroll")!);
  expect(f.read).toHaveBeenCalledTimes(prior + 1);
  expect(f.read.mock.calls.every(([request]) => JSON.parse(new TextDecoder().decode(request.queryJson)).operation !== "file")).toBe(true);
+});
+
+it("restores tree scroll, selected focus and metadata on Back without another observation", async () => {
+  const f = fixture(); render(<f.View />);
+  const row = await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
+  const scroll = row.closest<HTMLElement>(".file-tree-scroll")!; scroll.scrollTop = 137;
+  fireEvent.click(row); await screen.findByText("<script>globalThis.unsafe = true</script>");
+  const before = f.read.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
+  const restored = screen.getByRole("treeitem", { name: "note.txt 42 bytes" });
+  expect(restored.getAttribute("aria-selected")).toBe("true"); expect(document.activeElement).toBe(restored);
+  expect(restored.closest<HTMLElement>(".file-tree-scroll")!.scrollTop).toBe(137);
+  expect(screen.queryByText("<script>globalThis.unsafe = true</script>")).toBeNull();
+  expect(f.read).toHaveBeenCalledTimes(before);
+  await waitFor(() => expect(f.client.getQueryCache().getAll()).toHaveLength(0));
+});
+
+it("uses tree navigation and keeps symbolic links inert", async () => {
+  const f = fixture(); render(<f.View />);
+  const folder = await screen.findByRole("treeitem", { name: "folder Folder" }); folder.focus();
+  fireEvent.keyDown(folder, { key: "ArrowDown" }); expect(document.activeElement).toBe(screen.getByRole("treeitem", { name: "note.txt 42 bytes" }));
+  fireEvent.keyDown(document.activeElement!, { key: "End" }); const link = screen.getByRole("treeitem", { name: /symlink/ }); expect(document.activeElement).toBe(link);
+  const before = f.read.mock.calls.length; fireEvent.keyDown(link, { key: "Enter" }); expect(f.read).toHaveBeenCalledTimes(before); expect(screen.queryByRole("region", { name: "File preview" })).toBeNull();
+  fireEvent.keyDown(link, { key: "Home" }); expect(document.activeElement).toBe(folder);
+  f.read.mockResolvedValueOnce({ documentJson: encode({ size: "0", binary: false, truncated: false, entries: [{ name: "nested.txt", kind: "file", size: "2" }] }) });
+  fireEvent.keyDown(folder, { key: "ArrowRight" }); await screen.findByRole("treeitem", { name: "nested.txt 2 bytes" });
+  expect(folder.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.keyDown(folder, { key: "ArrowRight" }); expect(document.activeElement).toBe(screen.getByRole("treeitem", { name: "nested.txt 2 bytes" }));
+  fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" }); expect(document.activeElement).toBe(folder);
+  fireEvent.keyDown(folder, { key: "ArrowLeft" }); expect(folder.getAttribute("aria-expanded")).toBe("false"); expect(screen.queryByRole("treeitem", { name: "nested.txt 2 bytes" })).toBeNull();
 });

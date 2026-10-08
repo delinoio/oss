@@ -4,6 +4,8 @@ The desktop owns shared scroll-continuation state and presentation with domain
 adapters retaining response-validation, initial-read, payload-disposal and
 mutation authority. See the [shared desktop pagination contract](apps-delidev-desktop-contract.md#shared-scroll-continuation).
 
+Files uses the original Worker-owned read-only observation boundary with a desktop lazy tree, one serial read owner and disposable preview. Per-directory metadata stays in the open scope; cancellation fences late publication, and only complete parent ranges prove absence. Back preserves the conversation/composer and restores accepted navigation while discarding bytes. Follow the [desktop](apps-delidev-desktop-contract.md#session-file-explorer) and [Files](cmds-delidev-files-contract.md) contracts; no protocol, native change or migration is added.
+
 ## Key-preserving format amendment
 
 After main reservation PR #1666, ProviderInventory capability 9 owns connected API

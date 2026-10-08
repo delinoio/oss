@@ -340,7 +340,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
   .usage-skeletons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.session-files { padding: 20px; }
+.session-files { padding: 12px; min-width: 0; display: flex; flex-direction: column; gap: 8px; height: 100%; }
 .session-files h2 { margin: 0; }
 .session-files .file-path { overflow-wrap: anywhere; font-family: ui-monospace, monospace; }
 .file-entries { list-style: none; padding: 0; }
@@ -1053,3 +1053,33 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .inbox-recovery > h4 { font-size: 16px; }
 
 .settings-task-dialog .subscription-details { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* Files metadata is a compact tree; the existing session pane/drawer owns geometry. */
+.session-files header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.file-header-actions { display: flex; gap: 4px; }
+.file-icon-button { padding: 6px; min-width: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+.session-files svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.file-root-selector { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.file-root-selector select { width: 100%; min-width: 0; }
+.file-context { margin: 0; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+.file-tree-scroll { min-height: 0; flex: 1; overflow: auto; }
+.file-tree-entries { padding: 0; margin: 0; list-style: none; }
+.file-tree-entries [role=group] { padding-left: 16px; }
+.file-tree-row { display: flex; gap: 6px; align-items: center; min-height: 32px; padding: 4px; border-radius: 4px; cursor: pointer; }
+.file-tree-row:hover { background: var(--surface-hover); }
+.file-tree-node[aria-selected=true] > .file-tree-row { background: var(--selected-background); color: var(--selected-text); }
+.file-tree-node:focus-visible > .file-tree-row { outline: 2px solid var(--focus); outline-offset: -2px; }
+.file-tree-node[aria-disabled=true] > .file-tree-row { cursor: default; }
+.file-tree-chevron { width: 12px; display: inline-flex; flex: none; }
+.file-tree-chevron svg { width: 12px; height: 12px; }
+.file-tree-chevron.expanded { transform: rotate(90deg); }
+.file-tree-name { min-width: 0; overflow-wrap: anywhere; flex: 1; font-size: .85rem; }
+.file-tree-row small { font-size: .7rem; color: var(--muted); max-width: 42%; overflow-wrap: anywhere; }
+.file-directory-status { font-size: .8rem; }
+.file-directory-status:empty { display: none; }
+.file-preview { min-width: 0; overflow: auto; min-height: 0; }
+.file-preview h3 { margin: 8px 0; overflow-wrap: anywhere; }
+.file-preview .file-path { margin: 4px 0; }
+.file-back { margin-top: 4px; }
+
+.file-tree-node { outline: none; }
