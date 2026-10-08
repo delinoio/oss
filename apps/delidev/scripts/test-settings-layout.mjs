@@ -269,7 +269,8 @@ try {
       assert.deepEqual(await page.evaluate(() => window.projectRowReads), originalReads, "Disclosure/reflow never reads or writes");
       if (screenshotDirectory && width === 1440 && zoom === 1) {
         await mkdir(screenshotDirectory, { recursive: true });
-        await page.locator(".settings-content").evaluate(node => { node.scrollTop = 0; const main = node.closest("main"); if (main) main.scrollTop = 0; });
+        await page.setViewportSize({ width, height });
+        await page.locator(".settings-content").evaluate(async node => { node.scrollTop = 0; const main = node.closest("main"); if (main) main.scrollTop = 0; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); });
         await page.screenshot({ path: join(screenshotDirectory, `projects-${language}-${theme}-${width}x${height}.png`) });
       }
       projectRowChecks++;
