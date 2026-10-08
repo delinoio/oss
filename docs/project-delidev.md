@@ -348,3 +348,5 @@ preserves complete six-target manifest authority for a future new version.
 Workflow fixtures and packaging do not complete issue #964 or establish real
 installed-platform, WidgetKit or account acceptance. Operational credential
 registration and first publication remain separate from repository configuration.
+
+- Ordinary session tools may use the executing machine’s existing gh login through the bounded Worker-owned selector in the [harness contract](cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context). Server integrations, native provider credentials, remote machine identity, Sidechat restrictions and user-owned configuration cleanup remain separate.

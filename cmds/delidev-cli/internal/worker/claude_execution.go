@@ -71,6 +71,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
 	}
+	ordinaryTools := ordinaryExecutionTools(config.Logger)
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -144,7 +145,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	// accepted original controller then owns a bounded native interrupt grace.
 	stopOnCancellation := context.AfterFunc(ctx, cancelNative)
 	defer stopOnCancellation()
-	nativeConfig := claude.APIStreamConfig{
+	nativeConfig := claude.APIStreamConfig{OrdinaryTools: ordinaryTools,
 		Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger},
 		Version: input.Installation.Version, Home: filepath.Join(home, "claude"), Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: input.SessionID, Model: input.Configuration.NativeModel,
 		Permission: permission, Effort: effort, Instructions: input.Configuration.Instructions, API: claude.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token},

@@ -179,6 +179,7 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	// Outer Worker claims/envelope stay outside the native snapshot's complete
 	// file inventory. Child permanent deletion owns the entire original runtime.
 	nativeHome := filepath.Join(home, "native")
+	ordinaryTools := ordinaryExecutionTools(config.Logger)
 	env, err := harness.PrivateRuntimeEnvironment(nativeHome)
 	if err != nil {
 		return nil, err
@@ -195,7 +196,7 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	if err != nil {
 		return nil, domain.SafeError(err)
 	}
-	nativeConfig := opencode.APIExecutionConfig{Probe: opencode.ProbeConfig{Version: installation.Version, Home: filepath.Join(nativeHome, "opencode"), Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: nativeHome, Env: env, Logger: config.Logger}}, Workspace: manifest.PrimaryPath, Root: root, Settings: settings.Session, ServerOrigin: c.Credential.Endpoint, Token: apiproxy.TokenPrefix + nonce, Instructions: settings.Instructions, Rejection: settings.Rejection}
+	nativeConfig := opencode.APIExecutionConfig{OrdinaryTools: ordinaryTools, Probe: opencode.ProbeConfig{Version: installation.Version, Home: filepath.Join(nativeHome, "opencode"), Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: nativeHome, Env: env, Logger: config.Logger}}, Workspace: manifest.PrimaryPath, Root: root, Settings: settings.Session, ServerOrigin: c.Credential.Endpoint, Token: apiproxy.TokenPrefix + nonce, Instructions: settings.Instructions, Rejection: settings.Rejection}
 	if a.Configuration.OpenCodeContext != nil {
 		nativeConfig.ContextLimit = int64(a.Configuration.OpenCodeContext.Tokens)
 		nativeConfig.Prune = a.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1

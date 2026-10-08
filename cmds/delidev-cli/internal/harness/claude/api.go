@@ -11,6 +11,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -45,6 +46,8 @@ type APIConfig struct {
 // must durably accept the session and register the token before opening it. It
 // does not grant public execution or authorize resume without a history binding.
 type APIStreamConfig struct {
+	OrdinaryTools executionenv.Ordinary `json:"-"`
+
 	Process        process.Config             `json:"-"`
 	Version        string                     `json:"-"`
 	Home           string                     `json:"-"`
@@ -192,6 +195,7 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 		args = append(args, "--append-system-prompt-file="+path)
 	}
 	prepared := config.Process
+	env = config.OrdinaryTools.Apply(env)
 	prepared.Args, prepared.Env, prepared.Cwd = args, env, workspace
 	return prepared, nil
 }
