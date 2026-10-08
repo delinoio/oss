@@ -1,3 +1,5 @@
+import { AgentWorkerRow } from "./agent-worker-row";
+import { AgentWorkerMetadataProvider } from "./agent-worker-models";
 import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 // SPDX-License-Identifier: Apache-2.0
@@ -266,38 +268,6 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
   return <svg className="settings-category-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={settingsIcons[category]} /></svg>;
 }
 
-function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: () => void; preview: () => void; remove: () => void }) {
-  useLocale();
-  const data = document(row);
-  let name = resourceName(row);
-  // Unsupported schemas stay non-actionable. Only bounded inert name text is
-  // projected within the Agent name's 256-byte UTF-8 limit for identifying the
-  // row; it never enters an editor or request.
-  // Remove this projection once the shared document parser supports that schema.
-  if (!supportsResourceSchema(row) && row.documentJson.byteLength <= 1 << 20) {
-    try {
-      const display = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(row.documentJson)));
-      const projectedName = text(display.name) || text(display.alias);
-      // Check code units first so malformed large values never allocate an
-      // equally large UTF-8 buffer merely to validate display text.
-      if (projectedName.length <= 256 && new TextEncoder().encode(projectedName).byteLength <= 256) name = projectedName || name;
-    } catch { /* Malformed display text keeps the existing unnamed fallback. */ }
-  }
-  return <article className="settings-agent-row">
-    <div className="settings-agent-details">
-      <h3>{name}</h3>
-      {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
-      {text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}
-      {data.reconfiguration_required === true ? <p role="status">{copy("settings.reconfigurationRequired_a84a37")}</p> : null}
-      <small>{row.id}</small>
-    </div>
-    <div className="actions settings-agent-actions">
-      <button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={edit}>{copy("settings.edit_464c4f")}</button>
-      <button type="button" disabled={!supportsResourceSchema(row) || data.reconfiguration_required === true} aria-label={copy("settings.previewRoutingFor_ee49d7", { v0: name })} onClick={preview}>{copy("settings.previewRouting_02d4d9")}</button>
-      <button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={remove}>{copy("settings.delete_e2d0a5")}</button>
-    </div>
-  </article>;
-}
 
 interface SettingsProps { openUsage?: (entry: UsageEntry) => void; readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
 enum SettingsEntryKind { NewProject, ManageAccounts, AddAccount }
@@ -404,6 +374,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     : kind === EntityKind.MACHINE && !controlLocalWorker ? copy("settings.extra.bd632b65e652")
     : selected.description;
   const inventoryActive = visible && area === SettingsArea.Configuration && !hasSpecializedPanel && !hasOverlay && !networkPresentationOpen;
+  const [modelRefresh, refreshModels] = useState(0);
   const inventory = useResourceScrollQuery(kind, inventoryActive, selectedCategory, false, undefined, undefined, undefined, true);
   const root = useScrollRoot(deviceContent);
   const resident = new Map<string, Resource>();
@@ -495,7 +466,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
         {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !isApiProviders ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{selectedCategory === SettingsCategory.Repositories ? <p>{copy("settings.repositoryDescription")}</p> : isAgentWorkers ? <p className="settings-agent-summary">{copy("settings.reusableConfigurationsForYourAgents_5ba1a2")}</p> : isPreferenceCategory ? <p>{isGitWorkflow ? copy("settings.gitWorkflowDescription") : copy("settings.defaultRoutingWorktreeFetchAndPull_e19cf8")}</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isPreferenceCategory ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
-            <button type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? "Refresh Git workflow" : undefined} onClick={() => void result.refetch()}>{isGitWorkflow ? copy("settings.refresh_0e9161") : copy("settings.refreshSettings_65dbd6")}</button>
+            <button type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? "Refresh Git workflow" : undefined} onClick={() => { if (isAgentWorkers) refreshModels(value => value + 1); void result.refetch(); }}>{isGitWorkflow ? copy("settings.refresh_0e9161") : copy("settings.refreshSettings_65dbd6")}</button>
             {isPairedDevices && pairingAuthority ? <span ref={setPairingTriggerContainer} /> : null}
             {editableKinds.includes(kind) && kind !== EntityKind.SETTINGS
               ? <button type="button" className="primary" onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>{kind === EntityKind.REPOSITORY ? copy("settings.addRepository_2eda4d") : kind === EntityKind.PROJECT ? copy("project-creation.title") : copy("settings.new_077d61", { v0: kindNames[kind] })}</button>
@@ -527,7 +498,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
               {result.error && result.data ? <p className="notice" role="status">{copy("settings.refreshFailedShowingTheLastSuccessfully_df6f1e")}</p> : null}
               {isPairedDevices ? <p className="paired-device-explanation">{copy("settings.authorizationDoesNotMeanThisDevice_cfecd2")}</p> : null}
               <div className={selectedCategory === SettingsCategory.Repositories ? "repository-list" : isAgentWorkers && result.data?.resources.length ? "settings-agent-list" : isPairedDevices && result.data?.resources.length ? "paired-device-list" : undefined}>
-              <ScrollPayloadWindow query={inventory} root={root} active={inventoryActive} identity={paginationIdentity} revision={paginationRevision}>{rows => isProjects ? <ProjectList resources={rows} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : rows.map((row) => { if (kind === EntityKind.REPOSITORY) return <RepositoryRow key={row.id} row={row} active={inventoryActive} edit={() => setEditing({ initial: row, key: newRequestId() })} remove={() => setDeleting(row)} />; if (isPreferenceCategory) return <ServerPreferencesSummary key={row.id} row={row} section={preferenceSection} />; if (isPairedDevices) return <DeviceRow key={row.id} resource={row} currentDeviceId={currentDeviceId} expanded={expandedDevices.has(row.id)} toggle={() => toggleDevice(row.id)} revoke={() => setDevice(row)} />; if (isAgentWorkers) return <AgentWorkerRow key={row.id} row={row} edit={() => setEditing({ initial: row, key: newRequestId() })} preview={() => setRouting(row)} remove={() => setDeleting(row)} />; const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? preferenceLabel : resourceName(row)}</h3>{text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}{text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small><div className="actions">{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}><LocalizedText id="settings.edit_4ec92a" components={{ s0: <>{kind === EntityKind.SETTINGS ? preferenceLabel : resourceName(row)}</> }} /></button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}><LocalizedText id="settings.delete_a1b98e" components={{ s0: <>{resourceName(row)}</> }} /></button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>{copy("settings.previewRouting_02d4d9")}</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => inspectMachine(row)}>{copy("settings.inspectInstalledHarnesses_45e943")}</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>{copy("settings.manageConnection_ad2892")}</button> : null}</div></article>; })}</ScrollPayloadWindow>
+              <AgentWorkerMetadataProvider active={isAgentWorkers && inventoryActive} refresh={modelRefresh}><ScrollPayloadWindow query={inventory} root={root} active={inventoryActive} identity={paginationIdentity} revision={paginationRevision}>{rows => isProjects ? <ProjectList resources={rows} edit={(row) => setEditing({ initial: row, key: newRequestId() })} remove={setDeleting} /> : rows.map((row) => { if (kind === EntityKind.REPOSITORY) return <RepositoryRow key={row.id} row={row} active={inventoryActive} edit={() => setEditing({ initial: row, key: newRequestId() })} remove={() => setDeleting(row)} />; if (isPreferenceCategory) return <ServerPreferencesSummary key={row.id} row={row} section={preferenceSection} />; if (isPairedDevices) return <DeviceRow key={row.id} resource={row} currentDeviceId={currentDeviceId} expanded={expandedDevices.has(row.id)} toggle={() => toggleDevice(row.id)} revoke={() => setDevice(row)} />; if (isAgentWorkers) return <AgentWorkerRow key={row.id} row={row} edit={() => setEditing({ initial: row, key: newRequestId() })} preview={() => setRouting(row)} remove={() => setDeleting(row)} />; const data = document(row); return <article className="result" key={row.id}><h3>{kind === EntityKind.SETTINGS ? preferenceLabel : resourceName(row)}</h3>{text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}{text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}{kind === EntityKind.TEMPLATE ? <pre>{text(data.contents)}</pre> : null}<small>{row.id}</small><div className="actions">{editableKinds.includes(kind) ? <button disabled={row.schemaVersion !== 1} onClick={() => setEditing({ initial: row, key: newRequestId() })}><LocalizedText id="settings.edit_4ec92a" components={{ s0: <>{kind === EntityKind.SETTINGS ? preferenceLabel : resourceName(row)}</> }} /></button> : null}{editableKinds.includes(kind) && kind !== EntityKind.SETTINGS ? <button disabled={row.schemaVersion !== 1} onClick={() => setDeleting(row)}><LocalizedText id="settings.delete_a1b98e" components={{ s0: <>{resourceName(row)}</> }} /></button> : null}{kind === EntityKind.AGENT ? <button disabled={row.schemaVersion !== 1} onClick={() => setRouting(row)}>{copy("settings.previewRouting_02d4d9")}</button> : null}{kind === EntityKind.MACHINE ? <button disabled={row.schemaVersion !== 1} onClick={() => inspectMachine(row)}>{copy("settings.inspectInstalledHarnesses_45e943")}</button> : null}{kind === EntityKind.ACCOUNT ? <button disabled={row.schemaVersion !== 1} onClick={() => setAccount(row)}>{copy("settings.manageConnection_ad2892")}</button> : null}</div></article>; })}</ScrollPayloadWindow></AgentWorkerMetadataProvider>
               </div>
               {selectedCategory === SettingsCategory.Repositories && successfulEmptyFirstPage ? <SettingsEmpty title={copy("settings.repositoryEmptyTitle")} icon={<RepositoryIcon />}><p>{copy("settings.repositoryEmptyHelp")}</p></SettingsEmpty>
                 : selectedCategory === SettingsCategory.Repositories ? result.data?.resources.length === 0 && !result.error ? <p>{copy("settings.repositoryPageEmpty")}</p> : null
