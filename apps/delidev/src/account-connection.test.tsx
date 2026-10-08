@@ -169,8 +169,8 @@ it("date and language changes preserve an uncertain account receipt, draft, focu
   const reads = value.status.mock.calls.length;
   const draft = screen.getByRole("textbox", { name: "Session draft" });
   act(() => draft.focus());
-  fireEvent.click(screen.getByRole("radio", { name: /YYYY-MM-DD/ }));
-  await waitFor(() => expect(screen.getByRole("radio", { name: /YYYY-MM-DD/ })).toHaveProperty("checked", true));
+  fireEvent.change(screen.getByRole("combobox", { name: "Date format" }), { target: { value: "ymd" } });
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Date format" })).toHaveProperty("value", "ymd"));
   await act(async () => { await i18n.changeLanguage("ko"); });
   expect(document.activeElement).toBe(draft);
   expect(draft).toHaveProperty("value", "retained draft");

@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .date-format-settings { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 24px; }
 .date-format-settings fieldset { border: 0; padding: 0; }
-.date-format-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.date-format-choices label { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; min-height: 40px; overflow-wrap: anywhere; }
-.date-format-choices small { grid-column: 2; color: var(--muted); }
-@container settings-body (width < 640px) { .date-format-choices { grid-template-columns: minmax(0, 1fr); } }
 .date-format-notice { position: fixed; z-index: 1100; inset: auto 16px 16px; max-width: 680px; margin: 0 auto; padding: 12px; border: 1px solid var(--danger-border); border-radius: 8px; background: var(--danger-background); color: var(--danger-text); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; pointer-events: none; }
+.date-format-settings select { width: min(100%, 320px); min-height: 40px; }
+.date-format-example { display: block; margin-top: 8px; color: var(--muted); }
+@container settings-body (width < 640px) { .date-format-settings select { width: 100%; } }

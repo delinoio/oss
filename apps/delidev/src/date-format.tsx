@@ -2,7 +2,7 @@
 import { DateFormatPreference, formatTimestampLabel, TimestampMode } from "./timestamp-format";
 import "./date-format.css";
 import { copy, useLocale } from "./localization";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -138,17 +138,20 @@ export function useDateFormat(): DateFormatPreference {
 export function DateFormatSettings() {
   useLocale();
   const { snapshot, operation, select, reload } = useContext(DateFormatContext);
+  const labelId = useId();
   const choices = [DateFormatPreference.System, DateFormatPreference.Ymd, DateFormatPreference.Mdy, DateFormatPreference.Dmy];
   return <section className="date-format-settings" aria-label={copy("date-format.title")}>
-    {/* Native disabling during autosave blurs the selected radio in Chromium.
+    {/* Native disabling during autosave blurs the selected control in Chromium.
         Keep it focusable; the controller rejects saves while busy or uncertain. */}
     <fieldset disabled={operation === DateFormatOperation.Reading} aria-disabled={Boolean(operation || snapshot.problem)} aria-busy={operation === DateFormatOperation.Saving}>
-      <legend>{copy("date-format.title")}</legend>
-      <div className="date-format-choices">{choices.map(value => <label key={value}>
-        <input type="radio" name="device-date-format" value={value} checked={snapshot.date_format === value} onChange={() => select(value)} />
-        <span>{value === DateFormatPreference.System ? copy("date-format.system") : value === DateFormatPreference.Ymd ? "YYYY-MM-DD" : value === DateFormatPreference.Mdy ? "MM/DD/YYYY" : "DD/MM/YYYY"}</span>
-        <small>{formatTimestampLabel("2026-10-08T12:34:56Z", { preference: value, mode: TimestampMode.Absolute })}</small>
-      </label>)}</div>
+      <legend id={labelId}>{copy("date-format.title")}</legend>
+      <select aria-labelledby={labelId} value={snapshot.date_format} onChange={event => {
+        const next = choices.find(value => value === event.currentTarget.value);
+        if (next !== undefined) select(next);
+      }}>
+        {choices.map(value => <option key={value} value={value}>{value === DateFormatPreference.System ? copy("date-format.system") : value === DateFormatPreference.Ymd ? "YYYY-MM-DD" : value === DateFormatPreference.Mdy ? "MM/DD/YYYY" : "DD/MM/YYYY"}</option>)}
+      </select>
+      <small className="date-format-example">{formatTimestampLabel("2026-10-08T12:34:56Z", { preference: snapshot.date_format, mode: TimestampMode.Absolute })}</small>
     </fieldset>
     <p>{copy("date-format.scope")}</p>
     <p role="status" aria-live="polite">{copy(operation === DateFormatOperation.Reading ? "date-format.reading" : operation === DateFormatOperation.Saving ? "date-format.saving" : snapshot.problem ? "date-format.notSaved" : "date-format.saved")}</p>
