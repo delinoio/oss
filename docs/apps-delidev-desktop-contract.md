@@ -2766,3 +2766,5 @@ reset text follows the same rules at entry rendering under the existing
 OS-controlled five-minute timeline; it promises no continuous updates.
 
 Subscription Account details uses the category-owned 768px Form task defined in the [subscription Settings contract](apps-delidev-subscription-settings-contract.md#account-details-dialog-issue-1824). It retains safe metadata outside virtualized rows and hands management once to the existing fresh-resource controller without presentation-triggered reads.
+
+The Input queue displays only reconciled records with exact delivery `queued`. The same predicate owns loaded-page waiting counts, paged rows and final-page arrivals. Claimed, accepted, uncertain, rejected, removed, unknown and missing delivery states remain retained history but are absent from ordinary waiting rows. Resource revisions, pagination, transcript, queued controls and connection-owned mutation/draft lifetimes are unchanged.

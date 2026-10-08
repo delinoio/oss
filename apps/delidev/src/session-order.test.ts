@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
 import { EntityKind, ResourceSchema } from "@delinoio/delidev-api-client";
-import { interactionRows, messageRows, queueRows } from "./session";
+import { interactionRows, messageRows, queueRows, isQueuedInput } from "./session";
 
 it("appends newly streamed messages even when a replacement Worker generated an older UUID", () => {
   const sessionId = "session-a";
@@ -43,4 +43,23 @@ it("appends a streamed queue item beyond the safe integer range by identity", ()
   expect(queueRows([base], live, new Set(), [arrived.id], sessionId, true).map((row) => row.id)).toEqual([base.id, arrived.id]);
   expect(queueRows([base], live, new Set(), [arrived.id], sessionId, false).map((row) => row.id)).toEqual([base.id]);
   expect(queueRows([base], live, new Set([arrived.id]), [arrived.id], sessionId, true).map((row) => row.id)).toEqual([base.id]);
+});
+
+it("filters authoritative queue revisions without changing retained history or final-page identity", () => {
+  const sessionId = "session-a";
+  const input = (id: string, delivery: string | undefined, revision = 1n) => create(ResourceSchema, { id, sessionId, kind: EntityKind.QUEUE, schemaVersion: 1, revision, documentJson: new TextEncoder().encode(JSON.stringify({ delivery })) });
+  const queued = input("queued", "queued");
+  const hidden = ["claimed", "accepted", "uncertain", "rejected-before-start", "removed", "unknown", undefined].map((state, i) => input(`hidden-${i}`, state));
+  expect(queueRows([queued, ...hidden], new Map(), new Set(), [], sessionId, true).filter(isQueuedInput).map(row => row.id)).toEqual(["queued"]);
+  const accepted = input("queued", "accepted", 3n);
+  const stale = input("queued", "queued", 2n);
+  const live = new Map([[accepted.id, accepted]]);
+  expect(queueRows([stale], live, new Set(), [], sessionId, false)).toEqual([accepted]);
+  expect(queueRows([stale], live, new Set(), [], sessionId, false).filter(isQueuedInput)).toEqual([]);
+  const restored = input("queued", "queued", 4n);
+  live.set(restored.id, restored);
+  const arrival = input("arrival", "accepted", 1n);
+  live.set(arrival.id, arrival);
+  expect(queueRows([stale], live, new Set(), [arrival.id], sessionId, true).filter(isQueuedInput)).toEqual([restored]);
+  expect(queueRows([stale], live, new Set([restored.id]), [arrival.id], sessionId, true).filter(isQueuedInput)).toEqual([]);
 });
