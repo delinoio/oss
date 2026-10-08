@@ -368,3 +368,5 @@
 - clibox assetcov human reports share the complete covered/uncovered list formatter on all platforms. Preserve native path display, JSON, quiet/explicit-file publication, thresholds and child status.
 
 - clibox min-repro retains cancellation through final report encoding, commit and success return. Preserve committed bundles/reports; remove only unpublished report staging and retain prior destinations on pre-commit cancellation.
+
+- clibox Windows run env and wrappers expand supported executable dollar references against the prepared child environment before native PATH/PATHEXT lookup. Preserve literal argument conversion, parent-only assignment values and deferred workload resolution after wrapper admission.

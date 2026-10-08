@@ -212,11 +212,12 @@ while ($true) {{
             "-EncodedCommand",
             &service,
             "--",
-            "cmd",
+            "$TOOL",
             "/C",
             "exit 0",
         ],
     )
+    .env("TOOL", "cmd")
     .output()
     .unwrap();
 
@@ -231,5 +232,62 @@ while ($true) {{
             Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
             Err(error) => panic!("managed service retained its port after cleanup: {error}"),
         }
+    }
+}
+
+#[test]
+fn prepared_executable_references_launch_through_windows_planners() {
+    let home = tempfile::tempdir().unwrap();
+    let tools = home.path().join("tools with spaces");
+    std::fs::create_dir(&tools).unwrap();
+    let executable = tools.join("fixture.exe");
+    std::fs::copy(env!("CARGO_BIN_EXE_clibox"), &executable).unwrap();
+    for reference in ["$TOOL", "${TOOL}", "${tool}", "${TOOL:-unused}"] {
+        for prefix in [
+            vec!["run", "env", "--"],
+            vec!["run", "with-retry", "--max-attempts", "1", "--"],
+            vec!["run", "with-timeout", "--timeout", "10s", "--"],
+            vec!["run", "with-lock", "--name", "reference", "--"],
+            vec![
+                "run",
+                "with-rate-limit",
+                "--name",
+                "reference",
+                "--limit",
+                "100",
+                "--period",
+                "1m",
+                "--",
+            ],
+        ] {
+            let mut args = prefix;
+            args.extend([reference, "--version"]);
+            let output = command(home.path(), &args)
+                .env("ToOl", "fixture")
+                .env("PATH", &tools)
+                .env("PATHEXT", ".EXE;.CMD")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{args:?}: {output:?}");
+            assert!(String::from_utf8_lossy(&output.stdout).starts_with("clibox "));
+        }
+        let assignment = format!("TOOL={}", executable.display());
+        let output = command(
+            home.path(),
+            &["run", "env", &assignment, "--", reference, "--version"],
+        )
+        .env_remove("TOOL")
+        .output()
+        .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
+    for reference in ["$MISSING", "${EMPTY}"] {
+        let output = command(home.path(), &["run", "env", "--", reference, "--version"])
+            .env_remove("MISSING")
+            .env("EMPTY", "")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
     }
 }
