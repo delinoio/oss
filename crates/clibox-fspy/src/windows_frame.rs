@@ -7,7 +7,7 @@ use std::io::{self, Read};
 use crate::record::{AccessPath, FileIdentity, NativePath, Operation};
 
 pub(crate) const HEADER_BYTES: usize = 50;
-const MAX_PATH_BYTES: usize = 4096;
+pub(crate) const MAX_PATH_BYTES: usize = 4096;
 
 fn invalid(reason: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, reason)
