@@ -706,5 +706,5 @@ it("wizard-origin navigation keeps an eligible OAuth provider passive until an e
  const oauth = {view:undefined,selectedProtocol:undefined,selectProtocol:vi.fn(),continueInBrowser:vi.fn(),available:true,supports:()=>true,start,abandon:vi.fn(),reopen:vi.fn(),recover:vi.fn(),retryStart:vi.fn(),observe:vi.fn(),completionClaimed:false,canLeave:false};
  render(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api,{oauth,providers:[provider],eligibleProviders:[provider],startApiWizard:{key:"passive-wizard-entry",providerId:provider.providerId,provider,startOAuth:false}}))}</StrictMode>);
  await screen.findByRole("heading",{name:"Connect your entry"}); await act(async()=>{}); expect(start).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
- fireEvent.click(screen.getByRole("button",{name:"Change",exact:true})); fireEvent.click(screen.getByRole("button",{name:/API provider.*Browser sign-in/})); expect(start).toHaveBeenCalledExactlyOnceWith(provider);
+ fireEvent.click(screen.getByRole("button",{name:"Change"})); fireEvent.click(screen.getByRole("button",{name:/API provider.*Browser sign-in/})); expect(start).toHaveBeenCalledExactlyOnceWith(provider);
 });
