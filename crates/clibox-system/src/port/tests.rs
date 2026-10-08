@@ -508,3 +508,84 @@ fn listing_deduplicates_without_termination() {
     assert_eq!(report.results.len(), 1);
     assert!(backend.calls.is_empty());
 }
+
+#[cfg(unix)]
+#[test]
+fn linux_proc_unknown_owners_fail_every_list_mode_and_never_signal() {
+    use super::linux_snapshot::{
+        snapshot,
+        tests::{fixture, listener, owner},
+    };
+    for mixed in [false, true] {
+        let temp = fixture();
+        listener(temp.path(), "tcp", "0100007F:1F90", 4242);
+        if mixed {
+            listener(temp.path(), "tcp", "0100007F:1F91", 4243);
+            owner(temp.path(), 42, Some(4243));
+        }
+        let mut report = snapshot(temp.path(), &[8080, 8081].into(), Protocol::Tcp);
+        report.normalize();
+        for mode in [
+            OutputMode::Human,
+            OutputMode::Json,
+            OutputMode::Quiet,
+            OutputMode::Pids,
+        ] {
+            let mut out = Vec::new();
+            assert_eq!(finish_report(&report, mode, false, &mut out).unwrap(), 1);
+            let out = String::from_utf8(out).unwrap();
+            match mode {
+                OutputMode::Quiet => assert!(out.is_empty()),
+                OutputMode::Pids => assert_eq!(out, if mixed { "42\n" } else { "" }),
+                OutputMode::Human => assert!(out.contains("127.0.0.1\t8080")),
+                OutputMode::Json => {
+                    let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+                    assert!(value["results"][0]["pid"].is_null());
+                    assert!(value["results"][0]["name"].is_null());
+                    assert_eq!(value["errors"][0]["code"], "identity-unverifiable");
+                    assert_eq!(value["errors"][0]["port"], 8080);
+                }
+            }
+        }
+        let mut backend = Fake::default();
+        kill(&mut report, &mut backend, &mut Time::default());
+        assert_eq!(backend.calls, if mixed { vec![42] } else { vec![] });
+        assert_eq!(report.results[0].status, Some(Status::Skipped));
+        if mixed {
+            assert_eq!(report.results[1].status, Some(Status::Killed));
+        }
+        assert_eq!(
+            finish_report(&report, OutputMode::Quiet, true, &mut Vec::new()).unwrap(),
+            1
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn linux_proc_verified_and_empty_results_succeed_every_list_mode() {
+    use super::linux_snapshot::{
+        snapshot,
+        tests::{fixture, listener, owner},
+    };
+    for known in [false, true] {
+        let temp = fixture();
+        if known {
+            listener(temp.path(), "tcp", "0100007F:1F90", 4242);
+            owner(temp.path(), 42, Some(4242));
+        }
+        let report = snapshot(temp.path(), &[8080].into(), Protocol::Tcp);
+        assert!(report.errors.is_empty());
+        for mode in [
+            OutputMode::Human,
+            OutputMode::Json,
+            OutputMode::Quiet,
+            OutputMode::Pids,
+        ] {
+            assert_eq!(
+                finish_report(&report, mode, false, &mut Vec::new()).unwrap(),
+                0
+            );
+        }
+    }
+}
