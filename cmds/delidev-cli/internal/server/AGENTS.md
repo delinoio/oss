@@ -317,3 +317,5 @@ A fresh subscription lifecycle Take may return Canceled with exact cause `subscr
 - Repository saves check unused global identity and permanent tombstones at expected-zero admission and final validation. Known identity conflicts settle the original parent failure with valid child success in one report transaction; unexpected storage failures remain rollback/retryable. Follow the workspace contract.
 
 - Primary Worker dependency rescans follow the Sidechat/storage contracts. Retain one earliest skipped predecessor cursor for blocked cleanup/recovery, restore it on completion/store wake/heartbeat, and preserve later independent progress, bounded pages, original atomic dependent-retirement gates and one outstanding assignment.
+
+- Automatic title jobs belong exclusively to auxiliary admission and delivery under `docs/cmds-delidev-session-titles-contract.md`. Primary `WatchWork` skips queued and already auxiliary-claimed titles before generic claim and delivery, preserving ordinary dispatch and targeted controls. Keep original title authority, per-Worker/server capacity and capability gates.
