@@ -47,7 +47,7 @@ it("accepts only the requested Model kind, supported schema, positive revision a
 });
 function fixture() {
   const models = ["native-first", "native-second"].map(native => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, schemaVersion: 1, revision: 1n, documentJson: encode({ name: `${native} display`, native_id: native }) }));
-  const rows = [create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, schemaVersion: 3, revision: 1n, documentJson: encode({ name: "Ordered", harness: "codex", routes: [models[0], models[1], models[0]].map(row => ({ model_id: row.id, accounts: [{ id: newRequestId(), weight: 1 }] })) }) }), create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, schemaVersion: 99, revision: 1n, documentJson: encode({ name: "Future", harness: "codex", model_id: models[1].id }) })];
+  const rows = [create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, schemaVersion: 3, revision: 1n, documentJson: encode({ name: "Ordered", harness: "codex", routes: [models[0], models[1], models[0]].map((row, index) => ({ model_id: row.id, accounts: Array.from({ length: index + 1 }, (_, account) => ({ id: newRequestId(), weight: account === 0 ? 1000 : 1 })) })) }) }), create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, schemaVersion: 99, revision: 1n, documentJson: encode({ name: "Future", harness: "codex", model_id: models[1].id }) })];
   const get = vi.fn(async (request: { id: string }) => ({ resource: models.find(row => row.id === request.id) }));
   const transport = createRouterTransport(router => router.service(ResourceService, { getResource: get }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -63,6 +63,9 @@ it("lazily reads model routes in StrictMode, keeps repetitions, refreshes only d
   const toggle = screen.getByRole("button", { name: "+2 more" }); fireEvent.click(toggle);
   await screen.findByText("native-second"); expect(value.get).toHaveBeenCalledTimes(2); expect(toggle.getAttribute("aria-expanded")).toBe("true");
   const region = screen.getByRole("region", { name: "Configured models in saved order" }); expect(within(region).getAllByRole("listitem").map(row => row.querySelector("code")?.textContent)).toEqual(["native-first", "native-second", "native-first"]);
+  expect(within(region).getAllByRole("listitem").map(row => row.querySelector(".agent-route-account-count")?.textContent)).toEqual(["1 account", "2 accounts", "3 accounts"]);
+  expect(future.querySelector(".agent-route-account-count")).toBeNull();
+  expect(value.get.mock.calls.every(([request]) => value.models.some(model => model.id === request.id))).toBe(true);
   fireEvent.click(toggle); view.rerender(<value.Fixture refresh={1} />); await waitFor(() => expect(value.get).toHaveBeenCalledTimes(3));
   expect(value.get.mock.calls.at(-1)?.[0].id).toBe(value.models[0].id); expect(value.actions.edit).not.toHaveBeenCalled();
   view.rerender(<value.Fixture active={false} refresh={1} />); await act(settle); expect(value.get).toHaveBeenCalledTimes(3);
@@ -73,7 +76,7 @@ it("keeps the failed first route unavailable until explicit refresh and never re
   value.get.mockImplementation(async request => ({ resource: request.id === value.models[0].id ? undefined : value.models[1] }));
   const view = render(<value.Fixture />); await screen.findAllByText("Model unavailable"); expect(value.get).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "+2 more" })); await screen.findByText("native-second");
-  const summary = screen.getByText("Configured model").closest(".agent-model-summary")!; expect(within(summary as HTMLElement).getByText("Model unavailable")).toBeTruthy(); expect(summary.querySelector("code")).toBeNull();
+  const summary = screen.getByText("Configured model").closest(".agent-model-summary")!; expect(within(summary as HTMLElement).getByText("Model unavailable")).toBeTruthy(); expect(summary.querySelector("code")).toBeNull(); expect(within(summary as HTMLElement).getByText("1 account")).toBeTruthy();
   view.rerender(<value.Fixture refresh={1} />); await waitFor(() => expect(value.get).toHaveBeenCalledTimes(4)); expect(value.actions.remove).not.toHaveBeenCalled(); view.unmount(); logs.mockRestore();
 });
 it("shares four active exact reads across three mounted page fragments and cancels the opening", async () => {
@@ -121,4 +124,37 @@ it.each(["refresh", "reconnect"])("holds four actual transport permits across mo
   await act(async () => { pending.splice(0).forEach(resolve => resolve()); await settle(); });
   await screen.findByText("permit-native-7"); expect(maximum).toBe(4);
   expect(client.getQueryCache().getAll()).toHaveLength(0); mounted.unmount();
+});
+
+it.each([
+  { schema: 1, accounts: [], expected: "0 accounts" },
+  { schema: 1, accounts: undefined, expected: "Account count unavailable" },
+  { schema: 1, accounts: {}, expected: "Account count unavailable" },
+  { schema: 1, accounts: [{ id: "disabled" }, { id: "disconnected", weight: 1000 }], expected: "2 accounts" },
+  { schema: 2, accounts: [], expected: "0 accounts" },
+])("shows saved schema $schema counts independently of model availability", async ({ schema, accounts, expected }) => {
+  const value = fixture();
+  value.rows[0].schemaVersion = schema;
+  value.rows[0].documentJson = encode({ name: "Ordered", harness: "codex", ...(schema === 2 ? { reconfiguration_required: true } : {}), ...(schema === 3 ? { routes: [{ model_id: value.models[0].id, accounts }] } : { model_id: value.models[0].id, accounts }) });
+  value.get.mockImplementation(async () => ({ resource: undefined }));
+  const view = render(<value.Fixture />);
+  expect(screen.getByText(expected)).toBeTruthy();
+  await screen.findByText("Model unavailable");
+  expect(screen.getByText(expected)).toBeTruthy();
+  expect(value.get).toHaveBeenCalledTimes(1);
+  value.rows[0].revision++;
+  value.rows[0].documentJson = encode({ name: "Ordered", harness: "codex", ...(schema === 2 ? { reconfiguration_required: true } : {}), ...(schema === 3 ? { routes: [{ model_id: value.models[0].id, accounts: [{ id: "updated" }] }] } : { model_id: value.models[0].id, accounts: [{ id: "updated" }] }) });
+  view.rerender(<value.Fixture />);
+  expect(screen.getByText("1 account")).toBeTruthy();
+  expect(value.get).toHaveBeenCalledTimes(1);
+});
+
+it("keeps unreadable known documents unavailable without inferring counts or account reads", async () => {
+  const value = fixture();
+  value.rows[0].documentJson = Uint8Array.of(255);
+  render(<value.Fixture />);
+  expect(screen.getByText("Account count unavailable")).toBeTruthy();
+  expect(value.get).not.toHaveBeenCalled();
+  const future = screen.getByText("Future").closest("article")!;
+  expect(future.querySelector(".agent-route-account-count")).toBeNull();
 });

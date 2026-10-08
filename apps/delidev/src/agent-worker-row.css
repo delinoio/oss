@@ -11,3 +11,6 @@
 .agent-model-routes li { padding-block: 8px; overflow-wrap: anywhere; }
 .agent-model-routes .agent-model-name { margin-inline-start: 8px; }
 @container (width < 640px) { .settings-agent-actions { flex-basis: 100%; } }
+
+.agent-route-account-count { color: var(--muted); overflow-wrap: anywhere; }
+.agent-model-routes .agent-route-account-count { margin-inline-start: 8px; }
