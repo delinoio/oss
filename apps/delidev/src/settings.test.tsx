@@ -14,7 +14,7 @@ import { encode, type Document } from "./documents";
 import { NotificationProvider } from "./toast-notifications";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; doctor?: () => { reportJson?: Uint8Array }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
+function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string } | Promise<{ entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }>; doctor?: () => { reportJson?: Uint8Array }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -1144,4 +1144,50 @@ it("Settings search preserves the original uncertain server-preference request u
  fireEvent.change(search,{target:{value:'automatic fetch'}});fireEvent.click(screen.getByRole('button',{name:'Git › Allow automatic fetch before Worktree preparation'}));
  await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('automatic-fetch'));expect(screen.getByRole('button',{name:'Retry the same configuration'})).toBe(retry);expect((fetch as HTMLInputElement).checked).toBe(submittedFetch);expect(value.save).toHaveBeenCalledTimes(1);
  fireEvent.click(retry);await waitFor(()=>expect(value.save).toHaveBeenCalledTimes(2));const retried=input(value.save.mock.calls[1][0]);expect(retried.mutation.requestId).toBe(original.mutation.requestId);expect(retried.documentJson).toEqual(original.documentJson);
+});
+
+it("keeps confirmed provider switches and layout content through delayed off/on and manual refresh", async () => {
+  let provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", enabled: true, preset_id: "openai" });
+  const other = resource(EntityKind.PROVIDER, { name: "Anthropic", endpoint: "https://api.anthropic.com", protocol: "anthropic", authentication: "bearer", enabled: true, preset_id: "anthropic" });
+  const entry = () => create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENAI, providerId: provider.id, displayName: "OpenAI", enabled: JSON.parse(new TextDecoder().decode(provider.documentJson)).enabled, provider, accountCountsAvailable: true });
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  let hold = false, failRefresh = false;
+  const pending: Array<() => void> = [];
+  const value = fixture([provider, other], { readProviderInventory: (_token, request) => {
+    if (failRefresh && !request.enabledOnly) throw new ConnectError("Synthetic retained refresh failure", Code.Unavailable);
+    const response = { capabilities, entries: [entry(), create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.ANTHROPIC, providerId: other.id, displayName: "Anthropic", enabled: true, provider: other, accountCountsAvailable: true })] };
+    return hold && !request.enabledOnly ? new Promise(resolve => pending.push(() => resolve(response))) : response;
+  } });
+  value.save.mockImplementation(async request => {
+    provider = create(ResourceSchema, { ...provider, revision: provider.revision + 1n, documentJson: input(request).documentJson });
+    hold = true;
+    return { resource: provider };
+  });
+  render(value.view(<Settings visible />));
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  const original = await screen.findByRole("switch", { name: "Turn off OpenAI" });
+  for (const enabled of [true, false]) {
+    fireEvent.click(original);
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    expect(original.getAttribute("aria-checked")).toBe(String(enabled));
+    expect(screen.queryByText(/Refreshing provider state/)).toBeNull();
+    hold = false;
+    await act(async () => { pending.splice(0).forEach(resolve => resolve()); });
+    await waitFor(() => expect(original.getAttribute("aria-checked")).toBe(String(!enabled)));
+    expect(await screen.findByRole("switch", { name: `${enabled ? "Turn on" : "Turn off"} OpenAI` })).toBe(original);
+  }
+  hold = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh providers" }));
+  await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+  expect(screen.queryByText(/Refreshing provider state/)).toBeNull();
+  expect((screen.getByRole("button", { name: "Refresh providers" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(original.getAttribute("aria-checked")).toBe("true");
+  hold = false;
+  await act(async () => { pending.splice(0).forEach(resolve => resolve()); });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh providers" }) as HTMLButtonElement).disabled).toBe(false));
+  failRefresh = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh providers" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(original.getAttribute("aria-checked")).toBe("true");
+  expect(screen.getByRole("switch", { name: "Turn off OpenAI" })).toBe(original);
 });
