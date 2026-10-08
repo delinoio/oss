@@ -107,7 +107,7 @@ export interface AccountSettingsProps {
   editAccount: (resource: Resource) => void;
   deleteAccount: (resource: Resource) => void;
   onWorkflowReadyChange?: (active: boolean) => void;
-  startApiWizard?: { key: string; providerId: string; provider?: AccountProviderSummary };
+  startApiWizard?: { key: string; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean };
   providerHint?: AccountProviderSummary;
 }
 
@@ -166,6 +166,7 @@ function AccountCreationWizard({
   accountTypeFilteringReady,
   apiFormatSelectingReady = false,
   initialProvider,
+  startOAuth = true,
   providers,
   eligibleProviders,
   picker,
@@ -180,6 +181,7 @@ function AccountCreationWizard({
   accountTypeFilteringReady: boolean;
   apiFormatSelectingReady?: boolean;
   initialProvider?: AccountProviderSummary;
+  startOAuth?: boolean;
   providers: readonly AccountProviderSummary[];
   eligibleProviders: readonly AccountProviderSummary[];
   picker: AccountProviderPicker;
@@ -194,7 +196,7 @@ function AccountCreationWizard({
   const oauth = suppliedOAuth ?? localOAuth;
   const oauthStarted = useRef(false);
   useEffect(() => {
-    if (oauthStarted.current || !initialProvider?.oauthAvailable || !oauth.supports(initialProvider)) return;
+    if (!startOAuth || oauthStarted.current || !initialProvider?.oauthAvailable || !oauth.supports(initialProvider)) return;
     let live = true;
     queueMicrotask(() => {
       if (!live || oauthStarted.current) return;
@@ -202,7 +204,7 @@ function AccountCreationWizard({
       oauth.start(initialProvider);
     });
     return () => { live = false; };
-  }, [initialProvider, oauth]);
+  }, [initialProvider, oauth, startOAuth]);
   const [step, setStep] = useState(initialProvider ? WizardStep.Account : WizardStep.Provider);
   const [providerId, setProviderId] = useState(initialProvider?.providerId ?? "");
   // Keep the clicked contract authoritative when independent inventory pages retain different snapshots.
@@ -681,6 +683,7 @@ function ApiAccountSettings({
   const addAccountButton = useRef<HTMLButtonElement>(null);
   const [wizard, setWizard] = useState(false);
   const [wizardProvider, setWizardProvider] = useState<AccountProviderSummary>();
+  const [wizardStartOAuth, setWizardStartOAuth] = useState(true);
   const [pauseWorkflowLock, setPauseWorkflowLock] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Resource>();
   const lastWizardRequest = useRef("");
@@ -715,10 +718,12 @@ function ApiAccountSettings({
   }, [active, pauseWorkflowLock]);
   useEffect(() => {
     if (!startApiWizard || !startApiWizard.key || startApiWizard.key === lastWizardRequest.current) return;
-    lastWizardRequest.current = startApiWizard.key;
     const provider = startApiWizard.provider ?? providers.find((item) => item.providerId === startApiWizard.providerId);
     if (!provider?.enabled || !provider.providerId || document(provider.provider).protocol === "native-subscription") return;
+    // A provider-ID-only Settings entry waits for inventory before consuming its once-only navigation intent.
+    lastWizardRequest.current = startApiWizard.key;
     setWizardProvider(provider);
+    setWizardStartOAuth(startApiWizard.startOAuth !== false);
     setPauseWorkflowLock(false);
     onWorkflowReadyChange?.(true);
     setWizard(true);
@@ -738,7 +743,7 @@ function ApiAccountSettings({
   const finalFirstPage = inventory.loaded && !inventory.nextPageToken;
   return <section ref={content} className="account-settings api-keys-view api-usage-list" aria-label={copy("account-settings.aiApiKeysSettings_111960")}>
     <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} description={copy("account-settings.manageAiApiKeysAndKeyless_372629")} actions={<>
-      <button ref={addAccountButton} className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); onWorkflowReadyChange?.(true); setWizard(true); }}>{copy("account-settings.addAiApiKey_2c04a8")}</button>
+      <button ref={addAccountButton} className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); setWizardStartOAuth(true); onWorkflowReadyChange?.(true); setWizard(true); }}>{copy("account-settings.addAiApiKey_2c04a8")}</button>
     </>} />
     {providerIdFilter ? <div className="api-entry-filter"><p><LocalizedText id="account-settings.provider_bcf1a6" components={{ s0: <>{providersById.get(providerIdFilter)?.displayName || providerIdFilter}</> }} /></p><button type="button" onClick={() => {  clearProviderFilter(); }}>{copy("account-settings.clearProviderFilter_e0b8c0")}</button></div> : null}
     {accountTypeFilteringLoading ? <p role="status">{copy("account-settings.loadingProviderCapabilities_012324")}</p> : null}
@@ -760,6 +765,6 @@ function ApiAccountSettings({
     {accountTypeFilteringReady ? <p className="api-entry-storage-note">{copy("account-settings.knownUsageMayBeIncompleteEstimates_30eea0")}</p> : null}
     <p className="api-entry-storage-note">{copy("account-settings.credentialsAreStoredSecurelyOnThe_be612b")}</p>
     {selectedAccount && section === AccountSettingsSection.Api ? <SettingsTaskDialog key={selectedAccount.id} title={copy("account-settings.manageConnection_ad2892")} size={SettingsDialogSize.Wide} close={() => { setSelectedAccount(undefined); void rows.refetch(); }}><AccountConnection initial={selectedAccount} active={active} close={() => { setSelectedAccount(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
-    {wizard ? <SettingsTaskDialog fallbackFocus={() => addAccountButton.current} title={copy("account-settings.addAiApiKey_2c04a8")} size={SettingsDialogSize.Form} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}><AccountCreationWizard apiFormatSelectingReady={apiFormatSelectingReady} oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} /></SettingsTaskDialog> : null}
+    {wizard ? <SettingsTaskDialog fallbackFocus={() => addAccountButton.current} title={copy("account-settings.addAiApiKey_2c04a8")} size={SettingsDialogSize.Form} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }}><AccountCreationWizard apiFormatSelectingReady={apiFormatSelectingReady} oauth={oauth} openEdit={editAccount} active={active} accountTypeFilteringReady={accountTypeFilteringReady && providerPicker.ready} initialProvider={wizardProvider} startOAuth={wizardStartOAuth} providers={providerSummaries} eligibleProviders={eligibleProviders} picker={providerPicker} close={() => { onWorkflowReadyChange?.(false); setWizard(false); setWizardProvider(undefined); setPauseWorkflowLock(false); }} openProviders={browseApiProviders} openManage={(resource) => { onWorkflowReadyChange?.(true); setWizard(false); setPauseWorkflowLock(false); manageAccount(resource); }} saved={() => { void rows.refetch(); }} /></SettingsTaskDialog> : null}
   </section>;
 }

@@ -120,3 +120,13 @@
 }
 .worker-footer:empty { display: none; }
 .worker-footer > div:only-child { margin-left: auto; }
+
+/* The grip owns movement; the adjacent button owns detail-panel selection. */
+.worker-source-order > li { display: flex; gap: 8px; align-items: center; }
+.worker-source-list .worker-source-grip { flex: 0 0 40px; width: 40px; min-height: 40px; padding: 0; text-align: center; touch-action: none; cursor: grab; }
+.worker-source-grip[data-moving=true] { cursor: grabbing; }
+.worker-source-list .worker-source-selection { flex: 1; min-width: 0; }
+.worker-source-order-status { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.worker-routing { border: 0; border-top: 1px solid var(--border); padding: 12px 0 0; }
+.worker-routing > h4 { margin: 0 0 12px; }
+.worker-account-add { display: inline-block; min-height: 40px; padding-block: 10px; color: var(--accent); text-decoration: underline; }
