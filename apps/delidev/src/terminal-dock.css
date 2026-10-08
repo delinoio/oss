@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-:root { --terminal-background: #14191f; --terminal-foreground: #e5e9f0; --terminal-border: #526174; --terminal-muted: #b1bac5; --terminal-selection: #344459; --terminal-scrollbar: #596575; --terminal-scrollbar-hover: #758296; --terminal-scrollbar-active: #8b99ad; }
 .session-upper-content { display: contents; }
 .session-workspace.terminal-open .session-content { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) var(--terminal-dock-height, 40%); }
 .session-workspace.terminal-open .session-upper-content { display: grid; grid-area: 1 / 1; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, auto) minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
@@ -12,7 +11,7 @@
 .terminal-dock-header h3 { margin: 0 auto 0 0; font-size: 13px; }
 .terminal-dock button { min-height: 32px; color: var(--terminal-foreground); border: 1px solid var(--terminal-border); background: transparent; }
 .terminal-dock button:hover, .terminal-dock button[aria-selected=true] { background: var(--terminal-selection); }
-.terminal-dock button:focus-visible, .terminal-dock-separator:focus-visible { outline: 2px solid #80b7ef; outline-offset: -2px; }
+.terminal-dock button:focus-visible, .terminal-dock-separator:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .terminal-dock button:disabled { color: var(--terminal-muted); opacity: .6; }
 .terminal-dock-separator { flex: none; min-height: 6px; border-top: 1px solid var(--terminal-border); cursor: ns-resize; touch-action: none; }
 .terminal-tabs { display: flex; flex-wrap: wrap; align-items: center; max-height: 80px; overflow: auto; padding: 0 8px; }
@@ -31,3 +30,7 @@
 .terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider { background: var(--terminal-scrollbar); }
 .terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider:hover { background: var(--terminal-scrollbar-hover); }
 .terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider.active { background: var(--terminal-scrollbar-active); }
+/* Shared problem components inherit the dock's fixed dark palette rather than
+   mixing light warning backgrounds with terminal foreground text. */
+.terminal-dock .problem { color: var(--terminal-foreground); background: var(--terminal-background); border-color: var(--terminal-border); }
+.terminal-dock .problem small { color: var(--terminal-muted); }

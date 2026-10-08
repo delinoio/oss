@@ -721,7 +721,9 @@ state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
 and explicit selection beyond the bounded 50-record history payload window.
 
 Pin xterm 6.0.0, WebGL addon 0.19.0 and Fit addon 0.11.0 with their MIT notices.
-Static CSS preserves the dark 14px monospace palette in both application themes.
+Static CSS preserves the dark 14px monospace palette through tokens in all
+three shared theme palettes. Shared outward focus and terminal text/selection/
+control-border contrast remain audited in both application themes.
 The narrow package patch removes Viewport dynamic stylesheet insertion and
 makes the DOM renderer fallback fail closed; its source and ESM changes route
 both package entrypoints to the same patched ESM on repository Node24. Load
