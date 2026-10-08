@@ -120,6 +120,11 @@ func (r *serviceReloader) drainServiceManager(ctx context.Context, c Config, ide
 			return serviceManagerUnavailable()
 		}
 		active := false
+		for _, artifact := range response.Status.Artifacts {
+			if artifact.Reserved || artifact.Phase == ArtifactRemoving {
+				active = true
+			}
+		}
 		for _, image := range response.Status.Images {
 			if image.Phase == ImageOpen || image.Phase == ImageRemoving {
 				active = true

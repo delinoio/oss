@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -80,12 +81,21 @@ func TestGlobalDrainWaitsForManagedArtifacts(t *testing.T) {
 }
 
 type artifactServiceFixture struct {
+	pid int
 	serviceFixture
 	shutdown chan bool
 	store    *Store
 }
 
 func (f *artifactServiceFixture) Run(ctx context.Context, name string, args, env []string, in io.Reader) ([]byte, error) {
+	if f.pid > 0 {
+		if name == "launchctl" && len(args) == 1 && args[0] == "list" {
+			return []byte("PID\tStatus\tLabel\n" + strconv.Itoa(f.pid) + "\t0\t" + serviceLabel + "\n"), nil
+		}
+		if name == "systemctl" && len(args) > 1 && args[1] == "show" {
+			return []byte(strconv.Itoa(f.pid)), nil
+		}
+	}
 	for _, arg := range args {
 		if arg == "bootout" || arg == "disable" {
 			f.shutdown <- allTerminated(f.store.View())
@@ -99,7 +109,7 @@ func TestServiceShutdownWaitsForManagedArtifacts(t *testing.T) {
 		t.Skip("supported user services")
 	}
 	for _, action := range []string{"stop", "uninstall"} {
-		for _, phase := range []ArtifactPhase{ArtifactPreparing, ArtifactRemoving} {
+		for _, phase := range []ArtifactPhase{ArtifactPreparing, ArtifactRemoving, ArtifactReady} {
 			t.Run(action+"/"+string(phase), func(t *testing.T) {
 				m, c, _, _, _ := testManager(t)
 				home := filepath.Dir(c.Storage.State)
@@ -125,9 +135,15 @@ func TestServiceShutdownWaitsForManagedArtifacts(t *testing.T) {
 				defer cancel()
 				done := make(chan error, 1)
 				finished := make(chan struct{})
+				binary, err := os.Executable()
+				if err != nil {
+					t.Fatal(err)
+				}
+				fixture.pid = os.Getpid()
+				admission := matchingServiceManagerAdapter(t, binary, configPath)
 				go func() {
 					defer close(finished)
-					done <- Service(ctx, action, configPath, c, fixture)
+					done <- serviceWithManagerAdapter(ctx, action, configPath, c, fixture, admission)
 				}()
 				defer func() { cancel(); <-finished }()
 				// Observe the durable Stop request before checking the pending native action.
@@ -140,17 +156,29 @@ func TestServiceShutdownWaitsForManagedArtifacts(t *testing.T) {
 					case <-time.After(time.Millisecond):
 					}
 				}
-				select {
-				case safe := <-fixture.shutdown:
-					t.Fatalf("native shutdown preceded artifact cleanup: safe=%t", safe)
-				case err := <-done:
-					t.Fatalf("service completed while artifact pending: %v", err)
-				case <-time.After(100 * time.Millisecond):
+				if phase != ArtifactReady {
+					select {
+					case safe := <-fixture.shutdown:
+						t.Fatalf("native shutdown preceded artifact cleanup: safe=%t", safe)
+					case err := <-done:
+						t.Fatalf("service completed while artifact pending: %v", err)
+					case <-time.After(100 * time.Millisecond):
+					}
 				}
-				if _, err := os.Stat(servicePath()); err != nil {
-					t.Fatal("pending cleanup removed service definition", err)
+				if phase != ArtifactReady {
+					if _, err := os.Stat(servicePath()); err != nil {
+						t.Fatal("pending cleanup removed service definition", err)
+					}
 				}
-				if err := m.Store.Update(func(s *Snapshot) error { delete(s.Artifacts, "artifact"); return nil }); err != nil {
+				if err := m.Store.Update(func(s *Snapshot) error {
+					if phase == ArtifactPreparing {
+						s.Artifacts["artifact"].Phase = ArtifactReady
+						s.Artifacts["artifact"].Reserved = false
+					} else if phase == ArtifactRemoving {
+						delete(s.Artifacts, "artifact")
+					}
+					return nil
+				}); err != nil {
 					t.Fatal(err)
 				}
 				select {
