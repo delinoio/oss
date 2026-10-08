@@ -57,11 +57,15 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 		}
 	}
 	for i, path := range paths {
-		digest, err := scanForkTreeBounded(ctx, path, "", source.Type != domain.GeneralChat, request.forkEntryLimit())
+		marker, err := captureForkRootMarker(path)
 		if err != nil {
 			return nil, err
 		}
-		copy := forkCopy{source: path, tree: digest, git: source.Type != domain.GeneralChat, entryLimit: request.forkEntryLimit()}
+		digest, err := scanForkTreePinned(ctx, path, "", source.Type != domain.GeneralChat, request.forkEntryLimit(), &marker)
+		if err != nil {
+			return nil, err
+		}
+		copy := forkCopy{sourceMarker: &marker, source: path, tree: digest, git: source.Type != domain.GeneralChat, entryLimit: request.forkEntryLimit()}
 		if copy.git {
 			head, err := git.run(ctx, path, "rev-parse", "--verify", "HEAD")
 			if err != nil {
@@ -77,6 +81,9 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 			hash := sha256.Sum256(index)
 			copy.head, copy.index = request.Repositories[i].Base.Name, hex.EncodeToString(hash[:])
 		}
+		if err := copy.verifySourceMarker(); err != nil {
+			return nil, err
+		}
 		snapshot.copies = append(snapshot.copies, copy)
 	}
 	return snapshot, nil
@@ -90,11 +97,27 @@ func (m *Manager) PrepareFork(ctx context.Context, request PrepareRequest, snaps
 	if snapshot == nil || request.ForkSourceID == "" || snapshot.requestDigest != preparationDigest(request) {
 		return Manifest{}, ResultUncertain()
 	}
+	for _, copy := range snapshot.copies {
+		if err := copy.verifySourceMarker(); err != nil {
+			return Manifest{}, err
+		}
+	}
 	return m.prepare(ctx, request, snapshot)
 }
 
 func forkSnapshotChanged() error {
 	return domain.Fail(domain.Conflict, "The fork workspace changed during snapshot copying.", "Wait for source edits to finish, then request a new fork after verified cleanup.")
+}
+
+func (s *ForkSnapshot) sourceMarker(path string) *forkGitMarker {
+	if s != nil {
+		for _, copy := range s.copies {
+			if copy.source == path {
+				return copy.sourceMarker
+			}
+		}
+	}
+	return nil
 }
 
 func (s *ForkSnapshot) Verify(ctx context.Context, child Manifest) error {
@@ -129,6 +152,7 @@ func (r forkReader) Read(p []byte) (int, error) {
 }
 
 type forkCopy struct {
+	sourceMarker   *forkGitMarker
 	source, target string
 	tree           string
 	git            bool
@@ -255,6 +279,9 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 	return scanForkTreeBounded(ctx, source, target, gitTree, maxForkEntries)
 }
 func scanForkTreeBounded(ctx context.Context, source, target string, gitTree bool, entryLimit int) (string, error) {
+	return scanForkTreePinned(ctx, source, target, gitTree, entryLimit, nil)
+}
+func scanForkTreePinned(ctx context.Context, source, target string, gitTree bool, entryLimit int, original *forkGitMarker) (string, error) {
 	if entryLimit != maxForkEntries && entryLimit != maxOpenCodeForkEntries {
 		return "", forkUnsupported()
 	}
@@ -267,6 +294,11 @@ func scanForkTreeBounded(ctx context.Context, source, target string, gitTree boo
 		return "", forkUnsupported()
 	}
 	defer root.Close()
+	if original != nil {
+		if err := original.verifyIdentity(root, "."); err != nil {
+			return "", err
+		}
+	}
 	var outputRoot *os.Root
 	if target != "" {
 		canonical, err := filepath.EvalSymlinks(target)
@@ -336,6 +368,9 @@ func scanForkTreeBounded(ctx context.Context, source, target string, gitTree boo
 			// independent of directory insertion and enumeration order.
 			sortForkEntries(children)
 			marker, err := inspectForkGitMarker(root, name)
+			if err == nil && name == "." && original != nil {
+				err = original.verifyIdentity(root, name)
+			}
 			if err != nil {
 				return err
 			}
@@ -361,6 +396,11 @@ func scanForkTreeBounded(ctx context.Context, source, target string, gitTree boo
 			}
 			if err := marker.verify(root, name); err != nil {
 				return err
+			}
+			if name == "." && original != nil {
+				if err := original.verifyIdentity(root, name); err != nil {
+					return err
+				}
 			}
 			if target != "" {
 				if err := outputRoot.Chmod(name, before.Mode().Perm()); err != nil {
@@ -421,8 +461,18 @@ func copyForkTree(ctx context.Context, source, target string, gitTree bool) (for
 	return copyForkTreeBounded(ctx, source, target, gitTree, maxForkEntries)
 }
 func copyForkTreeBounded(ctx context.Context, source, target string, gitTree bool, entryLimit int) (forkCopy, error) {
-	digest, err := scanForkTreeBounded(ctx, source, target, gitTree, entryLimit)
-	return forkCopy{source: source, target: target, tree: digest, git: gitTree, entryLimit: entryLimit}, err
+	return copyForkTreePinned(ctx, source, target, gitTree, entryLimit, nil)
+}
+func copyForkTreePinned(ctx context.Context, source, target string, gitTree bool, entryLimit int, original *forkGitMarker) (forkCopy, error) {
+	marker, err := captureForkRootMarker(source)
+	if err != nil {
+		return forkCopy{}, err
+	}
+	if original != nil {
+		marker = *original
+	}
+	digest, err := scanForkTreePinned(ctx, source, target, gitTree, entryLimit, &marker)
+	return forkCopy{sourceMarker: &marker, source: source, target: target, tree: digest, git: gitTree, entryLimit: entryLimit}, err
 }
 
 func forkIndex(ctx context.Context, git Git, checkout string) (string, []byte, error) {
@@ -469,11 +519,14 @@ func forkIndex(ctx context.Context, git Git, checkout string) (string, []byte, e
 }
 
 func copyForkRepository(ctx context.Context, git Git, source, target, commit string) (forkCopy, error) {
+	return copyForkRepositoryPinned(ctx, git, source, target, commit, nil)
+}
+func copyForkRepositoryPinned(ctx context.Context, git Git, source, target, commit string, original *forkGitMarker) (forkCopy, error) {
 	_, index, err := forkIndex(ctx, git, source)
 	if err != nil {
 		return forkCopy{}, err
 	}
-	copy, err := copyForkTree(ctx, source, target, true)
+	copy, err := copyForkTreePinned(ctx, source, target, true, maxForkEntries, original)
 	if err != nil {
 		return copy, err
 	}
@@ -494,7 +547,7 @@ func (c forkCopy) verify(ctx context.Context, git Git) error {
 	if entryLimit == 0 {
 		entryLimit = maxForkEntries
 	}
-	digest, err := scanForkTreeBounded(ctx, c.source, "", c.git, entryLimit)
+	digest, err := scanForkTreePinned(ctx, c.source, "", c.git, entryLimit, c.sourceMarker)
 	if err != nil {
 		return err
 	}
@@ -533,7 +586,29 @@ func (c forkCopy) verify(ctx context.Context, git Git) error {
 			return forkSnapshotChanged()
 		}
 	}
-	return nil
+	return c.verifySourceMarker()
+}
+
+// The original source pin survives phase boundaries; child administration has
+// its own lifetime and is never compared to the source inode.
+func captureForkRootMarker(path string) (forkGitMarker, error) {
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return forkGitMarker{}, forkUnsupported()
+	}
+	defer root.Close()
+	return inspectForkGitMarker(root, ".")
+}
+func (c forkCopy) verifySourceMarker() error {
+	if c.sourceMarker == nil {
+		return nil
+	}
+	root, err := os.OpenRoot(c.source)
+	if err != nil {
+		return forkSnapshotChanged()
+	}
+	defer root.Close()
+	return c.sourceMarker.verifyIdentity(root, ".")
 }
 
 func sortForkEntries(entries []os.DirEntry) {
@@ -563,6 +638,23 @@ func inspectForkGitMarker(root *os.Root, parent string) (forkGitMarker, error) {
 		return forkGitMarker{}, forkUnsupported()
 	}
 	return forkGitMarker{info: info}, nil
+}
+
+// Cross-phase directory metadata may change when the owned fork adds its
+// worktree registration. Its native inode/mode remain original; regular gitdir
+// references retain byte-length/time checks. Each scan separately pins metadata.
+func (m forkGitMarker) verifyIdentity(root *os.Root, parent string) error {
+	current, err := root.Lstat(filepath.Join(parent, ".git"))
+	if m.info == nil && os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil || m.info == nil || !os.SameFile(m.info, current) || m.info.Mode() != current.Mode() {
+		return forkSnapshotChanged()
+	}
+	if !m.info.IsDir() && (m.info.Size() != current.Size() || !m.info.ModTime().Equal(current.ModTime())) {
+		return forkSnapshotChanged()
+	}
+	return nil
 }
 
 func (m forkGitMarker) verify(root *os.Root, parent string) error {

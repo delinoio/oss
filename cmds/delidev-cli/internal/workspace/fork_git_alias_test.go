@@ -2,9 +2,11 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -301,7 +303,11 @@ func TestForkFinalVerificationRejectsLateGitAlias(t *testing.T) {
 			if _, err := os.Lstat(filepath.Join(parent, ".git")); os.IsNotExist(err) {
 				t.Skip("native filesystem distinguishes case")
 			}
-			if domain.SafeError(copy.verify(context.Background(), Git{})).Code != domain.Unsupported {
+			code := domain.Unsupported
+			if side == "source" {
+				code = domain.Conflict
+			}
+			if domain.SafeError(copy.verify(context.Background(), Git{})).Code != code {
 				t.Fatal("late native administration accepted")
 			}
 		})
@@ -354,6 +360,108 @@ func TestPreparedProjectForkRejectsNestedNativeGitAlias(t *testing.T) {
 				}
 				if child, err := m.Read(childID); err == nil && child.State == Ready {
 					t.Fatal("rejected child published")
+				}
+			})
+		}
+	}
+}
+
+func TestForkOriginalGitMarkerSurvivesPhaseBoundaries(t *testing.T) {
+	for _, kind := range []domain.WorkspaceType{domain.Local, domain.Worktree} {
+		for _, phase := range []string{"before-copy", "before-final-verification"} {
+			t.Run(string(kind)+"/"+phase, func(t *testing.T) {
+				m := manager(t)
+				request, _ := requestFor(repository(t))
+				if kind == domain.Local {
+					request.Type, request.OriginMachineID = domain.Local, request.MachineID
+					request.Repositories[0].Starting = domain.Reference{}
+				}
+				source, err := m.Prepare(context.Background(), request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fork, err := m.ForkPreparation(context.Background(), source, domain.NewID(), domain.Worktree)
+				if err != nil {
+					t.Fatal(err)
+				}
+				snapshot, err := m.InspectForkSnapshot(context.Background(), source, fork)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var child Manifest
+				if phase == "before-final-verification" {
+					child, err = m.PrepareFork(context.Background(), fork, snapshot)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := snapshot.Verify(context.Background(), child); err != nil {
+						t.Fatal("independent child administration rejected", err)
+					}
+				}
+				marker := filepath.Join(source.PrimaryPath, ".git")
+				original, err := os.Lstat(marker)
+				if err != nil {
+					t.Fatal(err)
+				}
+				head := gitTest(t, source.PrimaryPath, "rev-parse", "HEAD")
+				index := gitTest(t, source.PrimaryPath, "ls-files", "--stage")
+				indexPath := strings.TrimSpace(gitTest(t, source.PrimaryPath, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+				indexBytes, err := os.ReadFile(indexPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				sourceBytes, err := os.ReadFile(filepath.Join(source.PrimaryPath, "tracked.txt"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				outside := filepath.Join(t.TempDir(), "original-admin")
+				if err := os.Rename(marker, outside); err != nil {
+					t.Fatal(err)
+				}
+				if original.IsDir() {
+					if err := os.CopyFS(marker, os.DirFS(outside)); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					raw, err := os.ReadFile(outside)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(marker, raw, original.Mode().Perm()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Chtimes(marker, original.ModTime(), original.ModTime()); err != nil {
+					t.Fatal(err)
+				}
+				replacement, err := os.Lstat(marker)
+				if err != nil || os.SameFile(original, replacement) {
+					t.Fatal("marker replacement fixture invalid", err)
+				}
+				if gitTest(t, source.PrimaryPath, "rev-parse", "HEAD") != head || gitTest(t, source.PrimaryPath, "ls-files", "--stage") != index {
+					t.Fatal("replacement changed HEAD/index")
+				}
+				indexPath = strings.TrimSpace(gitTest(t, source.PrimaryPath, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+				if raw, err := os.ReadFile(indexPath); err != nil || !bytes.Equal(raw, indexBytes) {
+					t.Fatal("replacement changed index bytes", err)
+				}
+				if phase == "before-copy" {
+					child, err = m.PrepareFork(context.Background(), fork, snapshot)
+					if child.State == Ready {
+						t.Fatal("replaced administration published")
+					}
+				} else {
+					err = snapshot.Verify(context.Background(), child)
+				}
+				if domain.SafeError(err).Code != domain.Conflict {
+					t.Fatal("original marker replacement accepted", err)
+				}
+				retained, err := os.Lstat(outside)
+				if err != nil || !os.SameFile(original, retained) {
+					t.Fatal("original administration changed", err)
+				}
+				if raw, err := os.ReadFile(filepath.Join(source.PrimaryPath, "tracked.txt")); err != nil || !bytes.Equal(raw, sourceBytes) {
+					t.Fatal("source bytes lost", err)
 				}
 			})
 		}

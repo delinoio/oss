@@ -112,8 +112,9 @@ Fork scans bind each parent’s native `.git` entry with anchored, non-following
 identity checks. Exclude only the declared repository’s top-level administration;
 reject its native case aliases in General Chat and nested directories. Distinct
 ordinary `.GIT` entries remain copyable on case-sensitive filesystems. Recheck
-the marker identity through inspection, copying and final verification; changes
-retain snapshot conflict and cannot publish a child. Never follow gitdir pointers.
+the original marker presence and native identity in transient snapshot evidence
+through inspection, copying and final verification. Later scans cannot replace
+this pin. Identity changes retain snapshot conflict and cannot publish a child. Never follow gitdir pointers.
 Source reads and destination writes use separate opened filesystem roots;
 canonical destination validation rejects linked targets before copying. Copied
 files and directories are synchronized before the ready manifest is published,
