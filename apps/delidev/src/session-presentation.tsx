@@ -4,7 +4,7 @@ import { copy, useLocale } from "./localization";
 
 export enum SessionIconKind {
   Diff = "diff", Files = "files", Terminals = "terminals", Browser = "browser",
-  Diagnostics = "diagnostics", Info = "info", Conversation = "conversation", Warning = "warning",
+  Diagnostics = "diagnostics", Conversation = "conversation", Warning = "warning",
 }
 
 const paths: Record<SessionIconKind, ReactNode> = {
@@ -13,7 +13,6 @@ const paths: Record<SessionIconKind, ReactNode> = {
   [SessionIconKind.Terminals]: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3M13 16h4" /></>,
   [SessionIconKind.Browser]: <><circle cx="12" cy="12" r="9" /><ellipse cx="12" cy="12" rx="4" ry="9" /><path d="M3 12h18M5 7h14M5 17h14" /></>,
   [SessionIconKind.Diagnostics]: <path d="M2 12h5l3-8 4 16 3-8h5" />,
-  [SessionIconKind.Info]: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7v1" /></>,
   [SessionIconKind.Conversation]: <path d="M21 11a9 9 0 0 1-9 9H7l-5 3 2-6a9 9 0 1 1 17-6ZM8 11h.01M12 11h.01M16 11h.01" />,
   [SessionIconKind.Warning]: <><path d="m12 3 10 18H2zM12 9v5M12 17v1" /></>,
 };

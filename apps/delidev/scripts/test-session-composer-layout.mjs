@@ -42,7 +42,7 @@ try {
   await page.evaluate(zoom => {
    document.body.style.zoom = String(zoom);
    const workspace = document.querySelector(".session-workspace"), body = workspace.querySelector(".session-body");
-   const region = document.createElement("div"); region.className = "session-conversation-region";
+   const region = document.createElement("div"); region.className = "session-conversation-region"; region.dataset.nestedComposerFixture = "true";
    body.before(region); region.append(body);
    workspace.style.gridTemplateRows = "auto auto minmax(0, 1fr)";
    Object.assign(region.style, { gridArea: "3 / 1", alignSelf: "end", height: "72px", minHeight: "0", container: "conversation / size" });
@@ -67,8 +67,10 @@ try {
   await page.keyboard.press("Escape"); assert(await page.locator(".composer-attachment-help").evaluate(node => document.activeElement === node));
   await page.getByRole("button", { name: c("session.queueMessage_891d4e"), exact: true }).click({ timeout: 5000 });
   await page.waitForFunction(() => window.__sessionComposerFixture.events.length === 1);
-  const bounds = await page.evaluate(() => { const workspace = document.querySelector(".session-workspace"), region = document.querySelector(".session-conversation-region"); return { workspace: workspace.clientHeight, region: region.clientHeight, contents: region.scrollHeight, overflow: getComputedStyle(region).overflowY }; });
+  const bounds = await page.evaluate(() => { const workspace = document.querySelector(".session-workspace"), region = document.querySelector("[data-nested-composer-fixture]"); return { workspace: workspace.clientHeight, region: region.clientHeight, contents: region.scrollHeight, overflow: getComputedStyle(region).overflowY }; });
   assert.equal(bounds.workspace, 320); assert.equal(bounds.region, 72); assert(bounds.contents > bounds.region); assert.equal(bounds.overflow, "auto");
+  // The fixture records the send before the retained receipt callback clears it.
+  await page.waitForFunction(() => document.querySelector(".composer textarea").value === "");
   assert.equal(await input.inputValue(), "");
   console.log(JSON.stringify({ operation: "composer_nested_short", language, theme, zoom, result: "passed" })); cases++;
  }
@@ -96,8 +98,8 @@ try {
   assert.deepEqual(await page.locator(".image-preview-list img").evaluateAll(nodes => nodes.map(node => node.alt)), Array.from({ length: 8 }, (_, index) => c("image-input.image").replace("{{number}}", String(index + 1))));
   await page.locator(".image-preview-list button").nth(3).click(); assert.equal(await page.locator(".image-preview-list img").count(), 7); await geometry();
   await page.locator('input[type="file"]').setInputFiles([file, file]); await page.getByText(c("image-input.limits"), { exact: true }).waitFor(); assert.equal(await page.locator(".image-preview-list img").count(), 7);
-  assert.equal(await page.locator(".session-toolbar-actions button").count(), 6);
-  for (let index = 0; index < 6; index++) { const button = page.locator(".session-toolbar-actions button").nth(index); await button.click(); assert.equal(await page.locator(".image-preview-list img").count(), 7); await geometry(); await button.click(); }
+  assert.equal(await page.locator(".session-toolbar-actions button").count(), 5);
+  for (let index = 0; index < 5; index++) { const button = page.locator(".session-toolbar-actions button").nth(index); await button.click(); assert.equal(await page.locator(".image-preview-list img").count(), 7); await geometry(); await button.click(); }
 
   await page.waitForFunction(() => !document.querySelector(".composer-submit").disabled);
   await input.evaluate(node => node.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, ctrlKey: true, isComposing: true, bubbles: true, cancelable: true })));

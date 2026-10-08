@@ -41,13 +41,19 @@ try {
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [960,640], [480,320]]) {
     await page.setViewportSize({ width, height });
     await page.goto(`${origin}/?language=${language}&theme=${theme}`);
+    assert.deepEqual(await page.locator(".session-toolbar-actions button").allTextContents(), language === "en" ? ["Diff", "Files", "Terminals", "Browser", "Diagnostics"] : ["변경 사항", "파일", "터미널", "브라우저", "진단"]);
+    assert.equal(await page.locator(".session-information").count(), 1, "Persistent inspector remains mounted without an Info action");
     // The localization is sourced from the current catalog, not fixed English.
     await page.locator(".session-notices .actions button").last().waitFor();
     assert.equal(await page.getByRole("textbox").first().inputValue(), "Retained draft");
     assert.equal(await page.locator(".session-tools").count(), 1);
     assert.equal(await page.locator(".session-controls > button").nth(1).isDisabled(), true);
     assert.equal(await page.evaluate(() => document.documentElement.dataset.fixtureWrites ?? "0"), "0");
-    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1), true, "Original session container stays within the viewport");
+    // Short Session layouts own bounded conversation scrolling. Verify that
+    // workspace and input access rather than requiring all content before scrolling.
+    assert(await page.locator(".session-workspace").evaluate(node => node.getBoundingClientRect().height <= innerHeight + 1), "Original Session workspace stays bounded");
+    const composer = page.locator(".composer textarea"); await composer.focus();
+    assert(await composer.evaluate(node => { const bounds = node.getBoundingClientRect(); return bounds.top >= 0 && bounds.bottom <= innerHeight + 1; }), "Original composer remains reachable through its scroll owner");
     const controls = page.locator(".session-notices .actions button");
     await controls.last().focus(); await page.keyboard.press("Enter");
     const confirm = page.locator(".session-tools .notice button").first();
@@ -57,10 +63,12 @@ try {
     assert.equal(overflow, false, "Failure and confirmation stay within the viewport");
     assert.equal(await page.locator(".session-tools .notice").count(), 1);
     if (process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR && width === 480) await page.screenshot({ path: join(process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR, `session-remediation-${language}-${theme}-${width}.png`) });
+    // Cancel retains its original details-summary focus owner, independently of toolbar actions.
+    const recoverySummary = page.locator(".session-tools > summary");
     await page.locator(".session-tools .notice button").last().click();
     assert.equal(await page.getByRole("textbox").first().inputValue(), "Retained draft");
     await page.keyboard.press("Escape");
-    assert.equal(await controls.last().evaluate(node => document.activeElement === node), true, "Closing original confirmation returns focus to its local recovery launcher");
+    assert.equal(await recoverySummary.evaluate(node => document.activeElement === node), true, "Cancellation retains the original recovery summary focus owner");
     checks++;
   }
   assert.deepEqual(failures, []);

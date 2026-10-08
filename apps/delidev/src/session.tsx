@@ -305,7 +305,6 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const diffButton = useRef<HTMLButtonElement>(null);
   const diagnosticsButton = useRef<HTMLButtonElement>(null);
   const browserButton = useRef<HTMLButtonElement>(null);
-  const infoButton = useRef<HTMLButtonElement>(null);
   const panelOpener = useRef<HTMLButtonElement | null>(null);
   const infoHeading = useRef<HTMLHeadingElement>(null);
   const infoEvidence = useRef<HTMLDivElement>(null);
@@ -495,7 +494,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     </header>
     <div className="session-toolbar">
       <strong>{copy("session.conversation_ccca18")}</strong>
-      <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={tool.panel === SessionPanel.Terminals ? terminalVisible : panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}<button type="button" ref={infoButton} aria-controls={`info-${id}`} onClick={() => { infoHeading.current?.focus({ preventScroll: true }); infoHeading.current?.scrollIntoView?.({ block: "nearest" }); }}><SessionIcon kind={SessionIconKind.Info} />{copy("session.info")}</button></div>
+      <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={tool.panel === SessionPanel.Terminals ? terminalVisible : panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}</div>
     </div>
     <div className="session-content">
     <div ref={upperContent} className="session-upper-content" data-terminal-compact-restored={terminalVisible && dockPresentation === TerminalDockPresentation.CompactRestored || undefined} inert={upperOccluded} aria-hidden={upperOccluded || undefined}>
