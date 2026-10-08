@@ -1167,7 +1167,7 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 // A quota reader owns its captured reference independently of the writer's
 // current generation. Rotation may retire it only after joined observer cleanup.
 func quotaProtectedGeneration(st *domain.SubscriptionState) domain.ID {
-	if st != nil && st.ServerQuota != nil && st.ServerQuota.Active() && !st.ServerQuota.CleanupConfirmed {
+	if st != nil && st.ServerQuota != nil && st.ServerQuota.Active() {
 		return st.ServerQuota.Generation
 	}
 	return ""

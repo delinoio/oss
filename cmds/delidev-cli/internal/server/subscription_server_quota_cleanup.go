@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -35,7 +36,7 @@ func (s *Service) reconcileRetainedServerQuotas(ctx context.Context) error {
 				continue
 			}
 			o := a.Subscription.ServerQuota
-			if o.AccessOnly && o.Epoch != s.subscriptionServerEpoch() && o.Phase == domain.SubscriptionObservationUncertain && !o.CleanupConfirmed {
+			if o.AccessOnly && o.Epoch != s.subscriptionServerEpoch() && o.Phase == domain.SubscriptionObservationUncertain {
 				owners = append(owners, retained{r.ID, *o})
 			}
 		}
@@ -45,30 +46,62 @@ func (s *Service) reconcileRetainedServerQuotas(ctx context.Context) error {
 	}
 	for _, owner := range owners {
 		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := reconcileServerQuotaRuntime(bounded, s.Store.Root(), owner.Operation)
-		cancel()
+		var err error
+		if !owner.Operation.CleanupConfirmed {
+			err = reconcileServerQuotaRuntime(bounded, s.Store.Root(), owner.Operation)
+		}
 		if err != nil {
+			cancel()
 			s.logger.WarnContext(ctx, "server_quota_cleanup_retained", "operation_id", owner.Operation.ID, "code", domain.SafeError(err).Code)
 			continue
 		}
-		_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.server.quota.reconciled", owner, func(tx *store.Tx) (any, error) {
-			r, a, err := subscriptionAccount(tx, owner.Account, 0)
+		err = func() error {
+			unlock, err := s.lockAccounts(bounded)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			o := a.Subscription.ServerQuota
-			if o == nil || *o != owner.Operation {
-				return nil, subscriptionDenied()
+			defer unlock()
+			// Checkpoint original native cleanup independently of vault cleanup.
+			_, err = s.Store.Mutate(bounded, domain.NewID(), "subscription.server.quota.reconcile.cleanup", owner, func(tx *store.Tx) (any, error) {
+				r, a, err := subscriptionAccount(tx, owner.Account, 0)
+				if err != nil {
+					return nil, err
+				}
+				if a.Subscription.ServerQuota == nil || *a.Subscription.ServerQuota != owner.Operation {
+					return nil, subscriptionDenied()
+				}
+				a.Subscription.ServerQuota.CleanupConfirmed = true
+				_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+				return struct{}{}, err
+			})
+			if err != nil {
+				return err
 			}
-			o.CleanupConfirmed = true
-			o.Phase = domain.SubscriptionObservationFailed
-			o.ErrorCode = domain.Canceled
-			a.Subscription.QuotaState = domain.ObservationFailed
-			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
-			return struct{}{}, err
-		})
-		if err != nil {
+			owner.Operation.CleanupConfirmed = true
+			if err = s.retireServerQuotaReference(bounded, owner.Account, owner.Operation); err != nil {
+				return err
+			}
+			_, err = s.Store.Mutate(bounded, domain.NewID(), "subscription.server.quota.reconciled", owner, func(tx *store.Tx) (any, error) {
+				r, a, err := subscriptionAccount(tx, owner.Account, 0)
+				if err != nil {
+					return nil, err
+				}
+				o := a.Subscription.ServerQuota
+				if o == nil || *o != owner.Operation {
+					return nil, subscriptionDenied()
+				}
+				o.Phase = domain.SubscriptionObservationFailed
+				o.ErrorCode = domain.Canceled
+				a.Subscription.QuotaState = domain.ObservationFailed
+				_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+				return struct{}{}, err
+			})
 			return err
+		}()
+		cancel()
+		if err != nil {
+			s.logger.WarnContext(ctx, "server_quota_reference_cleanup_retained", "operation_id", owner.Operation.ID, "code", domain.SafeError(err).Code)
+			continue
 		}
 		s.logger.InfoContext(ctx, "server_quota_cleanup_reconciled", "operation_id", owner.Operation.ID)
 	}
@@ -96,4 +129,72 @@ func reconcileServerQuotaRuntime(ctx context.Context, root string, o domain.Serv
 		return subscriptionDenied()
 	}
 	return cleanupFailedServerLoginDirectory(home)
+}
+
+// Caller holds account serialization. Native cleanup and the exact retained
+// operation authorize only retirement of its obsolete captured reference.
+func (s *Service) retireServerQuotaReference(ctx context.Context, id domain.ID, original domain.ServerQuotaOperation) error {
+	var current domain.ID
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := subscriptionAccount(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		st := a.Subscription
+		o := st.ServerQuota
+		if original.Validate() != nil || o == nil || o.Validate() != nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Actor != original.Actor || o.Generation != original.Generation || o.ConnectionID != original.ConnectionID || o.FinishID != original.FinishID || !o.RequestedAt.Equal(original.RequestedAt) || o.AccessOnly != original.AccessOnly || !o.CleanupConfirmed || (o.Phase != domain.SubscriptionObservationSending && o.Phase != domain.SubscriptionObservationUncertain) {
+			return subscriptionDenied()
+		}
+		current = st.Generation
+		if current != original.Generation && (current.Validate() != nil || st.Lease != nil && st.Lease.Generation == original.Generation || st.ServerCredit != nil && st.ServerCredit.Active() && st.ServerCredit.Generation == original.Generation || st.Observation != nil && st.Observation.Active() && st.Observation.Generation == original.Generation || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) && st.ServerOperation.Generation == original.Generation) {
+			return subscriptionDenied()
+		}
+		return nil
+	})
+	if err != nil || !original.AccessOnly || current == original.Generation {
+		return err
+	}
+	vault, err := s.secrets()
+	if err != nil {
+		return err
+	}
+	refs, err := vault.UnremovedReferences(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(refs) > 256 {
+		return subscriptionDenied()
+	}
+	captured := credentials.Ref{Owner: id, ID: original.Generation, Purpose: credentials.AccountLogin}
+	found, currentFound := false, false
+	for _, ref := range refs {
+		if ref.Owner != id || ref.Purpose != credentials.AccountLogin || ref.ID.Validate() != nil {
+			return subscriptionDenied()
+		}
+		found = found || ref == captured
+		currentFound = currentFound || ref.ID == current
+	}
+	if !found {
+		return nil
+	} // A durable prior deletion needs no second native send.
+	if !currentFound {
+		return subscriptionDenied()
+	}
+	if err = vault.Delete(ctx, captured); err != nil {
+		return err
+	}
+	refs, err = vault.UnremovedReferences(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(refs) > 256 {
+		return subscriptionDenied()
+	}
+	for _, ref := range refs {
+		if ref == captured || ref.Owner != id || ref.Purpose != credentials.AccountLogin || ref.ID.Validate() != nil {
+			return subscriptionDenied()
+		}
+	}
+	s.logger.InfoContext(ctx, "server_quota_reference_retired", "operation_id", original.ID)
+	return nil
 }

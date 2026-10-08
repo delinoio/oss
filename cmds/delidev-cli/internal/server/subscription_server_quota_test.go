@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -182,12 +183,18 @@ func TestServerQuotaFencesWorkerLifecycleAndChangedGeneration(t *testing.T) {
 	// Publication must not inherit another connection or generation, even after
 	// independent native cleanup of the original read.
 	n.duringRead = func() {
+		replacement := domain.NewID()
+		raw := subscriptionTestBundle("quota-server-account", "replacement", time.Now().UTC())
+		defer clear(raw)
+		if _, err := f.secrets.Put(ctx, credentials.Ref{Owner: f.input.AccountID, ID: replacement, Purpose: credentials.AccountLogin}, raw); err != nil {
+			t.Fatal(err)
+		}
 		_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.server.quota.rotation", nil, func(tx *store.Tx) (any, error) {
 			r, a, err := subscriptionAccount(tx, f.input.AccountID, 0)
 			if err != nil {
 				return nil, err
 			}
-			a.Subscription.Generation = domain.NewID()
+			a.Subscription.Generation = replacement
 			_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 			return nil, err
 		})

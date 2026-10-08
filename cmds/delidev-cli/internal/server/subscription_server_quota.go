@@ -59,7 +59,14 @@ func (s *Service) initializeServerQuotas(ctx context.Context) error {
 			if !o.Active() || o.Epoch == s.subscriptionServerEpoch() {
 				continue
 			}
-			if o.Phase == domain.SubscriptionObservationQueued || o.CleanupConfirmed {
+			if o.AccessOnly && (o.Phase == domain.SubscriptionObservationQueued || o.CleanupConfirmed) {
+				// Queued claims never opened native work; confirmed cleanup
+				// still retains its reference until retirement is checked.
+				o.CleanupConfirmed = true
+				o.Phase = domain.SubscriptionObservationUncertain
+				o.ErrorCode = domain.RecoveryRequired
+				a.Subscription.QuotaState = domain.ObservationFailed
+			} else if o.Phase == domain.SubscriptionObservationQueued || o.CleanupConfirmed {
 				o.Phase = domain.SubscriptionObservationFailed
 				o.ErrorCode = domain.Canceled
 				a.Subscription.QuotaState = domain.ObservationFailed
@@ -154,8 +161,16 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 		o := st.ServerQuota
 		original = *o
 		if !o.AccessOnly || !quotaAccountReady(a) || st.Pending != nil || st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Observation != nil && st.Observation.Active() || subscriptionActorValid(tx, o.Actor) != nil {
-			o.Phase = domain.SubscriptionObservationFailed
-			o.ErrorCode = domain.Canceled
+			if o.AccessOnly {
+				// This rejected queued claim opened no native owner. Keep its
+				// reference fence through the same checked finish path.
+				o.Phase = domain.SubscriptionObservationSending
+				o.CleanupConfirmed = true
+				original = *o
+			} else {
+				o.Phase = domain.SubscriptionObservationFailed
+				o.ErrorCode = domain.Canceled
+			}
 		} else {
 			o.Phase = domain.SubscriptionObservationSending
 			original = *o
@@ -166,7 +181,17 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 		}
 		return struct{}{}, nil
 	})
-	if err != nil || !claimed {
+	if err != nil {
+		return
+	}
+	if !claimed {
+		if original.AccessOnly && original.CleanupConfirmed {
+			bounded, stop := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
+			defer stop()
+			if err := s.finishServerQuota(bounded, id, original, domain.SubscriptionQuotaObservation{}, domain.Canceled); err != nil {
+				s.logger.WarnContext(bounded, "server_quota_rejected_cleanup_retained", "operation_id", original.ID, "code", domain.SafeError(err).Code)
+			}
+		}
 		return
 	}
 	s.logger.InfoContext(ctx, "server_quota_claimed", "operation_id", original.ID)
@@ -297,10 +322,22 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 	}
 }
 func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original domain.ServerQuotaOperation, observed domain.SubscriptionQuotaObservation, code domain.Code) error {
-	_, err := s.Store.Mutate(ctx, original.FinishID, "subscription.server.quota.finish", struct {
+	input := struct {
 		Account, Operation domain.ID
 		Code               domain.Code
-	}{id, original.ID, code}, func(tx *store.Tx) (any, error) {
+	}{id, original.ID, code}
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if _, replayed, err := s.Store.Replay(ctx, original.FinishID, "subscription.server.quota.finish", input); err != nil || replayed {
+		return err
+	}
+	if err := s.retireServerQuotaReference(ctx, id, original); err != nil {
+		return err
+	}
+	_, err = s.Store.Mutate(ctx, original.FinishID, "subscription.server.quota.finish", input, func(tx *store.Tx) (any, error) {
 		r, a, err := subscriptionAccount(tx, id, 0)
 		if err != nil {
 			return nil, err
