@@ -113,6 +113,13 @@ if (apiFormatEdit) {
   account.schemaVersion = 3;
   account.documentJson = encode({ ...original, api_protocol: "openai-chat", exclude_automatic: false, recovery_notifications: true, connection: { id: newRequestId(), authentication: "bearer" } });
 }
+// Opt-in Projects metadata fixture uses configured source bytes only.
+if (args.get("projectList") === "true") {
+  const repositories = Array.from({ length: 5 }, (_, index) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name: `Configured repository ${index + 1} ${"complete-name-".repeat(10)}`, ...(index === 1 ? {} : { remote_url: index === 4 ? "git@example.org:team/complete-source.git" : `https://example.org/team/${"complete-source-".repeat(14)}${index}.git` }) }) }));
+  records.push(...repositories);
+  const project = records.find(row => row.kind === EntityKind.PROJECT)!;
+  project.documentJson = encode({ ...resourceDocument(project), repositories: repositories.map(row => row.id), primary_repository: repositories[4]!.id });
+}
 if (projectWizard) records.push(...["oss", "delidev"].map(name => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name }) })));
 if (networkFixture === "populated") records.push(create(ResourceSchema, { id: newRequestId(), kind: EntityKind.NETWORK_PROFILE, schemaVersion: 1, revision: 9007199254740993n, documentJson: encode({ name: "Complete-proxy-profile-name-".repeat(10), mode: "http", host: "proxy.example", port: 3128, credential_generation: newRequestId() }) }));
 const networkReads = { route: 0, profiles: 0, writes: 0 };
