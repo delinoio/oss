@@ -43,6 +43,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		return nil, err
 	}
+	// Direct startup resolves and verifies Installation on this local copy.
+	// Completion must retain the immutable accepted assignment, whose v4
+	// installation is deliberately absent; executable evidence has its own
+	// original startup journal and must not rewrite the assignment digest.
+	acceptedInput := input
 	if input.Version == 4 {
 		config.startup = newExecutionStartupAttempt(config, owner, input)
 		defer func() { returned = config.startup.finish(returned) }()
@@ -618,8 +623,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
-		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs, contextProof)
+		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, acceptedInput, bound, completion, acceptedInputs, contextProof)
 		if err != nil {
+			logger.WarnContext(ctx, "native_execution_checkpoint_retention_failed", "code", domain.SafeError(err).Code)
 			return nil, err
 		}
 		completion.Version, completion.NativeCheckpointDigest = 2, checkpointDigest
