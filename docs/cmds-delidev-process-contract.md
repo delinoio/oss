@@ -36,6 +36,14 @@ Controller preparation creates the UUID scope directory exclusively under its al
 
 Capture the original directory identity through an open handle before attempting the controller, rather than deferring Windows identity lookup until rollback; see [Go's Windows file identity implementation](https://go.dev/src/os/types_windows.go). Close that handle before native startup or removal.
 
+## Original Worker controller observation
+
+`ControllerIdentity` contains only a PID and exact kernel birth; it grants no native process-scope ownership or termination authority. `ObserveControllerIdentity` returns the closed outcomes same-original-alive, original-exited and unknown. A malformed identity or inspection error remains unknown. A different independently verified birth proves only that the original controller exited; the unrelated current process is never adopted or terminated.
+
+Linux uses boot identity plus kernel start ticks. Missing procfs evidence alone is insufficient; a signal-zero kernel ESRCH independently confirms absence and delivers no signal. Darwin uses the kernel start timestamp and a successful empty exact-PID kernel observation to confirm absence. Windows uses creation FILETIME, narrowly classified nonexistent-PID OpenProcess failure or a signaled process handle. Access denial and every other failed kernel read remain unknown. These observations never call `ProcessAlive`, scan process lists, erase journals or prove descendant cleanup.
+
+The Worker owns the private generation/scope/registration/desktop-client bindings and synchronized evidence publication. Fresh authenticated desktop admission rechecks that evidence under its final original locks; see [the CLI contract](cmds-delidev-contract.md#main-desktop-automatic-worker-management). Legacy missing proof is not reconstructed or migrated. Record actual platform acceptance separately from fixtures and builds.
+
 ## Logging
 Log execution/owner identifiers, stable lifecycle states and typed safe failure causes only. Raw native stderr and command/environment dumps are excluded.
 

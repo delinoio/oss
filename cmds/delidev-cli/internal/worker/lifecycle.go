@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	processpkg "github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
@@ -118,20 +119,21 @@ func newLifecycle(root string, c Credential, previous Lifecycle, phase RuntimePh
 // A previously reserved child may still arrive, so retries wait on that original
 // generation instead of launching another child. Explicit stop can cancel it.
 func PrepareStart(root string) (RuntimeStatus, bool, error) {
-	return prepareStart(root, true, "")
+	return prepareStart(root, true, "", false)
 }
 
 // PrepareDesktopStart distinguishes intentional fresh-process Start from
-// supervision. Only native observation of the exact original child's exit may
-// replace incomplete controller evidence; native session journals are retained.
+// supervision. Native observation of the exact original child or a fresh launch
+// with durable original-controller proof may replace incomplete controller
+// evidence. Neither path proves native session cleanup.
 func PrepareDesktopStart(root string, reopen bool, exited domain.ID) (RuntimeStatus, bool, error) {
 	if exited != "" && exited.Validate() != nil {
 		return RuntimeStatus{}, false, lifecycleConflict()
 	}
-	return prepareStart(root, reopen, exited)
+	return prepareStart(root, reopen, exited, true)
 }
 
-func prepareStart(root string, reopen bool, exited domain.ID) (RuntimeStatus, bool, error) {
+func prepareStart(root string, reopen bool, exited domain.ID, desktop bool) (RuntimeStatus, bool, error) {
 	c, err := workerCredential(root)
 	if err != nil {
 		return RuntimeStatus{}, false, err
@@ -157,6 +159,26 @@ func prepareStart(root string, reopen bool, exited domain.ID) (RuntimeStatus, bo
 		return status, false, nil
 	}
 	defer process.Close()
+	if desktop && !reopen && current.Desired == WorkerStopped {
+		return runtimeStatus(current, false), false, nil
+	}
+	// Native same-process exit remains authoritative. Fresh desktop admission
+	// may additionally observe the recorded original controller, but must do
+	// so again under these final lifecycle/controller locks. Retry/Ensure and
+	// pending reservations cannot acquire new cross-launch recovery authority.
+	if desktop && (current.Phase == RuntimeStarting || current.Phase == RuntimeReady) && exited != current.Generation {
+		if !reopen {
+			return runtimeStatus(current, false), false, lifecycleConflict()
+		}
+		observation, err := observeDesktopController(root, c, current)
+		if err != nil {
+			return runtimeStatus(current, false), false, err
+		}
+		if observation != processpkg.ControllerExited {
+			return runtimeStatus(current, false), false, controllerProofFailure(controllerProofAlive)
+		}
+		exited = current.Generation
+	}
 	if !reopen {
 		status := runtimeStatus(current, false)
 		if current.Version == 0 || current.Desired == WorkerStopped {

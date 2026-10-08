@@ -42,8 +42,10 @@ type Config struct {
 	terminals                *terminalManager
 	Root                     string
 	StartupID                domain.ID
-	Logger                   *slog.Logger
-	Ready                    func(domain.ID)
+	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
+	DesktopClientID domain.ID
+	Logger          *slog.Logger
+	Ready           func(domain.ID)
 	// Admitted runs only after this original process owns its generation/lock.
 	// It publishes desktop ownership independently of network readiness.
 	Admitted         func(Lifecycle)
@@ -182,6 +184,23 @@ func Run(ctx context.Context, config Config) (resultErr error) {
 		return err
 	}
 	defer lock.Close()
+	// Publish original identity while both admission locks are retained. A
+	// failed publication leaves the reserved generation pending and admits no
+	// network attachment, native work or desktop ownership callback.
+	if config.DesktopClientID != "" {
+		reserved, proofErr := readLifecycle(config.Root, credential)
+		if proofErr == nil && reserved.Generation != config.StartupID {
+			proofErr = controllerProofFailure(controllerProofInvalid)
+		}
+		if proofErr == nil {
+			proofErr = publishControllerEvidence(config.Root, credential, reserved, config.DesktopClientID)
+		}
+		if proofErr != nil {
+			intentLock.Close()
+			config.Logger.Warn("desktop_worker_controller_proof", "phase", "publication", "code", domain.SafeError(proofErr).Code)
+			return proofErr
+		}
+	}
 	lifecycle, err := enterLifecycleLocked(config.Root, credential, config.StartupID)
 	intentLock.Close()
 	if err != nil {

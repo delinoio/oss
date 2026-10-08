@@ -322,7 +322,7 @@ func desktopWorkerHost(ctx context.Context, o options, args []string, streams IO
 		}
 		return map[string]any{"state": "service-managed", "started": false, "worker": status}, nil
 	}
-	if status.State == worker.StateUncertain && !status.ControllerActive && domain.ID(*exited) != status.Lifecycle.Generation {
+	if status.State == worker.StateUncertain && !status.ControllerActive && *mode != "launch" && domain.ID(*exited) != status.Lifecycle.Generation {
 		return nil, recoveryRequired()
 	}
 	// Admission may have waited behind service/update control. Recheck signed
@@ -346,6 +346,9 @@ func desktopWorkerHost(ctx context.Context, o options, args []string, streams IO
 		return nil, domain.SafeError(err)
 	}
 	status, launch, err := worker.PrepareDesktopStart(root, *mode == "launch" || (*mode == "retry" && status.Lifecycle.Version == 0), domain.ID(*exited))
+	if err != nil {
+		slog.Warn("desktop_worker_controller_proof", "phase", "final-admission", "code", domain.SafeError(err).Code)
+	}
 	if err != nil || !launch {
 		originalGate.Unlock()
 		return map[string]any{"started": false, "worker": status}, err
@@ -362,7 +365,7 @@ func desktopWorkerHost(ctx context.Context, o options, args []string, streams IO
 	logger := slog.New(slog.NewJSONHandler(log, nil))
 	// Admission pins its original host, while the surviving Local Worker uses
 	// its existing proved locator transport to reconnect after a desktop restart.
-	err = worker.Run(desktopruntime.WithTarget(running, nil), worker.Config{Root: root, StartupID: original, Logger: logger, Admitted: func(intent worker.Lifecycle) {
+	err = worker.Run(desktopruntime.WithTarget(running, nil), worker.Config{Root: root, StartupID: original, DesktopClientID: domain.ID(*clientID), Logger: logger, Admitted: func(intent worker.Lifecycle) {
 		unlock()
 		// Publish ownership before readiness; server lease expiry can delay the
 		// first attachment while this same Worker safely reconnects.
