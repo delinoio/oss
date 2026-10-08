@@ -377,3 +377,18 @@ it("reserves boundary-expiry recovery for explicit Reload list instead of header
   expect(submitted(value, 2).page).toBe(1);
   expect(screen.queryByRole("button", { name: "Reload list" })).toBeNull();
 });
+
+it("keeps repository inventory visits free of GitHub content reads across language changes", async () => {
+  const value = fixture(); render(<App transport={value.transport} />);
+  for (const language of [SupportedLanguage.English, SupportedLanguage.Korean]) {
+    await act(async () => { await i18n.changeLanguage(language); });
+    fireEvent.click(screen.getByRole("button", { name: language === SupportedLanguage.English ? "Settings" : "설정" }));
+    fireEvent.click(document.querySelector('[data-settings-category="repositories"]')!);
+    await screen.findByText(repositoryId);
+    expect(document.querySelector(".repository-github-tools")).toBeNull();
+    expect(document.querySelector('[aria-label="Browse repository GitHub items"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: language === SupportedLanguage.English ? "Sessions" : "세션" }));
+    expect(value.query).not.toHaveBeenCalled();
+  }
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); });
+});

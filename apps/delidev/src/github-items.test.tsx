@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { reviewerObservation } from "./github-reviewers-fixture";
 import { feedbackObservation } from "./github-feedback-fixture";
 import { ciObservation } from "./github-ci-fixture";
@@ -9,11 +10,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, IntegrationService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
-import { RepositoryGitHubItems, githubResult } from "./github-items";
+import { StandalonePullRequestResults, githubResult, type PullRequestNavigation } from "./github-items";
 import { encode } from "./documents";
-import { ItemKind, QueryOperation, type GitHubQuery } from "./github-query-model";
+import { ItemKind, ItemState, QueryOperation, type GitHubQuery } from "./github-query-model";
 
-function fixture(headRepository?: unknown) {
+function fixture(headRepository?: unknown, initialQuery: GitHubQuery = { kind: ItemKind.PullRequest, operation: QueryOperation.List, state: ItemState.Open, page: 1, page_size: 20 }) {
   const repository = create(ResourceSchema, { id: newRequestId(), revision: 9007199254740993n, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode({ integration_id: newRequestId(), github_owner: "fixture-owner", github_name: "repo" }) });
   const profile = JSON.parse(new TextDecoder().decode(repository.documentJson)).integration_id as string;
   const generation = newRequestId();
@@ -27,12 +28,17 @@ function fixture(headRepository?: unknown) {
   const inspect = vi.fn(() => { throw new Error("Retired access inspection must not run"); });
   const transport = createRouterTransport((router) => router.service(IntegrationService, { queryRepositoryIntegration: query, inspectRepositoryIntegration: inspect }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><RepositoryGitHubItems selected={repository} active={active} /></QueryClientProvider></TransportProvider>;
+  function StandaloneFixture({ active }: { active: boolean }) {
+    const [navigation, changeNavigation] = useState<PullRequestNavigation>();
+    if (!active) return null;
+    return navigation ? <StandalonePullRequestResults selected={repository} navigation={navigation} active changeNavigation={changeNavigation} /> : <button onClick={() => changeNavigation({ scopeKey: "standalone-fixture", query: initialQuery, previous: [] })}>Load pull requests</button>;
+  }
+  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><StandaloneFixture active={active} /></QueryClientProvider></TransportProvider>;
   return { repository, query, inspect, client, view };
 }
-it("opens explicit repository results and reads detail without inventing mergeability", async () => {
+it("loads standalone pull request results and reads detail without inventing mergeability", async () => {
   const f = fixture(); const view = render(f.view());
-  expect(f.query).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  expect(f.query).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   await screen.findByRole("button", { name: "Read #17" });
   expect(f.inspect).not.toHaveBeenCalled();
   expect(f.query.mock.calls[0][0].repositoryId).toBe(f.repository.id);
@@ -44,31 +50,34 @@ it("opens explicit repository results and reads detail without inventing mergeab
   fireEvent.click(screen.getByRole("button", { name: "Back to results" }));
   await screen.findByRole("button", { name: "Read #17" });
 });
-it("sends plain issue search separately and discloses incomplete search", async () => {
-  const f = fixture(); render(f.view());fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));await screen.findByRole("button", { name: "Read #17" });
-  fireEvent.change(screen.getByLabelText("GitHub item type"), { target: { value: "issue" } });
-  fireEvent.change(screen.getByLabelText("Search title and body"), { target: { value: "fix OR 오류" } });
-  fireEvent.click(screen.getByRole("button", { name: "Read GitHub items" }));
-  await screen.findByText(/GitHub returned incomplete search results/);
-  const args = JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson));
-  expect(args).toMatchObject({ kind: "issue", operation: "search", search: "fix OR 오류", page: 1 });
+it("retains strict issue-search decoding for the shared query contract", async () => {
+  const f = fixture(), query: GitHubQuery = { kind: ItemKind.Issue, operation: QueryOperation.Search, state: ItemState.Open, search: "fix OR 오류", page: 1, page_size: 20 };
+  const reply = await f.query({ repositoryId: f.repository.id, queryJson: encode(query) });
+  expect(githubResult(reply.documentJson, f.repository, query)).toMatchObject({ total_count: "1001", incomplete: true, next_page: 2 });
+  expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls[0][0].queryJson))).toEqual(query);
+});
+it("discloses incomplete standalone PR search and preserves its exact terms and cursor", async () => {
+  const initial: GitHubQuery = { kind: ItemKind.PullRequest, operation: QueryOperation.Search, state: ItemState.Open, search: "fix OR 오류", page: 1, page_size: 20 };
+  const f = fixture(undefined, initial); render(f.view()); expect(f.query).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" })); await screen.findByText(/GitHub returned incomplete search results/);
+  expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls[0][0].queryJson))).toEqual(initial);
   fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
-  await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson)).page).toBe(2));
+  await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson))).toEqual({ ...initial, page: 2 }));
 });
 it("rejects a foreign revision without rendering partial items", async () => {
   const f = fixture(); const valid = await f.query({ repositoryId: f.repository.id, queryJson: encode({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 }) });
   const result = JSON.parse(new TextDecoder().decode(valid.documentJson)); result.repository_revision = "2";
-  f.query.mockResolvedValueOnce({ schemaVersion: 1, documentJson: encode(result) });render(f.view());fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  f.query.mockResolvedValueOnce({ schemaVersion: 1, documentJson: encode(result) });render(f.view());fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   await screen.findByRole("alert"); expect(screen.queryByRole("button", { name: "Read #17" })).toBeNull();
 });
 it("discards repository content on inactivation", async () => {
-  const f = fixture();const view = render(f.view());fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));await screen.findByRole("button", { name: "Read #17" });
+  const f = fixture();const view = render(f.view());fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));await screen.findByRole("button", { name: "Read #17" });
   view.rerender(f.view(false));expect(screen.queryByText("Original fixture title")).toBeNull();
   await waitFor(() => expect(f.client.getQueryCache().getAll()).toHaveLength(0));expect(f.query).toHaveBeenCalledTimes(1);
 });
 
 it("reads checks and empty pending commit statuses independently through the PR detail", async () => {
-  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" })); fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
+  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" })); fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
   fireEvent.click(await screen.findByRole("button", { name: "Read PR checks" }));
   await screen.findByRole("table", { name: "Check runs for the observed head" }); expect(screen.getByText("success")).toBeTruthy();
   expect(screen.queryByText(/GitHub combined commit status/)).toBeNull();
@@ -79,13 +88,13 @@ it("reads checks and empty pending commit statuses independently through the PR 
   await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls.at(-1)![0].queryJson))).toMatchObject({ operation: "statuses", number: "17", page: 1, page_size: 1 }));
 });
 it("shows the original immutable diff text without rendering active content", async () => {
-  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" })); fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));fireEvent.click(await screen.findByRole("button", { name: "Read PR diff" }));
+  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" })); fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));fireEvent.click(await screen.findByRole("button", { name: "Read PR diff" }));
   await screen.findByText(/Original patch/); expect(screen.queryByRole("navigation", { name: "GitHub result pages" })).toBeNull();
   expect(screen.getByText(/Immutable base/)).toBeTruthy();
 });
 it("reads complete active base rules without inferring successful CI", async () => {
   const f = fixture(); render(f.view());
-  fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
   fireEvent.click(await screen.findByRole("button", { name: "Read active PR rules" }));
   await screen.findByRole("table", { name: "Required status checks · ruleset 9007199254740993" });
@@ -111,7 +120,7 @@ it("preserves unknown check source values without accepting a known passing clas
 });
 
 it("evaluates required CI separately from the head-only observations", async () => {
-  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
   fireEvent.click(await screen.findByRole("button", { name: "Evaluate required CI" }));
   await screen.findByRole("table", { name: "Active ruleset CI requirements" });
@@ -121,7 +130,7 @@ it("evaluates required CI separately from the head-only observations", async () 
 });
 
 it("reads published PR feedback explicitly without a partial page control", async () => {
-  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
   fireEvent.click(await screen.findByRole("button", { name: "Read published feedback" }));
   await screen.findByRole("region", { name: "Published PR feedback" });
@@ -131,7 +140,7 @@ it("reads published PR feedback explicitly without a partial page control", asyn
 });
 
 it("verifies feedback authors with a separate complete observation", async () => {
-  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  const f = fixture(); render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
   fireEvent.click(await screen.findByRole("button", { name: "Verify feedback authors" }));
   await screen.findByRole("table", { name: "Current feedback author identities and permissions" });
@@ -147,7 +156,7 @@ it.each([
   [forkSource(), "fixture-author/fork-repo"],
 ])("keeps original fork, deleted source and historical absence distinct (%j)", async (source, expected) => {
   const f = fixture(source); render(f.view());
-  fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
   await screen.findByText((_, element) => element?.tagName === "P" && Boolean(element.textContent?.startsWith("Source repository:") && element.textContent.includes(expected)));
   if (source && source.state === "available") {
@@ -186,7 +195,7 @@ it("retains accepted rows after a failed append and explicitly retries the same 
     if (query.page === 2) data.items = [{ ...data.items[0], id: "9007199254740994", node_id: "ITEM_18", number: "18", title: "Later fixture title", url: "https://github.com/fixture-owner/repo/pull/18" }];
     return { ...reply, documentJson: encode(data) };
   });
-  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" })); await screen.findByRole("button", { name: "Read #17" });
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" })); await screen.findByRole("button", { name: "Read #17" });
   fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" })); await screen.findByRole("button", { name: "Retry" });
   expect(screen.getByRole("button", { name: "Read #17" })).toBeTruthy(); expect(f.query).toHaveBeenCalledTimes(2);
   fireEvent.click(screen.getByRole("button", { name: "Retry" })); await screen.findByRole("button", { name: "Read #18" });
@@ -211,7 +220,7 @@ it.each(["checks", "statuses"])("appends %s observations and deduplicates their 
     if (query.page === 1) data.next_page = 2;
     return { ...reply, documentJson: encode(data) };
   });
-  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Browse GitHub items" })); fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" })); fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
   fireEvent.click(await screen.findByRole("button", { name: operation === "checks" ? "Read PR checks" : "Read PR commit statuses" }));
   await screen.findByRole("table"); fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
   await screen.findByText(operation === "checks" ? "Later observed check" : "Later observed status");

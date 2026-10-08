@@ -21,11 +21,6 @@
 .settings-content.settings-repositories .repository-metadata ul { padding: 0; margin: 0; list-style: none; }
 .settings-content.settings-repositories .repository-metadata li + li { margin-top: 8px; }
 .settings-content.settings-repositories .repository-github-name { font-weight: 500; }
-.settings-content.settings-repositories .repository-github-tools { display: flex; flex-wrap: wrap; gap: 8px; }
-.settings-content.settings-repositories .repository-github-tools > div { display: contents; }
-.settings-content.settings-repositories .repository-github-tools > div > :is(p, section) { flex-basis: 100%; min-width: 0; margin: 8px 0 0; order: 1; }
-.settings-content.settings-repositories .repository-github-tools > div > p { padding: 12px; border-left: 2px solid var(--warning-border); border-radius: 4px; color: var(--warning-text); background: var(--warning-background); }
-.settings-content.settings-repositories .repository-github-tools > div > section { overflow-x: auto; }
 .settings-content.settings-repositories .repository-resource-id { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; line-height: 18px; }
 .settings-content.settings-repositories .repository-resource-id code { font-size: 12px; line-height: 18px; }
 .settings-content.settings-repositories .settings-pages { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 24px; }
