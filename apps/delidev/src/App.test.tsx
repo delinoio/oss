@@ -208,6 +208,7 @@ it("creates an automatically named session from the first message and explicit W
   fireEvent.change(firstMessage, { target: { value: "Fix the startup crash" } });
   await chooseScrollOption(composer.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
   await chooseScrollOption(composer.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  expect(composer.queryByRole("button", { name: "Inspect this Runner" })).toBeNull();
   expect(screen.getByRole("heading", { name: "What would you like to work on?" })).toBeTruthy();
   expect(screen.getByText("General Chat · isolated projectless directory on the selected Worker")).toBeTruthy();
   fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter" });
@@ -247,6 +248,7 @@ it("starts General Chat with explicit execution selections and no project or Loc
   await chooseScrollOption(page.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
   await chooseScrollOption(page.getByRole("combobox", { name: "Runs on" }), value.machine.id);
   fireEvent.click(page.getByRole("checkbox", { name: "Plan Mode" }));
+  expect(page.queryByRole("button", { name: "Inspect this Runner" })).toBeNull();
   fireEvent.change(firstMessage, { target: { value: "Help me think through an idea" } });
   fireEvent.keyDown(firstMessage, { key: "Enter", shiftKey: true });
   fireEvent.keyDown(firstMessage, { key: "Enter", isComposing: true, keyCode: 229 });

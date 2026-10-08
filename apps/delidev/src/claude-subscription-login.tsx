@@ -251,6 +251,7 @@ export function useClaudeSubscriptionLogin(
     return { rows: response.resources.map(row => ({ id: row.id, revision: row.revision, label: resourceName(row), eligible: validRunnerObservation(row) && eligibleRunner(row), observation: claudeRunnerObservation(row) })), payload: response.resources, nextPageToken: response.nextPageToken };
   }, []);
   const machineReader = useConnectPaginationReader(ResourceQuery.listResources, machineRequest, machineProject);
+  // Diagnostics on another retained surface still own pending/uncertain inspection gates.
   const inspectRunner = useRunnerRemediation({ active: active && !hidden && view?.step === Step.Runner && !view.busy });
   const machinesActive = active && !hidden && view?.step === Step.Runner && !view.busy;
   const machines = usePaginationChain(`claude-runners:${pending.current?.opening ?? ""}`, machinesActive, machineReader);
@@ -691,10 +692,6 @@ export function useClaudeSubscriptionLogin(
       runners={runnerOptions}
       observations={machines.rows}
       runnerReadError={ownerReadError}
-      inspectRunner={selectedRunner && inspectRunner && !ownerReadError && !ownerRunner.isFetching ? () => inspectRunner(selectedRunner) : undefined}
-      inspection={inspectRunner?.body}
-      inspectable={machines.payloadPages.flatMap(page => page.payload).map(row => row.id)}
-      inspectExcluded={inspectRunner && !inspectRunner.locked ? id => { const original = machines.payloadPages.flatMap(page => page.payload).find(row => row.id === id); if (original) inspectRunner(original); } : undefined}
       selectedRunner={selectedRunner}
       runnerQuery={machines}
       canStart={Boolean(selectedRunner && eligibleRunner(selectedRunner) && !ownerReadError && !ownerRunner.isFetching && machines.loaded && !machines.loading && !machines.error && !inspectRunner?.pendingFor(view.machine))}
@@ -752,10 +749,6 @@ interface OnboardingProps {
   runners: ScrollPickerOption[];
   observations: { id: string; label: string; eligible: boolean; observation: RunnerObservation }[];
   runnerReadError: unknown;
-  inspectRunner?: () => void;
-  inspection: React.ReactNode;
-  inspectable: string[];
-  inspectExcluded?: (id: string) => void;
   selectedRunner?: Resource;
   runnerQuery: ScrollContinuationQuery;
   canStart: boolean;
@@ -850,9 +843,7 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
           {!p.readFailed && !p.loading && p.runnerQuery.loaded && !p.runners.some(row => !row.disabled) ? <InlineRemediation summary={copy(p.runnerQuery.nextPageToken ? "claude-subscription.inventoryPageEmpty" : p.runners.length ? "claude-subscription.inventoryNoEligible" : "claude-subscription.inventoryEmpty")} /> : null}
           {p.runnerQuery.nextPageToken && !p.runnerQuery.error ? <button type="button" disabled={busy || p.loading} onClick={p.runnerQuery.append}>{copy("pagination.loadMore")}</button> : null}
           <button type="button" disabled={busy || p.loading} onClick={p.refreshRunners}>{copy("claude-subscription.refreshRunners")}</button>
-          {p.observations.filter(row => !row.eligible).map(row => <article className="result" key={row.id}><h4>{row.label}</h4><InlineRemediation summary={<><p>{copy(`claude-subscription.excluded.${row.observation.cause ?? "unavailable"}`)}</p>{row.observation.detectedVersion ? <p>{copy("claude-subscription.detectedVersion", { version: row.observation.detectedVersion })}</p> : null}</>} actions={p.inspectExcluded && p.inspectable.includes(row.id) ? <button type="button" disabled={busy || p.loading || p.readFailed} onClick={() => p.inspectExcluded?.(row.id)}>{copy("claude-subscription.inspectRunner")}</button> : undefined} /></article>)}
-          {p.inspectRunner ? <button type="button" disabled={busy || p.loading || p.readFailed} onClick={p.inspectRunner}>{copy("claude-subscription.inspectRunner")}</button> : null}
-          {p.inspection}
+          {p.observations.filter(row => !row.eligible).map(row => <article className="result" key={row.id}><h4>{row.label}</h4><InlineRemediation summary={<><p>{copy(`claude-subscription.excluded.${row.observation.cause ?? "unavailable"}`)}</p>{row.observation.detectedVersion ? <p>{copy("claude-subscription.detectedVersion", { version: row.observation.detectedVersion })}</p> : null}</>} /></article>)}
           <SettingsTaskActions form={id}>
             <button
               className="primary"

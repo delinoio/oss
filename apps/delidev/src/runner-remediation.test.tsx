@@ -3,11 +3,13 @@ import { create } from "@bufbuild/protobuf";
 import { createRouterTransport, Code, ConnectError } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { RunnerRemediationProvider, useRunnerRemediation } from "./runner-remediation";
+import { useCallback, useState } from "react";
+import { ResourceChoice, ResourceSelectionPending } from "./configuration-fields";
 const machine = (name: string) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 9007199254740993n, documentJson: encode({ name, disabled: false, installations: [{ harness: "claude-code", state: "missing", explicit_path: "", problem: { message: "/private/native secret", guidance: "secret native instruction" } }] }) });
 it("retains one inspection draft and original uncertain request across presentation close, without replacing its Runner", async () => {
   const first = machine("First Runner"), second = machine("Second Runner");
@@ -95,5 +97,31 @@ it("inspects a newly paired Go Runner with null installation evidence using its 
   await screen.findByRole("button", { name: "Retry the same harness check" });
   expect(discover).toHaveBeenCalledOnce();
   expect(discover.mock.calls[0][0]).toMatchObject({ mutation: { id: row.id, expectedRevision: 9007199254740993n } });
+  client.clear();
+});
+
+it("retains consuming gates for an original diagnostic after selector shortcuts are removed", async () => {
+  const row = machine("Original gated Runner");
+  const discover = vi.fn((_request: unknown) => { throw new ConnectError("Original lost receipt", Code.Unavailable); });
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: () => ({ resource: row }), listResources: () => ({ resources: [row] }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() {
+    const inspection = useRunnerRemediation(); const [pending, setPending] = useState(new Map<string, boolean>());
+    const report = useCallback((id: string, value: boolean) => setPending(previous => previous.get(id) === value ? previous : new Map(previous).set(id, value)), []);
+    return <><ResourceSelectionPending.Provider value={report}><ResourceChoice label="Runner" kind={EntityKind.MACHINE} value={row.id} active change={() => {}} /></ResourceSelectionPending.Provider><button disabled={[...pending.values()].some(Boolean)}>Save consuming workflow</button><button onClick={() => inspection?.(row)}>Open explicit Runner diagnostics</button>{inspection?.body}</>;
+  }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  expect(screen.queryByRole("button", { name: "Inspect this Runner" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open explicit Runner diagnostics" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit executable paths" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
+  await screen.findByRole("button", { name: "Retry the same harness check" });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save consuming workflow" })).toHaveProperty("disabled", true));
+  const original = discover.mock.calls[0][0];
+  fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
+  expect(screen.queryByRole("dialog")).toBeNull(); expect(screen.getByRole("button", { name: "Save consuming workflow" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Open explicit Runner diagnostics" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same harness check" }));
+  await waitFor(() => expect(discover).toHaveBeenCalledTimes(2)); expect(discover.mock.calls[1][0]).toEqual(original);
   client.clear();
 });

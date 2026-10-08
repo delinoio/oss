@@ -53,6 +53,8 @@ try {
       assert(geometry.box.x >= -1 && geometry.box.y >= -1 && geometry.box.width <= width + 1 && geometry.box.height <= height + 1 && !geometry.overflow && !geometry.clipped.length, `${context}: ${JSON.stringify(geometry)}`);
       if (screenshots && width !== 640) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `${scenario}-${language}-${theme}-${width}x${height}-${stage}.png`) }); }
     };
+    assert.equal(await dialog.getByRole("button", { name: /^(Inspect this Runner|이 Runner 검사)$/ }).count(), 0, `${context}: selected and excluded Runner shortcuts are absent`);
+    assert.equal(await page.getByRole("dialog").count(), 1, `${context}: no shortcut-owned inspection dialog`);
     await inspect("initial");
     // At the effective 200% viewport, diagnostics remain inside the original
     // bounded body. Capture both ends and verify keyboard-reachable controls.
@@ -125,6 +127,8 @@ try {
     }
     if (["failure", "mixed", "partial", "stale"].includes(scenario)) { await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))); assert(await start.isEnabled(), `${context}: current eligible Runner is usable`); }
     assert(!(await dialog.textContent()).includes("native-secret"), `${context}: native content stays private`);
+    assert.equal(await dialog.getByRole("button", { name: /^(Inspect this Runner|이 Runner 검사)$/ }).count(), 0, `${context}: selected Runner exposes no shortcut`);
+    assert.equal(await page.getByRole("dialog").count(), 1, `${context}: only original login dialog remains`);
     await inspect("final");
     const counters = await page.evaluate(() => window.__claudeRunnersFixture);
     assert.equal(counters.save, 0, context); assert.equal(counters.login, 0, context); assert.equal(counters.native, 0, context);
