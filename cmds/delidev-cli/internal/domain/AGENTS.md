@@ -149,3 +149,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Fork publication retains the original v4 startup selection on the child before parent-owned creation jobs can be purged. Use that child-owned digest/selection for independent execution; missing older seed evidence requires recovery, never a replacement executable. Response usage accepts optional bounded original startup version metadata, and compaction attribution reads the exact completed source job readiness without rewriting assignments. Follow the Fork, startup and usage contracts.
 
 - Standalone GitHub repository access inspection is retired. Preserve the allocated RPC and messages for older clients; authenticated owner/paired-client calls return typed Unsupported/Connect Unimplemented with safe guidance and correlation. The endpoint performs no store, vault, admission or outbound work. Browse and PR operations retain their independent selected-profile/generation/revision checks. Follow `docs/cmds-delidev-integrations-contract.md#retired-standalone-repository-access-inspection`.
+
+- Native skill bindings contain opaque original Worker/inventory/package/snapshot identifiers and content digests. Retain them in immutable initial and queued inputs; plain text tokens grant no package authority and bound Steer is unsupported.
+
+- Private skill preparation actions and proofs are closed metadata on the existing read lane. Preserve original server/request/Worker instance scope digests and opaque snapshot identities; they grant no public RPC or migration.

@@ -701,3 +701,88 @@ independent gates; failure rolls back the complete claim/job/state. Preview is
 read-only. Continuation, explicit stopped-account switching, Fork and Sidechat retain
 their original immutable selected-source configuration and existing controls.
 Usage and costs continue to use the actual immutable selected account/model.
+
+## Explicit native skills
+
+Issue #1748 adds `$` skill selection to project-session and General Chat creation
+and existing follow-up composers. A selected token carries an opaque inventory,
+package revision and original paired Worker identity separately from text.
+Manually typed tokens remain plain text. Editing a selected token removes its
+binding; changed connection, Runner, Agent, project or session context requires
+reselection. Selection alone creates no session, accepted input or inference.
+
+Only Codex supports this profile. `SkillService.ListSkills` uses authenticated
+owner/client access and the selected Worker's joined keyless read lane. New
+sessions enumerate eligible user packages only. Existing prepared sessions can
+also enumerate verified workspace project roots. Discovery never prepares a
+workspace, imports authentication or general native configuration, or runs
+inference. Private enable/disable metadata affects eligibility only. Inventories
+bind the original actor, paired Worker device/instance, Agent revision and session
+or creation project. Late, unsupported, malformed and oversized reads fail closed.
+
+Inventory has at most 256 entries and a 256 KiB response. Selection has at most
+16 distinct packages. A package has at most 1,024 regular resources, 1 MiB of
+SKILL.md and 16 MiB total bytes; an input retains at most 64 MiB. Resource reads
+use rooted filesystem access. Escaping links and nonregular or incomplete
+packages are rejected. Internal file links become independently owned bytes.
+Only skill packages and bounded skill-specific flags can cross this import
+boundary. Inventory metadata expires after fifteen minutes; accepted snapshots
+never expire automatically.
+
+Before acceptance, the Worker copies the complete selected original packages to
+owner-only immutable snapshots under the original request ID. A private server journal synchronizes the original actor, complete request
+identity, operation and paired Worker proof before preparation dispatch. Each
+handler owns a unique joined claim through its final mutation; a concurrent
+rejected retry cannot release it. The Worker synchronizes its original intent,
+complete bounded file claims and native copy-root identity before copied bytes,
+and publishes snapshot metadata last. Receipt preflight
+returns an accepted exact retry before contacting the Worker. The accepted input,
+queue, assignment and retry retain original digests and snapshot references.
+Dispatch checks the original execution context and snapshot integrity before
+native input. Source edits do not change accepted snapshots. Missing or corrupt
+snapshots cause no native send and no plain-text fallback. Snapshot references
+remain in removed queue records for independently confirmed session cleanup.
+
+A joined server controller replays the exact original receipt. Accepted receipts
+retain snapshots. Unknown receipts retain original ownership and permit only the
+original exact retry. Only confirmed receipt absence after the original handler
+joins, or exclusive server restart, admits cleanup on the original paired device.
+Offline cleanup remains durable; replacement devices receive no removal authority.
+Worker cleanup shares the original preparation lock, verifies the original native
+root and every present claimed resource before removal, then observes absence.
+A removal-only tombstone fences late dispatch when copying never began. Changed,
+unlisted or replacement bytes remain uncertain and are preserved. Cancellation,
+capacity failure, response loss and partial copies never create unowned bytes.
+These private journals use existing keyless reads and add no public RPC or migration.
+
+Codex copies only selected snapshots into its private runtime, sets process-local
+extra roots, validates enabled exact names/paths through native skills/list, and
+sends structured skill inputs. Private native history retains ordered skill
+identity digests through continuation and uncertain recovery. These digests do
+not expose paths in public resources or logs. Skill-bound Steer remains disabled. Request field 4 is a presence-carrying
+`SkillSelectionList`: omission protects old clients from erasing bound queue
+inputs, an explicit empty list clears selection, and a nonempty typed edit
+retains exact original snapshots for unchanged selections. Only new selections
+prepare new immutable packages under the edit request ID. Replaced snapshots
+remain in the queue's retained cleanup references. Queue edits preserve their
+original revision, actor and complete request identity through exact retries.
+
+The owner explicitly authorized declarations and activation together for the
+2026-10-08 fixed QA batch. This exception applies only to issue #1748's System 44,
+Worker 24 and typed session request field 4. It does not waive original authority,
+immutable input, cleanup or compatibility checks and does not create a general
+exception to main-first allocation policy. The owner retains real-account,
+installed-native, remote-environment and cross-platform acceptance. Scripted
+transport/package tests establish local implementation evidence only.
+
+Fork and Sidechat copy complete original accepted packages into the child private runtime. Only explicit native skill nodes and generated skill-path tags inside those authenticated nodes are remapped; the original user text remains unchanged. The child native history must prove the remapped identities before publication. Parent deletion does not own these child copies.
+
+Skill admission shares the session deletion plan's aggregate 4,096-reference
+bound across current and retired selections in every queue row of the parent
+and its retained dependent Sidechats. Independent Forks keep their own budget.
+A deleting dependent retains the family admission fence until its original native,
+database and backup retirement removes the dependency index; absent queue rows
+are not cleanup proof. Plain inputs add no package ownership and remain usable.
+Read preflight
+checks before new package preparation; the original acceptance transaction checks
+again atomically. Existing references are never evicted to make room.

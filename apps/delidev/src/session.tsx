@@ -1,3 +1,4 @@
+import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { RunnerTaskRemediation } from "./session-runner-remediation";
 import { sessionControlEligibility, useSessionControl } from "./session-control";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
@@ -216,7 +217,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource }: { resou
 enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics", Info = "info" }
 enum InfoTarget { Status = "status", Recovery = "recovery", Budget = "budget" }
 
-export function SessionView({ id, draft, setDraft, active = true }: { id: string; draft: string; setDraft: (value: string) => void; active?: boolean; openRunnerSettings?: () => void }) {
+export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; openRunnerSettings?: () => void }) {
   useLocale();
   const live = useSessionStream(id);
   const [panel, setPanel] = useState(SessionPanel.Closed);
@@ -283,11 +284,12 @@ export function SessionView({ id, draft, setDraft, active = true }: { id: string
     return messageRows(messages.data?.resources ?? [], live.resources, live.removed, live.newMessageIds, id, !!messages.data && !messages.data.nextPageToken);
   }, [messages.data, live.resources, live.removed, live.newMessageIds, id]);
   useEffect(() => { if (live.generation > 1) { void messages.refresh(); void queue.refresh(); void interactions.refresh(); } }, [live.generation]);
-  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); void queue.refresh(); });
+  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); skills.clearAccepted(); void queue.refresh(); });
   const locked = send.busy || send.uncertain;
   const composer = useRef<HTMLTextAreaElement>(null);
-  const canSend = !locked && Boolean(draft.trim()) && text(data.archive) === "active";
-  const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }) }); };
+  const skills = useSkillCompletion({ value: draft, change: (value, bindings) => setDraft(value, bindings), textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active, disabled: locked });
+  const canSend = !locked && !skills.blocked && Boolean(draft.trim()) && text(data.archive) === "active";
+  const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }), skills: skills.selections.length ? { selections: skills.selections } : undefined }); };
   const shortcuts = useShortcuts([
     { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
     { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
@@ -394,7 +396,8 @@ export function SessionView({ id, draft, setDraft, active = true }: { id: string
       </div>
       <form className="composer" onSubmit={event => { event.preventDefault(); enqueue(); }}>
         <label className="sidebar-sr-only" htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label>
-        <textarea ref={composer} onKeyDown={shortcuts.onKeyDown} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={event => setDraft(event.target.value)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
+        <textarea ref={composer} onKeyDown={event => { if (!skills.onKeyDown(event) && !event.nativeEvent.isComposing) shortcuts.onKeyDown(event); }} onSelect={skills.onSelect} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={event => skills.onChange(event.target.value,event.target.selectionStart)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={3} />
+        {skills.list}{skills.warning}
         <div className="composer-actions">
           <label>{copy("session.mode_cd20bc")}<select value={mode} disabled={locked} onChange={event => setMode(event.target.value as Mode)}><option value={Mode.Execute}>{copy("session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("session.plan_fa8ed0")}</option></select></label>
           <button className="primary" aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}>{copy("session.queueMessage_891d4e")}</button>

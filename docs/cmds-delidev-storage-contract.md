@@ -1073,3 +1073,35 @@ Each batch child records native and credential-attempt fences before external cl
 DB baseline 32 directly initializes the complete Model-free current schema: inline Worker definitions, source/native-ID pricing and immutable execution/usage attribution. Remove persistent catalogs and model indexes/suppressions. Earlier DBs and backups are unsupported. The owner waives earlier DB retention and permits explicit DB/sidecar reset; protected credentials and native ownership retain their original cleanup authority. No conversion or placeholder migration is permitted.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+## Selected skill snapshots
+
+Follow the sessions contract's Explicit native skills section. Worker inventories
+contain private package paths; public resources contain only opaque identities,
+revisions and ownership references. Complete selected packages are private,
+revision-pinned and independently copied into native runtimes. Exact staging
+retries verify retained snapshots rather than reread changed source packages.
+Removed queue rows and typed edits retain original snapshot references,
+including replaced selections in retired bindings until confirmed session cleanup. Permanent session deletion
+includes those references even before any native job is claimed and waits for
+original paired Worker removal. Restore quarantine cannot reacquire execution or
+deletion authority. No automatic accepted-snapshot eviction or relational migration
+is introduced.
+
+Private skill preparation journals preserve original request/actor/device proofs
+before dispatch and complete Worker file/root claims before copy publication.
+They remain outside portable backups. Restore receipt quarantine is an unknown
+outcome and cannot authorize preparation cleanup. Cleanup requires positively
+absent original receipts after joined handlers or exclusive restart; original
+paired-device removal tombstones prevent delayed copying and root replacement.
+Accepted snapshots retain ordinary session deletion ownership.
+
+Active server staging journals have a 4,096-entry admission bound. Confirmed
+accepted or removed outcomes move atomically to exact-ID hash-sharded private
+terminal receipts before active-record removal. Worker intents retain capacity
+while original snapshot bytes exist. Confirmed original session deletion validates
+those intents and moves compact removal tombstones outside the active bound.
+Terminal lookups occur only for the exact request; maintenance never scans lifetime
+receipt history. Tombstones reject delayed dispatch and preserve replacements.
+Prepared result recovery normalizes delivery instances only through the complete
+immutable original preparation proof; ordinary inventory scope checks stay strict.

@@ -16,6 +16,7 @@ import (
 )
 
 type threadFixture struct {
+	skillRoots             []string
 	subagents              []map[string]any
 	mode                   string
 	thread                 map[string]any
@@ -29,6 +30,9 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleSkills(id, method, raw, write) {
+		return true
+	}
 	if f.handleSidechatCompaction(id, method, raw, write) {
 		return true
 	}

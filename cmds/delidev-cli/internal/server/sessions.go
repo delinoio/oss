@@ -178,15 +178,24 @@ func validateSessionSelection(tx *store.Tx, input domain.CreateSession) error {
 	return nil
 }
 
-func appendSessionInput(tx *store.Tx, id domain.ID, session *domain.Session, input domain.SessionInput) (domain.ID, error) {
+func appendSessionInput(tx *store.Tx, id domain.ID, session *domain.Session, input domain.SessionInput, names ...map[domain.ID]string) (domain.ID, error) {
 	if session.LastInputSequence >= 1<<63-2 || session.PendingInputs >= domain.MaxPendingInputs || session.PendingInputBytes > domain.MaxPendingInputBytes || session.PendingInputBytes+uint64(len(input.Prompt)) > domain.MaxPendingInputBytes {
 		return "", domain.Fail(domain.ResourceExhausted, "The retained input queue is full.", "Remove undelivered input or wait for confirmed native acceptance before adding more.")
+	}
+	if len(input.Skills) > 0 {
+		if err := tx.CheckSkillSnapshotCapacity(id, "", len(input.Skills)); err != nil {
+			return "", err
+		}
 	}
 	session.LastInputSequence++
 	session.PendingInputs++
 	session.PendingInputBytes += uint64(len(input.Prompt))
 	itemID := domain.NewID()
-	_, err := tx.Put(domain.QueueKind, itemID, 0, id, session.ProjectID, domain.QueuedInput{Sequence: session.LastInputSequence, ContentRevision: 1, Prompt: input.Prompt, Mode: input.Mode, Delivery: domain.InputQueued})
+	var skillNames map[domain.ID]string
+	if len(names) > 0 {
+		skillNames = names[0]
+	}
+	_, err := tx.Put(domain.QueueKind, itemID, 0, id, session.ProjectID, domain.QueuedInput{Sequence: session.LastInputSequence, ContentRevision: 1, Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills, SkillNames: skillNames, Delivery: domain.InputQueued})
 	return itemID, err
 }
 
@@ -207,6 +216,15 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 	if err := domain.Decode(req.Msg.DocumentJson, &input); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	if len(input.Skills) > 0 {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Skills require typed selections.", "Select skills through the supported composer."), correlation)
+	}
+	bindings, bindErr := skillBindings(req.Msg.Skills, req.Msg.RequestId)
+	if bindErr != nil {
+		return nil, rpc.Error(bindErr, correlation)
+	}
+	input.Skills = bindings
+
 	input.ApplyDefaults()
 	if err := input.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
@@ -222,7 +240,33 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		Actor  domain.Principal
 		Origin *domain.LocalOrigin `json:",omitempty"`
 	}{input, actor, origin}
+	var preparedSkillScope *domain.SkillReadRequest
+	var preparedSkillNames map[domain.ID]string
+	if len(input.Skills) > 0 {
+		previous, found, e := s.Store.Replay(ctx, domain.ID(req.Msg.RequestId), "session.create", identity)
+		if e != nil {
+			return nil, rpc.Error(e, correlation)
+		}
+		if found {
+			change, e := s.sessionResult(ctx, previous)
+			if e != nil {
+				return nil, rpc.Error(e, correlation)
+			}
+			return connect.NewResponse(&pb.CreateSessionResponse{Change: change}), nil
+		}
+		prepared, finish, e := s.prepareSkills(ctx, domain.SkillReadRequest{ProjectID: input.ProjectID, MachineID: input.MachineID, AgentID: input.AgentID, Selections: input.Skills}, domain.ID(req.Msg.RequestId), "session.create", identity)
+		defer finish()
+		if e != nil {
+			return nil, rpc.Error(e, correlation)
+		}
+		preparedSkillScope = prepared.Scope
+		preparedSkillNames = skillEntryNames(prepared.Entries)
+	}
+
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "session.create", identity, func(tx *store.Tx) (any, error) {
+		if err := acceptSkillScope(tx, preparedSkillScope); err != nil {
+			return nil, err
+		}
 		if origin != nil {
 			current, err := tx.Authenticate(originDigest[:])
 			if err != nil {
@@ -244,7 +288,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		if err := queueSessionWorkspace(tx, id, &value, preparation); err != nil {
 			return nil, err
 		}
-		itemID, err := appendSessionInput(tx, id, &value, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode})
+		itemID, err := appendSessionInput(tx, id, &value, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills}, preparedSkillNames)
 		if err != nil {
 			return nil, err
 		}
@@ -272,15 +316,67 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 	if err := domain.Decode(req.Msg.DocumentJson, &input); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	if len(input.Skills) > 0 {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Skills require typed selections.", "Select skills through the supported composer."), correlation)
+	}
+	bindings, bindErr := skillBindings(req.Msg.Skills, req.Msg.RequestId)
+	if bindErr != nil {
+		return nil, rpc.Error(bindErr, correlation)
+	}
+	input.Skills = bindings
+
 	input.ApplyDefaults()
 	if err := input.Validate(); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	identity := struct {
+		Actor     *domain.Principal `json:",omitempty"`
 		SessionID string
 		Input     domain.SessionInput
-	}{req.Msg.SessionId, input}
+	}{SessionID: req.Msg.SessionId, Input: input}
+	if len(input.Skills) > 0 {
+		actor, _ := domain.PrincipalFrom(ctx)
+		identity.Actor = &actor
+	}
+	var preparedSkillScope *domain.SkillReadRequest
+	var preparedSkillNames map[domain.ID]string
+	if len(input.Skills) > 0 {
+		previous, found, e := s.Store.Replay(ctx, domain.ID(req.Msg.RequestId), "session.enqueue", identity)
+		if e != nil {
+			return nil, rpc.Error(e, correlation)
+		}
+		if found {
+			change, e := s.sessionResult(ctx, previous)
+			if e != nil {
+				return nil, rpc.Error(e, correlation)
+			}
+			return connect.NewResponse(&pb.EnqueueInputResponse{Change: change}), nil
+		}
+		var session domain.Session
+		e = s.Store.Read(ctx, func(tx *store.Tx) error {
+			var e error
+			_, session, e = sessionRecord(tx, domain.ID(req.Msg.SessionId))
+			if e == nil {
+				e = tx.CheckSkillSnapshotCapacity(domain.ID(req.Msg.SessionId), "", len(input.Skills))
+			}
+			return e
+		})
+		if e != nil {
+			return nil, rpc.Error(e, correlation)
+		}
+		prepared, finish, e := s.prepareSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: domain.ID(req.Msg.SessionId), Selections: input.Skills}, domain.ID(req.Msg.RequestId), "session.enqueue", identity)
+		defer finish()
+		if e != nil {
+			return nil, rpc.Error(e, correlation)
+		}
+		preparedSkillScope = prepared.Scope
+		preparedSkillNames = skillEntryNames(prepared.Entries)
+	}
+
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "session.enqueue", identity, func(tx *store.Tx) (any, error) {
+		if err := acceptSkillScope(tx, preparedSkillScope); err != nil {
+			return nil, err
+		}
 		r, value, err := sessionRecord(tx, domain.ID(req.Msg.SessionId))
 		if err != nil {
 			return nil, err
@@ -288,7 +384,7 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if value.Archive != domain.NotArchived {
 			return nil, domain.Fail(domain.Conflict, "Archived or archiving sessions cannot accept new input.", "Restore the session first; restoration keeps execution paused.")
 		}
-		itemID, err := appendSessionInput(tx, r.ID, &value, input)
+		itemID, err := appendSessionInput(tx, r.ID, &value, input, preparedSkillNames)
 		if err != nil {
 			return nil, err
 		}
@@ -320,7 +416,7 @@ func validateSessionMutation(meta *pb.Mutation) error {
 	return domain.ID(meta.RequestId).Validate()
 }
 
-func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sessionID domain.ID, prompt string, remove bool) (*pb.SessionChange, error) {
+func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sessionID domain.ID, prompt string, remove bool, selections *pb.SkillSelectionList) (*pb.SessionChange, error) {
 	if err := validateSessionMutation(meta); err != nil {
 		return nil, err
 	}
@@ -338,7 +434,96 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		Revision  uint64
 		Prompt    string
 		Remove    bool
-	}{domain.ID(meta.Id), sessionID, meta.ExpectedRevision, prompt, remove}
+		Skills    *pb.SkillSelectionList `json:",omitempty"`
+		Actor     *domain.Principal      `json:",omitempty"`
+	}{ID: domain.ID(meta.Id), SessionID: sessionID, Revision: meta.ExpectedRevision, Prompt: prompt, Remove: remove, Skills: selections}
+	var preparedScope *domain.SkillReadRequest
+	var nextBindings []domain.SkillBinding
+	var nextNames map[domain.ID]string
+	if selections != nil && !remove {
+		actor, _ := domain.PrincipalFrom(ctx)
+		identity.Actor = &actor
+		previous, found, err := s.Store.Replay(ctx, domain.ID(meta.RequestId), "session.input.change", identity)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			return s.sessionResult(ctx, previous)
+		}
+		requested, err := skillBindings(selections, meta.RequestId)
+		if err != nil {
+			return nil, err
+		}
+		var session domain.Session
+		var old domain.QueuedInput
+		err = s.Store.Read(ctx, func(tx *store.Tx) error {
+			if err := tx.Authorize(); err != nil {
+				return err
+			}
+			_, value, e := sessionRecord(tx, sessionID)
+			if e != nil {
+				return e
+			}
+			session = value
+			row, e := tx.Get(domain.QueueKind, domain.ID(meta.Id))
+			if e != nil {
+				return e
+			}
+			if row.SessionID != sessionID || row.Revision != meta.ExpectedRevision {
+				return domain.Fail(domain.Conflict, "The input revision changed.", "Reload the original input before editing.")
+			}
+			old, e = store.Decode[domain.QueuedInput](row)
+			if e != nil {
+				return e
+			}
+			if old.Delivery != domain.InputQueued {
+				return domain.Fail(domain.Conflict, "Only queued input can be edited.", "Preserve claimed or uncertain input.")
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		nextNames = map[domain.ID]string{}
+		fresh := []domain.SkillBinding{}
+		for _, selection := range requested {
+			retained := false
+			for _, binding := range old.Skills {
+				if sameSelectedSkill(selection, binding) {
+					selection = binding
+					retained = true
+					nextNames[binding.SkillID] = old.SkillNames[binding.SkillID]
+					break
+				}
+			}
+			nextBindings = append(nextBindings, selection)
+			if !retained {
+				fresh = append(fresh, selection)
+			}
+		}
+		if len(fresh) > 0 {
+			retired := append([]domain.SkillBinding{}, old.RetiredSkills...)
+			for _, binding := range old.Skills {
+				if !slices.Contains(nextBindings, binding) && !slices.Contains(retired, binding) {
+					retired = append(retired, binding)
+				}
+			}
+			if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+				return tx.CheckSkillSnapshotCapacity(sessionID, domain.ID(meta.Id), len(nextBindings)+len(retired))
+			}); err != nil {
+				return nil, err
+			}
+			prepared, finish, e := s.prepareSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: sessionID, Selections: fresh}, domain.ID(meta.RequestId), "session.input.change", identity)
+			defer finish()
+			if e != nil {
+				return nil, e
+			}
+			preparedScope = prepared.Scope
+			for id, name := range skillEntryNames(prepared.Entries) {
+				nextNames[id] = name
+			}
+		}
+	}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "session.input.change", identity, func(tx *store.Tx) (any, error) {
 		sr, session, err := sessionRecord(tx, sessionID)
 		if err != nil {
@@ -375,6 +560,24 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		if pendingBytes > domain.MaxPendingInputBytes {
 			return nil, domain.Fail(domain.ResourceExhausted, "The retained input queue is full.", "Use a smaller input or remove undelivered entries.")
 		}
+		if len(value.Skills) > 0 && !remove && selections == nil {
+			return nil, domain.Fail(domain.Conflict, "Skill-bound input cannot be edited as plain text.", "Use a client that supports explicit skill selections.")
+		}
+		if selections != nil && !remove {
+			if err := acceptSkillScope(tx, preparedScope); err != nil {
+				return nil, err
+			}
+			for _, binding := range value.Skills {
+				if !slices.ContainsFunc(nextBindings, func(next domain.SkillBinding) bool { return next == binding }) && !slices.Contains(value.RetiredSkills, binding) {
+					value.RetiredSkills = append(value.RetiredSkills, binding)
+				}
+			}
+			if err := tx.CheckSkillSnapshotCapacity(sessionID, r.ID, len(value.RetiredSkills)+len(nextBindings)); err != nil {
+				return nil, err
+			}
+			value.Skills = nextBindings
+			value.SkillNames = nextNames
+		}
 		value.Prompt = prompt
 		value.ContentRevision++
 		if remove {
@@ -404,7 +607,7 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 }
 
 func (s *Service) EditQueuedInput(ctx context.Context, req *connect.Request[pb.EditQueuedInputRequest]) (*connect.Response[pb.EditQueuedInputResponse], error) {
-	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), req.Msg.Prompt, false)
+	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), req.Msg.Prompt, false, req.Msg.Skills)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -413,7 +616,7 @@ func (s *Service) EditQueuedInput(ctx context.Context, req *connect.Request[pb.E
 	return response, nil
 }
 func (s *Service) RemoveQueuedInput(ctx context.Context, req *connect.Request[pb.RemoveQueuedInputRequest]) (*connect.Response[pb.RemoveQueuedInputResponse], error) {
-	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), "", true)
+	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), "", true, nil)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -712,4 +915,18 @@ func (s *Service) ListQueue(ctx context.Context, req *connect.Request[pb.ListQue
 	response := connect.NewResponse(result)
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+func sameSelectedSkill(a, b domain.SkillBinding) bool {
+	return a.WorkerDeviceID == b.WorkerDeviceID && a.InventoryID == b.InventoryID && a.SkillID == b.SkillID && a.ContentRevision == b.ContentRevision
+}
+func skillEntryNames(entries []domain.SkillEntry) map[domain.ID]string {
+	if len(entries) == 0 {
+		return nil
+	}
+	names := map[domain.ID]string{}
+	for _, entry := range entries {
+		names[entry.SkillID] = entry.Name
+	}
+	return names
 }

@@ -223,6 +223,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	quotaDone := make(chan struct{})
 	go func() { defer close(quotaDone); service.runSubscriptionQuotaMaintenance(quotaCtx) }()
 	defer func() { stopQuota(); <-quotaDone }()
+	skillsCtx, stopSkills := context.WithCancel(child)
+	skillsDone := make(chan struct{})
+	go func() { defer close(skillsDone); service.runSkillPreparations(skillsCtx) }()
+	defer func() { stopSkills(); <-skillsDone }()
 	catalogCtx, stopCatalog := context.WithCancel(child)
 	catalogDone := make(chan struct{})
 	go func() {
@@ -299,6 +303,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		}
 		<-done
 	}
+	stopSkills()
+	<-skillsDone
 	stopCatalog()
 	<-catalogDone
 	// Catalog refresh may be resolving the account-backed outbound route. Join

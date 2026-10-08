@@ -190,6 +190,11 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if inspectErr != nil {
 		return nil, inspectErr
 	}
+	source, err = source.RehomeSkills(ctx, filepath.Join(home, "codex"))
+	if err != nil {
+		return nil, err
+	}
+	checkpoint.Native = source.Checkpoint()
 	var childPreparation workspace.PrepareRequest
 	var childManifest workspace.Manifest
 	var workspaceSnapshot *workspace.ForkSnapshot

@@ -939,3 +939,22 @@ surfaces; retained field and enum numbers preserve their original meanings.
 Record System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields in the owning feature PR. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+## Explicit native skill selection (#1748)
+
+System `NATIVE_SKILLS_V1 = 44` and Worker `NATIVE_SKILLS_V1 = 24` own this independent
+profile. `SkillService.ListSkills` returns bounded opaque selections with exact
+content revisions, display metadata and user/project provenance. Creation,
+enqueue and queued-edit requests append the presence-carrying
+`SkillSelectionList skills = 4`. Omission cannot strip bound queued input.
+Explicit empty clears selections; explicit nonempty retains original bindings
+or prepares newly selected immutable snapshots. The existing joined workspace-read envelope gains an exclusive
+skill request/result profile with original actor, Runner device/instance and
+Agent/session context. It grants no file, preparation, account or inference
+authority. Ordinary JSON carries references only. Regenerate the compatibility
+barrel and both generated clients from the reconciled sources. No SQLite
+migration is required. The narrow owner-authorized simultaneous declaration and
+activation exception is defined in the sessions contract's Explicit native skills
+section; remaining allocation policy is unchanged.
+
+The allocation ledger retains the complete #1748 enum/message field closure and the SkillService.ListSkills input/output and nonstreaming profile. The repository descriptor checks enforce numeric ownership and closed RPC method profiles.

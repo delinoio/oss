@@ -76,3 +76,29 @@ it("restores a queue edit after payload eviction without replay or autofocus", a
   await waitFor(() => expect(f.edit).toHaveBeenCalledTimes(1));
   expect(f.edit.mock.calls[0][0]).toMatchObject({ prompt: "Preserved original edit", mutation: { id: f.resource.id, expectedRevision: f.resource.revision } });
 });
+
+it("edits skill-bound input with explicit retained selections and clears them deliberately",async()=>{
+ const f=fixture(), skillId=newRequestId(),inventoryId=newRequestId(),workerDeviceId=newRequestId();
+ const bound=create(ResourceSchema,{...f.resource,documentJson:encode({prompt:"Before $add-issue after",sequence:3,delivery:"queued",mode:"plan",skills:[{skill_id:skillId,inventory_id:inventoryId,worker_device_id:workerDeviceId,content_revision:"a".repeat(64),snapshot_id:newRequestId()}],skill_names:{[skillId]:"add-issue"}})});
+ render(f.view(bound));expect((screen.getByRole("button",{name:"Steer with this input"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Edit input"}));fireEvent.change(screen.getByRole("textbox",{name:"Edited input"}),{target:{value:"New Before $add-issue after",selectionStart:0}});
+ fireEvent.click(screen.getByRole("button",{name:"Save input"}));await waitFor(()=>expect(f.edit).toHaveBeenCalledTimes(1));expect(f.edit.mock.calls[0]![0]).toMatchObject({skills:{selections:[{skillId,inventoryId,workerDeviceId,contentRevision:"a".repeat(64)}]}});
+});
+it("explicitly clears selected bindings without altering visible text",async()=>{
+ const f=fixture(),skillId=newRequestId();const bound=create(ResourceSchema,{...f.resource,documentJson:encode({prompt:"$add-issue remains plain",sequence:3,delivery:"queued",mode:"plan",skills:[{skill_id:skillId,inventory_id:newRequestId(),worker_device_id:newRequestId(),content_revision:"a".repeat(64),snapshot_id:newRequestId()}],skill_names:{[skillId]:"add-issue"}})});
+ render(f.view(bound));fireEvent.click(screen.getByRole("button",{name:"Edit input"}));fireEvent.click(screen.getByRole("button",{name:"Clear selected skills"}));expect(screen.getByRole("textbox",{name:"Edited input"})).toHaveProperty("value","$add-issue remains plain");fireEvent.click(screen.getByRole("button",{name:"Save input"}));await waitFor(()=>expect(f.edit).toHaveBeenCalledTimes(1));expect(f.edit.mock.calls[0]![0]).toMatchObject({skills:{selections:[]}});
+});
+
+it("retains skill bindings in the external queue draft across payload eviction",async()=>{
+ const f=fixture(),skillId=newRequestId(),inventoryId=newRequestId(),workerDeviceId=newRequestId();const resource=create(ResourceSchema,{...f.resource,documentJson:encode({prompt:"Original $add-issue",sequence:3,delivery:"queued",mode:"plan",skills:[{skill_id:skillId,inventory_id:inventoryId,worker_device_id:workerDeviceId,content_revision:"a".repeat(64),snapshot_id:newRequestId()}],skill_names:{[skillId]:"add-issue"}})});
+ function View(){const [visible,setVisible]=useState(true),drafts=useConversationDrafts<QueuedInputDraft>();return <><button onClick={()=>setVisible(v=>!v)}>Toggle payload</button>{visible?<QueuedInput resource={resource} session={f.session} refresh={()=>{}} draft={drafts.values.get(resource.id)} changeDraft={value=>drafts.save(resource.id,value)}/>:null}</>;}
+ render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><MutationIntents><View/></MutationIntents></QueryClientProvider></TransportProvider>);fireEvent.click(screen.getByRole("button",{name:"Edit input"}));fireEvent.change(screen.getByRole("textbox",{name:"Edited input"}),{target:{value:"Changed Original $add-issue",selectionStart:0}});fireEvent.click(screen.getByRole("button",{name:"Toggle payload"}));fireEvent.click(screen.getByRole("button",{name:"Toggle payload"}));expect(screen.getByRole("textbox",{name:"Edited input"})).toHaveProperty("value","Changed Original $add-issue");fireEvent.click(screen.getByRole("button",{name:"Save input"}));await waitFor(()=>expect(f.edit).toHaveBeenCalledTimes(1));expect(f.edit.mock.calls[0]![0]).toMatchObject({skills:{selections:[{skillId,inventoryId,workerDeviceId}]}});
+});
+
+it.each(["two packages","earlier literal"])("blocks ambiguous restored token spans through edits: %s",async(kind)=>{
+ const f=fixture(),ids=kind==="two packages"?[newRequestId(),newRequestId()]:[newRequestId()];
+ const resource=create(ResourceSchema,{...f.resource,documentJson:encode({prompt:"$same $same",sequence:3,delivery:"queued",mode:"plan",skills:ids.map(skill_id=>({skill_id,inventory_id:newRequestId(),worker_device_id:newRequestId(),content_revision:"a".repeat(64),snapshot_id:newRequestId()})),skill_names:Object.fromEntries(ids.map(id=>[id,"same"]))})});
+ render(f.view(resource));fireEvent.click(screen.getByRole("button",{name:"Edit input"}));const input=screen.getByRole("textbox",{name:"Edited input"});
+ for(const value of ["$other $same","$same $other","plain text"]){fireEvent.change(input,{target:{value,selectionStart:0}});expect((screen.getByRole("button",{name:"Save input"}) as HTMLButtonElement).disabled).toBe(true);fireEvent.submit(input.closest("form")!);expect(f.edit).not.toHaveBeenCalled();}
+ fireEvent.click(screen.getByRole("button",{name:"Clear selected skills"}));fireEvent.click(screen.getByRole("button",{name:"Save input"}));await waitFor(()=>expect(f.edit).toHaveBeenCalledTimes(1));expect(f.edit.mock.calls[0]![0]).toMatchObject({skills:{selections:[]}});
+});

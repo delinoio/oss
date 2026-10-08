@@ -2391,3 +2391,44 @@ Exact Runner inspection, executable editing and protocol verification reuse the 
 The shared Runner owner retains its exact machine controller across presentation close and same-identity connection readiness changes. Each task presents that controller through its original task slot; ordinary Settings inspection keeps Updates and Runner network tools, while inline inspection can use the compact view. Exact-machine pending inspection, protocol changes and uncertain jobs continue to gate new consuming workflow effects. Bounded inventory explanations never alter the original eligibility predicate or grant authority from malformed, stale or partial evidence.
 
 Session startup and preparation failures expose a supported recovery action beside the safe cause in the owning conversation. Its one SessionTools controller presents the original confirmation in the same session, including its Info drawer when space is constrained, preserving request and draft ownership. Account reads older than the original resource or retained successful acknowledgment cannot enable a fresh lifecycle action; original uncertain retries and durable cleanup remain independently available.
+
+### Explicit skill completion
+
+The three first-message/follow-up composer surfaces share one `$` completion
+controller. Original pending or uncertain composer locks suppress completion
+reads and choices while preserving the exact draft and selected bindings. Every
+acceptance also checks the original connected textarea and native fieldset
+disabled/inert state before changing text, bindings, or focus. Confirmed original
+mutation acceptance clears its submitted bindings independently of the pending
+render lock; this settlement callback grants no user edit authority. A token opens at input start or after whitespace at the caret;
+case-insensitive prefix filtering orders exact names first, then name and opaque
+identity. Candidates retain descriptions and user/project provenance. Mouse,
+Up/Down, Enter/Tab and Escape operate the accessible listbox without creating or
+sending input. IME composition never accepts a candidate or submits. Only the
+active token is replaced, with surrounding Unicode, newlines and caret preserved.
+
+Selected bindings are separate from visible text and exact uncertain mutations
+retain them. The authenticated connection owns each session draft as one bounded
+text-and-binding value across session navigation, Settings and same-identity
+transport replacement. Preserve the original Runner, Harness, session, project
+and opaque inventory/content identity; unresolved or changed context blocks
+sending until explicit reselection or token removal. Retain at most 1000 drafts
+and 4 MiB of combined text/binding metadata, with 256 KiB per prompt. Reject
+growth atomically without dropping existing bindings. Original accepted receipts
+clear only their owning draft even while its Session view is unmounted; pending
+and uncertain requests never clear it. Token edits remove bindings. Changed context requires reselection
+before sending; unselected manually typed tokens remain ordinary text. Loading,
+empty, unsupported and retry states preserve the draft in English and Korean.
+Inventory belongs to the selected Runner and Harness, including remote Runners;
+renderer-local skill directories are never discovery authority. Codex alone is
+supported. Follow the sessions contract's Explicit native skills section for
+snapshot, native input, recovery, protocol and cleanup ownership.
+
+Typed queued edits restore selected token bindings from immutable accepted metadata.
+They support explicit selection clearing and reselection, preserve bindings and
+drafts across payload eviction, and keep skill-bound Steer unavailable.
+
+Restored queued bindings require one unique matching token and one accepted
+package with that display name. Ambiguous same-named packages or literal tokens
+remain stale through text edits until explicit clearing and reselection; package
+metadata cannot infer the original token span.

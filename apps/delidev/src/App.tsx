@@ -19,7 +19,8 @@ import { Schedules } from "./schedules";
 import type { ControlLocalWorker } from "./local-worker-controls";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
-import { MutationIntents } from "./mutation";
+import type { SkillTokenBinding } from "./skill-completion";
+import { MutationIntents, useRetainedMutationAccepted } from "./mutation";
 import { connectionQueryClient } from "./cache";
 import type { PairingAuthority } from "./pairing-grant";
 import { TrayPresentation } from "./tray-presentation";
@@ -57,16 +58,24 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const [usageEntry, setUsageEntry] = useState<UsageEntry>();
   const [settingsEntry, setSettingsEntry] = useState<SettingsEntryDestination>();
   const [projectCreation, setProjectCreation] = useState<{ id: string; activation: number }>();
-  const [draftState, setDraftState] = useState<{ drafts: ReadonlyMap<string, string>; error?: string }>({ drafts: new Map() });
+  type SessionDraft = { prompt: string; bindings: SkillTokenBinding[] };
+  const [draftState, setDraftState] = useState<{ drafts: ReadonlyMap<string, SessionDraft>; error?: string }>({ drafts: new Map() });
+  const draftOwner = useRef(draftState);
   const { drafts } = draftState;
-  const saveDraft = (id: string, value: string) => setDraftState((current) => {
-    const size = new TextEncoder().encode(value).byteLength;
-    const total = [...current.drafts].reduce((bytes, [key, draft]) => bytes + (key === id ? 0 : new TextEncoder().encode(draft).byteLength), size);
-    if (size > 256 << 10 || total > 4 << 20 || (value && !current.drafts.has(id) && current.drafts.size >= 1000)) return { ...current, error: copy("App.extra.979e130130a9") };
+  // Keep text and typed invocation ownership atomic, including before unmount.
+  const saveDraft = (id: string, prompt?: string, bindings?: SkillTokenBinding[]) => {
+    const current = draftOwner.current, previous = current.drafts.get(id);
+    const next = { prompt: prompt ?? previous?.prompt ?? "", bindings: bindings ?? previous?.bindings ?? [] };
+    if (previous?.prompt === next.prompt && previous.bindings === next.bindings || !previous && !next.prompt && !next.bindings.length) return true;
+    const size = new TextEncoder().encode(next.prompt).byteLength;
+    const total = [...current.drafts].reduce((bytes, [key, draft]) => bytes + (key === id ? 0 : new TextEncoder().encode(JSON.stringify(draft)).byteLength), new TextEncoder().encode(JSON.stringify(next)).byteLength);
+    if (size > 256 << 10 || total > 4 << 20 || ((next.prompt || next.bindings.length) && !previous && current.drafts.size >= 1000)) {
+      draftOwner.current = { ...current, error: copy("App.extra.979e130130a9") }; setDraftState(draftOwner.current); return false;
+    }
     const drafts = new Map(current.drafts);
-    if (value) drafts.set(id, value); else drafts.delete(id);
-    return { drafts };
-  });
+    if (next.prompt || next.bindings.length) drafts.set(id, next); else drafts.delete(id);
+    draftOwner.current = { drafts }; setDraftState(draftOwner.current); return true;
+  };
   const sessions = useQuery(SessionQuery.listSessions, { projectId: "", includeArchived: false, pageSize: 50, pageToken: "" });
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
   const leaveSurface = (destination: Surface) => {
@@ -135,8 +144,9 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     if (target && !target.closest("[hidden], [inert]")) target.focus({ preventScroll: true });
   }, [surface, drawerOpen, settingsEntry]);
   return <LocalConnectionPresentationProvider target={connectionTarget} inline={!connectionReady} onRequest={onConnectionHelp}><RunnerRemediationProvider active authority={pairingAuthority}><RunnerPreferenceProvider readLocalWorker={readLocalWorker} scope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined}><SessionControlProvider><SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen} openDrawer={() => setDrawerOpen(true)}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} newGeneralChat={startNewGeneralChat} newProject={openNewProject} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+    {[...drafts.keys()].map(id => <SessionDraftSettlement key={id} id={id} clear={() => { saveDraft(id, "", []); }} />)}
     {projectCreation ? <ProjectCreationDialog key={projectCreation.id} activation={projectCreation.activation} close={closeProjectCreation} fallbackFocus={projectFallbackFocus} /> : null}
-    <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} active={surface === Surface.Sessions} id={selected} draft={drafts.get(selected) ?? ""} setDraft={(value) => saveDraft(selected, value)} openRunnerSettings={() => openSettings(SettingsEntryDestination.RunnerDevices)} /> : <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Problem error={status.error} actions={<button type="button" disabled={status.isFetching || !connectionReady} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} /></section>}</div>
+    <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} active={surface === Surface.Sessions} id={selected} draft={drafts.get(selected)?.prompt ?? ""} initialSkills={drafts.get(selected)?.bindings} setDraft={(value, bindings) => saveDraft(selected, value, bindings)} changeSkills={bindings => { saveDraft(selected, undefined, bindings); }} openRunnerSettings={() => openSettings(SettingsEntryDestination.RunnerDevices)} /> : <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Problem error={status.error} actions={<button type="button" disabled={status.isFetching || !connectionReady} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} /></section>}</div>
     <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionEntry.activation} entryProjectId={newSessionEntry.projectId} projectSelectionBlockedChanged={setNewSessionProjectBlocked} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
     {newGeneralChatActivation > 0 ? <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} kind={NewSessionKind.GeneralChat} active={surface === Surface.NewGeneralChat} ownsActivation={surface === Surface.NewGeneralChat} activation={newGeneralChatActivation} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} /> : null}
     <Search active={surface === Surface.Search} open={open} />
@@ -161,4 +171,10 @@ export function App({ transport, localServer, serverPresentation, connectionSett
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
   return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><PRWorkflowProvider><ShortcutProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></ShortcutProvider></PRWorkflowProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider>;
+}
+
+// The connection owns submitted drafts even while another Session is mounted.
+function SessionDraftSettlement({ id, clear }: { id: string; clear: () => void }) {
+  useRetainedMutationAccepted(`enqueue:${id}`, clear);
+  return null;
 }

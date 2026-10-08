@@ -100,3 +100,5 @@ Compact settled removal proof to one original inventory path per entry, without 
   within their established namespace, while generic SSH user/path namespaces
   remain distinct. A mismatch fails the save before the checkout can become
   Local execution authority.
+
+- Selected skill copying requires an original server preparation proof. Cleanup uses the joined keyless lane and original private file/root intent without current HOME, inventory or replacement-device authority.

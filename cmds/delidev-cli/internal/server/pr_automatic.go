@@ -40,7 +40,7 @@ func (s *Service) cancelAutomaticPRPreflight(ctx context.Context, attempt store.
 	if err != nil {
 		return err
 	}
-	_, err = s.changeQueuedInput(ctx, &pb.Mutation{Id: string(input.ID), ExpectedRevision: input.Revision, RequestId: string(domain.NewID())}, value.SessionID, "", true)
+	_, err = s.changeQueuedInput(ctx, &pb.Mutation{Id: string(input.ID), ExpectedRevision: input.Revision, RequestId: string(domain.NewID())}, value.SessionID, "", true, nil)
 	if err == nil {
 		s.logger.InfoContext(ctx, "automatic_pr_preflight_canceled", "attempt_id", attempt.ID, "input_id", input.ID)
 	}

@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/skills.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
@@ -111,6 +112,7 @@ message CreateSessionRequest {
   // Additional paired Worker credential loaded locally for explicit Local creation.
   // Authentication input only: never retain in resources, jobs, receipts or logs.
   string local_worker_token = 3;
+  SkillSelectionList skills = 4;
 }
 
 message CreateSessionResponse {
@@ -134,6 +136,7 @@ message EnqueueInputRequest {
   string session_id = 2;
   // Closed domain.SessionInput schema. Mode is immutable after acceptance.
   bytes document_json = 3;
+  SkillSelectionList skills = 4;
 }
 
 message EnqueueInputResponse {
@@ -144,6 +147,7 @@ message EditQueuedInputRequest {
   Mutation mutation = 1;
   string session_id = 2;
   string prompt = 3;
+  SkillSelectionList skills = 4;
 }
 
 message EditQueuedInputResponse {

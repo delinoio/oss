@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -234,6 +235,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				return e
 			}
 		}
+		for _, binding := range w.SkillSnapshots {
+			if e := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); e != nil {
+				return domain.SessionDeletionPending()
+			}
+		}
 		paths, e := sessionDeletionCopyPaths(ctx, root, w)
 		if e != nil {
 			return e
@@ -290,6 +296,12 @@ func removeSessionCopy(ctx context.Context, root, path string) error {
 		}
 		return nil
 	}
+	if parent == filepath.Join(root, "skill-snapshots") {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+		return nil
+	}
 	return removeSessionTree(ctx, root, path)
 }
 
@@ -305,6 +317,9 @@ func removeSessionTree(ctx context.Context, root, path string) error {
 // never gains permission to delete it merely from the earlier completed proof.
 func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
 	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
+	for _, binding := range w.SkillSnapshots {
+		paths = append(paths, filepath.Join(root, "skill-snapshots", string(binding.SnapshotID)))
+	}
 	paths = append(paths, workspace.SessionStorageCopyPaths(root, w)...)
 	remnants, err := workspace.SessionStorageRemnantPaths(ctx, root, w)
 	if err != nil {

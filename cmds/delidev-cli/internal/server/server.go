@@ -62,10 +62,12 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
-	knownModelsOnce sync.Once
-	knownModels     *knownmodels.Manager
-	releaseVerifier func([]byte, string, time.Time) (updates.Verified, error)
-	releaseFactory  func() (releaseClient, error)
+	skillPreparationsOnce sync.Once
+	skillPreparationsWake chan struct{}
+	knownModelsOnce       sync.Once
+	knownModels           *knownmodels.Manager
+	releaseVerifier       func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory        func() (releaseClient, error)
 	delidevv1connect.UnimplementedInstallationServiceHandler
 	delidevv1connect.UnimplementedWorkspaceStorageServiceHandler
 	userServiceOptions userservice.ServerOptions

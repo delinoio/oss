@@ -1,3 +1,4 @@
+import { useSkillCompletion } from "./skill-completion";
 import { productError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
@@ -92,6 +93,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     const submitted = JSON.parse(new TextDecoder().decode(request.documentJson));
     if (UUID_V7.test(submitted.agent_id) && UUID_V7.test(submitted.machine_id)) preferences.remember({ agent_id: submitted.agent_id, machine_id: submitted.machine_id });
     setPrompt("");
+    skills.clearAccepted();
     setCreatedElsewhere(undefined);
     created();
     if (navigation.current.ownsActivation && navigation.current.activation === submittedActivation.current) {
@@ -167,7 +169,18 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const localDefaultEligible = !localDefault.isFetching && !localDefault.error && localDefaultRow?.id === localDefaultID && localDefaultRow.kind === EntityKind.MACHINE && localDefaultRow.revision > 0n && supportsResourceSchema(localDefaultRow) && localDefaultData.disabled !== true && localDefaultData.enabled !== false && projectEligible && (!project || workspace !== Workspace.Worktree || !items(document(selectedProject.data?.resource).repositories).length || localDefaultCapabilities.includes("remote-workspace-clone-v1") || localDefaultCapabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1));
   useEffect(() => { if (!blocked && workspace !== Workspace.Local && machine === localDefaultID && localDefaultID && eligibilityReadSettled(localDefault.isFetching, localDefault.error) && projectEligible && !localDefaultEligible) { setMachine(""); setLocalDefaultID(""); } }, [blocked, workspace, machine, localDefaultID, localDefault.isFetching, localDefault.error, projectEligible, localDefaultEligible]);
   const automaticChoicesEligible = (!localDefaultID || machine !== localDefaultID || workspace === Workspace.Local || localDefaultEligible) && (!restoration.current.agent || agent !== preferences.pair?.agent_id || agentEligible) && (!restoration.current.machine || workspace === Workspace.Local || machine !== preferences.pair?.machine_id || machineEligible);
-  const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked && automaticChoicesEligible;
+  const updatePrompt = (value: string) => {
+    if (new TextEncoder().encode(value).byteLength > 256 << 10) {
+      setPromptLimit(true);
+      return false;
+    }
+    touched.current = true;
+    setPrompt(value);
+    setPromptLimit(false);
+    return true;
+  };
+  const skills = useSkillCompletion({ value: prompt, change: updatePrompt, textarea: firstMessage, machineId: machine, agentId: agent, projectId: project, active, disabled: blocked, enabled: status.data?.capabilities.includes(SystemCapability.NATIVE_SKILLS_V1) ?? false });
+  const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked && !skills.blocked && automaticChoicesEligible;
 
   const submit = async () => {
     if (!canCreate) return;
@@ -197,7 +210,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     if (workspaceType === Workspace.Local && !proof) return;
     touched.current = true;
     submittedActivation.current = navigation.current.activation;
-    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), localWorkerToken: proof?.token });
+    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), skills: skills.selections.length ? { selections: skills.selections } : undefined, localWorkerToken: proof?.token });
   };
 
   const shortcutScope = generalChat ? Surface.NewGeneralChat : Surface.NewSession;
@@ -206,15 +219,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     { id: ShortcutId.NewSessionSend, scope: shortcutScope, active, label: "shortcuts.createSession", bindings: [{ key: "Enter" }, { key: "Enter", primary: true }], target: firstMessage, input: ShortcutInput.Target, enabled: canCreate, unavailableReason: blocked ? "shortcuts.pending" : !automaticTitles ? "shortcuts.updateServer" : "shortcuts.creationRequired", run: () => firstMessage.current?.form?.requestSubmit() },
     { id: ShortcutId.NewSessionNewline, scope: shortcutScope, active, label: "shortcuts.newline", bindings: [{ key: "Enter", shift: true }], target: firstMessage, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: !blocked, unavailableReason: "shortcuts.pending" },
   ]);
-  const updatePrompt = (value: string) => {
-    if (new TextEncoder().encode(value).byteLength > 256 << 10) {
-      setPromptLimit(true);
-      return;
-    }
-    touched.current = true;
-    setPrompt(value);
-    setPromptLimit(false);
-  };
+
   const submitForm = (event: FormEvent) => {
     event.preventDefault();
     void submit();
@@ -242,13 +247,15 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               aria-label={copy("new-session.firstMessage_ecffa2")}
               placeholder={generalChat ? copy("new-session.generalChatPlaceholder") : copy("new-session.describeATaskAskAQuestion_4ed4ad")}
               value={prompt}
-              onChange={(event) => updatePrompt(event.target.value)}
-              onKeyDown={shortcuts.onKeyDown}
+              onChange={(event) => skills.onChange(event.target.value,event.target.selectionStart)}
+              onSelect={skills.onSelect} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}
+              onKeyDown={event => { if (!skills.onKeyDown(event) && !event.nativeEvent.isComposing) shortcuts.onKeyDown(event); }}
               aria-keyshortcuts={shortcuts.aria(ShortcutId.NewSessionFocus, ShortcutId.NewSessionSend, ShortcutId.NewSessionNewline)}
               rows={5}
               required
               autoComplete="off"
             />
+            {skills.list}{skills.warning}
             <div className="new-session-toolbar">
               <div className="new-session-selectors">
                 <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />

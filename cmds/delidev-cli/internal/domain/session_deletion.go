@@ -33,6 +33,7 @@ type SessionDeletionFork struct {
 }
 
 type SessionDeletionWork struct {
+	SkillSnapshots     []SkillBinding        `json:"skill_snapshots,omitempty"`
 	Fork               *SessionDeletionFork  `json:"fork,omitempty"`
 	Version            uint32                `json:"version"`
 	DeletionID         ID                    `json:"deletion_id"`
@@ -45,7 +46,15 @@ type SessionDeletionWork struct {
 }
 
 func (w SessionDeletionWork) Validate() error {
-	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil) || len(w.Copies) > 4096 || len(w.PreparationDigests) > 4096 {
+	if len(w.SkillSnapshots) > 4096 {
+		return SessionDeletionPending()
+	}
+	for _, binding := range w.SkillSnapshots {
+		if ValidateSkills([]SkillBinding{binding}) != nil || binding.WorkerDeviceID != w.DeviceID {
+			return SessionDeletionPending()
+		}
+	}
+	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0) || len(w.Copies) > 4096 || len(w.PreparationDigests) > 4096 {
 		return SessionDeletionPending()
 	}
 	for _, id := range []ID{w.DeletionID, w.ServerID, w.SessionID, w.MachineID, w.DeviceID} {

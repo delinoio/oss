@@ -23,6 +23,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -41,6 +42,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if config.Logger != nil {
 			config.Logger.WarnContext(ctx, "native_execution_settings_rejected", "job_id", owner, "stage", "assignment-validation", "options", input.Configuration.SelectedNativeOptionNames(), "code", domain.SafeError(err).Code)
 		}
+		return nil, err
+	}
+	if err := (skills.Manager{Root: config.Root}).CheckContext(input.Input.Skills, input); err != nil {
 		return nil, err
 	}
 	// Direct startup resolves and verifies Installation on this local copy.
@@ -346,7 +350,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	nativeConfig := codex.Config{SkillsRoot: config.Root, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
 	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -564,6 +568,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 					return nil, executionCheckpointUncertain()
 				}
 				copy(nativeInputs[n].PromptDigest[:], bytes)
+			}
+			proofs, proofErr := client.SkillInputProofs(ctx)
+			if proofErr != nil {
+				return nil, proofErr
+			}
+			bound.SkillInputs = proofs
+			for i := range nativeInputs {
+				for _, proof := range proofs {
+					if proof.ID == nativeInputs[i].ID && proof.PromptDigest == nativeInputs[i].PromptDigest {
+						nativeInputs[i].SkillDigest = proof.SkillDigest
+					}
+				}
 			}
 			original := codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
 			contextProof, err = client.RetainContinuationContext(ctx, original)

@@ -147,7 +147,7 @@ func initialExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err != nil {
 		return domain.ExecutionJobInput{}, err
 	}
-	return checkedExecutionAssignment(tx, sr, session, machine, domain.ExecutionJobInput{Version: 1, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: claim.ID, InputID: claim.InputID, ThreadRequestID: domain.NewID(), TurnRequestID: queued.NativeRequestID, Input: domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode}, Configuration: claim.Configuration, ConfigurationDigest: claim.ConfigurationDigest, AccountID: claim.InitialAccountID, ConnectionID: claim.ConnectionID})
+	return checkedExecutionAssignment(tx, sr, session, machine, domain.ExecutionJobInput{Version: 1, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: claim.ID, InputID: claim.InputID, ThreadRequestID: domain.NewID(), TurnRequestID: queued.NativeRequestID, Input: domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode, Skills: queued.Skills}, Configuration: claim.Configuration, ConfigurationDigest: claim.ConfigurationDigest, AccountID: claim.InitialAccountID, ConnectionID: claim.ConnectionID})
 }
 
 func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
@@ -158,6 +158,9 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 }
 
 func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
+	if len(input.Input.Skills) > 0 && (input.Configuration.Harness != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.NativeSkillsV1)) {
+		return domain.Installation{}, skillUnavailable()
+	}
 	var empty domain.Installation
 	c := input.Configuration
 	if err := c.ValidateNativeOptions(); err != nil {

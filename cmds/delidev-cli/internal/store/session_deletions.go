@@ -885,5 +885,46 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 		}
 		w.Copies = append(w.Copies, copy)
 	}
+	// Retained queued inputs also own snapshots before any native job is claimed.
+	after := domain.ID("")
+	count := 0
+	for {
+		records, err := t.List(Filter{Kind: domain.QueueKind, SessionID: v.SessionID, After: after, Limit: 200})
+		if err != nil {
+			return v, err
+		}
+		for _, record := range records {
+			queued, err := Decode[domain.QueuedInput](record)
+			if err != nil {
+				return v, err
+			}
+			for _, binding := range append(append([]domain.SkillBinding{}, queued.Skills...), queued.RetiredSkills...) {
+				count++
+				if count > domain.MaxRetainedSkillSnapshots || domain.ValidateSkills([]domain.SkillBinding{binding}) != nil {
+					return v, domain.SessionDeletionPending()
+				}
+				index := -1
+				for i := range v.Workers {
+					if v.Workers[i].Work.DeviceID == binding.WorkerDeviceID {
+						index = i
+					}
+				}
+				if index < 0 {
+					v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: v.ServerID, SessionID: v.SessionID, MachineID: value.MachineID, DeviceID: binding.WorkerDeviceID}})
+					index = len(v.Workers) - 1
+				}
+				w := &v.Workers[index].Work
+				if w.MachineID != value.MachineID {
+					return v, domain.SessionDeletionPending()
+				}
+				w.SkillSnapshots = append(w.SkillSnapshots, binding)
+			}
+			after = record.ID
+		}
+		if len(records) < 200 {
+			break
+		}
+	}
+
 	return v, v.validate()
 }

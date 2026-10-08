@@ -1850,3 +1850,19 @@ isolated profiles and logout without a real account. Installed CLI source
 inspection and empty-profile probes are separate evidence. Real original
 subscription login and first/follow-up/Stop/Resume acceptance must still be
 verified on each supported packaged platform before claiming completion.
+
+## Explicit Codex skills
+
+Follow the sessions contract's Explicit native skills section. After original
+process/settings validation and before turn/start, only selected immutable package
+copies become process-local extra roots. Verify native skills/list exact enabled
+name/path identities and resource digests before sending structured `skill` input.
+Unknown support or incomplete evidence never falls back to text. Private native
+user-history parsing preserves ordered skill identity digests independently of
+original text proofs; continuation compares those original private proofs. No
+ordinary native authentication, configuration overlay, plugin, hook, MCP or
+environment is imported. Claude Code, OpenCode and Grok Build remain unsupported.
+
+Package content proofs include each normalized executable flag. Snapshot, runtime,
+and independent Fork copies publish owner-only files: `0700` for executable
+resources and `0600` for other resources. Mode changes invalidate the proof.

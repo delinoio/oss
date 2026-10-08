@@ -461,7 +461,7 @@ func (c *Client) observeLateTurnLocked(native nativewire.Event) (Event, error) {
 		}
 		event.TurnID = turn.ID
 		event.Turn = &turn
-		c.execution.inputs[op.InputID] = inputAttempt{Digest: op.InputDigest, TurnID: turn.ID}
+		c.execution.inputs[op.InputID] = inputAttempt{Digest: op.InputDigest, SkillDigest: op.SkillDigest, TurnID: turn.ID}
 	case SteerTurnAction:
 		var ack struct {
 			TurnID domain.ID `json:"turnId"`
@@ -578,6 +578,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			}
 			message.ClientInputID = *item.ClientID
 		}
+		selectedSkills := []nativeTextInput{}
 		for _, raw := range item.Content {
 			var fields map[string]json.RawMessage
 			if domain.Decode(raw, &fields) != nil {
@@ -586,6 +587,14 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			var partType string
 			if json.Unmarshal(fields["type"], &partType) != nil {
 				return Event{}, incompatible()
+			}
+			if partType == "skill" {
+				var part nativeTextInput
+				if domain.Decode(raw, &part) != nil || part.Name == "" || part.Path == "" || part.Text != "" {
+					return Event{}, incompatible()
+				}
+				selectedSkills = append(selectedSkills, part)
+				continue
 			}
 			if partType != "text" {
 				return privateNative(native), nil
@@ -611,7 +620,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		}
 		if message.ClientInputID != "" {
 			attempt, known := c.execution.inputs[message.ClientInputID]
-			if !known || len(message.Parts) != 1 || attempt.Digest != sha256.Sum256([]byte(message.Text)) || (attempt.TurnID != "" && attempt.TurnID != params.TurnID) {
+			if !known || len(message.Parts) != 1 || attempt.Digest != sha256.Sum256([]byte(message.Text)) || attempt.SkillDigest != nativeSkillDigest(selectedSkills) || (attempt.TurnID != "" && attempt.TurnID != params.TurnID) {
 				return Event{}, incompatible()
 			}
 		}

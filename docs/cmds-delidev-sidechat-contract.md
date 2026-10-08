@@ -148,3 +148,16 @@ allocation ledger and generated bindings in the same change.
 - Sidechat creation uses the full native-fork wait deadline while findings submission retains its immediate bound. UI fork admission includes current workspace availability. Revalidate the closed native Sidechat configuration/features immediately before manual compaction claim/send. Failed unpublished reference preparation/fork rolls back only the original inode-bound metadata under independent bounded cleanup; foreign/replaced metadata remains pending. Parent deletion capacity counts only newly created dependent journals.
 
 Check the 256-child Sidechat ownership allowance inside the original fork admission transaction before queuing native preparation, and recheck at native claim/publication. The existing queued/claimed/uncertain fork reservation serializes the single outstanding preparation against that parent inventory; a rejected capacity request creates no job or child authority.
+
+Selected skill snapshots share one 4,096-reference admission budget across the
+parent and its registered dependent Sidechats, including current and retired
+queued bindings. Resolve the child through its original Fork metadata and the
+retained parent dependency index; independent Forks remain separate. Input and
+queued-edit acceptance check this closure in the original transaction, including
+concurrent parent/child writes. Sidechat admission, claim and publication recheck
+the same closure before adding child ownership. A deleting indexed child fences
+new skill or Sidechat admission until confirmed native, database and backup
+retirement releases its index. SQL purge alone cannot free its frozen outer-plan
+obligation. Text-only input remains usable, and rejected preparation retains its
+original durable cleanup owner. Do not enlarge the 4 MiB synchronized deletion
+envelope, evict accepted references, add RPCs or add a migration.

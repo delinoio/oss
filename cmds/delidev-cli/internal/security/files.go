@@ -81,14 +81,27 @@ func WriteAtomicOwned(path string, contents []byte) error {
 	return writeAtomic(path, contents, ".pending-"+filepath.Base(path)+"-")
 }
 
+// WriteAtomicOwnedMode retains only owner read/write and an optional owner execute bit.
+func WriteAtomicOwnedMode(path string, contents []byte, executable bool) error {
+	mode := os.FileMode(0600)
+	if executable {
+		mode = 0700
+	}
+	return writeAtomicMode(path, contents, ".pending-"+filepath.Base(path)+"-", mode)
+}
+
 func writeAtomic(path string, contents []byte, prefix string) error {
+	return writeAtomicMode(path, contents, prefix, 0600)
+}
+
+func writeAtomicMode(path string, contents []byte, prefix string, mode os.FileMode) error {
 	f, err := os.CreateTemp(filepath.Dir(path), prefix)
 	if err != nil {
 		return err
 	}
 	name := f.Name()
 	defer os.Remove(name)
-	if err = f.Chmod(0600); err == nil {
+	if err = f.Chmod(mode); err == nil {
 		_, err = f.Write(contents)
 	}
 	if err == nil {
