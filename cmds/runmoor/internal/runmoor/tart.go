@@ -1250,110 +1250,6 @@ func deletionVMName(entity string) string {
 	return "rm-delete-" + entity
 }
 
-func cleanupTartVMAt(ctx context.Context, t *TartDriver, c Config, pathName, identityName, installation, entity string) error {
-	if err := verifyVMOwnerAt(c, pathName, identityName, installation, entity); err != nil {
-		return err
-	}
-	v, err := t.vmOwnedAt(ctx, c, pathName, identityName, installation, entity)
-	if err != nil {
-		return err
-	}
-	if v.Running {
-		return problem(ErrCleanup, "Cannot delete a running VM.", "Confirm termination first.")
-	}
-	// This name is derived from the stable entity UUID. If the manager exits
-	// after the atomic move, the next cleanup pass can find the same owned VM.
-	if _, err = t.run(ctx, c, []string{"delete", pathName}, nil); err != nil {
-		return err
-	}
-	if _, err = os.Lstat(vmPath(c, pathName)); err == nil {
-		if ownerErr := verifyVMOwnerAt(c, pathName, identityName, installation, entity); ownerErr != nil {
-			return ownerErr
-		}
-		return problem(ErrCleanup, "Tart did not remove the stopped VM.", "Inspect the VM and retry cleanup; its reservation remains held.")
-	} else if !os.IsNotExist(err) {
-		return problem(ErrCleanup, "Cannot confirm Tart VM removal.", "Inspect the VM and retry cleanup; its reservation remains held.")
-	}
-	return nil
-}
-
-func lockOwnedTartVMConfig(c Config, pathName, identityName, installation, entity string) (*os.File, error) {
-	dir, err := openVerifiedVMOwnerAt(c, pathName, identityName, installation, entity)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	lock, err := lockTartVMConfigAt(dir)
-	if err != nil {
-		return nil, problem(ErrCleanup, "Cannot lock the stopped Tart VM for cleanup.", "Confirm no Tart operation is using it, then retry; its reservation remains held.")
-	}
-	opened, err := dir.Stat()
-	current, currentErr := vmDirectoryInfo(c, pathName)
-	if err != nil || currentErr != nil || !os.SameFile(opened, current) {
-		_ = lock.Close()
-		return nil, ambiguousVMOwnership()
-	}
-	if err = verifyVMOwnerAt(c, pathName, identityName, installation, entity); err != nil {
-		_ = lock.Close()
-		return nil, err
-	}
-	return lock, nil
-}
-
-func moveOwnedTartVMToDeletionName(c Config, name, deletionName, installation, entity string) (*os.File, error) {
-	if !safeName.MatchString(deletionName) || deletionName == name {
-		return nil, ambiguousVMOwnership()
-	}
-	dir, err := openVerifiedVMOwnerAt(c, name, name, installation, entity)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-	lock, err := lockTartVMConfigAt(dir)
-	if err != nil {
-		return nil, problem(ErrCleanup, "Cannot lock the stopped Tart VM for cleanup.", "Confirm no Tart operation is using it, then retry; its reservation remains held.")
-	}
-	fail := func(err error) (*os.File, error) {
-		_ = lock.Close()
-		return nil, err
-	}
-	before, err := dir.Stat()
-	if err != nil {
-		return fail(ambiguousVMOwnership())
-	}
-	if err = verifyVMOwner(c, name, installation, entity); err != nil {
-		return fail(err)
-	}
-	current, err := vmDirectoryInfo(c, name)
-	if err != nil || !os.SameFile(before, current) {
-		return fail(ambiguousVMOwnership())
-	}
-	if _, err = os.Lstat(vmPath(c, deletionName)); err == nil || !os.IsNotExist(err) {
-		return fail(ambiguousVMOwnership())
-	}
-	// Tart accepts a VM name for delete. Move the verified directory to a
-	// stable per-entity name with an exclusive filesystem rename first, so a
-	// later replacement at the original name cannot become Tart's delete target.
-	if err = renameTartVMNoReplace(vmPath(c, name), vmPath(c, deletionName)); err != nil {
-		return fail(problem(ErrCleanup, "Cannot reserve the Tart VM for identity-bound cleanup.", "Preserve the VM and retry after resolving the storage operation; its reservation remains held."))
-	}
-	moved, err := vmDirectoryInfo(c, deletionName)
-	if err != nil || !os.SameFile(before, moved) {
-		// A replacement won the source-name race. Restore it only if the original
-		// name is still empty; never overwrite a newer VM while recovering.
-		_ = renameTartVMNoReplace(vmPath(c, deletionName), vmPath(c, name))
-		return fail(ambiguousVMOwnership())
-	}
-	if err = verifyVMOwnerAt(c, deletionName, name, installation, entity); err != nil {
-		_ = renameTartVMNoReplace(vmPath(c, deletionName), vmPath(c, name))
-		return fail(err)
-	}
-	if err = syncPrivateDir(filepath.Join(c.Storage.Data, "tart", "vms")); err != nil {
-		return fail(problem(ErrCleanup, "Cannot sync the Tart VM cleanup reservation.", "Preserve the VM and retry cleanup; its reservation remains held."))
-	}
-	return lock, nil
-}
-
 func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot) error {
 	name := r.Handle.VM
 	if name == "" {
@@ -1372,12 +1268,7 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 	if !safeName.MatchString(deletionName) {
 		return ambiguousVMOwnership()
 	}
-	var deletionLock *os.File
-	defer func() {
-		if deletionLock != nil {
-			_ = deletionLock.Close()
-		}
-	}()
+	source := deletionName
 	if _, err := os.Lstat(vmPath(c, deletionName)); os.IsNotExist(err) {
 		if _, originalErr := os.Lstat(vmPath(c, name)); originalErr == nil {
 			if err = verifyVMOwner(c, name, s.Installation, r.ID); err != nil {
@@ -1390,9 +1281,7 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 			if v.Running {
 				return problem(ErrCleanup, "Cannot delete a running VM.", "Confirm termination first.")
 			}
-			if deletionLock, err = moveOwnedTartVMToDeletionName(c, name, deletionName, s.Installation, r.ID); err != nil {
-				return err
-			}
+			source = name
 		} else if !os.IsNotExist(originalErr) {
 			return problem(ErrCleanup, "Cannot inspect the Tart VM for cleanup.", "Check private data directory permissions; its reservation remains held.")
 		} else {
@@ -1410,13 +1299,25 @@ func (t *TartDriver) Cleanup(ctx context.Context, c Config, r Runner, s Snapshot
 		}
 	} else if err != nil {
 		return problem(ErrCleanup, "Cannot inspect the Tart cleanup directory.", "Check private data directory permissions; its reservation remains held.")
-	} else {
-		deletionLock, err = lockOwnedTartVMConfig(c, deletionName, name, s.Installation, r.ID)
-		if err != nil {
-			return err
-		}
 	}
-	if err := cleanupTartVMAt(ctx, t, c, deletionName, name, s.Installation, r.ID); err != nil {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	files, err := openTartCleanupFiles(c, source, name, s.Installation, r.ID)
+	if err != nil {
+		return err
+	}
+	defer closeTartCleanupFiles(files)
+	executor, ok := t.Exec.(tartCleanupExecutor)
+	if !ok {
+		return tartCleanupFailure()
+	}
+	deadline, _ := ctx.Deadline()
+	req := tartCleanupRequest{HelperExecutable: t.GuestExecutable, Data: c.Storage.Data, Executable: c.TartExecutable, Source: source, Owner: vmOwner{s.Installation, r.ID, name}, Deadline: deadline}
+	if err = executor.RunTartCleanup(ctx, req, files); err != nil {
+		return err
+	}
+	if err = confirmTartCleanupRemoved(files[1], files[0], deletionName); err != nil {
 		return err
 	}
 	if err := removeTartRunAlias(c, tartRunAlias(r.ID)); err != nil {

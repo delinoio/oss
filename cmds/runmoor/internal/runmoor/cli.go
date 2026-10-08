@@ -47,6 +47,9 @@ func printHelp(out io.Writer) {
 }
 
 func Execute(args []string, out, errOut io.Writer) int {
+	if len(args) == 1 && args[0] == "__tart-cleanup" {
+		return tartCleanupProcess()
+	}
 	if len(args) == 3 && args[0] == "__service-reload-handoff" {
 		return serviceReloadHandoff(args[1], args[2])
 	}
