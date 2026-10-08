@@ -88,6 +88,10 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		}
 		managedFixtureAccountRead(id, map[string]any{"type": "chatgpt", "email": "fixture@example.invalid", "planType": "plus"}, write)
 	case "account/rateLimits/read":
+		if response := os.Getenv("DELIDEV_CODEX_QUOTA_READ"); response != "" {
+			write(id, json.RawMessage(response))
+			return true
+		}
 		write(id, map[string]any{"rateLimits": map[string]any{"limitId": "codex", "primary": map[string]any{"usedPercent": 80, "windowDurationMins": 300, "resetsAt": 1900000000}, "secondary": map[string]any{"usedPercent": 20, "windowDurationMins": 10080, "resetsAt": 1900000000}}, "rateLimitsByLimitId": nil, "rateLimitResetCredits": map[string]any{"availableCount": 2, "credits": []any{map[string]any{"id": "credit_1", "resetType": "codexRateLimits", "status": "available", "grantedAt": 1700000000, "expiresAt": nil, "title": "not public", "description": "not public"}}}})
 	case "account/rateLimitResetCredit/consume":
 		var input struct {

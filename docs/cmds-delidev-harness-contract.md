@@ -1814,6 +1814,23 @@ private once-only summarize controller preserves original provider/model,
 independent HTTP/lifecycle/history/cleanup and repeated fresh-process lineage;
 manual product capability remains gated on its complete business integration.
 
+## Codex quota response observations (issue #1810)
+
+The private `account/rateLimits/read` response accepts optional nullable
+`ordinaryUsageAllowed` booleans, `accountId` strings and opaque `rateLimitUpsell`
+JSON from the [official Codex response declaration](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/src/protocol/v2/account.rs#L331).
+These observations are discarded before quota projection. They never enter
+resources, receipts, history or logs, select an account or endpoint, replace
+authentication identity, or grant recovery, execution or reset-credit authority.
+
+The existing bounded JSON envelope, recursive duplicate-key rejection and
+strict typed/unknown-field checks remain mandatory. Upsell JSON may contain
+opaque nested keys, but cannot bypass those common bounds or duplicate checks.
+Quota and credit validation, authoritative count versus detail-list semantics,
+protected-value checks, last-success retention, original credential ownership,
+once-only claims and independent cleanup keep their existing meaning. This
+response compatibility change adds no public interface, capability or migration.
+
 ## Claude native subscription execution profile
 
 The native subscription adapter reuses the pinned Claude Code `2.1.236`
