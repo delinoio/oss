@@ -111,8 +111,11 @@ it("distinguishes initial loading and successful empty first and later pages", a
   const empty = await screen.findByText("No saved schedules.");
   expect(empty.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   await waitFor(() => expect((pane().getByRole("button", { name: "Load more Saved schedules" }) as HTMLButtonElement).disabled).toBe(false));
+  const readsBeforeContinuation = value.list.mock.calls.length;
   fireEvent.click(pane().getByRole("button", { name: "Load more Saved schedules" }));
-  await screen.findByText("All loaded Saved schedules are shown.");
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Saved schedules" })).toBeNull());
+  expect(screen.getByText("No saved schedules.")).toBeTruthy();
+  expect(value.list.mock.calls.slice(readsBeforeContinuation).map(([request]) => request.pageToken)).toEqual(["schedule-next"]);
   expect(pane().queryByRole("button", { name: "First" })).toBeNull();
   expect(pane().queryByRole("button", { name: "Load more Saved schedules" })).toBeNull();
 });

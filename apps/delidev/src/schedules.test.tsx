@@ -309,7 +309,7 @@ it("preserves exact choices through accepted continuation and suspends inactive 
   fireEvent.click(selected);
   fireEvent.click(screen.getByRole("button", { name: "Load more Project" }));
   await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.kind === EntityKind.PROJECT && request.filter.pageToken === "next-project-page")).toBe(true));
-  await screen.findByText("All loaded Project are shown.");
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Project" })).toBeNull());
   expect(selected.getAttribute("data-value")).toBe(value.project.id);
   expect(screen.getByRole("option", { name: "Selected project" }).getAttribute("aria-selected")).toBe("true");
   fireEvent.keyDown(selected, { key: "Escape" });

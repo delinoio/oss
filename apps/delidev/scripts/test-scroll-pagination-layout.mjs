@@ -46,6 +46,10 @@ try {
    await page.waitForTimeout(80);
   }
   assert.equal((await count.textContent()).split(":")[0],"5");
+  const continuation = root.locator("[data-continuation]");
+  assert.equal(await continuation.count(),1,"Exhaustion retains the observer anchor");
+  assert.equal(await continuation.textContent(),"","Exhaustion adds no completion notice or announcement");
+  assert.equal(await continuation.locator("button, [role=status]").count(),0);
   assert(Number((await count.textContent()).split(":")[1]) <= 3,"Payload pages remain bounded");
   assert(await composer.evaluate(node=>node===document.activeElement),"Append preserves composer focus");
   await root.evaluate(node=> { node.scrollTop=0; });
