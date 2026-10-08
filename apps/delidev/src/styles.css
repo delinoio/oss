@@ -137,7 +137,6 @@ summary { cursor: pointer; padding: 3px; }
 .app main:has(> .new-general-chat-page:not([hidden])) { scrollbar-gutter: stable; }
 .new-general-chat-page .new-session-options h3 { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
 .new-general-chat-description { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-.new-general-chat-page .new-session-selectors select { min-height: 40px; }
 .new-session-back { min-height: 34px; padding: 5px 9px; border-color: transparent; background: transparent; color: var(--text-secondary); font-size: 13px; }
 .new-session-content > .resource-choice { margin-bottom: 7px; }
 .new-session-content > .resource-choice > label { max-width: 310px; margin: 0; font-size: 13px; }
@@ -150,9 +149,10 @@ summary { cursor: pointer; padding: 3px; }
 .new-session-selectors { display: flex; min-width: 0; flex: 1; align-items: flex-end; gap: 8px; }
 .new-session-selectors .resource-choice { min-width: 0; flex: 1; }
 .new-session-selectors .resource-choice > label, .new-session-mode { gap: 4px; min-width: 0; margin: 0; color: var(--text-secondary); font-size: 11px; }
-.new-session-selectors select { min-width: 0; min-height: 36px; padding: 6px 8px; font-size: 12px; }
-.new-session-mode { min-width: 88px; flex: 0 0 92px; }
-.new-session-mode select { width: 100%; }
+.plan-mode { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 40px; margin: 0; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.plan-mode input[type=checkbox] { flex: 0 0 auto; margin: 0; accent-color: var(--accent); }
+.plan-mode input:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.new-session-mode { flex: 0 0 auto; }
 .new-session-submit-row { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .new-session-options-toggle { min-height: 36px; padding: 6px 10px; color: var(--text-secondary); font-size: 12px; }
 .new-session-submit { display: grid; width: 40px; min-width: 40px; height: 40px; min-height: 40px; place-items: center; padding: 0; border-color: var(--accent); border-radius: 12px; background: var(--accent); color: var(--on-inverse); }

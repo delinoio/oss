@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.plan-mode-fixture > aside { min-height: 0; padding: 12px; overflow: auto; }
+.plan-mode-fixture > aside button { display: block; max-width: 100%; margin-bottom: 6px; }
+.plan-mode-fixture > aside output { display: none; }
+.plan-mode-session { height: 100%; }
+@media (max-width: 760px) {
+  .app.plan-mode-fixture { grid-template-columns: 80px minmax(0, 1fr); }
+  .plan-mode-fixture > aside { padding: 4px; overflow-wrap: anywhere; }
+  .plan-mode-fixture > aside button { padding: 4px; font-size: 11px; }
+}

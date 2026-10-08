@@ -248,6 +248,19 @@ extends the page's scroll range without moving the primary content by more than
 only while this page is active, and keep focus and all drafts intact. Ordinary
 New session project/Git options and session budget editing retain their existing
 presentation. Browser geometry evidence remains separate from native acceptance.
+New session, New general chat and the existing session message composer show a
+native **Plan Mode** checkbox (**계획 모드** in Korean) in their existing toolbars.
+Fresh controls are unchecked. Checked maps to `Mode.Plan`; unchecked maps to
+`Mode.Execute`, preserving the serialized `plan`/`execute` values. Label clicks
+and Space toggle the control without submission. Keep visible keyboard focus,
+semantic theme colors, existing wrapping and reachable selectors/Options/send
+controls at 1100px, 520px, 960×640 and effective 200% reflow. Preserve creation's
+touched marker and inherited fieldset lock, the existing session's pending and
+uncertain lock, independent mounted drafts and connection identity resets.
+Navigation, language and project shortcut changes retain their original mode
+state. Explicit uncertain retries use the original request identity and mode.
+Schedule and local-review mode controls keep their current presentation. This
+change grants no new execution, protocol, account or native authority.
 
 The existing authenticated CreateSession RPC submits `workspace=general-chat`, `source=MANUAL` and `name_mode=automatic`, without project, starting-reference or Local credential fields. Preserve server/native execution checks, automatic-title negotiation, byte bounds, validation and exact receipt retry. This presentation adds no protocol capability, migration, account or native authority.
 

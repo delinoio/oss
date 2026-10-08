@@ -46,7 +46,7 @@ it("retains composer, mode and staged information edits through tool switches an
   const mounted = render(f.view());
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await screen.findByRole("heading", { name: "Original session" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Mode" }), { target: { value: Mode.Plan } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
   fireEvent.click(screen.getByRole("button", { name: "Info" }));
   fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
   const name = screen.getByRole("textbox", { name: "Session name" });
@@ -60,12 +60,40 @@ it("retains composer, mode and staged information edits through tool switches an
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Info" }));
   mounted.rerender(f.view("Retained draft"));
   expect(composer).toHaveProperty("value", "Retained draft");
-  expect(screen.getByRole("combobox", { name: "Mode" })).toHaveProperty("value", Mode.Plan);
+  expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
   await act(async () => { await i18n.changeLanguage("ko"); });
   expect(screen.getByRole("textbox", { name: "메시지" })).toBe(composer);
   fireEvent.click(screen.getByRole("button", { name: "정보" }));
   expect(screen.getByRole("textbox", { name: "세션 이름" })).toBe(name);
   expect(f.enqueue).not.toHaveBeenCalled(); expect(f.rename).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+});
+
+it("submits Execute, Plan and Execute again only through the explicit composer action", async () => {
+  const f = fixture(); render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const mode = screen.getByRole("checkbox", { name: "Plan Mode" });
+  expect(mode).toHaveProperty("checked", false);
+  for (const [index, expected] of [Mode.Execute, Mode.Plan, Mode.Execute].entries()) {
+    if (index) { fireEvent.click(mode); expect(f.enqueue).toHaveBeenCalledTimes(index); }
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(index + 1));
+    expect(JSON.parse(new TextDecoder().decode(f.enqueue.mock.calls[index][0].documentJson)).mode).toBe(expected);
+    await waitFor(() => expect(mode).toHaveProperty("disabled", false));
+  }
+});
+
+it("locks the checked mode while its original enqueue request is pending", async () => {
+  const f = fixture(); let finish!: (result: { change: { session: typeof f.session } }) => void;
+  f.enqueue.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  render(f.view()); await screen.findByRole("heading", { name: "Original session" });
+  const mode = screen.getByRole("checkbox", { name: "Plan Mode" }); fireEvent.click(mode);
+  expect(f.enqueue).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(1));
+  expect(mode).toHaveProperty("checked", true); expect(mode).toHaveProperty("disabled", true);
+  expect(JSON.parse(new TextDecoder().decode(f.enqueue.mock.calls[0][0].documentJson)).mode).toBe(Mode.Plan);
+  await act(async () => finish({ change: { session: f.session } }));
+  await waitFor(() => expect(mode).toHaveProperty("disabled", false)); expect(mode).toHaveProperty("checked", true);
 });
 
 it("observes reached budgets with Info hidden and reveals the budget without resuming", async () => {
@@ -103,10 +131,12 @@ it("retries the exact queued input after supporting panels were opened and close
   f.enqueue.mockRejectedValueOnce(new ConnectError("Original receipt lost", Code.Unavailable));
   render(f.view());
   await screen.findByRole("heading", { name: "Original session" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Mode" }), { target: { value: Mode.Plan } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
   fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
   await screen.findByRole("button", { name: "Retry the same message" });
   const original = f.enqueue.mock.calls[0][0];
+  expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
   fireEvent.click(screen.getByRole("button", { name: "Info" }));
   fireEvent.click(screen.getByRole("button", { name: "Info" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry the same message" }));

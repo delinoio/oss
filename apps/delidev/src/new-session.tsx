@@ -273,7 +273,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               <div className="new-session-selectors">
                 <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />
                 <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required resolvedChoice={machineChoice} change={editMachine} />
-                <label className="new-session-mode">{copy("new-session.mode_5e23ec")}<select value={mode} onChange={(event) => { touched.current = true; setMode(event.target.value as Mode); }}><option value={Mode.Execute}>{copy("new-session.execute_e3a67d")}</option><option value={Mode.Plan}>{copy("new-session.plan_fa8ed0")}</option></select></label>
+                <label className="new-session-mode plan-mode"><input type="checkbox" checked={mode === Mode.Plan} onChange={(event) => { touched.current = true; setMode(event.target.checked ? Mode.Plan : Mode.Execute); }} />{copy("new-session.planMode")}</label>
               </div>
               <div className="new-session-submit-row">
                 <button type="button" className="new-session-options-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((value) => !value)}>{copy("new-session.options_d0db8b")}</button>

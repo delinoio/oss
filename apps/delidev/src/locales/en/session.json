@@ -103,5 +103,6 @@
   "session.startupAcknowledged": "Acknowledged",
   "session.startupInvalidEvidence": "Startup evidence is unavailable. Keep the original session paused and inspect its original recovery before retrying.",
   "session.startupManualSteps": "On this session’s Runner, install the named harness and permit this user to execute it. For a remote Runner, ask its administrator. Correct the original Runner’s executable path or settings, then use Retry startup only when the original input is confirmed not sent and its cleanup is confirmed.",
-  "session.startupControlUncertain": "The original control request has no confirmed result. Retry that same request to reconcile it; do not start a replacement operation."
+  "session.startupControlUncertain": "The original control request has no confirmed result. Retry that same request to reconcile it; do not start a replacement operation.",
+  "session.planMode": "Plan Mode"
 }
