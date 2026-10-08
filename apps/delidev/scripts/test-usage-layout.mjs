@@ -44,12 +44,26 @@ try {
     const main = page.locator(".usage-page"); await main.locator(".usage-summary").waitFor();
     assert.equal(await main.getByRole("tab").count(), 3, context);
     assert.equal(await main.getByRole("tabpanel").count(), 1, context);
-    assert.equal(await main.locator(".usage-trends").evaluate(node => node.open), false, context);
+    assert.equal(await main.locator(".usage-trends").evaluate(node => node.tagName), "SECTION", context);
+    assert(await main.locator(".usage-trends").isVisible(), context);
+    assert(await main.locator(".usage-trends").evaluate(node => Boolean(node.compareDocumentPosition(document.querySelector(".usage-detail")) & Node.DOCUMENT_POSITION_FOLLOWING)), context);
     const initialReads = await page.evaluate(() => window.__usageFixture.summary);
     const geometry = await main.evaluate(node => ({ width: node.getBoundingClientRect().width, overflow: node.scrollWidth > node.clientWidth + 1, documentOverflow: document.documentElement.scrollWidth > innerWidth + 1, primary: node.querySelector(".usage-metrics-primary").children.length, values: [...node.querySelectorAll(".usage-summary [data-token-measure] dd")].map(value => value.textContent), table: node.querySelector(".usage-table") ? { width: node.querySelector(".usage-table").clientWidth, scroll: node.querySelector(".usage-table").scrollWidth } : null }));
     assert(geometry.width <= 1280 && !geometry.overflow && !geometry.documentOverflow && geometry.primary === 4, `${context}: ${JSON.stringify(geometry)}`);
     if (empty) assert.deepEqual(geometry.values, Array(6).fill("0"), context);
-    else assert((await main.textContent()).includes("0195c9c0-7b13-7000-8000-000000000001"), context);
+    else {
+      const details = main.locator(".usage-row-detail summary").first(); await details.focus(); await details.press("Enter");
+      assert(await main.locator(".usage-row-detail details").first().evaluate(node => node.open), context);
+      for (const exact of ["0195c9c0-7b13-7000-8000-000000000001", "9,007,199,254,740,993", "USD", "EUR"]) assert((await main.locator(".usage-row-detail").first().textContent()).includes(exact), context);
+      await details.press("Enter");
+      assert.equal(await main.locator(".usage-table table thead th").count(),9,context);
+    }
+    const daily = main.locator(".usage-daily-svg"); await daily.focus(); await page.keyboard.press("End"); await page.keyboard.press("Escape");
+    const viewData = main.locator(".usage-chart-panel .usage-data-toggle").first(); await viewData.focus(); await viewData.press("Enter");
+    assert(await main.locator("#usage-daily-data").isVisible(),context); await viewData.press("Enter");
+    assert.equal(await page.evaluate(() => window.__usageFixture.summary), initialReads, `${context}: row and chart inspection do not query`);
+    await page.locator("#main").evaluate(node => node.scrollTop=0); await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    if (width === 1440) assert(await main.locator(".usage-daily-svg").evaluate(node => node.getBoundingClientRect().top < innerHeight && node.getBoundingClientRect().bottom > 0),`${context}: daily chart is visible before session records`);
     if (screenshots && [1440, 390].includes(width)) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `responses-${width}-${language}-${theme}-${empty ? "empty" : "records"}.png`) }); }
     const tabs = main.getByRole("tab"); await tabs.nth(0).focus(); await page.keyboard.press("ArrowRight");
     assert.equal(await tabs.nth(1).getAttribute("aria-selected"), "true", context);
@@ -65,7 +79,7 @@ try {
     assert.equal(await main.getByRole("tabpanel").count(), 1, context);
     await tabs.nth(2).press("ArrowLeft");
     assert.equal(await sources.nth(0).locator("details").first().evaluate(node => node.open), true, context);
-    const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) await opener.click();
+    const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) { await page.locator("#main").evaluate(node=>node.scrollTop=0); await opener.focus(); await opener.press("Enter"); }
     const pane = page.locator(".usage-sidebar");
     assert.equal(await pane.getByRole("button", { name: /Apply filters|필터 적용/ }).count(), 0, context);
     const date = pane.locator('input[type="datetime-local"]').first(); await date.focus(); await date.fill("2026-09-01T10:00");
@@ -96,6 +110,16 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, context);
     if (screenshots) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `remediation-${width}-${language}-${theme}.png`) }); }
     checks++; console.log(JSON.stringify({ operation: "usage-inline-remediation-case", context, result: "passed" }));
+  }
+  for (const scenario of ["loading", "unsupported", "refreshFailure", "newQueryFailure"]) for (const language of ["en","ko"]) for (const [width,height] of [[1440,900],[390,844]]) {
+    await page.setViewportSize({width,height}); await page.goto(`${origin}/?${scenario}=true&language=${language}`); await page.getByRole("button",{name:language==="ko" ? "사용량" : "Usage",exact:true}).click();
+    const main=page.locator(".usage-page");
+    if(scenario==="loading") { await main.locator(".usage-skeletons").waitFor(); assert.equal(await main.locator(".usage-summary").count(),0); await page.evaluate(()=>window.releaseUsage()); }
+    await main.locator(".usage-summary").waitFor();
+    if(scenario==="unsupported") assert(await main.locator(".usage-charts-unavailable").isVisible());
+    if(scenario==="refreshFailure") { await main.locator(".usage-row-detail summary").first().click(); await main.locator(".usage-header-actions button").click(); await main.locator(".usage-stale-indicator").waitFor(); assert(await main.locator(".usage-row-detail details").first().evaluate(node=>node.open)); assert(await main.locator(".usage-summary").isVisible()); }
+    if(scenario==="newQueryFailure") { const opener=page.locator(".sidebar-context-trigger"); if(await opener.isVisible()) { await page.locator("#main").evaluate(node=>node.scrollTop=0); await opener.focus(); await opener.press("Enter"); } await page.locator('.usage-sidebar input[type="datetime-local"]').first().fill("2026-09-02T10:00"); if(width<760) await page.keyboard.press("Escape"); await main.getByRole("alert").waitFor(); assert.equal(await main.locator(".usage-summary").count(),0); }
+    assert.equal(await page.evaluate(()=>window.__usageFixture.writes),0); checks++; console.log(JSON.stringify({operation:"usage-state-case",scenario,language,width,result:"passed"}));
   }
   assert.deepEqual(failures, []);
   console.log(JSON.stringify({ operation: "usage-layout-browser", source, checks, result: "passed", evidence: "synthetic App browser; effective zoom viewport only; no packaged/native acceptance" }));

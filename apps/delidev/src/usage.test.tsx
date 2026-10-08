@@ -344,17 +344,17 @@ it("does not reuse old scope data when a new valid selection fails", async () =>
   expect(screen.queryByText(/These are the last successfully retrieved values/)).toBeNull();
 });
 
-it("defaults to a table-first Responses tab with collapsed trends and keeps tab state without new reads", async () => {
+it("defaults to a trend-first Responses tab with expanded charts and keeps tab state without new reads", async () => {
   const f = fixture(); const view = render(f.view()); await screen.findByText("Incomplete coverage");
   const tabs = screen.getAllByRole("tab");
   expect(tabs.map(tab => tab.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
   expect(tabs.map(tab => tab.tabIndex)).toEqual([0, -1, -1]);
   const panel = screen.getByRole("tabpanel", { name: "Responses" });
   const details = [...panel.querySelectorAll("details")];
-  const trends = details.find(value => value.querySelector("summary")?.textContent === "Daily and model trends")!;
-  expect(trends.open).toBe(false);
+  const trends = panel.querySelector(".usage-trends")!;
+  expect(trends.tagName).toBe("SECTION");
   expect(details.find(value => value.querySelector("summary")?.textContent === "Accounting definitions and coverage")!.open).toBe(false);
-  expect(panel.querySelector("table")!.compareDocumentPosition(trends) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(trends.compareDocumentPosition(panel.querySelector(".usage-detail")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   for (const name of ["Input tokens", "Output tokens", "Known total tokens", "Recorded responses", "Token-price estimate"]) expect(within(panel).getByRole("columnheader", { name })).toBeTruthy();
   tabs[0].focus(); fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
   expect(document.activeElement).toBe(tabs[2]);
@@ -393,4 +393,16 @@ it("shows supported empty source rows collapsed and retains a user source choice
   fireEvent.click(screen.getByRole("button", { name: "Refresh" })); await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
   expect(disclosure.open).toBe(false);
   expect(within(panel).getByText(BigInt("9007199254740993").toLocaleString())).toBeTruthy();
+});
+it("keeps original identities and complete counter/estimate evidence in mounted compact row Details", async () => {
+ const f = fixture(); f.data.groups[0].projectId=newRequestId(); f.data.groups[0].projectName="Original project";
+ f.data.groups[0].estimates=create(EstimateTotalsSchema,{currencies:[{currency:"USD",knownAmount:"0.002",partialResponses:1},{currency:"EUR",knownAmount:"0",completeResponses:1}],unpricedResponses:1});
+ const view=render(f.view()); await screen.findByText("Incomplete coverage");
+ const row=document.querySelector<HTMLTableRowElement>(".usage-detail tbody tr")!, detail=row.querySelector<HTMLDetailsElement>("details")!, summary=detail.querySelector("summary")!;
+ expect(row.querySelectorAll("td")).toHaveLength(9); for(const cell of [...row.cells].slice(0,3)) for(const id of Object.values(f.ids)) expect(cell.textContent).not.toContain(id);
+ fireEvent.click(summary); expect(detail.open).toBe(true); expect(detail.querySelectorAll("[data-token-measure]")).toHaveLength(6);
+ for(const id of [f.ids.session,f.ids.account,f.ids.model,f.ids.provider,f.data.groups[0].projectId]) expect(detail.textContent).toContain(id);
+ expect(detail.textContent).toContain("USD 0.002"); expect(detail.textContent).toContain("EUR 0"); expect(f.read).toHaveBeenCalledTimes(1);
+ view.rerender(f.view(false)); view.rerender(f.view()); expect(row.querySelector("details")).toBe(detail); expect(detail.open).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Refresh"})); await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(2)); expect(row.querySelector("details")).toBe(detail); expect(detail.open).toBe(true);
 });
