@@ -709,7 +709,15 @@ opener; terminal screen Escape remains native input. Conversation, composer and 
 At a content width of at least 900px and body height of at least 600px, the initial
 dock is 40 percent high; pointer and keyboard separator resizing clamps to 200px
 through 70 percent. Smaller initial bodies maximize the dock. Explicit Restore,
-Maximize and Hide retain presentation state in the open Session lifetime.
+Maximize and Hide retain presentation state in the open Session lifetime. A
+maximized dock occludes the retained upper region with inert/aria-hidden and
+clipped hidden presentation; controllers and drafts stay mounted. Its original
+native Browser visibility observer must Hide the retained child through its
+existing exact cleanup ownership before presenting again. Restore returns the
+upper geometry and prior available focus without registering or executing anew.
+When Restore leaves less than200px above the dock, that retained upper region
+scrolls its intrinsic conversation/composer and Info rows; controls stay reachable
+without overlapping the dock, and native Browser bounds keep ancestor clipping.
 
 Authenticated generated operations follow the
 [terminal contract](cmds-delidev-terminals-contract.md). Only advertised support

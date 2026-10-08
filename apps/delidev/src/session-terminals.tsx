@@ -15,9 +15,11 @@ import { TerminalInputQueue } from "./terminal-input-queue";
 import { terminalDockHeight } from "./terminal-dock-size";
 import { ServiceProblem, Failure, Problem  } from "./ui";
 
+export enum TerminalDockPresentation { Docked = "docked", CompactRestored = "compact-restored", Maximized = "maximized" }
+
 enum OutputState { Connecting = "connecting", Attached = "attached", Detached = "detached", Exited = "exited" }
 
-export function SessionTerminals({ session, close, active = true }: { session: Resource; close: () => void; active?: boolean }) {
+export function SessionTerminals({ session, close, active = true, presentationChanged }: { session: Resource; close: () => void; active?: boolean; presentationChanged?: (value: TerminalDockPresentation) => void }) {
   useLocale();
   const dock = useRef<HTMLElement>(null);
   const [details, setDetails] = useState(false), [maximized, setMaximized] = useState(false), [height, setHeight] = useState<number>();
@@ -29,6 +31,9 @@ export function SessionTerminals({ session, close, active = true }: { session: R
     const observer = new ResizeObserver(measure); observer.observe(content); return () => observer.disconnect();
   }, []);
   const actualHeight = terminalDockHeight(geometry.width, geometry.height, maximized, height);
+  const presentation = !active || geometry.height <= 0 ? TerminalDockPresentation.Docked : actualHeight >= geometry.height ? TerminalDockPresentation.Maximized : geometry.height - actualHeight < 200 ? TerminalDockPresentation.CompactRestored : TerminalDockPresentation.Docked;
+  useLayoutEffect(() => { presentationChanged?.(presentation); }, [presentation, presentationChanged]);
+  useLayoutEffect(() => () => { presentationChanged?.(TerminalDockPresentation.Docked); }, [presentationChanged]);
   useLayoutEffect(() => { dock.current?.closest<HTMLElement>(".session-content")?.style.setProperty("--terminal-dock-height", `${actualHeight}px`); }, [actualHeight]);
   const [shell, setShell] = useState("");
   const [selected, setSelected] = useState("");
@@ -52,7 +57,7 @@ export function SessionTerminals({ session, close, active = true }: { session: R
   const resource = supported ? reachedSelection ?? (createdTerminal?.id === selected ? createdTerminal : selectedTerminal?.id === selected ? selectedTerminal : undefined) : undefined;
   return <aside ref={dock} hidden={!active} className="terminal-dock" aria-label={copy("session-terminals.sessionTerminals_db991c")}>
     <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label={copy("session-terminals.resizeDock")} aria-valuemin={Math.min(200, geometry.height * .7)} aria-valuemax={Math.floor(geometry.height)} aria-valuenow={Math.round(actualHeight)} className="terminal-dock-separator" onPointerDown={event => { const target = event.currentTarget, start = event.clientY, initial = actualHeight; target.setPointerCapture(event.pointerId); const move = (next: PointerEvent) => { setMaximized(false); setHeight(initial + start - next.clientY); }; const stop = () => { target.removeEventListener("pointermove", move); target.removeEventListener("pointerup", stop); target.removeEventListener("pointercancel", stop); }; target.addEventListener("pointermove", move); target.addEventListener("pointerup", stop, { once: true }); target.addEventListener("pointercancel", stop, { once: true }); }} onKeyDown={event => { if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return; event.preventDefault(); setMaximized(false); setHeight(event.key === "Home" ? 200 : event.key === "End" ? geometry.height * .7 : actualHeight + (event.key === "ArrowUp" ? 20 : -20)); }} />
-    <header className="terminal-dock-header"><h3>{copy("session-terminals.terminals_7482c4")}</h3><button type="button" aria-label={copy("session-terminals.createTerminal_747b98")} disabled={blocked} onClick={() => void create.send({ mutation: { requestId: newRequestId(), id: session.id, expectedRevision: session.revision }, shellOverride: shell, rows: 24, columns: 80 })}>+</button><button type="button" aria-expanded={details} onClick={() => setDetails(value => !value)}>{copy("session-terminals.details")}</button><button type="button" onClick={() => { if (actualHeight === geometry.height) { setMaximized(false); setHeight(geometry.height * .4); } else setMaximized(true); }}>{copy(actualHeight === geometry.height ? "session-terminals.restoreDock" : "session-terminals.maximizeDock")}</button><button type="button" onClick={close}>{copy("session-terminals.hideTerminals_522e2b")}</button></header>
+    <header className="terminal-dock-header"><h3>{copy("session-terminals.terminals_7482c4")}</h3><button type="button" aria-label={copy("session-terminals.createTerminal_747b98")} disabled={blocked} onClick={() => void create.send({ mutation: { requestId: newRequestId(), id: session.id, expectedRevision: session.revision }, shellOverride: shell, rows: 24, columns: 80 })}>+</button><button type="button" aria-expanded={details} onClick={() => setDetails(value => !value)}>{copy("session-terminals.details")}</button><button type="button" data-terminal-restore onClick={() => { if (actualHeight === geometry.height) { setMaximized(false); setHeight(geometry.height * .4); } else setMaximized(true); }}>{copy(actualHeight === geometry.height ? "session-terminals.restoreDock" : "session-terminals.maximizeDock")}</button><button type="button" onClick={close}>{copy("session-terminals.hideTerminals_522e2b")}</button></header>
     {discarded ? <p role="status">{copy("session-terminals.unsentDiscarded")}</p> : null}
     <div className="terminal-dock-details" hidden={!details}>
     <p>{copy("session-terminals.terminalsRunOnThisSessionS_0699b6")}</p>

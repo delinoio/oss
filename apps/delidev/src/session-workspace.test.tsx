@@ -253,3 +253,22 @@ it("keeps one upper tool alongside the independent Terminal dock and restores ea
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);expect(f.control).not.toHaveBeenCalled();
   mounted.unmount();f.client.clear();
 });
+
+it.each([580, 120])("occludes mounted upper content at automatic maximum and restores it at body height %s", async height => {
+  vi.stubGlobal("ResizeObserver", class { constructor(private changed: () => void) {} observe(node: HTMLElement) { Object.defineProperties(node, { clientWidth: { configurable: true, value: 1344 }, clientHeight: { configurable: true, value: height } }); this.changed(); } disconnect() {} });
+  const f = fixture(), mounted = render(f.view());
+  try {
+    const composer = await screen.findByRole("textbox", { name: "Message" });composer.focus();
+    fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+    const upper = mounted.container.querySelector(".session-upper-content")!;
+    await waitFor(() => expect(upper.getAttribute("aria-hidden")).toBe("true"));
+    expect(upper.hasAttribute("inert")).toBe(true);expect(upper.contains(composer)).toBe(true);expect(composer).toHaveProperty("value", "Original draft");
+    fireEvent.click(screen.getByRole("button", { name: "Restore terminal dock" }));
+    await waitFor(() => expect(upper.hasAttribute("inert")).toBe(false));
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);expect(document.activeElement).toBe(composer);
+    expect(upper.getAttribute("data-terminal-compact-restored")).toBe(height === 120 ? "true" : null);
+    fireEvent.click(screen.getByRole("button", { name: "Maximize terminal dock" }));await waitFor(() => expect(upper.hasAttribute("inert")).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Hide terminals" }));await waitFor(() => expect(upper.hasAttribute("inert")).toBe(false));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Terminals" }));expect(f.control).not.toHaveBeenCalled();
+  } finally { mounted.unmount();f.client.clear();vi.unstubAllGlobals(); }
+});

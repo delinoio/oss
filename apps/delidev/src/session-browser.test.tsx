@@ -231,3 +231,29 @@ it.each(["file:///fixture", "https://user:secret@fixture.test/"])("blocks invali
   await waitFor(() => expect(screen.getByRole("button", { name: "Open account browser" })).toHaveProperty("disabled", true));
   expect(document.querySelector(".browser-viewport")).toBeNull(); expect(f.register).not.toHaveBeenCalled(); expect(native).not.toHaveBeenCalled();
 });
+
+it("fences a retained Browser under the maximized upper inert region through exact Hide uncertainty", async () => {
+  const f = fixture(); let attempts = 0, finish!: (value: typeof f.local) => void;
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "hide") {
+      if (++attempts === 1) throw new Error("busy");
+      if (attempts === 2) return new Promise(resolve => { finish = resolve; });
+    }
+    return f.local;
+  });
+  const view = render(<div data-upper><f.View /></div>), upper = view.container.querySelector("[data-upper]")!;
+  await open();await screen.findByRole("button", { name: /Tab 1/ });
+  const original = native.mock.calls.find(([operation]) => operation === "open_browser")![1];
+  try {
+    await act(async () => { upper.setAttribute("inert", ""); upper.setAttribute("aria-hidden", "true"); });
+    await waitFor(() => expect(attempts).toBe(2));
+    await act(async () => { upper.removeAttribute("inert"); upper.removeAttribute("aria-hidden"); fireEvent.resize(window); });
+    expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(1);
+    expect(native.mock.calls.filter(([, args]) => args.action === "hide").every(([, args]) => args.viewId === original.viewId)).toBe(true);
+    expect(native.mock.calls.filter(([, args]) => args.action === "resize")).toHaveLength(0);
+    await act(async () => { finish(f.local); });
+    await waitFor(() => expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(2));
+    expect(f.register).toHaveBeenCalledTimes(1);
+    expect(native.mock.calls.filter(([operation]) => operation === "open_browser")[1][1].profileId).toBe(original.profileId);
+  } finally { view.unmount(); }
+});
