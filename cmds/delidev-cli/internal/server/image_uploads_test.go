@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -194,6 +195,26 @@ func TestImageRPCOrderedClaimExactRetryReadbackAndImmutableEdit(t *testing.T) {
 	var edited domain.QueuedInput
 	if domain.Decode(edit.Msg.Change.Input.DocumentJson, &edited) != nil || edited.Prompt != "Updated caption" || len(edited.Attachments) != 2 || edited.Attachments[0] != queued.Attachments[0] || edited.Attachments[1] != queued.Attachments[1] {
 		t.Fatal("old-client edit changed image refs", edited)
+	}
+
+	explicit := &pb.EditQueuedInputRequest{Mutation: acctMutation(edit.Msg.Change.Input, domain.NewID()), SessionId: change.Session.Id, Prompt: "", Attachments: []*pb.ImageAttachment{second.Attachment, first.Attachment}}
+	explicitReply, err := sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, explicit))
+	if err != nil {
+		t.Fatal("typed image-only edit rejected", err)
+	}
+	var typed domain.QueuedInput
+	if domain.Decode(explicitReply.Msg.Change.Input.DocumentJson, &typed) != nil || typed.Prompt != "" || !slices.Equal(typed.Attachments, queued.Attachments) {
+		t.Fatal("typed edit replaced original images", typed)
+	}
+	typedReplay, err := sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, explicit))
+	if err != nil || !typedReplay.Msg.Change.Replayed || typedReplay.Msg.Change.Input.Revision != explicitReply.Msg.Change.Input.Revision {
+		t.Fatal("typed edit exact retry lost", typedReplay, err)
+	}
+	for _, refs := range [][]*pb.ImageAttachment{{first.Attachment, second.Attachment}, {second.Attachment}} {
+		rejected := &pb.EditQueuedInputRequest{Mutation: acctMutation(explicitReply.Msg.Change.Input, domain.NewID()), SessionId: change.Session.Id, Prompt: "changed", Attachments: refs}
+		if _, err := sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, rejected)); connect.CodeOf(err) != connect.CodeAborted {
+			t.Fatal("reordered or removed accepted image admitted", err)
+		}
 	}
 	read, err := c.ReadAttachment(ctx, ownerRequest(f.identity, &pb.ReadAttachmentRequest{SessionId: change.Session.Id, AttachmentId: first.Attachment.Id, Limit: domain.MaxImageChunkBytes}))
 	if err != nil || !bytes.Equal(read.Msg.Data, raw) || read.Msg.Sha256 != imageinput.Digest(raw) || !read.Msg.Complete {

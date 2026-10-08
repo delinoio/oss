@@ -9315,6 +9315,13 @@
       "member": "problem_code",
       "number": 6,
       "newDeclaration": true
+    },
+    {
+      "issue": 1746,
+      "kind": "message",
+      "declaration": "EditQueuedInputRequest",
+      "member": "attachments",
+      "number": 5
     }
   ],
   "rpcReservations": [
@@ -9324,6 +9331,78 @@
       "method": "ListSkills",
       "input": "ListSkillsRequest",
       "output": "ListSkillsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "BeginUpload",
+      "input": "BeginUploadRequest",
+      "output": "BeginUploadResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "WriteChunk",
+      "input": "WriteChunkRequest",
+      "output": "WriteChunkResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "FinishUpload",
+      "input": "FinishUploadRequest",
+      "output": "FinishUploadResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "GetUpload",
+      "input": "GetUploadRequest",
+      "output": "GetUploadResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "ReadAttachment",
+      "input": "ReadAttachmentRequest",
+      "output": "ReadAttachmentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "DeleteDraftAttachment",
+      "input": "DeleteDraftAttachmentRequest",
+      "output": "DeleteDraftAttachmentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "WatchAttachmentTransfers",
+      "input": "WatchAttachmentTransfersRequest",
+      "output": "WatchAttachmentTransfersResponse",
+      "clientStreaming": false,
+      "serverStreaming": true
+    },
+    {
+      "issue": 1746,
+      "service": "AttachmentService",
+      "method": "ReportAttachmentTransfer",
+      "input": "ReportAttachmentTransferRequest",
+      "output": "ReportAttachmentTransferResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

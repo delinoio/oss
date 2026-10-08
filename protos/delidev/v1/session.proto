@@ -147,6 +147,7 @@ message EnqueueInputResponse {
 }
 
 message EditQueuedInputRequest {
+  repeated ImageAttachment attachments = 5;
   Mutation mutation = 1;
   string session_id = 2;
   string prompt = 3;

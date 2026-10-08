@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"os"
@@ -96,6 +97,11 @@ func TestNativeHistoryRetainsExplicitSkillIdentity(t *testing.T) {
 }
 
 func TestSkillForkCopiesOriginalPackagesAndRewritesProofsBeforeParentDeletion(t *testing.T) {
+	for _, withImages := range []bool{false, true} {
+		t.Run(fmt.Sprint(withImages), func(t *testing.T) { testSkillForkCopiesOriginalPackages(t, withImages) })
+	}
+}
+func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 	ctx := context.Background()
 	sourceHome, _ := filepath.EvalSymlinks(t.TempDir())
 	childHome, _ := filepath.EvalSymlinks(t.TempDir())
@@ -121,9 +127,17 @@ func TestSkillForkCopiesOriginalPackagesAndRewritesProofsBeforeParentDeletion(t 
 	if err != nil {
 		t.Fatal(err)
 	}
+	imageRoot := t.TempDir()
+	imageMachine := scope.MachineID
+	imageClient := &Client{imageRoot: imageRoot, imageMachine: imageMachine}
+	extra := []any{}
+	if withImages {
+		ref := stageImage(t, imageRoot, imageMachine)
+		extra = append(extra, map[string]any{"type": "localImage", "path": filepath.Join(imageRoot, "image-inputs", string(ref.ID)+".data")})
+	}
 	id, turnID := domain.NewID(), domain.NewID()
-	turn, _ := json.Marshal(map[string]any{"id": turnID, "status": "completed", "itemsView": "full", "items": []any{map[string]any{"id": "user", "type": "userMessage", "clientId": id, "content": []any{map[string]any{"type": "text", "text": "<skill><path>" + selected[0].Path + "</path></skill> literal user quotation", "text_elements": []any{}}, map[string]any{"type": "skill", "name": "add-issue", "path": selected[0].Path}}}}})
-	_, original, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{turn}))
+	turn, _ := json.Marshal(map[string]any{"id": turnID, "status": "completed", "itemsView": "full", "items": []any{map[string]any{"id": "user", "type": "userMessage", "clientId": id, "content": append(append([]any{map[string]any{"type": "text", "text": "<skill><path>" + selected[0].Path + "</path></skill> literal user quotation", "text_elements": []any{}}}, extra...), map[string]any{"type": "skill", "name": "add-issue", "path": selected[0].Path})}}})
+	_, original, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{turn}), imageClient.nativeImageInput)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +148,7 @@ func TestSkillForkCopiesOriginalPackagesAndRewritesProofsBeforeParentDeletion(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := &ForkSource{home: sourceHome, path: path, fileDigest: digest, turns: []json.RawMessage{turn}, checkpoint: ContinuationCheckpoint{Inputs: original}}
+	source := &ForkSource{imageRoot: imageRoot, imageMachine: imageMachine, home: sourceHome, path: path, fileDigest: digest, turns: []json.RawMessage{turn}, checkpoint: ContinuationCheckpoint{Inputs: original}}
 	child, err := source.RehomeSkills(ctx, childHome)
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +169,7 @@ func TestSkillForkCopiesOriginalPackagesAndRewritesProofsBeforeParentDeletion(t 
 	if err != nil || string(copied) != "Original resource" {
 		t.Fatal("child depends on parent resource", err)
 	}
-	_, inputs, err := decodeLatestTurnInputs(marshalForkPage(child.turns))
+	_, inputs, err := decodeLatestTurnInputs(marshalForkPage(child.turns), imageClient.nativeImageInput)
 	if err != nil || inputs[0] != child.checkpoint.Inputs[0] {
 		t.Fatal("child history proof changed", err)
 	}

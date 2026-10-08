@@ -447,7 +447,7 @@ func validateSessionMutation(meta *pb.Mutation) error {
 	return domain.ID(meta.RequestId).Validate()
 }
 
-func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sessionID domain.ID, prompt string, remove bool, selections *pb.SkillSelectionList) (*pb.SessionChange, error) {
+func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sessionID domain.ID, prompt string, remove bool, selections *pb.SkillSelectionList, attachments []domain.ImageAttachment) (*pb.SessionChange, error) {
 	if err := validateSessionMutation(meta); err != nil {
 		return nil, err
 	}
@@ -460,14 +460,15 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		}
 	}
 	identity := struct {
-		ID        domain.ID
-		SessionID domain.ID
-		Revision  uint64
-		Prompt    string
-		Remove    bool
-		Skills    *pb.SkillSelectionList `json:",omitempty"`
-		Actor     *domain.Principal      `json:",omitempty"`
-	}{ID: domain.ID(meta.Id), SessionID: sessionID, Revision: meta.ExpectedRevision, Prompt: prompt, Remove: remove, Skills: selections}
+		ID          domain.ID
+		SessionID   domain.ID
+		Revision    uint64
+		Prompt      string
+		Remove      bool
+		Attachments []domain.ImageAttachment `json:",omitempty"`
+		Skills      *pb.SkillSelectionList   `json:",omitempty"`
+		Actor       *domain.Principal        `json:",omitempty"`
+	}{ID: domain.ID(meta.Id), SessionID: sessionID, Revision: meta.ExpectedRevision, Prompt: prompt, Remove: remove, Skills: selections, Attachments: attachments}
 	var preparedScope *domain.SkillReadRequest
 	var nextBindings []domain.SkillBinding
 	var nextNames map[domain.ID]string
@@ -574,6 +575,9 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 		if err != nil {
 			return nil, err
 		}
+		if len(attachments) > 0 && !slices.Equal(attachments, value.Attachments) {
+			return nil, domain.Fail(domain.Conflict, "Accepted image references cannot change.", "Preserve the original ordered attachments when editing queued text.")
+		}
 		fixRow, fix, hasFix, err := tx.PRRemediationForInput(r.ID)
 		if err != nil {
 			return nil, err
@@ -641,7 +645,11 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 }
 
 func (s *Service) EditQueuedInput(ctx context.Context, req *connect.Request[pb.EditQueuedInputRequest]) (*connect.Response[pb.EditQueuedInputResponse], error) {
-	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), req.Msg.Prompt, false, req.Msg.Skills)
+	attachments, err := requestImageAttachments(req.Msg.Attachments)
+	if err != nil {
+		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+	}
+	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), req.Msg.Prompt, false, req.Msg.Skills, attachments)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -650,7 +658,7 @@ func (s *Service) EditQueuedInput(ctx context.Context, req *connect.Request[pb.E
 	return response, nil
 }
 func (s *Service) RemoveQueuedInput(ctx context.Context, req *connect.Request[pb.RemoveQueuedInputRequest]) (*connect.Response[pb.RemoveQueuedInputResponse], error) {
-	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), "", true, nil)
+	change, err := s.changeQueuedInput(ctx, req.Msg.Mutation, domain.ID(req.Msg.SessionId), "", true, nil, nil)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
