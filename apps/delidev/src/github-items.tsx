@@ -6,14 +6,14 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { useStablePageRevisions, paginationError, invalidGitHubPage, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { FailureCode, IntegrationQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text, type Document } from "./documents";
 import { OpenPRProblemHistory } from "./pr-problems";
 import { Problem } from "./ui";
 import { OpenGitHub } from "./github-opening";
-import { ItemKind, QueryOperation, ItemState, type GitHubQuery, positive, uuid, bounded, date, sha, actorValid } from "./github-query-model";
+import { ItemKind, QueryOperation, type GitHubQuery, positive, uuid, bounded, date, sha, actorValid } from "./github-query-model";
 import { PRSource, validPRSource } from "./github-pr-source";
 import { PRObservation, validPRObservation, isObservation } from "./github-pr-observations";
 
@@ -118,18 +118,4 @@ export function StandalonePullRequestResults({ selected, navigation, active, cha
     changeNavigation({ ...navigation, query: next, previous });
   }
   return <QueryResult key={JSON.stringify(navigation.query)} selected={selected} query={navigation.query} active={active} standaloneCards={navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search} pending={pending} change={change} back={navigation.previous.length ? () => changeNavigation({ ...navigation, query: navigation.previous[navigation.previous.length - 1]!, previous: navigation.previous.slice(0, -1) }) : undefined} />;
-}
-function ItemBrowser({ selected }: { selected: Resource }) {
-  useLocale();
-  const [kind, setKind] = useState(ItemKind.PullRequest), [state, setState] = useState(ItemState.Open), [search, setSearch] = useState(""), [pageSize, setPageSize] = useState(20);
-  const initial: GitHubQuery = { kind: ItemKind.PullRequest, operation: QueryOperation.List, state: ItemState.Open, page: 1, page_size: 20 };
-  const [query, setQuery] = useState<GitHubQuery>(initial), [previous, setPrevious] = useState<GitHubQuery[]>([]);
-  function change(next: GitHubQuery) { if (next.operation !== query.operation) setPrevious((old) => [...old.slice(-7), query]); setQuery(next); }
-  return <section aria-label={copy("github-items.browseRepositoryGithubItems_25c5d1")}><form onSubmit={(event) => { event.preventDefault(); setPrevious([]); setQuery({ kind, operation: search.trim() ? QueryOperation.Search : QueryOperation.List, state, page: 1, page_size: pageSize, ...(search.trim() ? { search: search.trim() } : {}) }); }}><label>{copy("github-items.githubItemType_bdad5e")}<select value={kind} onChange={(event) => setKind(event.target.value as ItemKind)}><option value={ItemKind.PullRequest}>{copy("github-items.pullRequests_d9e3f2")}</option><option value={ItemKind.Issue}>{copy("github-items.issues_666067")}</option></select></label><label>{copy("github-items.githubItemState_e62ca5")}<select value={state} onChange={(event) => setState(event.target.value as ItemState)}><option value={ItemState.Open}>{copy("github-items.open_ed077f")}</option><option value={ItemState.Closed}>{copy("github-items.closed_c21ead")}</option><option value={ItemState.All}>{copy("github-items.all_a52ace")}</option></select></label><label>{copy("github-items.githubPageSize_703f1f")}<select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value={1}>1</option><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option></select></label><label>{copy("github-items.searchTitleAndBody_f2c94c")}<input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} /></label><p>{copy("github-items.usePlainWordsNumbersSpacesHyphens_a1e3a4")}</p><button>{copy("github-items.readGithubItems_9d9b08")}</button></form><QueryResult key={JSON.stringify(query)} selected={selected} query={query} change={change} back={previous.length ? () => { setQuery(previous[previous.length - 1]); setPrevious((old) => old.slice(0, -1)); } : undefined} /></section>;
-}
-export function RepositoryGitHubItems({ selected, active }: { selected: Resource; active: boolean }) {
-  useLocale();
-  const [open, setOpen] = useState(false), data = document(selected);
-  const configured = Boolean(text(data.integration_id) && text(data.github_owner) && text(data.github_name));
-  return <div><button disabled={!configured || selected.schemaVersion !== 1} aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? copy("github-items.closeGithubItems_ed30c0") : copy("github-items.browseGithubItems_40ff50")}</button>{open && active ? <ItemBrowser key={`${selected.id}:${selected.revision}`} selected={selected} /> : null}</div>;
 }

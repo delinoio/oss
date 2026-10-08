@@ -3,16 +3,15 @@ import { useId } from "react";
 import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text } from "./documents";
 import { copy, LocalizedText, useLocale } from "./localization";
-import { RepositoryGitHubItems } from "./github-items";
 import "./repository-list.css";
 
 export function RepositoryIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3v10m0 4v4m12-14v4a4 4 0 0 1-4 4h-4" /><circle cx="6" cy="15" r="2" /><circle cx="18" cy="5" r="2" /></svg>;
 }
 
-// Inventory presentation uses saved metadata only. GitHub observations remain
-// explicit actions owned by the existing read controllers below.
-export function RepositoryRow({ row, active, edit, remove }: { row: Resource; active: boolean; edit: () => void; remove: () => void }) {
+// Inventory presentation uses saved metadata only. Standalone Pull requests
+// owns explicit GitHub observations independently of repository management.
+export function RepositoryRow({ row, edit, remove }: { row: Resource; edit: () => void; remove: () => void }) {
   useLocale();
   const heading = useId(), name = resourceName(row), data = document(row);
   const supported = supportsResourceSchema(row);
@@ -38,7 +37,6 @@ export function RepositoryRow({ row, active, edit, remove }: { row: Resource; ac
     </dl> : null}
     {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
     {text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}
-    <div className="repository-github-tools"><RepositoryGitHubItems selected={row} active={active} /></div>
     <p className="repository-resource-id"><span>{copy("settings.repositoryId")}</span><code>{row.id}</code></p>
   </article>;
 }

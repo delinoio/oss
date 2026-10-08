@@ -47,6 +47,9 @@ try {
     await page.getByRole("button", { name: l("Settings"), exact: true }).click();
     if (width < 760) await page.getByRole("button", { name: catalogs[language]["App.open_a007d6"].replace("<s0/>", catalogs[language]["App.extra.a1de4eceaa3b"]), exact: true }).click();
     await page.getByRole("button", { name: l("Repositories"), exact: true }).click();
+    assert.equal(await page.locator(".repository-github-tools").count(), 0, "Saved repository cards contain no GitHub content browser or empty tools wrapper");
+    assert.equal(await page.getByRole("button", { name: l("Browse GitHub items"), exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: l("Close GitHub items"), exact: true }).count(), 0);
     const opener = page.locator('.repository-row .repository-manage-actions button').first();
     await opener.click();
     const dialog = page.locator('dialog.settings-task-dialog[open]');

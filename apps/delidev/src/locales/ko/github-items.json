@@ -40,18 +40,6 @@
   "github-items.githubResultPages_52bc9b": "GitHub 결과 페이지",
   "github-items.firstGithubPage_fbf165": "첫 GitHub 페이지",
   "github-items.nextGithubPage_1ae370": "다음 GitHub 페이지",
-  "github-items.browseRepositoryGithubItems_25c5d1": "저장소 GitHub 항목 탐색",
-  "github-items.githubItemType_bdad5e": "GitHub 항목 유형",
-  "github-items.githubItemState_e62ca5": "GitHub 항목 상태",
-  "github-items.open_ed077f": "열기",
-  "github-items.closed_c21ead": "닫힘",
-  "github-items.all_a52ace": "전체",
-  "github-items.githubPageSize_703f1f": "GitHub 페이지 크기",
-  "github-items.searchTitleAndBody_f2c94c": "제목과 본문 검색",
-  "github-items.usePlainWordsNumbersSpacesHyphens_a1e3a4": "일반 단어, 숫자, 공백, 하이픈, 밑줄 또는 마침표를 사용하세요. 검색어를 비우면 항목 목록을 표시합니다.",
-  "github-items.readGithubItems_9d9b08": "GitHub 항목 읽기",
-  "github-items.closeGithubItems_ed30c0": "GitHub 항목 닫기",
-  "github-items.browseGithubItems_40ff50": "GitHub 항목 탐색",
   "github-items.extra.c8c2e1d98310": "본문이 없습니다.",
   "github-items.extra.a326f4758492": "작성자 사용 불가"
 }
