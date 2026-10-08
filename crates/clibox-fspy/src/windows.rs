@@ -38,9 +38,10 @@ pub enum Admission {
     Quit,
 }
 
+use crate::windows_frame::native_path;
 #[cfg(test)]
 use crate::windows_frame::HEADER_BYTES;
-use crate::windows_frame::{native_path, operation_id};
+pub(crate) use crate::windows_frame::{operation_id, MAX_PATH_BYTES};
 pub use crate::windows_frame::{read_frame, Frame, FrameKind};
 
 fn fs_path(units: &[u16]) -> PathBuf {
