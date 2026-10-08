@@ -58,13 +58,13 @@ class IntentRegistry {
   }
 }
 
-export interface RetainedMutationIntent { key: string; busy: boolean; uncertain: boolean }
+export interface RetainedMutationIntent { key: string; busy: boolean; uncertain: boolean; input: object }
 export function useRetainedMutationIntents(prefix: string): RetainedMutationIntent[] {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
   const revision = useSyncExternalStore(registry.subscribe, () => registry.revision, () => registry.revision);
   return useMemo(() => [...registry.entries].flatMap(([key, intent]) => key.startsWith(prefix) && intent.input
-    ? [{ key, busy: intent.busy, uncertain: intent.uncertain }]
+    ? [{ key, busy: intent.busy, uncertain: intent.uncertain, input: intent.input }]
     : []), [prefix, registry, revision]);
 }
 const Context = createContext<IntentRegistry | undefined>(undefined);

@@ -2889,3 +2889,17 @@ Agent Worker, Runs on, Plan Mode, Options and submission locks/retries retain
 their original behavior. Narrow/zoom layouts wrap without replacing draft owners.
 Existing-session compact attachment help/layout stays unchanged. No RPC, native
 behavior, capability, migration or logging of image/prompt content is added.
+
+### Original queue mutation recovery (issue #1580)
+
+The connection-scoped mutation registry retains pending and uncertain original
+Edit, Remove and Steer requests independently of current queue rows. SessionView
+presents matching original actions when their queue payload is absent, including
+a removed tombstone, resnapshot, refetch or session navigation. Mounted ordinary
+rows retain their existing retry controls without duplicate recovery buttons.
+Recovery validates the original request type, session/input/request UUIDs and
+revision; Steer also retains its original execution/turn binding. Explicit Retry
+sends the original immutable request only. Missing rows never permit resurrection,
+replacement requests or repeated queue accounting. Definite acknowledgment clears
+the intent; connection disposal prevents replay and discards presentation. The
+existing 1,000-intent/8 MiB registry bounds apply without another content cache.

@@ -11,5 +11,8 @@
   "queue.edit_262121": "edit",
   "queue.removal_e57388": "removal",
   "queue.steer_1cf39e": "Steer",
-  "queue.retryTheSame_4cb78a": "Retry the same <s0/>"
+  "queue.retryTheSame_4cb78a": "Retry the same <s0/>",
+  "queue.pendingActions": "Pending input actions",
+  "queue.sendingOriginal": "Sending the original input action…",
+  "queue.uncertainOriginal": "The original input action acknowledgment is uncertain."
 }

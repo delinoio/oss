@@ -11,5 +11,8 @@
   "queue.edit_262121": "편집",
   "queue.removal_e57388": "제거",
   "queue.steer_1cf39e": "방향 안내",
-  "queue.retryTheSame_4cb78a": "같은 <s0/> 다시 시도"
+  "queue.retryTheSame_4cb78a": "같은 <s0/> 다시 시도",
+  "queue.pendingActions": "대기 중인 입력 작업",
+  "queue.sendingOriginal": "원래 입력 작업을 전송하는 중…",
+  "queue.uncertainOriginal": "원래 입력 작업의 승인 여부가 불확실합니다."
 }
