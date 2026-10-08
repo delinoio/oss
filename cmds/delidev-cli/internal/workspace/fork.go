@@ -335,8 +335,16 @@ func scanForkTreeBounded(ctx context.Context, source, target string, gitTree boo
 			// File.ReadDir returns native order; sort to make the complete digest
 			// independent of directory insertion and enumeration order.
 			sortForkEntries(children)
+			marker, err := inspectForkGitMarker(root, name)
+			if err != nil {
+				return err
+			}
 			for _, child := range children {
-				if child.Name() == ".git" {
+				administration, err := marker.matches(root, name, child.Name())
+				if err != nil {
+					return err
+				}
+				if administration {
 					if name == "." && gitTree {
 						continue
 					}
@@ -345,6 +353,14 @@ func scanForkTreeBounded(ctx context.Context, source, target string, gitTree boo
 				if err := visit(filepath.Join(name, child.Name())); err != nil {
 					return err
 				}
+				if administration, err := marker.matches(root, name, child.Name()); err != nil {
+					return err
+				} else if administration {
+					return forkSnapshotChanged()
+				}
+			}
+			if err := marker.verify(root, name); err != nil {
+				return err
 			}
 			if target != "" {
 				if err := outputRoot.Chmod(name, before.Mode().Perm()); err != nil {
@@ -529,4 +545,50 @@ func forkFileSize(info os.FileInfo) int64 {
 		return -1
 	}
 	return info.Size()
+}
+
+// forkGitMarker binds the native .git entry in one parent without following a
+// symlink or reading a gitdir pointer. Native case aliases share its identity;
+// distinct .GIT content on a case-sensitive filesystem remains ordinary data.
+type forkGitMarker struct {
+	info os.FileInfo
+}
+
+func inspectForkGitMarker(root *os.Root, parent string) (forkGitMarker, error) {
+	info, err := root.Lstat(filepath.Join(parent, ".git"))
+	if os.IsNotExist(err) {
+		return forkGitMarker{}, nil
+	}
+	if err != nil {
+		return forkGitMarker{}, forkUnsupported()
+	}
+	return forkGitMarker{info: info}, nil
+}
+
+func (m forkGitMarker) verify(root *os.Root, parent string) error {
+	current, err := root.Lstat(filepath.Join(parent, ".git"))
+	if m.info == nil && os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil || m.info == nil || !os.SameFile(m.info, current) || m.info.Mode() != current.Mode() || m.info.Size() != current.Size() || !m.info.ModTime().Equal(current.ModTime()) {
+		return forkSnapshotChanged()
+	}
+	return nil
+}
+
+func (m forkGitMarker) matches(root *os.Root, parent, entry string) (bool, error) {
+	if err := m.verify(root, parent); err != nil {
+		return false, err
+	}
+	if entry == ".git" {
+		return true, nil
+	}
+	if m.info == nil {
+		return false, nil
+	}
+	info, err := root.Lstat(filepath.Join(parent, entry))
+	if err != nil {
+		return false, forkSnapshotChanged()
+	}
+	return os.SameFile(m.info, info), nil
 }
