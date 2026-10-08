@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -257,6 +258,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	inspection.Cwd = config.Workspace
 	env = config.OrdinaryTools.Apply(env)
 	prepared.Env = append(env, credentialVariable+"="+config.Token, "GROK_DEFAULT_MODEL="+selectedModel)
+	prepared.ProtectedValues = append(slices.Clone(prepared.ProtectedValues), config.Token)
 	prepared.Args = []string{"--no-auto-update", "agent", "stdio"}
 	phase = launchPhase
 	connection, err := nativewire.StartJSONRPC(ctx, prepared)

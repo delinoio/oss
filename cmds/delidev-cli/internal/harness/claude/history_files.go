@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -33,7 +34,7 @@ func ReadMainTranscript(ctx context.Context, home string, session domain.ID, wor
 func readMainTranscript(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, logger *slog.Logger) (observation TranscriptObservation, returned error) {
 	return readMainTranscriptWithInlineTools(ctx, home, session, workspace, messages, compactions, actions, resumes, nil, logger)
 }
-func readMainTranscriptWithInlineTools(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, tools *inlineToolProofs, logger *slog.Logger) (observation TranscriptObservation, returned error) {
+func readMainTranscriptWithInlineTools(ctx context.Context, home string, session domain.ID, workspace string, messages []HistoryMessageProof, compactions []HistoryCompactionProof, actions []HistoryCompactionActionProof, resumes []historyResumeProof, tools *inlineToolProofs, logger *slog.Logger, protected ...string) (observation TranscriptObservation, returned error) {
 	phase := historyScopePhase
 	defer func() { logHistoryRead(ctx, logger, session, false, phase, returned) }()
 	if session.Validate() != nil {
@@ -49,6 +50,10 @@ func readMainTranscriptWithInlineTools(ctx context.Context, home string, session
 	raw, err := scope.read(ctx, filepath.Join("projects", "delidev", string(session)+".jsonl"), maxHistoryTranscript)
 	if err != nil {
 		return observation, err
+	}
+	if !protectedTranscriptSafe(raw, security.NewProtectedJSON(protected)) {
+		clear(raw)
+		return observation, historyUncertain()
 	}
 	phase = historyProofPhase
 	observation, err = verifyResumedTranscript(ctx, raw, session, workspace, messages, nil, compactions, actions, resumes)
@@ -68,7 +73,7 @@ func readMainTranscriptWithInlineTools(ctx context.Context, home string, session
 // task, never from sidecar contents or a model-provided path. The original pair
 // stays pinned until both reads finish; native 0644 Unix sidecars remain behind
 // the checked owner-only root without relaxing security.ReadPrivate.
-func ReadChildTranscript(ctx context.Context, home string, session domain.ID, workspace string, binding ChildHistoryBinding, messages []HistoryMessageProof, logger *slog.Logger) (observation ChildTranscriptObservation, returned error) {
+func ReadChildTranscript(ctx context.Context, home string, session domain.ID, workspace string, binding ChildHistoryBinding, messages []HistoryMessageProof, logger *slog.Logger, protected ...string) (observation ChildTranscriptObservation, returned error) {
 	phase := historyScopePhase
 	defer func() { logHistoryRead(ctx, logger, session, true, phase, returned) }()
 	if session.Validate() != nil || !nativeHistoryTaskFilename(binding.TaskID) {
@@ -92,6 +97,12 @@ func ReadChildTranscript(ctx context.Context, home string, session domain.ID, wo
 	}
 	if err := scope.check(ctx); err != nil {
 		return observation, err
+	}
+	guard := security.NewProtectedJSON(protected)
+	if !protectedTranscriptSafe(raw, guard) || !guard.Safe(metadata) {
+		clear(raw)
+		clear(metadata)
+		return observation, historyUncertain()
 	}
 	phase = historyProofPhase
 	return VerifyChildTranscript(ctx, raw, metadata, session, workspace, binding, messages)
@@ -264,4 +275,16 @@ func (scope *historyFiles) read(ctx context.Context, name string, limit int64) (
 		return nil, err
 	}
 	return result, nil
+}
+
+// JSONL is already read under the existing file bound. Guard each complete
+// native frame before history can establish content or continuation authority.
+func protectedTranscriptSafe(raw []byte, guard security.ProtectedJSON) bool {
+	for _, line := range bytes.Split(raw, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) != 0 && !guard.Safe(line) {
+			return false
+		}
+	}
+	return true
 }

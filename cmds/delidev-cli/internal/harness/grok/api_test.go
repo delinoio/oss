@@ -88,6 +88,9 @@ func apiFixtureProcess() {
 			meta["defaultAuthMethodId"] = "xai.api_key"
 			meta["modelState"] = map[string]any{"currentModelId": selectedModel, "availableModels": fixtureAPIModels()}
 			value["authMethods"] = []any{map[string]any{"id": "xai.api_key", "name": "API", "description": "Private API advertisement"}, map[string]any{"id": "grok.com", "name": "Grok", "description": "Private subscription advertisement"}}
+			if strings.HasPrefix(mode, "reflect-init-") {
+				value["authMethods"].([]any)[0].(map[string]any)["description"] = reflectedFixtureValue(os.Getenv(credentialVariable), strings.TrimPrefix(mode, "reflect-init-"))
+			}
 			if mode == "wrong-model" {
 				meta["modelState"].(map[string]any)["currentModelId"] = "another-model"
 			}

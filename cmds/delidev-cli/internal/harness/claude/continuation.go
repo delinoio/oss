@@ -123,7 +123,7 @@ func (s *APISession) retainClosedHistoryLocked(ctx context.Context) (*ClosedAPIS
 	return &ClosedAPISession{previous: s, transcript: observed, requiresResume: requiresResume}, nil
 }
 
-func (s *APISession) readRetainedTranscript(ctx context.Context) (TranscriptObservation, error) {
+func (s *APISession) readRetainedTranscript(ctx context.Context, additionalProtected ...string) (TranscriptObservation, error) {
 	h := s.history
 	if h == nil || s.current == nil {
 		return TranscriptObservation{}, historyUncertain()
@@ -135,7 +135,7 @@ func (s *APISession) readRetainedTranscript(ctx context.Context) (TranscriptObse
 	if err != nil {
 		return TranscriptObservation{}, err
 	}
-	observed, err := readMainTranscriptWithInlineTools(ctx, historyHome(s.config), s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, &tools, s.config.Process.Logger)
+	observed, err := readMainTranscriptWithInlineTools(ctx, historyHome(s.config), s.config.SessionID, s.config.Workspace, h.messages, h.compactions, h.actions, h.resumes, &tools, s.config.Process.Logger, append(s.config.ProtectedValues(), additionalProtected...)...)
 	if err != nil {
 		return TranscriptObservation{}, err
 	}
@@ -201,7 +201,7 @@ func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner dom
 	}
 	// Initialization may not silently rewrite or substitute accepted history.
 	phase = continuationInitializedHistory
-	observed, err = previous.readRetainedTranscript(ctx)
+	observed, err = previous.readRetainedTranscript(ctx, config.ProtectedValues()...)
 	if err != nil || observed != closed.transcript {
 		return fail(historyUncertain())
 	}
@@ -223,6 +223,7 @@ func ContinueAPISession(ctx context.Context, closed *ClosedAPISession, owner dom
 			history.resumes = append(history.resumes, proof)
 		}
 	}
+	config.Process.ProtectedValues = config.ProtectedValues()
 	config.API = APIConfig{}
 	next := &APISession{stream: stream, config: config, initial: initial, current: previous.current, compaction: previous.compaction, inputs: previous.inputs, history: previous.history, authorities: previous.authorities, owners: previous.owners, serverOrigin: previous.serverOrigin}
 	next.owners[owner], next.authorities[authority] = true, true
