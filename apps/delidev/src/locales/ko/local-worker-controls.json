@@ -48,5 +48,9 @@
   "local-worker-controls.autoRetryingBadge": "다시 시도 중",
   "local-worker-controls.autoCheckingBadge": "확인 중",
   "local-worker-controls.viewProblemDetails": "문제 상세 보기",
-  "local-worker-controls.problemTitle": "로컬 Worker 문제"
+  "local-worker-controls.problemTitle": "로컬 Worker 문제",
+  "local-worker-controls.compactRunning": "프로세스 실행 중 · 준비 상태는 별도로 확인",
+  "local-worker-controls.quitOwnedSummary": "DeliDev를 종료하면 중지됩니다.",
+  "local-worker-controls.quitBorrowedSummary": "DeliDev를 종료해도 계속 실행됩니다.",
+  "local-worker-controls.details": "세부 정보"
 }

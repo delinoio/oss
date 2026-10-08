@@ -119,7 +119,7 @@ it.each([
   const label = await screen.findByText(badge);
   expect(label.getAttribute("role")).toBeNull();
   expect(screen.getAllByText(description)).toHaveLength(1);
-  expect(screen.getByRole("status").textContent).toBe(description);
+  expect(screen.getByRole("status").textContent).toBe(state === LocalWorkerState.Running ? "Process running · Readiness checked separately" : description);
   expect(screen.getByText(`Execution machine: ${value.machine_id}`)).toBeTruthy();
   expect(Boolean(screen.queryByRole("button", { name: "Start local Worker" }))).toBe(start);
   expect(Boolean(screen.queryByRole("button", { name: "Stop local Worker" }))).toBe(stop);
@@ -142,4 +142,53 @@ it("keeps the default non-registering consumer's appearance and pending callback
   expect(screen.queryByRole("button", { name: "Register this computer" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Stop local Worker" }));
   await waitFor(() => expect(pendingChanged).toHaveBeenLastCalledWith(true));
+});
+
+it.each([true, false])("collapses complete Running explanations without changing controller ownership (%s)", async owned_by_app => {
+  const value = { ...running(), management: { state: LocalWorkerManagementState.Running, attempts: 0, retry_ms: 0, owned_by_app } };
+  const control = vi.fn(async (_action: LocalWorkerAction) => value), props = { presentation: LocalWorkerPresentation.RunnerDevices, control, changed: vi.fn() };
+  const view = render(<LocalWorkerControls {...props} active />);
+  await screen.findByText("Process running · Readiness checked separately");
+  const details = screen.getByText("Details").closest("details")!;
+  expect(details.open).toBe(false);
+  expect(within(details).getByText(`Execution machine: ${value.machine_id}`)).toBeTruthy();
+  expect(screen.getByText(owned_by_app ? "Stops when you quit DeliDev." : "Keeps running after you quit DeliDev.").closest("details")).toBeNull();
+  expect(within(details).getByText(/Worker controller running/)).toBeTruthy();
+  details.open = true; fireEvent(details, new Event("toggle"));
+  expect(control).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Stop local Worker" }));
+  expect(screen.getByText(/Stopping this Worker interrupts/).closest("details")).toBeNull();
+  expect(details.open).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh local Worker" }));
+  await waitFor(() => expect(control).toHaveBeenCalledTimes(2));
+  expect(details.open).toBe(true);
+  expect(screen.getByRole("button", { name: "Confirm Worker stop" })).toBeTruthy();
+  view.rerender(<LocalWorkerControls {...props} active={false} />);
+  expect(details.open).toBe(false);
+  expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+});
+it.each([LocalWorkerState.NotStarted, LocalWorkerState.Starting, LocalWorkerState.Stopping, LocalWorkerState.Exited, LocalWorkerState.Uncertain])("keeps %s guidance outside the disclosure even with stale Running management", async state => {
+  const value = { ...running(), state, management: { state: LocalWorkerManagementState.Running, attempts: 0, retry_ms: 0, owned_by_app: true } };
+  const control = vi.fn(async () => value);
+  render(<LocalWorkerControls presentation={LocalWorkerPresentation.RunnerDevices} control={control} active changed={() => {}} />);
+  await screen.findByText("Details");
+  await waitFor(() => expect(screen.getByRole("status").textContent).not.toContain("Process running"));
+  expect(screen.getByRole("status").closest("details")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Start local Worker" })).toBeNull();
+});
+it("keeps saved connection presentation expanded without Runner Devices disclosure", async () => {
+  render(<LocalWorkerControls control={vi.fn(async () => running())} active changed={() => {}} />);
+  await screen.findByText(/Execution machine:/);
+  expect(screen.queryByText("Details")).toBeNull();
+  expect(screen.getByText(/Worker controller running/).closest("details")).toBeNull();
+});
+
+it("does not infer borrowed Quit ownership when Running management metadata has not arrived", async () => {
+ const control: ControlLocalWorker = Object.assign(vi.fn(async () => running()), { automatic: true });
+ render(<LocalWorkerControls presentation={LocalWorkerPresentation.RunnerDevices} control={control} active changed={() => {}} />);
+ await screen.findByText("Process running · Readiness checked separately");
+ expect(screen.queryByText("Keeps running after you quit DeliDev.")).toBeNull();
+ expect(screen.queryByText("Stops when you quit DeliDev.")).toBeNull();
+ expect(screen.getByText(/automatically starts and maintains/).closest("details")).toBeTruthy();
+ expect(screen.getByRole("button", { name: "Stop local Worker" })).toBeTruthy();
 });

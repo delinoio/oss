@@ -29,6 +29,8 @@ const badges: Record<LocalWorkerState, string> = {
 export function LocalWorkerControls({ control, active, changed, allowRegistration = true, pendingChanged, presentation = LocalWorkerPresentation.Default }: { control: ControlLocalWorker; active: boolean; changed: () => void; allowRegistration?: boolean; pendingChanged?: (pending: boolean) => void; presentation?: LocalWorkerPresentation }) {
   useLocale();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const explanation = useRef<HTMLDetailsElement>(null);
+  useEffect(() => { if (!active) explanation.current?.removeAttribute("open"); }, [active]);
   useEffect(() => { if (!active) setDetailsOpen(false); }, [active]);
   const [status, setStatus] = useState<LocalWorkerStatus>();
   const [problem, setProblem] = useProductMessage("");
@@ -82,19 +84,33 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
     : blocked ? management.failure === "service-managed" ? copy("local-worker-controls.autoServiceManaged") : management.failure === "permission-denied" || management.failure === "credential-unavailable" ? copy("local-worker-controls.autoPermission") : copy("local-worker-controls.autoBlocked")
     : management?.state === LocalWorkerManagementState.Checking ? copy("local-worker-controls.autoChecking") : management?.state === LocalWorkerManagementState.Running ? copy("local-worker-controls.autoRunningDescription") : undefined;
   const badge = blocked ? copy("local-worker-controls.autoNeedsAttention") : management?.state === LocalWorkerManagementState.Paused && status?.state !== LocalWorkerState.Stopping ? copy("local-worker-controls.autoStopped") : management?.state === LocalWorkerManagementState.Running ? copy("local-worker-controls.autoRunning") : management?.state === LocalWorkerManagementState.Registering ? copy("local-worker-controls.autoRegisteringBadge") : management?.state === LocalWorkerManagementState.Retrying ? copy("local-worker-controls.autoRetryingBadge") : management?.state === LocalWorkerManagementState.Checking ? copy("local-worker-controls.autoCheckingBadge") : status ? badges[status.state] : undefined;
-  return <section aria-label={copy("local-worker-controls.workerOnThisComputer_53d365")} className={runnerDevices ? "settings-runner-worker" : undefined}>
-    {runnerDevices ? <div className="settings-runner-worker-heading"><h2>{copy("local-worker-controls.thisComputerSWorker_80a5ac")}</h2>{badge ? <span className="settings-runner-badge">{badge}</span> : null}</div> : <h3>{copy("local-worker-controls.thisComputerSWorker_80a5ac")}</h3>}
-    <p>{automatic ? copy("local-worker-controls.autoManaged") : copy("local-worker-controls.registrationIsSeparateFromStartupThe_f724cc")}</p>
-    {status ? <><p role={blocked ? "alert" : "status"} className={runnerDevices && (blocked || status.state === LocalWorkerState.Uncertain) ? "settings-runner-uncertain" : undefined}>{runnerDevices && (blocked || status.state === LocalWorkerState.Uncertain) ? <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 2 21h20L12 3ZM12 9v5m0 3h.01" /></svg> : null}{managedDescription ?? descriptions[status.state]}</p>{status.machine_id ? <small><LocalizedText id="local-worker-controls.executionMachine_37d7c0" components={{ s0: <>{status.machine_id}</> }} /></small> : null}</> : automatic ? <p role="status">{copy("local-worker-controls.autoChecking")}</p> : null}
-    {management?.state === LocalWorkerManagementState.Running ? <p>{management.owned_by_app ? copy("local-worker-controls.autoQuitOwned") : copy("local-worker-controls.autoQuitBorrowed")}</p> : null}
-    {managedDescription && management?.state !== LocalWorkerManagementState.Running && status?.machine_id ? <p>{descriptions[status.state]}</p> : null}
-    {problem ? <p role="alert">{problem}</p> : null}
-    <div className="actions"><button disabled={busy} onClick={() => void refresh(true)}>{copy("local-worker-controls.refreshLocalWorker_167e1d")}</button>
+  // Process state and management must both agree before collapsing readiness guidance.
+  const compactRunning = status?.state === LocalWorkerState.Running && (!management || management.state === LocalWorkerManagementState.Running);
+  const generalExplanation = <p>{automatic ? copy("local-worker-controls.autoManaged") : copy("local-worker-controls.registrationIsSeparateFromStartupThe_f724cc")}</p>;
+  const machineIdentity = status?.machine_id ? <small><LocalizedText id="local-worker-controls.executionMachine_37d7c0" components={{ s0: <>{status.machine_id}</> }} /></small> : null;
+  const quitExplanation = management?.state === LocalWorkerManagementState.Running ? <p>{management.owned_by_app ? copy("local-worker-controls.autoQuitOwned") : copy("local-worker-controls.autoQuitBorrowed")}</p> : null;
+  const stateGuidance = status ? <><p role={blocked ? "alert" : "status"} className={runnerDevices && (blocked || status.state === LocalWorkerState.Uncertain) ? "settings-runner-uncertain" : undefined}>{runnerDevices && (blocked || status.state === LocalWorkerState.Uncertain) ? <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 2 21h20L12 3ZM12 9v5m0 3h.01" /></svg> : null}{runnerDevices && status.state !== LocalWorkerState.Running && management?.state === LocalWorkerManagementState.Running ? descriptions[status.state] : managedDescription ?? descriptions[status.state]}</p>{runnerDevices && managedDescription && management?.state !== LocalWorkerManagementState.Running ? <p>{descriptions[status.state]}</p> : null}</> : automatic ? <p role="status">{copy("local-worker-controls.autoChecking")}</p> : null;
+  const actions = <div className="actions"><button disabled={busy} onClick={() => void refresh(true)}>{copy("local-worker-controls.refreshLocalWorker_167e1d")}</button>
       {!status && allowRegistration && !automatic ? <button disabled={busy} onClick={() => void perform(LocalWorkerAction.Register)}>{copy("local-worker-controls.registerThisComputer_cbad75")}</button> : null}
       {canStart ? <button className={runnerDevices ? "primary" : undefined} disabled={busy || Boolean(pendingStop || confirmation)} onClick={() => void perform(LocalWorkerAction.Start)}>{copy("local-worker-controls.startLocalWorker_9c00b5")}</button> : null}
       {status?.generation && status.state !== LocalWorkerState.Exited && (!automatic || !blocked) && !confirmation && !pendingStop ? <button className={runnerDevices ? "settings-runner-stop" : undefined} disabled={busy} onClick={() => setConfirmation(status.generation)}>{copy("local-worker-controls.stopLocalWorker_0e4a48")}</button> : null}
       {blocked && runnerDevices ? <button onClick={() => setDetailsOpen(true)}>{copy("local-worker-controls.viewProblemDetails")}</button> : null}
-    </div>
+    </div>;
+  return <section aria-label={copy("local-worker-controls.workerOnThisComputer_53d365")} className={runnerDevices ? "settings-runner-worker" : undefined}>
+    {runnerDevices ? <>
+      <div className="settings-runner-worker-summary">
+        <div className="settings-runner-worker-overview">
+          <div className="settings-runner-worker-heading"><h2>{copy("local-worker-controls.thisComputerSWorker_80a5ac")}</h2>{badge ? <span className="settings-runner-badge">{badge}</span> : null}</div>
+          {compactRunning ? <><p role="status">{copy("local-worker-controls.compactRunning")}</p>{management?.state === LocalWorkerManagementState.Running ? <p>{management.owned_by_app ? copy("local-worker-controls.quitOwnedSummary") : copy("local-worker-controls.quitBorrowedSummary")}</p> : null}</> : stateGuidance}
+        </div>
+        {actions}
+      </div>
+      <details ref={explanation} className="settings-runner-worker-details">
+        <summary>{copy("local-worker-controls.details")}</summary>
+        <div>{generalExplanation}{compactRunning ? <>{managedDescription ? <p>{managedDescription}</p> : null}<p>{descriptions[status.state]}</p></> : null}{quitExplanation}{machineIdentity}</div>
+      </details>
+    </> : <><h3>{copy("local-worker-controls.thisComputerSWorker_80a5ac")}</h3>{generalExplanation}{stateGuidance}{machineIdentity}{quitExplanation}{managedDescription && management?.state !== LocalWorkerManagementState.Running && status?.machine_id ? <p>{descriptions[status.state]}</p> : null}{problem ? <p role="alert">{problem}</p> : null}{actions}</>}
+    {runnerDevices && problem ? <p role="alert">{problem}</p> : null}
     {detailsOpen ? <Modal title={copy("local-worker-controls.problemTitle")} close={() => setDetailsOpen(false)} visible={active} focusClose trapFocus>
       {badge ? <p role="status">{badge}</p> : null}
       {managedDescription ? <p>{managedDescription}</p> : null}
