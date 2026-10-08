@@ -18,7 +18,7 @@ export function QueuedInput({ resource, session, refresh, draft, changeDraft, re
   const data = document(current);
   const images = retainedImages(data.attachments);
   const imageBound = data.attachments !== undefined && (!images || images.length > 0);
-  
+
   const explicitEdit = useRef(false);
   const [localEdit, setLocalEdit] = useState<QueuedInputDraft>();
   const edit = changeDraft ? draft : localEdit;
