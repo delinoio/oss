@@ -30,7 +30,7 @@
   "machine-settings.excluded.permission": "The Runner cannot execute the harness. Review executable and operating system access on that computer, then inspect it again.",
   "machine-settings.excluded.installationFailed": "the harness inspection failed. Review the installation on that Runner and inspect it again; no readiness was established.",
   "machine-settings.excluded.version": "The installed executable did not provide a supported version. Install a supported harness version on this computer, select its path if needed, then check installed harnesses.",
-  "machine-settings.excluded.protocol": "The native harness protocol is not verified. Inspect this Runner with native protocol verification enabled; version detection alone does not establish readiness.",
+  "machine-settings.excluded.protocol": "The native harness protocol is not verified. Use Inspect installed harnesses with native protocol verification enabled; version detection alone does not establish readiness.",
   "machine-settings.observationUnavailable": "The Runner observation is unavailable or invalid. Read this exact Runner again before changing its configuration.",
   "machine-settings.observationReadFailed": "The Runner could not be refreshed. Retained observations are unconfirmed; retry the read before another inspection.",
   "machine-settings.detectedVersion": "Detected version: {{version}}",
