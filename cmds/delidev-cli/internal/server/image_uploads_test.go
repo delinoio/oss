@@ -430,3 +430,65 @@ func TestImageMixedSourcesAndImmutableDeclaredSnapshot(t *testing.T) {
 		t.Fatal("unknown original modality admitted", err)
 	}
 }
+
+func TestImageSessionCapacityRejectsBeforeStagingAndPreservesExactReceipt(t *testing.T) {
+	f, c, raw := imageRPCFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	session := domain.NewID()
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.session-image-capacity", nil, func(tx *store.Tx) (any, error) {
+		if _, err := tx.Put(domain.SessionKind, session, 0, "", "", domain.Session{Name: "Capacity fixture", MachineID: domain.ID(f.machine.Id), Archive: domain.NotArchived}); err != nil {
+			return nil, err
+		}
+		device, err := tx.InstallationWorkerDevice(domain.ID(f.machine.Id))
+		if err != nil {
+			return nil, err
+		}
+		for i := 0; i < domain.MaxSessionImageAttachments-1; i++ {
+			v := domain.ImageUpload{Version: 1, Attachment: domain.ImageAttachment{ID: domain.NewID(), MachineID: domain.ID(f.machine.Id), MediaType: domain.ImagePNG, ByteLength: uint64(len(raw)), SHA256: imageinput.Digest(raw)}, WorkerDeviceID: device, Actor: domain.Principal{Type: domain.OwnerDevice}, DraftID: domain.NewID(), OperationID: domain.NewID(), MachineRevision: f.machine.Revision, SessionID: session, State: domain.ImageReady, UploadedBytes: uint64(len(raw))}
+			body, _ := json.Marshal(v)
+			if _, err := tx.PutJob(v.Attachment.ID, 0, "", "", domain.Job{Type: domain.ImageAttachmentJob, State: domain.JobSucceeded, MachineID: v.Attachment.MachineID, Input: body, AcceptedAt: time.Now().UTC()}); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &pb.BeginUploadRequest{RequestId: string(domain.NewID()), DraftId: string(domain.NewID()), OperationId: string(domain.NewID()), MachineId: f.machine.Id, MachineRevision: f.machine.Revision, SessionId: string(session), MediaType: pb.ImageMediaType_IMAGE_MEDIA_TYPE_PNG, ByteLength: uint64(len(raw)), Sha256: imageinput.Digest(raw)}
+	admitted, err := c.BeginUpload(context.Background(), ownerRequest(f.identity, request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := c.BeginUpload(context.Background(), ownerRequest(f.identity, request))
+	if err != nil || !replay.Msg.Replayed || replay.Msg.Upload.Attachment.Id != admitted.Msg.Upload.Attachment.Id {
+		t.Fatal("boundary receipt was not idempotent", err)
+	}
+	overflow := &pb.BeginUploadRequest{RequestId: string(domain.NewID()), DraftId: string(domain.NewID()), OperationId: string(domain.NewID()), MachineId: request.MachineId, MachineRevision: request.MachineRevision, SessionId: request.SessionId, MediaType: request.MediaType, ByteLength: request.ByteLength, Sha256: request.Sha256}
+	if _, err := c.BeginUpload(context.Background(), ownerRequest(f.identity, overflow)); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("overflow staged: %v", err)
+	}
+	// A rejected attempt creates neither an accepted receipt nor a new attachment.
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+		var after domain.ID
+		for {
+			rows, err := tx.List(store.Filter{Kind: domain.JobKind, After: after, Limit: store.MaxPage})
+			if err != nil {
+				return err
+			}
+			for _, row := range rows {
+				after = row.ID
+				job, _ := store.Decode[domain.Job](row)
+				var v domain.ImageUpload
+				if job.Type == domain.ImageAttachmentJob && domain.Decode(job.Input, &v) == nil && string(v.OperationID) == overflow.OperationId {
+					t.Fatal("rejected upload metadata was written")
+				}
+			}
+			if len(rows) < store.MaxPage {
+				return nil
+			}
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

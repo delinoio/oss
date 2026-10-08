@@ -60,6 +60,9 @@ func validateImageUpload(v domain.ImageUpload) error {
 }
 
 func (t *Tx) PutImageUpload(row Record, v domain.ImageUpload) (Record, error) {
+	if err := t.ValidateImageCapacity(v); err != nil {
+		return row, err
+	}
 	if err := validateImageUpload(v); err != nil {
 		return row, err
 	}
@@ -74,8 +77,51 @@ func (t *Tx) PutImageUpload(row Record, v domain.ImageUpload) (Record, error) {
 	return t.PutJob(row.ID, row.Revision, "", "", j)
 }
 
+// Keep admission and cleanup on the same distinct-reference obligation set.
+// Removed inputs retain owners; uncertain deletion retains the original scope.
+// Only confirmed terminal removal or release to an independent owner frees it.
+const sessionImageObligation = `(EXISTS(SELECT 1 FROM json_each(entities.body,'$.input.owners') WHERE value=?) OR (json_extract(body,'$.input.session_id')=? AND json_extract(body,'$.input.state')!='deleted' AND (coalesce(json_extract(body,'$.input.input_id'),'')='' OR json_extract(body,'$.input.state')='deleting')))`
+
+func imageUploadScopes(v domain.ImageUpload) []domain.ID {
+	scopes := slices.Clone(v.Owners)
+	if v.SessionID != "" && v.State != domain.ImageDeleted && (v.InputID == "" || v.State == domain.ImageDeleting) && !slices.Contains(scopes, v.SessionID) {
+		scopes = append(scopes, v.SessionID)
+	}
+	return scopes
+}
+
+// ValidateImageCapacity runs in the same write transaction as upload admission,
+// input claims and Fork ownership. Check before any new metadata or Worker bytes.
+func (t *Tx) ValidateImageCapacity(v domain.ImageUpload) error {
+	if err := validateImageUpload(v); err != nil {
+		return err
+	}
+	// Unchanged original obligations already own their slot. Do not rescan all
+	// independent owners on chunk updates or release, and never block cleanup.
+	var previous []domain.ID
+	_, original, err := t.ImageUploadRecord(v.Attachment.ID)
+	if err == nil {
+		previous = imageUploadScopes(original)
+	} else if domain.SafeError(err).Code != domain.NotFound {
+		return err
+	}
+	for _, session := range imageUploadScopes(v) {
+		if slices.Contains(previous, session) {
+			continue
+		}
+		var count int
+		if err := t.tx.QueryRowContext(t.ctx, "SELECT count(*) FROM entities WHERE kind='job' AND json_extract(body,'$.type')=? AND id!=? AND "+sessionImageObligation, domain.ImageAttachmentJob, v.Attachment.ID, session, session).Scan(&count); err != nil {
+			return storageError(err)
+		}
+		if count >= domain.MaxSessionImageAttachments {
+			return domain.Fail(domain.ResourceExhausted, "This session has reached its retained image limit.", "Remove unclaimed image drafts and confirm their cleanup, or start an independent session. Retained or uncertain images cannot be discarded.")
+		}
+	}
+	return nil
+}
+
 func (t *Tx) sessionImageUploads(session domain.ID) ([]Record, error) {
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT "+recordColumns+" FROM entities WHERE kind='job' AND json_extract(body,'$.type')=? AND (json_extract(body,'$.input.session_id')=? OR EXISTS(SELECT 1 FROM json_each(entities.body,'$.input.owners') WHERE value=?)) ORDER BY id LIMIT 4097", domain.ImageAttachmentJob, session, session)
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT "+recordColumns+" FROM entities WHERE kind='job' AND json_extract(body,'$.type')=? AND "+sessionImageObligation+" ORDER BY id LIMIT 4097", domain.ImageAttachmentJob, session, session)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -91,7 +137,7 @@ func (t *Tx) sessionImageUploads(session domain.ID) ([]Record, error) {
 	if err := rows.Err(); err != nil {
 		return nil, storageError(err)
 	}
-	if len(result) > 4096 {
+	if len(result) > domain.MaxSessionImageAttachments {
 		return nil, domain.SessionDeletionPending()
 	}
 	return result, nil

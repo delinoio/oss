@@ -281,3 +281,5 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - Explicit skill inventory and preparation share the joined original Worker workspace-read lane. Authenticate original owner/client, Worker device/instance and Agent revision; expose metadata only. Bind immutable package references into original acceptance receipts and reject plain edits or Steer that would lose selected bindings.
 
 - Selected skill preparation must journal the exact original mutation identity before dispatch and retain its unique live claim through mutation. Joined reconciliation removes only after positive original receipt absence; unknown outcomes and replacement Workers retain original ownership.
+
+- Image Begin, claim and metadata updates use the store-owned session capacity fence before writing new metadata or Worker bytes. Preserve existing per-input limits and exact actor/operation/Runner authority; capacity rejection never admits or retires an uncertain image. Follow the image-input contract.

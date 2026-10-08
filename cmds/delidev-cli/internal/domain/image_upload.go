@@ -10,6 +10,10 @@ const (
 	ImageDeleting  ImageUploadState = "deleting"
 	ImageDeleted   ImageUploadState = "deleted"
 )
+
+// MaxSessionImageAttachments bounds distinct unresolved image cleanup obligations.
+const MaxSessionImageAttachments = 4096
+
 const ImageAttachmentJob JobType = "image-attachment"
 
 // ImageUpload is durable metadata only. Bytes remain on its original Worker.

@@ -55,7 +55,7 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 	}
-	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0 && len(w.Images) == 0) || len(w.Copies) > 4096 || len(w.Images) > 4096 || len(w.PreparationDigests) > 4096 {
+	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0 && len(w.Images) == 0) || len(w.Copies) > 4096 || len(w.Images) > MaxSessionImageAttachments || len(w.PreparationDigests) > 4096 {
 		return SessionDeletionPending()
 	}
 	for _, id := range []ID{w.DeletionID, w.ServerID, w.SessionID, w.MachineID, w.DeviceID} {

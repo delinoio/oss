@@ -22,6 +22,8 @@ Ordered image identity joins immutable assignment, acknowledgment, transcript an
 
 Same-identity project and General Chat drafts survive ordinary navigation, Settings and reconnect. Identity changes dispose draft presentation and private preview URLs. Explicit removal deletes only owned unclaimed staging, through a durable pending obligation while the Runner is offline. Archive preserves accepted bytes. Independent Fork retains attachment ownership throughout its own lifetime; Sidechat workspace references acquire no parent attachment deletion ownership.
 
+Each session retains at most 4,096 distinct unresolved image references across accepted or removed inputs, current independent Fork ownership and session-tied unclaimed drafts. Upload admission, input claims and Fork owner publication enforce this capacity in the same transaction before new metadata or Worker bytes. Replays and existing-reference transitions do not consume another slot. Deleting or quarantined obligations retain their slots; only confirmed terminal byte removal or release to another independent owner frees the original scope. Cleanup and Fork inventory use this same current-obligation set, excluding terminal draft history without erasing its receipt or proof. Keep the per-input eight-image, per-file ten-MiB and per-input forty-MiB bounds independently.
+
 Accepted attachment cleanup joins the existing durable session deletion and backup/restore quarantine boundaries. Removal completion requires observed absence on the original Worker. Preserve images while independently owned, preserve unsettled obligations across restart, and never delete original Local files or shared account resources. No automatic retention eviction is authorized.
 
 ## Validation and observability

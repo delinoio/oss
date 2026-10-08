@@ -34,6 +34,9 @@ func imageUploadRecord(tx *store.Tx, id domain.ID) (store.Record, domain.ImageUp
 	return row, upload, nil
 }
 func putImageUpload(tx *store.Tx, row store.Record, value domain.ImageUpload) (store.Record, error) {
+	if err := tx.ValidateImageCapacity(value); err != nil {
+		return store.Record{}, err
+	}
 	raw, _ := json.Marshal(value)
 	job := domain.Job{Type: domain.ImageAttachmentJob, State: domain.JobSucceeded, MachineID: value.Attachment.MachineID, Input: raw, AcceptedAt: time.Now().UTC()}
 	if row.Revision > 0 {
