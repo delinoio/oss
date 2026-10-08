@@ -27,7 +27,7 @@ const bridge = { read: async () => ({ revision, scope, pair: { agent_id: agent.i
 const uploads = new Map<string, AttachmentUpload>(), begins = new Map<string, string>(), bytes = new Map<string, Uint8Array>();
 const events: object[] = [];
 const fixtureMarker = "__imageInputFixture";
-Object.assign(window, { [fixtureMarker]: true, imageFixture: { events, bytes } });
+Object.assign(window, { [fixtureMarker]: true, imageFixture: { events, bytes, appearance: async (language: string, theme: string) => { document.documentElement.dataset.theme = theme; await i18n.changeLanguage(language); } } });
 const transport = createRouterTransport(router => {
  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AUTOMATIC_TITLES_V1, SystemCapability.IMAGE_INPUTS_V1] }) });
  router.service(ResourceService, { getResource: request => ({ resource: [agent,machine].find(value => value.id === request.id && value.kind === request.kind) }), listResources: request => ({ resources: request.filter?.kind === EntityKind.AGENT ? [agent] : request.filter?.kind === EntityKind.MACHINE ? [machine] : [] }) });

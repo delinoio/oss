@@ -40,8 +40,12 @@ it("never replaces text from late reads and keeps unsupported ordinary creation 
  fireEvent.change(field, { target: { value: "edited draft" } }); view.rerender(f.tree(newRequestId(), false, false)); complete({ entries: [entry("old scope")] });
  await waitFor(() => expect(field.value).toBe("edited draft")); field.setSelectionRange(0, 0); fireEvent.keyDown(field, { key: "ArrowUp" }); expect(field.value).toBe("edited draft"); expect(screen.getByRole("button", { name: "Ordinary create" })).toHaveProperty("disabled", false);
 });
-it("requires explicit clear confirmation and verifies its receipt", async () => {
- const f = fixture(); render(f.tree()); await waitFor(() => expect(f.read).toHaveBeenCalled()); fireEvent.click(screen.getByRole("button", { name: "Clear prompt history" })); expect(f.clear).not.toHaveBeenCalled();
- expect(screen.getByText(/Source sessions and older backups stay unchanged/)).toBeDefined(); const buttons = screen.getAllByRole("button", { name: "Clear prompt history" }); fireEvent.click(buttons.at(-1)!);
- await waitFor(() => expect(f.clear).toHaveBeenCalledOnce()); expect(f.clear.mock.calls[0]![0]).toMatchObject({ projectId: project, confirmed: true });
+it("keeps recall read-only without clear controls, guidance or a clear RPC", async () => {
+ const f = fixture(); render(f.tree()); await waitFor(() => expect(f.read).toHaveBeenCalled());
+ await waitFor(() => expect(screen.queryByText("Loading prompt history…")).toBeNull());
+ expect(screen.queryByRole("button", { name: "Clear prompt history" })).toBeNull();
+ expect(document.getElementById("project-prompt-history-guidance")).toBeNull();
+ const field = screen.getByRole("textbox") as HTMLTextAreaElement;
+ field.setSelectionRange(0, 0); fireEvent.keyDown(field, { key: "ArrowUp" }); expect(field.value).toBe("new");
+ expect(f.clear).not.toHaveBeenCalled();
 });

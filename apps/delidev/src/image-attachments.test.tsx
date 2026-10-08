@@ -54,3 +54,17 @@ it("keeps compact attachment help local, restores Escape focus and retains inlin
  fireEvent.click(screen.getByRole("button",{name:"Remove image 1"}));expect(remove).toHaveBeenCalledWith("original");
  expect(screen.getByRole("textbox",{name:"Retained input"})).toHaveProperty("value","Original draft");
 });
+
+it("places the original gated plus in the creation toolbar without help or submission", async () => {
+ const { ImageAttachmentInput } = await import("./image-attachments");
+ const draft={images:[],busy:false,error:undefined,cleanupPending:0,controller:{add:vi.fn(),remove:vi.fn(),retryCleanup:vi.fn()}} as unknown as Parameters<typeof ImageAttachmentInput>[0]["draft"];
+ const submit=vi.fn(), click=vi.spyOn(HTMLInputElement.prototype,"click");
+ const view=(disabled=false,available=true)=><form onSubmit={submit}><ImageAttachmentInput draft={draft} disabled={disabled} available={available} routeReady routeLoading={false} machineId="original" creationToolbar={attach=><div className="new-session-selectors">{attach}<label>Agent Worker<select><option>Original Agent</option></select></label></div>} /></form>;
+ const mounted=render(view());const plus=screen.getByRole("button",{name:"Attach images"});
+ expect(plus.textContent).toBe("+");expect(plus.getAttribute("type")).toBe("button");expect(plus.getAttribute("title")).toBe("Attach images");
+ expect(plus.nextElementSibling?.textContent).toContain("Agent Worker");
+ expect(screen.queryByRole("button",{name:"Attachment help"})).toBeNull();expect(screen.queryByText(/PNG, JPEG or WebP · Up to/)).toBeNull();
+ fireEvent.click(plus);expect(click).toHaveBeenCalledOnce();expect(submit).not.toHaveBeenCalled();
+ mounted.rerender(view(true));expect(plus).toHaveProperty("disabled",true);fireEvent.click(plus);expect(click).toHaveBeenCalledOnce();
+ mounted.rerender(view(false,false));expect(plus).toHaveProperty("disabled",true);expect(screen.getByText(/Update the server and Runner Device/)).toBeTruthy();
+});

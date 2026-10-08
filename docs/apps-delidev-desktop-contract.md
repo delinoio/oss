@@ -2786,7 +2786,7 @@ cleanup ownership. No new RPC or SQLite migration is added.
 
 Issue #1828 negotiates System capability 48. Only a project New session composer reads first-message history. Plain Up at collapsed absolute offset 0 recalls an older entry. Plain Down at the collapsed text end recalls a newer entry, then restores the saved draft and caret. Other arrows retain normal editing. Navigation freezes ordering until editing or scope reset. Recall never submits or changes attachments, mode or creation selections, and never restores typed skill authority.
 
-Skill completion handles keys first. IME, modifiers, selections and pending or uncertain creation suppress recall. Project/transport changes reset navigation and fence late results. Async reads never replace text. Missing capability/read failure leaves ordinary creation usable. Localized guidance and a confirmed Clear action sit beside the field. Clear retains its original uncertain request for explicit retry. There is no list/search UI. Confirmation explains older-backup retention.
+Skill completion handles keys first. IME, modifiers, selections and pending or uncertain creation suppress recall. Project/transport changes reset navigation and fence late results. Async reads never replace text. Missing capability/read failure leaves ordinary creation usable. Keep localized history loading/read-failure feedback but omit keyboard-history guidance, its textarea description reference and the desktop Clear action/confirmation/mutation path. Server and CLI confirmed clear APIs and durable receipts remain unchanged. There is no list/search UI.
 
 ## Quota percentage colors
 
@@ -2874,3 +2874,17 @@ revision or connection changes. Unsupported, unavailable or malformed inventorie
 retain saved/manual creation behavior. Worktree clears runner and overrides;
 Local loads fresh proof, pins its machine and clears overrides. Submission still
 rereads proof; pending/uncertain creation retains exact original retries.
+
+### Creation composer toolbar (issue #1858)
+
+New session and New general chat place one 40px icon-only plus attachment button
+immediately before Agent Worker, aligned with selector inputs at 8px spacing.
+Keep its localized Attach images accessible name/tooltip, non-submit semantics,
+original picker gates, semantic colors, 8px corners and focus treatment. Omit
+permanent image-format/limits guidance and do not add a creation attachment help
+button. Preserve route/processing status, validation errors, independent cleanup,
+ordered previews/removal and original file/paste/drop admission and byte limits.
+Agent Worker, Runs on, Plan Mode, Options and submission locks/retries retain
+their original behavior. Narrow/zoom layouts wrap without replacing draft owners.
+Existing-session compact attachment help/layout stays unchanged. No RPC, native
+behavior, capability, migration or logging of image/prompt content is added.

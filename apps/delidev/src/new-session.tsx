@@ -272,7 +272,6 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               id={`${idPrefix}-message`}
               name="first-message"
               aria-label={copy("new-session.firstMessage_ecffa2")}
-              aria-describedby={!generalChat && project && status.data?.capabilities.includes(SystemCapability.PROJECT_PROMPT_HISTORY_V1) ? "project-prompt-history-guidance" : undefined}
               placeholder={generalChat ? copy("new-session.generalChatPlaceholder") : copy("new-session.describeATaskAskAQuestion_4ed4ad")}
               value={prompt}
               onChange={(event) => skills.onChange(event.target.value,event.target.selectionStart)}
@@ -284,9 +283,9 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               autoComplete="off"
             />
             {skills.list}{skills.warning}{promptHistory.feedback}
-            <ImageAttachmentInput draft={images} disabled={blocked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={machine} />
-            <div className="new-session-toolbar">
+            <ImageAttachmentInput draft={images} disabled={blocked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={machine} creationToolbar={attach => <div className="new-session-toolbar">
               <div className="new-session-selectors">
+                {attach}
                 <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />
                 <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required resolvedChoice={machineChoice} change={editMachine} />
                 <label className="new-session-mode plan-mode"><input type="checkbox" checked={mode === Mode.Plan} onChange={(event) => { touched.current = true; setMode(event.target.checked ? Mode.Plan : Mode.Execute); }} />{copy("new-session.planMode")}</label>
@@ -297,7 +296,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
                 </button>
               </div>
-            </div>
+            </div>} />
           </div>
           <div className="new-session-hints" ref={placement.hints}><span>{generalChat ? copy("new-session.conversationsAreNamedAutomatically") : copy("new-session.sessionsAreNamedAutomatically_ba66e8")}</span><span>{copy("new-session.shiftEnterForANewLine_5e4b35")}</span></div>
           {optionsOpen ? <section className="new-session-options" aria-label={copy("new-session.sessionOptions_0bccf5")}>
