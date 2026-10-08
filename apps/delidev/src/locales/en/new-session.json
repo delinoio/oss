@@ -62,5 +62,20 @@
   "new-session.promptHistoryUnavailable": "Prompt history is unavailable. You can still create a session.",
   "new-session.clearPromptHistory": "Clear prompt history",
   "new-session.confirmPromptHistoryClear": "Clear this project's live first-message history? Source sessions and older backups stay unchanged. Restoring a backup may restore its captured history.",
-  "new-session.retryPromptHistoryClear": "Retry the original clear request"
+  "new-session.retryPromptHistoryClear": "Retry the original clear request",
+  "new-session.workspaceLabel": "Workspace",
+  "new-session.worktreeMode": "Worktree",
+  "new-session.localMode": "Local",
+  "new-session.additionalRepositories": "Additional repositories",
+  "new-session.startingBranch": "Starting branch",
+  "new-session.savedStartingReference": "Use saved starting reference",
+  "new-session.manualStartingReference": "Manual starting reference",
+  "new-session.searchBranches": "Search branches",
+  "new-session.branchUnavailable": "Selected branch unavailable",
+  "new-session.refreshBranches": "Refresh",
+  "new-session.loadingBranches": "Reading remote branches…",
+  "new-session.chooseBranchWorker": "Choose Runs on to read remote branches.",
+  "new-session.branchUnsupported": "Branch discovery is unavailable. Use the saved or manual starting reference.",
+  "new-session.noBranches": "The remote has no branches.",
+  "new-session.branchLookupFailed": "Remote branches could not be read. Use the saved or manual starting reference."
 }

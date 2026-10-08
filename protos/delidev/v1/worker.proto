@@ -30,6 +30,7 @@ service WorkerService {
   // An independent lane. Older Workers remain primary-only.
   rpc WatchAuxiliaryWork(WatchAuxiliaryWorkRequest) returns (stream WatchAuxiliaryWorkResponse);
   rpc ReportWork(ReportWorkRequest) returns (ReportWorkResponse);
+  rpc DiscoverRepositoryBranches(DiscoverRepositoryBranchesRequest) returns (DiscoverRepositoryBranchesResponse);
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
   rpc CloneRepository(CloneRepositoryRequest) returns (CloneRepositoryResponse);
   rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
@@ -127,6 +128,7 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1 = 27;
   WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1 = 26;
   WORKER_CAPABILITY_NATIVE_SKILLS_V1 = 24;
   WORKER_CAPABILITY_IMAGE_INPUTS_V1 = 25;
@@ -426,4 +428,20 @@ enum ExecutionStartupCleanup {
   EXECUTION_STARTUP_CLEANUP_UNSPECIFIED = 0;
   EXECUTION_STARTUP_CLEANUP_CONFIRMED = 1;
   EXECUTION_STARTUP_CLEANUP_UNCERTAIN = 2;
+}
+
+// Only server-resolved configuration may become a native Git assignment.
+message DiscoverRepositoryBranchesRequest {
+  string request_id = 1;
+  string project_id = 2;
+  uint64 project_revision = 3;
+  string repository_id = 4;
+  uint64 repository_revision = 5;
+  string machine_id = 6;
+  uint64 machine_revision = 7;
+}
+message DiscoverRepositoryBranchesResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }

@@ -42,6 +42,7 @@ type Git struct {
 	readOnly            bool
 	offline             bool
 	restrictedTransport bool
+	branchInventory     bool
 	diffIndexFile       string
 }
 
@@ -132,6 +133,9 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	}
 	var out limitedOutput
 	out.limit = MaxGitOutput
+	if g.branchInventory {
+		out.limit = domain.MaxRepositoryBranchesBytes
+	}
 	environment := gitEnvironment()
 	if g.environment != nil {
 		environment = slices.Clone(g.environment)

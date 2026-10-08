@@ -55,6 +55,11 @@ export const attachWorker = WorkerService.method.attachWorker;
 export const reportWork = WorkerService.method.reportWork;
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.DiscoverRepositoryBranches
+ */
+export const discoverRepositoryBranches = WorkerService.method.discoverRepositoryBranches;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.InspectRepository
  */
 export const inspectRepository = WorkerService.method.inspectRepository;

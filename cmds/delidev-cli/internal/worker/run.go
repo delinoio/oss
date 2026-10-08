@@ -31,6 +31,7 @@ import (
 
 type Config struct {
 	imageClient              delidevv1connect.AttachmentServiceClient
+	branchReportClient       delidevv1connect.WorkerServiceClient
 	startup                  *executionStartupAttempt
 	nativeClaudeInstallation *domain.Installation
 	network                  *workerNetworkRuntime
@@ -257,7 +258,8 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	config.network = transport.runtime
 	defer transport.CloseIdleConnections()
 	config.imageClient = delidevv1connect.NewAttachmentServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
-	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2*workspace.MaxStorageRecoveryJobBytes), connect.WithSendMaxBytes(2<<20))
+	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(8<<20), connect.WithSendMaxBytes(2<<20))
+	config.branchReportClient = delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2*domain.MaxRepositoryBranchesJobBytes), connect.WithSendMaxBytes(domain.MaxRepositoryBranchesJobBytes))
 	if err := retireStorageReports(ctx, config); err != nil {
 		return err
 	}
@@ -442,6 +444,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			}
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1)
+			}
 			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}, config)))
 			stopNegotiation()
 			err = negotiateErr
@@ -910,7 +915,11 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 		report.Problem = &pb.ErrorDetail{Code: string(result.Problem.Code)}
 	}
 	attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
-	acknowledged, err := client.ReportWork(attempt, authenticated(credential, report))
+	reportClient := client
+	if job.Type == domain.DiscoverRepositoryBranchesJob && config.branchReportClient != nil {
+		reportClient = config.branchReportClient
+	}
+	acknowledged, err := reportClient.ReportWork(attempt, authenticated(credential, report))
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -998,9 +1007,15 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	digest := hex.EncodeToString(hash[:])
 	path := filepath.Join(root, "jobs", resource.Id+".json")
 	result := journal{Version: 1, JobID: domain.ID(resource.Id), InstanceID: instance, Revision: resource.Revision, Digest: digest, State: journalStarted, ReportID: domain.NewID()}
-	raw, err := security.ReadPrivate(path, 2<<20)
+	journalLimit := 2 << 20
+	decodeLimit := 1 << 20
+	if job.Type == domain.DiscoverRepositoryBranchesJob {
+		journalLimit = domain.MaxRepositoryBranchesJobBytes
+		decodeLimit = domain.MaxRepositoryBranchesJobBytes
+	}
+	raw, err := security.ReadPrivate(path, int64(journalLimit))
 	if err == nil {
-		if err := domain.Decode(raw, &result); err != nil {
+		if err := domain.DecodeWithLimit(raw, &result, decodeLimit); err != nil {
 			return journal{}, err
 		}
 		if result.Version != 1 || result.JobID != domain.ID(resource.Id) || result.InstanceID != instance || result.Revision != resource.Revision || result.Digest != digest {
@@ -1184,6 +1199,17 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		return json.Marshal(result)
 	case domain.CloneRepositoryJob:
 		return executeRepositoryClone(ctx, config, owner, job)
+	case domain.DiscoverRepositoryBranchesJob:
+		var input domain.RepositoryBranchesInput
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.MachineID != job.MachineID {
+			return nil, workspace.ResultUncertain()
+		}
+		git := workspace.Git{ProcessRoot: filepath.Join(root, "processes"), OwnerID: owner, Logger: config.Logger}
+		result, err := git.DiscoverRepositoryBranches(ctx, root, input)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
 	case domain.InspectRepositoryJob:
 		var input domain.RepositoryInspectionInput
 		if err := domain.Decode(job.Input, &input); err != nil {

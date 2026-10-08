@@ -13,6 +13,7 @@ import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
 import { useGeneralChatPlacement } from "./general-chat-placement";
 import { document, encode, items, Mode, object, text, Workspace } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
+import { StartingBranches } from "./starting-branches";
 import { StartingReferences } from "./schedules";
 import { useRetainedMutation } from "./mutation";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
@@ -257,6 +258,13 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       {!generalChat && !project ? <p className="new-session-project-note">{copy("new-session.generalChatIsolatedProjectlessDirectoryOn_aac210")}</p> : null}
       <form {...imageEntryHandlers(images, blocked || !imageRoute.systemSupported)} onSubmit={submitForm}>
         <fieldset className="new-session-fieldset" disabled={blocked}>
+          {!generalChat && project ? <div className="new-session-workspace">
+            <fieldset className="workspace-mode"><legend>{copy("new-session.workspaceLabel")}</legend>
+              <label><input type="radio" name={`${idPrefix}-workspace`} checked={workspace === Workspace.Worktree} onChange={() => { touched.current = true; setWorkspace(Workspace.Worktree); setMachine(""); setStarting([]); }} />{copy("new-session.worktreeMode")}</label>
+              <label><input type="radio" name={`${idPrefix}-workspace`} disabled={!local.available} checked={workspace === Workspace.Local} onChange={() => { touched.current = true; void local.load().then(proof => { if (proof) { setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }} />{copy("new-session.localMode")}</label>
+            </fieldset>
+            {workspace === Workspace.Worktree && selectedProject.data?.resource ? <StartingBranches key={project} project={selectedProject.data.resource} machineId={machine} starting={starting} active={active && !blocked} supported={status.data?.capabilities.includes(SystemCapability.REPOSITORY_BRANCH_DISCOVERY_V1) ?? false} change={value => { touched.current = true; setStarting(value); }} /> : null}
+          </div> : null}
           <div className="new-session-composer" ref={placement.composer}>
             <label className="new-session-message-label" htmlFor={`${idPrefix}-message`}>{copy("new-session.firstMessage_ecffa2")}</label>
             <textarea
@@ -295,10 +303,6 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
           {optionsOpen ? <section className="new-session-options" aria-label={copy("new-session.sessionOptions_0bccf5")}>
             {!generalChat && project ? <>
               <p>{copy("new-session.aSeparateDetachedWorktreeIsPrepared_8c300d")}</p>
-              <div className="actions">
-                <button type="button" aria-pressed={workspace === Workspace.Worktree} onClick={() => { touched.current = true; setWorkspace(Workspace.Worktree); setMachine(""); setStarting([]); }}>{copy("new-session.useSeparateWorktrees_5cd0b6")}</button>
-                <button type="button" disabled={!local.available} aria-pressed={workspace === Workspace.Local} onClick={() => { touched.current = true; void local.load().then((proof) => { if (proof) { touched.current = true; setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }}>{copy("new-session.useThisComputerSLocalCheckouts_eadaad")}</button>
-              </div>
               {workspace === Workspace.Local ? <p>{copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}</p> : <StartingReferences key={project} project={project} starting={starting} change={(value) => { touched.current = true; setStarting(value); }} active={active} />}
             </> : !generalChat ? <p>{copy("new-session.generalChatUsesAPrivateProjectless_64e0ee")}</p> : null}
             {generalChat ? <>

@@ -982,3 +982,14 @@ Issue #1828 owns System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT_PR
 ## Server-owned reset-credit allocation closure
 
 Issue #1809 records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with complete implementation in the owning feature PR. Reuse the owner/client observation and reconciliation RPCs. Preserve System 19/30/46, existing allocations and separate Worker ownership; add no Worker/entity allocation or database migration. Follow the [server-credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits--issue-1809).
+
+## Remote branch discovery allocation — issue #1859
+
+Record System 51 / Worker 27 `REPOSITORY_BRANCH_DISCOVERY_V1`, the closed
+`DiscoverRepositoryBranchesRequest`/`Response` fields and WorkerService method in
+the owning complete feature PR. System 50 retains separate server-quota ownership.
+Existing declarations and numbers remain unchanged. Regenerate Go/TypeScript
+bindings and compatibility facades from reconciled sources. The operation reuses
+the server-owned Worker job/claim/report lifecycle under the workspace contract,
+with project/repository/machine revision fences and original Worker authority.
+No migration, checkout authority or Git credential persistence is added.

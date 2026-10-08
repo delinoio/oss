@@ -315,3 +315,33 @@ Every new Worktree uses `remote-clone` with an immutable URL, empty checkout and
 Reuse immediate Clone's argv/credential-free transport restrictions, empty template/null hooks, disabled recursive submodules/LFS smudging and ten-minute deadline. Clone full history once per session/repository, with no shared cache. Persist the manifest and exclusive root/native commitment before Git; publish readiness only after all repositories resolve and detach. Identical completed requests reuse the original result, while loss/restart requires the original job and manifest recovery; interrupted/unconfirmed requests cannot repeat cloning. Process uncertainty preserves owned files. Replacement directories or missing native proof never authorize cleanup.
 
 Managed clones use independent `.git` directories. Execution and continuation leases, preparation recovery, snapshot/restore and permanent deletion validate that ownership. Restore uses its existing independently synchronized publication proof rather than adopting old inode commitments. Fork derives `independent-fork` from a new managed or Local source only through the original closed parent: copy the complete Git objects without local optimization/hard links, pin parent HEAD/index/dirty files and set the original remote URL. Its child lifetime remains independent of parent cleanup. Sidechat continues to own metadata only and blocks parent removal until its own joined cleanup. Legacy accepted linked worktrees and original Local lifetimes remain unchanged.
+
+## Remote starting-branch discovery — issue #1859
+
+System 51 and Worker 27 independently negotiate `REPOSITORY_BRANCH_DISCOVERY_V1`.
+`DiscoverRepositoryBranches` accepts only a request identity and original project,
+repository and selected machine IDs/revisions. The server freezes the configured
+credential-free source, source identity and preferred remote (`origin` only under
+the existing managed-clone default). Callers supply no URL, checkout path or Git
+command. Discovery grants no preparation or execution authority and adds no migration.
+
+The existing authenticated Worker job/claim/report lifecycle binds the original
+machine, process instance and paired device. Revalidate configured membership,
+source and revisions before claim and successful result publication. Stale queued
+jobs fail without native work; stale reports settle as failures without publishing
+inventory. Receipt replay retains the original operation. New explicit refresh
+uses a new request identity.
+
+Only the selected Worker runs read-only `ls-remote --heads` in its private state
+scope. Reuse managed-clone source rewrite verification, credential/SSH-only native
+Git configuration, redirect/protocol restrictions, two-minute deadline, process
+ownership, cancellation and joined cleanup. No server/desktop account credentials,
+fetch, clone, checkout mutation or credential persistence is permitted. Never log
+raw sources, native output or credential-helper content.
+
+Validate complete sorted unique Git branch names. Bound native output and public
+inventory to 8 MiB and 10,000 branches; overflow fails instead of publishing a
+partial list. This job alone has 9 MiB JSON/journal envelope headroom. Its report
+receipt, bounded transport and single-resource reader support the complete result;
+other job inputs/outputs, page/event bounds and native Git output limits remain
+unchanged. A dedicated branch reader must not widen the general document parser.

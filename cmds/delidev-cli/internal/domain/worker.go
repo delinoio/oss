@@ -77,6 +77,7 @@ const (
 	CreateBackupJob               JobType = "create-backup"
 	DeleteBackupJob               JobType = "delete-backup"
 	CloneRepositoryJob            JobType = "clone-repository"
+	DiscoverRepositoryBranchesJob JobType = "discover-repository-branches"
 	InspectRepositoryJob          JobType = "inspect-repository"
 	SaveRepositoryJob             JobType = "save-repository"
 	ImportConfigurationJob        JobType = "import-configuration"
@@ -99,6 +100,7 @@ const (
 	CodexReadOnlySidechatWorkerV1  WorkerCapability = "codex-read-only-sidechat-v1"
 	ManagedCodexSidechatV1         WorkerCapability = "managed-codex-sidechat-v1"
 	RemoteWorkspaceCloneV1         WorkerCapability = "remote-workspace-clone-v1"
+	RepositoryBranchDiscoveryV1    WorkerCapability = "repository-branch-discovery-v1"
 	RepositoryCloneV1              WorkerCapability = "repository-clone-v1"
 	SignedWorkerUpdatesV1          WorkerCapability = "signed-worker-updates-v1"
 	RepositoryInspectionMetadataV1 WorkerCapability = "repository-inspection-metadata-v1"
@@ -156,7 +158,7 @@ const (
 )
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{ImageAttachmentJob, CleanupFailedSubscriptionsJob, CleanupFailedSubscriptionJob, NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
+	if !slices.Contains([]JobType{ImageAttachmentJob, CleanupFailedSubscriptionsJob, CleanupFailedSubscriptionJob, NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, DiscoverRepositoryBranchesJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {
@@ -193,7 +195,11 @@ func (j Job) Validate() error {
 	} else if j.Type == WorkspaceStorageJob {
 		maxInput = MaxStorageRecoveryInputBytes
 	}
-	if len(j.Input) > maxInput || len(j.Output) > maxJobDocumentBytes || !json.Valid(j.Input) || (len(j.Output) > 0 && !json.Valid(j.Output)) {
+	maxOutput := maxJobDocumentBytes
+	if j.Type == DiscoverRepositoryBranchesJob {
+		maxOutput = MaxRepositoryBranchesBytes
+	}
+	if len(j.Input) > maxInput || len(j.Output) > maxOutput || !json.Valid(j.Input) || (len(j.Output) > 0 && !json.Valid(j.Output)) {
 		return Fail(InvalidArgument, "Invalid Worker job document.", "Use a bounded versioned job payload.")
 	}
 	return nil
