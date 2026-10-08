@@ -183,6 +183,8 @@
 
 ### clibox Rules
 
+- Custom clibox time input retains the greatest precision of compatible consumed fractional fields, including repeated undotted fields and trailing zeros. Optional absent fields do not reduce precision; keep Chrono parsing and consistency checks authoritative and explicit coarser output unchanged.
+
 - macOS fbreak must own terminal SIGHUP before setup/launch and route it to control-loss cancellation through bounded owned-process cleanup. Keep hangup registration command-specific, reject queued admissions during cancellation, preserve cleanup-failure precedence, and retain real controlling-PTY loss regressions for held reads, root admission and concurrent owned callers.
 - macOS fspy native hooks must preserve paired synchronous operations during application TLS teardown. Guard destructor-managed transport access, retain each admitted socket through completion, keep reentrancy/correlation state destructor-free and mutation tokens on the native call's stack, and invalidate completeness on late transport loss without changing native errno or crossing the ABI with a TLS panic. Preserve pnport-mode exclusion and receiver limits; follow `docs/crates-clibox-fspy-contract.md` and `docs/crates-fspy-vendor-contract.md`.
 - macOS fspy must bind ordinary C `close` and `close$NOCANCEL` independently; Rust libc's x64 `close` declaration resolves to the latter. Preserve standalone TLS teardown coverage of both Rust-owned file drops and explicit native closes on both macOS architectures.

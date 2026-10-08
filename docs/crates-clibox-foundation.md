@@ -297,7 +297,7 @@ clibox hash verify --check CHECKSUM_FILE
 - Explicit input offsets establish the instant. Offset-free civil input uses `--timezone`; that option also selects the timezone for calendar arithmetic and output.
 - Support UTC and IANA timezone names. Bundle the same IANA database across all platform artifacts of a clibox version; never prefer the OS database. Rule updates arrive through clibox releases.
 - Support years `1`–`9999` and up to nanosecond precision. Reject leap seconds, invalid dates, unknown zones, unsupported format directives, and out-of-range results.
-- Preserve fractional precision unless the requested output is coarser. Integer Unix timestamp output uses mathematical floor, including negative timestamps.
+- Preserve fractional precision unless the requested output is coarser. Compatible repeated custom fractional fields retain their greatest supplied precision, including trailing zeros; absent optional fractions do not erase earlier precision. Chrono remains authoritative for consistency and parsing. Integer Unix timestamp output uses mathematical floor, including negative timestamps.
 - `time add` requires at least one unit option. Values are signed integers; explicit zero is valid.
 - Combine years/months into a calendar-month adjustment, clamp to the destination month’s final day, then apply combined weeks/days as calendar days, then hours/minutes/seconds as elapsed time.
 - A calendar day differs from 24 elapsed hours across DST transitions. Reject nonexistent or ambiguous local times during parsing or calendar arithmetic; do not automatically shift them or choose an occurrence.
