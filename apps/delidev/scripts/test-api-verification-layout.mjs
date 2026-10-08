@@ -67,7 +67,7 @@ try {
       if (width >= 1440) { const actionBox = await row.locator(".api-verification-actions").boundingBox(); assert(Math.abs(geometry.band.right-actionBox.x-actionBox.width-12)<=1,`${context}: original action at band right`); }
       assert.equal(geometry.disclaimer.text,language === "en" ? "Verification does not establish model inference permission, harness readiness, usage or quota recovery." : "인증 확인은 모델 추론 권한, 하네스 준비 상태, 사용량 또는 할당량 복구를 확인하지 않습니다.", `${context}: complete disclaimer`);
       assert.equal(await band.locator(".api-verification-group").count(),3,context);
-      if (["accepted","long","pending","uncertain"].includes(scenario)) assert((await row.locator(".api-verification-times").textContent()).includes("2026"), `${context}: full timestamp`);
+      if (["accepted","long","pending","uncertain"].includes(scenario)) assert(await row.locator(".api-verification-times time").evaluateAll(nodes => nodes.length > 0 && nodes.every(node => node.getAttribute("datetime") === "2026-10-08T00:08:14Z" && node.getAttribute("title") === "2026-10-08T00:08:14Z")), `${context}: exact original timestamp retained behind shared presentation`);
     };
     await inspect();
     const initial = await fixture(); assert.equal(initial.validate.length,0,context); assert.equal(initial.discover.length,0,context);
