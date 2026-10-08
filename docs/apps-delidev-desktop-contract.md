@@ -2398,7 +2398,9 @@ The three first-message/follow-up composer surfaces share one `$` completion
 controller. Original pending or uncertain composer locks suppress completion
 reads and choices while preserving the exact draft and selected bindings. Every
 acceptance also checks the original connected textarea and native fieldset
-disabled/inert state before changing text, bindings, or focus. A token opens at input start or after whitespace at the caret;
+disabled/inert state before changing text, bindings, or focus. Confirmed original
+mutation acceptance clears its submitted bindings independently of the pending
+render lock; this settlement callback grants no user edit authority. A token opens at input start or after whitespace at the caret;
 case-insensitive prefix filtering orders exact names first, then name and opaque
 identity. Candidates retain descriptions and user/project provenance. Mouse,
 Up/Down, Enter/Tab and Escape operate the accessible listbox without creating or

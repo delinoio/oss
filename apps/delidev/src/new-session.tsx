@@ -93,6 +93,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     const submitted = JSON.parse(new TextDecoder().decode(request.documentJson));
     if (UUID_V7.test(submitted.agent_id) && UUID_V7.test(submitted.machine_id)) preferences.remember({ agent_id: submitted.agent_id, machine_id: submitted.machine_id });
     setPrompt("");
+    skills.clearAccepted();
     setCreatedElsewhere(undefined);
     created();
     if (navigation.current.ownsActivation && navigation.current.activation === submittedActivation.current) {

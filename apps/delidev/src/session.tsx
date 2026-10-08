@@ -284,7 +284,7 @@ export function SessionView({ id, draft, setDraft, active = true }: { id: string
     return messageRows(messages.data?.resources ?? [], live.resources, live.removed, live.newMessageIds, id, !!messages.data && !messages.data.nextPageToken);
   }, [messages.data, live.resources, live.removed, live.newMessageIds, id]);
   useEffect(() => { if (live.generation > 1) { void messages.refresh(); void queue.refresh(); void interactions.refresh(); } }, [live.generation]);
-  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); skills.clear(); void queue.refresh(); });
+  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); skills.clearAccepted(); void queue.refresh(); });
   const locked = send.busy || send.uncertain;
   const composer = useRef<HTMLTextAreaElement>(null);
   const skills = useSkillCompletion({ value: draft, change: setDraft, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, active, disabled: locked });
