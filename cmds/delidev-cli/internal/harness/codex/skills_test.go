@@ -2,6 +2,7 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -121,7 +122,7 @@ func TestSkillForkCopiesOriginalPackagesAndRewritesProofsBeforeParentDeletion(t 
 		t.Fatal(err)
 	}
 	id, turnID := domain.NewID(), domain.NewID()
-	turn, _ := json.Marshal(map[string]any{"id": turnID, "status": "completed", "itemsView": "full", "items": []any{map[string]any{"id": "user", "type": "userMessage", "clientId": id, "content": []any{map[string]any{"type": "text", "text": "Original prompt", "text_elements": []any{}}, map[string]any{"type": "skill", "name": "add-issue", "path": selected[0].Path}}}}})
+	turn, _ := json.Marshal(map[string]any{"id": turnID, "status": "completed", "itemsView": "full", "items": []any{map[string]any{"id": "user", "type": "userMessage", "clientId": id, "content": []any{map[string]any{"type": "text", "text": "<skill><path>" + selected[0].Path + "</path></skill> literal user quotation", "text_elements": []any{}}, map[string]any{"type": "skill", "name": "add-issue", "path": selected[0].Path}}}}})
 	_, original, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{turn}))
 	if err != nil {
 		t.Fatal(err)
@@ -140,6 +141,10 @@ func TestSkillForkCopiesOriginalPackagesAndRewritesProofsBeforeParentDeletion(t 
 	}
 	if child.checkpoint.Inputs[0].PromptDigest != original[0].PromptDigest || child.checkpoint.Inputs[0].SkillDigest == original[0].SkillDigest {
 		t.Fatal("invalid remapped native proof")
+	}
+	// Literal user text is never rewritten merely because it resembles native tags.
+	if !bytes.Contains(child.turns[0], []byte(selected[0].Path)) {
+		t.Fatal("literal user path was rewritten")
 	}
 	// Source inventory edits and parent deletion cannot replace child resources.
 	os.RemoveAll(sourceHome)

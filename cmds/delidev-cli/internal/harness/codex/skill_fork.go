@@ -18,7 +18,8 @@ func (s *ForkSource) Checkpoint() ContinuationCheckpoint { return s.checkpoint }
 
 // RehomeSkills makes complete child-owned package copies before any native child
 // exists. Remapping is limited to explicit skill nodes and native generated path
-// tags; user messages and unrelated opaque native history keep their meaning.
+// tags inside those authenticated typed nodes; user text and opaque records keep
+// their original bytes. A textual <skill> tag alone is not rewrite authority.
 func (s *ForkSource) RehomeSkills(ctx context.Context, childHome string) (*ForkSource, error) {
 	if err := s.Verify(ctx); err != nil {
 		return nil, err
@@ -90,7 +91,7 @@ func (s *ForkSource) RehomeSkills(ctx context.Context, childHome string) (*ForkS
 					}
 				}
 			}
-			if text, ok := node["text"].(string); ok && strings.HasPrefix(strings.TrimSpace(text), "<skill>") {
+			if text, ok := node["text"].(string); ok && node["type"] == "skill" && strings.HasPrefix(strings.TrimSpace(text), "<skill>") {
 				for source, target := range paths {
 					text = strings.ReplaceAll(text, "<path>"+source+"</path>", "<path>"+target+"</path>")
 				}
