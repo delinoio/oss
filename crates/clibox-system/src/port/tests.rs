@@ -420,3 +420,91 @@ fn windows_projection_filters_ports_and_preserves_raw_revalidation_rows() {
         "UDP owner policy must not expand TCP behavior"
     );
 }
+
+#[test]
+fn duplicate_endpoints_keep_all_original_sockets_until_termination() {
+    struct Originals {
+        survivor: Option<u64>,
+        birth: u128,
+        expected: Vec<u64>,
+        signals: usize,
+    }
+    impl Backend for Originals {
+        fn snapshot(&mut self, _: &BTreeSet<u16>, _: Protocol) -> Report {
+            unreachable!()
+        }
+
+        fn terminate(&mut self, _: u32, rows: &[Entry]) -> Result<bool> {
+            self.expected = rows.iter().map(|r| r.identity.unwrap().socket).collect();
+            if rows.iter().any(|r| r.identity.unwrap().birth != self.birth) {
+                return Err(Failure::new(Code::IdentityChanged, "Changed."));
+            }
+            if !self.survivor.is_some_and(|id| self.expected.contains(&id)) {
+                return Err(Failure::new(Code::OwnershipChanged, "Changed."));
+            }
+            self.signals += 1;
+            Ok(true)
+        }
+
+        fn alive(&mut self, _: u32, _: u128) -> Result<bool> {
+            Ok(false)
+        }
+    }
+    for order in [[100, 200], [200, 100]] {
+        for (survivor, birth, authorized) in [
+            (Some(100), 123, true),
+            (Some(200), 123, true),
+            (None, 123, false),
+            (Some(300), 123, false),
+            (Some(200), 124, false),
+        ] {
+            let mut report = Report {
+                results: order
+                    .into_iter()
+                    .map(|id| {
+                        let mut r = row(7, 8000);
+                        r.identity.as_mut().unwrap().socket = id;
+                        r
+                    })
+                    .collect(),
+                errors: vec![],
+            };
+            let mut backend = Originals {
+                survivor,
+                birth,
+                expected: vec![],
+                signals: 0,
+            };
+            settle_snapshot(&mut report, true, &mut backend, &mut Time::default());
+            assert_eq!(backend.expected, order);
+            assert_eq!(backend.signals, usize::from(authorized));
+            assert_eq!(report.results.len(), 1);
+            assert_eq!(
+                report.results[0].status,
+                Some(if authorized {
+                    Status::Killed
+                } else {
+                    Status::Skipped
+                })
+            );
+            assert_eq!(report.errors.is_empty(), authorized);
+            let mut out = vec![];
+            write_report(&report, OutputMode::Json, true, &mut out).unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            assert_eq!(json["results"].as_array().unwrap().len(), 1);
+            assert!(json["results"][0].get("identity").is_none());
+        }
+    }
+}
+
+#[test]
+fn listing_deduplicates_without_termination() {
+    let mut report = Report {
+        results: vec![row(7, 8000), row(7, 8000)],
+        errors: vec![],
+    };
+    let mut backend = Fake::default();
+    settle_snapshot(&mut report, false, &mut backend, &mut Time::default());
+    assert_eq!(report.results.len(), 1);
+    assert!(backend.calls.is_empty());
+}

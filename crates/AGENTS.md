@@ -361,3 +361,5 @@
 - pnport new-group terminal fixtures must verify native foreground placement before issuing explicit Ctrl+Z. Do not rely on an incidental background-read SIGTTIN that can disappear when supervisor placement wins scheduling; retain the independent background-read control.
 
 - clibox min-repro selects staged root executables through the same verified observed alias/identity mapping as required inputs. Preserve original Unix argv zero, literal arguments, external executable handling and required source/link verification.
+
+- clibox port termination consumes every original private socket observation before public endpoint deduplication. Retain one signal per PID, birth checks, original socket matching and the shared verification deadline; replacement sockets grant no authority.
