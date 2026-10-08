@@ -50,6 +50,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
 const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
+const wizardAccountsOnly = process.env.DELIDEV_LAYOUT_WIZARD_ACCOUNTS_ONLY === "1";
 const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";
 const dismissalOnly = process.env.DELIDEV_LAYOUT_DISMISSAL_ONLY === "1";
 const projectsOnly = process.env.DELIDEV_LAYOUT_PROJECTS_ONLY === "1";
@@ -176,8 +177,8 @@ try {
     assert.equal(await form.locator(".worker-account-row").count(), 0, "Hidden accounts have no DOM/focusable rows");
     assert.equal(await form.getByRole("checkbox").count(), 0, "Hidden accounts have no accessible checkbox");
     assert(await form.getByText(l("{{v0}} accounts selected").replace("{{v0}}", "0"), { exact: true }).first().isVisible());
-    assert(await form.getByText(l("Connect an account in AI Subscription or AI API Keys, then refresh."), { exact: true }).isVisible());
-    await form.getByRole("button", { name: l("Refresh accounts"), exact: true }).click();
+    assert(await form.getByText(l("Connect an account in AI Subscription or AI API Keys."), { exact: true }).isVisible());
+    await page.evaluate(() => window.refreshWizardAccounts());
     await form.getByText(l("No accounts to select on this page."), { exact: true }).waitFor();
     const workspace = form.locator(".worker-accounts-workspace");
     const geometry = await workspace.evaluate(node => {
@@ -276,6 +277,40 @@ try {
       projectRowChecks++;
     }
     console.log(JSON.stringify({ operation: "project_rows_layout", result: "passed", projectRowChecks, languages: 2, themes: 2, viewports: 4, effectiveZoom: [1,2], nativeAcceptance: "not-performed" }));
+  } else if (wizardAccountsOnly) {
+    let checks = 0;
+    for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const ordered of [false, true]) for (const [width,height] of [[1440,900],[960,640],[640,480],[480,320]]) {
+      await page.setViewportSize({ width, height });
+      await page.goto(`${origin}/?theme=${theme}&sourceRoutes=${ordered}&language=${language}`);
+      await page.getByRole("button", { name: l("Settings"), exact: true }).click(); await select("Agent Workers");
+      await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click(); await page.getByRole("radio", { name: "Codex", exact: true }).click();
+      const form = page.locator(".worker-wizard"), picker = form.getByRole("combobox", { name: ordered ? l("Account source {{v0}}").replace("{{v0}}", "1") : l("Account source"), exact: true });
+      await picker.click(); await page.getByRole("option", { name: "Fixture provider", exact: true }).click();
+      await form.getByRole("link", { name: l("Add an account in AI API Keys"), exact: true }).waitFor();
+      assert(await picker.isVisible()); assert(await form.locator(".worker-routing").isVisible());
+      for (const label of ["Change source", "Refresh accounts"]) assert.equal(await form.getByRole("button", { name: l(label), exact: true }).count(), 0);
+      assert(await form.locator(".worker-source-grip").first().isDisabled());
+      if (ordered) {
+        await form.getByRole("button", { name: l("+ Add account source"), exact: true }).click();
+        const secondKey = await form.locator("li[data-source-key]").nth(1).getAttribute("data-source-key"), second = form.locator(`li[data-source-key="${secondKey}"] .worker-source-grip`), firstKey = await form.locator("li[data-source-key]").first().getAttribute("data-source-key");
+        await second.focus(); await page.keyboard.press("Space"); await page.keyboard.press("ArrowUp");
+        assert.notEqual(await form.locator("li[data-source-key]").first().getAttribute("data-source-key"), firstKey);
+        await page.keyboard.press("Escape"); assert.equal(await form.locator("li[data-source-key]").first().getAttribute("data-source-key"), firstKey);
+        assert(await form.isVisible()); await second.focus(); await page.keyboard.press("Space"); await page.keyboard.press("ArrowUp"); await page.keyboard.press("Enter");
+        assert(await second.evaluate(node => document.activeElement === node));
+        const grips = form.locator(".worker-source-grip"); await grips.first().scrollIntoViewIfNeeded();
+        const a = await grips.first().boundingBox(), b = await grips.nth(1).boundingBox();
+        if (a && b) { await page.mouse.move(a.x+a.width/2,a.y+a.height/2); await page.mouse.down(); await page.mouse.move(b.x+b.width/2,b.y+b.height/2); await page.mouse.up(); }
+      }
+      const geometry = await form.locator(".worker-accounts-workspace").evaluate(node => ({ width: node.getBoundingClientRect().width, columns: getComputedStyle(node).gridTemplateColumns.split(" "), overflow: node.scrollWidth > node.clientWidth }));
+      assert.equal(geometry.overflow, false); if (geometry.width >= 720) assert.equal(geometry.columns[0], "260px"); else assert.equal(geometry.columns.length, 1);
+      const footer = page.locator(".settings-task-footer"); assert(await footer.isVisible());
+      assert(await page.locator(".settings-task-dialog").evaluate(node => node.scrollWidth <= node.clientWidth));
+      if (ordered) await form.locator(".worker-source-selection").filter({hasText:"Fixture provider"}).click();
+      if (screenshotDirectory) { await mkdir(screenshotDirectory,{recursive:true}); await page.locator(".settings-task-body").evaluate(node => node.scrollTop=0); await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))); await page.screenshot({path:join(screenshotDirectory,`wizard-accounts-${ordered ? "ordered" : "legacy"}-${language}-${theme}-${width}x${height}.png`)}); }
+      checks++;
+    }
+    console.log(JSON.stringify({operation:"wizard_accounts_layout",result:"passed",checks,languages:2,themes:2,generations:2,viewports:3,effectiveZoomViewports:1,nativeAcceptance:"not-performed"}));
   } else if (accountsOnly) {
     for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480], [720,450], [480,320]]) {
       await page.setViewportSize({ width, height });

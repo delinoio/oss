@@ -692,3 +692,19 @@ it("opens, refreshes and revisits API entries without inspecting account storage
   expect(screen.getByRole("button", { name: "Manage connection" })).toBeTruthy();
   expect(screen.getByText(/Credentials are stored securely/)).toBeTruthy();
 });
+
+it("waits for provider inventory before consuming a provider-ID-only account entry", async () => {
+ const value = fixture(), entry = { key: "delayed-provider-entry", providerId: value.providerId, startOAuth: false };
+ const view = render(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api, {startApiWizard:entry,providers:[]}))}</StrictMode>);
+ expect(screen.queryByRole("heading",{name:"Connect your entry"})).toBeNull();
+ view.rerender(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api,{startApiWizard:entry,providers:[value.providerOption]}))}</StrictMode>);
+ await screen.findByRole("heading",{name:"Connect your entry"}); expect(screen.getByText("API provider",{selector:"strong"})).toBeTruthy();
+ expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled(); expect(value.other).not.toHaveBeenCalled();
+});
+it("wizard-origin navigation keeps an eligible OAuth provider passive until an explicit provider action", async () => {
+ const value = fixture(), start = vi.fn(), provider = {...value.providerOption,oauthAvailable:true};
+ const oauth = {view:undefined,selectedProtocol:undefined,selectProtocol:vi.fn(),continueInBrowser:vi.fn(),available:true,supports:()=>true,start,abandon:vi.fn(),reopen:vi.fn(),recover:vi.fn(),retryStart:vi.fn(),observe:vi.fn(),completionClaimed:false,canLeave:false};
+ render(<StrictMode>{value.view(value.settings(AccountSettingsSection.Api,{oauth,providers:[provider],eligibleProviders:[provider],startApiWizard:{key:"passive-wizard-entry",providerId:provider.providerId,provider,startOAuth:false}}))}</StrictMode>);
+ await screen.findByRole("heading",{name:"Connect your entry"}); await act(async()=>{}); expect(start).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Change"})); fireEvent.click(screen.getByRole("button",{name:/API provider.*Browser sign-in/})); expect(start).toHaveBeenCalledExactlyOnceWith(provider);
+});

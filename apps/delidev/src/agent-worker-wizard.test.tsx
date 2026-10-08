@@ -15,8 +15,15 @@ import { MutationIntents, useRetainedMutation } from "./mutation";
 import { i18n } from "./localization";
 
 function sourceChoice(label: string) {
-  if (!screen.queryByRole("combobox", { name: label })) fireEvent.click(screen.getByRole("button", { name: "Change source" }));
   return screen.getByRole("combobox", { name: label });
+}
+async function refreshAccounts(value: ReturnType<typeof fixture>) {
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+}
+function reorderSource(position: number, direction: "ArrowUp" | "ArrowDown") {
+  const grip = screen.getByRole("button", { name: new RegExp(`^Reorder source ${position}:`) });
+  grip.focus(); fireEvent.keyDown(grip, { key: " " }); fireEvent.keyDown(grip, { key: direction }); fireEvent.keyDown(grip, { key: "Enter" });
+  return grip;
 }
 function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1]) {
   const row = (kind: EntityKind, data: Record<string, unknown>, schemaVersion = 1) => create(ResourceSchema, { kind, schemaVersion, id: newRequestId(), revision: 1n, documentJson: encode(data) });
@@ -374,7 +381,7 @@ it("keeps pagination and explicit refresh when a complete page has only hidden c
   await waitScrollChoices(sourceChoice("Account source"));
   await chooseScrollOption(sourceChoice("Account source"), `api:${value.provider.id}`);
   await screen.findByText("No accounts to select on this page.");
-  expect(screen.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeTruthy();
+  expect(screen.getByText("Connect an account in AI Subscription or AI API Keys.")).toBeTruthy();
   expect(screen.queryByRole("checkbox", { name: /Backup API/ })).toBeNull();
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.ACCOUNT)).toHaveLength(1);
   expect((screen.getByRole("button", { name: /^Load more.*[Aa]ccount/ }) as HTMLButtonElement).disabled).toBe(false);
@@ -384,7 +391,7 @@ it("keeps pagination and explicit refresh when a complete page has only hidden c
   expect(screen.queryByRole("button", { name: "First account page" })).toBeNull();
   expect(screen.getByRole("checkbox", { name: /Team API/ })).toBeTruthy();
   connected = true;
-  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+  await refreshAccounts(value);
   await screen.findByRole("button", { name: /^Reload/ });
   fireEvent.click(screen.getByRole("button", { name: /^Reload/ }));
   await screen.findByRole("checkbox", { name: /Personal API/ });
@@ -407,11 +414,11 @@ it.each(["choices", "hidden-only", "failed", "invalid"] as const)("hides hidden-
   await chooseScrollOption(sourceChoice("Account source"), `api:${value.provider.id}`);
   await screen.findByText("No accounts to select on this page.");
   refreshing = true;
-  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
+  await refreshAccounts(value);
+  await waitFor(() => expect(globalThis.document.querySelector(".worker-account-list [data-continuation] [role=status]")).not.toBeNull());
   expect((screen.getByRole("button", { name: /^Load more.*[Aa]ccount/ }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
-  expect(screen.queryByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeNull();
+  expect(screen.queryByText("Connect an account in AI Subscription or AI API Keys.")).toBeNull();
   expect(screen.queryByText("Loading accounts…")).toBeNull();
   value.list.mockImplementation(request => {
     if (request.filter?.kind !== EntityKind.ACCOUNT) return loaded(request);
@@ -419,10 +426,10 @@ it.each(["choices", "hidden-only", "failed", "invalid"] as const)("hides hidden-
     return result === "choices" ? { ...hiddenPage, resources: [value.accounts[0]] } : result === "invalid" ? { ...hiddenPage, resources: [value.subscription] } : hiddenPage;
   });
   await act(async () => release());
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect(globalThis.document.querySelector(".worker-account-list [data-continuation] [role=status]")).toBeNull());
   if (result === "hidden-only") {
     expect(screen.getByText("No accounts to select on this page.")).toBeTruthy();
-    expect(screen.getByText("Connect an account in AI Subscription or AI API Keys, then refresh.")).toBeTruthy();
+    expect(screen.getByText("Connect an account in AI Subscription or AI API Keys.")).toBeTruthy();
   } else {
     expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
     if (result === "choices") { fireEvent.click(screen.getByRole("button", { name: /^Reload/ })); await screen.findByRole("checkbox", { name: /Personal API/ }); }
@@ -448,17 +455,17 @@ it("retains cached choices and selected account order and weights while refresh 
   await screen.findByRole("checkbox", { name: /Personal API/ });
   fireEvent.click(screen.getByText("Routing options"));
   refreshing = true;
-  fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(true));
+  await refreshAccounts(value);
+  await waitFor(() => expect(globalThis.document.querySelector(".worker-account-list [data-continuation] [role=status]")).not.toBeNull());
   expect((screen.getByRole("checkbox", { name: /Personal API/ }) as HTMLInputElement).checked).toBe(true);
   expect(screen.getAllByText("2 accounts selected")[0]).toBeTruthy();
-  const selected = within(screen.getByRole("region", { name: "Choose accounts" })).getByRole("list");
-  expect(within(selected).getAllByRole("listitem").map(row => row.querySelector("strong")!.textContent)).toEqual(["Personal API", "Team API"]);
+  const selected = globalThis.document.querySelector(".worker-routing ol")!;
+  expect(within(selected as HTMLElement).getAllByRole("listitem").map(row => row.querySelector("strong")!.textContent)).toEqual(["Personal API", "Team API"]);
   expect((screen.getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe("3");
   expect((screen.getByLabelText("Weight for account 2") as HTMLInputElement).value).toBe("5");
   expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
   await act(async () => release());
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect(globalThis.document.querySelector(".worker-account-list [data-continuation] [role=status]")).toBeNull());
   next(); await screen.findByRole("combobox", { name: "Model" }); next();
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
@@ -480,13 +487,13 @@ it.each(["initial", "refresh"])("keeps an %s account read failure distinct from 
   await chooseScrollOption(sourceChoice("Account source"), `api:${value.provider.id}`);
   if (state === "refresh") {
     await screen.findByText("No accounts to select on this page.");
-    failRead(); fireEvent.click(screen.getByRole("button", { name: "Refresh accounts" }));
+    failRead(); await refreshAccounts(value);
     await screen.findByText("Refresh failed. Showing the last successfully loaded accounts.");
   }
   await within(screen.getByRole("region", { name: "Choose accounts" })).findByRole("alert");
   expect(screen.queryByText("No accounts to select on this page.")).toBeNull();
   expect(screen.queryByText(/No accounts for this source/)).toBeNull();
-  expect((screen.getByRole("button", { name: "Refresh accounts" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Retry accounts" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 it.each(["edit", "refresh"])("preserves hidden selected account order, weights and save bytes after %s", async state => {
@@ -803,7 +810,7 @@ it("keeps one autocomplete selection and valid active identity across empty page
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
 
-it("saves subscription then API source models atomically and preserves drafts across Back", async () => {
+it("saves committed reordered source models atomically and preserves drafts across Back", async () => {
   const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]); await start(value); confirmHarness();
   await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
   fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
@@ -811,6 +818,7 @@ it("saves subscription then API source models atomically and preserves drafts ac
   await chooseScrollOption(sourceChoice("Account source 2"), `api:${value.provider.id}`);
   fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select Personal API" })).toBeTruthy());
+  reorderSource(2, "ArrowUp");
   await nextAfterSourceProof(value, [value.subscription, value.accounts[0]]);
   const subscriptionModel = screen.getByRole("combobox", { name: "Model for ChatGPT subscription" });
   const apiModel = screen.getByRole("combobox", { name: "Model for OpenAI API" });
@@ -824,20 +832,20 @@ it("saves subscription then API source models atomically and preserves drafts ac
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = value.save.mock.calls[0][0];
   expect(request.schemaVersion).toBe(3); expect(request.model).toBeUndefined();
-  expect(request.routeModels).toMatchObject([{ selection: { case: "nativeId", value: "subscription-exact" }, expectedModelRevision: 0n }, { selection: { case: "modelId", value: value.models[0].id }, expectedModelRevision: 1n }]);
+  expect(request.routeModels).toMatchObject([{ selection: { case: "modelId", value: value.models[0].id }, expectedModelRevision: 1n }, { selection: { case: "nativeId", value: "subscription-exact" }, expectedModelRevision: 0n }]);
   const saved = JSON.parse(new TextDecoder().decode(request.documentJson));
-  expect(saved.routes).toMatchObject([{ accounts: [{ id: value.subscription.id, weight: 1 }], routing: "priority" }, { accounts: [{ id: value.accounts[0].id, weight: 1 }], routing: "priority" }]);
+  expect(saved.routes).toMatchObject([{ accounts: [{ id: value.accounts[0].id, weight: 1 }], routing: "priority" }, { accounts: [{ id: value.subscription.id, weight: 1 }], routing: "priority" }]);
   expect(saved.model_id).toBeUndefined(); expect(saved.accounts).toBeUndefined(); expect(value.discover).not.toHaveBeenCalled();
 }, 15000);
 
-it("reorders sources with buttons and resets only a changed source", async () => {
+it("reorders sources with keyboard grips and resets only a changed source", async () => {
   const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]); await start(value); confirmHarness();
   await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt"); fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
   fireEvent.click(screen.getByRole("button", { name: "+ Add account source" })); await chooseScrollOption(sourceChoice("Account source 2"), `api:${value.provider.id}`); fireEvent.click(await screen.findByRole("checkbox", { name: /Personal API/ }));
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "Select Personal API" })).toBeTruthy());
   const personal = screen.getByRole("checkbox", { name: "Select Personal API" });
   const panel = personal.closest("section")!;
-  fireEvent.click(screen.getByRole("button", { name: "Move source 2 up" }));
+  reorderSource(2, "ArrowUp");
   expect(scrollChoiceValue(sourceChoice("Account source 1"))).toBe(`api:${value.provider.id}`);
   expect(screen.queryByRole("checkbox", { name: "Select ChatGPT account" })).toBeNull();
   await chooseScrollOption(sourceChoice("Account source 1"), `api:${value.otherProvider.id}`);
@@ -940,14 +948,13 @@ it.each([false, true])("keeps navigation in the fixed task footer with its origi
   expect(value.save).not.toHaveBeenCalled();
 });
 
-it("switches only displayed source panels and retains mounted drafts and disclosures", async () => {
+it("switches only displayed source panels and retains mounted drafts and routing controls", async () => {
   const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
   await start(value); confirmHarness();
   await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt");
   fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ }));
   const firstPanel = (await screen.findByRole("checkbox", { name: "Select ChatGPT account" })).closest("section")!;
-  const disclosure = firstPanel.querySelector("details")!;
-  disclosure.open = true;
+  const disclosure = firstPanel.querySelector(".worker-routing")!;
   fireEvent.change(within(firstPanel).getByLabelText("Weight for account 1"), { target: { value: "9" } });
   fireEvent.click(screen.getByRole("button", { name: "+ Add account source" }));
   expect(screen.queryByRole("checkbox", { name: "Select ChatGPT account" })).toBeNull();
@@ -956,12 +963,12 @@ it("switches only displayed source panels and retains mounted drafts and disclos
   const rail = screen.getByRole("complementary", { name: "Account sources" });
   fireEvent.click(within(rail).getByRole("button", { name: /1 · ChatGPT subscription/ }));
   expect(screen.getByRole("checkbox", { name: "Select ChatGPT account" }).closest("section")).toBe(firstPanel);
-  expect(disclosure.open).toBe(true);
+  expect(firstPanel.querySelector(".worker-routing")).toBe(disclosure);
   expect((within(firstPanel).getByLabelText("Weight for account 1") as HTMLInputElement).value).toBe("9");
   expect(screen.queryByRole("checkbox", { name: "Select Personal API" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Move source 1 down" }));
+  const movedGrip = reorderSource(1, "ArrowDown");
   expect(screen.getByRole("checkbox", { name: "Select ChatGPT account" }).closest("section")).toBe(firstPanel);
-  expect(globalThis.document.activeElement).toBe(within(firstPanel).getByRole("heading", { name: "2 · ChatGPT subscription" }));
+  expect(globalThis.document.activeElement).toBe(movedGrip);
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
 
@@ -975,7 +982,7 @@ it("focuses account validation and the exact later invalid weight in the display
   fireEvent.click(screen.getByRole("button", { name: /^Load more.*[Aa]ccount/ }));
   fireEvent.click(await screen.findByRole("checkbox", { name: /Team API/ }));
   await screen.findByRole("checkbox", { name: "Select Team API" });
-  const routing = screen.getByText(/Routing options/).closest("details")!; routing.open = true;
+  expect(screen.getByRole("heading", { name: "Routing options" })).toBeTruthy();
   const later = screen.getByLabelText("Weight for account 2");
   fireEvent.change(later, { target: { value: "1001" } });
   await waitFor(() => expect((later as HTMLInputElement).validity.valid).toBe(false));
@@ -1005,25 +1012,24 @@ it("focuses legacy account choices when a valid source has no selected account",
   const account = await screen.findByRole("checkbox", { name: /Personal API/ });
   next();
   expect(globalThis.document.activeElement).toBe(account);
-  expect(screen.queryByRole("combobox", { name: "Account source" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "Account source" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled();
 });
 
 
-it.each([false, true])("keeps resolved edit source collapsed unless explicitly revealed (reveal=%s)", async reveal => {
+it.each([false, true])("keeps resolved edit source visible through deferred proofs (reflow=%s)", async reflow => {
   const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1]);
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   const transport: Transport = { ...value.transport, async unary(...args) { if (args[0].name === "GetResource") await pending; return value.transport.unary(...args); } };
   await start(value, true, transport); confirmHarness();
-  const change = screen.getByRole("button", { name: "Change source" });
-  expect(change.getAttribute("aria-expanded")).toBe("false");
-  if (reveal) fireEvent.click(change);
+  expect(screen.queryByRole("button", { name: "Change source" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "Account source 1" })).toBeTruthy();
+  if (reflow) fireEvent(window, new Event("resize"));
   await act(async () => release());
   await screen.findByRole("checkbox", { name: "Select Personal API" });
-  expect(change.getAttribute("aria-expanded")).toBe(String(reveal));
-  expect(Boolean(screen.queryByRole("combobox", { name: "Account source 1" }))).toBe(reveal);
+  expect(screen.getByRole("combobox", { name: "Account source 1" })).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
 
@@ -1103,7 +1109,7 @@ it("seeds routed account display metadata without replacing failed independent p
 });
 
 
-it.each([false, true])("shows initial selected-provider failure outside the collapsed source picker (routes=%s)", async routes => {
+it.each([false, true])("shows initial selected-provider failure beside the visible source picker (routes=%s)", async routes => {
   const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, ...(routes ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
   let unavailable = true;
   value.get.mockImplementation(request => { if (unavailable && request.id === value.provider.id) throw new ConnectError("Unavailable", Code.Unavailable); return { resource: value.records.find(row => row.id === request.id) }; });
@@ -1111,14 +1117,14 @@ it.each([false, true])("shows initial selected-provider failure outside the coll
   await chooseScrollOption(sourceChoice(routes ? "Account source 1" : "Account source"), `api:${value.provider.id}`);
   await screen.findAllByRole("alert");
   const retry = screen.getByRole("button", { name: "Retry source details" });
-  expect(screen.getByRole("button", { name: "Change source" }).getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByRole("combobox", { name: routes ? "Account source 1" : "Account source" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Change source" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: routes ? "Account source 1" : "Account source" })).toBeTruthy();
   const providerReads = value.get.mock.calls.filter(([request]) => request.id === value.provider.id).length;
   unavailable = false; fireEvent.click(retry);
   await screen.findByRole("checkbox", { name: /Personal API/ });
   expect(value.get.mock.calls.filter(([request]) => request.id === value.provider.id)).toHaveLength(providerReads + 1);
   expect(screen.queryByRole("button", { name: "Retry source details" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Change source" }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("button", { name: "Change source" })).toBeNull();
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
 });
 
@@ -1143,4 +1149,31 @@ it.each([false, true])("retains account choice and weight while retrying selecte
   expect(screen.getByLabelText("Weight for account 1")).toBe(weight);
   expect(weight).toHaveProperty("value", "9");
   expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+});
+
+it.each([false, true])("opens the selected provider's account task only for complete empty inventory (ordered=%s)", async ordered => {
+ const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, ...(ordered ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
+ await start(value); confirmHarness(); await chooseScrollOption(sourceChoice(ordered ? "Account source 1" : "Account source"), `api:${value.otherProvider.id}`);
+ const link = await screen.findByRole("link", { name: "Add an account in AI API Keys" });
+ expect(screen.getByRole("heading", { name: "Routing options", level: 4 })).toBeTruthy();
+ expect(screen.queryByRole("button", { name: "Change source" })).toBeNull(); expect(screen.queryByRole("button", { name: "Refresh accounts" })).toBeNull();
+ fireEvent.click(link); await screen.findByRole("heading", { name: "AI API Keys", level: 1 });
+ expect(screen.queryByRole("heading", { name: "Accounts", level: 3 })).toBeNull(); expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+ expect((await screen.findAllByText("Other API", { exact: true })).length).toBeGreaterThan(0);
+ await screen.findByRole("textbox", { name: "Entry name" });
+});
+it.each([false, true])("navigates empty subscription inventory and disposes the wizard (ordered=%s)", async ordered => {
+ const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, ...(ordered ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
+ const original = value.list.getMockImplementation()!; value.list.mockImplementation(request => request.subscriptionService === SubscriptionServiceIdentity.CHATGPT ? { resources: [], nextPageToken: "" } : original(request));
+ await start(value); confirmHarness(); await chooseScrollOption(sourceChoice(ordered ? "Account source 1" : "Account source"), "subscription:chatgpt");
+ fireEvent.click(await screen.findByRole("link", { name: "Add an account in AI Subscription" })); await screen.findByRole("heading", { name: "AI Subscription", level: 1 });
+ expect(screen.queryByRole("heading", { name: "Accounts", level: 3 })).toBeNull(); expect(value.save).not.toHaveBeenCalled(); expect(value.discover).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
+ expect(screen.getByRole("heading", { name: "Harness", level: 3 })).toBeTruthy();
+});
+it.each([false, true])("does not turn an incomplete empty account page into add-account authority (ordered=%s)", async ordered => {
+ const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, ...(ordered ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
+ const original = value.list.getMockImplementation()!; value.list.mockImplementation(request => request.providerId === value.otherProvider.id ? { resources: [], nextPageToken: "unread-tail" } : original(request));
+ await start(value); confirmHarness(); await chooseScrollOption(sourceChoice(ordered ? "Account source 1" : "Account source"), `api:${value.otherProvider.id}`);
+ await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.providerId === value.otherProvider.id)).toBe(true)); await act(async () => {}); expect(screen.queryByRole("link", { name: "Add an account in AI API Keys" })).toBeNull();
 });
