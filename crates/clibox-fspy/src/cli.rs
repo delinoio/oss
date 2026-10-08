@@ -6630,40 +6630,144 @@ int main(int argc, char **argv) {
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_autowatch_reruns_on_observed_input_change() {
-        use std::{process::Stdio, thread, time::Instant};
+        use std::{
+            io::{BufRead, BufReader},
+            process::Stdio,
+            sync::mpsc,
+            thread,
+        };
+        struct FixtureChild(std::process::Child);
+        impl FixtureChild {
+            fn stop(&mut self) -> Option<std::process::ExitStatus> {
+                if let Ok(Some(status)) = self.0.try_wait() {
+                    return Some(status);
+                }
+                // SAFETY: this is the retained, unreaped fixture child.
+                unsafe { libc::kill(self.0.id() as i32, libc::SIGINT) };
+                let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                while std::time::Instant::now() < deadline {
+                    match self.0.try_wait() {
+                        Ok(Some(status)) => return Some(status),
+                        Ok(None) => thread::sleep(Duration::from_millis(10)),
+                        Err(_) => break,
+                    }
+                }
+                let _ = self.0.kill();
+                self.0.wait().ok()
+            }
+        }
+        impl Drop for FixtureChild {
+            fn drop(&mut self) {
+                let _ = self.stop();
+            }
+        }
         let directory = tempfile::tempdir().unwrap();
-        fs::write(directory.path().join("input.txt"), b"first").unwrap();
-        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-            .arg("--exact")
-            .arg("cli::tests::macos_autowatch_child")
-            .env("CLIBOX_FSPY_MAC_WATCH_ROOT", directory.path())
+        let root = directory.path().canonicalize().unwrap();
+        // Publish this fixture's creation before starting a discovery stream;
+        // retain every notification from the actual supervised execution.
+        use notify::Watcher;
+        let (setup_tx, setup_rx) = mpsc::channel();
+        let mut setup = notify::recommended_watcher(move |event| {
+            let _ = setup_tx.send(event);
+        })
+        .unwrap_or_else(|_| panic!("fixture setup watcher unavailable"));
+        setup
+            .watch(&root, notify::RecursiveMode::Recursive)
+            .unwrap_or_else(|_| panic!("fixture setup watch unavailable"));
+        let input = root.join("input.txt");
+        fs::write(&input, b"first").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let event = setup_rx
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .expect("fixture setup input creation was not published")
+                .unwrap_or_else(|_| panic!("fixture setup native notification failed"));
+            assert!(
+                !event.need_rescan(),
+                "fixture setup lost native notifications"
+            );
+            if event.kind == notify::EventKind::Create(notify::event::CreateKind::File)
+                && event.paths.contains(&input)
+            {
+                break;
+            }
+        }
+        drop(setup);
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "cli::tests::macos_autowatch_child",
+                "--nocapture",
+            ])
+            .env("CLIBOX_FSPY_MAC_WATCH_ROOT", &root)
             .current_dir(directory.path())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        let runs = directory.path().join("runs.txt");
-        for expected in [1, 2] {
-            let deadline = Instant::now() + Duration::from_secs(10);
-            while fs::read(&runs).unwrap_or_default().len() < expected {
-                if Instant::now() >= deadline {
-                    child.kill().unwrap();
-                    let output = child.wait_with_output().unwrap();
-                    panic!(
-                        "macOS autowatch missed run {expected}: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
+        let mut child = FixtureChild(child);
+        let stdout = child.0.stdout.take().unwrap();
+        let (read_tx, reads) = mpsc::channel();
+        let output = thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let line = line.unwrap();
+                for token in ["FSPY_MAC_WATCH_READ_FIRST", "FSPY_MAC_WATCH_READ_SECOND"] {
+                    if line.contains(token) {
+                        let _ = read_tx.send(token);
+                    }
                 }
-                thread::sleep(Duration::from_millis(10));
+            }
+        });
+        let stderr = child.0.stderr.take().unwrap();
+        let (tx, installed) = mpsc::channel();
+        let diagnostics = thread::spawn(move || {
+            let mut text = String::new();
+            for line in BufReader::new(stderr).lines() {
+                let line = line.unwrap();
+                if line.contains("stage=\"watch_dependencies_installed\"") {
+                    let _ = tx.send(());
+                }
+                text.push_str(&line);
+                text.push('\n');
+            }
+            text
+        });
+        for (expected, token) in [
+            (1, "FSPY_MAC_WATCH_READ_FIRST"),
+            (2, "FSPY_MAC_WATCH_READ_SECOND"),
+        ] {
+            // Worker output precedes native capture teardown.
+            // A debug-only install acknowledgment proves the watch set is
+            // authoritative before the parent changes an observed input.
+            if installed.recv_timeout(Duration::from_secs(10)).is_err() {
+                let _ = child.stop();
+                let stderr = diagnostics.join().unwrap();
+                panic!("macOS autowatch missed installed run {expected}: {stderr}");
+            }
+            let read = reads.recv_timeout(Duration::from_secs(10));
+            if read != Ok(token) {
+                let _ = child.stop();
+                let stderr = diagnostics.join().unwrap();
+                panic!(
+                    "macOS autowatch read the wrong fixture input for run {expected}: {read:?}; \
+                     {stderr}"
+                );
             }
             if expected == 1 {
-                thread::sleep(Duration::from_millis(300));
-                fs::write(directory.path().join("input.txt"), b"second").unwrap();
+                fs::write(&input, b"second").unwrap();
             }
         }
-        // SAFETY: this PID is the owned test child, not an arbitrary process.
-        unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
-        assert!(child.wait().unwrap().success());
+        assert!(child.stop().is_some_and(|status| status.success()));
+        output.join().unwrap();
+        assert!(
+            reads.try_recv().is_err(),
+            "unexpected additional watched input read"
+        );
+        assert!(diagnostics
+            .join()
+            .unwrap()
+            .lines()
+            .all(|line| line.starts_with("DEBUG ")));
     }
 
     #[cfg(target_os = "macos")]
@@ -6672,6 +6776,15 @@ int main(int argc, char **argv) {
         let Some(root) = std::env::var_os("CLIBOX_FSPY_MAC_WATCH_ROOT") else {
             return;
         };
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::new(
+                "clibox_fspy::watch=debug",
+            ))
+            .with_ansi(false)
+            .without_time()
+            .with_target(false)
+            .with_writer(std::io::stderr)
+            .init();
         let executable = std::env::current_exe().unwrap();
         let cli = TestCli::try_parse_from([
             OsString::from("fspy"),
@@ -6686,6 +6799,7 @@ int main(int argc, char **argv) {
             executable.into_os_string(),
             OsString::from("--exact"),
             OsString::from("cli::tests::macos_watch_worker"),
+            OsString::from("--nocapture"),
         ])
         .unwrap();
         assert_eq!(execute(cli.command), 130);
@@ -6697,15 +6811,13 @@ int main(int argc, char **argv) {
         if std::env::var_os("CLIBOX_FSPY_MAC_WATCH_ROOT").is_none() {
             return;
         }
-        assert!(!fs::read("input.txt").unwrap().is_empty());
-        use std::io::Write;
-        fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("runs.txt")
-            .unwrap()
-            .write_all(b"x")
-            .unwrap();
+        // Static tokens prove which test-owned input content was read without
+        // adding coordination writes to the watched project.
+        match fs::read("input.txt").unwrap().as_slice() {
+            b"first" => println!("FSPY_MAC_WATCH_READ_FIRST"),
+            b"second" => println!("FSPY_MAC_WATCH_READ_SECOND"),
+            _ => panic!("unexpected fixture input content"),
+        }
     }
 
     #[cfg(target_os = "windows")]

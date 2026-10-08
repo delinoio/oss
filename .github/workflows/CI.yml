@@ -40,5 +40,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
+      - name: Validate complete native fspy library
+        run: cargo test --locked -p clibox-fspy --lib -- --test-threads=4
       - name: Validate watch fixture lifecycle and event boundary
         run: cargo test --locked -p clibox --test fspy_watch -- --test-threads=4
