@@ -140,6 +140,51 @@ func (x *SkillSelection) GetWorkerDeviceId() string {
 	return ""
 }
 
+// Presence distinguishes an old client omission from an explicit clear.
+type SkillSelectionList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Selections    []*SkillSelection      `protobuf:"bytes,1,rep,name=selections,proto3" json:"selections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SkillSelectionList) Reset() {
+	*x = SkillSelectionList{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SkillSelectionList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SkillSelectionList) ProtoMessage() {}
+
+func (x *SkillSelectionList) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SkillSelectionList.ProtoReflect.Descriptor instead.
+func (*SkillSelectionList) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *SkillSelectionList) GetSelections() []*SkillSelection {
+	if x != nil {
+		return x.Selections
+	}
+	return nil
+}
+
 type SkillEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Selection     *SkillSelection        `protobuf:"bytes,1,opt,name=selection,proto3" json:"selection,omitempty"`
@@ -152,7 +197,7 @@ type SkillEntry struct {
 
 func (x *SkillEntry) Reset() {
 	*x = SkillEntry{}
-	mi := &file_delidev_v1_skills_proto_msgTypes[1]
+	mi := &file_delidev_v1_skills_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -164,7 +209,7 @@ func (x *SkillEntry) String() string {
 func (*SkillEntry) ProtoMessage() {}
 
 func (x *SkillEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_skills_proto_msgTypes[1]
+	mi := &file_delidev_v1_skills_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -177,7 +222,7 @@ func (x *SkillEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillEntry.ProtoReflect.Descriptor instead.
 func (*SkillEntry) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{1}
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SkillEntry) GetSelection() *SkillSelection {
@@ -220,7 +265,7 @@ type ListSkillsRequest struct {
 
 func (x *ListSkillsRequest) Reset() {
 	*x = ListSkillsRequest{}
-	mi := &file_delidev_v1_skills_proto_msgTypes[2]
+	mi := &file_delidev_v1_skills_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -232,7 +277,7 @@ func (x *ListSkillsRequest) String() string {
 func (*ListSkillsRequest) ProtoMessage() {}
 
 func (x *ListSkillsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_skills_proto_msgTypes[2]
+	mi := &file_delidev_v1_skills_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -245,7 +290,7 @@ func (x *ListSkillsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSkillsRequest.ProtoReflect.Descriptor instead.
 func (*ListSkillsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{2}
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListSkillsRequest) GetMachineId() string {
@@ -285,7 +330,7 @@ type ListSkillsResponse struct {
 
 func (x *ListSkillsResponse) Reset() {
 	*x = ListSkillsResponse{}
-	mi := &file_delidev_v1_skills_proto_msgTypes[3]
+	mi := &file_delidev_v1_skills_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -297,7 +342,7 @@ func (x *ListSkillsResponse) String() string {
 func (*ListSkillsResponse) ProtoMessage() {}
 
 func (x *ListSkillsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_skills_proto_msgTypes[3]
+	mi := &file_delidev_v1_skills_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -310,7 +355,7 @@ func (x *ListSkillsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSkillsResponse.ProtoReflect.Descriptor instead.
 func (*ListSkillsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{3}
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListSkillsResponse) GetSkills() []*SkillEntry {
@@ -330,7 +375,11 @@ const file_delidev_v1_skills_proto_rawDesc = "" +
 	"\finventory_id\x18\x01 \x01(\tR\vinventoryId\x12\x19\n" +
 	"\bskill_id\x18\x02 \x01(\tR\askillId\x12)\n" +
 	"\x10content_revision\x18\x03 \x01(\tR\x0fcontentRevision\x12(\n" +
-	"\x10worker_device_id\x18\x04 \x01(\tR\x0eworkerDeviceId\"\xb9\x01\n" +
+	"\x10worker_device_id\x18\x04 \x01(\tR\x0eworkerDeviceId\"P\n" +
+	"\x12SkillSelectionList\x12:\n" +
+	"\n" +
+	"selections\x18\x01 \x03(\v2\x1a.delidev.v1.SkillSelectionR\n" +
+	"selections\"\xb9\x01\n" +
 	"\n" +
 	"SkillEntry\x128\n" +
 	"\tselection\x18\x01 \x01(\v2\x1a.delidev.v1.SkillSelectionR\tselection\x12\x12\n" +
@@ -370,25 +419,27 @@ func file_delidev_v1_skills_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_skills_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_delidev_v1_skills_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_delidev_v1_skills_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_delidev_v1_skills_proto_goTypes = []any{
 	(SkillProvenance)(0),       // 0: delidev.v1.SkillProvenance
 	(*SkillSelection)(nil),     // 1: delidev.v1.SkillSelection
-	(*SkillEntry)(nil),         // 2: delidev.v1.SkillEntry
-	(*ListSkillsRequest)(nil),  // 3: delidev.v1.ListSkillsRequest
-	(*ListSkillsResponse)(nil), // 4: delidev.v1.ListSkillsResponse
+	(*SkillSelectionList)(nil), // 2: delidev.v1.SkillSelectionList
+	(*SkillEntry)(nil),         // 3: delidev.v1.SkillEntry
+	(*ListSkillsRequest)(nil),  // 4: delidev.v1.ListSkillsRequest
+	(*ListSkillsResponse)(nil), // 5: delidev.v1.ListSkillsResponse
 }
 var file_delidev_v1_skills_proto_depIdxs = []int32{
-	1, // 0: delidev.v1.SkillEntry.selection:type_name -> delidev.v1.SkillSelection
-	0, // 1: delidev.v1.SkillEntry.provenance:type_name -> delidev.v1.SkillProvenance
-	2, // 2: delidev.v1.ListSkillsResponse.skills:type_name -> delidev.v1.SkillEntry
-	3, // 3: delidev.v1.SkillService.ListSkills:input_type -> delidev.v1.ListSkillsRequest
-	4, // 4: delidev.v1.SkillService.ListSkills:output_type -> delidev.v1.ListSkillsResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	1, // 0: delidev.v1.SkillSelectionList.selections:type_name -> delidev.v1.SkillSelection
+	1, // 1: delidev.v1.SkillEntry.selection:type_name -> delidev.v1.SkillSelection
+	0, // 2: delidev.v1.SkillEntry.provenance:type_name -> delidev.v1.SkillProvenance
+	3, // 3: delidev.v1.ListSkillsResponse.skills:type_name -> delidev.v1.SkillEntry
+	4, // 4: delidev.v1.SkillService.ListSkills:input_type -> delidev.v1.ListSkillsRequest
+	5, // 5: delidev.v1.SkillService.ListSkills:output_type -> delidev.v1.ListSkillsResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_skills_proto_init() }
@@ -402,7 +453,7 @@ func file_delidev_v1_skills_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_skills_proto_rawDesc), len(file_delidev_v1_skills_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -1081,7 +1081,8 @@ contain private package paths; public resources contain only opaque identities,
 revisions and ownership references. Complete selected packages are private,
 revision-pinned and independently copied into native runtimes. Exact staging
 retries verify retained snapshots rather than reread changed source packages.
-Removed queue rows retain original snapshot references. Permanent session deletion
+Removed queue rows and typed edits retain original snapshot references,
+including replaced selections in retired bindings until confirmed session cleanup. Permanent session deletion
 includes those references even before any native job is claimed and waits for
 original paired Worker removal. Restore quarantine cannot reacquire execution or
 deletion authority. No automatic accepted-snapshot eviction or relational migration

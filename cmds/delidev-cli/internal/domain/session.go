@@ -331,6 +331,8 @@ type SessionStartPreparation struct {
 }
 
 type QueuedInput struct {
+	RetiredSkills   []SkillBinding `json:"retired_skills,omitempty"`
+	SkillNames      map[ID]string  `json:"skill_names,omitempty"`
 	Skills          []SkillBinding `json:"skills,omitempty"`
 	Sequence        uint64         `json:"sequence"`
 	ContentRevision uint64         `json:"content_revision"`

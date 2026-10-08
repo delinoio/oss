@@ -2410,3 +2410,7 @@ Inventory belongs to the selected Runner and Harness, including remote Runners;
 renderer-local skill directories are never discovery authority. Codex alone is
 supported. Follow the sessions contract's Explicit native skills section for
 snapshot, native input, recovery, protocol and cleanup ownership.
+
+Typed queued edits restore selected token bindings from immutable accepted metadata.
+They support explicit selection clearing and reselection, preserve bindings and
+drafts across payload eviction, and keep skill-bound Steer unavailable.

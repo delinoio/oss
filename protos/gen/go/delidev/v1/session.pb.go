@@ -1042,8 +1042,8 @@ type CreateSessionRequest struct {
 	DocumentJson []byte `protobuf:"bytes,2,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
 	// Additional paired Worker credential loaded locally for explicit Local creation.
 	// Authentication input only: never retain in resources, jobs, receipts or logs.
-	LocalWorkerToken string            `protobuf:"bytes,3,opt,name=local_worker_token,json=localWorkerToken,proto3" json:"local_worker_token,omitempty"`
-	Skills           []*SkillSelection `protobuf:"bytes,4,rep,name=skills,proto3" json:"skills,omitempty"`
+	LocalWorkerToken string              `protobuf:"bytes,3,opt,name=local_worker_token,json=localWorkerToken,proto3" json:"local_worker_token,omitempty"`
+	Skills           *SkillSelectionList `protobuf:"bytes,4,opt,name=skills,proto3" json:"skills,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1099,7 +1099,7 @@ func (x *CreateSessionRequest) GetLocalWorkerToken() string {
 	return ""
 }
 
-func (x *CreateSessionRequest) GetSkills() []*SkillSelection {
+func (x *CreateSessionRequest) GetSkills() *SkillSelectionList {
 	if x != nil {
 		return x.Skills
 	}
@@ -1275,8 +1275,8 @@ type EnqueueInputRequest struct {
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	SessionId string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Closed domain.SessionInput schema. Mode is immutable after acceptance.
-	DocumentJson  []byte            `protobuf:"bytes,3,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
-	Skills        []*SkillSelection `protobuf:"bytes,4,rep,name=skills,proto3" json:"skills,omitempty"`
+	DocumentJson  []byte              `protobuf:"bytes,3,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
+	Skills        *SkillSelectionList `protobuf:"bytes,4,opt,name=skills,proto3" json:"skills,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1332,7 +1332,7 @@ func (x *EnqueueInputRequest) GetDocumentJson() []byte {
 	return nil
 }
 
-func (x *EnqueueInputRequest) GetSkills() []*SkillSelection {
+func (x *EnqueueInputRequest) GetSkills() *SkillSelectionList {
 	if x != nil {
 		return x.Skills
 	}
@@ -1388,7 +1388,7 @@ type EditQueuedInputRequest struct {
 	Mutation      *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
 	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Prompt        string                 `protobuf:"bytes,3,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Skills        []*SkillSelection      `protobuf:"bytes,4,rep,name=skills,proto3" json:"skills,omitempty"`
+	Skills        *SkillSelectionList    `protobuf:"bytes,4,opt,name=skills,proto3" json:"skills,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1444,7 +1444,7 @@ func (x *EditQueuedInputRequest) GetPrompt() string {
 	return ""
 }
 
-func (x *EditQueuedInputRequest) GetSkills() []*SkillSelection {
+func (x *EditQueuedInputRequest) GetSkills() *SkillSelectionList {
 	if x != nil {
 		return x.Skills
 	}
@@ -4631,13 +4631,13 @@ const file_delidev_v1_session_proto_rawDesc = "" +
 	"\rworkspace_job\x18\x05 \x01(\v2\x14.delidev.v1.ResourceR\fworkspaceJob\x127\n" +
 	"\frecovery_job\x18\x06 \x01(\v2\x14.delidev.v1.ResourceR\vrecoveryJob\x129\n" +
 	"\rexecution_job\x18\a \x01(\v2\x14.delidev.v1.ResourceR\fexecutionJob\x12J\n" +
-	"\x16execution_recovery_job\x18\b \x01(\v2\x14.delidev.v1.ResourceR\x14executionRecoveryJob\"\xbc\x01\n" +
+	"\x16execution_recovery_job\x18\b \x01(\v2\x14.delidev.v1.ResourceR\x14executionRecoveryJob\"\xc0\x01\n" +
 	"\x14CreateSessionRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12#\n" +
 	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson\x12,\n" +
-	"\x12local_worker_token\x18\x03 \x01(\tR\x10localWorkerToken\x122\n" +
-	"\x06skills\x18\x04 \x03(\v2\x1a.delidev.v1.SkillSelectionR\x06skills\"J\n" +
+	"\x12local_worker_token\x18\x03 \x01(\tR\x10localWorkerToken\x126\n" +
+	"\x06skills\x18\x04 \x01(\v2\x1e.delidev.v1.SkillSelectionListR\x06skills\"J\n" +
 	"\x15CreateSessionResponse\x121\n" +
 	"\x06change\x18\x01 \x01(\v2\x19.delidev.v1.SessionChangeR\x06change\"\x9b\x01\n" +
 	"\x13ListSessionsRequest\x12\x1d\n" +
@@ -4649,22 +4649,22 @@ const file_delidev_v1_session_proto_rawDesc = "" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\"p\n" +
 	"\x14ListSessionsResponse\x120\n" +
 	"\bsessions\x18\x01 \x03(\v2\x14.delidev.v1.ResourceR\bsessions\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xac\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xb0\x01\n" +
 	"\x13EnqueueInputRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12#\n" +
-	"\rdocument_json\x18\x03 \x01(\fR\fdocumentJson\x122\n" +
-	"\x06skills\x18\x04 \x03(\v2\x1a.delidev.v1.SkillSelectionR\x06skills\"I\n" +
+	"\rdocument_json\x18\x03 \x01(\fR\fdocumentJson\x126\n" +
+	"\x06skills\x18\x04 \x01(\v2\x1e.delidev.v1.SkillSelectionListR\x06skills\"I\n" +
 	"\x14EnqueueInputResponse\x121\n" +
-	"\x06change\x18\x01 \x01(\v2\x19.delidev.v1.SessionChangeR\x06change\"\xb5\x01\n" +
+	"\x06change\x18\x01 \x01(\v2\x19.delidev.v1.SessionChangeR\x06change\"\xb9\x01\n" +
 	"\x16EditQueuedInputRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x16\n" +
-	"\x06prompt\x18\x03 \x01(\tR\x06prompt\x122\n" +
-	"\x06skills\x18\x04 \x03(\v2\x1a.delidev.v1.SkillSelectionR\x06skills\"L\n" +
+	"\x06prompt\x18\x03 \x01(\tR\x06prompt\x126\n" +
+	"\x06skills\x18\x04 \x01(\v2\x1e.delidev.v1.SkillSelectionListR\x06skills\"L\n" +
 	"\x17EditQueuedInputResponse\x121\n" +
 	"\x06change\x18\x01 \x01(\v2\x19.delidev.v1.SessionChangeR\x06change\"k\n" +
 	"\x18RemoveQueuedInputRequest\x120\n" +
@@ -5086,7 +5086,7 @@ var file_delidev_v1_session_proto_goTypes = []any{
 	(*SendSidechatFindingsResponse)(nil),     // 75: delidev.v1.SendSidechatFindingsResponse
 	(*Resource)(nil),                         // 76: delidev.v1.Resource
 	(*Mutation)(nil),                         // 77: delidev.v1.Mutation
-	(*SkillSelection)(nil),                   // 78: delidev.v1.SkillSelection
+	(*SkillSelectionList)(nil),               // 78: delidev.v1.SkillSelectionList
 	(UsageCoverage)(0),                       // 79: delidev.v1.UsageCoverage
 	(*SessionDeletionJob)(nil),               // 80: delidev.v1.SessionDeletionJob
 	(SubscriptionServiceIdentity)(0),         // 81: delidev.v1.SubscriptionServiceIdentity
@@ -5103,13 +5103,13 @@ var file_delidev_v1_session_proto_depIdxs = []int32{
 	76,  // 8: delidev.v1.SessionChange.recovery_job:type_name -> delidev.v1.Resource
 	76,  // 9: delidev.v1.SessionChange.execution_job:type_name -> delidev.v1.Resource
 	76,  // 10: delidev.v1.SessionChange.execution_recovery_job:type_name -> delidev.v1.Resource
-	78,  // 11: delidev.v1.CreateSessionRequest.skills:type_name -> delidev.v1.SkillSelection
+	78,  // 11: delidev.v1.CreateSessionRequest.skills:type_name -> delidev.v1.SkillSelectionList
 	16,  // 12: delidev.v1.CreateSessionResponse.change:type_name -> delidev.v1.SessionChange
 	76,  // 13: delidev.v1.ListSessionsResponse.sessions:type_name -> delidev.v1.Resource
-	78,  // 14: delidev.v1.EnqueueInputRequest.skills:type_name -> delidev.v1.SkillSelection
+	78,  // 14: delidev.v1.EnqueueInputRequest.skills:type_name -> delidev.v1.SkillSelectionList
 	16,  // 15: delidev.v1.EnqueueInputResponse.change:type_name -> delidev.v1.SessionChange
 	77,  // 16: delidev.v1.EditQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
-	78,  // 17: delidev.v1.EditQueuedInputRequest.skills:type_name -> delidev.v1.SkillSelection
+	78,  // 17: delidev.v1.EditQueuedInputRequest.skills:type_name -> delidev.v1.SkillSelectionList
 	16,  // 18: delidev.v1.EditQueuedInputResponse.change:type_name -> delidev.v1.SessionChange
 	77,  // 19: delidev.v1.RemoveQueuedInputRequest.mutation:type_name -> delidev.v1.Mutation
 	16,  // 20: delidev.v1.RemoveQueuedInputResponse.change:type_name -> delidev.v1.SessionChange

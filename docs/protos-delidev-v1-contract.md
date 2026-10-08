@@ -945,9 +945,10 @@ Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-
 System `NATIVE_SKILLS_V1 = 44` and Worker `NATIVE_SKILLS_V1 = 24` own this independent
 profile. `SkillService.ListSkills` returns bounded opaque selections with exact
 content revisions, display metadata and user/project provenance. Creation,
-enqueue and queued-edit requests append repeated `skills = 4`; edits cannot
-replace skill selections or strip existing bindings, including omitted fields
-from old clients. The existing joined workspace-read envelope gains an exclusive
+enqueue and queued-edit requests append the presence-carrying
+`SkillSelectionList skills = 4`. Omission cannot strip bound queued input.
+Explicit empty clears selections; explicit nonempty retains original bindings
+or prepares newly selected immutable snapshots. The existing joined workspace-read envelope gains an exclusive
 skill request/result profile with original actor, Runner device/instance and
 Agent/session context. It grants no file, preparation, account or inference
 authority. Ordinary JSON carries references only. Regenerate the compatibility

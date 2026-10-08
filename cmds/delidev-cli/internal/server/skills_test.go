@@ -84,10 +84,10 @@ func TestSkillsRejectWorkerClientAndUnnegotiatedMachine(t *testing.T) {
 func TestSkillSelectionRejectsMalformedAndDuplicateBindings(t *testing.T) {
 	request := string(domain.NewID())
 	item := &pb.SkillSelection{WorkerDeviceId: string(domain.NewID()), InventoryId: string(domain.NewID()), SkillId: string(domain.NewID()), ContentRevision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-	if _, e := skillBindings([]*pb.SkillSelection{item, item}, request); e == nil {
+	if _, e := skillBindings(&pb.SkillSelectionList{Selections: []*pb.SkillSelection{item, item}}, request); e == nil {
 		t.Fatal("duplicate selected skill accepted")
 	}
-	if _, e := skillBindings([]*pb.SkillSelection{nil}, request); e == nil {
+	if _, e := skillBindings(&pb.SkillSelectionList{Selections: []*pb.SkillSelection{nil}}, request); e == nil {
 		t.Fatal("nil selection accepted")
 	}
 }
@@ -96,7 +96,7 @@ func TestSkillAcceptanceBindsOriginalRequestAndRejectsFieldUnawareEdit(t *testin
 	f, ctx, stream := skillReaderFixture(t)
 	client := delidevv1connect.NewSessionServiceClient(http.DefaultClient, f.endpoint.URL)
 	selection := &pb.SkillSelection{WorkerDeviceId: string(f.workerDevice), InventoryId: string(domain.NewID()), SkillId: string(domain.NewID()), ContentRevision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-	request := &pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: f.request.DocumentJson, LocalWorkerToken: f.request.LocalWorkerToken, Skills: []*pb.SkillSelection{selection}}
+	request := &pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: f.request.DocumentJson, LocalWorkerToken: f.request.LocalWorkerToken, Skills: &pb.SkillSelectionList{Selections: []*pb.SkillSelection{selection}}}
 	result := make(chan *pb.SessionChange, 1)
 	failures := make(chan error, 1)
 	go func() {
@@ -114,7 +114,7 @@ func TestSkillAcceptanceBindsOriginalRequestAndRejectsFieldUnawareEdit(t *testin
 	if domain.Decode(stream.Msg().RequestJson, &read) != nil || read.Skills == nil || len(read.Skills.Selections) != 1 || string(read.Skills.Selections[0].SnapshotID) != request.RequestId {
 		t.Fatal("unbound acceptance", read)
 	}
-	raw, _ := json.Marshal(domain.SkillReadResult{Entries: []domain.SkillEntry{}})
+	raw, _ := json.Marshal(domain.SkillReadResult{Entries: []domain.SkillEntry{{WorkerDeviceID: domain.ID(selection.WorkerDeviceId), InventoryID: domain.ID(selection.InventoryId), SkillID: domain.ID(selection.SkillId), ContentRevision: selection.ContentRevision, Name: "add-issue", Description: "fixture", Provenance: "user"}}})
 	if _, err := f.workerClient.ReportWorkspaceRead(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkspaceReadRequest{MachineId: f.machine.Id, InstanceId: f.workerInstance, ReadId: string(read.ID), DocumentJson: raw})); err != nil {
 		t.Fatal(err)
 	}
@@ -138,4 +138,86 @@ func TestSkillAcceptanceBindsOriginalRequestAndRejectsFieldUnawareEdit(t *testin
 	if connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatal("field-unaware edit dropped bound skills", err)
 	}
+	retainedRequest := &pb.EditQueuedInputRequest{SessionId: change.Session.Id, Prompt: "Changed text retaining $add-issue", Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: change.Input.Id, ExpectedRevision: change.Input.Revision}, Skills: &pb.SkillSelectionList{Selections: []*pb.SkillSelection{selection}}}
+	retained, err := client.EditQueuedInput(ctx, ownerRequest(f.identity, retainedRequest))
+	if err != nil {
+		t.Fatal("typed retained edit", err)
+	}
+	var retainedInput domain.QueuedInput
+	if domain.Decode(retained.Msg.Change.Input.DocumentJson, &retainedInput) != nil || len(retainedInput.Skills) != 1 || retainedInput.Skills[0].SnapshotID != input.Skills[0].SnapshotID {
+		t.Fatal("retained edit replaced snapshot")
+	}
+	retry, err := client.EditQueuedInput(ctx, ownerRequest(f.identity, retainedRequest))
+	if err != nil || !retry.Msg.Change.Replayed {
+		t.Fatal("typed exact edit retry", err)
+	}
+	clear, err := client.EditQueuedInput(ctx, ownerRequest(f.identity, &pb.EditQueuedInputRequest{SessionId: change.Session.Id, Prompt: "Explicitly cleared binding", Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: change.Input.Id, ExpectedRevision: retained.Msg.Change.Input.Revision}, Skills: &pb.SkillSelectionList{}}))
+	if err != nil {
+		t.Fatal("explicit clear", err)
+	}
+	var cleared domain.QueuedInput
+	if domain.Decode(clear.Msg.Change.Input.DocumentJson, &cleared) != nil || len(cleared.Skills) != 0 || len(cleared.RetiredSkills) != 1 || cleared.RetiredSkills[0] != input.Skills[0] {
+		t.Fatal("clear lost durable snapshot owner")
+	}
+
+	// Existing project/user discovery requires the original prepared session roots.
+	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil || f.workerStream.Msg().Job.Id != change.WorkspaceJob.Id {
+		t.Fatal("missing skill-session preparation", f.workerStream.Err())
+	}
+	preparation := f.workerStream.Msg().Job
+	var job domain.Job
+	var preparationRequest workspace.PrepareRequest
+	if domain.Decode(preparation.DocumentJson, &job) != nil || domain.Decode(job.Input, &preparationRequest) != nil {
+		t.Fatal("invalid skill-session preparation")
+	}
+	manager := workspace.Manager{Root: f.workerRoot}
+	manifest, e := manager.Prepare(ctx, preparationRequest)
+	if e != nil {
+		t.Fatal(e)
+	}
+	preparationOutput, _ := json.Marshal(manifest)
+	if _, e = f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(preparation, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: preparationOutput})); e != nil {
+		t.Fatal(e)
+	}
+	freshSelection := &pb.SkillSelection{WorkerDeviceId: selection.WorkerDeviceId, InventoryId: string(domain.NewID()), SkillId: string(domain.NewID()), ContentRevision: selection.ContentRevision}
+	freshRequest := &pb.EditQueuedInputRequest{SessionId: change.Session.Id, Prompt: "New $add-note selection", Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: change.Input.Id, ExpectedRevision: clear.Msg.Change.Input.Revision}, Skills: &pb.SkillSelectionList{Selections: []*pb.SkillSelection{freshSelection}}}
+	go func() {
+		response, e := client.EditQueuedInput(ctx, ownerRequest(f.identity, freshRequest))
+		if e != nil {
+			failures <- e
+			return
+		}
+		result <- response.Msg.Change
+	}()
+	received := make(chan bool, 1)
+	go func() { received <- stream.Receive() }()
+	select {
+	case ok := <-received:
+		if !ok {
+			t.Fatal(stream.Err())
+		}
+	case e := <-failures:
+		t.Fatal("new selected edit before observation", e)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if domain.Decode(stream.Msg().RequestJson, &read) != nil || len(read.Skills.Selections) != 1 || string(read.Skills.Selections[0].SnapshotID) != freshRequest.Mutation.RequestId {
+		t.Fatal("new edit snapshot not request bound")
+	}
+	raw, _ = json.Marshal(domain.SkillReadResult{Entries: []domain.SkillEntry{{WorkerDeviceID: domain.ID(freshSelection.WorkerDeviceId), InventoryID: domain.ID(freshSelection.InventoryId), SkillID: domain.ID(freshSelection.SkillId), ContentRevision: freshSelection.ContentRevision, Name: "add-note", Description: "fixture", Provenance: "user"}}})
+	if _, e := f.workerClient.ReportWorkspaceRead(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkspaceReadRequest{MachineId: f.machine.Id, InstanceId: f.workerInstance, ReadId: string(read.ID), DocumentJson: raw})); e != nil {
+		t.Fatal(e)
+	}
+	select {
+	case change = <-result:
+	case e := <-failures:
+		t.Fatal(e)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	var edited domain.QueuedInput
+	if domain.Decode(change.Input.DocumentJson, &edited) != nil || len(edited.Skills) != 1 || string(edited.Skills[0].SnapshotID) != freshRequest.Mutation.RequestId || edited.SkillNames[edited.Skills[0].SkillID] != "add-note" || len(edited.RetiredSkills) != 1 {
+		t.Fatal("new edit lost package or retired ownership")
+	}
+
 }

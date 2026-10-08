@@ -7,5 +7,6 @@
   "skills.user": "User",
   "skills.empty": "No matching skills.",
   "skills.unsupported": "Update the server and Runner Device to use skills.",
-  "skills.reselect": "The selected skills need reselection before sending."
+  "skills.reselect": "The selected skills need reselection before sending.",
+  "skills.clear": "Clear selected skills"
 }

@@ -208,7 +208,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     if (workspaceType === Workspace.Local && !proof) return;
     touched.current = true;
     submittedActivation.current = navigation.current.activation;
-    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), skills: skills.selections, localWorkerToken: proof?.token });
+    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), skills: skills.selections.length ? { selections: skills.selections } : undefined, localWorkerToken: proof?.token });
   };
 
   const shortcutScope = generalChat ? Surface.NewGeneralChat : Surface.NewSession;

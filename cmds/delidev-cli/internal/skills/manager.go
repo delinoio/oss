@@ -569,3 +569,19 @@ func VerifyRuntimePackage(ctx context.Context, home, path string) error {
 	}
 	return nil
 }
+
+// PreparedEntries returns metadata only from the verified immutable accepted copy.
+func (m Manager) PreparedEntries(ctx context.Context, scope domain.SkillReadRequest) ([]domain.SkillEntry, error) {
+	if _, err := m.Resolve(ctx, scope.Selections); err != nil {
+		return nil, err
+	}
+	if len(scope.Selections) == 0 {
+		return nil, unavailable()
+	}
+	b, err := readBounded(filepath.Join(snapshotPath(m.Root, scope.Selections[0].SnapshotID), "snapshot.json"), 256<<10)
+	var saved snapshot
+	if err != nil || domain.Decode(b, &saved) != nil || !sameScope(saved.Scope, scope) {
+		return nil, unavailable()
+	}
+	return saved.Entries, nil
+}

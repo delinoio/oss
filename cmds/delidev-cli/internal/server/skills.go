@@ -237,6 +237,18 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 				return empty, skillUnavailable()
 			}
 		}
+		if len(scope.Selections) > 0 {
+			if len(result.Entries) != len(scope.Selections) {
+				return empty, skillUnavailable()
+			}
+			for _, binding := range scope.Selections {
+				if !slices.ContainsFunc(result.Entries, func(entry domain.SkillEntry) bool {
+					return entry.WorkerDeviceID == binding.WorkerDeviceID && entry.InventoryID == binding.InventoryID && entry.SkillID == binding.SkillID && entry.ContentRevision == binding.ContentRevision
+				}) {
+					return empty, skillUnavailable()
+				}
+			}
+		}
 		result.Scope = &scope
 		return result, nil
 	}
@@ -256,9 +268,12 @@ func (s *Service) ListSkills(ctx context.Context, req *connect.Request[pb.ListSk
 	}
 	return connect.NewResponse(response), nil
 }
-func skillBindings(values []*pb.SkillSelection, request string) ([]domain.SkillBinding, error) {
+func skillBindings(selection *pb.SkillSelectionList, request string) ([]domain.SkillBinding, error) {
 	result := []domain.SkillBinding{}
-	for _, v := range values {
+	if selection == nil {
+		return result, nil
+	}
+	for _, v := range selection.Selections {
 		if v == nil {
 			return nil, skillUnavailable()
 		}

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/skills.proto.
  */
 export const file_delidev_v1_skills: GenFile = /*@__PURE__*/
-  fileDesc("ChdkZWxpZGV2L3YxL3NraWxscy5wcm90bxIKZGVsaWRldi52MSJsCg5Ta2lsbFNlbGVjdGlvbhIUCgxpbnZlbnRvcnlfaWQYASABKAkSEAoIc2tpbGxfaWQYAiABKAkSGAoQY29udGVudF9yZXZpc2lvbhgDIAEoCRIYChB3b3JrZXJfZGV2aWNlX2lkGAQgASgJIo8BCgpTa2lsbEVudHJ5Ei0KCXNlbGVjdGlvbhgBIAEoCzIaLmRlbGlkZXYudjEuU2tpbGxTZWxlY3Rpb24SDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRIvCgpwcm92ZW5hbmNlGAQgASgOMhsuZGVsaWRldi52MS5Ta2lsbFByb3ZlbmFuY2UiYQoRTGlzdFNraWxsc1JlcXVlc3QSEgoKbWFjaGluZV9pZBgBIAEoCRIQCghhZ2VudF9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEhIKCnByb2plY3RfaWQYBCABKAkiPAoSTGlzdFNraWxsc1Jlc3BvbnNlEiYKBnNraWxscxgBIAMoCzIWLmRlbGlkZXYudjEuU2tpbGxFbnRyeSpsCg9Ta2lsbFByb3ZlbmFuY2USIAocU0tJTExfUFJPVkVOQU5DRV9VTlNQRUNJRklFRBAAEhkKFVNLSUxMX1BST1ZFTkFOQ0VfVVNFUhABEhwKGFNLSUxMX1BST1ZFTkFOQ0VfUFJPSkVDVBACMlsKDFNraWxsU2VydmljZRJLCgpMaXN0U2tpbGxzEh0uZGVsaWRldi52MS5MaXN0U2tpbGxzUmVxdWVzdBoeLmRlbGlkZXYudjEuTGlzdFNraWxsc1Jlc3BvbnNlQjxaOmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vZGVsaWRldi92MTtkZWxpZGV2djFiBnByb3RvMw");
+  fileDesc("ChdkZWxpZGV2L3YxL3NraWxscy5wcm90bxIKZGVsaWRldi52MSJsCg5Ta2lsbFNlbGVjdGlvbhIUCgxpbnZlbnRvcnlfaWQYASABKAkSEAoIc2tpbGxfaWQYAiABKAkSGAoQY29udGVudF9yZXZpc2lvbhgDIAEoCRIYChB3b3JrZXJfZGV2aWNlX2lkGAQgASgJIkQKElNraWxsU2VsZWN0aW9uTGlzdBIuCgpzZWxlY3Rpb25zGAEgAygLMhouZGVsaWRldi52MS5Ta2lsbFNlbGVjdGlvbiKPAQoKU2tpbGxFbnRyeRItCglzZWxlY3Rpb24YASABKAsyGi5kZWxpZGV2LnYxLlNraWxsU2VsZWN0aW9uEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSLwoKcHJvdmVuYW5jZRgEIAEoDjIbLmRlbGlkZXYudjEuU2tpbGxQcm92ZW5hbmNlImEKEUxpc3RTa2lsbHNSZXF1ZXN0EhIKCm1hY2hpbmVfaWQYASABKAkSEAoIYWdlbnRfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRISCgpwcm9qZWN0X2lkGAQgASgJIjwKEkxpc3RTa2lsbHNSZXNwb25zZRImCgZza2lsbHMYASADKAsyFi5kZWxpZGV2LnYxLlNraWxsRW50cnkqbAoPU2tpbGxQcm92ZW5hbmNlEiAKHFNLSUxMX1BST1ZFTkFOQ0VfVU5TUEVDSUZJRUQQABIZChVTS0lMTF9QUk9WRU5BTkNFX1VTRVIQARIcChhTS0lMTF9QUk9WRU5BTkNFX1BST0pFQ1QQAjJbCgxTa2lsbFNlcnZpY2USSwoKTGlzdFNraWxscxIdLmRlbGlkZXYudjEuTGlzdFNraWxsc1JlcXVlc3QaHi5kZWxpZGV2LnYxLkxpc3RTa2lsbHNSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM");
 
 /**
  * @generated from message delidev.v1.SkillSelection
@@ -47,6 +47,25 @@ export const SkillSelectionSchema: GenMessage<SkillSelection> = /*@__PURE__*/
   messageDesc(file_delidev_v1_skills, 0);
 
 /**
+ * Presence distinguishes an old client omission from an explicit clear.
+ *
+ * @generated from message delidev.v1.SkillSelectionList
+ */
+export type SkillSelectionList = Message<"delidev.v1.SkillSelectionList"> & {
+  /**
+   * @generated from field: repeated delidev.v1.SkillSelection selections = 1;
+   */
+  selections: SkillSelection[];
+};
+
+/**
+ * Describes the message delidev.v1.SkillSelectionList.
+ * Use `create(SkillSelectionListSchema)` to create a new message.
+ */
+export const SkillSelectionListSchema: GenMessage<SkillSelectionList> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_skills, 1);
+
+/**
  * @generated from message delidev.v1.SkillEntry
  */
 export type SkillEntry = Message<"delidev.v1.SkillEntry"> & {
@@ -76,7 +95,7 @@ export type SkillEntry = Message<"delidev.v1.SkillEntry"> & {
  * Use `create(SkillEntrySchema)` to create a new message.
  */
 export const SkillEntrySchema: GenMessage<SkillEntry> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_skills, 1);
+  messageDesc(file_delidev_v1_skills, 2);
 
 /**
  * @generated from message delidev.v1.ListSkillsRequest
@@ -108,7 +127,7 @@ export type ListSkillsRequest = Message<"delidev.v1.ListSkillsRequest"> & {
  * Use `create(ListSkillsRequestSchema)` to create a new message.
  */
 export const ListSkillsRequestSchema: GenMessage<ListSkillsRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_skills, 2);
+  messageDesc(file_delidev_v1_skills, 3);
 
 /**
  * @generated from message delidev.v1.ListSkillsResponse
@@ -125,7 +144,7 @@ export type ListSkillsResponse = Message<"delidev.v1.ListSkillsResponse"> & {
  * Use `create(ListSkillsResponseSchema)` to create a new message.
  */
 export const ListSkillsResponseSchema: GenMessage<ListSkillsResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_skills, 3);
+  messageDesc(file_delidev_v1_skills, 4);
 
 /**
  * @generated from enum delidev.v1.SkillProvenance

@@ -11,8 +11,8 @@ export function skillToken(value: string, caret: number): SkillToken | undefined
   const suffix = /^[^\s$]*/u.exec(value.slice(caret))![0];
   return { start: caret - match[1]!.length - 1, end: caret + suffix.length, prefix: match[1]! };
 }
-interface Binding { start: number; end: number; token: string; selection: SkillSelection; stale: boolean }
-export function editedBindings(before: string, after: string, bindings: readonly Binding[]): Binding[] {
+export interface SkillTokenBinding { start: number; end: number; token: string; selection: SkillSelection; stale: boolean }
+export function editedBindings(before: string, after: string, bindings: readonly SkillTokenBinding[]): SkillTokenBinding[] {
   let start = 0; while (start < before.length && start < after.length && before[start] === after[start]) start++;
   let end = before.length, nextEnd = after.length; while (end > start && nextEnd > start && before[end - 1] === after[nextEnd - 1]) { end--; nextEnd--; }
   const delta = after.length - before.length;
@@ -22,14 +22,15 @@ export function editedBindings(before: string, after: string, bindings: readonly
     return after.slice(next.start, next.end) === next.token ? [next] : [];
   });
 }
-export function useSkillCompletion({ value, change, textarea, machineId, agentId, sessionId = "", projectId = "", active = true, enabled = true }: {
+export function useSkillCompletion({ value, change, textarea, machineId, agentId, sessionId = "", projectId = "", active = true, enabled = true, initialBindings = [], bindingsChanged }: {
   value: string; change: (value: string) => void; textarea: RefObject<HTMLTextAreaElement | null>;
-  machineId: string; agentId: string; sessionId?: string; projectId?: string; active?: boolean; enabled?: boolean;
+  machineId: string; agentId: string; sessionId?: string; projectId?: string; active?: boolean; enabled?: boolean; initialBindings?: SkillTokenBinding[]; bindingsChanged?: (bindings: SkillTokenBinding[]) => void;
 }) {
   useLocale(); const transport = useTransport(), id = useId();
   const scope = `${machineId}:${agentId}:${sessionId}:${projectId}`;
   const previousScope = useRef({ scope, transport });
-  const [bindings, setBindings] = useState<Binding[]>([]), [caret, setCaret] = useState(0), [dismissed, setDismissed] = useState(false), [selected, setSelected] = useState(0);
+  const [bindings, setBindings] = useState<SkillTokenBinding[]>(initialBindings), [caret, setCaret] = useState(0), [dismissed, setDismissed] = useState(false), [selected, setSelected] = useState(0);
+  useEffect(() => { bindingsChanged?.(bindings); }, [bindings, bindingsChanged]);
   const composing = useRef(false);
   const token = !dismissed && !composing.current ? skillToken(value, caret) : undefined;
   const contextChanged = previousScope.current.scope !== scope || previousScope.current.transport !== transport;

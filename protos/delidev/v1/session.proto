@@ -112,7 +112,7 @@ message CreateSessionRequest {
   // Additional paired Worker credential loaded locally for explicit Local creation.
   // Authentication input only: never retain in resources, jobs, receipts or logs.
   string local_worker_token = 3;
-  repeated SkillSelection skills = 4;
+  SkillSelectionList skills = 4;
 }
 
 message CreateSessionResponse {
@@ -136,7 +136,7 @@ message EnqueueInputRequest {
   string session_id = 2;
   // Closed domain.SessionInput schema. Mode is immutable after acceptance.
   bytes document_json = 3;
-  repeated SkillSelection skills = 4;
+  SkillSelectionList skills = 4;
 }
 
 message EnqueueInputResponse {
@@ -147,7 +147,7 @@ message EditQueuedInputRequest {
   Mutation mutation = 1;
   string session_id = 2;
   string prompt = 3;
-  repeated SkillSelection skills = 4;
+  SkillSelectionList skills = 4;
 }
 
 message EditQueuedInputResponse {

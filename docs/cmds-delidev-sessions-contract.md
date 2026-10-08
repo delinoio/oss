@@ -742,8 +742,13 @@ Codex copies only selected snapshots into its private runtime, sets process-loca
 extra roots, validates enabled exact names/paths through native skills/list, and
 sends structured skill inputs. Private native history retains ordered skill
 identity digests through continuation and uncertain recovery. These digests do
-not expose paths in public resources or logs. Skill-bound Steer and plain queued
-edits are disabled; remove and enqueue a new explicit selection instead.
+not expose paths in public resources or logs. Skill-bound Steer remains disabled. Request field 4 is a presence-carrying
+`SkillSelectionList`: omission protects old clients from erasing bound queue
+inputs, an explicit empty list clears selection, and a nonempty typed edit
+retains exact original snapshots for unchanged selections. Only new selections
+prepare new immutable packages under the edit request ID. Replaced snapshots
+remain in the queue's retained cleanup references. Queue edits preserve their
+original revision, actor and complete request identity through exact retries.
 
 The owner explicitly authorized declarations and activation together for the
 2026-10-08 fixed QA batch. This exception applies only to issue #1748's System 44,
@@ -753,4 +758,4 @@ exception to main-first allocation policy. The owner retains real-account,
 installed-native, remote-environment and cross-platform acceptance. Scripted
 transport/package tests establish local implementation evidence only.
 
-Fork and Sidechat copy complete original accepted packages into the child private runtime. Only explicit native skill nodes and generated skill-path tags are remapped; the original user text remains unchanged. The child native history must prove the remapped identities before publication. Parent deletion does not own these child copies.
+Fork and Sidechat copy complete original accepted packages into the child private runtime. Only explicit native skill nodes and generated skill-path tags inside those authenticated nodes are remapped; the original user text remains unchanged. The child native history must prove the remapped identities before publication. Parent deletion does not own these child copies.

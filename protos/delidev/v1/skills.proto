@@ -18,6 +18,10 @@ message SkillSelection {
   string content_revision = 3;
   string worker_device_id = 4;
 }
+// Presence distinguishes an old client omission from an explicit clear.
+message SkillSelectionList {
+  repeated SkillSelection selections = 1;
+}
 message SkillEntry {
   SkillSelection selection = 1;
   string name = 2;

@@ -29,7 +29,12 @@ func (m *Manager) ReadSkills(ctx context.Context, request ReadRequest) (domain.S
 	}
 	packages := skills.Manager{Root: m.Root, Home: home}
 	if len(request.Skills.Selections) > 0 {
-		return result, packages.Prepare(ctx, *request.Skills)
+		if e := packages.Prepare(ctx, *request.Skills); e != nil {
+			return result, e
+		}
+		entries, e := packages.PreparedEntries(ctx, *request.Skills)
+		result.Entries = entries
+		return result, e
 	}
 	if request.Skills.SessionID == "" || request.Manifest.Version == 0 {
 		return packages.List(ctx, *request.Skills, nil)

@@ -289,7 +289,7 @@ export function SessionView({ id, draft, setDraft, active = true }: { id: string
   const composer = useRef<HTMLTextAreaElement>(null);
   const skills = useSkillCompletion({ value: draft, change: setDraft, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, active });
   const canSend = !locked && !skills.blocked && Boolean(draft.trim()) && text(data.archive) === "active";
-  const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }), skills: skills.selections }); };
+  const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }), skills: skills.selections.length ? { selections: skills.selections } : undefined }); };
   const shortcuts = useShortcuts([
     { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
     { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },

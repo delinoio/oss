@@ -1,13 +1,14 @@
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useRef, useState } from "react";
-import { SessionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { useCallback, useRef, useState } from "react";
+import { SessionQuery, newRequestId, type Resource, type SkillSelection } from "@delinoio/delidev-api-client";
 import { document, items, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
+import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { Problem } from "./ui";
 import { RejectedInput } from "./startup-rejection";
 
 enum Delivery { Queued = "queued", Claimed = "claimed", Accepted = "accepted", Uncertain = "uncertain", Removed = "removed", Rejected = "rejected-before-start" }
-export type QueuedInputDraft = { prompt: string; revision: bigint };
+export type QueuedInputDraft = { prompt: string; revision: bigint; skills?: SkillTokenBinding[] };
 export function QueuedInput({ resource, session, refresh, draft, changeDraft, readOnly = false }: { resource: Resource; session?: Resource; refresh: () => void; draft?: QueuedInputDraft; changeDraft?: (value?: QueuedInputDraft) => void; readOnly?: boolean }) {
   useLocale();
   const [accepted, setAccepted] = useState<Resource>();
@@ -29,13 +30,27 @@ export function QueuedInput({ resource, session, refresh, draft, changeDraft, re
     {text(data.delivery) === Delivery.Removed ? <p>{copy("queue.removedInputOriginalOrderingRetained_3f3155")}</p> : <p>{text(data.prompt)}</p>}
     {text(data.delivery) === Delivery.Rejected ? <RejectedInput resource={current} session={session} /> : null}
     {text(data.delivery) === Delivery.Queued ? <>
-      <div className="actions"><button disabled={busy || !!items(data.skills).length} onClick={() => { explicitEdit.current = true; setEdit({ prompt: text(data.prompt), revision: current.revision }); }}>{copy("queue.editInput_f7680c")}</button><button disabled={busy} onClick={() => void remove.send({ mutation: mutation(), sessionId: resource.sessionId })}>{copy("queue.removeInput_95e788")}</button><button disabled={busy || !canSteer} onClick={() => void steer.send({ mutation: mutation(), sessionId: resource.sessionId, expectedExecutionId: text(execution.execution_id), expectedTurnId: text(execution.native_turn_id) })}>{copy("queue.steerWithThisInput_d835aa")}</button></div>
-      {edit ? <form onSubmit={(event) => { event.preventDefault(); if (busy || edit.revision !== current.revision) return; void update.send({ mutation: { id: resource.id, expectedRevision: edit.revision, requestId: newRequestId() }, sessionId: resource.sessionId, prompt: edit.prompt }); }}>
-        <label>{copy("queue.editedInput_e6f7fe")}<textarea autoFocus={explicitEdit.current} rows={3} maxLength={65536} disabled={busy} value={edit.prompt} onChange={(event) => setEdit({ ...edit, prompt: event.target.value })} /></label>
-        {edit.revision !== current.revision ? <p role="status">{copy("queue.thisInputChangedWhileYouWere_cfe47a")}</p> : null}
-        <div className="actions"><button className="primary" disabled={busy || !edit.prompt.trim() || edit.revision !== current.revision}>{copy("queue.saveInput_9f11a2")}</button><button type="button" disabled={busy} onClick={() => setEdit(undefined)}>{copy("queue.cancelEdit_6fa271")}</button></div>
-      </form> : null}
+      <div className="actions"><button disabled={busy} onClick={() => { explicitEdit.current = true; setEdit({ prompt: text(data.prompt), revision: current.revision, skills: queuedSkillBindings(data) }); }}>{copy("queue.editInput_f7680c")}</button><button disabled={busy} onClick={() => void remove.send({ mutation: mutation(), sessionId: resource.sessionId })}>{copy("queue.removeInput_95e788")}</button><button disabled={busy || !canSteer} onClick={() => void steer.send({ mutation: mutation(), sessionId: resource.sessionId, expectedExecutionId: text(execution.execution_id), expectedTurnId: text(execution.native_turn_id) })}>{copy("queue.steerWithThisInput_d835aa")}</button></div>
+      {edit ? <QueuedInputEditor key={resource.id} edit={edit} setEdit={setEdit} current={current} session={session} busy={busy} autoFocus={explicitEdit.current} save={(prompt, selections) => { void update.send({ mutation: { id: resource.id, expectedRevision: edit.revision, requestId: newRequestId() }, sessionId: resource.sessionId, prompt, skills: { selections } }); }} /> : null}
     </> : null}
     {[update, remove, steer].map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="queue.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("queue.edit_262121") : index === 1 ? copy("queue.removal_e57388") : copy("queue.steer_1cf39e")}</> }} /></button> : null}</div>)}
   </article>;
+}
+
+function queuedSkillBindings(data: Record<string, unknown>): SkillTokenBinding[] {
+ const prompt=text(data.prompt), names=object(data.skill_names);
+ return items(data.skills).map(value=>{const binding=object(value),name=text(names[text(binding.skill_id)]),token=`$${name}`;let start=prompt.indexOf(token);while(start>=0 && (start>0 && !/\s/u.test(prompt[start-1]!) || start+token.length<prompt.length && !/\s/u.test(prompt[start+token.length]!))) start=prompt.indexOf(token,start+1);
+ return {start:Math.max(0,start),end:Math.max(0,start)+token.length,token,stale:!name || start<0,selection:{$typeName:"delidev.v1.SkillSelection",inventoryId:text(binding.inventory_id),skillId:text(binding.skill_id),contentRevision:text(binding.content_revision),workerDeviceId:text(binding.worker_device_id)}};});
+}
+function QueuedInputEditor({edit,setEdit,current,session,busy,autoFocus,save}: {edit:QueuedInputDraft;setEdit:(draft?:QueuedInputDraft)=>void;current:Resource;session?:Resource;busy:boolean;autoFocus:boolean;save:(prompt:string,selections:SkillSelection[])=>void}) {
+ const textarea=useRef<HTMLTextAreaElement>(null), data=document(session);
+ // Draft ownership remains outside disposable payloads; only token bindings change.
+ const bindingsChanged=useCallback((bindings:SkillTokenBinding[])=>{if(edit.skills!==bindings) setEdit({...edit,skills:bindings});},[edit,setEdit]);
+ const skills=useSkillCompletion({value:edit.prompt,change:prompt=>setEdit({...edit,prompt}),textarea,machineId:text(data.machine_id),agentId:text(data.agent_id),sessionId:current.sessionId,initialBindings:edit.skills,bindingsChanged,active:!busy});
+ return <form onSubmit={event=>{event.preventDefault();if(busy || skills.blocked || edit.revision!==current.revision) return;save(edit.prompt,skills.selections);}}>
+  <label>{copy("queue.editedInput_e6f7fe")}<textarea ref={textarea} autoFocus={autoFocus} rows={3} maxLength={65536} disabled={busy} value={edit.prompt} onChange={event=>skills.onChange(event.target.value,event.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/></label>
+  {skills.list}{skills.warning}{edit.skills?.length ? <button type="button" disabled={busy} onClick={skills.clear}>{copy("skills.clear")}</button>:null}
+  {edit.revision!==current.revision ? <p role="status">{copy("queue.thisInputChangedWhileYouWere_cfe47a")}</p>:null}
+  <div className="actions"><button className="primary" disabled={busy || skills.blocked || !edit.prompt.trim() || edit.revision!==current.revision}>{copy("queue.saveInput_9f11a2")}</button><button type="button" disabled={busy} onClick={()=>setEdit(undefined)}>{copy("queue.cancelEdit_6fa271")}</button></div>
+ </form>;
 }

@@ -8695,6 +8695,14 @@
       "member": "skills",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillSelectionList",
+      "member": "selections",
+      "number": 1,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
