@@ -41,8 +41,8 @@ The request uses an exact session mutation and expected predecessor
 execution identity. Its response joins the current session/job and original
 action, including reference-only receipt replay. Profile availability must be
 checked independently of the common capability; a reservation grants neither.
-These allocations must be present on main before dependent implementations use
-them, as required by the structure contract.
+Record these allocations with their implementation in the owning feature PR,
+as permitted by the structure contract.
 
 The existing `CompactSessionRequest.mutation = 1` and response `job = 1`,
 `request_id = 2`, `replayed = 3` assignments are recorded in the immutable
@@ -52,7 +52,7 @@ generated bindings do not yet contain them. The current native profiles still
 use the original revision-bound mutation and job receipt, so their implementation
 does not satisfy this additional shared request/response boundary.
 
-After the new reservations reach main, dependent implementation must bind
+The complete implementation must bind
 `expected_execution_id` to the exact original successful execution in the
 admission transaction and actor-bound receipt identity. The response must read
 its current `session` and original `job` together under current authorization,
@@ -65,8 +65,8 @@ The existing schema-24 entities, jobs, receipts and cancellation tables provide
 the generic durable storage boundary. Compaction allocates no migration and leaves
 the independently activated accounting, diagnostic and subscription migrations
 26–28 in their original order; their historical reservations remain unchanged.
-If implementation requires additional tables or indexes, reserve that migration
-on main before using it. Never skip pending versions with empty migrations or
+If implementation requires additional tables or indexes, record that migration
+in the owning feature PR. Never skip pending versions with empty migrations or
 reinterpret an unknown historical layout.
 
 ## Admission and ordering

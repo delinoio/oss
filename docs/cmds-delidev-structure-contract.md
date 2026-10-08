@@ -1,5 +1,22 @@
 # DeliDev source ownership and compatibility
 
+## Allocation workflow
+
+A complete DeliDev feature PR may update protocol-number and database-version
+allocation records, active declarations, generated bindings and implementation
+together. A separate reservation PR, prior merge to main or reservation closure
+before branching is not required. This workflow supersedes earlier main-first
+prerequisites; historical reservation PRs remain provenance, not delivery gates.
+
+Preserve existing numbers, original declaration/member and migration owners,
+shared consumers, collision checks and compatibility checks. Reconcile concurrent
+allocations against the current target branch before merging, then regenerate
+outputs from the reconciled sources. Keep real migration dependencies and order;
+never insert an empty migration to skip unfinished work. Planned records remain
+separate from executable migrations and do not advertise runtime, native or
+account support. Complete feature delivery and its acceptance requirements remain
+unchanged.
+
 ## API account format selection
 
 Reservation PR #1646 established the complete issue #964 allocation closure on
@@ -44,9 +61,9 @@ Confirmed deletion, tombstone/browser obligations, the existing configuration re
 The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
 reserves System login 39, System execution 40, Worker managed execution 21 and
 progress diagnostic field 10 under issue #964. The ledger also owns the new
-GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Establish
-the complete closure on main before active schemas, generated bindings or runtime
-support. Codex field 7 and existing System 30/35/36/37 and Worker 19 ownership
+GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Record
+the complete closure in the owning feature PR. Codex field 7 and existing
+System 30/35/36/37 and Worker 19 ownership
 remain unchanged. Reservations activate nothing and add no migration.
 
 ## Agent Worker source-route ownership
@@ -110,8 +127,8 @@ all affected owners, even when their rules live outside the edited directory.
 
 GitHub token-first onboarding under issue #964 reserves System capability 34,
 two closed enums and five new message declarations in the protocol allocation
-ledger. Establish this reservation-only closure on main before dependent
-implementation. It grants no token inspection, pre-profile form, credential
+ledger. Record this allocation closure in the owning feature PR. Records alone
+grant no token inspection, pre-profile form, credential
 retention or browser capability and adds no migration. Follow the protocol and
 integration contracts.
 
@@ -138,16 +155,17 @@ to its original PR, or its owning issue when no implementation PR exists yet, an
 a unique number. Shared consumers are recorded explicitly. Existing main
 assignments are immutable.
 Reservations do not advertise capability support or activate implementation.
-New allocations must be established on main before dependent feature branches use
-them. Existing shared message semantics still require explicit composition.
+Feature PRs may add allocation records, active declarations and implementation
+together; no separate reservation PR or prior merge to main is required. Existing
+shared message semantics still require explicit composition.
 
 Issue #1203's shared compaction RPC closure reserves
 `CompactSessionRequest.expected_execution_id = 2` and
 `CompactSessionResponse.session = 4`, with #1093/#1202 as shared consumers.
 Record PR #1221's already-active request/response assignments in the immutable
-baseline without renumbering them. Establish the additive reservations on main
-before implementing exact predecessor admission and joined current-session/job
-responses. The existing response request ID remains the original action ID.
+baseline without renumbering them. Record the additive reservations with exact
+predecessor admission and joined current-session/job responses in the owning
+feature PR. The existing response request ID remains the original action ID.
 Reservations do not add active schema fields, generated bindings, capabilities
 or migrations and do not establish complete native acceptance.
 
@@ -180,7 +198,7 @@ preserved and require recovery rather than being inferred from their version alo
 The general API browser OAuth extension reserves migration 31 under issue #964
 after real 26–30 and retains the original 29/30 owners. Inventory capability 6,
 device connection method 4 and the additive flow/options/state fields belong to
-the same main-first reservation closure in the allocation ledger. Reservations
+the same allocation closure in the allocation ledger. Reservations
 grant no provider registration, exchange or native capability. Deliver complete
 common/Hugging Face, Gemini and Baseten feature PRs in that dependency order under
 the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
@@ -188,8 +206,8 @@ the [account OAuth contract](cmds-delidev-account-oauth-contract.md).
 ### Repository addition prerequisites
 
 The approved remote-first extension reserves System 37
-(`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`) on main
-before dependent implementation. It follows the Add repository implementation
+(`REMOTE_REPOSITORIES_V1`) and Worker 19 (`REMOTE_WORKSPACE_CLONE_V1`) in the
+owning feature PR. It follows the Add repository implementation
 in PR #1355 and preserves its immediate-clone/listing allocations. Reservations
 alone grant no URL registration or managed workspace clone and add no migration.
 The complete feature must compose repository saving, session/schedule admission,
@@ -199,8 +217,8 @@ deletion; a URL-only form without remote Worker preparation is incomplete.
 The Add repository extension under issue #964 reserves System capabilities 31
 (`REPOSITORY_CLONE_V1`) and 32 (`GITHUB_REPOSITORY_PICKER_V1`), Worker capability
 18 (`REPOSITORY_CLONE_V1`), and the five new repository-list/clone message
-declarations in the allocation ledger. Establish these reservations on main
-before implementation. Reservations grant no GitHub listing, Git authentication,
+declarations in the allocation ledger. Record these allocations in the owning
+feature PR. Records alone grant no GitHub listing, Git authentication,
 filesystem write, clone or registration capability. No migration is reserved:
 the implementation uses the existing repository schema and durable job/receipt
 boundary. PATs remain server-only GitHub API credentials; the original Worker
@@ -234,8 +252,8 @@ private layout marker; no reservation itself activates support. Unmarked histori
 version-25 files still require recovery without modification.
 Claude accounting must compose with the Grok accounting schema and shared usage
 meaning established by the preceding change. Request diagnostics follows both
-implemented versions. If that product order changes, revise the ledger on main
-before branching; do not insert empty migrations to skip unfinished work.
+implemented versions. If that product order changes, reconcile the ledger in the
+owning feature PR; do not insert empty migrations to skip unfinished work.
 
 Issue #1235 reserves migration 28 for service-native subscription identity and
 legacy configuration retirement, after the real implementations of 26 and 27.
@@ -253,9 +271,10 @@ Issue #1146 reserves migration 29 for private OpenRouter OAuth attempt metadata,
 after real migrations 26–28, together with inventory capability 5, inventory-entry
 field 9 and the exclusively owned connection-method/attempt-state enums. The
 [OAuth contract](cmds-delidev-account-oauth-contract.md) owns the complete
-implemented lifecycle and outstanding real-provider/platform acceptance. Establish these allocations on main before
-dependent implementation; no placeholder migration, active protobuf declaration,
-generated binding or OAuth capability is introduced by this prerequisite. Keep
+implemented lifecycle and outstanding real-provider/platform acceptance. Record
+these allocations in the owning feature PR; allocation records alone introduce
+no placeholder migration, active protobuf declaration, generated binding or
+OAuth capability. Keep
 the existing sequence and issue open until full implementation is accepted.
 
 The storage suite covers every fixed historical schema and the real 29-to-30
@@ -307,8 +326,8 @@ that historical map. Generated service/query facades retain both services.
 
 ## Remaining-feature prerequisite reservations
 
-The allocation ledger reserves the complete remaining-feature dependency closure
-before independent implementation PRs. It retains every existing main assignment
+The allocation ledger records the complete remaining-feature dependency closure
+with independent implementation PRs. It retains every existing main assignment
 and original owner; reservations grant no capability or native authority.
 The closed WorkspaceStorageAction enum retains original PR #1121 ownership
 alongside its existing System capability 11. Its eight values remain reserved
@@ -334,10 +353,10 @@ order. No executable migration, schema declaration, generated binding or runtime
 advertisement is added by this prerequisite.
 
 Delivery uses independent PRs merged in dependency order. A coherent feature PR
-may compose related complete contracts and consecutive real migrations after all
-shared reservations have reached main; the delivery boundary is not one PR per
-issue or migration. Retain every original migration owner and execution order. Establish these shared
-reservations on main before composing their dependent branches; each feature PR
+may compose related complete contracts and consecutive real migrations with their
+shared allocation records; the delivery boundary is not one PR per
+issue or migration. Retain every original migration owner and execution order.
+Record these shared allocations in the owning feature PR; each feature PR
 must include its complete business, authenticated RPC, CLI, client and desktop
 boundary plus applicable validation. Preserve implementation branches and record
 source-bound validation and unresolved native/account/platform acceptance in PRs
@@ -347,8 +366,8 @@ Sidechat reference preparation privately owns sidechat-preparations/ under the w
 ## Pre-release compatibility reset
 
 The owner-approved pre-release cleanup establishes database baseline 32 and
-DeliDev protocol 2 before implementation. Reserve
-`AttachWorkerRequest.protocol_version = 10` on main before declaring the field.
+DeliDev protocol 2 in the complete feature PR. Record
+`AttachWorkerRequest.protocol_version = 10` in the owning feature PR.
 Reservations do not activate a database layout, RPC, Worker admission or reset.
 
 The complete reset replaces migrations 1–31 with one current initialization
@@ -373,7 +392,7 @@ number or a legacy name alone does not identify compatibility code.
 
 This approved reset supersedes historical compatibility-preservation and
 executable migration-retention requirements only when its complete feature is
-implemented. Retain main-first allocation ownership and tool-generated outputs.
+implemented. Retain original allocation ownership and tool-generated outputs.
 DeliDev pre-release breaking changes do not suppress other projects' Buf
 breaking checks, numeric allocation validation, lint or freshness. Record source
 revision, commands, results and unresolved limits in PRs and CI artifacts.
@@ -392,8 +411,8 @@ acceptance must be recorded independently from fixture/build validation under
 the subscription and desktop contracts.
 Issue #964 reserves System capability 38, Worker capability 20 and the complete
 Claude login-code/progress/native-identity closure in the protocol allocation
-ledger. Establish these reservations on main before dependent feature branches
-activate the declarations. Existing Codex bundles, independent capabilities and
+ledger. Record these allocations in the owning feature PR. Existing Codex
+bundles, independent capabilities and
 real migrations through 31 retain their meanings. Reservations alone grant no
 native login, execution, browser dispatch or cleanup authority and add no
 migration. The complete feature owns selected-Runner native authentication,
@@ -406,6 +425,6 @@ native lifecycle/execution cleanup under the subscription and desktop contracts.
 
 ## Inline Worker models and endpoint-only completion reservation
 
-Main first reserves System 42, Worker 22 and the complete endpoint/model-identity/pricing closure in the allocation ledger. Compose full DB baseline 32 / protocol 2 reset with inline Worker schema 4 and current portable bundle 4. The prior atomic Model/Agent save and portable bundle 2 proposal are superseded only on complete activation. The 2026-10-07 owner amendment waives earlier DB retention and permits explicit DB/sidecar reset without conversion, retaining original native and protected-credential cleanup authority.
+The feature PR records System 42, Worker 22 and the complete endpoint/model-identity/pricing closure in the allocation ledger. Compose full DB baseline 32 / protocol 2 reset with inline Worker schema 4 and current portable bundle 4. The prior atomic Model/Agent save and portable bundle 2 proposal are superseded only on complete activation. The 2026-10-07 owner amendment waives earlier DB retention and permits explicit DB/sidecar reset without conversion, retaining original native and protected-credential cleanup authority.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

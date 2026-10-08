@@ -37,7 +37,7 @@ observation controls or canonical model registration.
 Main-established `SystemCapability.SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16`
 and `WorkerCapability.WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7`
 activate the API observation boundary. The [structure contract](cmds-delidev-structure-contract.md)
-still requires shared reservations to reach main before dependent implementation;
+permits allocation records and implementation in the same feature PR;
 other pending reservations never enter status or Worker capability negotiation.
 
 `NativeModelService` in `native_models.proto` owns `DiscoverNativeModels`,
@@ -106,7 +106,7 @@ selection. This adds no executable database migration or new migration version.
 The executable registry includes main-established schema 25 for Grok accounting;
 pending versions 26 and 27 retain their original order and every later reservation
 remains unchanged. If
-implementation needs a schema change, establish its version on main first and
+implementation needs a schema change, record its version in the feature PR and
 preserve the complete preceding sequence, backup-first atomic upgrades and historical records. A protocol
 reservation cannot authorize a database version or an empty migration.
 
@@ -184,8 +184,8 @@ Update this contract and affected account/catalog/protocol/desktop contracts whe
 observation ownership, native versions, publication fencing, credential profiles,
 registration semantics or paging bounds change. Keep scoped AGENTS rules aligned
 with ownership/policy changes and the project index aligned with its domain links
-and cross-domain invariants. New shared numbers and migration versions must be
-established on main before dependent implementation.
+and cross-domain invariants. Record new shared numbers and migration versions
+with implementation in the owning feature PR under the structure contract.
 
 ## References
 

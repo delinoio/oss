@@ -23,7 +23,7 @@ ProviderInventory capability 8 and Start/attempt fields 4/7. PR #1657 establishe
 before implementation; preserve original login, credentials, receipts, account
 connections and execution history without a migration.
 
-API account format selection uses the main-first closure in PR #1646. The
+API account format selection uses the allocation closure in PR #1646. The
 [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection)
 owns per-key protocol profiles, schema-3 API compatibility and portable version 4;
 legacy account defaults and original connection/execution ownership remain intact.
@@ -54,7 +54,7 @@ Issue #1137 makes a fresh main desktop launch sufficient to start its own admitt
 
 Issue #1088 adds Worker-owned session terminals with native Unix PTY/Windows ConPTY processes, authenticated create/control/output operations and equivalent CLI commands. The desktop provides a bounded text terminal view. Agent Stop preserves terminals; Archive and storage deletion join their independent exact cleanup gate. The [terminal contract](cmds-delidev-terminals-contract.md) and [validation records in PR #1226](https://github.com/delinoio/oss/pull/1226) distinguish fixture/cross-build validation from native platform, remote Worker and release acceptance; this increment does not complete the remaining issue #964 scope.
 
-Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Schema allocations reach main before activation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
+Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Feature PRs may record schema allocations with their implementation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
 
 ## Project ID
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
@@ -238,7 +238,7 @@ advertised system terminal support. Unknown or unsupported status cannot issue
 terminal reads or expose cached terminal errors; see the
 [desktop contract](apps-delidev-desktop-contract.md).
 
-Remaining-feature delivery follows the [structure contract](cmds-delidev-structure-contract.md): establish shared numeric and migration reservations on main, then merge complete independently validated feature PRs in dependency order. Reservation support and actual native/account/platform acceptance remain distinct.
+Remaining-feature delivery follows the [allocation workflow](cmds-delidev-structure-contract.md#allocation-workflow): complete feature PRs may include shared numeric and migration allocation records with their implementation and merge in dependency order. Reservation support and actual native/account/platform acceptance remain distinct.
 
 Native input accounting and request diagnostics activate their main-established independent capabilities with real migrations 26/27. Preserve once-only original Claude/OpenCode source attribution, nullable precise counters, immutable pricing and metadata-only requested/observed diagnostic evidence across authenticated RPC, CLI and desktop. The [usage](cmds-delidev-usage-contract.md) and [diagnostics](cmds-delidev-diagnostics-contract.md) contracts own these boundaries; no fixture establishes real-account acceptance.
 - Worker network bootstrap pins an original protected recipient and pending/paired identity, then independently reconciles desired/effective generation through authenticated control. Stale state blocks fresh work while original active generation and cleanup remain immutable. The separately claimed Codex API/title tunnel keeps upstream credentials in Go, verifies native proxy/shell policy and joins before cleanup; public native-route use is independent of control readiness and provider success. Follow the [network contract](cmds-delidev-network-contract.md).
@@ -272,7 +272,7 @@ and historical Usage attribution remain immutable. Reservation PR #1371 precedes
 activation; schema-3 Agents and portable version 3 add no SQLite migration.
 
 The owner-approved [pre-release compatibility reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
-reserves database baseline 32, protocol 2 and Worker attach field 10 before its
+reserves database baseline 32, protocol 2 and Worker attach field 10 with its
 complete implementation. Reservations leave current runtime behavior unchanged.
 
 ## Native Claude subscriptions
@@ -290,16 +290,16 @@ Console/API login, cross-device authentication and Claude quotas/credits remain
 excluded. Actual account and packaged-platform acceptance remain separate from
 fixtures/builds. See [the subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
 The owner-approved native Claude subscription extension spans the existing
-subscription, desktop, harness, protocol and storage owners. Reserve System 38,
-Worker 20 and the complete login-code/progress/native-identity declarations on
-main before implementation. Authentication remains in an original installed
+subscription, desktop, harness, protocol and storage owners. Record System 38,
+Worker 20 and the complete login-code/progress/native-identity declarations in
+the owning feature PR. Authentication remains in an original installed
 Claude Code account profile on the selected Runner Device; server metadata does
 not grant credentials, cross-device execution or cleanup authority. The
 reservation prerequisite activates no support and adds no migration. Follow
 [the subscription contract](cmds-delidev-subscription-contract.md#planned-native-claude-subscriptions).
 
 The approved inline-Worker-model replacement composes the current-only DB 32 /
-protocol 2 reset. Its complete main-first declarations and ownership are defined
+protocol 2 reset. Its complete recorded declarations and ownership are defined
 in the catalog, structure, storage, desktop, protocol, usage, transfer and
 subagent contracts. Independent Models and persistent API catalogs are removed
 only with complete activation. Earlier DB retention is waived by the owner;

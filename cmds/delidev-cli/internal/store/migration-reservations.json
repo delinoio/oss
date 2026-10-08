@@ -80,5 +80,5 @@
       "composition": "Initialize the complete current functional schema directly; no upgrade from schemas 1 through 31. Reject earlier databases and backups without changing original files or sidecars. This baseline reservation supersedes executable historical migration retention only on complete reset activation. Compose the inline Worker model replacement: complete Model-free current layout, Worker schema 4, portable bundle 4 and source/native-ID pricing; no independent Model registry or persistent API catalog."
     }
   ],
-  "policy": "Reservations are not executable. Implement in order, or revise the reservation sequence on main before starting replacements; never fill a gap with a no-op migration. An unmerged version-25 database is an unknown layout and requires preservation and explicit recovery."
+  "policy": "Reservations are not executable. Feature PRs may record or reconcile version allocations together with implementation without a separate reservation PR or prior merge to main. Preserve original ownership and real dependency order; never fill a gap with a no-op migration. An unmerged version-25 database is an unknown layout and requires preservation and explicit recovery."
 }

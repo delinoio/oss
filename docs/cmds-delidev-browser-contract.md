@@ -336,7 +336,7 @@ only. Existing account credential-disconnection prerequisites remain in force.
 Update this contract and the scoped desktop/CLI/protocol/client AGENTS files when
 ownership, bounds, native lifetime, cleanup acknowledgments or wire semantics
 change. Keep the project and docs catalogs linked. Shared numeric or migration
-allocations must still follow the source-structure contract on main.
+allocations must still follow the source-structure contract in the owning feature PR.
 
 ## References
 

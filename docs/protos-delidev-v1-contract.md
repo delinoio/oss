@@ -119,9 +119,9 @@ Confirmed deletion, tombstone/browser obligations, the existing configuration re
 The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
 reserves System login 39, System execution 40, Worker managed execution 21 and
 progress diagnostic field 10 under issue #964. The ledger also owns the new
-GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Establish
-the complete closure on main before active schemas, generated bindings or runtime
-support. Codex field 7 and existing System 30/35/36/37 and Worker 19 ownership
+GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Record
+the complete closure in the owning feature PR. Codex field 7 and existing
+System 30/35/36/37 and Worker 19 ownership
 remain unchanged. Reservations activate nothing and add no migration.
 
 
@@ -206,14 +206,14 @@ The five new message declarations and their fields are recorded with exclusive
 ownership in `allocations.json`: token inspection request ID/token 1–2, response
 request ID/state/identity/problem JSON 1–4, public identity ID/node ID/login 1–3,
 form request request ID/token kind/resource owner/access 1–4 and form response
-request ID/token kind/resource owner/access/URL 1–5. Establish this closure on main
-before dependent implementation. This prerequisite introduces no active schema,
+request ID/token kind/resource owner/access/URL 1–5. Record this closure in the
+owning feature PR. Allocation records alone introduce no active schema,
 generated binding, advertised support, credential lifetime, browser authority or
 database migration. Existing profile/revision-bound token forms remain unchanged.
 
 ### Activated onboarding boundary
 
-After the main-first reservation closure, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
+With the recorded allocations, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
 
 Fine-grained `PrepareGitHubTokenForm` with selected-repositories access permits
 an empty `resource_owner`, echoes it unchanged and omits `target_name` from the
@@ -285,8 +285,8 @@ API_KEY 1, OAUTH_PKCE 2 and KEYLESS 3. `AccountOAuthState` declares UNSPECIFIED 
 AWAITING_AUTHORIZATION 1, EXCHANGING 2, SAVING 3, CONNECTED 4, CANCELED 5, EXPIRED 6,
 FAILED 7, INTERRUPTED 8 and RECOVERY_REQUIRED 9. Each new-enum member uses explicit
 declaration provenance in the allocation ledger without entering the active
-baseline. Establish these reservations and migration 29 on main before dependent
-implementation, except the owner-approved single integrated PR. The reconciled
+baseline. Record these allocations and migration 29 in the owning feature PR,
+including the owner-approved single integrated PR. The reconciled
 AccountService schema defines owner/client Start/Complete/Cancel/Status, each
 with its own standard-named response, and generates both languages from their
 source. Value-local Buf acronym-prefix comments preserve the reserved OAuth
@@ -306,8 +306,8 @@ The additional shared RPC closure records PR #1221's existing
 `CompactSessionRequest` and `CompactSessionResponse` assignments in the immutable
 baseline, then reserves `CompactSessionRequest.expected_execution_id = 2` and
 `CompactSessionResponse.session = 4` under issue #1203 with #1093/#1202 as shared
-consumers. Establish these reservations on main before adding active fields or
-generated bindings. The expected execution must join the exact original source
+consumers. Record these allocations with active fields and generated bindings
+in the owning feature PR. The expected execution must join the exact original source
 at acceptance and remain part of the actor-bound receipt identity. The response
 must join the current session and original job in one authorized read, including
 reference-only replay; its existing `request_id` remains the original action ID.
@@ -332,8 +332,8 @@ message fields detected version 1, minimum version 2, phase 3, stable error code
 4, safe message 5, guidance 6 and correlation ID 7 under issue #964.
 `CodexDiagnosticPhase` reserves UNSPECIFIED 0, DISCOVERY 1, VERSION 2, PROFILE 3,
 RUNTIME 4, LAUNCH 5, INITIALIZE 6, CONFIRM 7, LOGIN 8, MODELS 9, EXECUTION 10,
-HISTORY 11 and CLEANUP 12. Establish these ledger-only reservations on main
-before dependent implementation. They grant no Codex version, native operation,
+HISTORY 11 and CLEANUP 12. Record these allocations in the owning feature PR.
+Records alone grant no Codex version, native operation,
 diagnostic response or capability support and add no migration. Diagnostics
 must exclude paths, credentials, login URLs, identities and raw native content.
 
@@ -344,8 +344,8 @@ enum reserves UNSPECIFIED 0, PREPARING 1, WAITING 2, SUCCEEDED 3, CANCELED 4,
 EXPIRED 5, UNSUPPORTED 6, RECOVERY_REQUIRED 7 and FAILED 8.
 `ForwardSubscriptionCallbackRequest` reserves account ID 1, original operation
 ID 2 and write-only callback query 3; its response reserves accepted 1.
-All new declarations have explicit ledger ownership. Establish these allocations
-on main before dependent schemas or code. This reservation changes no active
+All new declarations have explicit ledger ownership. Record these allocations
+in the owning feature PR. This reservation changes no active
 schema, binding, endpoint, capability advertisement or migration. Omitted
 `RequestSubscription.machine_id` remains unsupported until the complete
 server-owned boundary activates; existing machine-bound requests retain their
@@ -357,8 +357,8 @@ Issue #1235 reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
 under its owning issue identity. This independent capability will negotiate
 service-bearing subscription Accounts/native Models and retired-reference
 projections at resource schema version 2; unchanged API resources remain version
-1. It must not depend on API provider inventory capabilities. Establish this
-allocation and migration 28 on main before dependent implementation. This
+1. It must not depend on API provider inventory capabilities. Record this
+allocation and migration 28 in the owning feature PR. This
 prerequisite changes no active schema, generated binding or capability
 advertisement; generate clients from reconciled schemas when implementation
 activates the reserved boundary.
@@ -928,13 +928,14 @@ user codes remain Start-only; later provider implementations retain their gates.
 ## Pre-release protocol reset reservation
 
 The [pre-release reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
-reserves protocol 2 and `AttachWorkerRequest.protocol_version = 10` on main.
+records protocol 2 and `AttachWorkerRequest.protocol_version = 10` in the
+complete feature PR.
 The field is absent from active schemas until complete implementation. The
 reset removes historical forwarding imports/reflection and obsolete API
 surfaces; retained field and enum numbers preserve their original meanings.
 
 ## Inline Worker models and endpoint-only completion reservation
 
-Reserve System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields on main. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
+Record System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields in the owning feature PR. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
