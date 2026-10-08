@@ -677,6 +677,22 @@ fn concurrent_fork_and_child_callbacks_preserve_the_virtual_view() {
     fixture.assert_released();
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn raw_fork_child_retains_the_virtual_view_and_owned_scratch() {
+    let mut fixture = Fixture::new("raw-fork", false);
+    let output = fixture.stopped();
+    assert!(
+        output.status.success(),
+        "{}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(fixture.root.path().join("raw-fork-child").is_file());
+    assert!(!fixture.root.path().join("node_modules").exists());
+    fixture.assert_released();
+}
+
 fn exec_fixture(mode: &str) -> Fixture {
     use std::os::unix::fs::PermissionsExt;
 
