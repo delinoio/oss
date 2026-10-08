@@ -1593,10 +1593,26 @@ fixtures prove layout only; packaged CEF and native acceptance remain separate.
 The transcript scrolls independently. Open interactions remain expanded, and
 request/queue contents have bounded scroll space near the composer. Preserve
 original page-scoped counts, pagination and live delivery ordering. The composer
-stays at the bottom, with a 120px textarea adjustable from 80px to 180px; short
-available areas start at 80px, with independently bounded upper rows. The composer
-can scroll within its allocated row when narrow or zoomed content exceeds the
-available height, keeping its original input and actions reachable. Compact
+stays at the bottom as a full-width 24px-corner card with 16px padding and a
+subtle semantic border/shadow. Its borderless textarea starts at 48px, grows with
+content to 180px and then scrolls internally, without manual resizing; short
+viewports cap growth at 64px while keeping the toolbar reachable. Bound the
+card to half the actual workspace height with independent vertical scrolling and
+a pinned toolbar, so inline failures or eight-image strips cannot displace input
+actions or obscure workspace tools. Ordered 64px
+image thumbnails precede the input in a horizontally scrolling strip with original
+numbered descriptions, staging state and independent 40px removal controls. The
+bottom wrapping toolbar has a 40px Attach images plus, keyboard-accessible
+Attachment help, the native Plan Mode checkbox in a compact pill and a 40px
+circular accent upward-arrow Queue message button with its original accessible
+name/tooltip. Guidance exposes PNG/JPEG/WebP and the unchanged eight-image,
+10MiB-each/40MiB-total limits only when explicitly opened; Escape closes it and
+restores its opener. Route loading/unavailability, processing, overflow/errors,
+cleanup retry and the original uncertain-request retry remain inline. Preserve
+connection-owned drafts, immutable references, skills/IME, plain Enter newline,
+primary-modifier Enter submission and receipt-proven clearing. Queue never
+implies Resume. New session/General Chat creation retain their own geometry.
+Upper rows remain independently bounded. Compact
 sidebar navigation takes space from the workspace instead of displacing input.
 Keep the existing Execute/Plan selection, Enter behavior,
 connection-owned prompt limits, send locks and exact uncertain retries. An empty

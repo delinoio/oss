@@ -106,8 +106,8 @@
 .session-workspace .session-input-tray > details { border: 0; padding: 0; margin: 0; background: transparent; }
 .session-input-tray summary { padding: 5px 0; color: var(--muted); font-size: 12px; cursor: pointer; }
 .session-tray-content { padding: 8px 0 12px; }
-.session-workspace .composer { grid-area: 4 / 1; min-width: 0; min-height: 0; max-height: 40cqh; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin: 0 20px 16px; background: var(--surface); }
-.session-workspace .composer textarea { display: block; height: 120px; min-height: 80px; max-height: 180px; resize: vertical; border: 0; border-radius: 0; padding: 4px 6px; font-size: 13px; }
+.session-workspace .composer { grid-area: 4 / 1; min-width: 0; min-height: 0; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: 24px; padding: 16px; margin: 0 20px 16px; background: var(--surface); box-shadow: 0 2px 8px var(--shadow-soft); }
+.session-workspace .composer textarea { display: block; height: 48px; min-height: 48px; max-height: 180px; resize: none; overflow-y: auto; border: 0; border-radius: 0; padding: 4px 0; font-size: 14px; line-height: 20px; }
 .composer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
 .composer-actions > label { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size: 12px; }
 .composer-actions select { width: auto; min-height: 36px; padding: 4px 24px 4px 8px; }
@@ -148,7 +148,7 @@
 }
 @media (max-height: 480px) {
   .session-workspace .session-header { padding-top: 8px; padding-bottom: 8px; }
-  .session-workspace .composer textarea { height: 80px; }
+  .session-workspace .composer textarea { height: 48px; }
 }
 /* Short available areas include compact navigation and browser QA chrome.
    Bound the upper rows instead of letting intrinsic content displace input. */
@@ -160,7 +160,7 @@
   .session-notices { max-height: 48px; }
   .session-input-tray { display: flex; flex-wrap: wrap; gap: 0 16px; max-height: 80px; }
   .session-input-tray > details[open] { flex-basis: 100%; }
-  .session-workspace .composer textarea { height: 80px; }
+  .session-workspace .composer textarea { height: 48px; }
   .session-information > header { position: static; }
 }
 
@@ -177,3 +177,29 @@
 .skill-completion li { padding: 8px; cursor: pointer; overflow-wrap: anywhere; }
 .skill-completion li[aria-selected="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
 .skill-completion li p { margin: 4px 0; }
+
+/* Only retained session composers use this compact layout; creation keeps its owner.
+   Bound the card to its actual workspace so inline errors and image strips cannot
+   displace the toolbar in short layouts. Original input/status stay scrollable. */
+.session-workspace .composer { max-height: 50cqh; overflow-y: auto; scroll-padding-bottom: 48px; }
+.session-workspace .composer .image-preview-list { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding: 2px; }
+.session-workspace .composer .image-preview-list li { flex: 0 0 auto; grid-template-columns: 64px 40px; max-width: none; padding: 4px; gap: 2px; }
+.session-workspace .composer .image-preview-list img { grid-column: 1; width: 64px; height: 64px; }
+.session-workspace .composer .image-preview-list button { grid-column: 2; grid-row: 1; align-self: start; }
+.session-workspace .composer .image-preview-list span { grid-column: 1 / -1; max-width: 108px; }
+.composer-toolbar { position: sticky; bottom: 0; z-index: 2; background: var(--surface); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.composer-toolbar .composer-attach, .composer-toolbar .composer-submit { width: 40px; min-width: 40px; height: 40px; padding: 0; display: grid; place-items: center; }
+.composer-toolbar .composer-attach { font-size: 24px; }
+.composer-toolbar .composer-submit { border-radius: 50%; margin-left: auto; }
+.composer-toolbar .plan-mode { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface-subtle); font-size: 12px; margin: 0; }
+.composer-toolbar .composer-attachment-help { display: grid; place-items: center; width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 8px; }
+.composer-attachment-guidance { margin: 0; padding: 8px 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.composer-original-retry { margin-top: 8px; }
+@media (max-height: 480px) {
+  .session-workspace .composer textarea { max-height: 64px; }
+  .session-workspace .composer { margin-bottom: 8px; }
+}
+
+@container session-view (max-height: 480px) {
+  .session-workspace .composer textarea { max-height: 64px; }
+}

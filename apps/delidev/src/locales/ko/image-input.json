@@ -22,5 +22,6 @@
   "image-input.evidenceUnavailable": "이미지 참조를 사용할 수 없습니다.",
   "image-input.steerUnavailable": "이미지 입력에는 Steer를 사용할 수 없습니다. 대기열 전송은 원래 이미지를 유지합니다.",
   "image-input.textLimit": "메시지가 256 KiB를 초과합니다. 원래 초안을 유지하고 텍스트를 줄이세요.",
-  "image-input.retryRead": "이미지 불러오기 재시도"
+  "image-input.retryRead": "이미지 불러오기 재시도",
+  "image-input.helpLabel": "첨부 도움말"
 }
