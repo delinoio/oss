@@ -1832,6 +1832,8 @@ OAuth presentation recognizes only typed credential-runtime recovery causes and 
 `pnpm prepare:sidecar [TARGET_TRIPLE]` accepts only the six explicit macOS/Windows/Linux x64/arm64 target mappings and never silently substitutes the host. Native packaging/signing/publication remain separate acceptance work.
 
 Workspace Rust Clippy and test CI prepare those same generated inputs using the pinned Go toolchain before compiling the desktop host. A bare all-features Cargo command in a clean checkout lacks the Tauri external-binary resource until that preparation runs; generated frontend and sidecar files remain untracked.
+Closed GitHub presentation shell fixtures isolate executable publication in a joined writer child, so parallel fixture forks cannot retain a parent-owned writable script description and cause Linux `ETXTBSY` at exec. They assert exact data-directory and closed-operation arguments, accepted acknowledgment shape, malformed-output and nonzero-exit failure classifications, accepted bounded benign stderr, rejected-input admission before spawn and absence of server-state bootstrap. Their invocation marker is written at entry before argument or stdin validation. This test-only descriptor isolation does not change production command deadlines or sidecar authority, and does not establish the cause of an earlier CI failure whose result was reduced to a boolean.
+
 
 ## Dependencies and Integrations
 Use the repository's React, Connect Query, React Query and Rsbuild pins. The Go server/Worker and canonical versioned protobuf remain authoritative. Toss frontend guidelines inform explicit status, focused forms, clear action hierarchy and accessible components.

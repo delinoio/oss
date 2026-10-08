@@ -38,3 +38,6 @@ tokio = { version = "1.49.0", features = ["rt", "time"] }
 tokio-util = "0.7.18"
 winapi = { version = "0.3.9", features = ["consoleapi", "fileapi", "handleapi", "jobapi2", "namedpipeapi", "stringapiset", "synchapi", "winbase", "wincon", "winnls", "winnt"] }
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization"] }
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
