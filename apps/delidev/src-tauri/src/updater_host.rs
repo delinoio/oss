@@ -152,24 +152,22 @@ impl UpdateHost {
         // presentation epoch.
         let owner = self.installation.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(task) = owner.as_ref() {
-            if let Some(join) = task.join.lock().unwrap_or_else(|e| e.into_inner()).take() {
-                if join.join().is_err() {
-                    tracing::error!(operation = "desktop_update_join", code = "native-uncertain");
-                }
+            if let Some(join) = task.join.lock().unwrap_or_else(|e| e.into_inner()).take()
+                && join.join().is_err()
+            {
+                tracing::error!(operation = "desktop_update_join", code = "native-uncertain");
             }
-            if task
+            let pending = task
                 .pending
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .is_some()
-            {
-                if let Err(code) = task.settle(connector) {
-                    tracing::error!(
-                        operation = "desktop_update_join",
-                        state = "settlement-uncertain",
-                        ?code
-                    );
-                }
+                .is_some();
+            if pending && let Err(code) = task.settle(connector) {
+                tracing::error!(
+                    operation = "desktop_update_join",
+                    state = "settlement-uncertain",
+                    ?code
+                );
             }
         }
     }
