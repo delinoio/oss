@@ -610,3 +610,27 @@ it("subscription details opens and closes without reads, then one management tas
   fireEvent.click(screen.getByRole("button", { name: "Close Manage subscription" }));
   await waitFor(() => expect(globalThis.document.activeElement).toBe(opener));
 });
+
+
+it("subscription details retains its proven revision floor after stale inventory refresh before metadata management", async () => {
+  const value = fixture();
+  render(<value.Harness settings />);
+  await screen.findByRole("article", { name: alias });
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${alias}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Account details" }));
+  const provenRevision = value.current.revision;
+  const staleInventory = create(ResourceSchema, { ...value.current, revision: provenRevision - 2n });
+  value.list.mockResolvedValue({ resources: [staleInventory] });
+  const lists = value.list.mock.calls.length;
+  await act(async () => { await value.client.invalidateQueries({ predicate: query => query.queryKey.some(part => typeof part === "object" && part !== null && "scrollPaginationRefresh" in part) }); });
+  await waitFor(() => expect(value.list.mock.calls.length).toBeGreaterThan(lists));
+  expect(screen.getByRole("dialog", { name: "Account details" })).toBeTruthy();
+  // A fresh response above the regressed list but below the displayed proof
+  // cannot authorize controls for this original account.
+  value.read.mockResolvedValue({ resource: create(ResourceSchema, { ...value.current, revision: provenRevision - 1n }) });
+  fireEvent.click(screen.getByRole("button", { name: "Manage metadata" }));
+  const management = await screen.findByRole("dialog", { name: "Manage subscription" });
+  await waitFor(() => expect(within(management).getByRole("alert")).toBeTruthy());
+  expect(within(management).queryByRole("button", { name: "Disconnect" })).toBeNull();
+  expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+});
