@@ -7,6 +7,7 @@ import (
 
 const NativeSkillsV1 WorkerCapability = "native-skills-v1"
 const MaxSelectedSkills = 16
+const MaxRetainedSkillSnapshots = 4096
 
 // Skill bindings contain opaque ownership and digest evidence, never paths.
 type SkillBinding struct {

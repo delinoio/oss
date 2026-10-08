@@ -759,3 +759,8 @@ installed-native, remote-environment and cross-platform acceptance. Scripted
 transport/package tests establish local implementation evidence only.
 
 Fork and Sidechat copy complete original accepted packages into the child private runtime. Only explicit native skill nodes and generated skill-path tags inside those authenticated nodes are remapped; the original user text remains unchanged. The child native history must prove the remapped identities before publication. Parent deletion does not own these child copies.
+
+Skill admission shares the session deletion plan's aggregate 4,096-reference
+bound across current and retired selections in every queue row. Read preflight
+checks before new package preparation; the original acceptance transaction checks
+again atomically. Existing references are never evicted to make room.

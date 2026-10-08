@@ -182,6 +182,11 @@ func appendSessionInput(tx *store.Tx, id domain.ID, session *domain.Session, inp
 	if session.LastInputSequence >= 1<<63-2 || session.PendingInputs >= domain.MaxPendingInputs || session.PendingInputBytes > domain.MaxPendingInputBytes || session.PendingInputBytes+uint64(len(input.Prompt)) > domain.MaxPendingInputBytes {
 		return "", domain.Fail(domain.ResourceExhausted, "The retained input queue is full.", "Remove undelivered input or wait for confirmed native acceptance before adding more.")
 	}
+	if len(input.Skills) > 0 {
+		if err := tx.CheckSkillSnapshotCapacity(id, "", len(input.Skills)); err != nil {
+			return "", err
+		}
+	}
 	session.LastInputSequence++
 	session.PendingInputs++
 	session.PendingInputBytes += uint64(len(input.Prompt))
@@ -350,6 +355,9 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		e = s.Store.Read(ctx, func(tx *store.Tx) error {
 			var e error
 			_, session, e = sessionRecord(tx, domain.ID(req.Msg.SessionId))
+			if e == nil {
+				e = tx.CheckSkillSnapshotCapacity(domain.ID(req.Msg.SessionId), "", len(input.Skills))
+			}
 			return e
 		})
 		if e != nil {
@@ -492,6 +500,17 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 			}
 		}
 		if len(fresh) > 0 {
+			retired := append([]domain.SkillBinding{}, old.RetiredSkills...)
+			for _, binding := range old.Skills {
+				if !slices.Contains(nextBindings, binding) && !slices.Contains(retired, binding) {
+					retired = append(retired, binding)
+				}
+			}
+			if err := s.Store.Read(ctx, func(tx *store.Tx) error {
+				return tx.CheckSkillSnapshotCapacity(sessionID, domain.ID(meta.Id), len(nextBindings)+len(retired))
+			}); err != nil {
+				return nil, err
+			}
 			prepared, e := s.observeSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: sessionID, Selections: fresh})
 			if e != nil {
 				return nil, e
@@ -550,8 +569,8 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 					value.RetiredSkills = append(value.RetiredSkills, binding)
 				}
 			}
-			if len(value.RetiredSkills)+len(nextBindings) > 4096 {
-				return nil, domain.Fail(domain.ResourceExhausted, "The retained skill snapshot limit is reached.", "Delete the session through its confirmed cleanup before selecting more packages.")
+			if err := tx.CheckSkillSnapshotCapacity(sessionID, r.ID, len(value.RetiredSkills)+len(nextBindings)); err != nil {
+				return nil, err
 			}
 			value.Skills = nextBindings
 			value.SkillNames = nextNames

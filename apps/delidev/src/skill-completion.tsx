@@ -20,7 +20,7 @@ export function editedBindings(before: string, after: string, bindings: readonly
     if (binding.ambiguous) return [binding];
     if (end > binding.start && start < binding.end || start > binding.start && start < binding.end) return [];
     const shift = start <= binding.start ? delta : 0, next = { ...binding, start: binding.start + shift, end: binding.end + shift };
-    return after.slice(next.start, next.end) === next.token ? [next] : [];
+    return after.slice(next.start, next.end) === next.token && (next.start === 0 || /\s/u.test(after[next.start - 1]!)) && (next.end === after.length || /\s/u.test(after[next.end]!)) ? [next] : [];
   });
 }
 export function useSkillCompletion({ value, change, textarea, machineId, agentId, sessionId = "", projectId = "", active = true, enabled = true, initialBindings = [], bindingsChanged }: {

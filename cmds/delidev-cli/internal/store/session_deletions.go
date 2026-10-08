@@ -900,7 +900,7 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			}
 			for _, binding := range append(append([]domain.SkillBinding{}, queued.Skills...), queued.RetiredSkills...) {
 				count++
-				if count > 4096 || domain.ValidateSkills([]domain.SkillBinding{binding}) != nil {
+				if count > domain.MaxRetainedSkillSnapshots || domain.ValidateSkills([]domain.SkillBinding{binding}) != nil {
 					return v, domain.SessionDeletionPending()
 				}
 				index := -1
