@@ -519,13 +519,24 @@ mod tests {
             let sidecar = root.join("sidecar");
             std::fs::write(
                 &sidecar,
-                r#"#!/bin/sh
-printf x >> "$2/calls"
-case "$4" in
-native-begin) exec /bin/cat "$2/begin.json" ;;
-native-outcome) exec /bin/cat "$2/outcome.json" ;;
-esac
-exit 1
+                r#"#!/usr/bin/python3
+import sys,json,os
+root=sys.argv[2]
+if sys.argv[3]=='server':
+ print(json.dumps({'version':2,'result':{'endpoint':'http://127.0.0.1:51234','generation':'019c2381-9300-7000-8000-000000000001','key':'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk'}}),flush=True)
+ for line in sys.stdin:
+  request=json.loads(line)
+  op=request['operation']
+  if op=='runtime.shutdown': break
+  if op in ('runtime.cancel','runtime.fence'): continue
+  assert op=='update.native-begin'
+  open(os.path.join(root,'calls'),'a').write('x')
+  result=json.load(open(os.path.join(root,'begin.json')))['result']
+  print(json.dumps({'version':2,'id':request['id'],'result':result}),flush=True)
+else:
+ assert sys.argv[3:5]==['update','native-outcome']
+ open(os.path.join(root,'calls'),'a').write('x')
+ print(open(os.path.join(root,'outcome.json')).read())
 "#,
             )
             .unwrap();
@@ -590,6 +601,7 @@ exit 1
             }
             assert!(task.pending.lock().unwrap().is_none());
             host.join(&connector);
+            connector.shutdown_owned().unwrap();
             assert_eq!(
                 std::fs::read(root.join("calls")).unwrap(),
                 b"xx",
