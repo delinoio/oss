@@ -566,9 +566,12 @@ command reporting a different version uses `RUNNER_VERSION_UNSUPPORTED`.
 Public CLI, TOML, SQLite and versioned JSON shapes remain unchanged.
 Each launch checks cancellation and the durable unforced Preparing phase. The
 supervisor rechecks that phase before starting the runner. Preparation retries
-pending supervisor status within its existing deadline; ownership conflicts and
-confirmed immediate exits still fail. It observes startup
-before publishing readiness, owns a separate runner process group, and continues
+a confirmed absent initial supervisor status within its existing deadline.
+Malformed, mismatched or unsafe status files fail immediately with ownership
+errors; a missing status after readiness is also an ownership failure. These
+failures preserve reservations and authorize no signal or deletion. Confirmed
+immediate exits still fail. It observes startup before publishing readiness,
+owns a separate runner process group, and continues
 across a manager-only restart. Process identity is the kernel PID, group and OS
 start time. The bootstrap deadline bounds preparation only. An empty successful
 Darwin PID sysctl result confirms process absence; actual inspection errors
