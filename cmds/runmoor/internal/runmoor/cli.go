@@ -329,14 +329,11 @@ func Execute(args []string, out, errOut io.Writer) int {
 			printDoctor(out, report, *jsonOutput)
 			return doctorExit(report)
 		}
-		images := &ImageManager{Store: store, Tart: &TartDriver{Exec: OSCommand{}}}
-		probe, cancel := context.WithTimeout(ctx, 2*time.Hour)
-		defer cancel()
-		_ = images.Reconcile(probe, c)
 		var all []*Image
 		for _, v := range store.View().Images {
 			all = append(all, v)
 		}
+		sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
 		writeJSON(out, ControlResponse{SchemaVersion: 1, Images: all})
 		return 0
 	case "reload":
