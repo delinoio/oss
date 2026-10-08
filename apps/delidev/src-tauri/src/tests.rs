@@ -42,18 +42,51 @@ fn github_presentation_uses_closed_sidecar_and_checks_acknowledgment() {
     .enumerate()
     {
         let executable = temporary.path().join(format!("sidecar-{index}"));
-        fs::write(&executable, format!("#!/bin/sh\n[ \"$3\" = presentation ] && [ \"$4\" = open-github ] && [ \"$5\" = --url-stdin ] && [ \"$#\" = 5 ] || exit 2\naddress=$(/bin/cat)\n[ \"$address\" = https://github.com/owner/repo/pull/1 ] || exit 3\nprintf '%s' '{{\"version\":1,\"result\":{response}}}'\n")).unwrap();
+        let script = format!("#!/bin/sh\n[ \"$3\" = presentation ] && [ \"$4\" = open-github ] && [ \"$5\" = --url-stdin ] && [ \"$#\" = 5 ] || exit 2\naddress=$(/bin/cat)\n[ \"$address\" = https://github.com/owner/repo/pull/1 ] || exit 3\nprintf x >> \"$0.invocations\"\nprintf '%s' '{{\"version\":1,\"result\":{response}}}'\n");
+        // Parallel fixture forks can retain a parent-authored writable script
+        // description and make Linux exec fail with ETXTBSY. A joined writer
+        // child keeps every writable description out of the test parent and
+        // its sibling fixture children; production admission remains intact.
+        let written = Command::new("/bin/sh")
+            .env_clear()
+            .args([
+                "-c",
+                r#"umask 077; printf '%s' "$2" > "$1""#,
+                "presentation-fixture",
+            ])
+            .arg(&executable)
+            .arg(script)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(
+            written.success(),
+            "presentation fixture writer failed: {written}"
+        );
+        let invocations = PathBuf::from(format!("{}.invocations", executable.display()));
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
         let connector = Connector::new(executable, temporary.path().join("state")).unwrap();
+        let observed = connector.open_github("https://github.com/owner/repo/pull/1");
+        let expected = if index == 0 {
+            Ok(())
+        } else {
+            Err(NativeFailure::InvalidEvidence)
+        };
         assert_eq!(
-            connector
-                .open_github("https://github.com/owner/repo/pull/1")
-                .is_ok(),
-            index == 0
+            observed, expected,
+            "presentation fixture response case {index}"
         );
+        assert_eq!(fs::read(&invocations).unwrap(), b"x");
         assert_eq!(
             connector.open_github("file:///tmp/unsafe"),
             Err(NativeFailure::InvalidInput)
+        );
+        assert_eq!(
+            fs::read(&invocations).unwrap(),
+            b"x",
+            "invalid input spawned the sidecar"
         );
         assert!(
             !connector.root.exists(),
