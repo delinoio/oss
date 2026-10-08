@@ -583,3 +583,67 @@ fn alias_only_executable_reproduction_preserves_argv_zero_and_empty_arguments() 
         );
     }
 }
+
+#[cfg(unix)]
+#[test]
+#[ignore = "opt-in native fspy publication acceptance; ordinary tests verify snapshot and staged \
+            child"]
+fn reproduction_preserves_directory_link_before_parent_component() {
+    if std::env::var_os("CLIBOX_FSPY_PARENT_COMPONENT_REPRO").is_some() {
+        assert_eq!(fs::read("input.txt").unwrap(), b"fixture");
+        eprintln!("EXPECTED");
+        std::process::exit(42);
+    }
+    let _guard = REPRO_TEST_LOCK.lock().unwrap();
+    for decoy in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        fs::create_dir_all(root.join("deep/nested")).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        fs::write(root.join("deep/target.txt"), b"fixture").unwrap();
+        symlink("deep/nested", root.join("shortcut")).unwrap();
+        symlink("shortcut/../target.txt", root.join("input.txt")).unwrap();
+        if decoy {
+            fs::write(root.join("target.txt"), b"decoy").unwrap();
+        }
+        let bundle = directory.path().join("bundle");
+        let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .current_dir(&root)
+            .args(["fspy", "min-repro", "--root"])
+            .arg(&root)
+            .args(["--include", "input.txt", "--bundle-dir"])
+            .arg(&bundle)
+            .args([
+                "--expect-exit",
+                "42",
+                "--expect-stderr",
+                "EXPECTED",
+                "--timeout",
+                "60s",
+                "--json",
+                "--",
+            ])
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "reproduction_preserves_directory_link_before_parent_component",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("CLIBOX_FSPY_PARENT_COMPONENT_REPRO", "1")
+            .output()
+            .unwrap();
+        assert_verified(&output);
+        assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
+        assert_eq!(
+            fs::read_link(bundle.join("input.txt")).unwrap(),
+            Path::new("shortcut/../target.txt")
+        );
+        assert_eq!(
+            fs::read_link(bundle.join("shortcut")).unwrap(),
+            Path::new("deep/nested")
+        );
+        assert!(bundle.join("deep/nested").is_dir());
+        assert!(!bundle.join("target.txt").exists());
+    }
+}
