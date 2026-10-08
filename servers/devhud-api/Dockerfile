@@ -3,6 +3,7 @@ FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS administrator-assets
 WORKDIR /src
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
 COPY apps/devhud-admin/package.json ./apps/devhud-admin/package.json
 COPY packages/devhud-api-client/package.json ./packages/devhud-api-client/package.json
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter devhud-admin...

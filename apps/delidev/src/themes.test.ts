@@ -40,10 +40,13 @@ test("every existing surface uses shared tokens with complete light/dark and fir
 
 test("semantic text, states, primary controls and focus retain accessible contrast in both themes", () => {
   for (const palette of palettes.slice(0, 2)) {
-    for (const [foreground, background] of [["text", "background"], ["text", "surface"], ["muted", "surface"], ["text-subtle", "surface"], ["link", "surface"], ["selected-text", "selected-background"], ["warning-text", "warning-background"], ["danger-text", "danger-background"], ["success-text", "surface"], ["on-accent", "accent"], ["on-inverse", "inverse-surface"], ["on-inverse-muted", "inverse-surface"], ["conversation-text", "conversation-background"]]) {
+    for (const [foreground, background] of [["text", "background"], ["text", "surface"], ["muted", "surface"], ["text-subtle", "surface"], ["link", "surface"], ["selected-text", "selected-background"], ["warning-text", "warning-background"], ["danger-text", "danger-background"], ["success-text", "surface"], ["on-accent", "accent"], ["on-inverse", "inverse-surface"], ["on-inverse-muted", "inverse-surface"], ["conversation-text", "conversation-background"], ["terminal-foreground", "terminal-background"], ["terminal-muted", "terminal-background"], ["terminal-foreground", "terminal-selection"]]) {
       expect(contrast(palette.get(foreground)!, palette.get(background)!), `${foreground} / ${background}`).toBeGreaterThanOrEqual(4.5);
     }
     for (const background of ["surface", "background", "selected-background"]) expect(contrast(palette.get("focus")!, palette.get(background)!), `focus / ${background}`).toBeGreaterThanOrEqual(3);
+    for (const background of ["terminal-background", "terminal-selection"]) expect(contrast(palette.get("terminal-border")!, palette.get(background)!), `terminal-border / ${background}`).toBeGreaterThanOrEqual(3);
+    // Terminal focus is drawn outside selected buttons against the dock background.
+    expect(contrast(palette.get("focus")!, palette.get("terminal-background")!)).toBeGreaterThanOrEqual(3);
     expect(contrast(palette.get("control-border")!, palette.get("surface")!)).toBeGreaterThanOrEqual(3);
   }
 });

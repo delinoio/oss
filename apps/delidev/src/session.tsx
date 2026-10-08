@@ -41,7 +41,7 @@ import { NativeReasoning } from "./native-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
@@ -54,7 +54,7 @@ import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
 import "./session.css";
 import { Interaction } from "./interactions";
-import { SessionTerminals } from "./session-terminals";
+import { SessionTerminals, TerminalDockPresentation } from "./session-terminals";
 import { SessionForkAction } from "./session-fork";
 import { SidechatFindings } from "./sidechat";
 import { SessionTools } from "./session-tools";
@@ -274,6 +274,24 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     window.addEventListener("resize", measure);
     return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
   }, []);
+  const [terminalOpened, setTerminalOpened] = useState(false), [terminalVisible, setTerminalVisible] = useState(false);
+  const [dockPresentation, setDockPresentation] = useState(TerminalDockPresentation.Docked);
+  const upperContent = useRef<HTMLDivElement>(null), upperFocus = useRef<HTMLElement | null>(null);
+  const upperOccluded = terminalVisible && dockPresentation === TerminalDockPresentation.Maximized;
+  const reportDockPresentation = useCallback((value: TerminalDockPresentation) => {
+    const focused = window.document.activeElement;
+    if (value === TerminalDockPresentation.Maximized && focused instanceof HTMLElement && upperContent.current?.contains(focused)) {
+      upperFocus.current = focused;
+      upperContent.current.closest(".session-workspace")?.querySelector<HTMLButtonElement>("[data-terminal-restore]")?.focus();
+    }
+    setDockPresentation(value);
+  }, []);
+  useLayoutEffect(() => {
+    if (upperOccluded || !upperFocus.current) return;
+    const original = upperFocus.current; upperFocus.current = null;
+    // Hide preserves its Terminal opener; Restore alone returns prior upper focus.
+    if (terminalVisible && original.isConnected && !original.closest("[hidden], [inert]")) original.focus({ preventScroll: true });
+  }, [upperOccluded, terminalVisible]);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] = useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(null);
   const terminalsButton = useRef<HTMLButtonElement>(null);
@@ -424,8 +442,10 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       else panelButtons[panel].current?.focus();
     }
   };
+  const closeTerminal = () => { setTerminalVisible(false); terminalsButton.current?.focus(); };
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
-    if (panel === next) closePanel();
+    if (next === SessionPanel.Terminals) { if (terminalVisible) closeTerminal(); else { setTerminalOpened(true); setTerminalVisible(true); } }
+    else if (panel === next) closePanel();
     else { panelOpener.current = panelButtons[next].current; setPanel(next); }
   };
   // Revealing Info does not replace the temporary tool or its original opener.
@@ -447,9 +467,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     { panel: SessionPanel.Browser, icon: SessionIconKind.Browser, label: copy("session.browser_d31de1") },
     { panel: SessionPanel.Diagnostics, icon: SessionIconKind.Diagnostics, label: copy("session.diagnostics_268f14") },
   ] as const;
-  return <section className={`session-workspace${panel !== SessionPanel.Closed ? " panel-open" : ""}${panel === SessionPanel.Browser ? " browser-open" : ""}`} aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
-    if (event.key === "Escape" && panel !== SessionPanel.Closed && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
-      event.stopPropagation(); closePanel();
+  return <section className={`session-workspace${terminalVisible ? " terminal-open" : ""}${panel === SessionPanel.Browser ? " browser-open" : ""}${panel !== SessionPanel.Closed ? " panel-open" : ""}`} aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
+    if (event.key === "Escape" && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && (panel !== SessionPanel.Closed || terminalVisible) && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
+      event.stopPropagation(); if (event.target instanceof Element && event.target.closest(".terminal-dock")) closeTerminal(); else if (panel !== SessionPanel.Closed) closePanel(); else closeTerminal();
     }
   }}>
     <header className="session-header">
@@ -469,9 +489,10 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     </header>
     <div className="session-toolbar">
       <strong>{copy("session.conversation_ccca18")}</strong>
-      <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}<button type="button" ref={infoButton} aria-controls={`info-${id}`} onClick={() => { infoHeading.current?.focus({ preventScroll: true }); infoHeading.current?.scrollIntoView?.({ block: "nearest" }); }}><SessionIcon kind={SessionIconKind.Info} />{copy("session.info")}</button></div>
+      <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={tool.panel === SessionPanel.Terminals ? terminalVisible : panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}<button type="button" ref={infoButton} aria-controls={`info-${id}`} onClick={() => { infoHeading.current?.focus({ preventScroll: true }); infoHeading.current?.scrollIntoView?.({ block: "nearest" }); }}><SessionIcon kind={SessionIconKind.Info} />{copy("session.info")}</button></div>
     </div>
     <div className="session-content">
+    <div ref={upperContent} className="session-upper-content" data-terminal-compact-restored={terminalVisible && dockPresentation === TerminalDockPresentation.CompactRestored || undefined} inert={upperOccluded} aria-hidden={upperOccluded || undefined}>
     <div ref={conversationRegion} className="session-conversation-region" style={{ "--browser-width": `${browserLayout.width}px` } as React.CSSProperties}>
     <div className="session-body">
       <div className="session-notices">
@@ -535,8 +556,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       const node = conversationRegion.current, rect = node.getBoundingClientRect(), scale = rect.width / node.clientWidth;
       browserLayout.resize((rect.right - event.clientX) / scale - 4);
     }} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} /> : null}
-    {panel === SessionPanel.Terminals && session ? <div id={`terminals-${id}`} className="session-app-panel"><SessionTerminals key={id} session={session} close={closePanel} /></div>
-      : panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={closePanel} /></div>
+    {panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={closePanel} /></div>
       : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={closePanel} /></div>
       : panel === SessionPanel.Diagnostics ? <div id={`diagnostics-${id}`} className="session-app-panel"><RequestDiagnostics key={id} sessionId={id} close={closePanel} /></div>
       : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} layout={browserLayout} /></div> : null}
@@ -563,6 +583,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </> : null}
       </div>
     </aside>
+    </div>
+    {terminalOpened && session ? <div id={`terminals-${id}`} hidden={!terminalVisible} className="session-terminal-slot"><SessionTerminals key={id} session={session} close={closeTerminal} active={active && terminalVisible} presentationChanged={reportDockPresentation} /></div> : null}
     </div>
   </section>;
 }

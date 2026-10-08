@@ -56,6 +56,9 @@
       "ws@>=6.0.0 <6.2.4": "6.2.6",
       "ws@>=7.0.0 <7.5.11": "7.5.13",
       "ws@>=8.0.0 <8.21.0": "8.21.3"
+    },
+    "patchedDependencies": {
+      "@xterm/xterm@6.0.0": "patches/@xterm__xterm@6.0.0.patch"
     }
   },
   "devDependencies": {
