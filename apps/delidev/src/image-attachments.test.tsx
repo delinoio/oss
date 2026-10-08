@@ -37,3 +37,20 @@ it("does not read retained originals outside the active viewport",async()=>{
  await act(async()=>observe([{isIntersecting:false}])); await waitFor(()=>expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:verified")); expect(screen.queryByRole("img")).toBeNull();
  mounted.rerender(view(false)); await act(async()=>observe([{isIntersecting:true}])); expect(read).toHaveBeenCalledOnce();
 });
+
+it("keeps compact attachment help local, restores Escape focus and retains inline recovery", async () => {
+ const { ImageAttachmentInput } = await import("./image-attachments");
+ const remove=vi.fn(), retryCleanup=vi.fn();
+ const draft={images:[{key:"original",preview:"blob:verified",ready:false}],busy:false,error:undefined,cleanupPending:1,controller:{remove,retryCleanup,add:vi.fn()}} as unknown as Parameters<typeof ImageAttachmentInput>[0]["draft"];
+ render(<ImageAttachmentInput compact draft={draft} disabled={false} available routeReady={false} routeLoading machineId="original-machine" controls={<button type="button">Original queue</button>}><textarea aria-label="Retained input" defaultValue="Original draft" /></ImageAttachmentInput>);
+ const help=screen.getByRole("button",{name:"Attachment help"});
+ expect(screen.queryByText(/PNG, JPEG or WebP · Up to/)).toBeNull();
+ help.focus();fireEvent.click(help);expect(screen.getByText(/Up to 8 images, 10 MiB each, 40 MiB total/)).toBeTruthy();
+ fireEvent.keyDown(screen.getByRole("textbox",{name:"Retained input"}),{key:"Escape"});
+ expect(screen.queryByText(/PNG, JPEG or WebP · Up to/)).toBeNull();expect(document.activeElement).toBe(help);
+ expect(screen.getByRole("img",{name:"Image 1"})).toBeTruthy();
+ expect(screen.getByText("Checking the selected image route…")).toBeTruthy();
+ fireEvent.click(screen.getByRole("button",{name:"Retry image cleanup"}));expect(retryCleanup).toHaveBeenCalledOnce();
+ fireEvent.click(screen.getByRole("button",{name:"Remove image 1"}));expect(remove).toHaveBeenCalledWith("original");
+ expect(screen.getByRole("textbox",{name:"Retained input"})).toHaveProperty("value","Original draft");
+});

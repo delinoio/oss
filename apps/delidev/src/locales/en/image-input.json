@@ -22,5 +22,6 @@
   "image-input.evidenceUnavailable": "Image references are unavailable.",
   "image-input.steerUnavailable": "Steer is unavailable for image inputs. Queue delivery keeps the original images.",
   "image-input.textLimit": "The message exceeds 256 KiB. Keep the original draft and shorten the text.",
-  "image-input.retryRead": "Retry loading image"
+  "image-input.retryRead": "Retry loading image",
+  "image-input.helpLabel": "Attachment help"
 }
