@@ -53,6 +53,7 @@ const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";
 const dismissalOnly = process.env.DELIDEV_LAYOUT_DISMISSAL_ONLY === "1";
 const projectsOnly = process.env.DELIDEV_LAYOUT_PROJECTS_ONLY === "1";
+const projectRowsOnly = process.env.DELIDEV_LAYOUT_PROJECT_ROWS_ONLY === "1";
 const languageOnly = process.env.DELIDEV_LAYOUT_LANGUAGE_ONLY === "1";
 let language = "en";
 const messages = new Map();
@@ -231,7 +232,50 @@ try {
     }
     gitChecks++; keyboardChecks += 4;
   };
-  if (accountsOnly) {
+  if (projectRowsOnly) {
+    let projectRowChecks = 0;
+    for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const zoom of [1, 2]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480]]) {
+      await page.setViewportSize({ width: width / zoom, height: height / zoom });
+      await page.goto(`${origin}/?theme=${theme}&language=${language}&projectRows=true`);
+      await page.getByRole("button", { name: l("Settings"), exact: true }).click(); await select("Projects");
+      const rows = page.locator(".project-metadata-row"), singleton = rows.first(), multi = rows.nth(3);
+      await page.waitForFunction(() => document.querySelectorAll(".project-repository-url").length === 5);
+      assert.equal(await rows.count(), 4);
+      assert.equal(await singleton.locator("h3, .project-repository-heading strong").count(), 1, "Matching singleton has one name");
+      assert.equal(await singleton.locator(".project-identity p, .project-primary-badge").count(), 0);
+      assert.equal(await rows.nth(1).locator(".project-repository-heading strong").textContent(), "Different repository");
+      assert.equal(await rows.nth(2).locator(".project-identity p").textContent(), language === "ko" ? "저장소 0개" : "0 repositories");
+      assert.equal(await multi.locator(".project-repository-rows > li").count(), 3);
+      assert.equal(await multi.locator(".project-primary-badge").count(), 0);
+      const originalReads = await page.evaluate(() => ({ ...window.projectRowReads }));
+      const details = singleton.locator(".project-original-details"), summary = details.locator("summary");
+      assert.equal(await details.evaluate(node => node.open), false);
+      await summary.focus(); await summary.press("Enter");
+      assert.equal(await details.evaluate(node => node.open), true);
+      assert.equal(await details.locator("dd").count(), 2);
+      assert(await details.evaluate(node => { const style = getComputedStyle(node), target = node.querySelector("summary").getBoundingClientRect(); return style.borderTopWidth === "0px" && style.paddingTop === "0px" && target.height >= 40; }));
+      await summary.press("Space"); assert.equal(await details.evaluate(node => node.open), false);
+      const show = multi.locator(".project-show-repositories"); await show.focus(); await show.press("Enter");
+      assert.deepEqual(await multi.locator(".project-repository-heading strong").allTextContents(), ["web", "api", "worker", "primary fourth", "final repository"]);
+      assert.equal(await multi.locator(".project-primary-badge").count(), 1);
+      assert.equal(await multi.locator(".project-repository-rows > li").nth(3).locator(".project-primary-badge").count(), 1);
+      assert(await show.evaluate(node => document.activeElement === node));
+      await show.press("Enter"); assert.equal(await multi.locator(".project-repository-rows > li").count(), 3);
+      assert(await show.evaluate(node => document.activeElement === node));
+      assert.equal(await page.locator(".project-list a").count(), 0);
+      assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth + 1), "Projects has no horizontal overflow");
+      assert(await rows.evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth + 1)), "Complete URLs and names wrap");
+      await page.setViewportSize({ width: width / zoom - 8, height: height / zoom });
+      assert.deepEqual(await page.evaluate(() => window.projectRowReads), originalReads, "Disclosure/reflow never reads or writes");
+      if (screenshotDirectory && width === 1440 && zoom === 1) {
+        await mkdir(screenshotDirectory, { recursive: true });
+        await page.locator(".settings-content").evaluate(node => { node.scrollTop = 0; const main = node.closest("main"); if (main) main.scrollTop = 0; });
+        await page.screenshot({ path: join(screenshotDirectory, `projects-${language}-${theme}-${width}x${height}.png`) });
+      }
+      projectRowChecks++;
+    }
+    console.log(JSON.stringify({ operation: "project_rows_layout", result: "passed", projectRowChecks, languages: 2, themes: 2, viewports: 4, effectiveZoom: [1,2], nativeAcceptance: "not-performed" }));
+  } else if (accountsOnly) {
     for (language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480], [720,450], [480,320]]) {
       await page.setViewportSize({ width, height });
       await page.goto(`${origin}/?theme=${theme}&populated=true&hiddenWorkerChoices=true&language=${language}`);
@@ -627,7 +671,7 @@ try {
     await page.screenshot({ path: screenshotPath });
   }
   }
-  if (!projectsOnly && !accountsOnly && !dismissalOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
+  if (!projectRowsOnly && !projectsOnly && !accountsOnly && !dismissalOnly) console.log(JSON.stringify({ operation: "settings_layout", result: "passed", categoryChecks: checked, childFormChecks: formsChecked, harnessChecks, gitChecks, hiddenAccountChoiceChecks: hiddenChoicesChecked, languages: 2, themes: 3, inventories: languageOnly ? 1 : 2, viewports: languageOnly ? 4 : viewports.length, effectiveZoomChecks: languageOnly ? 12 : categories.length * viewports.length * 2, primarySurfaceChecks: languageOnly ? 0 : 16, keyboardChecks, languagePickerChecks, nativeAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));

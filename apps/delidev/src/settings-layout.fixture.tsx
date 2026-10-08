@@ -32,6 +32,9 @@ const apiFormatEdit = args.get("apiFormatEdit") === "true";
 const apiUsage = apiFormatEdit || args.get("apiUsage") === "true";
 const longNames = args.get("longNames") === "true";
 const projectWizard = args.get("projectWizard") === "true";
+const projectRows = args.get("projectRows") === "true";
+const projectRowReads = { reads: 0, writes: 0 };
+Object.assign(window, { projectRowReads });
 const cleanupFixture = args.get("cleanupFixture") === "true";
 const accountStorageFixture = args.get("accountStorage") === "true";
 const subscriptionDetails = args.get("subscriptionDetails") === "true";
@@ -121,6 +124,17 @@ if (args.get("projectList") === "true") {
   const project = records.find(row => row.kind === EntityKind.PROJECT)!;
   project.documentJson = encode({ ...resourceDocument(project), repositories: repositories.map(row => row.id), primary_repository: repositories[4]!.id });
 }
+if (projectRows) {
+  for (let index = records.length - 1; index >= 0; index--) if (records[index]!.kind === EntityKind.PROJECT) records.splice(index, 1);
+  const add = (name: string, names: string[]) => {
+    const repositories = names.map(name => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name, remote_url: name === "oss" ? "https://github.com/delinoio/oss.git" : `https://example.org/team/${"complete-source-".repeat(14)}repository.git` }) }));
+    records.push(...repositories, create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name, repositories: repositories.map(row => row.id), primary_repository: repositories[Math.min(3, repositories.length - 1)]?.id }) }));
+  };
+  add("oss", ["oss"]);
+  add("Different project", ["Different repository"]);
+  add("Empty project", []);
+  add("Multi project", ["web", "api", "worker", "primary fourth", "final repository"]);
+}
 if (projectWizard) records.push(...["oss", "delidev"].map(name => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name }) })));
 if (networkFixture === "populated") records.push(create(ResourceSchema, { id: newRequestId(), kind: EntityKind.NETWORK_PROFILE, schemaVersion: 1, revision: 9007199254740993n, documentJson: encode({ name: "Complete-proxy-profile-name-".repeat(10), mode: "http", host: "proxy.example", port: 3128, credential_generation: newRequestId() }) }));
 const networkReads = { route: 0, profiles: 0, writes: 0 };
@@ -140,7 +154,7 @@ const fixtureTransport = createRouterTransport(router => {
   } });
   if (networkFixture) router.service(NetworkService, { getNetworkRoute: () => { networkReads.route++; return {}; }, selectNetworkProfile: request => { networkReads.writes++; return { resource: create(ResourceSchema, { kind: EntityKind.NETWORK_ROUTE, id: newRequestId(), revision: 9007199254740994n, schemaVersion: 1, documentJson: encode({ profile_id: request.profileId, profile: { name: "Fixture selected route", mode: "http" } }) }) }; } });
   router.service(UsageService, { getUsageSummary: () => ({ fromUnixMs: 1788642000000n, untilUnixMs: 1791234000000n, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, totals: { responses: 126, total: { knownTotal: "1284920", measuredResponses: 126 } }, estimatedCost: UsageCostState.KNOWN_SUBTOTAL, estimates: { currencies: [{ currency: "USD", knownAmount: "12.48", completeResponses: 126 }] } }) });
-  router.service(ResourceService, { listResources: request => { if (subscriptionDetails && request.filter?.kind === EntityKind.ACCOUNT) document.documentElement.dataset.subscriptionDetailLists = String(Number(document.documentElement.dataset.subscriptionDetailLists ?? "0") + 1); if (request.filter?.kind === EntityKind.NETWORK_PROFILE) networkReads.profiles++; return { resources: hoverFixture && request.filter?.kind === EntityKind.PROJECT ? [hoverProject] : subscriptionBackground && request.filter?.kind === EntityKind.ACCOUNT && request.accountType === AccountTypeFilter.SUBSCRIPTION ? [subscription] : records.filter(row => row.kind === request.filter?.kind && (row.kind !== EntityKind.ACCOUNT || resourceDocument(row).type === (request.accountType === AccountTypeFilter.API ? "api" : "subscription"))) }; }, getResource: request => { if (subscriptionDetails) document.documentElement.dataset.subscriptionDetailReads = String(Number(document.documentElement.dataset.subscriptionDetailReads ?? "0") + 1); return ({ resource: [provider, ...(routingFixture ? routingAccounts : []), ...(subscriptionBackground ? [subscription] : []), ...hoverSessions, ...records].find(row => row.id === request.id) }); } });
+  router.service(ResourceService, { listResources: request => { if (projectRows) projectRowReads.reads++; if (subscriptionDetails && request.filter?.kind === EntityKind.ACCOUNT) document.documentElement.dataset.subscriptionDetailLists = String(Number(document.documentElement.dataset.subscriptionDetailLists ?? "0") + 1); if (request.filter?.kind === EntityKind.NETWORK_PROFILE) networkReads.profiles++; return { resources: hoverFixture && request.filter?.kind === EntityKind.PROJECT ? [hoverProject] : subscriptionBackground && request.filter?.kind === EntityKind.ACCOUNT && request.accountType === AccountTypeFilter.SUBSCRIPTION ? [subscription] : records.filter(row => row.kind === request.filter?.kind && (row.kind !== EntityKind.ACCOUNT || resourceDocument(row).type === (request.accountType === AccountTypeFilter.API ? "api" : "subscription"))) }; }, getResource: request => { if (projectRows) projectRowReads.reads++; if (subscriptionDetails) document.documentElement.dataset.subscriptionDetailReads = String(Number(document.documentElement.dataset.subscriptionDetailReads ?? "0") + 1); return ({ resource: [provider, ...(routingFixture ? routingAccounts : []), ...(subscriptionBackground ? [subscription] : []), ...hoverSessions, ...records].find(row => row.id === request.id) }); } });
   router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, presetId: ProviderPresetId.OLLAMA, displayName: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, accountCountsAvailable: true, totalAccounts: 0n, connectedAccounts: 0n }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: populated ? [model, ...extraModels] : [], providers: [provider] }) });
   router.service(SessionService, { listSessions: () => ({ sessions: hoverSessions }), getSessionBudget: request => ({ view: { session: hoverSessions.find(row => row.id === request.sessionId), state: BudgetState.ALLOW_INCOMPLETE } }) });
   router.service(InboxService, { getNotificationPreferences: () => ({ preferences: notificationPreferences }), setNotificationPreferences: request => { notificationPreferences = { revision: notificationPreferences.revision + 1n, interactions: request.preferences!.interactions, terminals: request.preferences!.terminals }; return { preferences: notificationPreferences }; }, listInbox: () => ({ entries: [] }) });
@@ -165,7 +179,8 @@ const fixtureTransport = createRouterTransport(router => {
     const compact = { policy: "priority", selected: routingAccounts[0].id, candidates: [{ ...candidate(routingAccounts[0], "eligible"), quota_state: "stale", score: 0, reset_at: "2026-10-07T00:00:00Z" }] };
     if (routingFixture === "compact") return { routeJson: encode({ ...compact, source_index: 0, sources: [{ source: "subscription:chatgpt", model_id: model.id, native_model: "gpt-6", route: compact }] }) };
     return { routeJson: encode(routingFixture === "empty" ? { ...first, candidates: [] } : routingFixture === "selected" ? selected : routingFixture === "sources" ? { ...selected, source_index: 1, sources: [{ source: "subscription:chatgpt", model_id: model.id, native_model: "Fixture subscription model", route: first, problem: { code: "missing_input", message: "Synthetic account state" } }, { source: `api:${provider.id}`, model_id: model.id, native_model: "Fixture API model", route: selected }] } : first) };
-  }, saveConfiguration: projectWizard ? request => {
+  }, saveConfiguration: projectWizard || projectRows ? request => {
+    if (projectRows) projectRowReads.writes++;
     // Synthetic acceptance makes accidental writes during Next observable.
     document.documentElement.dataset.fixtureProjectSaveCount = String(Number(document.documentElement.dataset.fixtureProjectSaveCount ?? "0") + 1);
     return { resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, schemaVersion: request.schemaVersion, revision: 1n, documentJson: request.documentJson }) };
