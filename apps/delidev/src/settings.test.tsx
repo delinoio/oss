@@ -1055,3 +1055,39 @@ it("does not treat a pending or failed subscription support read as proved unsup
   expect((screen.getByRole("button", { name: "Sign in to Claude" }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.connect).not.toHaveBeenCalled(); expect(value.disconnect).not.toHaveBeenCalled();
 });
+
+it.each(["cancel", "close", "done"])("retains a failed first model through %s and ordinary inventory refresh until explicit Refresh settings", async exit => {
+  const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const model = resource(EntityKind.MODEL, { name: "Original configured model", native_id: "explicit-refresh-native" });
+  const first = resource(EntityKind.AGENT, { name: "First retained Worker", harness: "codex", model_id: model.id });
+  const second = resource(EntityKind.AGENT, { name: "Second retained Worker", harness: "codex", model_id: model.id });
+  let visible = [first, second], modelAvailable = false, failedInventory = false;
+  const modelReads = vi.fn(async () => { if (!modelAvailable) throw new ConnectError("Synthetic model denied", Code.PermissionDenied); return { resource: model }; });
+  const value = fixture([first, second, model], {
+    readResource: id => id === model.id ? modelReads() : { resource: visible.find(row => row.id === id) },
+    readResources: kind => { if (kind === EntityKind.AGENT && failedInventory) throw new ConnectError("Synthetic inventory refresh failure", Code.Unavailable); return { resources: kind === EntityKind.AGENT ? visible : [] }; },
+  });
+  value.remove.mockImplementation(async () => { visible = [second]; return {}; });
+  render(value.view(<Settings />)); fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  await screen.findAllByText("Model unavailable"); expect(modelReads).toHaveBeenCalledTimes(1);
+  modelAvailable = true;
+  fireEvent.click(screen.getByRole("button", { name: "Delete First retained Worker" }));
+  if (exit === "done") fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  else {
+    failedInventory = true;
+    if (exit === "cancel") fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+    else fireEvent.click(screen.getByRole("button", { name: "Close Delete configuration" }));
+  }
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await screen.findByRole("heading", { name: "Second retained Worker" });
+  if (exit === "done") expect(value.remove).toHaveBeenCalledTimes(1);
+  else {
+    await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+    await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  }
+  expect(modelReads).toHaveBeenCalledTimes(1); expect(screen.getAllByText("Model unavailable").length).toBeGreaterThan(0);
+  failedInventory = false;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findAllByText("explicit-refresh-native"); expect(modelReads).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText("Model unavailable")).toBeNull(); log.mockRestore();
+});

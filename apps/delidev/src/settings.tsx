@@ -383,7 +383,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const result = { data: inventory.loaded ? { resources, nextPageToken: inventory.nextPageToken } : undefined,
     error: inventory.error?.failure, isFetching: Boolean(inventory.loading), isPending: !inventory.loaded && !inventory.error,
     isSuccess: inventory.loaded && !inventory.error && !inventory.loading,
-    refetch: () => { if (isAgentWorkers) refreshModels(value => value + 1); inventory.refreshExplicit(); } };
+    refetch: () => inventory.refreshExplicit() };
   // Within this category, only a successful paired page can prune retained
   // identities. Leaving the category disposes every disclosure with its scope.
   useEffect(() => {
@@ -466,7 +466,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
         {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !isApiProviders ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{selectedCategory === SettingsCategory.Repositories ? <p>{copy("settings.repositoryDescription")}</p> : isAgentWorkers ? <p className="settings-agent-summary">{copy("settings.reusableConfigurationsForYourAgents_5ba1a2")}</p> : isPreferenceCategory ? <p>{isGitWorkflow ? copy("settings.gitWorkflowDescription") : copy("settings.defaultRoutingWorktreeFetchAndPull_e19cf8")}</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isPreferenceCategory ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
-            <button type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? "Refresh Git workflow" : undefined} onClick={() => void result.refetch()}>{isGitWorkflow ? copy("settings.refresh_0e9161") : copy("settings.refreshSettings_65dbd6")}</button>
+            <button type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? "Refresh Git workflow" : undefined} onClick={() => { if (isAgentWorkers) refreshModels(value => value + 1); void result.refetch(); }}>{isGitWorkflow ? copy("settings.refresh_0e9161") : copy("settings.refreshSettings_65dbd6")}</button>
             {isPairedDevices && pairingAuthority ? <span ref={setPairingTriggerContainer} /> : null}
             {editableKinds.includes(kind) && kind !== EntityKind.SETTINGS
               ? <button type="button" className="primary" onClick={() => setEditing({ key: newRequestId() })}><span className="settings-action-icon" aria-hidden="true">+</span>{kind === EntityKind.REPOSITORY ? copy("settings.addRepository_2eda4d") : kind === EntityKind.PROJECT ? copy("project-creation.title") : copy("settings.new_077d61", { v0: kindNames[kind] })}</button>
