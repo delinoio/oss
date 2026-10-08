@@ -39,3 +39,30 @@ it("closes inactive pickers and retains native required-field validation", () =>
   fireEvent.click(trigger); result.rerender(view(false));
   expect(screen.queryByRole("listbox")).toBeNull(); expect((trigger as HTMLButtonElement).disabled).toBe(true);
 });
+
+it("uses one mounted manual top-layer listbox and repositions on resize/scroll without selection or page replacement",()=>{
+ const state=query(),change=vi.fn();
+ render(<ScrollPicker options={options} label="Runner" value="a" change={change} query={state} active />);
+ const trigger=screen.getByRole("combobox");fireEvent.click(trigger);
+ const popup=screen.getByRole("listbox");
+ expect(popup.getAttribute("popover")).toBe("manual");
+ fireEvent.keyDown(trigger,{key:"End"});
+ const highlighted=trigger.getAttribute("aria-activedescendant");
+ fireEvent.resize(window);fireEvent.scroll(document);
+ expect(screen.getByRole("listbox")).toBe(popup);
+ expect(trigger.getAttribute("aria-activedescendant")).toBe(highlighted);
+ expect(change).not.toHaveBeenCalled();expect(state.append).not.toHaveBeenCalled();expect(state.reload).not.toHaveBeenCalled();
+ fireEvent.keyDown(trigger,{key:"Enter",isComposing:true});fireEvent.keyDown(trigger,{key:"Enter",keyCode:229,isComposing:false});
+ expect(change).not.toHaveBeenCalled();expect(screen.getByRole("listbox")).toBe(popup);
+ fireEvent.keyDown(trigger,{key:"Enter"});expect(change).toHaveBeenCalledExactlyOnceWith("b");
+});
+
+it("disposes positioning listeners and blocks stale selection on owning lifetime loss",()=>{
+ const change=vi.fn(),state=query();
+ const view=render(<ScrollPicker options={options} label="Runner" value="a" change={change} query={state} active />);
+ fireEvent.click(screen.getByRole("combobox"));
+ view.unmount();fireEvent.resize(window);fireEvent.scroll(document);
+ expect(change).not.toHaveBeenCalled();expect(screen.queryByRole("listbox")).toBeNull();
+});
+
+it("blocks queued selection when the original owner becomes inert before rendering",()=>{const change=vi.fn();const view=render(<section><ScrollPicker options={options} label="Runner" value="a" change={change} query={query()} active/></section>);fireEvent.click(screen.getByRole("combobox"));const option=screen.getAllByRole("option",{name:"Equal name"})[1]!;view.container.querySelector("section")!.setAttribute("inert","");fireEvent.click(option);expect(change).not.toHaveBeenCalled();});
