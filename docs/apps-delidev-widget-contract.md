@@ -77,6 +77,11 @@ observations remain unavailable. A passed reset or expired observation marks
 the quota stale without inventing recovery or pooled capacity. Aliases and saved
 server names are masked for email/recognized credential syntax and stripped of
 controls at the persistence boundary as well as the existing tray boundary.
+Recognized syntax is case-insensitive `bearer `, `sk-`, `ghp_`, `github_pat_`,
+`token=`, `password` and `api_key`, plus email-shaped values containing `@`.
+Account aliases are masked before renderer-to-native tray IPC and account/saved
+server names are masked again before native menu rendering. Stored labels and
+original resource/navigation identities remain unchanged.
 
 Successful refresh time comes from the validated server overview, never from
 disk write time, a reload request or a widget timeline. Failed refresh retains

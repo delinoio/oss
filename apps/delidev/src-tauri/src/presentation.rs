@@ -156,9 +156,23 @@ impl TraySummary {
 }
 
 // Menu accelerators and control characters are presentation syntax, never part
-// of an account alias. Email-shaped aliases also stay private in native UI.
+// of an account alias. Match widget masking for account and saved-server
+// labels.
 pub fn menu_alias(value: &str) -> String {
-    if value.contains('@') {
+    let lower = value.to_ascii_lowercase();
+    if value.contains('@')
+        || [
+            "bearer ",
+            "sk-",
+            "ghp_",
+            "github_pat_",
+            "token=",
+            "password",
+            "api_key",
+        ]
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+    {
         return crate::localization::text(crate::localization::Message::AliasHidden).to_owned();
     }
     value
@@ -211,6 +225,32 @@ mod tests {
         value.overview.as_mut().unwrap().connected_workers = "01".into();
         assert!(value.validate().is_err());
     }
+    #[test]
+    fn account_and_saved_server_labels_mask_widget_credential_syntax() {
+        for prefix in [
+            "bearer ",
+            "BeArEr ",
+            "sk-",
+            "SK-",
+            "ghp_",
+            "GhP_",
+            "github_pat_",
+            "GitHub_Pat_",
+            "token=",
+            "TOKEN=",
+            "password",
+            "Password",
+            "api_key",
+            "API_KEY",
+        ] {
+            let label = format!("Fixture {prefix}SECRET_SENTINEL");
+            assert_eq!(menu_alias(&label), "Account alias hidden");
+            assert!(!menu_alias(&label).contains("SECRET_SENTINEL"));
+        }
+        assert_eq!(menu_alias("Ordinary saved server"), "Ordinary saved server");
+        assert_eq!(menu_alias("A&B\taccount"), "A&&B account");
+    }
+
     #[test]
     fn aliases_and_quota_never_invent_capacity() {
         assert_eq!(menu_alias("A&B\taccount"), "A&&B account");

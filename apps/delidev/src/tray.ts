@@ -51,8 +51,10 @@ export function traySummary(overview: GetOverviewResponse | undefined, overviewF
         }
         return { state, remaining_basis_points: remaining, observed_at, reset_at };
       });
-      // Do not send an email-shaped user alias to native presentation at all.
-      entries.push({ alias: alias.includes("@") ? "Account alias hidden" : alias, ...(alias.includes("@") ? { alias_hidden: true } : {}), windows, more: quotas.length > 8 });
+      // Match the widget privacy policy before any alias crosses native IPC.
+      const lower = alias.toLowerCase();
+      const hidden = alias.includes("@") || ["bearer ", "sk-", "ghp_", "github_pat_", "token=", "password", "api_key"].some(pattern => lower.includes(pattern));
+      entries.push({ alias: hidden ? "Account alias hidden" : alias, ...(hidden ? { alias_hidden: true } : {}), windows, more: quotas.length > 8 });
     }
     summary.accounts = { entries, more: Boolean(accounts.nextPageToken) };
   }

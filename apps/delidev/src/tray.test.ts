@@ -85,3 +85,23 @@ it("recovers presentation initialization on a later refresh without replaying pr
   expect(bridge.publish.mock.calls[0]?.length).toBe(3);
   publisher.close();
 });
+
+it.each([
+  "bearer ", "BeArEr ", "sk-", "SK-", "ghp_", "GhP_", "github_pat_", "GitHub_Pat_",
+  "token=", "TOKEN=", "password", "Password", "api_key", "API_KEY", "owner@",
+])("masks recognized %s account syntax before native IPC without rewriting metadata", pattern => {
+  const alias = `Fixture ${pattern}SECRET_SENTINEL`;
+  const resource = create(ResourceSchema, { kind: EntityKind.ACCOUNT, schemaVersion: 1, documentJson: encode({ alias, quota: [] }) });
+  const original = resource.documentJson.slice();
+  const accounts = create(ListResourcesResponseSchema, { resources: [resource] });
+  const summary = traySummary(overview(), false, undefined, accounts);
+  expect(summary.accounts?.entries[0]).toMatchObject({ alias: "Account alias hidden", alias_hidden: true });
+  expect(JSON.stringify(summary)).not.toContain("SECRET_SENTINEL");
+  expect(resource.documentJson).toEqual(original);
+});
+
+it("retains ordinary account names and lets native menu escaping handle controls", () => {
+  const alias = "A&B\taccount";
+  const accounts = create(ListResourcesResponseSchema, { resources: [create(ResourceSchema, { kind: EntityKind.ACCOUNT, schemaVersion: 1, documentJson: encode({ alias, quota: [] }) })] });
+  expect(traySummary(overview(), false, undefined, accounts).accounts?.entries[0].alias).toBe(alias);
+});
