@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { AccountingUnitKind, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, UsageAccountingProfile, UsageCostState, UsageService, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { i18n, formatNumber, formatTimestamp } from "./localization";
+import { SettingsTasks, SettingsTaskBackground } from "./settings-task";
 import { ApiEntryRow } from "./api-entry-row";
 import { encode } from "./documents";
 
@@ -19,7 +20,7 @@ function fixture() {
   const transport = createRouterTransport(router => router.service(UsageService, { getUsageSummary: read }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const callbacks = { manage: vi.fn(), edit: vi.fn(), remove: vi.fn(), openUsage: vi.fn() };
-  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><ApiEntryRow row={row} provider={{ displayName: "OpenRouter", enabled: true }} active={active} {...callbacks} /></QueryClientProvider></TransportProvider>;
+  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsTasks><SettingsTaskBackground><ApiEntryRow row={row} provider={{ displayName: "OpenRouter", enabled: true }} active={active} {...callbacks} /></SettingsTaskBackground></SettingsTasks></QueryClientProvider></TransportProvider>;
   return { id, row, data, read, client, callbacks, view };
 }
 function emptyFixture() {
@@ -127,14 +128,15 @@ it("keeps metadata actions in a keyboard-owned disclosure and restores focus on 
   fireEvent.click(opener);
   const actions = screen.getByRole("group", { name: "Actions for OpenRouter" });
   fireEvent.keyDown(within(actions).getByRole("button", { name: "Delete entry" }), { key: "Escape" });
-  expect(document.activeElement).toBe(opener); expect(screen.queryByRole("group")).toBeNull();
+  expect(document.activeElement).toBe(opener); expect(screen.queryByRole("group", { name: "Actions for OpenRouter" })).toBeNull();
   fireEvent.click(opener); fireEvent.click(screen.getByRole("button", { name: "Edit preferences" }));
   expect(f.callbacks.edit).toHaveBeenCalledTimes(1);
-  const details = screen.getByRole("button", { name: "Details" });
-  fireEvent.click(details);
-  expect(screen.getByText(/3 accepted executions/)).toBeTruthy();
-  fireEvent.keyDown(screen.getByText(/3 accepted executions/), { key: "Escape" });
-  expect(details.getAttribute("aria-expanded")).toBe("false"); expect(document.activeElement).toBe(details);
+  fireEvent.click(opener); fireEvent.click(screen.getByRole("button", { name: "Details" }));
+  const details = screen.getByRole("dialog", { name: "Details" });
+  expect(within(details).getByText(/3 accepted executions/)).toBeTruthy();
+  fireEvent(details,new Event("cancel",{bubbles:true,cancelable:true}));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull()); expect(document.activeElement).toBe(opener);
+  expect(f.read).toHaveBeenCalledTimes(1);
 });
 it("separates native totals and estimates without summing, and keeps an absent Claude total unavailable", async () => {
   const f = fixture();
@@ -206,15 +208,15 @@ it("updates the retained usage disclosure without extra reads, focus changes or 
   f.row.documentJson = encode({ alias: "My original API account", type: "api", enabled: true, health: "unverified", quota: [{ id: "Original window", state: "observed", remaining: 0.5, observed_at: "2026-10-06T01:02:03.123456789+09:00", reset_at: "2026-10-07T01:02:03.123456789+09:00" }] });
   render(f.view());
   await screen.findByText("1 observed response");
-  const details = screen.getByRole("button", { name: "Details" });
-  fireEvent.click(details); details.focus();
-  const article = details.closest("article");
+  const opener=screen.getByRole("button",{name:"More actions for My original API account"});
+  fireEvent.click(opener); fireEvent.click(screen.getByRole("button",{name:"Details"}));
+  const dialog=screen.getByRole("dialog",{name:"Details"}), heading=within(dialog).getByRole("heading",{name:"Details"});
+  await waitFor(()=>expect(document.activeElement).toBe(heading));
   await act(() => i18n.changeLanguage("ko"));
-  expect(screen.getByRole("button", { name: "상세" })).toBe(details);
-  expect(details.closest("article")).toBe(article);
-  expect(details.getAttribute("aria-expanded")).toBe("true");
-  expect(document.activeElement).toBe(details);
-  expect(screen.getByText("My original API account")).toBeTruthy();
+  expect(screen.getByRole("dialog",{name:"상세"})).toBe(dialog);
+  expect(within(dialog).getByRole("heading",{name:"상세"})).toBe(heading);
+  expect(document.activeElement).toBe(heading);
+  expect(within(dialog).getByText("My original API account")).toBeTruthy();
   expect(screen.getByText("관측된 응답 1개")).toBeTruthy();
   expect(screen.getByText(formatNumber(18446744073709551614n))).toBeTruthy();
   expect(screen.getAllByText("USD 12,345,678,901,234,567,890.0000123400").length).toBeGreaterThan(0);
@@ -222,6 +224,23 @@ it("updates the retained usage disclosure without extra reads, focus changes or 
   expect(screen.getByText(formatTimestamp(new Date(Number(f.data.untilUnixMs)).toISOString()))).toBeTruthy();
   expect(f.read).toHaveBeenCalledTimes(1);
   for (const callback of Object.values(f.callbacks)) expect(callback).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "닫기 상세" }));
+  await waitFor(()=>expect(document.activeElement).toBe(opener));
   fireEvent.click(screen.getByRole("button", { name: "사용량 보기" }));
   expect(f.callbacks.openUsage).toHaveBeenCalledWith({ key: expect.any(String), accountId: f.id, fromUnixMs: f.data.fromUnixMs, untilUnixMs: f.data.untilUnixMs });
+});
+
+it("reuses stale row evidence through dialog reopen and disposes Details on category departure",async()=>{
+ const f=fixture(),mounted=render(f.view()); await screen.findAllByText("USD 12.48");
+ const open=()=>{fireEvent.click(screen.getByRole("button",{name:"More actions for OpenRouter"}));fireEvent.click(screen.getByRole("button",{name:"Details"}));};
+ f.read.mockRejectedValueOnce(new ConnectError("Read denied",Code.PermissionDenied)); await act(async()=>{await f.client.refetchQueries();});
+ open(); const dialog=screen.getByRole("dialog",{name:"Details"}); expect(within(dialog).getByText(/Showing stale usage/)).toBeTruthy(); expect(within(dialog).getByText("USD 12.48")).toBeTruthy(); expect(within(dialog).getByText(f.id)).toBeTruthy();
+ fireEvent.click(within(dialog).getByRole("button",{name:"Close Details"})); await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull()); open(); expect(f.read).toHaveBeenCalledTimes(2);
+ mounted.rerender(f.view(false)); await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull()); mounted.rerender(f.view()); expect(screen.queryByRole("dialog")).toBeNull(); expect(f.read).toHaveBeenCalledTimes(2);
+ for(const callback of Object.values(f.callbacks)) expect(callback).not.toHaveBeenCalled();
+});
+it("keeps unknown schemas read-only while allowing their full Details identity",async()=>{
+ const f=fixture(); f.row.schemaVersion=4; render(f.view()); const opener=screen.getByRole("button",{name:"More actions for Unnamed"}); fireEvent.click(opener);
+ expect(screen.getByRole("button",{name:"Edit preferences"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"Delete entry"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"Manage connection"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"View usage"})).toHaveProperty("disabled",true);
+ fireEvent.click(screen.getByRole("button",{name:"Details"})); expect(within(screen.getByRole("dialog",{name:"Details"})).getByText(f.id)).toBeTruthy(); expect(f.read).not.toHaveBeenCalled();
 });

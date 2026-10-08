@@ -8,6 +8,7 @@ import { document, object, resourceName, text } from "./documents";
 import { EstimateAmounts } from "./estimate-costs";
 import { QuotaObservationState, quotaPresentation, type SubscriptionQuotaWindow } from "./subscription-settings";
 import { Problem } from "./ui";
+import { SettingsTaskDialog, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
 import type { UsageEntry } from "./usage-entry";
 
 const unitNames: Partial<Record<AccountingUnitKind, string>> = {
@@ -58,8 +59,8 @@ export function ApiEntryRow({ row, provider, active, manage, edit, remove, openU
   const value = document(row), name = resourceName(row), supported = supportsResourceSchema(row);
   const result = useQuery(UsageQuery.getUsageSummary, { accountId: row.id, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 }, { enabled: active && supported, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const [menu, setMenu] = useState(false), [details, setDetails] = useState(false);
-  const menuId = useId(), detailsId = useId(), nameId = useId();
-  const menuButton = useRef<HTMLButtonElement>(null), detailsButton = useRef<HTMLButtonElement>(null);
+  const menuId = useId(), nameId = useId();
+  const menuButton = useRef<HTMLButtonElement>(null);
   const [, setClock] = useState(0);
   const now = Date.now();
   const windows: SubscriptionQuotaWindow[] = Array.isArray(value.quota) ? value.quota.map(entry => {
@@ -72,6 +73,7 @@ export function ApiEntryRow({ row, provider, active, manage, edit, remove, openU
     const timer = setTimeout(() => setClock(value => value + 1), Math.min(Math.max(0, expiry - Date.now()), 2_147_483_647));
     return () => clearTimeout(timer);
   }, [active, expiry]);
+  useEffect(() => { if (!active) { setMenu(false); setDetails(false); } }, [active]);
   const closeMenu = () => { setMenu(false); menuButton.current?.focus(); };
   const cleanup = Boolean(text(object(value.removal).request_id));
   const connected = Boolean(text(object(value.connection).id));
@@ -88,20 +90,31 @@ export function ApiEntryRow({ row, provider, active, manage, edit, remove, openU
       </div></div>
       <dl className="api-usage-metrics"><UsageMetrics data={result.data} /><div className="api-usage-metric"><dt>{copy("api-entry-row.quota_6c105c")}</dt><dd>{value.confirmed_exhausted === true ? <strong className="api-entry-exhausted">{copy("api-entry-row.confirmedExhausted_763851")}</strong> : windows.length ? windows.slice(0, 2).map((window, index) => <Quota key={index} window={window} now={now} compact />) : <strong>{copy("api-entry-row.notReported_adadfa")}</strong>}</dd></div></dl>
       <div className="api-entry-controls"><button type="button" disabled={!supported} onClick={manage}>{copy("api-entry-row.manageConnection_ad2892")}</button><div className="api-entry-more">
-        <button ref={menuButton} type="button" disabled={!supported} aria-label={copy("api-entry-row.moreActionsFor_5057a7", { v0: name })} aria-expanded={menu} aria-controls={menuId} onClick={() => setMenu(!menu)} onKeyDown={event => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><span aria-hidden="true">⋯</span></button>
-        {menu ? <div id={menuId} className="api-entry-more-panel" role="group" aria-label={copy("api-entry-row.actionsFor_b59837", { v0: name })} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><button type="button" onClick={() => { closeMenu(); edit(); }}>{copy("api-entry-row.editPreferences_00b4cc")}</button><button className="api-entry-delete" type="button" onClick={() => { closeMenu(); remove(); }}>{copy("api-entry-row.deleteEntry_d2968b")}</button></div> : null}
+        <button ref={menuButton} type="button" aria-label={copy("api-entry-row.moreActionsFor_5057a7", { v0: name })} aria-expanded={menu} aria-controls={menuId} onClick={() => setMenu(!menu)} onKeyDown={event => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><span aria-hidden="true">⋯</span></button>
+        {menu ? <div id={menuId} className="api-entry-more-panel" role="group" aria-label={copy("api-entry-row.actionsFor_b59837", { v0: name })} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><button type="button" onClick={() => { closeMenu(); setDetails(true); }}>{copy("api-entry-row.details")}</button><button type="button" disabled={!supported} onClick={() => { closeMenu(); edit(); }}>{copy("api-entry-row.editPreferences_00b4cc")}</button><button className="api-entry-delete" type="button" disabled={!supported} onClick={() => { closeMenu(); remove(); }}>{copy("api-entry-row.deleteEntry_d2968b")}</button></div> : null}
       </div></div>
     </div>
     <div className="api-entry-usage-status">
       {result.isFetching ? <p role="status">{result.data ? copy("api-entry-row.refreshingUsage_70313a") : copy("api-entry-row.loadingUsage_0134e9")}</p> : null}
       <Problem error={result.error} />{result.error ? <><p role="status">{result.data ? copy("api-entry-row.refreshFailedShowingStaleUsageFrom_b5be80") : copy("api-entry-row.usageIsUnavailableEntryControlsRemain_755eaf")}</p><button type="button" disabled={!active || result.isFetching} onClick={() => void result.refetch()}><LocalizedText id="api-entry-row.retryUsageFor_40ac3c" components={{ s0: <>{name}</> }} /></button></> : null}
     </div>
-    <div className="api-entry-footer"><button ref={detailsButton} type="button" className="api-entry-text-action" aria-expanded={details} aria-controls={detailsId} onClick={() => setDetails(!details)} onKeyDown={event => { if (event.key === "Escape" && details) { event.preventDefault(); event.stopPropagation(); setDetails(false); } }}><LocalizedText id="api-entry-row.details_2b5716" components={{ s0: <span aria-hidden="true">{details ? "⌄" : "›"}</span> }} /></button><button type="button" className="api-entry-text-action api-entry-usage-link" disabled={!supported || !openUsage} onClick={() => openUsage?.({ key: newRequestId(), accountId: row.id, fromUnixMs: result.data?.fromUnixMs ?? 0n, untilUnixMs: result.data?.untilUnixMs ?? 0n })}>{copy("api-entry-row.viewUsage_2e4ae3")}</button></div>
-    <div id={detailsId} className="api-entry-details" hidden={!details} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDetails(false); detailsButton.current?.focus(); } }}>
+    <div className="api-entry-footer"><button type="button" className="api-entry-text-action api-entry-usage-link" disabled={!supported || !openUsage} onClick={() => openUsage?.({ key: newRequestId(), accountId: row.id, fromUnixMs: result.data?.fromUnixMs ?? 0n, untilUnixMs: result.data?.untilUnixMs ?? 0n })}>{copy("api-entry-row.viewUsage_2e4ae3")}</button></div>
+    {details ? <SettingsTaskDialog title={copy("api-entry-row.details")} subtitle={name} size={SettingsDialogSize.Form} focus={SettingsDialogFocus.Heading} close={() => setDetails(false)}><ApiEntryDetailsBody row={row} provider={provider} usage={result.data} windows={windows} now={now}>
+      {result.isFetching ? <p role="status">{result.data ? copy("api-entry-row.refreshingUsage_70313a") : copy("api-entry-row.loadingUsage_0134e9")}</p> : null}
+      <Problem error={result.error} />{result.error ? <p role="status">{result.data ? copy("api-entry-row.refreshFailedShowingStaleUsageFrom_b5be80") : copy("api-entry-row.usageIsUnavailableEntryControlsRemain_755eaf")}</p> : null}
+    </ApiEntryDetailsBody></SettingsTaskDialog> : null}
+  </article>;
+}
+
+// Presentation consumes the mounted row's original query and quota clock. A
+// dialog opening never creates a second reader or verification controller.
+export function ApiEntryDetailsBody({ row, provider, usage, windows, now, children }: { row: Resource; provider?: { enabled: boolean; protocol?: string }; usage?: GetUsageSummaryResponse; windows: SubscriptionQuotaWindow[]; now: number; children?: ReactNode }) {
+  useLocale();
+  const value = document(row);
+  return <section className="api-entry-details">{children}
       <dl><div><dt>{copy("api-entry-row.apiFormat")}</dt><dd>{apiFormatLabels[apiFormat(value.api_protocol) ?? apiFormat(provider?.protocol)!] ?? ""}</dd></div><div><dt>{copy("api-entry-row.entry_861e39")}</dt><dd>{value.enabled === true ? copy("api-entry-row.enabled_92c1cd") : copy("api-entry-row.disabled_75081b")}</dd></div><div><dt>{copy("api-entry-row.providerStatus_369744")}</dt><dd>{provider ? provider.enabled ? copy("api-entry-row.enabled_92c1cd") : copy("api-entry-row.off_ca7981") : copy("api-entry-row.unavailable_ca1844")}</dd></div><div><dt>{copy("api-entry-row.accountId_4489c4")}</dt><dd>{row.id}</dd></div></dl>
       <p>{copy("api-entry-row.connectionAndHealthAreIndependentActual_149c54")}</p>
-      {result.data ? <>{result.data.fromUnixMs > 0n && result.data.untilUnixMs > result.data.fromUnixMs ? <p><LocalizedText id="api-entry-row.rangeExclusive_cacdfc" components={{ s0: <time>{formatTimestamp(new Date(Number(result.data.fromUnixMs)).toISOString())}</time>, s1: <time>{formatTimestamp(new Date(Number(result.data.untilUnixMs)).toISOString())}</time> }} /></p> : null}<p><LocalizedText id="api-entry-row.incompleteCoverageAcceptedExecutionsAndNative_a304c9" components={{ s0: <>{formatNumber(result.data.acceptedExecutionsWithoutResponse)}</>, s1: <>{formatNumber(result.data.acceptedCompactionsWithoutResponse)}</> }} /></p><p><LocalizedText id="api-entry-row.measuredResponsesUnavailableResponseTotals_7758ea" components={{ s0: <>{formatNumber(result.data.totals?.total?.measuredResponses ?? 0)}</>, s1: <>{formatNumber(result.data.totals?.total?.unavailableResponses ?? 0)}</> }} /></p><EstimateAmounts value={result.data.estimates} />{result.data.nativeAccounting.map(data => unitNames[data.totals?.kind ?? AccountingUnitKind.UNSPECIFIED] ? <p key={data.totals!.kind}><LocalizedText id="api-entry-row.measuredUnavailableTotalUnitsUnpricedUnits_f7c451" components={{ s0: <>{unitNames[data.totals!.kind]}</>, s1: <>{formatNumber(data.totals?.total?.measuredUnits ?? 0)}</>, s2: <>{formatNumber(data.totals?.total?.unavailableUnits ?? 0)}</>, s3: <>{formatNumber(data.totals?.unpricedUnits ?? 0)}</> }} /></p> : null)}{result.data.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 ? <p>{copy("api-entry-row.independentNativeAccountingIsUnavailableFrom_324aa8")}</p> : null}</> : <p>{copy("api-entry-row.noUsageEvidenceHasBeenRetrieved_a6a0ca")}</p>}
+      {usage ? <>{usage.fromUnixMs > 0n && usage.untilUnixMs > usage.fromUnixMs ? <p><LocalizedText id="api-entry-row.rangeExclusive_cacdfc" components={{ s0: <time>{formatTimestamp(new Date(Number(usage.fromUnixMs)).toISOString())}</time>, s1: <time>{formatTimestamp(new Date(Number(usage.untilUnixMs)).toISOString())}</time> }} /></p> : null}<p><LocalizedText id="api-entry-row.incompleteCoverageAcceptedExecutionsAndNative_a304c9" components={{ s0: <>{formatNumber(usage.acceptedExecutionsWithoutResponse)}</>, s1: <>{formatNumber(usage.acceptedCompactionsWithoutResponse)}</> }} /></p><p><LocalizedText id="api-entry-row.measuredResponsesUnavailableResponseTotals_7758ea" components={{ s0: <>{formatNumber(usage.totals?.total?.measuredResponses ?? 0)}</>, s1: <>{formatNumber(usage.totals?.total?.unavailableResponses ?? 0)}</> }} /></p><EstimateAmounts value={usage.estimates} />{usage.nativeAccounting.map(data => unitNames[data.totals?.kind ?? AccountingUnitKind.UNSPECIFIED] ? <p key={data.totals!.kind}><LocalizedText id="api-entry-row.measuredUnavailableTotalUnitsUnpricedUnits_f7c451" components={{ s0: <>{unitNames[data.totals!.kind]}</>, s1: <>{formatNumber(data.totals?.total?.measuredUnits ?? 0)}</>, s2: <>{formatNumber(data.totals?.total?.unavailableUnits ?? 0)}</>, s3: <>{formatNumber(data.totals?.unpricedUnits ?? 0)}</> }} /></p> : null)}{usage.accountingProfile !== UsageAccountingProfile.NATIVE_UNITS_V1 ? <p>{copy("api-entry-row.independentNativeAccountingIsUnavailableFrom_324aa8")}</p> : null}</> : <p>{copy("api-entry-row.noUsageEvidenceHasBeenRetrieved_a6a0ca")}</p>}
       {windows.length ? windows.map((window, index) => <Quota key={index} window={window} now={now} />) : <p>{copy("api-entry-row.noQuotaObservation_d9e3af")}</p>}
-    </div>
-  </article>;
+  </section>;
 }

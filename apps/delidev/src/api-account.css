@@ -102,10 +102,10 @@
 .api-entry-more > button { min-width: 40px; }
 .api-entry-more-panel { position: absolute; z-index: 2; right: 0; top: 46px; display: grid; gap: 4px; width: 200px; max-width: 70cqw; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 16px var(--shadow-soft); }
 .api-entry-more-panel button { text-align: left; }
-.api-entry-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--border-subtle); }
+.api-entry-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--border-subtle); }
 .api-usage-row .api-entry-text-action { padding-inline: 0; border: 0; background: transparent; color: var(--muted); }
 .api-usage-row .api-entry-usage-link { color: var(--link); }
-.api-entry-details { padding-top: 16px; font-size: 12px; color: var(--text-secondary); }
+.api-entry-details { overflow-wrap: anywhere; padding-top: 0; font-size: 14px; color: var(--text-secondary); }
 .api-entry-details .api-quota-window { margin-block: 12px; }
 .api-entry-usage-status p { margin: 8px 0; font-size: 12px; color: var(--muted); }
 @container (max-width: 899px) {
@@ -134,3 +134,6 @@
 .api-verification p { margin: 0 0 4px; }
 .api-verification small { flex-basis: 100%; color: var(--muted); }
 .api-verification button { min-height: 40px; white-space: normal; }
+
+.api-entry-details dl { display: grid; gap: 12px; margin: 0; }
+.api-entry-details dd { margin: 4px 0 0; overflow-wrap: anywhere; }
