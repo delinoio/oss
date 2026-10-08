@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "desktop-update"
+description = "Read and control only the original trusted-window desktop update, preserving native confirmation, selected server and lifetime authority."
+commands.allow = ["desktop_update_context", "desktop_update_native"]

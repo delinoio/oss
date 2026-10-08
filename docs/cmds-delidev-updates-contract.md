@@ -39,6 +39,15 @@ A lost reply retries the same phase; it never invokes installation or creates a
 generation. Failed persistence retains original retry/inspection ownership and
 logs uncertainty without claiming terminal publication.
 
+The native application manifest declares `desktop_update_context` and
+`desktop_update_native` under the dedicated closed `desktop-update` permission.
+Only the existing main/local-* and server-* product document capabilities grant
+it. External/child/remote webviews receive no grant. Label matching cannot replace
+native product-window registry admission, original saved binding, lifetime epoch,
+server checks or confirmation. Validate actual generated manifests and resolved
+permissions against the existing OAuth control; those fixtures establish ACL
+behavior, separately from real native installation acceptance.
+
 ## Storage
 
 Private bounded candidates retain the original signed manifest and downloaded digest. UUID-v7 receipts bind original actor, server, target, component and revision. Dedicated Worker generation binaries preserve the previous working binary and existing device/workspace scope. A replacement does not modify a shared CLI/server executable. Unknown installation outcomes retain recovery state and cannot claim rollback.

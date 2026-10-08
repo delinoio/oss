@@ -2053,6 +2053,105 @@ mod tests {
     }
 
     #[test]
+    fn generated_updater_acl_preserves_registered_trusted_webviews() {
+        use delidev_desktop::window_registry::{Registry, Role};
+        use tauri::{
+            ipc::{Origin, RuntimeAuthority},
+            utils::{
+                acl::{
+                    APP_ACL_KEY, capability::Capability, manifest::Manifest, resolved::Resolved,
+                },
+                platform::Target,
+            },
+        };
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(include_str!(concat!(
+            env!("OUT_DIR"),
+            "/acl-manifests.json"
+        )))
+        .unwrap();
+        let app = &manifests[APP_ACL_KEY];
+        let commands = ["desktop_update_context", "desktop_update_native"];
+        assert_eq!(app.permissions["desktop-update"].commands.allow, commands);
+        assert_eq!(
+            app.permissions["account-oauth"].commands.allow,
+            ["account_oauth_native"]
+        );
+        for permission in [
+            "allow-desktop-update-context",
+            "allow-desktop-update-native",
+        ] {
+            assert!(
+                app.permissions.contains_key(permission)
+                    || app.command_permission(permission, false).is_some()
+            );
+        }
+        let capabilities: BTreeMap<String, Capability> =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/capabilities.json")))
+                .unwrap();
+        let resolved = Resolved::resolve(&manifests, capabilities, Target::current()).unwrap();
+        for command in commands {
+            assert!(resolved.allowed_commands.contains_key(command));
+        }
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        let mut registry = Registry::default();
+        let main = registry.reserve(Role::Local, false).unwrap();
+        registry.ready(&main).unwrap();
+        let local = registry.reserve(Role::Local, false).unwrap();
+        registry.ready(&local).unwrap();
+        let saved = registry
+            .reserve(Role::Saved(uuid::Uuid::now_v7().to_string()), false)
+            .unwrap();
+        registry.ready(&saved).unwrap();
+        for command in commands {
+            for entry in [&main, &local, &saved] {
+                assert!(registry.admitted(&entry.label).is_ok());
+                assert!(
+                    authority
+                        .resolve_access(command, &entry.label, &entry.label, &Origin::Local)
+                        .is_some()
+                );
+                assert!(
+                    authority
+                        .resolve_access(command, &entry.label, "external-child", &Origin::Local)
+                        .is_none()
+                );
+                assert!(
+                    authority
+                        .resolve_access(
+                            command,
+                            &entry.label,
+                            &entry.label,
+                            &Origin::Remote {
+                                url: "https://example.test/".parse().unwrap()
+                            }
+                        )
+                        .is_none()
+                );
+            }
+            for label in ["external-child", "unregistered", "browser-fixture"] {
+                assert!(
+                    authority
+                        .resolve_access(command, label, label, &Origin::Local)
+                        .is_none()
+                );
+                assert!(registry.admitted(label).is_err());
+            }
+        }
+        // ACL label patterns are only the first guard. The command captures
+        // registry admission before reading a server or executing an action.
+        assert!(registry.admitted("local-unregistered").is_err());
+        assert!(registry.admitted("server-unregistered").is_err());
+        registry.begin_close(&local.label, false).unwrap();
+        assert!(registry.admitted(&local.label).is_err());
+        registry.stop();
+        assert!(registry.admitted(&main.label).is_err());
+    }
+
+    #[test]
     fn generated_oauth_acl_preserves_trusted_webview_boundaries() {
         use tauri::{
             ipc::{Origin, RuntimeAuthority},
