@@ -54,11 +54,47 @@
 .session-notice strong, .session-notice span { display: block; }
 .session-notice span { font-size: 12px; }
 .session-notice > button { flex-shrink: 0; }
-.session-workspace .transcript { grid-area: 4 / 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px; }
+.session-workspace .transcript { grid-area: 4 / 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px; container: transcript / inline-size; }
 .session-workspace .transcript > * { flex-shrink: 0; }
 .session-workspace .transcript > .session-empty { flex: 1; }
 .session-workspace .transcript pre { line-height: 1.65; }
 .session-workspace .message { margin: 0; max-width: none; }
+/* Historical payload wrappers and direct live rows share the same item spacing.
+   Keep the wrappers measurable for bounded page restoration. */
+.session-workspace .transcript > [data-payload-page] { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.session-workspace .transcript .message-user {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: min(75%, 720px);
+  min-width: 0;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--on-accent);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.session-workspace .transcript .message-user > header { flex-wrap: wrap; gap: 4px 12px; }
+.session-workspace .transcript .message-user > header strong,
+.session-workspace .transcript .message-user > header small { color: inherit; }
+.session-workspace .transcript .message-user details { border-color: currentColor; }
+.session-workspace .transcript .message-user :focus-visible { outline-color: var(--on-accent); outline-offset: 2px; }
+/* Claude's validated child supplies the presentation proof. Invalid payloads
+   keep their original card without repeating native content validation. */
+.session-workspace .transcript .message-assistant,
+.session-workspace .transcript .message-claude-assistant:has(> .native-claude-message-content) {
+  align-self: stretch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+@container transcript (width < 600px) {
+  .session-workspace .transcript .message-user { max-width: 90%; }
+}
+
 .session-workspace nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .session-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); gap: 12px; padding: 16px 0; }
 .session-empty .session-icon { width: 40px; height: 40px; margin-bottom: 8px; }

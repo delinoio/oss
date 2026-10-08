@@ -1484,6 +1484,22 @@ threshold it overlays the notices and transcript, with a width capped at 400px;
 it cannot obscure the request tray or composer. CSS reflow uses the same DOM and
 controllers. Tool labels wrap at narrow widths and effective zoom.
 
+Conversation transcript presentation distinguishes recognized roles without
+changing content authority. Generic user messages and validated Grok user roots
+use intrinsic right-aligned bubbles capped at `min(75%, 720px)`, or 90% below
+600px available transcript width. Use `--accent` / `--on-accent`, 12px corners
+and 12px/16px padding, with left-aligned content and readable headers, details
+and keyboard focus. Generic assistant roots, validated Grok text roots and the
+validated Claude assistant wrapper are left-aligned without an outer background,
+border, rounded container or card padding. Invalid native records, unknown roles,
+tools, progress, artifacts and interruption presentations retain their existing
+treatment. Native details keep their own borders and disclosures. Preserve role
+headers, status labels, inert exact text/whitespace and wrapping. Use 16px item
+spacing within historical payload wrappers and between historical/live rows,
+without replacing the measured wrappers, pagination, ordering or revision owners.
+The shared Conversation includes ordinary sessions and General Chat. Browser
+fixtures prove layout only; packaged CEF and native acceptance remain separate.
+
 The transcript scrolls independently. Open interactions remain expanded, and
 request/queue contents have bounded scroll space near the composer. Preserve
 original page-scoped counts, pagination and live delivery ordering. The composer
