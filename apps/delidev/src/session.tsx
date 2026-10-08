@@ -396,7 +396,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     : live.state === ConnectionState.Reconnecting ? copy("session.connectionLostRetainedStateShown_8cc737")
     : live.state === ConnectionState.Failed ? copy("session.connectionRequiresAttention_160d4a") : copy("session.connecting_72021e");
   const projectedSubmissions = submissions.rows.filter(row => row.sessionId === id && !row.native && !rows.some(message => {
-    return row.queueId === nativeSubmissionInput(message);
+    return Boolean(row.queueId) && row.queueId === nativeSubmissionInput(message);
   }));
   const tools = [
     { panel: SessionPanel.Diff, icon: SessionIconKind.Diff, label: copy("session.diff_7ecf46") },

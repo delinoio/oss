@@ -21,7 +21,7 @@ function fixture() {
   };
   const enqueue = vi.fn(async (request: EnqueueInputRequest) => receipt(request));
   const control = vi.fn(() => ({}));
-  const list = vi.fn((_request: { filter?: { pageToken?: string } }) => ({ resources: [] as Resource[] }));
+  const list = vi.fn((_request: { filter?: { kind?: EntityKind; pageToken?: string } }) => ({ resources: [] as Resource[] }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [original, other] }), listQueue: () => ({ inputs: [] }), enqueueInput: enqueue, controlSession: control });
@@ -68,6 +68,36 @@ it("shows Sending before enqueue settles, then advances through queue and one na
   await act(async () => f.publish(create(ResourceSchema, { id: newRequestId(), sessionId: f.original.id, kind: EntityKind.MESSAGE, schemaVersion: 1, revision: 1n, documentJson: encode({ role: "user", state: "complete", input_id: queue.id, text: "웹 검색 할 줄 알아?" }) })));
   await waitFor(() => expect(screen.queryByRole("article", { name: "Submitted message" })).toBeNull());
   expect(within(screen.getByLabelText("Conversation", { selector: ".transcript" })).getAllByText("웹 검색 할 줄 알아?")).toHaveLength(1); expect(f.control).not.toHaveBeenCalled();
+});
+
+it("keeps the immediate projection beside retained historical messages without input identities", async () => {
+  const f = fixture();
+  const historical = [
+    { role: "user", state: "complete", text: "웹 검색 할 줄 알아?" },
+    { role: "assistant", state: "complete", text: "Historical assistant without input identity" },
+  ].map(document => create(ResourceSchema, { id: newRequestId(), sessionId: f.original.id, kind: EntityKind.MESSAGE, schemaVersion: 1, revision: 1n, documentJson: encode(document) }));
+  f.list.mockImplementation(request => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? historical : [] }));
+  let finish!: () => void;
+  f.enqueue.mockImplementationOnce(async request => { await new Promise<void>(resolve => { finish = resolve; }); return f.receipt(request); });
+  render(<App transport={f.transport} />);
+  const input = await f.enter();
+  const transcript = screen.getByLabelText("Conversation", { selector: ".transcript" });
+  await within(transcript).findByText("Historical assistant without input identity");
+  fireEvent.change(input, { target: { value: "웹 검색 할 줄 알아?" } });
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  const projected = within(transcript).getByRole("article", { name: "Submitted message" });
+  expect(within(projected).getByRole("status").textContent).toBe("Sending");
+  expect(within(transcript).getAllByText("웹 검색 할 줄 알아?")).toHaveLength(2);
+  await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
+  await act(async () => finish());
+  await within(projected).findByText("Queued");
+  const queue = (await f.enqueue.mock.results[0].value).change.input;
+  await act(async () => f.publish(create(ResourceSchema, { id: newRequestId(), sessionId: f.original.id, kind: EntityKind.MESSAGE, schemaVersion: 1, revision: 1n, documentJson: encode({ role: "user", state: "complete", input_id: queue.id, text: "웹 검색 할 줄 알아?" }) })));
+  await waitFor(() => expect(within(transcript).queryByRole("article", { name: "Submitted message" })).toBeNull());
+  // The historical identical prompt remains separate from the exact new input.
+  expect(within(transcript).getAllByText("웹 검색 할 줄 알아?")).toHaveLength(2);
+  expect(within(transcript).getByText("Historical assistant without input identity")).toBeDefined();
+  expect(f.control).not.toHaveBeenCalled();
 });
 
 it.each(["uncertain", "malformed", "rejected"])("keeps truthful %s status and original retry/draft ownership", async scenario => {
@@ -122,7 +152,7 @@ it("reinspects a removed original queue identity after navigation without loadin
   await f.enter(); await within(screen.getByRole("article", { name: "Submitted message" })).findByText("Removed");
   expect(within(screen.getByRole("article", { name: "Submitted message" })).queryByText("웹 검색 할 줄 알아?")).toBeNull();
   expect(f.enqueue).toHaveBeenCalledOnce(); expect(f.control).not.toHaveBeenCalled();
-  expect(f.list.mock.calls.every(call => !call.length || !((call[0] as { filter?: { pageToken?: string } }).filter?.pageToken))).toBe(true);
+  expect(f.list.mock.calls.every(call => !call.length || !((call[0] as { filter?: { kind?: EntityKind; pageToken?: string } }).filter?.pageToken))).toBe(true);
 });
 it("ignores a late accepted response after connection identity replacement", async () => {
   const f = fixture(); let finish!: () => void;
