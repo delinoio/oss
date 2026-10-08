@@ -48,13 +48,13 @@ it("retains composer, mode and staged information edits through tool switches an
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await screen.findByRole("heading", { name: "Original session" });
   fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
-  fireEvent.click(screen.getByRole("button", { name: "Info" }));
+  screen.getByRole("heading", { name: "Session information" }).focus();
   fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
   const name = screen.getByRole("textbox", { name: "Session name" });
   fireEvent.change(name, { target: { value: "Staged name" } });
   fireEvent.click(screen.getByRole("button", { name: "Files" }));
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
-  fireEvent.click(screen.getByRole("button", { name: "Info" }));
+  screen.getByRole("heading", { name: "Session information" }).focus();
   expect(screen.getByRole("textbox", { name: "Session name" })).toBe(name);
   expect(name).toHaveProperty("value", "Staged name");
   fireEvent.keyDown(screen.getByRole("complementary", { name: "Session information" }), { key: "Escape" });
@@ -65,7 +65,7 @@ it("retains composer, mode and staged information edits through tool switches an
   expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
   await act(async () => { await i18n.changeLanguage("ko"); });
   expect(screen.getByRole("textbox", { name: "메시지" })).toBe(composer);
-  fireEvent.click(screen.getByRole("button", { name: "정보" }));
+  screen.getByRole("heading", { name: "세션 정보" }).focus();
   expect(screen.getByRole("textbox", { name: "세션 이름" })).toBe(name);
   expect(f.enqueue).not.toHaveBeenCalled(); expect(f.rename).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
 });
@@ -142,8 +142,8 @@ it("retries the exact queued input after supporting panels were opened and close
   const original = f.enqueue.mock.calls[0][0];
   expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("disabled", true);
   expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
-  fireEvent.click(screen.getByRole("button", { name: "Info" }));
-  fireEvent.click(screen.getByRole("button", { name: "Info" }));
+  screen.getByRole("heading", { name: "Session information" }).focus();
+  screen.getByRole("heading", { name: "Session information" }).focus();
   fireEvent.click(screen.getByRole("button", { name: "Retry the same message" }));
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(2));
   expect(f.enqueue.mock.calls[1][0]).toEqual(original);
@@ -188,7 +188,7 @@ it("shows original uncertain startup recovery beside the conversation with one c
   const confirmation = screen.getByRole("button", { name: "Confirm selected recovery action" });
   fireEvent.keyDown(confirmation, { key: "Escape" });
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Files" }));
-  fireEvent.click(screen.getByRole("button", { name: "Info" }));
+  screen.getByRole("heading", { name: "Session information" }).focus();
   expect(screen.getByRole("button", { name: "Confirm selected recovery action" })).toBe(confirmation);
   expect(screen.getAllByRole("button", { name: "Reconcile original execution" })).toHaveLength(1);
   expect(screen.getByRole("button", { name: "Reconcile original execution" })).toBe(recovery);
@@ -223,7 +223,7 @@ it("keeps Info independent of every temporary tool and restores the original too
     fireEvent.click(opener);
     expect(opener.getAttribute("aria-expanded")).toBe("true");
     expect(info).toHaveProperty("hidden", false);
-    fireEvent.click(screen.getByRole("button", { name: "Info" }));
+    screen.getByRole("heading", { name: "Session information" }).focus();
     expect(document.activeElement).toBe(heading);
     expect(opener.getAttribute("aria-expanded")).toBe("true");
     fireEvent.keyDown(heading, { key: "Escape" });
@@ -231,7 +231,7 @@ it("keeps Info independent of every temporary tool and restores the original too
     expect(opener.getAttribute("aria-expanded")).toBe("false");
     expect(info).toHaveProperty("hidden", false); expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   }
-  fireEvent.click(screen.getByRole("button", { name: "Info" }));
+  screen.getByRole("heading", { name: "Session information" }).focus();
   fireEvent.keyDown(heading, { key: "Escape" });
   expect(document.activeElement).toBe(heading); expect(info).toHaveProperty("hidden", false);
   expect(f.enqueue).not.toHaveBeenCalled(); expect(f.rename).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
@@ -285,4 +285,19 @@ it.each([false, true])("shows only waiting queue inputs while retaining accepted
   expect(document.querySelectorAll(".queue-item")).toHaveLength(mixed ? 1 : 0);
   expect(screen.queryByText(/Hidden history/)).toBeNull();
   if (mixed) expect(screen.getByText("Waiting input")).toBeTruthy();
+});
+
+it("keeps exactly five workspace tools and no Info action in either locale", async () => {
+  const f = fixture(); render(f.view()); await screen.findByRole("heading", { name: "Original session" });
+  const toolbar = document.querySelector(".session-toolbar-actions")!;
+  expect([...toolbar.querySelectorAll("button")].map(button => button.textContent)).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
+  expect(screen.queryByRole("button", { name: "Info" })).toBeNull();
+  const info = screen.getByRole("complementary", { name: "Session information" });
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  expect([...toolbar.querySelectorAll("button")].map(button => button.textContent)).toEqual(["변경 사항", "파일", "터미널", "브라우저", "진단"]);
+  expect(screen.queryByRole("button", { name: "정보" })).toBeNull();
+  expect(screen.getByRole("complementary", { name: "세션 정보" })).toBe(info);
+  expect(screen.getByRole("textbox", { name: "메시지" })).toBe(composer);
+  expect(f.enqueue).not.toHaveBeenCalled(); expect(f.rename).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
 });

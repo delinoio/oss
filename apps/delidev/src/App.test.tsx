@@ -897,7 +897,6 @@ it("opens execution configuration without changing the unsent session draft or d
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep the original unsent draft" } });
-  fireEvent.click(screen.getByRole("button", { name: "Info" }));
   fireEvent.click(screen.getByText("Execution settings"));
   fireEvent.click(screen.getByText("Execution configuration and instructions"));
   expect(screen.getByText(/No accepted execution configuration/)).toBeTruthy();

@@ -1624,10 +1624,11 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-A full-width tool strip exposes Diff, Files, Terminals, Browser, Diagnostics and
-Info. Info is a persistent inspector, independent of the five initially closed,
-mutually exclusive temporary tools. Its toolbar action focuses the original Info
-heading; it never toggles or dismisses the card. At 900px available session width
+A full-width tool strip exposes exactly Diff, Files, Terminals, Browser and
+Diagnostics in that order. There is no toolbar Info action. Info remains a
+persistent inspector, independent of the five initially closed, mutually exclusive
+temporary tools. Original Show details, recovery and budget entry points focus
+the original heading/section without dismissing the card or another tool. At 900px available session width
 or more, reserve a 360px right rail including 20px horizontal padding, separated
 from the conversation by 24px. Place the 320px card at the upper right, with 20px
 corners, a semantic thin border, subtle shadow and 16px internal padding. Cap its

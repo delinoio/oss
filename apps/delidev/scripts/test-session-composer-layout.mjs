@@ -96,8 +96,8 @@ try {
   assert.deepEqual(await page.locator(".image-preview-list img").evaluateAll(nodes => nodes.map(node => node.alt)), Array.from({ length: 8 }, (_, index) => c("image-input.image").replace("{{number}}", String(index + 1))));
   await page.locator(".image-preview-list button").nth(3).click(); assert.equal(await page.locator(".image-preview-list img").count(), 7); await geometry();
   await page.locator('input[type="file"]').setInputFiles([file, file]); await page.getByText(c("image-input.limits"), { exact: true }).waitFor(); assert.equal(await page.locator(".image-preview-list img").count(), 7);
-  assert.equal(await page.locator(".session-toolbar-actions button").count(), 6);
-  for (let index = 0; index < 6; index++) { const button = page.locator(".session-toolbar-actions button").nth(index); await button.click(); assert.equal(await page.locator(".image-preview-list img").count(), 7); await geometry(); await button.click(); }
+  assert.equal(await page.locator(".session-toolbar-actions button").count(), 5);
+  for (let index = 0; index < 5; index++) { const button = page.locator(".session-toolbar-actions button").nth(index); await button.click(); assert.equal(await page.locator(".image-preview-list img").count(), 7); await geometry(); await button.click(); }
 
   await page.waitForFunction(() => !document.querySelector(".composer-submit").disabled);
   await input.evaluate(node => node.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, ctrlKey: true, isComposing: true, bubbles: true, cancelable: true })));
