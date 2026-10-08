@@ -1270,6 +1270,7 @@ dependencies = [
  "clibox-transform",
  "clibox-wait",
  "libc",
+ "notify",
  "rcgen",
  "rustls",
  "serde_json",
