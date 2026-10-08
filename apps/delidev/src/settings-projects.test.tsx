@@ -103,8 +103,9 @@ it("preserves four field groups, repository order, primary clearing, restriction
   for (const label of ["Name", "Repositories", "Agent Workers", "AI accounts"]) expect(screen.getByRole("group", { name: label })).toBeTruthy();
   await within(screen.getByRole("combobox", { name: "Primary repository" })).findByRole("option", { name: "First" });
   expect(within(screen.getByRole("combobox", { name: "Primary repository" })).getByRole("option", { name: "Second" }).getAttribute("value")).toBe(second.id);
-  const repositories = screen.getByRole("group", { name: "Repositories" }); fireEvent.click(within(repositories).getByRole("button", { name: "Move entry 2 up" }));
-  expect(Array.from(repositories.querySelectorAll("li code"), node => node.textContent)).toEqual([second.id, first.id]);
+  const repositories = screen.getByRole("group", { name: "Repositories" }); const grip = within(repositories).getByRole("button", { name: "Move repository 2: Second" }); fireEvent.keyDown(grip, { key: " " }); fireEvent.keyDown(grip, { key: "ArrowUp" }); expect(value.save).not.toHaveBeenCalled(); fireEvent.keyDown(grip, { key: "Enter" });
+  expect(value.save).not.toHaveBeenCalled();
+  expect(Array.from(repositories.querySelectorAll("li[data-repository-id]"), node => node.getAttribute("data-repository-id"))).toEqual([second.id, first.id]);
   fireEvent.click(within(repositories).getByRole("button", { name: "Remove entry 2" }));
   const primary = screen.getByRole("combobox", { name: "Primary repository" }) as HTMLSelectElement; expect(primary.value).toBe(""); expect(primary.required).toBe(true); expect(primary.checkValidity()).toBe(false);
   fireEvent.change(primary, { target: { value: second.id } });

@@ -1,3 +1,4 @@
+import { ProjectRepositoryOrder } from "./project-repository-order";
 import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { statusLabel } from "./product-status";
@@ -200,7 +201,7 @@ function ProviderFields({ data, change, subscriptionOnly = false, ...props }: Fi
   </>;
 }
 export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow" }
-interface FieldsProps { initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
+interface FieldsProps { movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All } = props;
@@ -260,14 +261,19 @@ export function projectRepositoryOption(id: string, index: number, names: Readon
   const name = names.get(id) ?? copy("project-creation.nameUnavailable");
   return [...names.values()].filter(value => value === name).length > 1 || !names.has(id) ? copy("project-creation.distinctRepository", { name, position: index + 1 }) : name;
 }
-function ProjectFields({ data, change, active }: FieldsProps) {
+function ProjectFields({ data, change, active, movementActive = active }: FieldsProps) {
+  const [selected, setSelected] = useState("");
   useLocale();
   const repositories = items(data.repositories).map(text);
   const { names, loading, error, retry } = useProjectRepositoryNames(repositories, active);
   return <>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.repositories_1e32af")}</legend>
-      <OrderedLinks label={copy("configuration-fields.orderedRepositories_f1a12d")} kind={EntityKind.REPOSITORY} links={repositories} active={active} names={names} explanation={copy("project-creation.workspaceHelp")} change={(values) => change({ ...data, repositories: values, primary_repository: values.includes(data.primary_repository) ? data.primary_repository : "" })} />
+      <fieldset><legend>{copy("configuration-fields.orderedRepositories_f1a12d")}</legend><p>{copy("project-creation.workspaceHelp")}</p>
+        <ResourceChoice label={copy("configuration-fields.add_b69dce", { v0: kindNames[EntityKind.REPOSITORY] })} kind={EntityKind.REPOSITORY} value={selected} change={setSelected} active={active} />
+        <button type="button" disabled={!selected || repositories.includes(selected) || repositories.length >= 1000} onClick={() => { change({ ...data, repositories: [...repositories, selected] }); setSelected(""); }}>{copy("configuration-fields.addSelected_967e2a")}</button>
+        <ProjectRepositoryOrder ids={repositories} names={names} active={movementActive} change={(values) => change({ ...data, repositories: values, primary_repository: values.includes(text(data.primary_repository)) ? data.primary_repository : "" })} />
+      </fieldset>
       {loading ? <p role="status">{copy("project-creation.loadingNames")}</p> : null}<Problem error={error} />
       {error ? <button type="button" disabled={loading} onClick={retry}>{copy("project-creation.retryRead")}</button> : null}
       <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{repositories.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>

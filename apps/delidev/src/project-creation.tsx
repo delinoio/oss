@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { ProjectRepositoryOrder, RepositorySecondaryID } from "./project-repository-order";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { useCallback, useContext, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -94,11 +95,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     if (step === Step.Configure && !validate()) return;
     setProblem(""); setValidationField(undefined); setStep(step + 1);
   };
-  const selected = (editable: boolean) => <ol className="project-selected-repositories">{ids.map((id, index) => <li key={id}>
-    <span className="project-repository-position" aria-hidden="true">{index + 1}</span><span className="project-repository-name">{names.get(id) ?? copy("project-creation.nameUnavailable")}</span>
-    {!names.has(id) || ids.some(other => other !== id && names.get(other) === names.get(id)) ? <RepositoryIdentity id={id} /> : null}
-    {editable ? <div className="actions"><button type="button" disabled={blocked || index === 0} aria-label={copy("configuration-fields.moveEntryUp_b22154", { v0: index + 1 })} onClick={() => { const values = [...ids]; [values[index - 1], values[index]] = [values[index]!, values[index - 1]!]; repositories(values); }}>↑</button><button type="button" disabled={blocked} aria-label={copy("configuration-fields.removeEntry_8a2d73", { v0: index + 1 })} onClick={() => repositories(ids.filter(value => value !== id))}>×</button></div> : null}
-  </li>)}</ol>;
+  const selected = (editable: boolean) => <ProjectRepositoryOrder ids={ids} names={names} editable={editable} active={active && visible && !blocked && step === Step.Repositories} change={repositories} />;
   return <form id={formId} ref={form} className="project-editor project-creation" onSubmit={event => {
     event.preventDefault();
     // Enter in search/name fields must never bypass the explicit wizard steps.
@@ -137,7 +134,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
         <RestrictionFields label={copy("configuration-fields.agentWorkers_e60c23")} kind={EntityKind.AGENT} value={data.agents} active={active && visible && step === Step.Restrictions} change={agents => change({ ...data, agents })} />
         <RestrictionFields label={copy("configuration-fields.aiAccounts_050a21")} kind={EntityKind.ACCOUNT} value={data.accounts} active={active && visible && step === Step.Restrictions} change={accounts => change({ ...data, accounts })} />
       </fieldset>
-      <section className="project-creation-summary"><h4>{copy("project-creation.summary")}</h4><dl><dt>{copy("project-creation.name")}</dt><dd>{text(data.name)}</dd><dt>{copy("configuration-fields.primaryRepository_b2bbc5")}</dt><dd>{projectRepositoryOption(text(data.primary_repository), ids.indexOf(text(data.primary_repository)), names)}</dd><dt>{copy("configuration-fields.repositories_1e32af")}</dt><dd><ol>{ids.map(id => <li key={id}>{names.get(id) ?? copy("project-creation.nameUnavailable")}{!names.has(id) || ids.some(other => other !== id && names.get(other) === names.get(id)) ? <RepositoryIdentity id={id} /> : null}</li>)}</ol></dd></dl></section>
+      <section className="project-creation-summary"><h4>{copy("project-creation.summary")}</h4><dl><dt>{copy("project-creation.name")}</dt><dd>{text(data.name)}</dd><dt>{copy("configuration-fields.primaryRepository_b2bbc5")}</dt><dd>{projectRepositoryOption(text(data.primary_repository), ids.indexOf(text(data.primary_repository)), names)}</dd><dt>{copy("configuration-fields.repositories_1e32af")}</dt><dd><ol>{ids.map(id => <li key={id}>{names.get(id) || copy("project-creation.nameUnavailable")}{!names.get(id) || ids.some(other => other !== id && names.get(other) === names.get(id)) ? <RepositorySecondaryID id={id} /> : null}</li>)}</ol></dd></dl></section>
     </section>
     {problem ? <p role="alert">{problem}</p> : null}
     {children}
