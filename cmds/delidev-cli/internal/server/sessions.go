@@ -231,6 +231,7 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		Actor  domain.Principal
 		Origin *domain.LocalOrigin `json:",omitempty"`
 	}{input, actor, origin}
+	var preparedSkillScope *domain.SkillReadRequest
 	if len(input.Skills) > 0 {
 		previous, found, e := s.Store.Replay(ctx, domain.ID(req.Msg.RequestId), "session.create", identity)
 		if e != nil {
@@ -243,12 +244,17 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 			}
 			return connect.NewResponse(&pb.CreateSessionResponse{Change: change}), nil
 		}
-		if _, e := s.observeSkills(ctx, domain.SkillReadRequest{ProjectID: input.ProjectID, MachineID: input.MachineID, AgentID: input.AgentID, Selections: input.Skills}); e != nil {
+		prepared, e := s.observeSkills(ctx, domain.SkillReadRequest{ProjectID: input.ProjectID, MachineID: input.MachineID, AgentID: input.AgentID, Selections: input.Skills})
+		if e != nil {
 			return nil, rpc.Error(e, correlation)
 		}
+		preparedSkillScope = prepared.Scope
 	}
 
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "session.create", identity, func(tx *store.Tx) (any, error) {
+		if err := acceptSkillScope(tx, preparedSkillScope); err != nil {
+			return nil, err
+		}
 		if origin != nil {
 			current, err := tx.Authenticate(originDigest[:])
 			if err != nil {
@@ -320,6 +326,7 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		actor, _ := domain.PrincipalFrom(ctx)
 		identity.Actor = &actor
 	}
+	var preparedSkillScope *domain.SkillReadRequest
 	if len(input.Skills) > 0 {
 		previous, found, e := s.Store.Replay(ctx, domain.ID(req.Msg.RequestId), "session.enqueue", identity)
 		if e != nil {
@@ -341,12 +348,17 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if e != nil {
 			return nil, rpc.Error(e, correlation)
 		}
-		if _, e = s.observeSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: domain.ID(req.Msg.SessionId), Selections: input.Skills}); e != nil {
+		prepared, e := s.observeSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: domain.ID(req.Msg.SessionId), Selections: input.Skills})
+		if e != nil {
 			return nil, rpc.Error(e, correlation)
 		}
+		preparedSkillScope = prepared.Scope
 	}
 
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "session.enqueue", identity, func(tx *store.Tx) (any, error) {
+		if err := acceptSkillScope(tx, preparedSkillScope); err != nil {
+			return nil, err
+		}
 		r, value, err := sessionRecord(tx, domain.ID(req.Msg.SessionId))
 		if err != nil {
 			return nil, err

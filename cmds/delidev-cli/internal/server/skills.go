@@ -237,6 +237,7 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 				return empty, skillUnavailable()
 			}
 		}
+		result.Scope = &scope
 		return result, nil
 	}
 }
@@ -264,4 +265,41 @@ func skillBindings(values []*pb.SkillSelection, request string) ([]domain.SkillB
 		result = append(result, domain.SkillBinding{WorkerDeviceID: domain.ID(v.WorkerDeviceId), InventoryID: domain.ID(v.InventoryId), SkillID: domain.ID(v.SkillId), ContentRevision: v.ContentRevision, SnapshotID: domain.ID(request)})
 	}
 	return result, domain.ValidateSkills(result)
+}
+
+// The acceptance transaction fences the prepared original context once more.
+func acceptSkillScope(tx *store.Tx, scope *domain.SkillReadRequest) error {
+	if scope == nil {
+		return nil
+	}
+	if _, _, err := skillScope(tx, *scope); err != nil {
+		return err
+	}
+	row, err := tx.Get(domain.AgentKind, scope.AgentID)
+	if err != nil {
+		return err
+	}
+	revision := row.Revision
+	if scope.SessionID != "" {
+		_, session, err := sessionRecord(tx, scope.SessionID)
+		if err != nil {
+			return err
+		}
+		if session.InitialExecution != nil {
+			revision = session.InitialExecution.Configuration.AgentRevision
+		}
+	}
+	instance, _, err := tx.WorkerInstance(scope.MachineID)
+	if err != nil || instance != scope.WorkerInstanceID || revision != scope.AgentRevision {
+		return skillUnavailable()
+	}
+	device, err := tx.Get(domain.DeviceKind, scope.WorkerDeviceID)
+	if err != nil {
+		return err
+	}
+	worker, err := store.Decode[domain.Device](device)
+	if err != nil || worker.Revoked || worker.MachineID != scope.MachineID || worker.Type != domain.WorkerDevice {
+		return skillUnavailable()
+	}
+	return nil
 }

@@ -64,5 +64,6 @@ type SkillReadRequest struct {
 	Selections       []SkillBinding `json:"selections,omitempty"`
 }
 type SkillReadResult struct {
-	Entries []SkillEntry `json:"entries"`
+	Scope   *SkillReadRequest `json:"scope,omitempty"`
+	Entries []SkillEntry      `json:"entries"`
 }
