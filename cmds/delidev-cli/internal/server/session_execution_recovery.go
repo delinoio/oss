@@ -359,7 +359,10 @@ func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain
 	if input.Fork != nil && (input.Fork.JobID != f.JobID || input.Fork.RuntimeID != f.RuntimeID || input.Fork.NativeThreadID != f.NativeThreadID || input.Fork.NativeTurnID != f.ChildTurn() || input.Fork.CheckpointDigest != f.CheckpointDigest) {
 		return "", domain.ExecutionRecoveryUncertain()
 	}
-	if f.OpenCodeCreationRequestID != "" {
+	if f.OpenCodeCreationProof != nil {
+		if !f.VerifyOpenCodeCreation(row.ID) {
+			return "", domain.ExecutionRecoveryUncertain()
+		}
 		return f.OpenCodeCreationRequestID, nil
 	}
 	original, err := tx.Get(domain.JobKind, f.JobID)
@@ -380,6 +383,9 @@ func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain
 	selected, _ := json.Marshal(f.Startup)
 	originalSelection, _ := json.Marshal(seed.Startup)
 	if !bytes.Equal(actual, expected) || !bytes.Equal(selected, originalSelection) {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	if f.OpenCodeCreationRequestID != "" && f.OpenCodeCreationRequestID != seed.OpenCode.Fork {
 		return "", domain.ExecutionRecoveryUncertain()
 	}
 	return seed.OpenCode.Fork, nil

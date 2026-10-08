@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 package domain
 
-import "encoding/json"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
 
 // ForkOrigin is a retained boundary, never an executable copy of source input.
 // Snapshot remains immutable even before the child's first explicit input.
 type ForkOrigin struct {
+	OpenCodeCreationProof     *OpenCodeForkCreationProof `json:"opencode_creation_proof,omitempty"`
 	OpenCodeCreationRequestID ID                         `json:"opencode_creation_request_id,omitempty"`
 	Startup                   *ExecutionStartupSelection `json:"startup,omitempty"`
 	SidechatParentSnapshot    *InitialExecution          `json:"sidechat_parent_snapshot,omitempty"`
@@ -21,6 +26,34 @@ type ForkOrigin struct {
 	Snapshot                  InitialExecution           `json:"snapshot"`
 	WorkerDeviceID            ID                         `json:"worker_device_id"`
 	JobInputDigest            string                     `json:"job_input_digest"`
+}
+
+// OpenCodeForkCreationProof binds the verified publication without retaining
+// executable source input, prompts or protected native content.
+type OpenCodeForkCreationProof struct {
+	CreationRequestID ID     `json:"creation_request_id"`
+	ChildSessionID    ID     `json:"child_session_id"`
+	JobOutputDigest   string `json:"job_output_digest"`
+	OriginDigest      string `json:"origin_digest"`
+}
+
+func (f ForkOrigin) OpenCodeCreationDigest(child ID, outputDigest string) string {
+	f.OpenCodeCreationProof = nil
+	raw, err := json.Marshal(struct {
+		ChildSessionID  ID         `json:"child_session_id"`
+		JobOutputDigest string     `json:"job_output_digest"`
+		Origin          ForkOrigin `json:"origin"`
+	}{child, outputDigest, f})
+	if err != nil {
+		return ""
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
+}
+
+func (f ForkOrigin) VerifyOpenCodeCreation(child ID) bool {
+	p := f.OpenCodeCreationProof
+	return p != nil && p.CreationRequestID == f.OpenCodeCreationRequestID && p.ChildSessionID == child && canonicalDigest(p.JobOutputDigest) && canonicalDigest(p.OriginDigest) && p.OriginDigest == f.OpenCodeCreationDigest(child, p.JobOutputDigest)
 }
 
 type ForkJobInput struct {
@@ -161,6 +194,9 @@ func (f ForkOrigin) Validate() error {
 	harness := f.Snapshot.Configuration.Harness
 	if f.OpenCodeCreationRequestID != "" && (harness != OpenCode || f.OpenCodeCreationRequestID.Validate() != nil || UniqueIDs([]ID{f.OpenCodeCreationRequestID, f.JobID, f.RuntimeID, f.SourceSessionID, f.SourceExecutionID}) != nil) {
 		return Fail(RecoveryRequired, "The child lost its original OpenCode creation identity.", "Preserve the child-owned Fork seed and checkpoint.")
+	}
+	if f.OpenCodeCreationProof != nil && (harness != OpenCode || f.OpenCodeCreationRequestID == "" || f.OpenCodeCreationProof.ChildSessionID.Validate() != nil || !f.VerifyOpenCodeCreation(f.OpenCodeCreationProof.ChildSessionID)) {
+		return Fail(RecoveryRequired, "The child lost its original OpenCode creation proof.", "Preserve the immutable verified child publication.")
 	}
 	validProfile := harness == Codex && f.NativeTurnID == "" || harness == OpenCode && f.NativeTurnID.Validate(OpenCode, NativeTurnIdentity) == nil && f.NativeTurnID != f.SourceTurnID
 	digest, err := f.Snapshot.Configuration.Digest()
