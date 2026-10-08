@@ -33,6 +33,31 @@ assert(quota.label(at: now, snapshotStale: false) == "0.00% remaining · observe
 assert(quota.label(at: now.addingTimeInterval(301), snapshotStale: false) == "0.00% remaining · stale")
 assert(!states[0].isStale(at: now) && states[0].isStale(at: now.addingTimeInterval(45)))
 assert(states[0].isStale(at: now.addingTimeInterval(-1)))
+let correctedTime = WidgetPresentationTime(timelineDate: now, wallDate: now.addingTimeInterval(-30))
+assert(correctedTime.isStale(states[0]))
+assert(states[0].last_successful_at == "2026-09-30T10:00:00Z")
+let futureQuota = Quota(state: .observed, remaining_basis_points: 0, observed_at: "2026-09-30T10:00:00Z", reset_at: nil)
+assert(correctedTime.quotaLabel(futureQuota, server: states[0]) == "0.00% remaining · stale")
+let priorTimestamp = ISO8601DateFormatter().string(from: now.addingTimeInterval(-40))
+var priorServer = ServerSnapshot(id: first, name: "Earlier observation", state: .observed,
+    last_successful_at: priorTimestamp, last_attempted_at: priorTimestamp,
+    summary: Summary(overview: Overview(observed_at: priorTimestamp, stale: false,
+        active_sessions: "0", pending_interactions: "0", registered_workers: "0", connected_workers: "0"), usage: nil, accounts: nil))
+try priorServer.validate()
+assert(!correctedTime.isStale(priorServer))
+assert(correctedTime.quotaLabel(futureQuota, server: priorServer) == "0.00% remaining · stale")
+for offset in [44.0, 45.0] {
+    let ordinaryTime = WidgetPresentationTime(timelineDate: now.addingTimeInterval(offset), wallDate: now.addingTimeInterval(offset))
+    assert(ordinaryTime.isStale(states[0]) == (offset == 45))
+}
+let expiryTime = WidgetPresentationTime(timelineDate: now.addingTimeInterval(45), wallDate: now.addingTimeInterval(44))
+assert(expiryTime.isStale(states[0]))
+let currentTime = WidgetPresentationTime(timelineDate: now, wallDate: now)
+assert(currentTime.quotaLabel(futureQuota, server: states[0]) == "0.00% remaining · observed")
+for state in [QuotaState.unknown, .failed, .unsupported] {
+    let unavailable = Quota(state: state, remaining_basis_points: nil, observed_at: nil, reset_at: nil)
+    assert(correctedTime.quotaLabel(unavailable, server: states[0]) == unavailable.label(at: now, snapshotStale: true))
+}
 let unavailableQuota = states[0].summary!.accounts!.entries[0].windows[1]
 assert(unavailableQuota.label(at: now, snapshotStale: false) == "Quota unknown")
 let resetQuota = Quota(state: .observed, remaining_basis_points: 10000, observed_at: "2026-09-30T09:59:00Z", reset_at: "2026-09-30T10:00:00Z")

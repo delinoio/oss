@@ -13,13 +13,13 @@ struct StatusContent: View {
     let family: WidgetFamily
     private var detailFont: Font { family == .systemMedium ? .system(size: 10) : .caption2 }
     private var bodyFont: Font { family == .systemMedium ? .system(size: 11) : .caption }
-    private var now: Date { max(entry.date, Date()) }
     private func copy(_ key: WidgetMessage, _ values: [String: String] = [:]) -> String { widgetCopy(key, entry.language, values) }
     private func date(_ value: Date) -> String { widgetDate(value, entry.language) }
     var body: some View {
+        let time = WidgetPresentationTime(timelineDate: entry.date, wallDate: Date())
         VStack(alignment: .leading, spacing: family == .systemMedium ? 1 : 3) {
             if entry.languageFailed { Text(copy(.widgetLanguageUnavailable)).font(detailFont) }
-            HStack { Text("DeliDev").font(.headline); Spacer(); Text(entry.server.map { $0.last_successful_at == nil ? copy(.widgetUnavailable) : $0.isStale(at: now) ? copy(.widgetStale) : copy(.widgetObserved) } ?? copy(.widgetUnavailable)).font(detailFont) }
+            HStack { Text("DeliDev").font(.headline); Spacer(); Text(entry.server.map { $0.last_successful_at == nil ? copy(.widgetUnavailable) : time.isStale($0) ? copy(.widgetStale) : copy(.widgetObserved) } ?? copy(.widgetUnavailable)).font(detailFont) }
             if let server = entry.server {
                 Text(server.name_hidden == true ? copy(.widgetAliasHidden) : server.name).font(.subheadline).lineLimit(1).privacySensitive()
                 HStack(alignment: .top, spacing: 12) {
@@ -40,10 +40,10 @@ struct StatusContent: View {
                                 ForEach(Array(accounts.entries.prefix(family == .systemLarge ? 2 : 1).enumerated()), id: \.offset) { _, account in
                                     Text(account.alias_hidden == true ? copy(.widgetAliasHidden) : account.alias).font(bodyFont).lineLimit(1).privacySensitive()
                                     if let quota = account.windows.first {
-                                        Text(quota.label(at: now, snapshotStale: server.isStale(at: now), language: entry.language)).font(detailFont).lineLimit(2).privacySensitive()
+                                        Text(time.quotaLabel(quota, server: server, language: entry.language)).font(detailFont).lineLimit(2).privacySensitive()
                                         if family == .systemLarge {
                                             if let observed = quota.observed_at.flatMap(widgetTimestamp) { Text(copy(.observedAt, ["at": date(observed)])).font(detailFont) }
-                                            if let reset = quota.reset_at, widgetTimestamp(reset) != nil { Text(widgetQuotaReset(reset, at: now, language: entry.language)).font(detailFont) }
+                                            if let reset = quota.reset_at, widgetTimestamp(reset) != nil { Text(widgetQuotaReset(reset, at: time.evaluationDate(observedAt: quota.observed_at), language: entry.language)).font(detailFont) }
                                         }
                                     } else { Text(copy(.quotaUnavailable)).font(detailFont) }
                                     if family == .systemLarge && (account.more || account.windows.count > 1) { Text(copy(.widgetMoreWindows)).font(detailFont) }

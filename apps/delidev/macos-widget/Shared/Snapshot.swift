@@ -101,6 +101,21 @@ struct Quota: Codable {
     }
 }
 struct Account: Codable { var alias: String; var alias_hidden: Bool? = nil; let windows: [Quota]; let more: Bool }
+struct WidgetPresentationTime {
+    let timelineDate: Date
+    let wallDate: Date
+    // A scheduled entry can force expiry, but cannot make a future observation current.
+    func evaluationDate(observedAt: String?) -> Date {
+        if let observation = observedAt.flatMap(widgetTimestamp), observation > wallDate { return wallDate }
+        return max(timelineDate, wallDate)
+    }
+    func isStale(_ server: ServerSnapshot) -> Bool {
+        server.isStale(at: evaluationDate(observedAt: server.last_successful_at))
+    }
+    func quotaLabel(_ quota: Quota, server: ServerSnapshot, language: WidgetLanguage = .english) -> String {
+        quota.label(at: evaluationDate(observedAt: quota.observed_at), snapshotStale: isStale(server), language: language)
+    }
+}
 struct Accounts: Codable { var entries: [Account]; let more: Bool }
 struct Summary: Codable {
     let overview: Overview?
