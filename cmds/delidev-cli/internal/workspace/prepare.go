@@ -391,7 +391,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			return failed(domain.SafeError(err))
 		}
 		if request.ForkSourceID != "" {
-			copy, err := copyForkTreeBounded(ctx, request.ForkSourcePath, manifest.PrimaryPath, false, request.forkEntryLimit())
+			copy, err := copyForkTreePinned(ctx, request.ForkSourcePath, manifest.PrimaryPath, false, request.forkEntryLimit(), forkSnapshot.sourceMarker(request.ForkSourcePath))
 			if err != nil {
 				return failed(err)
 			}
@@ -524,7 +524,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 					}
 				}
 				if request.ForkSourceID != "" {
-					copy, err := copyForkRepository(ctx, git, inspection.Root, prepared.Path, prepared.StartingCommit)
+					copy, err := copyForkRepositoryPinned(ctx, git, inspection.Root, prepared.Path, prepared.StartingCommit, forkSnapshot.sourceMarker(inspection.Root))
 					if err != nil {
 						return failed(err)
 					}
