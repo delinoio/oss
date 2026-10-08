@@ -152,7 +152,7 @@ The desktop and resident CLI ship from the same package/source revision with pri
 It updates the desktop package, Cargo manifest/lock and Tauri versions together,
 records the original run/source revision, and creates `delidev-v<semver>` before
 calling `release-delidev.yml`. The existing Go sidecar/Worker version and source
-revision injection remains shared. DeliDev does not publish a Cargo or npm package.
+revision injection remains shared. DeliDev does not publish a Cargo or npm package. Desktop local-server and saved-connection compatibility checks use the compiled `CARGO_PKG_VERSION`, so they advance with the packaged Go server version; protocol checks remain independent.
 
 The reusable workflow builds macOS/Linux x64 and arm64 using the existing native
 matrix and keyless package checks. Windows x64/arm64 is explicitly skipped:
