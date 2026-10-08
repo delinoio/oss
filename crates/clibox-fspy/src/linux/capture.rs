@@ -5,7 +5,7 @@ use std::{
     ffi::CString,
     fs,
     os::unix::ffi::OsStrExt,
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
     sync::atomic::{AtomicBool, Ordering},
     thread,
