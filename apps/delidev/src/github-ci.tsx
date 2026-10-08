@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { items, object, text, type Document } from "./documents";
 import { bounded, positive, sha } from "./github-query-model";
@@ -245,7 +247,7 @@ export function CIOriginalEvidence({ row }: { row: Document }) {
   const value = object(row.evidence), workflow = object(value.workflow);
   return <details><summary>{copy("github-ci.originalLifecycleAndOutput_25753b")}</summary>
     <p><LocalizedText id="github-ci.resultId_d45e9f" components={{ s0: <>{text(row.node_id)}</>, s1: <>{value.suite_node_id ? copy("github-ci.suite_e79a3a", { v0: text(value.suite_node_id) }) : ""}</> }} /></p>
-    <dl>{[["started_at", copy("github-ci.extra.ecbc89cd37a0")], ["completed_at", copy("github-ci.extra.22a970d2e5b1")], ["created_at", copy("github-ci.extra.d70b9e24bca2")], ["updated_at", copy("github-ci.extra.3a5ecca188c0")]].map(([key, label]) => value[key] ? <div key={key}><dt>{label}</dt><dd><time dateTime={text(value[key])}>{text(value[key])}</time></dd></div> : null)}</dl>
+    <dl>{[["started_at", copy("github-ci.extra.ecbc89cd37a0")], ["completed_at", copy("github-ci.extra.22a970d2e5b1")], ["created_at", copy("github-ci.extra.d70b9e24bca2")], ["updated_at", copy("github-ci.extra.3a5ecca188c0")]].map(([key, label]) => value[key] ? <div key={key}><dt>{label}</dt><dd><Timestamp value={text(value[key])} /></dd></div> : null)}</dl>
     {value.workflow ? <p><LocalizedText id="github-ci.workflowRunObservedWorkflowAttemptThis_dbe9db" components={{ s0: <>{text(workflow.node_id)}</>, s1: <>{text(workflow.run_number)}</>, s2: <>{text(workflow.observed_attempt)}</> }} /></p> : null}
     {[["title", copy("github-ci.extra.4c198f5da765")], ["summary", copy("github-ci.extra.8696494cf17f")], ["text", copy("github-ci.extra.89420fdb493e")], ["description", copy("github-ci.extra.00ffd18a5ad0")]].map(([key, label]) => value[key] != null ? <div key={key}><h5>{label}</h5><pre>{text(value[key])}</pre></div> : null)}
   </details>;

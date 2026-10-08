@@ -4,12 +4,14 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { AccountService, EntityKind, ResourceSchema, ResourceService, newRequestId, type DisconnectAccountRequest, type Resource } from "@delinoio/delidev-api-client";
 import { AccountConnection } from "./account-connection";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
+import { DateFormatPreference, DateFormatProvider, DateFormatSettings, type DateFormatBridge } from "./date-format";
+import { i18n } from "./localization";
 
 const cleanupLabel = "Retry original credential cleanup";
 function fixture(revision: bigint, removal?: string) {
@@ -33,10 +35,12 @@ function fixture(revision: bigint, removal?: string) {
     router.service(AccountService, { getAccountStatus: status, disconnectAccount: disconnect });
     router.service(ResourceService, { getResource: () => ({ resource: provider }) });
   });
-  const mount = (row: Resource = initial) => {
+  const mount = (row: Resource = initial, bridge?: DateFormatBridge) => {
     // A new query client and mutation registry model loss of all renderer memory.
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    const view = render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><AccountConnection initial={row} active close={vi.fn()} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>);
+    const accountView = <AccountConnection initial={row} active close={vi.fn()} />;
+    const content = bridge ? <DateFormatProvider bridge={bridge}><DateFormatSettings /><textarea aria-label="Session draft" defaultValue="retained draft" />{accountView}</DateFormatProvider> : accountView;
+    const view = render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{content}</MutationIntents></QueryClientProvider></TransportProvider></StrictMode>);
     return { unmount: () => { view.unmount(); client.clear(); } };
   };
   return { id, initial, disconnect, status, mount, confirmSecureDeletion: () => { secureDeletionConfirmed = true; }, get current() { return current; } };
@@ -149,4 +153,33 @@ it("rejects an older successful status after acknowledgment while retaining the 
  expect(retry.disabled).toBe(false);fireEvent.click(retry);await waitFor(()=>expect(f.disconnect).toHaveBeenCalledTimes(2));
  expect(f.disconnect.mock.calls[1][0].mutation).toEqual(original);expect(original.expectedRevision).toBe(9007199254740993n);
  expect(screen.queryByLabelText("API key")).toBeNull();view.unmount();
+});
+
+it("date and language changes preserve an uncertain account receipt, draft, focus and query identity", async () => {
+  const requestId = newRequestId(), value = fixture(8n, `{"request_id":"${requestId}","expected_revision":9007199254740993}`);
+  value.disconnect.mockRejectedValueOnce(new ConnectError("Fixture response lost", Code.Unavailable));
+  const bridge: DateFormatBridge = {
+    read: async () => ({ revision: 1, date_format: DateFormatPreference.System, problem: null }),
+    update: async date_format => ({ revision: 2, date_format, problem: null }),
+    subscribe: async () => () => {},
+  };
+  const view = value.mount(value.initial, bridge);
+  fireEvent.click(await screen.findByRole("button", { name: cleanupLabel }));
+  const retry = await screen.findByRole("button", { name: "Retry the same disconnection" });
+  const reads = value.status.mock.calls.length;
+  const draft = screen.getByRole("textbox", { name: "Session draft" });
+  act(() => draft.focus());
+  fireEvent.click(screen.getByRole("radio", { name: /YYYY-MM-DD/ }));
+  await waitFor(() => expect(screen.getByRole("radio", { name: /YYYY-MM-DD/ })).toHaveProperty("checked", true));
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  expect(document.activeElement).toBe(draft);
+  expect(draft).toHaveProperty("value", "retained draft");
+  expect(value.status).toHaveBeenCalledTimes(reads);
+  expect(value.disconnect).toHaveBeenCalledTimes(1);
+  await act(async () => { await i18n.changeLanguage("en"); });
+  expect(screen.getByRole("button", { name: "Retry the same disconnection" })).toBe(retry);
+  fireEvent.click(retry);
+  await screen.findByText("Fixture vault cleanup is pending.");
+  expect(value.disconnect.mock.calls[1][0].mutation).toEqual(value.disconnect.mock.calls[0][0].mutation);
+  view.unmount();
 });

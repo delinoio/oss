@@ -22,8 +22,8 @@ it("renders separate observed quota windows, explicit branding and masked fixtur
   expect(screen.getAllByRole("progressbar").map((bar) => bar.getAttribute("value"))).toEqual(["68", "82", "41", "76"]);
   expect(screen.getAllByText(/f\*\*\*@example.test/)).toHaveLength(2);
   const firstRow = screen.getByRole("article", { name: first.alias });
-  expect(within(firstRow).getAllByText(observedAt)).toHaveLength(2);
-  expect(within(firstRow).getAllByText(resetAt)).toHaveLength(2);
+  expect(within(firstRow).getAllByTitle(observedAt)).toHaveLength(2);
+  expect(within(firstRow).getAllByTitle(resetAt)).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: `Refresh ${first.alias}` }));
   expect(first.refresh).toHaveBeenCalledTimes(1); expect(second.refresh).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Show all 3 quota windows" }));
@@ -59,7 +59,7 @@ it("retains last successful observations and time after a failed refresh", async
   await act(async () => fireEvent.click(screen.getByRole("button", { name: `Refresh ${first.alias}` })));
   expect(screen.getByRole("alert").textContent).toContain("last successful observations retained");
   expect(screen.getByRole("progressbar").getAttribute("value")).toBe("68");
-  expect(screen.getByText(observedAt)).toBeTruthy();
+  expect(screen.getByTitle(observedAt)).toBeTruthy();
 });
 
 it("uses one global refresh action across hidden pages/filters and shows independent account outcomes", () => {
@@ -178,7 +178,7 @@ it.each([1, 2, 3])("renders each of %i quota windows once when account details a
 });
 
 
-it.each([Quota.Stale, Quota.Failed])("updates reset warnings for retained %s windows with one active-only timer", (state) => {
+it.each([Quota.Stale, Quota.Failed])("updates reset warnings for retained %s windows with independent business and shared presentation clocks", (state) => {
   vi.useFakeTimers(); vi.setSystemTime(now);
   const first = row("chatgpt", [
     { ...window("first-reset", .68, state), resetAt: new Date(now + 60_000).toISOString() },
@@ -187,17 +187,18 @@ it.each([Quota.Stale, Quota.Failed])("updates reset warnings for retained %s win
   const rendered = render(view([first], { now: undefined }));
   try {
     expect(screen.queryByText(/Elapsed; recovery unconfirmed/)).toBeNull();
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2);
     act(() => vi.advanceTimersByTime(60_000));
     expect(screen.getAllByText(/Elapsed; recovery unconfirmed/)).toHaveLength(1);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2);
     rendered.rerender(view([first], { now: undefined, active: false }));
     expect(vi.getTimerCount()).toBe(0);
     rendered.rerender(view([first], { now: undefined }));
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2);
     act(() => vi.advanceTimersByTime(60_000));
     expect(screen.getAllByText(/Elapsed; recovery unconfirmed/)).toHaveLength(2);
-    expect(vi.getTimerCount()).toBe(0);
+    // Only the shared label clock remains; the business reset clock is exhausted.
+    expect(vi.getTimerCount()).toBe(1);
     expect(screen.getAllByText(state === Quota.Stale ? /Stale · Observed/ : /Observation failed · Observed/)).toHaveLength(2);
     expect(first.refresh).not.toHaveBeenCalled();
     expect(first.disconnect).not.toHaveBeenCalled();

@@ -44,7 +44,7 @@ it("owns the single Settings heading, three independent observations and every r
   await screen.findByText("Read succeeded");
   expect(screen.getAllByRole("heading", { level: 1, name: "Connection & diagnostics" })).toHaveLength(1);
   expect(screen.getAllByText(/Read-only observations from the selected server/)).toHaveLength(1);
-  expect(screen.getByText("2026-09-25T12:34:56Z")).toBeTruthy();
+  expect(screen.getByTitle("2026-09-25T12:34:56Z")).toBeTruthy();
   expect(view.container.querySelectorAll(".diagnostics-observation")).toHaveLength(3);
   const server = screen.getByRole("region", { name: "Server information" });
   for (const label of ["Server version", "Server platform", "Protocol version", "Database schema", "Bound endpoint"]) expect(within(server).getByText(label)).toBeTruthy();
@@ -172,11 +172,11 @@ it("announces deferred initial reads and refreshes while retaining the original 
   await act(async () => initial.resolve({ reportJson: encode(data) })); await screen.findByText("Read succeeded");
   const update = deferred<{ reportJson: Uint8Array }>(); value.doctor.mockImplementationOnce(() => update.promise);
   fireEvent.click(screen.getByRole("button", { name: "Refresh diagnostics" })); await screen.findByRole("status");
-  expect(screen.getByText("2026-09-25T12:34:56Z")).toBeTruthy(); expect(screen.getByText("Read succeeded")).toBeTruthy();
+  expect(screen.getByTitle("2026-09-25T12:34:56Z")).toBeTruthy(); expect(screen.getByText("Read succeeded")).toBeTruthy();
   expect((screen.getByRole("button", { name: "Refresh diagnostics" }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => update.reject(new ConnectError("private fixture failure", Code.Unavailable, { "x-delidev-correlation-id": newRequestId() })));
   await screen.findByText(/report below is the last returned observation/);
-  expect(screen.getByText("2026-09-25T12:34:56Z")).toBeTruthy(); expect(screen.queryByText("private fixture failure")).toBeNull();
+  expect(screen.getByTitle("2026-09-25T12:34:56Z")).toBeTruthy(); expect(screen.queryByText("private fixture failure")).toBeNull();
 });
 
 for (const code of [Code.Unauthenticated, Code.PermissionDenied]) it(`keeps initial authorization failure ${code} separate from summaries and empty inventories`, async () => {

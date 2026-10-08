@@ -46,6 +46,7 @@ import { revealAgentInvalidControl } from "./agent-configuration";
 import { RepositoryRegistration, type ChooseRepositoryFolder } from "./repository-registration";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { SettingsLifetime } from "./settings-lifetime";
+import { DateFormatSettings } from "./date-format";
 import { AppearanceSettings } from "./appearance";
 import { LanguageSettings } from "./language";
 import { statusLabel } from "./product-status";
@@ -474,7 +475,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           </div> : null}
         </div> : null}
         <div className="settings-panels">
-          {area === SettingsArea.Appearance ? <div><AppearanceSettings /><LanguageSettings /></div> : null}
+          {area === SettingsArea.Appearance ? <div><AppearanceSettings /><LanguageSettings /><DateFormatSettings /></div> : null}
           {area === SettingsArea.Backups ? <div><Backups active={visible} /></div> : null}
           {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}

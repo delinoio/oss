@@ -58,8 +58,8 @@ it("renders the approved server order and local Details without an RPC or inferr
   expect(within(panel).getAllByText("This desktop client")).toHaveLength(1);
   expect(screen.getAllByText("Authorization does not mean this device is currently connected.")).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: /^Revoke / })).toHaveLength(1);
-  expect(screen.getByText("Paired: 29 Sep 2026, 00:58 UTC")).toBeTruthy();
-  expect(screen.getByText("Paired: 28 Sep 2026, 23:52 UTC · Revoked: 29 Sep 2026, 02:03 UTC")).toBeTruthy();
+  expect(screen.getAllByTitle("2026-09-29T00:58:53.515872Z")[0]).toBeTruthy();
+  expect(screen.getAllByTitle("2026-09-29T02:03:40.902482Z")[0]).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "Create pairing document" })).toHaveLength(1);
   const control = workerDetails(), before = value.list.mock.calls.length;
   expect(control.getAttribute("aria-expanded")).toBe("false");
@@ -70,7 +70,7 @@ it("renders the approved server order and local Details without an RPC or inferr
   expect(within(disclosure).getByText(ids[1])).toBeTruthy();
   expect(within(disclosure).getByText(ids[3])).toBeTruthy();
   expect(within(disclosure).getByText("Runner Device ID")).toBeTruthy();
-  expect(within(disclosure).getByText("2026-09-29T00:58:53.515872Z")).toBeTruthy();
+  expect(within(disclosure).getByTitle("2026-09-29T00:58:53.515872Z")).toBeTruthy();
   expect(value.list).toHaveBeenCalledTimes(before); expect(value.read).not.toHaveBeenCalled(); expect(value.revoke).not.toHaveBeenCalled(); expect(value.issue).not.toHaveBeenCalled();
 });
 
@@ -136,9 +136,9 @@ it("keeps unknown, unsupported and long values inert without inventing authoriza
   const row = details.closest("article")!;
   expect(within(row).getByRole("heading", { name }).querySelector("b")).toBeNull();
   expect(within(row).getAllByText("Unknown")).toHaveLength(2);
-  expect(within(row).getByText("Paired: Unknown")).toBeTruthy();
+  expect(within(row).getAllByText("2026-02-30T00:00:00Z")).toBeTruthy();
   fireEvent.click(details);
-  expect(within(row).getByText("2026-02-30T00:00:00Z")).toBeTruthy(); expect(within(row).getByText("<invalid>")).toBeTruthy();
+  expect(within(row).getAllByText("2026-02-30T00:00:00Z")).toBeTruthy(); expect(within(row).getAllByText("<invalid>")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /^Revoke / })).toBeNull();
   expect(screen.getByRole("button", { name: "Details for Unknown" })).toBeTruthy();
   expect(screen.queryByText("Revoked")).toBeNull();

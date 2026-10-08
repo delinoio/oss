@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp, TimestampText } from "./timestamp-display";
 import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { OperationStatus } from "./jobs";
@@ -5,7 +7,6 @@ import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useNativeModelPages } from "./model-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
-import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -85,7 +86,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
     <Failure failure={models.error?.failure} />
     {models.error?.failure.code === FailureCode.Internal ? <p role="alert">{copy("native-model-settings.theObservationPageIsMalformedNo_ac73dd")}</p> : null}
     {models.loaded && !models.rows.length && !models.error ? <p>{copy("native-model-settings.noNativeModelsInThisObservation_a24b4f")}</p> : null}
-    {models.loaded && selectedObservation ? <><p>{copy("native-model-settings.observedAt", { v0: formatTimestamp(text(object(document(selectedObservation).output).observed_at)) || copy("native-model-settings.extra.ca1844969742") })}</p><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{selectedObservation.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p></> : null}
+    {models.loaded && selectedObservation ? <><p>{<TimestampText id={"native-model-settings.observedAt"} values={{ v0: <Timestamp value={text(object(document(selectedObservation).output).observed_at)} fallback={copy("native-model-settings.extra.ca1844969742")} /> }} />}</p><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{selectedObservation.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p></> : null}
     <div ref={listRoot} className="conversation-page-scroll"><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={models} root={listRoot} active={active && opened && !blocked}>{payload => {
       if (!payload.length) return null;
       const page = payload[0], entries = payload.map(row => row.entry), observedScope = object(document(page.job).input);

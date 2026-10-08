@@ -322,7 +322,7 @@ it("renders account quota recovery with no terminal or session authority", async
  fireEvent.click(await screen.findByRole("button",{name:/Subscription quota recovered, Recovered subscription, Unread/}));
  await screen.findByRole("heading",{name:"Subscription quota recovery"});
  expect(screen.getByText("Account: Recovered subscription")).toBeTruthy();
- expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
+ expect(screen.getByTitle(observed).getAttribute("datetime")).toBe(observed);
  expect(screen.queryByText("Original terminal observation")).toBeNull();
  expect((screen.getByRole("button",{name:"Open session"}) as HTMLButtonElement).disabled).toBe(true);
  expect(value.answer).not.toHaveBeenCalled(); expect(value.setRead).not.toHaveBeenCalled();
@@ -494,4 +494,15 @@ describe("Inbox detail presentation", () => {
   expect(screen.getByText("Execution metadata").closest("details")!.open).toBe(false);
   expect(value.setRead).not.toHaveBeenCalled(); expect(value.answer).not.toHaveBeenCalled();
  });
+});
+
+it("retains invalid original recorded timestamps as inert shared labels", async () => {
+  const value = fixture();
+  value.entry.createdAt = "2026-02-30T23:59:59Z";
+  render(value.renderInbox());
+  const label = await screen.findByText(value.entry.createdAt);
+  expect(label.tagName).toBe("TIME");
+  expect(label.getAttribute("datetime")).toBe(value.entry.createdAt);
+  expect(value.get).not.toHaveBeenCalled();
+  expect(value.setRead).not.toHaveBeenCalled();
 });

@@ -221,7 +221,7 @@ it("updates the retained usage disclosure without extra reads, focus changes or 
   expect(screen.getByText(formatNumber(18446744073709551614n))).toBeTruthy();
   expect(screen.getAllByText("USD 12,345,678,901,234,567,890.0000123400").length).toBeGreaterThan(0);
   expect(screen.getByText(formatTimestamp("2026-10-07T01:02:03.123456789+09:00"))).toBeTruthy();
-  expect(screen.getByText(formatTimestamp(new Date(Number(f.data.untilUnixMs)).toISOString()))).toBeTruthy();
+  expect(screen.getByTitle(new Date(Number(f.data.untilUnixMs)).toISOString())).toBeTruthy();
   expect(f.read).toHaveBeenCalledTimes(1);
   for (const callback of Object.values(f.callbacks)) expect(callback).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "닫기 상세" }));

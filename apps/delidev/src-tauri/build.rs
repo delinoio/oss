@@ -14,6 +14,8 @@ fn main() {
             "read_session_creation_preferences",
             "update_session_creation_preferences",
             "read_appearance",
+            "read_date_format",
+            "update_date_format",
             "update_appearance",
             "read_language",
             "update_language",

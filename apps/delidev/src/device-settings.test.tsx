@@ -127,5 +127,5 @@ it("labels retained diagnostics when refresh fails and renders guidance only as 
   value.doctor.mockRejectedValueOnce(new ConnectError("fixture offline", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Refresh diagnostics" }));
   await screen.findByText(/report below is the last returned observation/);
-  expect(screen.getByText("2026-09-25T12:34:56Z")).toBeTruthy();
+  expect(screen.getByTitle("2026-09-25T12:34:56Z")).toBeTruthy();
 });

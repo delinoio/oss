@@ -354,6 +354,23 @@ try {
       assert.equal(await input.inputValue(), "Korean - 한국어");
       assert.equal(await input.evaluate(node => node === document.activeElement), true);
       assert.equal(await input.getAttribute("aria-expanded"), "false");
+      // Native preference is simulated by the owning fixture bridge. These
+      // checks prove renderer presentation, never platform persistence.
+      const formats = page.locator(".date-format-settings");
+      assert.equal(await formats.locator("input[type=radio]").count(), 4);
+      for (const preset of ["ymd", "mdy", "dmy", "system"]) {
+        const radio = formats.locator(`input[value="${preset}"]`);
+        await radio.focus(); await radio.press("Space");
+        await formats.getByRole("status").filter({ hasText: "날짜 형식을 저장했습니다." }).waitFor();
+        await radio.waitFor({ state: "attached" });
+        assert.equal(await radio.isChecked(), true);
+        assert.equal(await radio.evaluate(node => node === document.activeElement), true);
+      }
+      const dateGeometry = await formats.evaluate(node => ({ overflow: node.scrollWidth > node.clientWidth, rows: [...node.querySelectorAll("label")].map(row => row.getBoundingClientRect().height), examples: [...node.querySelectorAll("small")].map(row => row.textContent) }));
+      assert(!dateGeometry.overflow && dateGeometry.rows.every(height => height >= 40), JSON.stringify(dateGeometry));
+      assert(dateGeometry.examples[1].startsWith("2026-10-08"));
+      assert(dateGeometry.examples[2].startsWith("10/08/2026"));
+      assert(dateGeometry.examples[3].startsWith("08/10/2026"));
       languagePickerChecks++;
     }
   } else if (githubOnly) {

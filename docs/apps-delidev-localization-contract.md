@@ -211,3 +211,14 @@ Validation-only updates belong in PRs/issues/CI and do not change ownership docs
 - [Dependency security](repository-dependency-security-contract.md)
 - [i18next TypeScript](https://www.i18next.com/overview/typescript)
 - [WidgetKit updates](https://developer.apple.com/documentation/widgetkit/keeping-a-widget-up-to-date/)
+
+## Timestamp presentation
+
+Issue #1736 adds the shared timestamp and device-date-format ownership described
+in the desktop contract. English and Korean relative labels use floored elapsed
+units below 24 hours. Computer-local absolute labels follow the selected closed
+date preset; System follows the application language. Exact source timestamp
+strings, offsets and fractions remain inspectable and never become machine
+authority through localization. UTC backup and exact standalone PR-card labels
+retain their explicit modes. Catalog interpolation uses inert React timestamp
+slots so locale and display-clock updates do not stringify or remount them.

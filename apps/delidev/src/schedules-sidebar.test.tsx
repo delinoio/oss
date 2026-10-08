@@ -53,7 +53,9 @@ it("shows explicit state and complete UTC with selection over the whole row", as
   render(value.view());
   const morning = await screen.findByRole("button", { name: /^Morning review/ });
   expect(morning.textContent).toContain("Enabled");
-  expect(morning.textContent).toContain("Next run (UTC): 2026-10-01T00:00:00Z");
+  expect(morning.textContent).toContain("Next run (UTC): ");
+  expect(morning.querySelector("time")?.title).toBe("2026-10-01T00:00:00Z");
+  expect(morning.querySelector("time")?.textContent).toContain("00:00:00 UTC");
   expect(pane().getByRole("button", { name: /^Weekly cleanup/ }).textContent).toContain("PausedNext run (UTC): None scheduled");
   expect(pane().getByRole("heading", { name: "Saved schedules" })).toBeTruthy();
   expect(pane().getByRole("button", { name: "Refresh" }).querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
@@ -137,7 +139,7 @@ it("keeps same-scope cached rows after failure and drops them when the filter sc
   value.list.mockRejectedValue(new ConnectError("Offline", Code.Unavailable));
   fireEvent.click(pane().getByRole("button", { name: "Refresh" }));
   await screen.findByText("Refresh failed. Showing the previous page.");
-  expect(pane().getByRole("button", { name: /^Morning review/ }).textContent).toContain("2026-10-01T00:00:00Z");
+  expect(pane().getByRole("button", { name: /^Morning review/ }).querySelector("time")?.title).toBe("2026-10-01T00:00:00Z");
   fireEvent.click(pane().getByRole("button", { name: "Enabled" }));
   await waitFor(() => expect(value.list.mock.lastCall?.[0].enabled).toBe(true));
   expect(pane().queryByRole("button", { name: /^Morning review/ })).toBeNull();

@@ -1224,8 +1224,9 @@ Use one flat semantic-themed list with divided articles in
 server order. Each row displays a decorative outline desktop/Worker icon, complete
 inert 16px semibold name, known type as Desktop client/Worker (otherwise Unknown),
 textual Authorized/Revoked/Unknown badge, exact current-desktop marker and 13px
-UTC dates such as **29 Sep 2026, 00:58 UTC**. Missing/unparseable timestamps are
-Unknown; reject impossible calendar dates instead of normalizing them. Do not
+shared ordinary timestamp labels under issue #1736. Missing timestamps are
+Unknown; invalid values remain inert original text without normalizing impossible
+calendar dates. Do not
 interpret future-schema documents to invent names, authorization or actions.
 Keep **Authorization does not mean this device is currently connected.** once
 above the list and **Local Worker registration is available in Runner Devices.**
@@ -2510,3 +2511,43 @@ decoding, ordered file/paste/drop entry, separate drafts, navigation retention,
 image-only typed admission and localized responsive controls with synthetic
 services. Keep the fixture outside release bundles. Browser fixtures and builds
 do not establish real native, account or platform acceptance.
+## Shared timestamps and device date format (issue #1736)
+
+Every human-facing desktop timestamp uses `Timestamp` from
+`timestamp-display.tsx`. Its centralized formatter validates the original
+RFC3339/RFC3339Nano wall date before converting the instant. Ordinary past labels
+show now below 60 seconds, whole minutes below one hour, whole hours below 24
+hours, and absolute time at 24 hours or older. Future instants are absolute.
+Missing values retain the surface's unavailable presentation; invalid values
+remain inert original text. Relative wording never changes status, readiness,
+freshness, ordering or scheduling evidence.
+
+Ordinary absolute labels use the computer timezone, seconds and timezone
+identification. Date presets are the closed System/language-default, YMD, MDY
+and DMY values; they change only the date portion. The original string, offset
+and fractional precision remain in `time.dateTime`, tooltip and accessible
+inspection. Backup labels use absolute UTC with seconds and source fractions;
+standalone PR cards use exact mode. Usage range endpoints retain their original
+instants and pinned analytics timezone. Calendar-only values, input controls,
+durations, raw payloads, exports and logs keep their existing semantics.
+
+One presentation scheduler per window owns mounted relative labels. It schedules
+the next label boundary, stops while hidden or without subscribers, recomputes
+on visibility/focus, and disposes timers/listeners. This clock admits no query,
+mutation, retry or native operation. Locale, format and clock changes preserve
+mounted workflows, focus, drafts, query identities and original receipts.
+
+`DateFormatProvider` mounts above connection state. Appearance exposes automatic
+save with live examples. A separate native-owned `date_format.json` version-1
+record stores only the closed `system`, `ymd`, `mdy`, `dmy` preference. Registered
+trusted Local and exact Saved-server windows use serialized bounded inspection,
+atomic synchronized replacement, process revisions and authorized live-window
+publication. Missing storage defaults to system. Invalid/newer storage remains
+untouched with recovery guidance. Failed/uncertain saves retain the committed
+selection and require explicit Reload before another choice. The preference is
+outside server state, pairing, backups and configuration transfer. No server
+RPC, protocol allocation, database migration or format conversion is added.
+
+Automated component/storage/build evidence is separate from actual native
+persistence and multi-window acceptance on macOS, Windows and Linux. Record the
+revision, commands, results and unresolved limits in PRs and CI artifacts.

@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp } from "./timestamp-display";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { statusLabel } from "./product-status";
-import { formatTimestamp } from "./localization";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createQueryOptions, useQuery, useTransport } from "@connectrpc/connect-query";
@@ -52,8 +53,8 @@ function itemLabel(view: InboxView): string {
 
 function recordedTime(resource: Resource): { label: string; machineValue?: string } {
   const raw = resource.createdAt;
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw) || !Number.isFinite(Date.parse(raw))) return { label: copy("inbox.extra.b0e8642e6377") };
-  return { label: new Date(raw).toLocaleString(displayLocale()), machineValue: raw };
+  if (!raw) return { label: copy("inbox.extra.b0e8642e6377") };
+  return { label: raw, machineValue: raw };
 }
 
 function itemIcon(view: InboxView): { symbol: string; tone: string } {
@@ -295,7 +296,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
             const icon = itemIcon(view);
             return <li key={entry.id}><button className="inbox-row" type="button" data-inbox-id={entry.id} aria-current={selectedId === entry.id ? "true" : undefined} aria-label={copy("inbox.message_3c2edd", { v0: kind, v1: resourceName(view.account ?? view.session), v2: state === "read" ? copy("inbox.read_9b9a8d") : state === "unread" ? copy("inbox.unread_1b9f38") : copy("inbox.readStateUnavailable_c6a29d") })} onClick={(event) => selectItem(entry.id, event.detail === 0)}>
               <span className={`inbox-kind-icon is-${icon.tone}`} aria-hidden="true">{icon.symbol}</span>
-              <span className="inbox-row-copy"><strong>{resourceName(view.account ?? view.session)}</strong><span>{kind}</span><small>{time.label}</small></span>
+              <span className="inbox-row-copy"><strong>{resourceName(view.account ?? view.session)}</strong><span>{kind}</span><small><Timestamp value={time.machineValue} fallback={time.label} /></small></span>
               <span className={`inbox-read-label ${state === "unread" ? "is-unread" : ""}`}>{state === "unread" ? <><LocalizedText id="inbox.unread_2cbf9b" components={{ s0: <span className="inbox-unread-dot" aria-hidden="true" /> }} /></> : state === "read" ? copy("inbox.read_9b9a8d") : copy("inbox.unavailable_ca1844")}</span>
             </button></li>;
           })}</ul>}</ScrollPayloadWindow>
@@ -335,7 +336,7 @@ function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft,
   const terminal = object(data.terminal);
   return <article className="inbox-detail-content">
     {!pageContains ? <p className="inbox-outside-list">{copy("inbox.thisItemIsOutsideTheCurrent_99d4bb")}</p> : null}
-    <div className="inbox-detail-meta"><span className={`inbox-source-badge is-${itemIcon(view).tone}`}>{itemLabel(view)}</span><span className={`inbox-state-badge ${state === "unread" ? "is-unread" : ""}`}>{state === "read" ? copy("inbox.read_9b9a8d") : state === "unread" ? copy("inbox.unread_1b9f38") : copy("inbox.readStateUnavailable_c6a29d")}</span><span><LocalizedText id="inbox.recorded_18a5bf" components={{ s0: <time dateTime={time.machineValue}>{time.label}</time> }} /></span></div>
+    <div className="inbox-detail-meta"><span className={`inbox-source-badge is-${itemIcon(view).tone}`}>{itemLabel(view)}</span><span className={`inbox-state-badge ${state === "unread" ? "is-unread" : ""}`}>{state === "read" ? copy("inbox.read_9b9a8d") : state === "unread" ? copy("inbox.unread_1b9f38") : copy("inbox.readStateUnavailable_c6a29d")}</span><span><LocalizedText id="inbox.recorded_18a5bf" components={{ s0: <Timestamp value={time.machineValue} fallback={time.label} /> }} /></span></div>
     <div className="actions inbox-detail-actions"><button className="primary" onClick={() => open(entry.sessionId)} disabled={!entry.sessionId}>{copy("inbox.openSession_b205bb")}</button>{state === "read" || state === "unread" ? <button disabled={!canMutate || readMutation.busy || readMutation.uncertain} onClick={() => void readMutation.send({ mutation: { requestId: newRequestId(), id: entry.id, expectedRevision: entry.revision }, readState: mark })}>{state === "read" ? copy("inbox.markUnread_54b4e3") : copy("inbox.markRead_b49c9b")}</button> : null}</div>
     <Problem error={readMutation.error} />{readMutation.uncertain ? <button disabled={!canMutate || readMutation.busy} onClick={readMutation.retry}>{copy("inbox.retryTheSameReadStateChange_ddea2f")}</button> : null}
     {draftError ? <p className="inbox-draft-limit" role="alert">{draftError}</p> : null}
@@ -345,7 +346,7 @@ function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft,
         {responseCurrent ? null : <p>{copy("inbox.thisRequestIsRetainedForInspection_208dff")}</p>}
         <Interaction resource={view.interaction} refresh={refresh} draft={draft} saveDraft={(editable) => saveDraft(view.interaction!, editable)} clearDraft={() => clearDraft(view.interaction!.id)} submissionAllowed={canMutate && responseCurrent && !identityChanged} receiptRetryAllowed={canMutate} />
       </section>
-    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label={copy("inbox.subscriptionQuotaRecovery_44e5d3")}><h4>{copy("inbox.subscriptionQuotaRecovery_44e5d3")}</h4><p><LocalizedText id="inbox.account_e07497" components={{ s0: <>{resourceName(view.account)}</> }} /></p><p><LocalizedText id="inbox.observed_e8e2c1" components={{ s0: <time dateTime={text(object(data.recovery).observed_at)}>{formatTimestamp(text(object(data.recovery).observed_at))}</time> }} /></p><p>{copy("inbox.thisRecordsTheAccountSObserved_bd3f28")}</p></section> : <section className="inbox-terminal"><h4>{copy("inbox.originalTerminalObservation_b3bd33")}</h4><p>{itemLabel(view)}</p><p>{copy("inbox.recordedTimeIsTheInboxRecord_4acabe")}</p><details className="inbox-execution-metadata" key={entry.id}><summary>{copy("inbox.executionMetadata")}<small>{copy("inbox.originalIdentifiersAndOutcome")}</small></summary><pre>{JSON.stringify(terminal, null, 2)}</pre></details></section>}
+    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label={copy("inbox.subscriptionQuotaRecovery_44e5d3")}><h4>{copy("inbox.subscriptionQuotaRecovery_44e5d3")}</h4><p><LocalizedText id="inbox.account_e07497" components={{ s0: <>{resourceName(view.account)}</> }} /></p><p><LocalizedText id="inbox.observed_e8e2c1" components={{ s0: <Timestamp value={text(object(data.recovery).observed_at)} /> }} /></p><p>{copy("inbox.thisRecordsTheAccountSObserved_bd3f28")}</p></section> : <section className="inbox-terminal"><h4>{copy("inbox.originalTerminalObservation_b3bd33")}</h4><p>{itemLabel(view)}</p><p>{copy("inbox.recordedTimeIsTheInboxRecord_4acabe")}</p><details className="inbox-execution-metadata" key={entry.id}><summary>{copy("inbox.executionMetadata")}<small>{copy("inbox.originalIdentifiersAndOutcome")}</small></summary><pre>{JSON.stringify(terminal, null, 2)}</pre></details></section>}
   </article>;
 }
 
