@@ -12,9 +12,9 @@ import { i18n, copy } from "./localization";
 import { MutationIntents } from "./mutation";
  import { SubscriptionQuotaControls } from "./subscription-quota";
 
-function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "", serverCredits = false, creditPhase = "", cleanup = false, workerUncertain = false) {
+function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "", serverCredits = false, creditPhase = "", cleanup = false, workerUncertain = false, inventoryFields: Record<string, unknown> = {}) {
   const machine = newRequestId(), connection = newRequestId(), generation = newRequestId(), inventory = newRequestId();
-  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { observation: workerUncertain ? { id: newRequestId(), action: "reset-credit", phase: "uncertain" } : undefined, generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_credit: creditPhase ? { id: newRequestId(), phase: creditPhase, cleanup_confirmed: cleanup, outcome: "" } : undefined, server_quota: phase ? { id: newRequestId(), phase } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details } } };
+  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { observation: workerUncertain ? { id: newRequestId(), action: "reset-credit", phase: "uncertain" } : undefined, generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_credit: creditPhase ? { id: newRequestId(), phase: creditPhase, cleanup_confirmed: cleanup, outcome: "" } : undefined, server_quota: phase ? { id: newRequestId(), phase } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details, ...inventoryFields } } };
   let account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 2, documentJson: encode(data) });
   const request = vi.fn(async (value) => ({ account, operationId: value.mutation?.requestId }));
   const reconcile = vi.fn(async (_value: unknown) => ({ account }));
@@ -25,15 +25,22 @@ function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLim
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  function Harness() {
     const [current, setCurrent] = useState(account), [, setBusy] = useState(false);
-    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button></MutationIntents></TransportProvider></QueryClientProvider>;
+    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: [{id:"credit_2",reset_type:"codexRateLimits",status:"available"}] } } }) }); setCurrent(account); }}>Replace fixture credit</button></MutationIntents></TransportProvider></QueryClientProvider>;
   }
   return { Harness, request, reconcile, account, machine, connection, generation, inventory };
 }
 
+async function selectExactCredit() {
+ const use = await screen.findByRole("button", { name: "Use" });
+ await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(use);
+ fireEvent.click(screen.getByRole("button", { name: "Select credit credit_1" }));
+}
+
 it("preserves authoritative count, confirms the selected credit and retains the exact lost request", async () => {
   const value = fixture(); value.request.mockRejectedValueOnce(new ConnectError("lost acknowledgment", Code.Unavailable)); render(<value.Harness />);
-  fireEvent.click(await screen.findByRole("button", { name: "Review reset credit credit_1" }));
-  expect(screen.getByText(/2 available reset credits; 1 returned details/)).toBeTruthy(); expect(value.request).not.toHaveBeenCalled();
+  await selectExactCredit();
+  expect(screen.getByText("2 available reset credits")).toBeTruthy(); expect(screen.getByText("1 returned details")).toBeTruthy(); expect(value.request).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Confirm credit consumption" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry original quota or credit request" }));
   await waitFor(() => expect(value.request).toHaveBeenCalledTimes(2));
@@ -43,7 +50,8 @@ it("preserves authoritative count, confirms the selected credit and retains the 
 
 it("requires an explicit count-only next-credit confirmation and fences stale revisions", async () => {
   const value = fixture(null); render(<value.Harness />);
-  fireEvent.click(await screen.findByRole("button", { name: "Review native next-credit selection" }));
+  const use = await screen.findByRole("button", { name: "Use" });
+  await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
   fireEvent.click(screen.getByRole("button", { name: "Change fixture account revision" }));
   expect((screen.getByRole("button", { name: "Confirm credit consumption" }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.request).not.toHaveBeenCalled(); expect(document(value.account).recovery_notifications).toBe(false);
@@ -83,7 +91,7 @@ it.each([true, false])("negotiates server quota without a Runner Device (support
  await waitFor(()=>expect(button.disabled).toBe(!supported));
  fireEvent.click(button);
  if(supported){await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));expect(value.request.mock.calls[0][0]).toMatchObject({machineId:"",connectionId:value.connection,generationId:value.generation,mutation:{id:value.account.id,expectedRevision:1n}})}else{expect(value.request).not.toHaveBeenCalled()}
- expect((screen.getByRole("button",{name:"Review reset credit credit_1"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole("button",{name:"Use"}) as HTMLButtonElement).disabled).toBe(true);
 });
 it.each(["queued","sending","uncertain"])("retains the server quota %s fence in detail controls",async phase=>{
  const value=fixture(undefined,undefined,"",true,true,phase);render(<value.Harness />);await screen.findByText(/Last successful observation/);
@@ -93,8 +101,9 @@ it.each(["queued","sending","uncertain"])("retains the server quota %s fence in 
 it.each([undefined, null])("confirms server reset credits with the original omitted-machine selector", async details => {
  const value=fixture(details,undefined,"",true,true,"",true);render(<value.Harness />);
  const next=details===null;
- const review=await screen.findByRole("button",{name:next?"Review native next-credit selection":"Review reset credit credit_1"});
+ const review=await screen.findByRole("button",{name:"Use"});
  await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));fireEvent.click(review);
+ if (!next) fireEvent.click(screen.getByRole("button", { name: "Select credit credit_1" }));
  fireEvent.click(screen.getByRole("button",{name:"Confirm credit consumption"}));
  await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));
  expect(value.request.mock.calls[0][0]).toMatchObject({machineId:"",creditId:next?"":"credit_1",nextCredit:next,confirmed:true,connectionId:value.connection,generationId:value.generation,creditsObservationId:value.inventory});
@@ -103,7 +112,7 @@ it.each(["queued","sending","uncertain"])("server credit %s blocks competing ref
  const value=fixture(undefined,undefined,"",true,true,"",true,phase);render(<value.Harness />);
  await screen.findByText(/Last successful observation/);
  expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(true);
- expect((screen.getByRole("button",{name:"Review reset credit credit_1"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole("button",{name:"Use"}) as HTMLButtonElement).disabled).toBe(true);
  expect(value.request).not.toHaveBeenCalled();
 });
 it.each([false,true])("server credit reconciliation requires independently confirmed cleanup (%s)",async cleanup=>{
@@ -117,6 +126,8 @@ it("preserves the server confirmation selectors in Korean",async()=>{
  await i18n.changeLanguage("ko");
  try {
   const value=fixture(undefined,undefined,"",true,true,"",true);render(<value.Harness />);
+  const use=await screen.findByRole("button",{name:"사용"});
+  await waitFor(()=>expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
   const review=await screen.findByRole("button",{name:/credit_1/});
   await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));fireEvent.click(review);
   fireEvent.click(screen.getByRole("button",{name:copy("subscription-quota.confirmCreditConsumption_251822")}));
@@ -132,4 +143,101 @@ it("retains original Worker reconciliation after a terminal server-credit histor
  await waitFor(()=>expect(value.reconcile).toHaveBeenCalledTimes(1));
  const state=document(value.account).subscription as Record<string,unknown>;
  expect(value.reconcile.mock.calls[0][0]).toMatchObject({operationId:(state.observation as Record<string,unknown>).id});
+});
+
+
+it("starts collapsed, uses authoritative count, and restores selection focus without sending", async () => {
+ const value = fixture(); render(<value.Harness />);
+ const use = await screen.findByRole("button", { name: "Use" });
+ await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(false));
+ expect(screen.getByRole("button", { name: "View details" }).getAttribute("aria-expanded")).toBe("false");
+ expect(screen.queryByRole("button", { name: "Select credit credit_1" })).toBeNull();
+ fireEvent.click(use); expect(globalThis.document.activeElement).toBe(screen.getByRole("heading", { name: "Credit details" }));
+ const select = screen.getByRole("button", { name: "Select credit credit_1" }); fireEvent.click(select);
+ expect(globalThis.document.activeElement).toBe(screen.getByRole("heading", { name: "Confirm reset credit consumption" }));
+ expect(screen.getByText("Account: Quota fixture")).toBeTruthy();
+ fireEvent.click(screen.getByRole("button", { name: "Keep credit" })); expect(globalThis.document.activeElement).toBe(select);
+ expect(value.request).not.toHaveBeenCalled();
+});
+it("retains original confirmation outside collapsed details and restores section fallback focus", async () => {
+ const value=fixture();render(<value.Harness />);await selectExactCredit();
+ fireEvent.click(screen.getByRole("button",{name:"Hide details"}));
+ expect(screen.getByRole("button",{name:"Confirm credit consumption"})).toBeTruthy();
+ fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
+ expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));
+ expect(value.request).not.toHaveBeenCalled();
+});
+it.each([{}, "invalid", [{id:"expired",reset_type:"codexRateLimits",status:"available",expires_at:"2020-01-01T00:00:00Z"}]])("never invents next-credit selection for malformed or ineligible details",async details=>{
+ const value=fixture(details);render(<value.Harness />);await screen.findByText(/Last successful observation/);
+ expect((screen.getByRole("button",{name:"Use"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"View details"}));expect(screen.queryByRole("button",{name:"Confirm credit consumption"})).toBeNull();expect(value.request).not.toHaveBeenCalled();
+});
+
+it.each([
+ {available_count:"0"}, {available_count:"not-a-count"},
+ {observed_at:"2020-01-01T00:00:00Z"}, {observed_at:"2999-01-01T00:00:00Z"}
+])("keeps unknown, zero and stale inventory disabled with visible guidance",async fields=>{
+ const value=fixture(undefined,undefined,"",false,true,"",false,"",false,false,fields);render(<value.Harness />);
+ await screen.findByText(/Last successful observation/);
+ expect((screen.getByRole("button",{name:"Use"}) as HTMLButtonElement).disabled).toBe(true);
+ expect(screen.getByText(fields.available_count==="0"?"No reset credits are available.":fields.available_count?"Available credit count unknown":"Refresh the account to review a current credit inventory.",{selector:"p"})).toBeTruthy();
+ expect(value.request).not.toHaveBeenCalled();
+});
+it("locale changes and collapsed details retain the original exact selection without sending",async()=>{
+ const value=fixture();render(<value.Harness />);await selectExactCredit();fireEvent.click(screen.getByRole("button",{name:"Hide details"}));
+ try {await i18n.changeLanguage("ko");expect(await screen.findByRole("button",{name:"리셋권 사용 확인"})).toBeTruthy();expect(screen.getByText("리셋권 credit_1 사용")).toBeTruthy();expect(value.request).not.toHaveBeenCalled();}
+ finally {await i18n.changeLanguage("en")}
+ expect(screen.getByRole("button",{name:"Confirm credit consumption"})).toBeTruthy();
+});
+
+it("restores the section heading when background inventory disables the original selection opener",async()=>{
+ const value=fixture();render(<value.Harness />);await selectExactCredit();
+ fireEvent.click(screen.getByRole("button",{name:"Remove fixture credits"}));
+ expect((screen.getByRole("button",{name:"Select credit credit_1"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
+ expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();
+});
+it("restores the section heading instead of an inert original selection opener",async()=>{
+ const value=fixture();render(<value.Harness />);await selectExactCredit();
+ screen.getByRole("button",{name:"Select credit credit_1"}).closest(".reset-credit-rows")!.setAttribute("inert","");
+ fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
+ expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();
+});
+
+it("renders expiry only for a valid supplied RFC3339 timestamp",async()=>{
+ const value=fixture([
+  {id:"credit-bad-date",reset_type:"codexRateLimits",status:"available",expires_at:"2030"},
+  {id:"credit-valid-date",reset_type:"codexRateLimits",status:"available",expires_at:"2030-10-31T00:00:00Z"}
+ ]);render(<value.Harness />);const use=await screen.findByRole("button",{name:"Use"});await waitFor(()=>expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
+ expect(globalThis.document.querySelectorAll(".reset-credit-row time").length).toBe(1);
+ expect(globalThis.document.querySelector(".reset-credit-row time")?.getAttribute("datetime")).toBe("2030-10-31T00:00:00Z");expect(value.request).not.toHaveBeenCalled();
+});
+
+it.each(["2030", "2030-02-30T00:00:00Z", "", true, 0])("rejects malformed expiry %s for selection and confirmation", async expires_at => {
+ const value=fixture([{id:"credit_1",reset_type:"codexRateLimits",status:"available",expires_at}]);render(<value.Harness />);
+ await screen.findByText(/Last successful observation/);
+ expect((screen.getByRole("button",{name:"Use"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"View details"}));
+ expect(screen.queryByRole("button",{name:"Select credit credit_1"})).toBeNull();
+ expect(screen.queryByRole("button",{name:"Confirm credit consumption"})).toBeNull();
+ expect(value.request).not.toHaveBeenCalled();
+});
+it.each([undefined,null,"2999-01-01T00:00:00Z"])("preserves omitted and valid future expiry selection (%s)",async expires_at=>{
+ const value=fixture([{id:"credit_1",reset_type:"codexRateLimits",status:"available",expires_at}]);render(<value.Harness />);await selectExactCredit();
+ expect((screen.getByRole("button",{name:"Confirm credit consumption"}) as HTMLButtonElement).disabled).toBe(false);
+ expect(value.request).not.toHaveBeenCalled();
+});
+
+it("restores the heading after another credit replaces the selected row", async () => {
+ const value=fixture();render(<value.Harness />);await selectExactCredit();
+ const original=screen.getByRole("button",{name:"Select credit credit_1"});
+ fireEvent.click(screen.getByRole("button",{name:"Replace fixture credit"}));
+ const replacement=screen.getByRole("button",{name:"Select credit credit_2"});
+ expect((replacement as HTMLButtonElement).disabled).toBe(false);
+ expect(original.isConnected).toBe(false);
+ expect((screen.getByRole("button",{name:"Confirm credit consumption"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
+ expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));
+ expect(globalThis.document.activeElement).not.toBe(replacement);
+ expect(value.request).not.toHaveBeenCalled();
 });

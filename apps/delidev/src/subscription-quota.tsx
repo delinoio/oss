@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Timestamp } from "./timestamp-display";
+import { timestampInstant } from "./timestamp-format";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import "./subscription-quota.css";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, SubscriptionObservationAction, SubscriptionQuery, SystemCapability, SystemQuery, EntityKind, isEntityId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
@@ -47,6 +49,12 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const serverCreditAvailable = serverQuotaAvailable(state, serverCreditsSupported);
   const creditLaneAvailable = isEntityId(ownerMachine) ? workerCreditsSupported : serverCreditAvailable;
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
+  const [expanded, setExpanded] = useState(false);
+  const sectionHeading = useRef<HTMLHeadingElement>(null), detailsHeading = useRef<HTMLHeadingElement>(null), confirmationHeading = useRef<HTMLHeadingElement>(null);
+  const selectionOpener = useRef<HTMLElement | null>(null), focusDetails = useRef(false), focusConfirmation = useRef(false);
+  const detailsId = useId(), detailsHeadingId = useId();
+  useEffect(() => { if (expanded && focusDetails.current) { focusDetails.current = false; detailsHeading.current?.focus(); } }, [expanded]);
+  useEffect(() => { if (confirmation && focusConfirmation.current) { focusConfirmation.current = false; confirmationHeading.current?.focus(); } }, [confirmation]);
   const [preferenceProblem, setPreferenceProblem] = useState("");
   const observe = useRetainedMutation("subscription:observe:" + current.id, SubscriptionQuery.requestSubscriptionObservation, (result) => { if (result.account) accepted(result.account); setConfirmation(undefined); }, (result, request) => result.operationId === request.mutation?.requestId && serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
   const reconcile = useRetainedMutation("subscription:credit:reconcile:" + current.id, SubscriptionQuery.reconcileSubscriptionCredit, (result) => { if (result.account) accepted(result.account); }, (result, request) => serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
@@ -62,12 +70,25 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const credits = Array.isArray(details) && details.length <= 100 ? details.map(object) : undefined;
   const inventoryFresh = isEntityId(text(inventory.observation_id)) && Number.isFinite(Date.parse(text(inventory.observed_at))) && Date.now() - Date.parse(text(inventory.observed_at)) >= 0 && Date.now() - Date.parse(text(inventory.observed_at)) <= 300000;
   const inventoryAvailable = countValid && BigInt(count) > 0n && inventoryFresh;
-  const selectable = (credits ?? []).filter((credit) => /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(text(credit.id)) && credit.reset_type === "codexRateLimits" && credit.status === "available" && (!credit.expires_at || Date.parse(text(credit.expires_at)) > Date.now()));
-  const confirmCredit = (creditId: string, next: boolean) => {
+  const selectable = (credits ?? []).filter((credit) => /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(text(credit.id)) && credit.reset_type === "codexRateLimits" && credit.status === "available" && (credit.expires_at == null || (timestampInstant(text(credit.expires_at)) ?? -Infinity) > Date.now()));
+  const confirmCredit = (creditId: string, next: boolean, opener: HTMLElement) => {
     if (!creditReady || originalActive || !creditsSupported || !countValid || BigInt(count) <= 0n || !inventoryFresh) return;
+    selectionOpener.current = opener; focusConfirmation.current = true;
     setConfirmation({ machine: serverCreditAvailable ? "" : ownerMachine, account: current, creditId, next, inventoryId: text(inventory.observation_id), connection, generation });
   };
-  const exactConfirmation = confirmation && confirmation.account.revision === current.revision && confirmation.connection === connection && confirmation.generation === generation && confirmation.inventoryId === inventory.observation_id && confirmation.machine === (serverCreditAvailable ? "" : ownerMachine);
+  const useAvailable = creditReady && !originalActive && inventoryAvailable && (details === null || selectable.length > 0);
+  const creditReason = status.isPending ? copy("subscription-quota.loadingCredits") : status.error ? copy("subscription-quota.creditReadFailed") : !creditsSupported ? copy("subscription-quota.resetCreditConsumptionIsUnavailableOn_9c9ea3") : originalActive || busy ? copy("subscription-quota.creditPending") : !creditLaneAvailable || !creditReady ? copy("subscription-quota.creditOwnerUnavailable") : !countValid ? copy("subscription-quota.availableCreditCountUnknown_4e840a") : count === "0" ? copy("subscription-quota.noCredits") : !inventoryFresh ? copy("subscription-quota.creditInventoryStale") : details !== null && !credits ? copy("subscription-quota.creditDetailsMalformed") : details !== null && selectable.length === 0 ? copy("subscription-quota.noEligibleCredits") : "";
+  const useCredit = (opener: HTMLElement) => {
+    if (!useAvailable) return;
+    if (details === null) confirmCredit("", true, opener);
+    else { focusDetails.current = true; if (expanded) { focusDetails.current = false; detailsHeading.current?.focus(); } else setExpanded(true); }
+  };
+  const keepCredit = () => {
+    setConfirmation(undefined);
+    const opener = selectionOpener.current;
+    if (opener?.isConnected && !opener.matches(":disabled") && !opener.closest("[hidden], [inert]")) opener.focus(); else sectionHeading.current?.focus();
+  };
+  const exactConfirmation = confirmation && confirmation.account.id === current.id && confirmation.account.revision === current.revision && confirmation.connection === connection && confirmation.generation === generation && confirmation.inventoryId === inventory.observation_id && confirmation.machine === (serverCreditAvailable ? "" : ownerMachine);
   const saveRecoveryNotifications = (enabled: boolean) => {
     let documentJson: Uint8Array;
     try { documentJson = accountPreferencesDocument(current, { recovery_notifications: enabled }); }
@@ -81,10 +102,34 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
     {quotaSupported && !isEntityId(ownerMachine) && !serverSupported ? <p role="status">{copy("subscription-quota.serverQuotaUnsupported")}</p> : null}
     <label className="checkbox"><input type="checkbox" checked={data.recovery_notifications === true} disabled={!active || !quotaSupported || busy} onChange={(event) => saveRecoveryNotifications(event.target.checked)} />{copy("subscription-quota.notifyMeOfObservedQuotaRecovery_b8f166")}</label>
     {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
-    <h3>{copy("subscription-quota.resetCredits_321f63")}</h3>
-    {creditsSupported && !isEntityId(ownerMachine) && !serverCreditsSupported ? <p role="status">{copy("subscription-quota.serverCreditsUnavailable")}</p> : null}
-    {!creditsSupported ? <p role="status">{copy("subscription-quota.resetCreditConsumptionIsUnavailableOn_9c9ea3")}</p> : <><p>{countValid ? copy("subscription-quota.availableResetCredits_d85d49", { v0: count }) : copy("subscription-quota.availableCreditCountUnknown_4e840a")}{countValid && details === null ? copy("subscription-quota.individualCreditDetailsUnavailable_50e212") : credits ? copy("subscription-quota.returnedDetails_0ebcde", { v0: credits.length }) : ""}.</p>{selectable.map((credit) => <button key={text(credit.id)} type="button" disabled={!creditReady || originalActive || !inventoryAvailable} onClick={() => confirmCredit(text(credit.id), false)}><LocalizedText id="subscription-quota.reviewResetCredit_f3c5d5" components={{ s0: <>{text(credit.id)}</> }} /></button>)}{countValid && details === null && BigInt(count) > 0n ? <button type="button" disabled={!creditReady || originalActive || !inventoryAvailable} onClick={() => confirmCredit("", true)}>{copy("subscription-quota.reviewNativeNextCreditSelection_778df5")}</button> : null}</>}
-    {confirmation ? <section aria-label={copy("subscription-quota.confirmResetCreditConsumption_1ce436")}><p><LocalizedText id="subscription-quota.forThisAccountThisConsumesA_488945" components={{ s0: <>{confirmation.next ? copy("subscription-quota.letCodexSelectItsNextAvailable_be8c4e") : copy("subscription-quota.consumeResetCredit_7eb25b", { v0: confirmation.creditId })}</> }} /></p>{!exactConfirmation ? <p role="alert">{copy("subscription-quota.theAccountOrInventoryChangedRefresh_e2f6b9")}</p> : null}<div className="actions"><button type="button" disabled={!creditReady || originalActive || !exactConfirmation || !inventoryAvailable} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: confirmation.machine, action: SubscriptionObservationAction.RESET_CREDIT, connectionId: confirmation.connection, generationId: confirmation.generation, creditsObservationId: confirmation.inventoryId, creditId: confirmation.creditId, nextCredit: confirmation.next, confirmed: true })}>{copy("subscription-quota.confirmCreditConsumption_251822")}</button><button type="button" disabled={busy} onClick={() => setConfirmation(undefined)}>{copy("subscription-quota.keepCredit_53e67f")}</button></div></section> : null}
+    <section className="reset-credit-section" aria-labelledby={detailsHeadingId + "-section"}>
+      <div className="reset-credit-summary">
+        <h3 ref={sectionHeading} id={detailsHeadingId + "-section"} tabIndex={-1}>{copy("subscription-quota.resetCredits_321f63")}</h3>
+        <span>{countValid ? copy("subscription-quota.availableResetCredits_d85d49", { v0: count }) : copy("subscription-quota.availableCreditCountUnknown_4e840a")}</span>
+        <button type="button" className="primary" disabled={!useAvailable} onClick={event => useCredit(event.currentTarget)}>{copy("subscription-quota.useCredit")}</button>
+      </div>
+      {creditReason ? <p role="status" className="reset-credit-secondary">{creditReason}</p> : null}
+      {creditsSupported && !isEntityId(ownerMachine) && !serverCreditsSupported ? <p role="status" className="reset-credit-secondary">{copy("subscription-quota.serverCreditsUnavailable")}</p> : null}
+      <button type="button" className="reset-credit-disclosure" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(value => !value)}>{copy(expanded ? "subscription-quota.hideDetails" : "subscription-quota.viewDetails")}</button>
+      <div id={detailsId} hidden={!expanded}>
+        <h4 ref={detailsHeading} id={detailsHeadingId} tabIndex={-1}>{copy("subscription-quota.creditDetails")}</h4>
+        <p className="reset-credit-secondary">{details === null ? copy("subscription-quota.detailsUnavailable") : credits ? copy("subscription-quota.returnedDetailCount", { v0: credits.length }) : copy("subscription-quota.creditDetailsMalformed")}</p>
+        <div className="reset-credit-rows">
+          {credits?.map((credit, index) => <div className="reset-credit-row" key={text(credit.id) + ":" + index}>
+            <div><span>{text(credit.id) || copy("subscription-quota.extra.ca1844969742")}</span><span className="reset-credit-secondary">{copy(credit.status === "available" ? "subscription-quota.creditAvailable" : "subscription-quota.creditUnavailable")}</span>{timestampInstant(text(credit.expires_at)) !== undefined ? <span className="reset-credit-secondary">{copy("subscription-quota.creditExpiry")} <Timestamp value={text(credit.expires_at)} /></span> : null}</div>
+            {selectable.includes(credit) ? <button type="button" disabled={!creditReady || originalActive || !inventoryAvailable} onClick={event => confirmCredit(text(credit.id), false, event.currentTarget)} aria-label={copy("subscription-quota.selectCreditName", { v0: text(credit.id) })}>{copy("subscription-quota.selectCredit")}</button> : null}
+          </div>)}
+        </div>
+      </div>
+      {confirmation ? <section className="reset-credit-confirmation" aria-label={copy("subscription-quota.confirmResetCreditConsumption_1ce436")}>
+        <h4 ref={confirmationHeading} tabIndex={-1}>{copy("subscription-quota.confirmResetCreditConsumption_1ce436")}</h4>
+        <p>{copy("subscription-quota.confirmAccount", { v0: text(document(confirmation.account).alias) || copy("subscription-quota.extra.ca1844969742") })}</p>
+        <p>{confirmation.next ? copy("subscription-quota.detailsUnavailableNext") : copy("subscription-quota.consumeResetCredit_7eb25b", { v0: confirmation.creditId })}</p>
+        <p className="reset-credit-secondary">{copy("subscription-quota.consumptionWarning")}</p>
+        {!exactConfirmation ? <p role="alert">{copy("subscription-quota.theAccountOrInventoryChangedRefresh_e2f6b9")}</p> : null}
+        <div className="actions"><button type="button" className="primary" disabled={!creditReady || originalActive || !exactConfirmation || !inventoryAvailable} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: confirmation.account.id, expectedRevision: confirmation.account.revision }, machineId: confirmation.machine, action: SubscriptionObservationAction.RESET_CREDIT, connectionId: confirmation.connection, generationId: confirmation.generation, creditsObservationId: confirmation.inventoryId, creditId: confirmation.creditId, nextCredit: confirmation.next, confirmed: true })}>{copy("subscription-quota.confirmCreditConsumption_251822")}</button><button type="button" disabled={busy} onClick={keepCredit}>{copy("subscription-quota.keepCredit_53e67f")}</button></div>
+      </section> : null}
+    </section>
     {text(serverObservation.id) ? <p role="status">{statusLabel(text(serverObservation.phase))}</p> : null}
     {text(serverCredit.id) ? <p role="status">{statusLabel(text(serverCredit.phase))}{outcomeLabels[text(serverCredit.outcome)] ? copy("subscription-quota.message_2fa20b", { v0: outcomeLabels[text(serverCredit.outcome)] }) : ""}</p> : null}
     {text(observation.id) ? <p role="status">{text(observation.action)} · {statusLabel(text(observation.phase))}{outcomeLabels[text(observation.outcome)] ? copy("subscription-quota.message_2fa20b", { v0: outcomeLabels[text(observation.outcome)] }) : ""}</p> : null}
