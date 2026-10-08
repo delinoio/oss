@@ -13,6 +13,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#if defined(__linux__) && defined(__x86_64__)
+#include <sys/syscall.h>
+#include <sched.h>
+#endif
 #include <unistd.h>
 
 static int signal_file = -1;
@@ -284,11 +288,37 @@ int main(int argc, char **argv) {
         if (!terminal_line(line, sizeof(line)) || strcmp(line, "second\n")) return 72;
         return dependency() ? 73 : 23;
     }
-    if (strcmp(mode, "fork-stress") == 0) {
+    if (strcmp(mode, "fork-stress") == 0
+#if defined(__linux__) && defined(__x86_64__)
+        || strcmp(mode, "raw-fork") == 0
+#endif
+    ) {
         FILE *group = fopen("root.group", "w");
         if (!group) return 66;
         fprintf(group, "%d", getpgrp());
         fclose(group);
+#if defined(__linux__) && defined(__x86_64__)
+        if (!strcmp(mode, "raw-fork")) {
+            // A kernel-rejected creation must discard its admission snapshot
+            // before the subsequent raw fork captures a new one.
+            errno = 0;
+            long rejected = syscall(SYS_clone, CLONE_SIGHAND | SIGCHLD, 0, 0, 0, 0);
+            if (rejected != -1 || errno != EINVAL) return 60;
+            // The raw x64 syscall must capture scratch before creation too.
+            pid_t child = (pid_t)syscall(SYS_fork);
+            if (child < 0) return 55;
+            if (!child) {
+                int result = dependency();
+                if (result) _exit(result);
+                int marker = open("raw-fork-child", O_WRONLY | O_CREAT | O_EXCL, 0600);
+                if (marker < 0 || close(marker)) _exit(59);
+                _exit(0);
+            }
+            int status;
+            if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return 56;
+            return WEXITSTATUS(status);
+        }
+#endif
         return concurrent_fork();
     }
     int detached = !strncmp(mode, "detached", 8);

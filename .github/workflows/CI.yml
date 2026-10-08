@@ -4,32 +4,11 @@ on:
 permissions:
   contents: read
 jobs:
-  windows-link-probe:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          lfs: false
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@v1
-        with:
-          toolchain: nightly-2026-09-28
-      - name: Inspect native relative-link parent semantics
-        shell: pwsh
-        run: |
-          rustc --edition=2021 scripts/ci/windows-parent-link-diagnostic.rs -o "$env:RUNNER_TEMP/windows-parent-link-diagnostic.exe"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & "$env:RUNNER_TEMP/windows-parent-link-diagnostic.exe"
-          exit $LASTEXITCODE
-      - name: Validate revised Windows reproduction fixtures
-        shell: pwsh
-        run: cargo test --locked -p clibox-fspy --lib -- --test-threads=4
-  native-watch-probe:
+  linux-pnport-probe:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-22.04]
+        os: [ubuntu-22.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -40,18 +19,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-09-28
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      - name: Validate Linux terminal fixtures
-        if: runner.os == 'Linux'
+      - name: Build owned Linux injection prerequisites
+        run: cargo build --locked -p pnport -p pnport-preload
+      - name: Validate admitted scratch ownership
+        run: cargo test --locked -p pnport --bin pnport linux_scratch -- --nocapture
+      - name: Validate complete Linux process lifecycle
+        run: cargo test --locked -p pnport --test process_lifecycle -- --test-threads=4
+      - name: Repeat libc and raw fork ownership controls
         run: |
-          cargo test --locked -p clibox --test run -- --test-threads=4
-          for attempt in 1 2 3 4 5; do
-            cargo test --locked -p clibox --test run interactive_workload_keeps_foreground_terminal_access -- --exact --nocapture
+          for attempt in 1 2 3; do
+            cargo test --locked -p pnport --test process_lifecycle concurrent_fork_and_child_callbacks_preserve_the_virtual_view -- --exact --nocapture
+            if [ "$(uname -m)" = x86_64 ]; then
+              cargo test --locked -p pnport --test process_lifecycle raw_fork_child_retains_the_virtual_view_and_owned_scratch -- --exact --nocapture
+            fi
           done
-      - name: Validate complete native fspy library
-        run: cargo test --locked -p clibox-fspy --lib -- --test-threads=4
-      - name: Validate watch fixture lifecycle and event boundary
-        run: cargo test --locked -p clibox --test fspy_watch -- --test-threads=4
