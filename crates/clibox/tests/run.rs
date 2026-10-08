@@ -738,26 +738,129 @@ fn timeout_does_not_block_on_a_stalled_output_consumer() {
 #[test]
 #[cfg(target_os = "linux")]
 fn interactive_workload_keeps_foreground_terminal_access() {
+    struct Fixture {
+        child: Child,
+        terminal: fs::File,
+        output: Vec<u8>,
+    }
+    impl Fixture {
+        fn drain(&mut self) {
+            let mut buffer = [0; 1024];
+            loop {
+                match self.terminal.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(count) => self.output.extend_from_slice(&buffer[..count]),
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+                    Err(error) => panic!("could not read fixture terminal: {error}"),
+                }
+            }
+        }
+
+        fn wait(&mut self, timeout: Duration) -> Option<ExitStatus> {
+            let deadline = Instant::now() + timeout;
+            loop {
+                self.drain();
+                if let Some(status) = self.child.try_wait().unwrap() {
+                    self.drain();
+                    return Some(status);
+                }
+                if Instant::now() >= deadline {
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if self.child.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            // The retained wrapper owns cleanup of its workload on SIGTERM.
+            unsafe { libc::kill(self.child.id() as i32, libc::SIGTERM) };
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while self.child.try_wait().ok().flatten().is_none() {
+                if Instant::now() >= deadline {
+                    // Force and reap only the retained wrapper. Dropping
+                    // this fixture's PTY master then hangs up its original
+                    // controlling session and the simple shell workload.
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
     let home = tempfile::tempdir().unwrap();
-    let (wrapper, mut terminal) = terminal_command(
+    let (wrapper, terminal) = terminal_command(
         home.path(),
         &[
             "run",
             "with-timeout",
             "--timeout",
-            "1s",
+            "30s",
             "--kill-after",
             "0",
             "--",
             "sh",
             "-c",
-            "read value; printf 'reply=%s\\n' \"$value\"",
+            "printf 'terminal-ready\\n'; read value; printf 'reply=%s\\n' \"$value\"",
         ],
     );
-    let mut wrapper = spawn_terminal(wrapper);
-    terminal.write_all(b"answer\n").unwrap();
-    assert!(wrapper.wait().unwrap().success());
-    assert!(read_terminal(terminal).contains("reply=answer"));
+    use std::os::fd::AsRawFd;
+    let flags = unsafe { libc::fcntl(terminal.as_raw_fd(), libc::F_GETFL) };
+    assert_ne!(flags, -1);
+    assert_ne!(
+        unsafe {
+            libc::fcntl(
+                terminal.as_raw_fd(),
+                libc::F_SETFL,
+                flags | libc::O_NONBLOCK,
+            )
+        },
+        -1
+    );
+    let mut fixture = Fixture {
+        child: spawn_terminal(wrapper),
+        terminal,
+        output: Vec::new(),
+    };
+    // Input sent before the child starts cannot prove it retained foreground
+    // terminal access. Wait for output and the native ownership handoff first;
+    // the product timeout is only an outer guard for this interactive fixture.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let group = loop {
+        fixture.drain();
+        let group = unsafe { libc::tcgetpgrp(fixture.terminal.as_raw_fd()) };
+        if String::from_utf8_lossy(&fixture.output)
+            .lines()
+            .any(|line| line == "terminal-ready")
+            && group > 0
+            && group != fixture.child.id() as i32
+        {
+            break group;
+        }
+        let status = fixture.child.try_wait().unwrap();
+        assert!(
+            status.is_none() && Instant::now() < deadline,
+            "interactive workload was not ready: status={status:?}, output={:?}",
+            String::from_utf8_lossy(&fixture.output)
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert_process_chain_in_group(fixture.child.id(), group, group);
+    fixture.terminal.write_all(b"answer\n").unwrap();
+    let status = fixture.wait(Duration::from_secs(10));
+    assert!(
+        status.is_some_and(|status| status.success()),
+        "interactive workload failed: status={status:?}, output={:?}",
+        String::from_utf8_lossy(&fixture.output)
+    );
+    assert!(String::from_utf8_lossy(&fixture.output)
+        .lines()
+        .any(|line| line == "reply=answer"));
 }
 
 #[test]
