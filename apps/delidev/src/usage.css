@@ -43,3 +43,46 @@
   .usage-page .usage-metrics-primary, .usage-page .usage-metrics-secondary { grid-template-columns: 1fr; }
   .usage-accounting-source > details > summary span { display: block; margin: 4px 0; }
 }
+/* Trend-first response presentation. Row evidence stays in the same mounted table on narrow screens. */
+.usage-page { font-size: 14px; line-height: 20px; }
+.usage-page small { font-size: 12px; line-height: 18px; }
+.usage-page .usage-applied { gap: 8px 16px; padding-block: 8px; }
+.usage-page .usage-applied details { margin-left: auto; }
+.usage-applied-exact { display: flex; flex-direction: column; gap: 8px; padding-block: 8px; }
+.usage-page .usage-coverage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 8px; border-radius: 8px; }
+.usage-coverage details { flex-basis: 100%; }
+.usage-page .usage-coverage details summary { min-height: 40px; padding: 8px 0; font-size: 12px; line-height: 18px; }
+.usage-page .usage-trends { padding: 0; border: 0; background: transparent; margin-block: 24px; }
+.usage-page .usage-charts { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.usage-page .usage-chart-panel { min-width: 0; border-radius: 8px; }
+.usage-page .usage-detail { margin-block: 24px; }
+.usage-page .usage-table th, .usage-page .usage-table td { min-width: 0; padding: 8px; }
+.usage-page .usage-detail > .usage-table > table { table-layout: fixed; min-width: 880px; }
+.usage-page .usage-detail > .usage-table th:nth-child(-n+3) { width: 16%; }
+.usage-page .usage-number { text-align: right; }
+.usage-page .usage-number > span { display: block; }
+.usage-page .usage-detail > .usage-table th:nth-child(n+4):nth-child(-n+8) { text-align: right; }
+.usage-page .usage-detail > .usage-table th:last-child { width: 80px; }
+.usage-page .usage-row-detail summary { min-height: 40px; }
+.usage-original-identities { display: grid; gap: 8px; }
+.usage-original-identities dt { font-weight: 600; }
+.usage-original-identities dd { margin: 0; overflow-wrap: anywhere; }
+.usage-row-detail details[open] { min-width: 260px; max-width: 360px; }
+.usage-row-detail .usage-row-measures { grid-template-columns: 1fr; }
+@media (max-width: 759px) {
+ .usage-page .usage-detail > .usage-table > table { min-width: 0; display: block; }
+ .usage-page .usage-detail > .usage-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+ .usage-page .usage-detail > .usage-table caption, .usage-page .usage-detail > .usage-table tbody { display: block; width: 100%; }
+ .usage-page .usage-detail > .usage-table tr { display: grid; grid-template-columns: minmax(0, 1fr); margin-block: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+ .usage-page .usage-detail > .usage-table td { display: block; text-align: left; border: 0; padding: 6px 0; }
+ .usage-page .usage-detail > .usage-table td[data-label]::before { display: block; content: attr(data-label); color: var(--muted); font-size: 12px; line-height: 18px; }
+ .usage-page .usage-row-detail details[open] { min-width: 0; max-width: none; }
+ .usage-page .usage-metrics-primary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ .usage-page .usage-applied details { margin-left: 0; width: 100%; }
+}
+.usage-page .usage-applied details, .usage-page .usage-coverage details, .usage-page .usage-summary-breakdown { padding: 0; border: 0; background: transparent; }
+.usage-page .usage-coverage details { flex-basis: auto; margin-left: auto; }
+.usage-page .usage-coverage details[open] { flex-basis: 100%; margin-left: 0; }
+.usage-page .usage-coverage details[open] > span { display: block; margin-top: 8px; }
+.usage-page .usage-summary h2 { margin-bottom: 12px; }
+@media (max-width: 759px) { .usage-page .usage-coverage details { margin-left: 0; } }

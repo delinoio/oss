@@ -105,5 +105,13 @@
   "usage.historicalSourcePricing": "과거 가격 근거",
   "usage.readHelp": "적용된 필터의 사용량을 읽을 수 없습니다. 여기서 새로고침으로 마지막 유효한 선택을 다시 읽으세요. 유효하지 않은 편집은 로컬에 유지되며 읽기 실패로 사용량이나 비용이 0이라고 판단하지 않습니다.",
   "usage.modelReadHelp": "이 모델의 상세 정보를 읽을 수 없습니다. 여기서 동일한 모델을 다시 확인하세요. 과거 사용량과 가격 증거는 원래 식별 정보를 유지하며 현재 모델 읽기로 대체되지 않습니다.",
-  "usage.accountingRecheckHelp": "반환된 집계 증거가 지원되지 않거나 불완전하며 정확한 원인은 확인할 수 없습니다. 필요한 경우 원래 DeliDev 서버를 업데이트한 후 여기서 새로고침으로 동일한 적용 범위를 다시 확인하세요. 누락된 증거를 0으로 해석하지 마세요."
+  "usage.accountingRecheckHelp": "반환된 집계 증거가 지원되지 않거나 불완전하며 정확한 원인은 확인할 수 없습니다. 필요한 경우 원래 DeliDev 서버를 업데이트한 후 여기서 새로고침으로 동일한 적용 범위를 다시 확인하세요. 누락된 증거를 0으로 해석하지 마세요.",
+  "usage.partialEstimate": "부분",
+  "usage.filteredScope": "필터링한 소스",
+  "usage.allSources": "모든 소스",
+  "usage.appliedDetails": "세부 정보",
+  "usage.coverageDetails": "커버리지 세부 정보",
+  "usage.rowDetails": "세부 정보",
+  "usage.missingExecutions": "응답 사용량이 없는 실행 {{count}}개",
+  "usage.missingContextActions": "응답 사용량이 없는 컨텍스트 작업 {{count}}개"
 }

@@ -105,5 +105,13 @@
   "usage.historicalSourcePricing": "Historical price evidence",
   "usage.readHelp": "Usage could not be read for the applied filters. Use Refresh here to reread the last valid selection. Invalid edits stay local; a failed read does not establish zero usage or cost.",
   "usage.modelReadHelp": "This model’s details could not be read. Recheck the same model here. Historical usage and price evidence retain their original identities and are not replaced by a current model read.",
-  "usage.accountingRecheckHelp": "The returned accounting evidence is unsupported or incomplete; its exact cause is unavailable. If needed, update the original DeliDev server, then use Refresh here to recheck the same applied range. Do not interpret missing evidence as zero."
+  "usage.accountingRecheckHelp": "The returned accounting evidence is unsupported or incomplete; its exact cause is unavailable. If needed, update the original DeliDev server, then use Refresh here to recheck the same applied range. Do not interpret missing evidence as zero.",
+  "usage.partialEstimate": "Partial",
+  "usage.filteredScope": "Filtered sources",
+  "usage.allSources": "All sources",
+  "usage.appliedDetails": "Details",
+  "usage.coverageDetails": "Coverage details",
+  "usage.rowDetails": "Details",
+  "usage.missingExecutions": "{{count}} executions without response usage",
+  "usage.missingContextActions": "{{count}} context actions without response usage"
 }

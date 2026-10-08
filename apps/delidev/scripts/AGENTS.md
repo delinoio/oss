@@ -131,3 +131,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Routing preview layout checks measure badge, Project control and Refresh centers within 1 CSS pixel under wide idle, held-refresh and selected-project states. The opt-in synthetic routing gate grants no execution authority; preserve localized labels, compact stacking, request counts, disposal and effective-zoom evidence boundaries.
 
 - `test-subscription-rail-refresh-layout.mjs` uses the real rail with synthetic saved-resource reads for deferred focus/timer geometry and continuation identity in English/Korean, semantic themes and effective 200% widths. Keep `__subscriptionRailFixture` excluded from releases; browser/build state remains temporary and grants no native/account/platform acceptance.
+
+- Usage browser fixtures cover the trend-first summary/charts/session order, exact row/chart data, English/Korean themes, stacked narrow records and effective zoom. Keep filter/tab/disclosure reads and writes observable with synthetic counters; screenshots and evidence remain outside the checkout and cannot establish packaged/native acceptance.
