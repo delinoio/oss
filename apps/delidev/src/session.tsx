@@ -1,4 +1,4 @@
-import { useSkillCompletion } from "./skill-completion";
+import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { RunnerTaskRemediation } from "./session-runner-remediation";
 import { sessionControlEligibility, useSessionControl } from "./session-control";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
@@ -217,7 +217,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource }: { resou
 enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics", Info = "info" }
 enum InfoTarget { Status = "status", Recovery = "recovery", Budget = "budget" }
 
-export function SessionView({ id, draft, setDraft, active = true }: { id: string; draft: string; setDraft: (value: string) => void; active?: boolean; openRunnerSettings?: () => void }) {
+export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; openRunnerSettings?: () => void }) {
   useLocale();
   const live = useSessionStream(id);
   const [panel, setPanel] = useState(SessionPanel.Closed);
@@ -287,7 +287,7 @@ export function SessionView({ id, draft, setDraft, active = true }: { id: string
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); skills.clearAccepted(); void queue.refresh(); });
   const locked = send.busy || send.uncertain;
   const composer = useRef<HTMLTextAreaElement>(null);
-  const skills = useSkillCompletion({ value: draft, change: setDraft, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, active, disabled: locked });
+  const skills = useSkillCompletion({ value: draft, change: (value, bindings) => setDraft(value, bindings), textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active, disabled: locked });
   const canSend = !locked && !skills.blocked && Boolean(draft.trim()) && text(data.archive) === "active";
   const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }), skills: skills.selections.length ? { selections: skills.selections } : undefined }); };
   const shortcuts = useShortcuts([

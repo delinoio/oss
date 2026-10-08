@@ -2408,7 +2408,15 @@ sending input. IME composition never accepts a candidate or submits. Only the
 active token is replaced, with surrounding Unicode, newlines and caret preserved.
 
 Selected bindings are separate from visible text and exact uncertain mutations
-retain them. Token edits remove bindings. Changed context requires reselection
+retain them. The authenticated connection owns each session draft as one bounded
+text-and-binding value across session navigation, Settings and same-identity
+transport replacement. Preserve the original Runner, Harness, session, project
+and opaque inventory/content identity; unresolved or changed context blocks
+sending until explicit reselection or token removal. Retain at most 1000 drafts
+and 4 MiB of combined text/binding metadata, with 256 KiB per prompt. Reject
+growth atomically without dropping existing bindings. Original accepted receipts
+clear only their owning draft even while its Session view is unmounted; pending
+and uncertain requests never clear it. Token edits remove bindings. Changed context requires reselection
 before sending; unselected manually typed tokens remain ordinary text. Loading,
 empty, unsupported and retry states preserve the draft in English and Korean.
 Inventory belongs to the selected Runner and Harness, including remote Runners;
