@@ -208,9 +208,26 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 	if err := request.validate(); err != nil {
 		return request, err
 	}
+	// General Chat has no preparation Git reads and needs no child process owner.
+	if len(source.Repositories) == 0 {
+		return request, nil
+	}
 	git := m.Git
 	git.OwnerID, git.readOnly = child, true
-	if err := security.PrivateDir(filepath.Join(git.ProcessRoot, string(child))); err != nil {
+	if err := security.PrivateDir(git.ProcessRoot); err != nil {
+		return request, ResultUncertain()
+	}
+	ownerPath := filepath.Join(git.ProcessRoot, string(child))
+	// A fresh unpublished child cannot adopt a foreign or retained owner index.
+	if err := os.Mkdir(ownerPath, 0700); err != nil {
+		return request, ResultUncertain()
+	}
+	originalIndex, err := os.Lstat(ownerPath)
+	request.forkProcessIdentity = originalIndex
+	if err != nil {
+		return request, ResultUncertain()
+	}
+	if err := security.SyncParent(ownerPath); err != nil {
 		return request, ResultUncertain()
 	}
 	for i, repo := range source.Repositories {
@@ -226,6 +243,10 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 	}
 	return request, nil
 }
+
+// ForkProcessIdentity returns only the transient identity captured before HEAD
+// reads. Decoded or legacy preparation metadata cannot recreate this proof.
+func (r PrepareRequest) ForkProcessIdentity() os.FileInfo { return r.forkProcessIdentity }
 
 // scanForkTree uses an opened root for every access. Links and special files are
 // outside the initial copy profile, rather than followed or silently omitted.

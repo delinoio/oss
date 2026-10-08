@@ -156,6 +156,8 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		return nil, publicationUncertain()
 	}
 	phase := forkRuntimeUnused
+	var childProcessOwner domain.ID
+	var childProcessIdentity os.FileInfo
 	var unpublishedSidechatInput workspace.PrepareRequest
 	var unpublishedSidechat *workspace.Manifest
 	defer func() {
@@ -169,6 +171,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 					returned = executionCheckpointUncertain()
 				}
 			}
+			returned = finishForkChildProcessFailure(config.Root, childProcessOwner, childProcessIdentity, phase, returned)
 			returned = finishForkPreNativeFailure(home, phase, returned)
 			logger.InfoContext(ctx, "session_fork_failure_ownership", "job_id", owner, "runtime_phase", phase, "code", domain.SafeError(returned).Code)
 		}
@@ -219,6 +222,13 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		}
 	} else {
 		childPreparation, err = manager.ForkPreparation(ctx, manifest, input.ChildSessionID, input.Workspace)
+		if err == nil {
+			childProcessOwner = input.ChildSessionID
+			childProcessIdentity = childPreparation.ForkProcessIdentity()
+			if childProcessIdentity == nil && len(childPreparation.Repositories) != 0 {
+				err = executionCheckpointUncertain()
+			}
+		}
 		if err == nil {
 			workspaceSnapshot, err = manager.InspectForkSnapshot(ctx, manifest, childPreparation)
 		}
@@ -393,6 +403,20 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		managedFinish = managed.finishID
 	}
 	return json.Marshal(domain.ForkJobResult{ManagedFinish: managedFinish, Version: input.Version, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
+}
+
+// Preparation reads use the unpublished child owner. Only a definite rejection
+// before native creation may retire it; cleanup runs independently of its caller.
+func finishForkChildProcessFailure(root string, child domain.ID, original os.FileInfo, phase forkRuntimePhase, returned error) error {
+	if returned == nil || child == "" || phase != forkRuntimeUnused || domain.SafeError(returned).Code == domain.RecoveryRequired {
+		return returned
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := process.RetireCompletedOwnerContext(ctx, filepath.Join(root, "processes"), child, original); err != nil {
+		return executionCheckpointUncertain()
+	}
+	return returned
 }
 
 // Every pre-native validation/preparation return shares this guard. Workspace
