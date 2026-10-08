@@ -730,13 +730,30 @@ boundary. Inventory metadata expires after fifteen minutes; accepted snapshots
 never expire automatically.
 
 Before acceptance, the Worker copies the complete selected original packages to
-owner-only immutable snapshots under the original request ID. Receipt preflight
+owner-only immutable snapshots under the original request ID. A private server journal synchronizes the original actor, complete request
+identity, operation and paired Worker proof before preparation dispatch. Each
+handler owns a unique joined claim through its final mutation; a concurrent
+rejected retry cannot release it. The Worker synchronizes its original intent,
+complete bounded file claims and native copy-root identity before copied bytes,
+and publishes snapshot metadata last. Receipt preflight
 returns an accepted exact retry before contacting the Worker. The accepted input,
 queue, assignment and retry retain original digests and snapshot references.
 Dispatch checks the original execution context and snapshot integrity before
 native input. Source edits do not change accepted snapshots. Missing or corrupt
 snapshots cause no native send and no plain-text fallback. Snapshot references
 remain in removed queue records for independently confirmed session cleanup.
+
+A joined server controller replays the exact original receipt. Accepted receipts
+retain snapshots. Unknown receipts retain original ownership and permit only the
+original exact retry. Only confirmed receipt absence after the original handler
+joins, or exclusive server restart, admits cleanup on the original paired device.
+Offline cleanup remains durable; replacement devices receive no removal authority.
+Worker cleanup shares the original preparation lock, verifies the original native
+root and every present claimed resource before removal, then observes absence.
+A removal-only tombstone fences late dispatch when copying never began. Changed,
+unlisted or replacement bytes remain uncertain and are preserved. Cancellation,
+capacity failure, response loss and partial copies never create unowned bytes.
+These private journals use existing keyless reads and add no public RPC or migration.
 
 Codex copies only selected snapshots into its private runtime, sets process-local
 extra roots, validates enabled exact names/paths through native skills/list, and

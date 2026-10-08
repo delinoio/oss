@@ -1087,3 +1087,11 @@ includes those references even before any native job is claimed and waits for
 original paired Worker removal. Restore quarantine cannot reacquire execution or
 deletion authority. No automatic accepted-snapshot eviction or relational migration
 is introduced.
+
+Private skill preparation journals preserve original request/actor/device proofs
+before dispatch and complete Worker file/root claims before copy publication.
+They remain outside portable backups. Restore receipt quarantine is an unknown
+outcome and cannot authorize preparation cleanup. Cleanup requires positively
+absent original receipts after joined handlers or exclusive restart; original
+paired-device removal tombstones prevent delayed copying and root replacement.
+Accepted snapshots retain ordinary session deletion ownership.

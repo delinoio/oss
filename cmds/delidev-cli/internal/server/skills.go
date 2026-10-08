@@ -91,9 +91,19 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
 		return empty, domain.Fail(domain.PermissionDenied, "Skills require an authorized product client.", "Use the paired owner or client.")
 	}
-	scope.ActorID = actor.DeviceID
-	if scope.ActorID == "" {
-		scope.ActorID = s.Identity.ServerID
+	cleanup := scope.Action == domain.CleanupSkillPreparation
+	if scope.Action != "" && !cleanup {
+		return empty, skillUnavailable()
+	}
+	if cleanup {
+		if domain.ValidateSkillPreparation(scope) != nil || scope.Preparation.ServerID != s.Identity.ServerID {
+			return empty, skillUnavailable()
+		}
+	} else {
+		scope.ActorID = actor.DeviceID
+		if scope.ActorID == "" {
+			scope.ActorID = s.Identity.ServerID
+		}
 	}
 	if scope.MachineID.Validate() != nil || scope.AgentID.Validate() != nil || (scope.SessionID != "" && scope.SessionID.Validate() != nil) || domain.ValidateSkills(scope.Selections) != nil {
 		return empty, skillUnavailable()
@@ -101,6 +111,10 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 	var input workspace.PrepareRequest
 	var manifest workspace.Manifest
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if cleanup {
+			input.MachineID = scope.MachineID
+			return tx.Authorize()
+		}
 		var e error
 		row, readErr := tx.Get(domain.AgentKind, scope.AgentID)
 		if readErr != nil {
@@ -132,8 +146,18 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 		s.workspaceReadsMu.Unlock()
 		return empty, skillUnavailable()
 	}
+	if cleanup && scope.WorkerDeviceID != reader.device {
+		s.workspaceReadsMu.Unlock()
+		return empty, skillUnavailable()
+	}
 	scope.WorkerDeviceID = reader.device
 	scope.WorkerInstanceID = reader.instance
+	if !cleanup && len(scope.Selections) > 0 {
+		if e := s.retainSkillPreparation(ctx, &scope); e != nil {
+			s.workspaceReadsMu.Unlock()
+			return empty, e
+		}
+	}
 	for _, binding := range scope.Selections {
 		if binding.WorkerDeviceID != reader.device {
 			s.workspaceReadsMu.Unlock()
@@ -166,6 +190,9 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 	check := func(tx *store.Tx) error {
 		if e := currentWorkspaceReader(tx, reader); e != nil {
 			return e
+		}
+		if cleanup {
+			return nil
 		}
 		row, e := tx.Get(domain.AgentKind, scope.AgentID)
 		if e != nil {
@@ -237,7 +264,7 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 				return empty, skillUnavailable()
 			}
 		}
-		if len(scope.Selections) > 0 {
+		if !cleanup && len(scope.Selections) > 0 {
 			if len(result.Entries) != len(scope.Selections) {
 				return empty, skillUnavailable()
 			}

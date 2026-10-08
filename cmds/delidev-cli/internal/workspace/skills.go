@@ -23,6 +23,12 @@ func (m *Manager) ReadSkills(ctx context.Context, request ReadRequest) (domain.S
 	if err := ctx.Err(); err != nil {
 		return result, domain.SafeError(err)
 	}
+	if request.Skills.Action == domain.CleanupSkillPreparation {
+		return result, (skills.Manager{Root: m.Root}).CleanupPreparation(ctx, *request.Skills)
+	}
+	if request.Skills.Action != "" || len(request.Skills.Selections) > 0 && domain.ValidateSkillPreparation(*request.Skills) != nil {
+		return result, ResultUncertain()
+	}
 	home, e := os.UserHomeDir()
 	if e != nil {
 		return result, domain.SafeError(e)
