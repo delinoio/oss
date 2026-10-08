@@ -21,7 +21,7 @@ private runtime. Separate accounts can run independently.
 
 ## Interfaces and Contracts
 
-Establish these issue #964 allocations on main before dependent implementation:
+Record these issue #964 allocations in the owning feature PR:
 
 - System `GROK_SUBSCRIPTION_LOGIN_V1 = 39`.
 - System `GROK_SUBSCRIPTION_EXECUTION_V1 = 40`.
@@ -123,7 +123,7 @@ record supported-platform native and packaging evidence separately.
 ## Dependencies and Integrations
 
 The official [CLI reference](https://docs.x.ai/build/cli/reference) defines browser
-and device login. Main-first reservations precede a complete feature PR. Use
+and device login. A complete feature PR may include the allocation records. Use
 `pnpm proto:generate` for Go/TypeScript bindings and compatibility facades.
 
 ## Change Triggers

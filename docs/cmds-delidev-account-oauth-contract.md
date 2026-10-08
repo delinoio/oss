@@ -58,7 +58,7 @@ to OAuth tokens. Coding subscriptions and flows that broker or separately create
 API keys are outside this extension. Other providers retain API-key or Keyless
 connections. Existing OpenRouter behavior and its issue #1146 ownership remain.
 
-Establish these issue #964 reservations on main before dependent implementation:
+Record these issue #964 reservations in the owning feature PR:
 
 - `ProviderInventoryCapability.ACCOUNT_OAUTH_V1 = 6`; preserve OpenRouter-only 5.
 - `ProviderConnectionMethod.OAUTH_DEVICE = 4`; preserve values 0–3.
@@ -74,8 +74,8 @@ Establish these issue #964 reservations on main before dependent implementation:
   cleanup metadata. Existing OpenRouter records and vault references survive.
 
 These reservations activate no schema, credential exchange, capability or native
-browser authority. Complete feature PRs follow reservation closure on main in
-this order: common lifecycle plus Hugging Face, Gemini, then Baseten.
+browser authority. Complete feature PRs may include their allocation records and
+merge in this order: common lifecycle plus Hugging Face, Gemini, then Baseten.
 
 Go owns exchange, device polling, protected access/refresh tokens and refresh.
 On macOS, check current executable code before a fresh Start admission or
@@ -199,7 +199,7 @@ use authenticated Connect for selected local and remote servers.
 
 ## Compatibility reservations
 
-Establish all reservations on main before dependent implementation. The owning
+Record all reservations in the owning feature PR. The owning
 issue remains 1146 after an implementation PR exists. Existing numbers and the
 migration order retain their current meanings.
 
@@ -214,7 +214,7 @@ migration order retain their current meanings.
   diagnostics 27 and subscription identity/retirement 28 implementations.
   Do not implement placeholder predecessors or activate 29 before that complete
   sequence exists. Changing
-  product order requires a separately reconciled reservation sequence on main.
+  product order requires a reconciled allocation sequence in the owning feature PR.
 
 The allocation ledger marks each member of a wholly new enum with
 `newDeclaration: true`, retaining one owner and a zero UNSPECIFIED value without
@@ -237,7 +237,7 @@ Advertise capability 5 only together with the implemented product lifecycle.
 
 - Go generates a cryptographic PKCE verifier/challenge with S256 and builds only `https://openrouter.ai/auth`. Desktop uses the owned callback_url; headless omits it. Exchange only through `POST https://openrouter.ai/api/v1/auth/keys` with code/verifier/S256. Resolve one immutable explicit server route under the existing network contract; route or TLS failure never grants direct fallback. No registration/client secret, inference, management key, ambient cookies/proxies, redirects, automatic HTTP retry or alternate provider.
 - Keep verifier and canonical callback/authorization URL in memory in their original server process. Cap application attempts at ten minutes and 32 nonterminal or unresolved-cleanup server attempts; distinguish this application deadline from the provider's code lifetime after issuance. Clear transient buffers and bound HTTP with the existing 20-second deadline/32KiB response-header conventions and a deliberately tighter new OAuth response ceiling of 64KiB (ordinary provider inspection permits 4MiB). Validate the returned key with the existing 1–8192-byte API-key validator.
-- Add private `account_oauth_attempts` metadata storage in reserved schema 29 after the implemented schema 25 baseline and real migrations 26–28. Preserve the reservation's meaning; reconcile any required order change on main before implementation. Include actor/server/provider UUID+revision, original start/completion IDs, reserved account/create/connect UUIDs, process generation, state/revision/times, comparison HMAC/digests, protected-reference identity and cleanup status. No raw verifier, code, key, callback URL or approval URL in SQLite/receipts. No foreign key requiring an existing account and no cascading deletion of recovery evidence.
+- Add private `account_oauth_attempts` metadata storage in reserved schema 29 after the implemented schema 25 baseline and real migrations 26–28. Preserve the reservation's meaning; reconcile any required order change in the owning feature PR. Include actor/server/provider UUID+revision, original start/completion IDs, reserved account/create/connect UUIDs, process generation, state/revision/times, comparison HMAC/digests, protected-reference identity and cleanup status. No raw verifier, code, key, callback URL or approval URL in SQLite/receipts. No foreign key requiring an existing account and no cascading deletion of recovery evidence.
 - Fresh stores include the table; use the existing verified backup-first transactional migration, preserving accounts/providers/settings/claims/default deletions. Exclude attempt rows from public resources/snapshots/events/portable export. Database images contain metadata, never credentials. Existing managed restore eligibility refuses unresolved OAuth attempts or cleanup. Historical images cannot replace current once-only attempt metadata; restore copies the current private attempt table and quarantines historical receipts. This adds no restore operation.
 - Before HTTP, commit one durable exchange-dispatch claim, following the existing once-only HTTP-claim pattern. HTTP runs outside SQLite/account locks. No timeout, cancellation, duplicate callback, RPC retry or process restart may send that exchange again.
 - Seal a successfully received key in the existing vault under `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}`. Then create disconnected default metadata once and connect once using shared existing lifecycle helpers, exact creation revision and original identities. Factor locked helpers to avoid recursive account-gate acquisition. Recheck actor, provider and attempt authority before staging and at final commit.

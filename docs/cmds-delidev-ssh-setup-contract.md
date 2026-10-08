@@ -16,7 +16,7 @@ Authorized owners and paired clients; original paired Workers; release maintaine
 
 `delidev machine ssh` and desktop Runner Device setup inspect a target, display its original host-key fingerprint, require explicit exact-key confirmation, then install/register/start/check only DeliDev Worker. Closed authentication methods use bounded write-only credential input. A changed host key blocks all authenticated commands. Target inspection selects one of six signed Worker artifacts. Repeated setup inspects and preserves the original registration and workspace scope.
 
-Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 before dependent source changes. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. The approved integrated-PR exception applies; independent branches retain the main-first prerequisite.
+Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 in the owning feature PR. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. Feature PRs may include the allocation records and implementation together.
 
 Initial SSH pairing installs the exact server-compatible signed Worker release, independently of a newer update candidate; it cannot weaken the ordinary pairing version gate. Non-loopback SSH targets require an explicit reachable TLS server endpoint before protected staging. Windows staging checks ancestor reparse points before creation and creates only new owner-only product directories; existing permissions are validated without rewriting them.
 

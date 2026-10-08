@@ -29,7 +29,7 @@ unchanged; capability 9 owns the dedicated extension.
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
-own the main-first capability 8 and Start/attempt format fields established
+own the recorded capability 8 and Start/attempt format fields established
 by reservation PR #1657. Preserve manual
 format profiles, original defaults and independent OAuth eligibility. The common
 manual/OAuth connection UI requires selection for multiple profiles and displays
@@ -465,11 +465,11 @@ the selected Agent Worker configuration. Subscription completion retains the
 known official advisory catalog, without merging saved records. Token pricing
 uses the exact `(API Provider UUID or SubscriptionService, native ID)` identity.
 
-Reserve System `INLINE_WORKER_MODELS_V1 = 42`, Worker
+Record System `INLINE_WORKER_MODELS_V1 = 42`, Worker
 `INLINE_MODEL_EXECUTION_V1 = 22`, `ModelIdentity`, `EndpointModel`,
 `ListEndpointModels` request/response, source/native-ID token-pricing declarations
-and the additive usage/pricing model-identity fields in the allocation ledger on
-main before implementation. Reservations advertise no runtime capability.
+and the additive usage/pricing model-identity fields in the allocation ledger
+with the owning feature PR. Records alone advertise no runtime capability.
 
 Compose the complete feature with the already main-reserved current-only DB
 baseline 32 and protocol 2 reset. Initialize a complete Model-free current

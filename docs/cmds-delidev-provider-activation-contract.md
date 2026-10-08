@@ -69,13 +69,13 @@ Automated fixtures do not establish real desktop layout/keyboard, real provider 
 
 ## Additional hosted providers (#1148)
 
-The main-first reservation ledger assigns `ProviderPresetId` 10–35 in the issue's
+The allocation ledger assigns `ProviderPresetId` 10–35 in the issue's
 published table order for 26 additional fixed hosted services. Existing 0–9
 retain their meanings. Storage migration 30 belongs to the added hosted defaults;
 29 remains exclusively OAuth after real 26/27/28. The original issue's proposed
 25 predates the reconciled main accounting sequence and cannot be reused.
 Real migration 30 follows real OAuth 29 and seeds only its explicit set of 26 additions. It retains existing managed UUIDs and Off state, never recreates an explicitly deleted original preset, and never merges a custom name or endpoint. Startup after 30 does not reseed a deleted addition. A synchronized pre-migration backup and one atomic transaction preserve the original database after any failure. Reservations alone expose no preset, inspection profile or seeded provider.
-Complete independent feature PRs retain the main-first prerequisite and merge
+Complete independent feature PRs may include their allocation records and merge
 after their implemented dependencies.
 
 

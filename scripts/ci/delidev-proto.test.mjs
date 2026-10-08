@@ -42,7 +42,8 @@ test('current wire numbers match immutable assignments and future reservations',
       for (const issue of item.sharedIssues) assert.ok(Number.isSafeInteger(issue) && issue > 0 && issue !== item.issue, 'shared consumers identify other issues');
     }
     // A wholly new declaration has no active baseline until its feature is implemented.
-    // Reserve its closed values first without declaring or advertising support.
+    // Record its closed values with planned or implemented declarations.
+    // Allocation records alone do not advertise support.
     if (item.newDeclaration === true) {
       assert.ok(item.kind === 'enum' || item.kind === 'message', 'new declarations have a closed protocol kind');
       assert.ok(!Object.hasOwn(ledger.baseline, item.declaration), 'original declarations cannot become new');
@@ -71,7 +72,7 @@ test('current wire numbers match immutable assignments and future reservations',
         found.set(declaration.name, declaration);
         if (!expected[declaration.name]) continue;
         assert.equal(expected[declaration.name].kind, kind);
-        for (const field of declaration[members] ?? []) assert.equal(field.number, expected[declaration.name].members[field.name], `${declaration.name}.${field.name} must have a main-established allocation`);
+        for (const field of declaration[members] ?? []) assert.equal(field.number, expected[declaration.name].members[field.name], `${declaration.name}.${field.name} must have a recorded allocation`);
       }
     }
   }
