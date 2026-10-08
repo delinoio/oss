@@ -16,10 +16,10 @@ export function identity(version, revision) {
 }
 export function updaterTarget(t) { return `${t.platform}-${t.arch === 'x64' ? 'amd64' : 'arm64'}`; }
 export function expectedNames() {
-  return releaseTargets.flatMap(t => {
+  return [...releaseTargets.flatMap(t => {
     const target = updaterTarget(t);
     return [artifactName('desktop', target), artifactName('worker', target), ...(t.platform === 'linux' ? [`delidev-desktop-${target}.deb`] : [])];
-  }).sort();
+  }), 'LICENSE', 'NOTICE'].sort();
 }
 export async function digest(file) {
   const before = lstatSync(file);
@@ -65,6 +65,11 @@ export async function assemble(inputs, output, expected) {
       copyFileSync(join(directory, a.name), join(output, a.name));
       reports.push({ name: a.name, ...actual });
     }
+  }
+  for (const name of ['LICENSE', 'NOTICE']) {
+    const source = fileURLToPath(new URL(`../../${name}`,import.meta.url));
+    copyFileSync(source,join(output,name));
+    reports.push({name,...await digest(join(output,name))});
   }
   const index = { ...expected, artifacts: reports.sort((a,b) => a.name.localeCompare(b.name)), nativeAcceptance: 'unverified', platformSigning: 'developer-id-notarized-and-linux-digests' };
   validateIndex(index, expected);

@@ -54,7 +54,7 @@ function remote(state, overrides = {}) {
 }
 test('four native targets assemble ten exact download assets without an updater manifest',async t => {
   const state = await fixture(t);
-  assert.equal(releaseTargets.length,4); assert.equal(state.index.artifacts.length,10);
+  assert.equal(releaseTargets.length,4); assert.equal(state.index.artifacts.length,12);
   assert.equal(state.index.channel,'download-only'); assert.throws(signingRoot,/not ready/);
   writeFileSync(join(state.output,'delidev-update-manifest.json'),'{}');
   await assert.rejects(verifyDirectory(state.output,expected),/Unexpected/);
@@ -73,7 +73,7 @@ test('candidate revision, architecture target, inventory and final bytes cannot 
 for(const scenario of ['normal','createLost','uploadLost','publishLost']) test(`draft publication reconciles ${scenario} and never mutates a public release`,async t => {
   const state=await fixture(t), r=remote(state,{[scenario]:true});
   const options={...r,index:state.index,expected,existing:null};
-  assert.equal(await reconcile(options),'published'); assert.equal(r.assets.length,12);
+  assert.equal(await reconcile(options),'published'); assert.equal(r.assets.length,14);
   const before=r.events.length;
   assert.equal(await reconcile({...options,existing:r.release}),'reused');
   assert.ok(r.events.slice(before).every(([,method])=>method==='GET'));

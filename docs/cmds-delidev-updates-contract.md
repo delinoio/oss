@@ -73,7 +73,11 @@ download-only: they contain no `delidev-update-manifest.json` and provide no upd
 candidate. The existing verifier still requires all twelve desktop/Worker entries;
 no partial manifest, protocol change or migration is introduced. Release notes and
 the index declare skipped Windows targets and unverified installed-platform/account
-acceptance. Missing manifests do not authorize a verifier fallback.
+acceptance. Missing manifests do not authorize a verifier fallback. The existing
+checker selects the newest stable DeliDev version before fetching its manifest;
+a newer download-only release therefore returns a missing-manifest error rather
+than offering an older complete update. This path preserves that behavior until
+a future complete release supplies a newer valid manifest.
 
 Public release bytes and target inventory are immutable. Later Windows support or
 updater activation requires a new version. A full updater release still requires

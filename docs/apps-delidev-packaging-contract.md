@@ -197,7 +197,7 @@ source revision, target and release run ID. Reruns restore and verify original
 candidates instead of resigning them. Expired, duplicate or corrupt retained
 candidates fail rather than silently replacing original bytes. An existing public
 release is verified before signing/building. Assembly requires all four target
-reports and ten exact download assets, adds `delidev-release-index.json` and
+reports and ten exact download assets, includes unchanged root `LICENSE`/`NOTICE`, adds `delidev-release-index.json` and
 `SHA256SUMS`, and rejects any updater manifest. The index retains
 `nativeAcceptance: unverified`; signatures/package inspection do not establish
 installed-platform, provisioned WidgetKit or real-account acceptance.
