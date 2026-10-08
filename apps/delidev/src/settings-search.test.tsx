@@ -11,6 +11,8 @@ it("matches only current-language bundled metadata using all case-insensitive NF
  expect(matchSettings("   \t",categories)).toEqual([]);
  expect(matchSettings(" GIT\nAUTOMATIC  fetch",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.AutomaticFetch]);
  expect(matchSettings("git strategy",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.Session,SettingsSearchTarget.Conflict]);
+ expect(matchSettings("system language immediately",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.Language]);
+ expect(matchSettings("computer timezone",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.DateFormat]);
  expect(matchSettings("customer-private-name",categories)).toEqual([]);
  expect(matchSettings("selector GitHub numeric",categories)).toEqual([]);
  await i18n.changeLanguage("ko");
