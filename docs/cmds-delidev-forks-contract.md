@@ -181,6 +181,26 @@ cannot leave an unpublished child process scope after definite rejection. Actual
 source HEADs are read only after those checks; native read/ownership failures
 retain recovery classification and process evidence.
 
+Unpublished independent Fork preparation owns its child Git process index.
+Create that index exclusively before HEAD reads; General Chat creates no index
+when there are no repository reads. Retain the original native directory identity
+through inspection and copying. After a definite pre-native rejection, independently
+reconcile completed original scopes, verify that same empty index, remove only
+the index and its original recovery lock, synchronize parents and confirm absence.
+Any unjoined, foreign, changed or uncertain owner preserves recovery-required
+classification and its evidence. Published children keep their independent owner.
+
+Failed-Fork permanent deletion copies carry an omitted-zero private child process
+owner from the immutable validated original ForkJobInput. Normal deletion and
+completed-proof replay inventory that exact index and recovery lock. Legacy pending
+plans may add this omitted owner only after original assignment digest, revision,
+instance, session, machine, device and runtime checks. Keep unrelated omitted bytes
+unchanged. Rebind only an untouched Worker proof whose digest equals the same plan
+with the newly added fields omitted; started/complete legacy removal without those
+original proofs stays unresolved. Reappearing retired indexes are absence-only and
+never gain removal authority from a completed or started deletion proof. This adds
+no public capability, RPC allocation or database migration.
+
 Every later pre-native workspace rejection applies the same unused-runtime
 cleanup after joined source inspection and independently verified owned-copy
 rollback. A `RecoveryRequired` workspace result may leave owned copies without

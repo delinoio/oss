@@ -85,6 +85,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if w.Validate() != nil {
 		return proof, domain.SessionDeletionPending()
 	}
+	for _, copy := range w.Copies {
+		if copy.Type == domain.ForkSessionJob && copy.ExecutionID != "" && copy.UnpublishedSidechatID == "" && copy.UnpublishedChildProcessID == "" {
+			return proof, domain.SessionDeletionPending()
+		}
+	}
 	root, e := filepath.EvalSymlinks(config.Root)
 	if e != nil {
 		return proof, domain.SessionDeletionPending()
@@ -100,8 +105,24 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	path := sessionDeletionPath(root, w.SessionID)
 	raw, e := security.ReadPrivate(path, 4096)
 	if e == nil {
-		if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.Digest != w.Digest() || proof.ReportID.Validate() != nil {
+		if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
 			return proof, domain.SessionDeletionPending()
+		}
+		if proof.Digest != w.Digest() {
+			// An untouched legacy proof can admit only the same immutable work
+			// plus server-proved child owners. Removed evidence cannot be rebuilt.
+			legacy := w
+			legacy.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
+			for i := range legacy.Copies {
+				legacy.Copies[i].UnpublishedChildProcessID = ""
+			}
+			if proof.RemovalStarted || proof.Complete || proof.Digest != legacy.Digest() {
+				return proof, domain.SessionDeletionPending()
+			}
+			proof.Digest = w.Digest()
+			if err := writeJSON(path, proof); err != nil {
+				return proof, err
+			}
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return proof, domain.SessionDeletionPending()
@@ -198,6 +219,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			if domain.Decode(raw, &j) != nil || j.Version != 1 || j.JobID != copy.JobID || j.InstanceID != copy.InstanceID || j.Revision != copy.Revision || j.Digest != copy.Digest || j.ReportID.Validate() != nil {
 				return proof, domain.SessionDeletionPending()
 			}
+			if copy.UnpublishedChildProcessID != "" && len(j.Output) != 0 {
+				return proof, domain.SessionDeletionPending()
+			}
 			if copy.Type != domain.PrepareWorkspaceJob || j.Problem == nil || len(j.Output) != 0 {
 				allowAbsentWorkspace = false
 			}
@@ -215,6 +239,17 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}
 	manager := workspace.Manager{Root: root, Logger: config.Logger}
 	for _, copy := range w.Copies {
+		if copy.UnpublishedChildProcessID != "" {
+			if proof.RemovalStarted {
+				for _, path := range []string{filepath.Join(root, "processes", string(copy.UnpublishedChildProcessID)), filepath.Join(root, "processes", string(copy.UnpublishedChildProcessID)+".recovery.lock")} {
+					if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+						return proof, domain.SessionDeletionPending()
+					}
+				}
+			} else if err := process.RetireCompletedOwnerContext(ctx, filepath.Join(root, "processes"), copy.UnpublishedChildProcessID, nil); err != nil {
+				return proof, domain.SessionDeletionPending()
+			}
+		}
 		if copy.UnpublishedSidechatID != "" {
 			if err := manager.DiscardInterruptedSidechatFork(ctx, copy.JobID, w.SessionID, copy.UnpublishedSidechatID); err != nil {
 				return proof, err
@@ -223,6 +258,10 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}
 	unpublishedPaths := map[string]bool{}
 	for _, copy := range w.Copies {
+		if copy.UnpublishedChildProcessID != "" {
+			unpublishedPaths[filepath.Join(root, "processes", string(copy.UnpublishedChildProcessID))] = true
+			unpublishedPaths[filepath.Join(root, "processes", string(copy.UnpublishedChildProcessID)+".recovery.lock")] = true
+		}
 		if copy.UnpublishedSidechatID != "" {
 			unpublishedPaths[filepath.Join(root, "workspaces", string(copy.UnpublishedSidechatID))] = true
 			unpublishedPaths[workspace.SidechatForkClaimPath(root, copy.JobID)] = true
@@ -375,6 +414,9 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 			return nil, domain.SafeError(e)
 		}
 		paths = append(paths, filepath.Join(root, "jobs", string(copy.JobID)), filepath.Join(root, "jobs", string(copy.JobID)+".json"), filepath.Join(root, "workspace-recovery", string(copy.JobID)+".json"), filepath.Join(root, "processes", string(copy.JobID)), filepath.Join(root, "processes", string(copy.JobID)+".recovery.lock"))
+		if copy.UnpublishedChildProcessID != "" {
+			paths = append(paths, filepath.Join(root, "processes", string(copy.UnpublishedChildProcessID)), filepath.Join(root, "processes", string(copy.UnpublishedChildProcessID)+".recovery.lock"))
+		}
 		if copy.UnpublishedSidechatID != "" {
 			paths = append(paths, workspace.SidechatForkClaimPath(root, copy.JobID), filepath.Join(root, "workspaces", string(copy.UnpublishedSidechatID)))
 		}

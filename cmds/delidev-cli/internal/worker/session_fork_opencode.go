@@ -130,6 +130,10 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	if err != nil {
 		return nil, err
 	}
+	childProcessIdentity := childPrep.ForkProcessIdentity()
+	defer func() {
+		returned = finishForkChildProcessFailure(config.Root, i.ChildSessionID, childProcessIdentity, forkRuntimeUnused, returned)
+	}()
 	childPrep.ForkProfile = workspace.OpenCodeGeneralChatForkV1
 	inventory, err := opencode.InspectForkSourceInventory(ctx, filepath.Join(config.Root, "runtimes", string(a.ExecutionID)), source.Native, source.NativeReference)
 	if err != nil {

@@ -14,15 +14,16 @@ const MaxSessionDeletionBytes = 4 << 20
 // Deletion work contains only immutable ownership references. Native paths,
 // prompts, credentials and transcript content never cross this boundary.
 type SessionDeletionCopy struct {
-	JobID                 ID      `json:"job_id"`
-	UnpublishedSidechatID ID      `json:"unpublished_sidechat_id,omitempty"`
-	Type                  JobType `json:"type"`
-	Revision              uint64  `json:"revision,string"`
-	Digest                string  `json:"digest"`
-	InstanceID            ID      `json:"instance_id"`
-	ExecutionID           ID      `json:"execution_id,omitempty"`
-	SnapshotID            ID      `json:"snapshot_id,omitempty"`
-	ActionID              ID      `json:"action_id,omitempty"`
+	JobID                     ID      `json:"job_id"`
+	UnpublishedChildProcessID ID      `json:"unpublished_child_process_id,omitempty"`
+	UnpublishedSidechatID     ID      `json:"unpublished_sidechat_id,omitempty"`
+	Type                      JobType `json:"type"`
+	Revision                  uint64  `json:"revision,string"`
+	Digest                    string  `json:"digest"`
+	InstanceID                ID      `json:"instance_id"`
+	ExecutionID               ID      `json:"execution_id,omitempty"`
+	SnapshotID                ID      `json:"snapshot_id,omitempty"`
+	ActionID                  ID      `json:"action_id,omitempty"`
 }
 
 type SessionDeletionFork struct {
@@ -81,6 +82,9 @@ func (w SessionDeletionWork) Validate() error {
 				return SessionDeletionPending()
 			}
 		default:
+			return SessionDeletionPending()
+		}
+		if c.UnpublishedChildProcessID != "" && (c.Type != ForkSessionJob || c.UnpublishedChildProcessID.Validate() != nil || c.UnpublishedChildProcessID == w.SessionID || c.UnpublishedChildProcessID == c.JobID || c.UnpublishedChildProcessID == c.ExecutionID || c.ExecutionID == "" || c.UnpublishedSidechatID != "") {
 			return SessionDeletionPending()
 		}
 		if c.UnpublishedSidechatID != "" && (c.Type != ForkSessionJob || c.UnpublishedSidechatID.Validate() != nil || c.UnpublishedSidechatID == w.SessionID) {

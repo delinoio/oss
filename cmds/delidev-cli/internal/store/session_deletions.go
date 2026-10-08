@@ -409,9 +409,97 @@ func (s *Store) GetSessionDeletion(ctx context.Context, id domain.ID) (SessionDe
 	return s.readSessionDeletion(id)
 }
 func (s *Store) SessionDeletions(ctx context.Context) ([]SessionDeletion, error) {
-	s.gate.RLock()
-	defer s.gate.RUnlock()
-	return s.sessionDeletionInventory(ctx)
+	s.gate.Lock()
+	defer s.gate.Unlock()
+	items, err := s.sessionDeletionInventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if err := s.reconcileSessionDeletionForkOwners(ctx, &items[i]); err != nil {
+			if domain.SafeError(err).Code != domain.RecoveryRequired {
+				return nil, err
+			}
+			// Keep this legacy obligation unresolved without blocking unrelated
+			// deletion lanes. The Worker refuses copies with an unproved owner.
+		}
+	}
+	return items, nil
+}
+
+func (s *Store) reconcileSessionDeletionForkOwners(ctx context.Context, v *SessionDeletion) error {
+	// A failed later copy must not publish a partial in-memory enrichment.
+	raw, err := json.Marshal(v)
+	var candidate SessionDeletion
+	if err != nil || domain.DecodeWithLimit(raw, &candidate, domain.MaxSessionDeletionBytes) != nil {
+		return domain.SessionDeletionPending()
+	}
+	changed := false
+	if err := s.readLocked(ctx, func(tx *Tx) error {
+		var err error
+		changed, err = tx.reconcileUnpublishedForkOwners(&candidate)
+		return err
+	}); err != nil {
+		return err
+	}
+	if changed {
+		candidate.Revision++
+		if err := s.writeSessionDeletion(candidate); err != nil {
+			return err
+		}
+		*v = candidate
+	}
+	return nil
+}
+
+// Legacy plans did not inventory child HEAD-read owners. Derive that omission
+// only while the original failed job and immutable assignment remain available.
+// Acknowledged plans and removed databases cannot recreate missing authority.
+func (t *Tx) reconcileUnpublishedForkOwners(v *SessionDeletion) (bool, error) {
+	changed := false
+	for wi := range v.Workers {
+		worker := &v.Workers[wi]
+		if worker.Acknowledged {
+			continue
+		}
+		for ci := range worker.Work.Copies {
+			copy := &worker.Work.Copies[ci]
+			if copy.Type != domain.ForkSessionJob || copy.ExecutionID == "" || copy.UnpublishedSidechatID != "" || copy.UnpublishedChildProcessID != "" {
+				continue
+			}
+			row, err := t.JobAssignment(copy.JobID)
+			if err != nil {
+				return false, domain.SessionDeletionPending()
+			}
+			original, err := Decode[domain.Job](row)
+			h := sha256.Sum256(row.Data)
+			if err != nil || row.Revision != copy.Revision || hex.EncodeToString(h[:]) != copy.Digest || row.SessionID != v.SessionID || original.Type != copy.Type || original.InstanceID != copy.InstanceID || original.MachineID != worker.Work.MachineID || original.AssignedDeviceID != worker.Work.DeviceID {
+				return false, domain.SessionDeletionPending()
+			}
+			currentRow, err := t.Get(domain.JobKind, copy.JobID)
+			if err != nil {
+				return false, domain.SessionDeletionPending()
+			}
+			current, err := Decode[domain.Job](currentRow)
+			var input domain.ForkJobInput
+			if err != nil || current.State == domain.JobSucceeded || domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.SourceSessionID != v.SessionID || input.RuntimeID != copy.ExecutionID || input.Purpose == domain.SidechatFork {
+				return false, domain.SessionDeletionPending()
+			}
+			copy.UnpublishedChildProcessID = input.ChildSessionID
+			changed = true
+		}
+	}
+	for i := range v.Dependents {
+		childChanged, err := t.reconcileUnpublishedForkOwners(&v.Dependents[i])
+		if err != nil {
+			return false, err
+		}
+		if childChanged {
+			v.Dependents[i].Revision++
+			changed = true
+		}
+	}
+	return changed, nil
 }
 
 func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletion, request, instance domain.ID, digest string) (SessionDeletion, error) {
@@ -443,6 +531,10 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 	actor, ok := domain.PrincipalFrom(ctx)
 	if !ok || actor.Type != domain.WorkerDevice || request.Validate() != nil || v.ID != deletion {
 		return v, domain.SessionDeletionPending()
+	}
+	// A stale pre-upgrade acknowledgement cannot omit newly proved child work.
+	if err := s.reconcileSessionDeletionForkOwners(ctx, &v); err != nil {
+		return v, err
 	}
 	for i, w := range v.Workers {
 		if w.Work.DeviceID == actor.DeviceID && w.Work.MachineID == actor.MachineID && w.Work.Digest() == digest {
@@ -883,6 +975,8 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			copy.ExecutionID = input.RuntimeID
 			if input.Purpose == domain.SidechatFork {
 				copy.UnpublishedSidechatID = input.ChildSessionID
+			} else {
+				copy.UnpublishedChildProcessID = input.ChildSessionID
 			}
 		}
 		if j.Type == domain.PrepareWorkspaceJob {

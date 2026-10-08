@@ -48,7 +48,9 @@ type RepositorySpec struct {
 	AutoFetch              bool                `json:"auto_fetch"`
 }
 type PrepareRequest struct {
-	SidechatSource *SidechatSource `json:"sidechat_source,omitempty"`
+	// Transient original fork index identity; never serialized into preparation.
+	forkProcessIdentity os.FileInfo
+	SidechatSource      *SidechatSource `json:"sidechat_source,omitempty"`
 	// ForkSourceID is an immutable Worker-owned copy profile. Ordinary creation
 	// never accepts it; the fork coordinator binds the original source manifest.
 	ForkProfile       ForkProfile          `json:"fork_profile,omitempty"`
