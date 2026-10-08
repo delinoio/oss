@@ -246,3 +246,18 @@ it("retains the exact uncertain subscription operation while a successful older 
  fireEvent.click(retry);await waitFor(()=>expect(operation).toHaveBeenCalledTimes(2));expect(operation.mock.calls[1][0]).toEqual(original);expect(original.mutation.expectedRevision).toBe(9007199254740993n);
  view.unmount();client.clear();
 });
+
+
+it.each([true,false])("negotiates row quota refresh for a server-owned account (supported: %s)",async supported=>{
+ const value=fixture(),row=value.accounts[0]!,connection=newRequestId(),generation=newRequestId();
+ value.accounts[0]=create(ResourceSchema,{...row,documentJson:encode({alias:"Existing subscription",type:"subscription",subscription_service:"chatgpt",enabled:true,health:"ready",quota:[],connection:{id:connection},subscription:{generation,server_quota_generation:generation}})});
+ const refresh=vi.fn(async request=>({account:value.accounts[0],operationId:request.mutation.requestId}));
+ const transport=createRouterTransport(router=>{
+ router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,...(supported?[SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V1]:[SystemCapability.SUBSCRIPTION_QUOTA_V1])]})});
+ router.service(ResourceService,{listResources:value.list});router.service(SubscriptionService,{requestSubscriptionObservation:refresh});
+ });
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SubscriptionAccounts active editAccount={()=>{}} deleteAccount={()=>{}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ const button=await screen.findByRole("button",{name:"Refresh Existing subscription"});expect((button as HTMLButtonElement).disabled).toBe(!supported);fireEvent.click(button);
+ if(supported){await waitFor(()=>expect(refresh).toHaveBeenCalledOnce());expect(refresh.mock.calls[0][0]).toMatchObject({machineId:"",connectionId:connection,generationId:generation,mutation:{id:row.id,expectedRevision:row.revision}})}else{expect(refresh).not.toHaveBeenCalled()}
+});

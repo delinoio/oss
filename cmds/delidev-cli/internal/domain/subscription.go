@@ -23,6 +23,8 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
+	ServerQuota            *ServerQuotaOperation             `json:"server_quota,omitempty"`
+	ServerQuotaGeneration  ID                                `json:"server_quota_generation,omitempty"`
 	NativeProfileID        ID                                `json:"native_profile_id,omitempty"`
 	NativeOperation        *NativeSubscriptionOperation      `json:"native_operation,omitempty"`
 	OwnerMachineID         ID                                `json:"owner_machine_id,omitempty"`
@@ -74,6 +76,15 @@ func (s SubscriptionState) Validate(account Account) error {
 	// Database restore disconnects accounts without restoring their external
 	// vault. Quarantined references remain valid evidence, never grant authority.
 	if s.Generation != "" && (s.Generation.Validate() != nil || account.Connection == nil && !s.RecoveryRequired || account.Connection != nil && account.Connection.Authentication != SubscriptionAuth || len(s.IdentityCommitment) != 64) {
+		return invalid()
+	}
+	if s.ServerQuota != nil && account.SubscriptionService != SubscriptionChatGPT {
+		return invalid()
+	}
+	if s.ServerQuotaGeneration != "" && s.ServerQuotaGeneration.Validate() != nil || s.ServerQuota != nil && s.ServerQuota.Validate() != nil {
+		return invalid()
+	}
+	if s.ServerQuota != nil && s.ServerQuota.Active() && (s.Lease != nil || s.ServerOperation != nil && s.ServerOperation.NativeStarted) {
 		return invalid()
 	}
 	if s.OwnerMachineID != "" && s.OwnerMachineID.Validate() != nil || s.Observation != nil && s.Observation.Validate() != nil || s.ResetCredits != nil && s.ResetCredits.Validate() != nil {

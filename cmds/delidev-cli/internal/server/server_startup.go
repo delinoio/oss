@@ -162,6 +162,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	if err := service.initializeServerSubscriptions(child); err != nil {
 		return err
 	}
+	if err := service.initializeServerQuotas(domain.WithPrincipal(child, domain.Principal{Type: domain.OwnerDevice})); err != nil {
+		return err
+	}
 	if err := service.initializeOAuth(child); err != nil {
 		return err
 	}
@@ -203,6 +206,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	lifecycleLock = nil
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
+	serverQuotaCtx, stopServerQuota := context.WithCancel(child)
+	serverQuotaDone := make(chan struct{})
+	go func() { defer close(serverQuotaDone); service.runServerQuotas(serverQuotaCtx) }()
+	defer func() { stopServerQuota(); <-serverQuotaDone }()
 	subscriptionCtx, stopSubscription := context.WithCancel(child)
 	subscriptionDone := make(chan struct{})
 	go func() { defer close(subscriptionDone); service.runServerSubscriptions(subscriptionCtx) }()

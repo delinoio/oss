@@ -33,5 +33,7 @@
   "subscription-quota.retryOriginalCreditReconciliationRequest_1dd094": "Retry original credit reconciliation request",
   "subscription-quota.retryOriginalRecoveryPreference_fa3cb3": "Retry original recovery preference",
   "subscription-quota.extra.ca1844969742": "Unavailable",
-  "subscription-quota.accountPreferencesCouldNotBeSavedReload_0d91a4": "Account preferences could not be saved. Reload the current account before saving."
+  "subscription-quota.accountPreferencesCouldNotBeSavedReload_0d91a4": "Account preferences could not be saved. Reload the current account before saving.",
+  "subscription-quota.serverQuotaUnsupported": "Update the server to refresh quota for an account without a Runner Device.",
+  "subscription-quota.serverCreditsUnavailable": "Reset-credit consumption requires the original Runner Device."
 }

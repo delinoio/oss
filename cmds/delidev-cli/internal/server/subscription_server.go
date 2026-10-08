@@ -57,7 +57,7 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 			a.Subscription = &domain.SubscriptionState{}
 		}
 		state := a.Subscription
-		if state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
+		if state.ServerQuotaActive() || state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
 			return nil, subscriptionDenied()
 		}
 		if action == domain.SubscriptionLogin && (a.Connection != nil || state.Generation != "" || state.Lease != nil) {
@@ -296,7 +296,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 			return nil, err
 		}
 		st := a.Subscription
-		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != original.ID || st.ServerOperation.State != domain.SubscriptionPreparing || st.ServerOperation.NativeStarted || st.Pending == nil || st.Pending.ID != original.ID || st.Pending.Phase != domain.SubscriptionQueued || st.Lease != nil || st.RecoveryRequired || st.ServerOperation.Epoch != s.subscriptionServerEpoch() {
+		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != original.ID || st.ServerOperation.State != domain.SubscriptionPreparing || st.ServerOperation.NativeStarted || st.Pending == nil || st.Pending.ID != original.ID || st.Pending.Phase != domain.SubscriptionQueued || st.ServerQuotaActive() || st.Lease != nil || st.RecoveryRequired || st.ServerOperation.Epoch != s.subscriptionServerEpoch() {
 			return nil, subscriptionDenied()
 		}
 		o := st.ServerOperation
@@ -677,6 +677,27 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 	}
 	if cleanup {
 		if err := cleanupSubscriptionReferences(ctx, vault, id, keep); err != nil {
+			return err
+		}
+	}
+	if success && cleanup && operation.Action != domain.SubscriptionLogout {
+		_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.server.quota.ready", struct{ Account, Generation domain.ID }{id, o.FinishID}, func(tx *store.Tx) (any, error) {
+			r, a, err := subscriptionAccount(tx, id, 0)
+			if err != nil {
+				return nil, err
+			}
+			if a.Subscription.Generation != o.FinishID || a.Subscription.RecoveryRequired || a.Subscription.ServerOperation == nil || a.Subscription.ServerOperation.ID != o.ID {
+				return nil, subscriptionDenied()
+			}
+			a.Subscription.ServerQuotaGeneration = o.FinishID
+			if _, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+				return nil, err
+			}
+			// The joined quota lane discovers this new generation only after
+			// the final protected-reference cleanup has settled.
+			return struct{}{}, nil
+		})
+		if err != nil {
 			return err
 		}
 	}

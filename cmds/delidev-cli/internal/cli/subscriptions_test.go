@@ -12,9 +12,10 @@ import (
 
 type subscriptionCLIClient struct {
 	delidevv1connect.SubscriptionServiceClient
-	request  *pb.RequestSubscriptionRequest
-	cancel   *pb.CancelSubscriptionRequest
-	progress *pb.GetSubscriptionProgressRequest
+	observation *pb.RequestSubscriptionObservationRequest
+	request     *pb.RequestSubscriptionRequest
+	cancel      *pb.CancelSubscriptionRequest
+	progress    *pb.GetSubscriptionProgressRequest
 }
 
 func (f *subscriptionCLIClient) RequestSubscription(_ context.Context, req *connect.Request[pb.RequestSubscriptionRequest]) (*connect.Response[pb.RequestSubscriptionResponse], error) {
@@ -65,13 +66,21 @@ func TestCLISubscriptionExplicitWorkerAndOriginalOperation(t *testing.T) {
 
 type subscriptionCLISystem struct {
 	delidevv1connect.SystemServiceClient
-	supported bool
+	quota       bool
+	serverQuota bool
+	supported   bool
 }
 
 func (f *subscriptionCLISystem) GetStatus(context.Context, *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
 	result := &pb.GetStatusResponse{}
 	if f.supported {
 		result.Capabilities = []pb.SystemCapability{pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_LOGIN_V1}
+	}
+	if f.quota {
+		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1)
+	}
+	if f.serverQuota {
+		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1)
 	}
 	return connect.NewResponse(result), nil
 }
@@ -86,5 +95,30 @@ func TestCLISubscriptionWithoutWorkerNegotiatesIndependentCapability(t *testing.
 		if f.request == nil || f.request.MachineId != "" || f.request.DeviceCode || f.request.Mutation.RequestId != string(requestID) || f.request.Mutation.ExpectedRevision != 7 {
 			t.Fatal("independent CLI login lost its original ownership")
 		}
+	}
+}
+
+func (f *subscriptionCLIClient) RequestSubscriptionObservation(_ context.Context, req *connect.Request[pb.RequestSubscriptionObservationRequest]) (*connect.Response[pb.RequestSubscriptionObservationResponse], error) {
+	f.observation = req.Msg
+	return connect.NewResponse(&pb.RequestSubscriptionObservationResponse{OperationId: req.Msg.Mutation.RequestId}), nil
+}
+func TestCLIServerQuotaNegotiatesOmittedMachine(t *testing.T) {
+	for _, supported := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unsupported", true: "supported"}[supported], func(t *testing.T) {
+			f := &subscriptionCLIClient{}
+			c := client{subscriptions: f, system: &subscriptionCLISystem{quota: !supported, serverQuota: supported}}
+			id, connection, generation, requestID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+			args := []string{"refresh-quota", "--id", string(id), "--revision", "7", "--connection-id", string(connection), "--generation-id", string(generation)}
+			_, err := subscriptionObservationCommand(context.Background(), c, options{requestID: requestID}, args)
+			if !supported {
+				if domain.SafeError(err).Code != domain.Unsupported || f.observation != nil {
+					t.Fatal("unnegotiated server quota request", err)
+				}
+				return
+			}
+			if err != nil || f.observation == nil || f.observation.MachineId != "" || f.observation.Mutation.RequestId != string(requestID) || f.observation.GenerationId != string(generation) {
+				t.Fatal("server quota lost original selector", err)
+			}
+		})
 	}
 }

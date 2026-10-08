@@ -160,7 +160,7 @@ func disconnectedSubscription(a domain.Account) bool {
 	if st == nil {
 		return true
 	}
-	if st.Validate(a) != nil || st.Pending != nil || st.Lease != nil || st.RecoveryRequired || st.Generation != "" || st.IdentityCommitment != "" || st.Observation != nil && st.Observation.Active() || st.ResetCredits != nil {
+	if st.ServerQuotaActive() || st.Validate(a) != nil || st.Pending != nil || st.Lease != nil || st.RecoveryRequired || st.Generation != "" || st.IdentityCommitment != "" || st.Observation != nil && st.Observation.Active() || st.ResetCredits != nil {
 		return false
 	}
 	return st.ServerOperation == nil || !st.ServerOperation.Active() && !st.ServerOperation.NativeStarted

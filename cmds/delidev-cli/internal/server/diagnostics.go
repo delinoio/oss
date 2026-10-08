@@ -180,7 +180,7 @@ func doctorSubscriptionState(account domain.Account) domain.DiagnosticState {
 	}
 	state := account.Subscription
 	if state != nil {
-		if state.Pending != nil || state.Lease != nil || state.RecoveryRequired ||
+		if state.ServerQuotaActive() || state.Pending != nil || state.Lease != nil || state.RecoveryRequired ||
 			state.ServerOperation != nil && (state.ServerOperation.Active() || state.ServerOperation.NativeStarted || state.ServerOperation.CleanupPhase == domain.SubscriptionNativeCleanupConfirmed) ||
 			state.Observation != nil && (state.Observation.Active() || state.Observation.Phase == domain.SubscriptionObservationRetiredUncertain) {
 			return domain.DiagnosticUnavailable
