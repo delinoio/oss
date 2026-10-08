@@ -179,6 +179,10 @@ func requireSystemdActiveIdentity(ctx context.Context, exec CommandExecutor, def
 }
 
 func Service(ctx context.Context, action, path string, c Config, exec CommandExecutor) error {
+	return serviceWithManagerAdapter(ctx, action, path, c, exec, newServiceReloader(os.Stderr))
+}
+
+func serviceWithManagerAdapter(ctx context.Context, action, path string, c Config, exec CommandExecutor, admission *serviceReloader) error {
 	unit := servicePath()
 	if action == "install" {
 		if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
@@ -254,18 +258,6 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			}
 			definitionSnapshot = &snapshot
 		}
-		if runtime.GOOS == "linux" {
-			// Reject a stale active manager before sending drain control to the
-			// requested configuration or opening its offline state.
-			if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-				return e
-			}
-		} else if runtime.GOOS == "darwin" {
-			if e := requireLaunchdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-				return e
-			}
-		}
-		admission := newServiceReloader(os.Stderr)
 		admission.Exec = exec
 		manager, e := admission.admitServiceManager(ctx, definitionSnapshot.data)
 		if e != nil {
@@ -286,9 +278,6 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			return e
 		}
 		if runtime.GOOS == "darwin" {
-			if e := requireLaunchdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-				return e
-			}
 			if e := admission.checkServiceManager(ctx, manager); e != nil {
 				return e
 			}
@@ -301,9 +290,6 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			// cached ExecStop from the validated on-disk snapshot before --now
 			// can stop the unit, then verify that snapshot remained unchanged.
 			if runtime.GOOS == "linux" {
-				if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-					return e
-				}
 				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
 					return e
 				}
@@ -311,9 +297,6 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 					return e
 				}
 				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
-					return e
-				}
-				if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
 					return e
 				}
 			}

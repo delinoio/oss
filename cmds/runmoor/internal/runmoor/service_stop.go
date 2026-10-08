@@ -18,8 +18,11 @@ func serviceManagerUnavailable() error {
 
 func (r *serviceReloader) admitServiceManager(ctx context.Context, definition []byte) (serviceManagerIdentity, error) {
 	pid, loaded, err := r.nativePID(ctx)
-	if err != nil || r.Platform == "darwin" && loaded && pid == 0 {
-		return serviceManagerIdentity{}, serviceManagerUnavailable()
+	if err != nil {
+		return serviceManagerIdentity{}, err
+	}
+	if r.Platform == "darwin" && loaded && pid == 0 {
+		return serviceManagerIdentity{}, problem(ErrDependency, "Cannot verify the loaded launchd service while it is inactive.", "Inspect the loaded job in the logged-in GUI session, reconcile it with the installed plist, then retry service stop or uninstall.")
 	}
 	identity := serviceManagerIdentity{pid: pid}
 	if pid == 0 {
@@ -31,7 +34,7 @@ func (r *serviceReloader) admitServiceManager(ctx context.Context, definition []
 	}
 	args, err := reloadArguments(r.Platform, definition)
 	if err != nil || r.invocation(pid, args) != nil {
-		return identity, serviceManagerUnavailable()
+		return identity, problem(ErrConfig, "The active service does not match its installed definition.", "Gracefully stop the active manager with its original configuration, then retry the service action.")
 	}
 	if err = r.checkServiceManager(ctx, identity); err != nil {
 		return identity, err
