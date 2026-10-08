@@ -604,6 +604,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Git Profiles follows the approved #1147 presentation in the desktop/integration contracts: one eligible create action, distinct loading/error/stale/empty-page states, separate storage and identity facts, first-entry editor focus, and full informational native token-form disclosure. Keep original explicit operations, decimal revisions, immutable uncertain requests, transient write-only PAT clearing, opaque paging and the shared Settings disposal contract; presentation grants no repository capability.
 
+- GitHub creation pins its first admitted controller for the current task opening. Capability refresh failure or later capability changes cannot replace its draft or original pending/uncertain save. Show sanitized status failures with explicit read-only retry; admit new token inspection/save only with a completed valid capability-34 read while preserving already authorized original reconciliation. Initial metadata fallback and the current dialog/category/Settings/connection disposal rules remain unchanged; follow the integration contract.
+
 ### Integration fixture ownership
 
 - Add Settings integration coverage to a feature-specific `settings-<feature>.integration.test.tsx`. Call `useSettingsFixture()` once per file; each file owns independent temporary server/database/provider/Worker state. Register a spawned Worker on that fixture before waiting for readiness so failed tests still reap it. Do not append unrelated tests to a central suite or depend on another file's mutations.
