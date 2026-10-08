@@ -1,0 +1,9 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.general-chat-fixture > aside { padding: 16px; }
+.general-chat-fixture > aside button { display: block; max-width: 100%; margin-bottom: 8px; }
+.general-chat-fixture > aside output { display: none; }
+@media (max-width: 760px) {
+  .app.general-chat-fixture { grid-template-columns: 80px minmax(0, 1fr); }
+  .general-chat-fixture > aside { padding: 4px; overflow-wrap: anywhere; }
+  .general-chat-fixture > aside button { padding: 4px; font-size: 11px; }
+}
