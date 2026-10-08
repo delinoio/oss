@@ -143,5 +143,17 @@
   "settings.repositoryPageCount_one": "{{count}} repository on this page",
   "settings.repositoryPageCount_other": "{{count}} repositories on this page",
   "settings.repositoryServerUpdateRequired": "Update the selected server before saving a repository.",
-  "settings.retryRepositoryCapability": "Retry repository capability check"
+  "settings.retryRepositoryCapability": "Retry repository capability check",
+  "settings.projectRepositoryCount_one": "{{count}} repository",
+  "settings.projectRepositoryCount_other": "{{count}} repositories",
+  "settings.projectDetails": "Project details",
+  "settings.projectRepositoriesShowAll": "Show all repositories",
+  "settings.projectRepositoriesShowFewer": "Show fewer repositories",
+  "settings.projectRepositoryLoading": "Loading repository details…",
+  "settings.projectRepositoryURLMissing": "URL not configured",
+  "settings.projectRepositoryUnavailable": "Repository details unavailable",
+  "settings.projectRepositoryStale": "Showing previously loaded repository details. Refresh to read the latest details.",
+  "settings.projectRepositoryPrimary": "Primary",
+  "settings.projectOriginalID": "Project ID",
+  "settings.projectRepositoryOriginalIDs": "Repository IDs"
 }

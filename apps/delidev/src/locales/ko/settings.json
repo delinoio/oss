@@ -143,5 +143,17 @@
   "settings.repositoryPageCount_one": "이 페이지의 저장소 {{count}}개",
   "settings.repositoryPageCount_other": "이 페이지의 저장소 {{count}}개",
   "settings.repositoryServerUpdateRequired": "저장소를 저장하기 전에 선택한 서버를 업데이트하세요.",
-  "settings.retryRepositoryCapability": "저장소 기능 확인 재시도"
+  "settings.retryRepositoryCapability": "저장소 기능 확인 재시도",
+  "settings.projectRepositoryCount_one": "저장소 {{count}}개",
+  "settings.projectRepositoryCount_other": "저장소 {{count}}개",
+  "settings.projectDetails": "프로젝트 세부 정보",
+  "settings.projectRepositoriesShowAll": "모든 저장소 보기",
+  "settings.projectRepositoriesShowFewer": "저장소 적게 보기",
+  "settings.projectRepositoryLoading": "저장소 세부 정보를 불러오는 중…",
+  "settings.projectRepositoryURLMissing": "URL이 설정되지 않음",
+  "settings.projectRepositoryUnavailable": "저장소 세부 정보를 사용할 수 없음",
+  "settings.projectRepositoryStale": "이전에 불러온 저장소 세부 정보입니다. 최신 정보를 확인하려면 새로 고침하세요.",
+  "settings.projectRepositoryPrimary": "기본",
+  "settings.projectOriginalID": "프로젝트 ID",
+  "settings.projectRepositoryOriginalIDs": "저장소 ID"
 }
