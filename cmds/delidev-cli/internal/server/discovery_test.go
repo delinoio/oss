@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestVersionOnlyDiscoveryReceiptSurvivesProtocolAddition(t *testing.T) {
@@ -92,7 +93,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	resources := delidevv1connect.NewResourceServiceClient(http.DefaultClient, endpoint.URL)
 	instance := string(domain.NewID())
 	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version}
-	originalAttach := *attach
+	originalAttach := proto.Clone(attach).(*pb.AttachWorkerRequest)
 	attached, err := client.AttachWorker(ctx, ownerRequest(worker, attach))
 	if err != nil {
 		t.Fatal(err)
@@ -247,7 +248,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	}
 	// Reconnect uses the original attachment request. It must observe refreshed
 	// discovery without another Machine revision or replacing its receipt.
-	reconnected, err := client.AttachWorker(ctx, ownerRequest(worker, &originalAttach))
+	reconnected, err := client.AttachWorker(ctx, ownerRequest(worker, originalAttach))
 	if err != nil || reconnected.Msg.Machine.Revision != current.Msg.Resource.Revision || !bytes.Equal(reconnected.Msg.Machine.DocumentJson, current.Msg.Resource.DocumentJson) {
 		t.Fatalf("original attachment hid current discovery or repeated its write: %v %v", reconnected, err)
 	}
