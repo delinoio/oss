@@ -261,3 +261,22 @@ it("places the retained verification owner after the full summary without remoun
   expect(mounted).toHaveBeenCalledTimes(1);
   expect(disposed).not.toHaveBeenCalled();
 });
+
+it.each([
+  [0, "var(--danger-text)"],
+  [25, "color-mix(in srgb, var(--danger-text) 50%, var(--warning-text) 50%)"],
+  [50, "var(--warning-text)"],
+  [67, "color-mix(in srgb, var(--warning-text) 66%, var(--success-text) 34%)"],
+  [75, "color-mix(in srgb, var(--warning-text) 50%, var(--success-text) 50%)"],
+  [100, "var(--success-text)"],
+] as const)("uses percentage color in compact and detailed API quota at %i", async (percent, color) => {
+  const f = fixture();
+  f.row.documentJson = encode({ alias: "OpenRouter", type: "api", enabled: true, health: "unverified", quota: [{ id: "Daily", state: "observed", remaining: percent / 100, observed_at: new Date().toISOString() }] });
+  render(f.view()); await screen.findAllByText("USD 12.48");
+  for (const bar of screen.getAllByRole("progressbar")) {
+    expect(bar.getAttribute("value")).toBe(String(percent));
+    expect(bar.style.getPropertyValue("--quota-fill")).toBe(color);
+  }
+  expect(f.read).toHaveBeenCalledTimes(1);
+  expect(f.callbacks.manage).not.toHaveBeenCalled();
+});

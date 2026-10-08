@@ -2577,3 +2577,7 @@ cleanup ownership. No new RPC or SQLite migration is added.
 Issue #1828 negotiates System capability 48. Only a project New session composer reads first-message history. Plain Up at collapsed absolute offset 0 recalls an older entry. Plain Down at the collapsed text end recalls a newer entry, then restores the saved draft and caret. Other arrows retain normal editing. Navigation freezes ordering until editing or scope reset. Recall never submits or changes attachments, mode or creation selections, and never restores typed skill authority.
 
 Skill completion handles keys first. IME, modifiers, selections and pending or uncertain creation suppress recall. Project/transport changes reset navigation and fence late results. Async reads never replace text. Missing capability/read failure leaves ordinary creation usable. Localized guidance and a confirmed Clear action sit beside the field. Clear retains its original uncertain request for explicit retry. There is no list/search UI. Confirmation explains older-backup retention.
+
+## Quota percentage colors
+
+API quota bars share the subscription percentage color rule: interpolate danger-text → warning-text at 0–50% and warning-text → success-text at 50–100%, using the displayed rounded integer and active semantic tokens. Accent, WebKit and Mozilla fills use one uniform color independent of freshness; text continues to distinguish retained and unavailable evidence. This presentation grants no quota recovery or account authority.

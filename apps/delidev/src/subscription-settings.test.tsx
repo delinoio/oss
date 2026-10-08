@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { quotaColor } from "./quota-color";
 import { SubscriptionBrand } from "./subscription-catalog";
 import { QuotaObservationState as Quota, SubscriptionConnectionState as Connection, SubscriptionOperationState as Operation, SubscriptionReadState as Read, SubscriptionSettingsView, quotaPresentation, type SubscriptionAccountRow, type SubscriptionQuotaWindow } from "./subscription-settings";
 
@@ -203,4 +204,35 @@ it.each([Quota.Stale, Quota.Failed])("updates reset warnings for retained %s win
     expect(first.refresh).not.toHaveBeenCalled();
     expect(first.disconnect).not.toHaveBeenCalled();
   } finally { rendered.unmount(); vi.useRealTimers(); }
+});
+
+it.each([
+  [0, "var(--danger-text)"],
+  [25, "color-mix(in srgb, var(--danger-text) 50%, var(--warning-text) 50%)"],
+  [49, "color-mix(in srgb, var(--danger-text) 2%, var(--warning-text) 98%)"],
+  [50, "var(--warning-text)"],
+  [51, "color-mix(in srgb, var(--warning-text) 98%, var(--success-text) 2%)"],
+  [67, "color-mix(in srgb, var(--warning-text) 66%, var(--success-text) 34%)"],
+  [75, "color-mix(in srgb, var(--warning-text) 50%, var(--success-text) 50%)"],
+  [100, "var(--success-text)"],
+] as const)("uses semantic interpolation for displayed quota %i", (percent, color) => {
+  render(view([row("chatgpt", [window("primary", percent / 100), window("extra", percent / 100, Quota.Failed), window("additional", percent / 100, Quota.Stale)])]));
+  fireEvent.click(screen.getByRole("button", { name: "Show all 3 quota windows" }));
+  const bars = screen.getAllByRole("progressbar");
+  expect(bars).toHaveLength(3);
+  for (const bar of bars) {
+    expect(bar.getAttribute("value")).toBe(String(percent));
+    expect(bar.style.getPropertyValue("--quota-fill")).toBe(color);
+  }
+  expect(screen.getByText(/Observation failed/)).toBeTruthy();
+  expect(screen.getByText(/Stale/)).toBeTruthy();
+});
+
+it("colors equivalent rounded percentages identically without changing quota provenance", () => {
+  const first = quotaPresentation(window("first", .6651), now);
+  const second = quotaPresentation(window("second", .6749, Quota.Failed), now);
+  expect(first.percent).toBe(67);
+  expect(second.percent).toBe(67);
+  expect(quotaColor(first.percent!)).toBe(quotaColor(second.percent!));
+  expect(first.state).not.toBe(second.state);
 });
