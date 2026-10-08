@@ -6,7 +6,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AccountService, ProviderService, UsageService, EntityKind, ResourceSchema, GetUsageSummaryResponseSchema, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
+import { AccountService, ProviderService, UsageService, EntityKind, ErrorDetailSchema, ResourceSchema, GetUsageSummaryResponseSchema, UsageAccountingProfile, UsageCostState, newRequestId } from "@delinoio/delidev-api-client";
 import { SettingsTasks, SettingsTaskBackground } from "./settings-task";
 import { ApiEntryRow } from "./api-entry-row";
 import { ApiVerification } from "./api-verification";
@@ -37,7 +37,7 @@ const transport = createRouterTransport(router => {
     const mutation = request.mutation!;
     counters.validate.push({ id: mutation.id, expectedRevision: String(mutation.expectedRevision), requestId: mutation.requestId });
     if (scenario === "pending") await new Promise<void>(done => { release = done; });
-    if (scenario === "uncertain" && counters.validate.length === 1) throw new ConnectError("Synthetic lost authentication receipt with complete original recovery guidance.", Code.Unavailable);
+    if (scenario === "uncertain" && counters.validate.length === 1) throw new ConnectError("Synthetic lost authentication receipt with complete original recovery guidance.", Code.Unavailable, undefined, [{ desc: ErrorDetailSchema, value: { code: "server_unavailable", guidance: "Retain the original authentication request and inspect its accepted receipt before an explicit exact retry.", correlationId: "0195c9c0-7b13-7000-8000-000000000001" } }]);
     const validation = { request_id: mutation.requestId, connection_id: connection, state: "observed", authentication: "credential-accepted", observed_at: observed };
     row = create(ResourceSchema, { ...row, revision: 2n, documentJson: encode({ ...document(row), validation }) });
     return { account: row, requestId: mutation.requestId, validationJson: encode(validation) };

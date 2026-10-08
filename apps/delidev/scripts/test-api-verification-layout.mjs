@@ -75,7 +75,13 @@ try {
     if (["pending","uncertain"].includes(scenario)) {
       await check().focus(); await check().press("Enter");
       await page.waitForFunction(() => window.__apiVerificationFixture.counters.validate.length === 1);
-      if (scenario === "uncertain") await row.getByRole("button",{ name:labels[language].retry, exact:true }).waitFor();
+      if (scenario === "uncertain") {
+        await row.getByRole("button",{ name:labels[language].retry, exact:true }).waitFor();
+        const evidence = row.locator(".api-verification-problems details");
+        await evidence.locator("summary").focus(); await evidence.locator("summary").press("Enter");
+        assert((await evidence.textContent()).includes("Synthetic lost authentication receipt with complete original recovery guidance."),`${context}: original complete failure explanation retained`);
+        await inspect();
+      }
       assert(await check().isDisabled(), `${context}: pending/uncertain new checks locked`);
     }
     const beforePresentation = await fixture();
