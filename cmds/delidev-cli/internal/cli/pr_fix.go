@@ -9,7 +9,7 @@ import (
 	"slices"
 )
 
-func prFixCommand(ctx context.Context, c client, o options, args []string, streams IO) (any, error) {
+func prFixCommand(ctx context.Context, c client, o *options, args []string, streams IO) (any, error) {
 	f := flags("github pr remediation fix")
 	path := f.String("input", "-", "version-1 JSON selection file or stdin")
 	if err := parse(f, args); err != nil {
@@ -26,7 +26,7 @@ func prFixCommand(ctx context.Context, c client, o options, args []string, strea
 	if domain.Decode(raw, &input) != nil || input.Validate() != nil {
 		return nil, domain.Fail(domain.InvalidArgument, "Invalid manual fix selection.", "Supply exact set/problem revisions and explicit project/repository IDs.")
 	}
-	ensureRequest(&o)
+	ensureRequest(o)
 	r, err := c.prFixes.RequestPullRequestFix(ctx, request(c, &pb.RequestPullRequestFixRequest{RequestId: string(o.requestID), SchemaVersion: 1, DocumentJson: raw}))
 	if err != nil {
 		return nil, rpc.ClientError(err)

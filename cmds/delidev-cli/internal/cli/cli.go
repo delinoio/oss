@@ -90,7 +90,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		if command == "worker" {
 			kind = userservice.Worker
 		}
-		value, err := serviceCommand(ctx, o, kind, rest[1:], streams)
+		value, err := serviceCommand(ctx, &o, kind, rest[1:], streams)
 		return emit(value, err)
 	}
 	if command == "device" && len(rest) > 0 && (rest[0] == "inspect-local" || rest[0] == "recover-local") {
@@ -214,6 +214,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 
 	case "update":
+		if len(rest) > 0 && (rest[0] == "check" || rest[0] == "worker-request" || rest[0] == "cancel") {
+			ensureRequest(&o)
+		}
 		value, err := updateCommand(ctx, c, o, rest)
 		return emit(value, err)
 	case "storage":

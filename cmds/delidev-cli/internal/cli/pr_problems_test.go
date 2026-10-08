@@ -17,8 +17,10 @@ import (
 )
 
 func TestCLIPRProblemCommandsPreserveExactIdentityAndRejectForeignHistory(t *testing.T) {
-	for _, mode := range []string{"refresh", "refresh-ci", "refresh-conflict", "list", "dismiss", "foreign-history"} {
+	for _, mode := range []string{"refresh", "refresh-ci", "refresh-conflict", "list", "dismiss", "foreign-history", "generated-refresh", "generated-dismiss"} {
 		t.Run(mode, func(t *testing.T) {
+			generated := strings.HasPrefix(mode, "generated-")
+			mode = strings.TrimPrefix(mode, "generated-")
 			repository, id, setID, requestID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
 			at := time.Now().UTC()
 			target := domain.SessionPullRequest{Version: 1, Provider: domain.GitHubCom, RepositoryID: repository, RemoteRepositoryID: "37", RepositoryNodeID: "R_37", Owner: "fixture-owner", Name: "repo", PullRequestID: "9007199254740993", PullRequestNodeID: "PR_17", Number: "17", Title: "Original", ObservedAt: at}
@@ -47,6 +49,9 @@ func TestCLIPRProblemCommandsPreserveExactIdentityAndRejectForeignHistory(t *tes
 			mux := http.NewServeMux()
 			mux.Handle(delidevv1connect.IntegrationServiceRefreshPullRequestProblemsProcedure, connect.NewUnaryHandler(delidevv1connect.IntegrationServiceRefreshPullRequestProblemsProcedure, func(_ context.Context, r *connect.Request[pb.RefreshPullRequestProblemsRequest]) (*connect.Response[pb.RefreshPullRequestProblemsResponse], error) {
 				calls++
+				if generated {
+					requestID = domain.ID(r.Msg.RequestId)
+				}
 				if r.Msg.RepositoryId != string(repository) || r.Msg.Number != "17" || r.Msg.RequestId != string(requestID) || r.Msg.Kind != expectedKind {
 					t.Error("collection identity changed")
 				}
@@ -61,6 +66,11 @@ func TestCLIPRProblemCommandsPreserveExactIdentityAndRejectForeignHistory(t *tes
 			}))
 			mux.Handle(delidevv1connect.IntegrationServiceDismissPullRequestProblemProcedure, connect.NewUnaryHandler(delidevv1connect.IntegrationServiceDismissPullRequestProblemProcedure, func(_ context.Context, r *connect.Request[pb.DismissPullRequestProblemRequest]) (*connect.Response[pb.DismissPullRequestProblemResponse], error) {
 				calls++
+				if generated {
+					requestID = domain.ID(r.Msg.Mutation.GetRequestId())
+					value.Dismissal.RequestID = requestID
+					problem.DocumentJson, _ = json.Marshal(value)
+				}
 				if r.Msg.Mutation == nil || r.Msg.Mutation.Id != string(id) || r.Msg.Mutation.ExpectedRevision != 9007199254740993 || r.Msg.Mutation.RequestId != string(requestID) || r.Msg.ContentVersion != entry.ContentVersion {
 					t.Error("dismissal identity changed")
 				}
@@ -82,10 +92,19 @@ func TestCLIPRProblemCommandsPreserveExactIdentityAndRejectForeignHistory(t *tes
 			default:
 				args = append(args, "list", "--remote-repository-id", "37", "--pull-request-id", "9007199254740993")
 			}
+			if generated {
+				args = append(args[:5], args[7:]...)
+			}
 			var output, diagnostic strings.Builder
 			code := Run(context.Background(), args, IO{In: strings.NewReader("private-problem-fixture-token"), Out: &output, Err: &diagnostic})
 			if (code == 0) != (mode != "foreign-history") || calls != 1 {
 				t.Fatalf("CLI result=%d calls=%d output=%s diagnostics=%s", code, calls, output.String(), diagnostic.String())
+			}
+			if generated {
+				var envelope map[string]any
+				if json.Unmarshal([]byte(output.String()), &envelope) != nil || domain.ID(requestID).Validate() != nil || envelope["request_id"] != string(requestID) {
+					t.Fatal("generated mutation identity was not retained", output.String())
+				}
 			}
 			if strings.Contains(output.String(), "private-problem-fixture-token") {
 				t.Fatal("credential exposed")

@@ -8,6 +8,9 @@ import (
 func dispatchModel(ctx context.Context, c client, o options, rest []string, streams IO) (int, bool) {
 	emit := func(value any, err error) int { return emitResult(streams, o, value, err) }
 	if len(rest) > 0 && (rest[0] == "native-discover" || rest[0] == "native-observation" || rest[0] == "native-list" || rest[0] == "native-cancel") {
+		if rest[0] == "native-discover" || rest[0] == "native-cancel" {
+			ensureRequest(&o)
+		}
 		value, err := nativeModelCatalog(ctx, c, o, rest)
 		return emit(value, err), true
 	}

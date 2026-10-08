@@ -25,7 +25,7 @@ func readOAuthCode(input io.Reader) ([]byte, error) {
 	}
 	return raw, nil
 }
-func accountOAuthCommand(ctx context.Context, c client, o options, args []string, streams IO) (any, error) {
+func accountOAuthCommand(ctx context.Context, c client, o *options, args []string, streams IO) (any, error) {
 	if len(args) == 0 {
 		return nil, domain.Fail(domain.MissingInput, "An OAuth operation is required.", "Use start, complete, status or cancel.")
 	}
@@ -73,7 +73,7 @@ func accountOAuthCommand(ctx context.Context, c client, o options, args []string
 	if recover && o.requestID == "" {
 		return nil, domain.Fail(domain.MissingInput, "Recovery requires the original completion request ID.", "Supply --request-id and the original completion revision; recovery never exchanges again.")
 	}
-	ensureRequest(&o)
+	ensureRequest(o)
 	m := &pb.Mutation{Id: id, ExpectedRevision: revision, RequestId: string(o.requestID)}
 	if op == "start" {
 		start := &pb.StartAccountOAuthRequest{Provider: m, CallbackUrl: callbackURL}
