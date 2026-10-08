@@ -760,6 +760,15 @@ func (r *serviceReloader) replaceLinux(ctx context.Context, path string, c Confi
 	if pid <= 0 {
 		return nil // Observe readiness; an inactive unit grants no signal authority.
 	}
+	// Capture the admitted restart's expected identity before acquisition.
+	// Final proof after open rejects PID reuse at the acquisition boundary.
+	start := j.ProcessStart
+	if pid != j.PID {
+		start, err = r.ProcessStart(pid)
+		if err != nil || start == "" {
+			return reloadFailure()
+		}
+	}
 	open := r.OpenManager
 	if open == nil {
 		open = openReloadManager
@@ -773,13 +782,6 @@ func (r *serviceReloader) replaceLinux(ctx context.Context, path string, c Confi
 		return reloadFailure()
 	}
 	defer handle.Close()
-	start := j.ProcessStart
-	if pid != j.PID {
-		start, err = r.ProcessStart(pid)
-		if err != nil || start == "" {
-			return reloadFailure()
-		}
-	}
 	if err := r.proveRetainedLinuxManager(ctx, c, j, pid, start); err != nil {
 		return err
 	}

@@ -213,3 +213,47 @@ func TestLinuxReloadCheckpointsAdmittedOlderManagerGeneration(t *testing.T) {
 		t.Fatal("retained stale process instead of admitted older manager", f.pidfdOpened, f.pidfdSignaled)
 	}
 }
+
+func TestLinuxReloadRejectsRestartedPIDReuseAtAcquisition(t *testing.T) {
+	f := newReloadFixture(t, "linux")
+	f.onCommand = func(command string) error {
+		if strings.Contains(command, " daemon-reload") {
+			return errors.New("fixture interruption")
+		}
+		return nil
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("fixture did not retain intent")
+	}
+	original, err := readReloadJournal(f.r.Unit)
+	if err != nil || original == nil {
+		t.Fatal("missing original journal", err)
+	}
+	f.onCommand = nil
+	f.pid, f.peer = 404, 404
+	f.version = original.PreviousVersion
+	f.args[404] = f.args[original.PID]
+	processStart := f.r.ProcessStart
+	f.onOpenManager = func(pid int) error {
+		if pid != 404 {
+			t.Fatal("did not acquire admitted older manager")
+		}
+		f.r.ProcessStart = func(pid int) (string, error) {
+			if pid == 404 {
+				return "recycled-at-acquisition", nil
+			}
+			return processStart(pid)
+		}
+		return nil
+	}
+	if err := f.reload(); err == nil {
+		t.Fatal("recycled generation gained original authority")
+	}
+	current, err := readReloadJournal(f.r.Unit)
+	if err != nil || current == nil || current.PID != original.PID || current.ProcessStart != original.ProcessStart || current.Stage != reloadPublished {
+		t.Fatal("recycled identity was checkpointed", err)
+	}
+	if len(f.pidfdSignaled) != 0 || f.pidfdClosed != 1 {
+		t.Fatal("uncertain restart was signaled or its descriptor leaked")
+	}
+}
