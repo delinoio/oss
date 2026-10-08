@@ -110,7 +110,7 @@ func readPreparation(path string) (preparationIntent, error) {
 	var total int64
 	for _, file := range v.Files {
 		digest, err := hex.DecodeString(file.SHA256)
-		if !fs.ValidPath(file.Name) || file.Name == "." || seen[file.Name] || err != nil || len(digest) != 32 || hex.EncodeToString(digest) != file.SHA256 || file.Size < 0 {
+		if !fs.ValidPath(file.Name) || file.Name == "." || seen[file.Name] || err != nil || len(digest) != 32 || hex.EncodeToString(digest) != file.SHA256 || file.Size < 0 || file.Size > MaxPackageBytes {
 			return v, unavailable()
 		}
 		seen[file.Name] = true

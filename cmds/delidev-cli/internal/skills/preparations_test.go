@@ -207,3 +207,24 @@ func TestPreparationSessionCleanupReleasesActiveCapacity(t *testing.T) {
 		t.Fatal("terminal tombstone allowed resurrection")
 	}
 }
+
+func TestPreparationJournalRejectsOversizedResourceClaim(t *testing.T) {
+	m, s := preparationFixture(t)
+	if e := m.Prepare(context.Background(), s); e != nil {
+		t.Fatal(e)
+	}
+	v, e := readPreparation(m.preparationPath(s.Preparation.RequestID))
+	if e != nil {
+		t.Fatal(e)
+	}
+	v.Files[0].Size = MaxPackageBytes + 1
+	if e = writePreparation(m.preparationPath(s.Preparation.RequestID), v); e != nil {
+		t.Fatal(e)
+	}
+	if e = m.CleanupPreparation(context.Background(), cleanupScope(s)); e == nil {
+		t.Fatal("oversized private claim accepted")
+	}
+	if _, e = os.Stat(filepath.Join(snapshotPath(m.Root, s.Preparation.RequestID), "snapshot.json")); e != nil {
+		t.Fatal("invalid claim acquired deletion authority", e)
+	}
+}
