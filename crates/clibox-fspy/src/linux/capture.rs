@@ -2,11 +2,10 @@
 
 use std::{
     collections::HashMap,
-    env,
-    ffi::{CString, OsString},
+    ffi::CString,
     fs,
-    os::unix::{ffi::OsStrExt, fs::PermissionsExt},
-    path::{Path, PathBuf},
+    os::unix::ffi::OsStrExt,
+    path::Path,
     process::Command,
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -109,62 +108,15 @@ impl Event {
     }
 }
 
-struct RootProgram {
-    selected: PathBuf,
-    failed_candidates: Vec<(PathBuf, i32)>,
-}
+use crate::root_program::{ResolveFailure, RootProgram};
 
 fn root_program(command: &Command, max_failed: usize) -> Result<RootProgram, TraceFailure> {
-    let cwd = command.get_current_dir().unwrap_or_else(|| Path::new("."));
-    let cwd = std::path::absolute(cwd).map_err(|_| TraceFailure::Spawn)?;
-    let program = Path::new(command.get_program());
-    let executable = |path: &Path| {
-        fs::metadata(path)
-            .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-    };
-    if program.as_os_str().as_bytes().contains(&b'/') {
-        let path = if program.is_absolute() {
-            program.to_path_buf()
-        } else {
-            cwd.join(program)
-        };
-        return executable(&path)
-            .then_some(RootProgram {
-                selected: path,
-                failed_candidates: Vec::new(),
-            })
-            .ok_or(TraceFailure::Spawn);
-    }
-    let path_env = command
-        .get_envs()
-        .find(|(key, _)| *key == "PATH")
-        .map(|(_, value)| value.map(OsString::from))
-        .unwrap_or_else(|| env::var_os("PATH"))
-        .unwrap_or_else(|| OsString::from("/bin:/usr/bin"));
-    let mut failed_candidates = Vec::new();
-    for directory in env::split_paths(&path_env) {
-        let base = if directory.is_absolute() {
-            directory
-        } else {
-            cwd.join(directory)
-        };
-        let candidate = base.join(program);
-        if executable(&candidate) {
-            return Ok(RootProgram {
-                selected: candidate,
-                failed_candidates,
-            });
-        }
-        if failed_candidates.len() >= max_failed {
-            return Err(TraceFailure::EventLimit);
-        }
-        let error = match fs::metadata(&candidate) {
-            Ok(_) => libc::EACCES,
-            Err(error) => error.raw_os_error().unwrap_or(libc::EIO),
-        };
-        failed_candidates.push((candidate, error));
-    }
-    Err(TraceFailure::Spawn)
+    crate::root_program::resolve(command, max_failed, crate::root_program::execution_access)
+        .map_err(|failure| match failure {
+            ResolveFailure::Limit => TraceFailure::EventLimit,
+            ResolveFailure::Access(libc::EACCES | libc::EPERM) => TraceFailure::Permission,
+            ResolveFailure::Access(_) => TraceFailure::Spawn,
+        })
 }
 
 /// Record all selected synchronous file operations. The optional policy runs
@@ -605,10 +557,88 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Write, os::unix::process::CommandExt, process::Stdio};
+    use std::{
+        env,
+        io::Write,
+        os::unix::{fs::PermissionsExt, process::CommandExt},
+        path::PathBuf,
+        process::Stdio,
+    };
 
     use super::*;
     use crate::record::{parse, serialize, DEFAULT_BYTE_LIMIT, DEFAULT_EVENT_LIMIT};
+
+    #[test]
+    fn inaccessible_owner_candidate_cannot_hide_later_image() {
+        // The owner of 0641 lacks execute permission; root has different
+        // execution authority, so retain this as an unprivileged fixture.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let denied = directory.path().join("denied");
+        let valid = directory.path().join("valid");
+        fs::create_dir(&denied).unwrap();
+        fs::create_dir(&valid).unwrap();
+        fs::copy("/bin/true", denied.join("tool")).unwrap();
+        fs::set_permissions(denied.join("tool"), fs::Permissions::from_mode(0o641)).unwrap();
+        fs::copy("/bin/true", valid.join("tool")).unwrap();
+        fs::set_permissions(valid.join("tool"), fs::Permissions::from_mode(0o755)).unwrap();
+        let path = env::join_paths([&denied, &valid]).unwrap();
+        let mut command = Command::new("tool");
+        command.env("PATH", &path);
+        let record = capture(
+            &mut command,
+            |program| {
+                assert_eq!(program, valid.join("tool"));
+                let mut resolved = Command::new(program);
+                resolved.arg0("tool").env("PATH", &path);
+                resolved
+            },
+            directory.path(),
+            Limits::default(),
+            &AtomicBool::new(false),
+            |_| Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(
+            record.operations[0].completion.native_error,
+            Some(libc::EACCES)
+        );
+        assert_eq!(record.operations[0].start.operation, Operation::Exec);
+        assert_eq!(record.operations[1].completion.native_error, None);
+        assert_eq!(
+            record.operations[1].start.paths[0].project_relative,
+            Some(NativePath::UnixBytes(b"valid/tool".to_vec()))
+        );
+        let mut encoded = Vec::new();
+        serialize(
+            &record,
+            &mut encoded,
+            DEFAULT_EVENT_LIMIT,
+            DEFAULT_BYTE_LIMIT,
+        )
+        .unwrap();
+        parse(encoded.as_slice(), DEFAULT_EVENT_LIMIT, DEFAULT_BYTE_LIMIT).unwrap();
+
+        for explicit in [false, true] {
+            let mut command = Command::new(if explicit {
+                denied.join("tool")
+            } else {
+                PathBuf::from("tool")
+            });
+            command.env("PATH", &denied);
+            let result = capture(
+                &mut command,
+                |_| panic!("denied admission must not construct a child"),
+                directory.path(),
+                Limits::default(),
+                &AtomicBool::new(false),
+                |_| Duration::ZERO,
+            );
+            assert!(matches!(result, Err(TraceFailure::Permission)));
+        }
+    }
 
     #[test]
     fn path_candidates_before_selected_executable_are_recorded() {
