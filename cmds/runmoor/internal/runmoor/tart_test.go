@@ -675,3 +675,17 @@ func TestSetupReservationsShareHostBudget(t *testing.T) {
 	}
 	requireCode(t, m.reserve(c, ids[2]), ErrCapacity)
 }
+
+// The command mock models one deletion PID; kernel exec tests cover the real child.
+func (f *tartFixture) RunTartCleanup(ctx context.Context, req tartCleanupRequest, files []*os.File) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	lock, err := prepareTartCleanup(req, files)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	_, err = f.Run(ctx, req.Executable, []string{"delete", deletionVMName(req.Owner.Entity)}, tartEnv(req.config()), nil)
+	return err
+}
