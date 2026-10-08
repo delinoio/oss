@@ -23,34 +23,36 @@ export function editedBindings(before: string, after: string, bindings: readonly
     return after.slice(next.start, next.end) === next.token && (next.start === 0 || /\s/u.test(after[next.start - 1]!)) && (next.end === after.length || /\s/u.test(after[next.end]!)) ? [next] : [];
   });
 }
-export function useSkillCompletion({ value, change, textarea, machineId, agentId, sessionId = "", projectId = "", active = true, enabled = true, initialBindings = [], bindingsChanged }: {
+export function useSkillCompletion({ value, change, textarea, machineId, agentId, sessionId = "", projectId = "", active = true, enabled = true, disabled = false, initialBindings = [], bindingsChanged }: {
   value: string; change: (value: string) => void; textarea: RefObject<HTMLTextAreaElement | null>;
-  machineId: string; agentId: string; sessionId?: string; projectId?: string; active?: boolean; enabled?: boolean; initialBindings?: SkillTokenBinding[]; bindingsChanged?: (bindings: SkillTokenBinding[]) => void;
+  machineId: string; agentId: string; sessionId?: string; projectId?: string; active?: boolean; enabled?: boolean; disabled?: boolean; initialBindings?: SkillTokenBinding[]; bindingsChanged?: (bindings: SkillTokenBinding[]) => void;
 }) {
   useLocale(); const transport = useTransport(), id = useId();
   const scope = `${machineId}:${agentId}:${sessionId}:${projectId}`;
   const previousScope = useRef({ scope, transport });
   const [bindings, setBindings] = useState<SkillTokenBinding[]>(initialBindings), [caret, setCaret] = useState(0), [dismissed, setDismissed] = useState(false), [selected, setSelected] = useState(0);
   useEffect(() => { bindingsChanged?.(bindings); }, [bindings, bindingsChanged]);
-  const composing = useRef(false);
+  const composing = useRef(false), editable = useRef(false);
+  editable.current = active && !disabled;
+  const canEdit = () => editable.current && Boolean(textarea.current?.isConnected) && !textarea.current?.matches(":disabled") && !textarea.current?.closest("[inert], [hidden]");
   const token = !dismissed && !composing.current ? skillToken(value, caret) : undefined;
   const contextChanged = previousScope.current.scope !== scope || previousScope.current.transport !== transport;
   useEffect(() => {
     if (contextChanged) { previousScope.current = { scope, transport }; setBindings(prior => prior.map(binding => ({ ...binding, stale: true }))); setSelected(0); }
   }, [scope, transport, contextChanged]);
-  const query = useQuery(SkillQuery.listSkills, { machineId, agentId, sessionId, projectId }, { enabled: active && enabled && !!token && !!machineId && !!agentId && !contextChanged, retry: false, staleTime: 0, gcTime: 0 });
+  const query = useQuery(SkillQuery.listSkills, { machineId, agentId, sessionId, projectId }, { enabled: active && enabled && !disabled && !!token && !!machineId && !!agentId && !contextChanged, retry: false, staleTime: 0, gcTime: 0 });
   const prefix = token?.prefix.toLocaleLowerCase() ?? "";
   const candidates = (query.data?.skills ?? []).filter(entry => entry.selection && entry.name.toLocaleLowerCase().startsWith(prefix)).sort((a, b) => Number(b.name.toLocaleLowerCase() === prefix) - Number(a.name.toLocaleLowerCase() === prefix) || a.name.localeCompare(b.name) || a.selection!.skillId.localeCompare(b.selection!.skillId));
   const validIndex = Math.min(selected, Math.max(0, candidates.length - 1));
   const accept = (entry: SkillEntry) => {
-    if (!token || !entry.selection || composing.current || contextChanged) return;
+    if (!canEdit() || !enabled || !token || !entry.selection || composing.current || contextChanged) return;
     const replacement = `$${entry.name}`, next = value.slice(0, token.start) + replacement + value.slice(token.end), end = token.start + replacement.length;
     setBindings(prior => [...editedBindings(value, next, prior).filter(binding => binding.start !== token.start), { start: token.start, end, token: replacement, selection: entry.selection!, stale: false }]);
-    change(next); setCaret(end); setDismissed(true); queueMicrotask(() => { textarea.current?.focus(); textarea.current?.setSelectionRange(end, end); });
+    change(next); setCaret(end); setDismissed(true); queueMicrotask(() => { if (!canEdit()) return; textarea.current?.focus(); textarea.current?.setSelectionRange(end, end); });
   };
-  const onChange = (next: string, position: number) => { setBindings(prior => editedBindings(value, next, prior)); change(next); setCaret(position); setDismissed(false); setSelected(0); };
+  const onChange = (next: string, position: number) => { if (!canEdit()) return; setBindings(prior => editedBindings(value, next, prior)); change(next); setCaret(position); setDismissed(false); setSelected(0); };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.nativeEvent.isComposing || composing.current || event.nativeEvent.keyCode === 229 || event.repeat || event.getModifierState("AltGraph")) return false;
+    if (!canEdit() || event.nativeEvent.isComposing || composing.current || event.nativeEvent.keyCode === 229 || event.repeat || event.getModifierState("AltGraph")) return false;
     if (!token) return false;
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDismissed(true); return true; }
     if (candidates.length && ["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(event.key) && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
@@ -63,13 +65,14 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
   };
   const distinct = new Map(bindings.filter(binding => !binding.stale && value.slice(binding.start,binding.end)===binding.token).map(binding => [binding.selection.skillId, binding.selection]));
   const blocked = contextChanged && bindings.length > 0 || bindings.some(binding => binding.stale) || distinct.size > 16;
-  const list = token ? <div className="skill-completion">
-    {enabled ? query.isFetching ? <p role="status">{copy("skills.loading")}</p> : query.error ? <><p role="status">{copy("skills.unavailable")}</p><button type="button" onClick={() => void query.refetch()}>{copy("skills.retry")}</button></> : candidates.length ? <ul role="listbox" id={id} aria-label={copy("skills.available")}>{candidates.map((entry, index) => <li key={entry.selection!.skillId} id={`${id}-${index}`} role="option" aria-selected={index === validIndex} onMouseDown={event => event.preventDefault()} onClick={() => accept(entry)}><strong>{entry.name}</strong> <span>{entry.provenance === SkillProvenance.PROJECT ? copy("skills.project") : copy("skills.user")}</span><p>{entry.description}</p></li>)}</ul> : <p role="status">{copy("skills.empty")}</p> : <p role="status">{copy("skills.unsupported")}</p>}
+  const visible = active && !disabled && Boolean(token);
+  const list = visible ? <div className="skill-completion">
+    {enabled ? query.isFetching ? <p role="status">{copy("skills.loading")}</p> : query.error ? <><p role="status">{copy("skills.unavailable")}</p><button type="button" onClick={() => { if (canEdit()) void query.refetch(); }}>{copy("skills.retry")}</button></> : candidates.length ? <ul role="listbox" id={id} aria-label={copy("skills.available")}>{candidates.map((entry, index) => <li key={entry.selection!.skillId} id={`${id}-${index}`} role="option" aria-selected={index === validIndex} onMouseDown={event => event.preventDefault()} onClick={() => accept(entry)}><strong>{entry.name}</strong> <span>{entry.provenance === SkillProvenance.PROJECT ? copy("skills.project") : copy("skills.user")}</span><p>{entry.description}</p></li>)}</ul> : <p role="status">{copy("skills.empty")}</p> : <p role="status">{copy("skills.unsupported")}</p>}
   </div> : null;
-  return { selections: [...distinct.values()], blocked, list, clear: () => setBindings([]), onChange, onKeyDown,
-    onSelect: () => { setCaret(textarea.current?.selectionStart ?? 0); },
-    onCompositionStart: () => { composing.current = true; setDismissed(true); }, onCompositionEnd: () => { composing.current = false; setCaret(textarea.current?.selectionStart ?? 0); setDismissed(false); },
-    attributes: { "aria-controls": token && candidates.length ? id : undefined, "aria-autocomplete": "list" as const, "aria-expanded": !!token, "aria-activedescendant": token && candidates.length ? `${id}-${validIndex}` : undefined },
+  return { selections: [...distinct.values()], blocked, list, clear: () => { if (canEdit()) setBindings([]); }, onChange, onKeyDown,
+    onSelect: () => { if (!canEdit()) return; setCaret(textarea.current?.selectionStart ?? 0); },
+    onCompositionStart: () => { if (!canEdit()) return; composing.current = true; setDismissed(true); }, onCompositionEnd: () => { composing.current = false; if (!canEdit()) return; setCaret(textarea.current?.selectionStart ?? 0); setDismissed(false); },
+    attributes: { "aria-controls": visible && candidates.length ? id : undefined, "aria-autocomplete": "list" as const, "aria-expanded": visible, "aria-activedescendant": visible && candidates.length ? `${id}-${validIndex}` : undefined },
     warning: blocked ? <p role="status">{copy("skills.reselect")}</p> : null,
   };
 }

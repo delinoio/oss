@@ -177,7 +177,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     setPrompt(value);
     setPromptLimit(false);
   };
-  const skills = useSkillCompletion({ value: prompt, change: updatePrompt, textarea: firstMessage, machineId: machine, agentId: agent, projectId: project, active, enabled: status.data?.capabilities.includes(SystemCapability.NATIVE_SKILLS_V1) ?? false });
+  const skills = useSkillCompletion({ value: prompt, change: updatePrompt, textarea: firstMessage, machineId: machine, agentId: agent, projectId: project, active, disabled: blocked, enabled: status.data?.capabilities.includes(SystemCapability.NATIVE_SKILLS_V1) ?? false });
   const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked && !skills.blocked && automaticChoicesEligible;
 
   const submit = async () => {

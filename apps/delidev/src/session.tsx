@@ -287,7 +287,7 @@ export function SessionView({ id, draft, setDraft, active = true }: { id: string
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, () => { setDraft(""); skills.clear(); void queue.refresh(); });
   const locked = send.busy || send.uncertain;
   const composer = useRef<HTMLTextAreaElement>(null);
-  const skills = useSkillCompletion({ value: draft, change: setDraft, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, active });
+  const skills = useSkillCompletion({ value: draft, change: setDraft, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, active, disabled: locked });
   const canSend = !locked && !skills.blocked && Boolean(draft.trim()) && text(data.archive) === "active";
   const enqueue = () => { if (canSend) void send.send({ requestId: newRequestId(), sessionId: id, documentJson: encode({ prompt: draft, mode }), skills: skills.selections.length ? { selections: skills.selections } : undefined }); };
   const shortcuts = useShortcuts([

@@ -55,7 +55,7 @@ function QueuedInputEditor({edit,setEdit,current,session,busy,autoFocus,save}: {
  const textarea=useRef<HTMLTextAreaElement>(null), data=document(session);
  // Draft ownership remains outside disposable payloads; only token bindings change.
  const bindingsChanged=useCallback((bindings:SkillTokenBinding[])=>{if(edit.skills!==bindings) setEdit({...edit,skills:bindings});},[edit,setEdit]);
- const skills=useSkillCompletion({value:edit.prompt,change:prompt=>setEdit({...edit,prompt}),textarea,machineId:text(data.machine_id),agentId:text(data.agent_id),sessionId:current.sessionId,initialBindings:edit.skills,bindingsChanged,active:!busy});
+ const skills=useSkillCompletion({value:edit.prompt,change:prompt=>setEdit({...edit,prompt}),textarea,machineId:text(data.machine_id),agentId:text(data.agent_id),sessionId:current.sessionId,initialBindings:edit.skills,bindingsChanged,disabled:busy});
  return <form onSubmit={event=>{event.preventDefault();if(busy || skills.blocked || edit.revision!==current.revision) return;save(edit.prompt,skills.selections);}}>
   <label>{copy("queue.editedInput_e6f7fe")}<textarea ref={textarea} autoFocus={autoFocus} rows={3} maxLength={65536} disabled={busy} value={edit.prompt} onChange={event=>skills.onChange(event.target.value,event.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/></label>
   {skills.list}{skills.warning}{edit.skills?.length ? <button type="button" disabled={busy} onClick={skills.clear}>{copy("skills.clear")}</button>:null}
