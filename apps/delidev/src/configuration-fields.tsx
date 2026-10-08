@@ -269,7 +269,7 @@ function ProjectFields({ data, change, active, movementActive = active }: Fields
   return <>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.repositories_1e32af")}</legend>
-      <fieldset><legend>{copy("configuration-fields.orderedRepositories_f1a12d")}</legend><p>{copy("project-creation.workspaceHelp")}</p>
+      <fieldset><legend>{copy("configuration-fields.orderedRepositories_f1a12d")}</legend><p><LocalizedText id="configuration-fields.orderIsPreserved_62a111" components={{ s0: <>{copy("project-creation.workspaceHelp")}</> }} /></p>
         <ResourceChoice label={copy("configuration-fields.add_b69dce", { v0: kindNames[EntityKind.REPOSITORY] })} kind={EntityKind.REPOSITORY} value={selected} change={setSelected} active={active} />
         <button type="button" disabled={!selected || repositories.includes(selected) || repositories.length >= 1000} onClick={() => { change({ ...data, repositories: [...repositories, selected] }); setSelected(""); }}>{copy("configuration-fields.addSelected_967e2a")}</button>
         <ProjectRepositoryOrder ids={repositories} names={names} active={movementActive} change={(values) => change({ ...data, repositories: values, primary_repository: values.includes(text(data.primary_repository)) ? data.primary_repository : "" })} />
