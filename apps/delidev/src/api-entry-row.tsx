@@ -86,7 +86,6 @@ export function ApiEntryRow({ row, provider, active, manage, edit, remove, openU
         <h2 id={nameId}>{name}</h2><p className="api-entry-provider-name">{provider?.displayName ?? copy("api-entry-row.extra.37709967fc3f") + text(value.provider_id)}</p>
         <p className="api-entry-format">{apiFormatLabels[apiFormat(value.api_protocol) ?? apiFormat(provider?.protocol)!] ?? ""}</p>
         <div className="api-entry-statuses"><span data-state={cleanup ? "warning" : connected ? "connected" : "neutral"}><span className="api-entry-sr-only">{copy("api-entry-row.connection_9adb21")}</span>{cleanup ? copy("api-entry-row.credentialCleanupPending_50459d") : connected ? copy("api-entry-row.connected_229655") : copy("api-entry-row.disconnected_04dfac")}</span><span data-state={value.health === "ready" ? "connected" : "warning"}><span className="api-entry-sr-only">{copy("api-entry-row.health_6e9098")}</span>{verified ? copy("api-verification.badge") : statusLabel(text(value.health)) || copy("api-entry-row.extra.b764cdc0eab7")}</span></div>
-        {verification}
         {!supported ? <small>{row.id}</small> : null}
       </div></div>
       <dl className="api-usage-metrics"><UsageMetrics data={result.data} /><div className="api-usage-metric"><dt>{copy("api-entry-row.quota_6c105c")}</dt><dd>{value.confirmed_exhausted === true ? <strong className="api-entry-exhausted">{copy("api-entry-row.confirmedExhausted_763851")}</strong> : windows.length ? windows.slice(0, 2).map((window, index) => <Quota key={index} window={window} now={now} compact />) : <strong>{copy("api-entry-row.notReported_adadfa")}</strong>}</dd></div></dl>
@@ -95,6 +94,7 @@ export function ApiEntryRow({ row, provider, active, manage, edit, remove, openU
         {menu ? <div id={menuId} className="api-entry-more-panel" role="group" aria-label={copy("api-entry-row.actionsFor_b59837", { v0: name })} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><button type="button" onClick={() => { closeMenu(); setDetails(true); }}>{copy("api-entry-row.details")}</button><button type="button" disabled={!supported} onClick={() => { closeMenu(); edit(); }}>{copy("api-entry-row.editPreferences_00b4cc")}</button><button className="api-entry-delete" type="button" disabled={!supported} onClick={() => { closeMenu(); remove(); }}>{copy("api-entry-row.deleteEntry_d2968b")}</button></div> : null}
       </div></div>
     </div>
+    {verification}
     <div className="api-entry-usage-status">
       {result.isFetching ? <p role="status">{result.data ? copy("api-entry-row.refreshingUsage_70313a") : copy("api-entry-row.loadingUsage_0134e9")}</p> : null}
       <Problem error={result.error} />{result.error ? <><p role="status">{result.data ? copy("api-entry-row.refreshFailedShowingStaleUsageFrom_b5be80") : copy("api-entry-row.usageIsUnavailableEntryControlsRemain_755eaf")}</p><button type="button" disabled={!active || result.isFetching} onClick={() => void result.refetch()}><LocalizedText id="api-entry-row.retryUsageFor_40ac3c" components={{ s0: <>{name}</> }} /></button></> : null}
