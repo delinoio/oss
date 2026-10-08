@@ -14,7 +14,7 @@ import { encode, type Document } from "./documents";
 import { NotificationProvider } from "./toast-notifications";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
+function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; doctor?: () => { reportJson?: Uint8Array }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -23,7 +23,7 @@ function fixture(resources: Resource[], options: { readResource?: (id: string) =
   const disconnect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1] }); } });
+    router.service(SystemService, { getDoctor: options.doctor ?? vi.fn(() => { throw new Error("Doctor is not requested by Settings"); }), getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1] }); } });
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
     router.service(ResourceService, { listResources: list, getResource: (request) => options.readResource?.(request.id) ?? ({ resource: resources.find((row) => row.id === request.id) }) });
@@ -1097,4 +1097,16 @@ it.each(["cancel", "close", "done"])("retains a failed first model through %s an
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findAllByText("explicit-refresh-native"); expect(modelReads).toHaveBeenCalledTimes(2);
   expect(screen.queryByText("Model unavailable")).toBeNull(); log.mockRestore();
+});
+
+it("retains Connection controls without mounting or reading Settings Doctor", async () => {
+ const doctor = vi.fn(() => ({})); const value = fixture([], {doctor});
+ render(value.view(<Settings connectionSettings={<button>Original native connection</button>} />));
+ fireEvent.click(screen.getByRole("button",{name:"Connection & diagnostics"}));
+ await screen.findByRole("button",{name:"Original native connection"});
+ expect(screen.getByRole("heading",{name:"Connection & diagnostics"})).toBeTruthy();
+ expect(screen.queryByRole("button",{name:"Refresh diagnostics"})).toBeNull();
+ expect(screen.queryByText("Reading server diagnostics")).toBeNull();
+ expect(doctor).not.toHaveBeenCalled();
+
 });

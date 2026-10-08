@@ -42,10 +42,11 @@
   "local-worker-controls.autoPermission": "원래 등록 또는 권한을 검증하지 못했습니다. 기존 등록 파일을 유지하세요. 비공개 디렉터리가 본인 계정 소유이며 본인만 접근할 수 있는지 확인한 다음(macOS/Linux 디렉터리 0700, 파일 0600) 이 Worker를 새로고침하세요.",
   "local-worker-controls.autoNeedsAttention": "확인 필요",
   "local-worker-controls.autoStopped": "중지됨",
-  "local-worker-controls.autoDiagnostics": "연결 및 진단",
   "local-worker-controls.autoRunning": "실행 중",
   "local-worker-controls.autoRunningDescription": "워커 프로세스가 실행 중입니다. 연결 상태와 작업 실행 가능 여부는 별도로 확인합니다.",
   "local-worker-controls.autoRegisteringBadge": "등록 확인 중",
   "local-worker-controls.autoRetryingBadge": "다시 시도 중",
-  "local-worker-controls.autoCheckingBadge": "확인 중"
+  "local-worker-controls.autoCheckingBadge": "확인 중",
+  "local-worker-controls.viewProblemDetails": "문제 상세 보기",
+  "local-worker-controls.problemTitle": "로컬 Worker 문제"
 }

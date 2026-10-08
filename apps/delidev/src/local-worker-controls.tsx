@@ -1,5 +1,6 @@
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
+import { Modal } from "./ui";
 
 export enum LocalWorkerAction { Register = "register", Start = "start", Stop = "stop", Status = "status" }
 export enum LocalWorkerState { NotStarted = "not-started", Starting = "starting", Running = "running", Stopping = "stopping", Exited = "exited", Uncertain = "uncertain" }
@@ -25,8 +26,10 @@ const badges: Record<LocalWorkerState, string> = {
   get [LocalWorkerState.Uncertain]() { return copy("local-worker-controls.extra.7564cd2e0474"); },
 };
 
-export function LocalWorkerControls({ control, active, changed, allowRegistration = true, pendingChanged, presentation = LocalWorkerPresentation.Default, onDiagnostics }: { control: ControlLocalWorker; active: boolean; changed: () => void; allowRegistration?: boolean; pendingChanged?: (pending: boolean) => void; presentation?: LocalWorkerPresentation; onDiagnostics?: () => void }) {
+export function LocalWorkerControls({ control, active, changed, allowRegistration = true, pendingChanged, presentation = LocalWorkerPresentation.Default }: { control: ControlLocalWorker; active: boolean; changed: () => void; allowRegistration?: boolean; pendingChanged?: (pending: boolean) => void; presentation?: LocalWorkerPresentation }) {
   useLocale();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => { if (!active) setDetailsOpen(false); }, [active]);
   const [status, setStatus] = useState<LocalWorkerStatus>();
   const [problem, setProblem] = useProductMessage("");
   const [busy, setBusy] = useState(false);
@@ -90,8 +93,15 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
       {!status && allowRegistration && !automatic ? <button disabled={busy} onClick={() => void perform(LocalWorkerAction.Register)}>{copy("local-worker-controls.registerThisComputer_cbad75")}</button> : null}
       {canStart ? <button className={runnerDevices ? "primary" : undefined} disabled={busy || Boolean(pendingStop || confirmation)} onClick={() => void perform(LocalWorkerAction.Start)}>{copy("local-worker-controls.startLocalWorker_9c00b5")}</button> : null}
       {status?.generation && status.state !== LocalWorkerState.Exited && (!automatic || !blocked) && !confirmation && !pendingStop ? <button className={runnerDevices ? "settings-runner-stop" : undefined} disabled={busy} onClick={() => setConfirmation(status.generation)}>{copy("local-worker-controls.stopLocalWorker_0e4a48")}</button> : null}
-      {blocked && onDiagnostics ? <button onClick={onDiagnostics}>{copy("local-worker-controls.autoDiagnostics")}</button> : null}
+      {blocked && runnerDevices ? <button onClick={() => setDetailsOpen(true)}>{copy("local-worker-controls.viewProblemDetails")}</button> : null}
     </div>
+    {detailsOpen ? <Modal title={copy("local-worker-controls.problemTitle")} close={() => setDetailsOpen(false)} visible={active} focusClose trapFocus>
+      {badge ? <p role="status">{badge}</p> : null}
+      {managedDescription ? <p>{managedDescription}</p> : null}
+      {status ? <p>{descriptions[status.state]}</p> : null}
+      {status?.machine_id ? <p><LocalizedText id="local-worker-controls.executionMachine_37d7c0" components={{ s0: <>{status.machine_id}</> }} /></p> : null}
+      {problem ? <p role="alert">{problem}</p> : null}
+    </Modal> : null}
     {confirmation && !pendingStop ? <><p>{copy("local-worker-controls.stoppingThisWorkerInterruptsItsActive_09fca2")}</p>{stale ? <p role="alert">{copy("local-worker-controls.theWorkerGenerationChangedRefreshAnd_62391f")}</p> : null}<button disabled={busy || Boolean(stale)} onClick={() => void perform(LocalWorkerAction.Stop, confirmation)}>{copy("local-worker-controls.confirmWorkerStop_c7e9d5")}</button><button disabled={busy} onClick={() => setConfirmation(undefined)}>{copy("local-worker-controls.keepWorkerRunning_6abcfd")}</button></> : null}
     {pendingStop ? <><p>{copy("local-worker-controls.theRetainedStopTargetsOnlyIts_b08b1d")}</p><button disabled={busy} onClick={() => void perform(LocalWorkerAction.Stop, pendingStop)}>{copy("local-worker-controls.retryOriginalWorkerStop_70aea2")}</button>{status?.generation !== pendingStop || status.state === LocalWorkerState.Exited ? <button disabled={busy} onClick={() => { setPendingStop(undefined); setConfirmation(undefined); setProblem(""); }}>{copy("local-worker-controls.acknowledgeRefreshedWorkerState_afc0fe")}</button> : null}</> : null}
   </section>;

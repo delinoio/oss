@@ -155,5 +155,7 @@
   "settings.projectRepositoryStale": "이전에 불러온 저장소 세부 정보입니다. 최신 정보를 확인하려면 새로 고침하세요.",
   "settings.projectRepositoryPrimary": "기본",
   "settings.projectOriginalID": "프로젝트 ID",
-  "settings.projectRepositoryOriginalIDs": "저장소 ID"
+  "settings.projectRepositoryOriginalIDs": "저장소 ID",
+  "settings.connectionUnavailable": "이 창에서는 네이티브 Connection 컨트롤을 사용할 수 없습니다.",
+  "settings.connectionDescription": "원본 연결과 저장된 서버 컨트롤을 관리합니다."
 }
