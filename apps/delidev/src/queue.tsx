@@ -4,7 +4,8 @@ import { LocalizedText, copy, useLocale } from "./localization";
 import { useCallback, useRef, useState } from "react";
 import { SessionQuery, newRequestId, type Resource, type SkillSelection } from "@delinoio/delidev-api-client";
 import { document, items, object, text } from "./documents";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
+import { uuid } from "./github-query-model";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { Problem } from "./ui";
 import { RejectedInput } from "./startup-rejection";
@@ -70,4 +71,49 @@ function QueuedInputEditor({edit,setEdit,current,session,busy,imageBound,autoFoc
   {edit.revision!==current.revision ? <p role="status">{copy("queue.thisInputChangedWhileYouWere_cfe47a")}</p>:null}
   <div className="actions"><button className="primary" disabled={busy || skills.blocked || (!edit.prompt.trim() && !imageBound) || edit.revision!==current.revision}>{copy("queue.saveInput_9f11a2")}</button><button type="button" disabled={busy} onClick={()=>setEdit(undefined)}>{copy("queue.cancelEdit_6fa271")}</button></div>
  </form>;
+}
+
+
+enum QueueMutationKind { Edit = "edit-input", Remove = "remove-input", Steer = "steer-input" }
+const queueRequestTypes = {
+  [QueueMutationKind.Edit]: "delidev.v1.EditQueuedInputRequest",
+  [QueueMutationKind.Remove]: "delidev.v1.RemoveQueuedInputRequest",
+  [QueueMutationKind.Steer]: "delidev.v1.SteerQueuedInputRequest",
+};
+function queueIntent(intent: RetainedMutationIntent, sessionId: string) {
+  const request = object(intent.input), mutation = object(request.mutation);
+  const kind = Object.values(QueueMutationKind).find(value => intent.key === `${value}:${text(mutation.id)}`);
+  if (!kind || request.$typeName !== queueRequestTypes[kind] || request.sessionId !== sessionId || !uuid(sessionId) || !uuid(mutation.id) || !uuid(mutation.requestId) || typeof mutation.expectedRevision !== "bigint" || mutation.expectedRevision <= 0n || mutation.expectedRevision >= 1n << 63n) return;
+  if (kind === QueueMutationKind.Steer && (!uuid(request.expectedExecutionId) || !uuid(request.expectedTurnId))) return;
+  return { kind, inputId: text(mutation.id) };
+}
+
+/** Queue tombstones and payload eviction cannot acknowledge an original request. */
+export function PendingQueueInputs({ sessionId, presentInputIds, refresh }: { sessionId: string; presentInputIds: ReadonlySet<string>; refresh: () => void }) {
+  useLocale();
+  const edits = useRetainedMutationIntents(`${QueueMutationKind.Edit}:`);
+  const removals = useRetainedMutationIntents(`${QueueMutationKind.Remove}:`);
+  const steers = useRetainedMutationIntents(`${QueueMutationKind.Steer}:`);
+  const pending = [...edits, ...removals, ...steers].flatMap(intent => {
+    const original = queueIntent(intent, sessionId);
+    return original && !presentInputIds.has(original.inputId) ? [{ ...original, key: intent.key }] : [];
+  });
+  // The connection registry bounds these original requests to 1,000/8 MiB.
+  // Never fetch or recreate a missing queue row to recover its presentation.
+  return pending.length ? <section aria-label={copy("queue.pendingActions")}><h4>{copy("queue.pendingActions")}</h4>
+    {pending.map(intent => <PendingQueueInput key={intent.key} kind={intent.kind} inputId={intent.inputId} sessionId={sessionId} refresh={refresh} />)}
+  </section> : null;
+}
+function PendingQueueInput({ kind, inputId, sessionId, refresh }: { kind: QueueMutationKind; inputId: string; sessionId: string; refresh: () => void }) {
+  const edit = useRetainedMutation(`${QueueMutationKind.Edit}:${inputId}`, SessionQuery.editQueuedInput, refresh);
+  const remove = useRetainedMutation(`${QueueMutationKind.Remove}:${inputId}`, SessionQuery.removeQueuedInput, refresh);
+  const steer = useRetainedMutation(`${QueueMutationKind.Steer}:${inputId}`, SessionQuery.steerQueuedInput, refresh);
+  const operation = kind === QueueMutationKind.Edit ? edit : kind === QueueMutationKind.Remove ? remove : steer;
+  const valid = operation.input && queueIntent({ key: `${kind}:${inputId}`, input: operation.input, busy: operation.busy, uncertain: operation.uncertain }, sessionId);
+  const label = kind === QueueMutationKind.Edit ? copy("queue.edit_262121") : kind === QueueMutationKind.Remove ? copy("queue.removal_e57388") : copy("queue.steer_1cf39e");
+  return <article className="queue-item">
+    <p><strong>{label}</strong> · {inputId}</p><p role="status">{operation.busy ? copy("queue.sendingOriginal") : copy("queue.uncertainOriginal")}</p>
+    <Problem error={operation.error} />
+    {valid && operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="queue.retryTheSame_4cb78a" components={{ s0: <>{label}</> }} /></button> : null}
+  </article>;
 }

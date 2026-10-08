@@ -61,7 +61,7 @@ import { SidechatFindings } from "./sidechat";
 import { SessionTools } from "./session-tools";
 import { SessionStorageAction } from "./session-storage";
 import { SessionPullRequests } from "./session-pull-requests";
-import { QueuedInput, type QueuedInputDraft } from "./queue";
+import { PendingQueueInputs, QueuedInput, type QueuedInputDraft } from "./queue";
 import { StartupRejection } from "./startup-rejection";
 import { sessionTitlePresentation } from "./session-title";
 
@@ -434,6 +434,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   }, [revealSubmission, active]);
   const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
   const queued = pending.filter(isQueuedInput);
+  const presentedQueueIds = new Set(queue.payloadPages.flatMap(page => queueRows(page.payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => row.id)).concat(!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => row.id) : []));
   const panelButtons = {
     [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
     [SessionPanel.Terminals]: terminalsButton, [SessionPanel.Browser]: browserButton,
@@ -534,6 +535,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
             <ScrollContinuation query={interactions} root={requestsRoot} active={requestsOpen} label={copy("session.requestPages_d06a30")} />
           </div>
         </details>
+        <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         <details className="queue" onToggle={event => setQueueOpen(event.currentTarget.open)}><summary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.length}</> }} />}</summary>
           <div ref={queueRoot} className="session-tray-content"><Failure failure={queue.error?.failure} />
             <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput active={active && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput active={active && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
