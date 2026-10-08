@@ -164,7 +164,14 @@ stapled DMG. Each target also publishes its dedicated Worker executable, which
 provides the ordinary `delidev` CLI/server commands. A downloaded standalone Unix
 executable requires executable permission before use.
 
-Production macOS signing is separate from keyless preparation. The signing step
+Production macOS signing runs in a fresh job separate from keyless preparation.
+External actions in the coordinator and reusable workflow use full commit SHAs.
+The signer installs no package manager, Go/Rust toolchain, build dependencies or
+CEF cache. It invokes the repository signer directly with Node, consumes only
+the original same-run keyless DMG/Worker and digest-bound CEF notice inventory,
+and rechecks their version, source revision, architecture and exact filenames
+before using credentials. The build job has no release Environment or signing
+secret references. The signing step
 imports the selected Developer ID Application certificate into a private temporary
 keychain without changing the default/search-list keychains. Main app and both
 widget profiles must match their original bundle IDs, the selected team,
@@ -203,7 +210,9 @@ owner, remain enforced by GitHub.
 
 Successful target candidates are retained for seven days under the original
 source revision, target and release run ID. Reruns restore and verify original
-candidates instead of resigning them. Expired, duplicate or corrupt retained
+candidates instead of resigning them. Original macOS keyless signing inputs and
+notices are retained under a separate same-run identity; reruns verify and reuse
+them before rebuilding when no signed candidate exists. Expired, duplicate or corrupt retained
 candidates fail rather than silently replacing original bytes. An existing public
 release is verified before signing/building. Assembly requires all four target
 reports and ten exact download assets, includes unchanged root `LICENSE`/`NOTICE`, adds `delidev-release-index.json` and

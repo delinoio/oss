@@ -155,7 +155,7 @@ export async function main(command) {
   if (command === 'plan') {
     // No Windows signing backend is implemented. Never let a variable grant it.
     requireValue(!process.env.DELIDEV_WINDOWS_SIGNING_ENABLED || process.env.DELIDEV_WINDOWS_SIGNING_ENABLED === 'false', 'Windows production signing is not implemented');
-    output({ matrix: { include: releaseTargets }, channel: expected.channel, windows: 'skipped' });
+    output({ matrix: { include: releaseTargets }, macos_matrix: { include: releaseTargets.filter(t => t.platform === 'darwin') }, channel: expected.channel, windows: 'skipped' });
     return;
   }
   if (command === 'check-root') { signingRoot(); return; }

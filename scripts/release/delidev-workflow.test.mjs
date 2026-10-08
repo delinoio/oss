@@ -31,16 +31,20 @@ test('coordinator forwards only the required signing secret references to Enviro
   const references = [...new Set([...source('release-delidev.yml').matchAll(/secrets\.(DELIDEV_[A-Z0-9_]+)/g)].map(match=>match[1]))].sort();
   assert.deepEqual(references,[...names].sort());
   assert.equal(workflow.jobs.preflight.environment,'delidev-release');
-  assert.equal(workflow.jobs.package.environment,'delidev-release');
+  assert.equal(workflow.jobs.sign.environment,'delidev-release');
+  assert.equal(workflow.jobs.package.environment,undefined);
 });
 test('publication is behind four-native matrix, signing preflight and original candidate validation',()=>{
   assert.deepEqual(workflow.permissions,{contents:'read',actions:'read'});
   assert.equal(workflow.jobs.package.strategy.matrix,'${{ fromJSON(needs.inspect.outputs.matrix) }}');
   assert.deepEqual(workflow.jobs.package.needs,['inspect','preflight']);
-  assert.deepEqual(workflow.jobs.publish.needs,['inspect','package']);
-  assert.equal(workflow.jobs.package.environment,'delidev-release');
+  assert.deepEqual(workflow.jobs.publish.needs,['inspect','package','sign']);
+  assert.equal(workflow.jobs.sign.environment,'delidev-release');
+  assert.equal(workflow.jobs.package.environment,undefined);
   assert.equal(workflow.jobs.publish.permissions.contents,'write');
   assert.equal(workflow.concurrency['cancel-in-progress'],false);
+  assert.deepEqual(workflow.jobs.sign.needs,['inspect','preflight','package']);
+  assert.equal(workflow.jobs.sign.strategy.matrix,'${{ fromJSON(needs.inspect.outputs.macos_matrix) }}');
   const steps=workflow.jobs.package.steps;
   assert.equal(steps[0].with.lfs,true);assert.equal(steps[0].with['persist-credentials'],false);
   const restore=steps.findIndex(s=>s.id==='retained'), build=steps.findIndex(s=>s.name==='Build keyless verified inputs');
@@ -54,11 +58,29 @@ test('publication is behind four-native matrix, signing preflight and original c
 test('result fails when any original phase fails and accepts immutable public reuse only after inspection',()=>{
   const step=workflow.jobs.result.steps[0];
   const js=step.run.match(/^node <<'JS'\n([\s\S]*)\nJS\n?$/)[1];
-  for(const [published,statuses,expected] of [['false',['success','success','success','success'],0],['false',['success','success','failure','skipped'],1],['true',['success','skipped','skipped','skipped'],0],['true',['failure','skipped','skipped','skipped'],1]]){
-    const results=Object.fromEntries(['inspect','preflight','package','publish'].map((name,i)=>[name,{result:statuses[i],outputs:{published}}]));
+  for(const [published,statuses,expected] of [['false',['success','success','success','success','success'],0],['false',['success','success','failure','skipped','skipped'],1],['true',['success','skipped','skipped','skipped','skipped'],0],['true',['failure','skipped','skipped','skipped','skipped'],1]]){
+    const results=Object.fromEntries(['inspect','preflight','package','sign','publish'].map((name,i)=>[name,{result:statuses[i],outputs:{published}}]));
     // Avoid file writes: capture the summary through a minimal fs stub.
     const script=js.replace("const fs = require('node:fs');","const fs = {appendFileSync: (_, value) => process.stdout.write(value)};");
     const result=spawnSync(process.execPath,['-e',script],{env:{RESULTS:JSON.stringify(results),RELEASE_VERSION:'0.1.1'},encoding:'utf8'});
     assert.equal(result.status,expected,result.stderr);assert.match(result.stdout,/Windows x64\/arm64: skipped/);assert.match(result.stdout,/no update manifest/);
   }
+});
+
+test('credential jobs use immutable actions and a clean signer without package managers or build setup',()=>{
+  for(const file of ['release-delidev.yml','release-project.yml']) {
+    const document = yaml.load(source(file));
+    for(const job of Object.values(document.jobs)) for(const step of job.steps ?? []) if(step.uses && !step.uses.startsWith('./')) assert.match(step.uses,/@[a-f0-9]{40}$/);
+  }
+  const packageJob = JSON.stringify(workflow.jobs.package);
+  assert.doesNotMatch(packageJob,/secrets\.|Sign and notarize/);
+  const signer = workflow.jobs.sign;
+  assert.equal(signer.permissions,undefined);
+  assert.doesNotMatch(JSON.stringify(signer),/pnpm|setup-go|rust-toolchain|setup-prebuilt|install|bundle:updater/);
+  const sign = signer.steps.find(s=>s.name==='Sign and notarize macOS release files');
+  assert.equal(sign.run,'node apps/delidev/scripts/bundle-release.mjs --target ${{ matrix.target }}');
+  assert.equal(sign.if,"steps.retained.outputs.reused != 'true'");
+  for(const [name,job] of Object.entries(workflow.jobs)) for(const step of job.steps ?? []) if(JSON.stringify(step.env ?? {}).includes('secrets.DELIDEV_')) assert.ok(name==='sign' || name==='preflight');
+  assert.ok(signer.steps.findIndex(s=>s.id==='retained') < signer.steps.findIndex(s=>s.name==='Download original macOS signing inputs'));
+  assert.ok(workflow.jobs.package.steps.some(s=>s.run==='node scripts/release/delidev-candidate.mjs --signing-input'));
 });

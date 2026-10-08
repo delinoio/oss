@@ -4,12 +4,13 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
-import { selectTarget, acquireNativeBuildLock, verifyPackageRevision, verifyNotices, packageResources, cefCredits } from './native-package.mjs';
+import { selectTarget, acquireNativeBuildLock, verifyPackageRevision, verifyNotices, packageResources } from './native-package.mjs';
 import { verifyBundle } from './bundle-macos-dry-run.mjs';
 import { nativeEnvironment } from './bundle-native-dry-run.mjs';
 import { signMacOS } from '../../../scripts/release/delidev-macos-sign.mjs';
+import { verifySigningInput } from '../../../scripts/release/delidev-signing-input.mjs';
 import { artifactName } from '../../../scripts/release/generate-delidev-updater.mjs';
-import { digest, requireValue, updaterTarget } from '../../../scripts/release/delidev-release.mjs';
+import { digest, identity, requireValue, updaterTarget } from '../../../scripts/release/delidev-release.mjs';
 
 export async function main(args) {
   requireValue(args.length === 2 && args[0] === '--target', 'Choose one DeliDev native release target');
@@ -26,7 +27,8 @@ export async function main(args) {
   verifyPackageRevision(process.env.RELEASE_REVISION,revision,run('git',['status','--porcelain','--untracked-files=normal']));
   const version = JSON.parse(readFileSync(join(app,'src-tauri/tauri.conf.json'),'utf8')).version;
   requireValue(version === process.env.RELEASE_VERSION, 'DeliDev release version mismatch');
-  const input = join(root,'target/delidev-updater-input',selected.target,revision);
+  const input = selected.platform === 'darwin' ? join(root,'target/delidev-signing-input',selected.target) : join(root,'target/delidev-updater-input',selected.target,revision);
+  const credits = selected.platform === 'darwin' ? await verifySigningInput(input,selected.target,identity(version,revision)) : null;
   const report = JSON.parse(readFileSync(join(input,'input.json'),'utf8'));
   requireValue(report.sourceRevision === revision && report.version === version && report.platformSigning === 'keyless-dry-run' && report.artifacts.length === 2, 'Original updater build identity mismatch');
   const output = join(root,'target/delidev-release-candidate',selected.target);
@@ -56,7 +58,7 @@ export async function main(args) {
         run('/usr/bin/ditto',[join(volume,'DeliDev.app'),bundle]);
       } finally { if(attached) run('/usr/bin/hdiutil',['detach',volume]); }
       verifyBundle(bundle,(program,args) => run(program,args),selected.arch === 'arm64' ? 'arm64' : 'x86_64');
-      const resources = packageResources(app,root,cefCredits(selected,env));
+      const resources = packageResources(app,root,credits);
       verifyNotices(join(bundle,'Contents/Resources'),resources);
       const desktop = join(stage,artifactName('desktop',target)); rmSync(desktop);
       await signMacOS({bundle,worker:join(stage,artifactName('worker',target)),desktop,version});

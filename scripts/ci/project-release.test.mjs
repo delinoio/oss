@@ -179,7 +179,8 @@ test("Source and tap tokens are separately scoped and project release triggers r
     const release = yaml.load(source(`.github/workflows/release-${project}.yml`));
     if (project === Project.DeliDev) {
       assert.deepEqual(Object.keys(release.on), ["workflow_call"]);
-      assert.equal(release.jobs.package.environment, "delidev-release");
+      assert.equal(release.jobs.package.environment, undefined);
+      assert.equal(release.jobs.sign.environment, "delidev-release");
       continue;
     }
     if (project === Project.AsyncCommitHook) {
