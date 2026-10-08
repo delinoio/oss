@@ -21,11 +21,39 @@ import (
 	"time"
 )
 
-func imageRPCFixture(t *testing.T) (*firstDispatchFixture, delidevv1connect.AttachmentServiceClient, []byte) {
+func imageRPCFixture(t *testing.T, harnesses ...domain.Harness) (*firstDispatchFixture, delidevv1connect.AttachmentServiceClient, []byte) {
 	t.Helper()
-	f := newFirstDispatchFixture(t)
+	harness := domain.Codex
+	if len(harnesses) == 1 {
+		harness = harnesses[0]
+	}
+	f := newFirstDispatchFixtureForHarness(t, harness)
 	ctx := context.Background()
 	_, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.service.Store.Mutate(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), domain.NewID(), "fixture.image-model", nil, func(tx *store.Tx) (any, error) {
+		row, err := tx.Get(domain.AgentKind, domain.ID(f.agent.Id))
+		if err != nil {
+			return nil, err
+		}
+		agent, err := store.Decode[domain.Agent](row)
+		if err != nil {
+			return nil, err
+		}
+		modelRow, err := tx.Get(domain.ModelKind, agent.ModelID)
+		if err != nil {
+			return nil, err
+		}
+		model, err := store.Decode[domain.Model](modelRow)
+		if err != nil {
+			return nil, err
+		}
+		model.InputModalities = []string{"text", "image"}
+		return tx.Put(domain.ModelKind, modelRow.ID, modelRow.Revision, "", "", model)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,6 +158,30 @@ func TestImageRPCOrderedClaimExactRetryReadbackAndImmutableEdit(t *testing.T) {
 	if domain.Decode(change.Input.DocumentJson, &queued) != nil || len(queued.Attachments) != 2 || string(queued.Attachments[0].ID) != second.Attachment.Id || string(queued.Attachments[1].ID) != first.Attachment.Id {
 		t.Fatal("ordered receipt lost", queued)
 	}
+
+	_, err = f.service.Store.Mutate(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), domain.NewID(), "fixture.changed-model-metadata", nil, func(tx *store.Tx) (any, error) {
+		agentRow, err := tx.Get(domain.AgentKind, domain.ID(f.agent.Id))
+		if err != nil {
+			return nil, err
+		}
+		agent, err := store.Decode[domain.Agent](agentRow)
+		if err != nil {
+			return nil, err
+		}
+		row, err := tx.Get(domain.ModelKind, agent.ModelID)
+		if err != nil {
+			return nil, err
+		}
+		model, err := store.Decode[domain.Model](row)
+		if err != nil {
+			return nil, err
+		}
+		model.InputModalities = []string{"text"}
+		return tx.Put(domain.ModelKind, row.ID, row.Revision, "", "", model)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	replay, err := sessionClient(f.accountFixture).CreateSession(ctx, ownerRequest(f.identity, req))
 	if err != nil || replay.Msg.Change.Session.Id != change.Session.Id || !replay.Msg.Change.Replayed {
 		t.Fatal(replay, err)
@@ -215,5 +267,145 @@ func TestImageOfflineDraftRemovalSurvivesReconciliation(t *testing.T) {
 	again, err := c.DeleteDraftAttachment(ctx, ownerRequest(f.identity, request))
 	if err != nil || !again.Msg.Replayed {
 		t.Fatal(again, err)
+	}
+}
+
+func TestUnsupportedImageRoutesNeverClaimOrCreateNativeWork(t *testing.T) {
+	for _, harness := range []domain.Harness{domain.ClaudeCode, domain.OpenCode, domain.GrokBuild} {
+		t.Run(string(harness), func(t *testing.T) {
+			f, c, raw := imageRPCFixture(t, harness)
+			imageWorkerFixture(t, f, c)
+			operation := domain.NewID()
+			u := finishImage(t, f, c, beginImage(t, f, c, raw, domain.NewID(), operation, ""), raw)
+			selection := f.selection
+			selection.Prompt = ""
+			document, _ := json.Marshal(selection)
+			_, err := sessionClient(f.accountFixture).CreateSession(context.Background(), ownerRequest(f.identity, &pb.CreateSessionRequest{RequestId: string(operation), DocumentJson: document, Attachments: []*pb.ImageAttachment{u.Attachment}}))
+			if connect.CodeOf(err) != connect.CodeUnimplemented {
+				t.Fatal("unsupported image accepted", err)
+			}
+			if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+				_, upload, err := imageUploadRecord(tx, domain.ID(u.Attachment.Id))
+				if err != nil {
+					return err
+				}
+				if upload.State != domain.ImageReady || len(upload.Owners) != 0 || upload.InputID != "" {
+					t.Fatal("unsupported route claimed", upload)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+func TestStagedImageRejectsChangedRunnerRevisionAndDevice(t *testing.T) {
+	for _, changeDevice := range []bool{false, true} {
+		t.Run(map[bool]string{false: "revision", true: "device"}[changeDevice], func(t *testing.T) {
+			f, c, raw := imageRPCFixture(t)
+			imageWorkerFixture(t, f, c)
+			ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+			operation := domain.NewID()
+			u := finishImage(t, f, c, beginImage(t, f, c, raw, domain.NewID(), operation, ""), raw)
+			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.changed-runner", nil, func(tx *store.Tx) (any, error) {
+				if changeDevice {
+					row, value, err := imageUploadRecord(tx, domain.ID(u.Attachment.Id))
+					if err != nil {
+						return nil, err
+					}
+					value.WorkerDeviceID = domain.NewID()
+					return putImageUpload(tx, row, value)
+				}
+				row, machine, err := activeMachine(tx, domain.ID(f.machine.Id))
+				if err != nil {
+					return nil, err
+				}
+				machine.Name = "Changed explicit Runner selection"
+				return tx.Put(domain.MachineKind, row.ID, row.Revision, "", "", machine)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			selection := f.selection
+			document, _ := json.Marshal(selection)
+			_, err = sessionClient(f.accountFixture).CreateSession(context.Background(), ownerRequest(f.identity, &pb.CreateSessionRequest{RequestId: string(operation), DocumentJson: document, Attachments: []*pb.ImageAttachment{u.Attachment}}))
+			if err == nil {
+				t.Fatal("stale staging claimed")
+			}
+			if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+				_, value, err := imageUploadRecord(tx, domain.ID(u.Attachment.Id))
+				if err == nil && (value.State != domain.ImageReady || len(value.Owners) != 0) {
+					t.Fatal("stale staging mutated", value)
+				}
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+func TestImageStagingBoundRejectsNinthBeforeWorkerWrite(t *testing.T) {
+	f, c, raw := imageRPCFixture(t)
+	draft, operation := domain.NewID(), domain.NewID()
+	for range domain.MaxInputImages {
+		beginImage(t, f, c, raw, draft, operation, "")
+	}
+	_, err := c.BeginUpload(context.Background(), ownerRequest(f.identity, &pb.BeginUploadRequest{RequestId: string(domain.NewID()), DraftId: string(draft), OperationId: string(operation), MachineId: f.machine.Id, MachineRevision: f.machine.Revision, MediaType: pb.ImageMediaType_IMAGE_MEDIA_TYPE_PNG, ByteLength: uint64(len(raw)), Sha256: imageinput.Digest(raw)}))
+	if err == nil {
+		t.Fatal("ninth staged")
+	}
+}
+
+func TestImageMixedSourcesAndImmutableDeclaredSnapshot(t *testing.T) {
+	f, _, raw := imageRPCFixture(t)
+	ref := domain.ImageAttachment{ID: domain.NewID(), MachineID: domain.ID(f.machine.Id), MediaType: domain.ImagePNG, ByteLength: uint64(len(raw)), SHA256: imageinput.Digest(raw)}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.mixed-image-sources", nil, func(tx *store.Tx) (any, error) {
+		row, err := tx.Get(domain.AgentKind, domain.ID(f.agent.Id))
+		if err != nil {
+			return nil, err
+		}
+		agent, err := store.Decode[domain.Agent](row)
+		if err != nil {
+			return nil, err
+		}
+		modelRow, err := tx.Get(domain.ModelKind, agent.ModelID)
+		if err != nil {
+			return nil, err
+		}
+		model, err := store.Decode[domain.Model](modelRow)
+		if err != nil {
+			return nil, err
+		}
+		model.InputModalities = []string{"text"}
+		model.NativeID += "-text-only"
+		other := domain.NewID()
+		if _, err := tx.Put(domain.ModelKind, other, 0, "", "", model); err != nil {
+			return nil, err
+		}
+		first := agent.SourceRoutes()[0]
+		second := first
+		second.ModelID = other
+		agent.Routes = []domain.AgentSourceRoute{first, second}
+		agent.ModelID = ""
+		agent.Accounts = nil
+		agent.Routing = nil
+		return tx.Put(domain.AgentKind, row.ID, row.Revision, "", "", agent)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+		return checkImageRoute(tx, domain.ID(f.agent.Id), domain.ID(f.machine.Id), []domain.ImageAttachment{ref})
+	}); domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatal("mixed unsupported model admitted", err)
+	}
+	snapshot := domain.Session{AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), InitialExecution: &domain.InitialExecution{Configuration: domain.ExecutionConfiguration{Harness: domain.Codex, ImageInputDeclared: true}}}
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error { return checkSessionImageRoute(tx, snapshot, []domain.ImageAttachment{ref}) }); err != nil {
+		t.Fatal("mutable metadata replaced original declaration", err)
+	}
+	snapshot.InitialExecution.Configuration.ImageInputDeclared = false
+	if err := f.service.Store.Read(ctx, func(tx *store.Tx) error { return checkSessionImageRoute(tx, snapshot, []domain.ImageAttachment{ref}) }); domain.SafeError(err).Code != domain.Unsupported {
+		t.Fatal("unknown original modality admitted", err)
 	}
 }

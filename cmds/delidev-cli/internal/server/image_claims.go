@@ -42,6 +42,19 @@ func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, refs []domain.I
 	if agent.Harness != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
 		return domain.UnsupportedImageInput()
 	}
+	for _, modelID := range agent.ModelIDs() {
+		row, err := tx.Get(domain.ModelKind, modelID)
+		if err != nil {
+			return err
+		}
+		model, err := store.Decode[domain.Model](row)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(model.InputModalities, "image") {
+			return domain.UnsupportedImageInput()
+		}
+	}
 	for _, ref := range refs {
 		if ref.MachineID != machineID {
 			return domain.InvalidImageInput()
@@ -103,7 +116,7 @@ func checkSessionImageRoute(tx *store.Tx, session domain.Session, refs []domain.
 	if err != nil {
 		return err
 	}
-	if snapshot.Configuration.Harness != domain.Codex || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
+	if snapshot.Configuration.Harness != domain.Codex || !snapshot.Configuration.ImageInputDeclared || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
 		return domain.UnsupportedImageInput()
 	}
 	for _, ref := range refs {

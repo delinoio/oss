@@ -4,7 +4,11 @@ package domain
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -116,5 +120,59 @@ func TestImageInputRejectsCorruptAndAnimatedContainers(t *testing.T) {
 	animation = append(animation, raw[8:]...)
 	if ValidateImageContent(animation, ImagePNG) == nil {
 		t.Fatal("animation accepted")
+	}
+}
+
+func TestWebPActualContentAndDecodeAllocationBound(t *testing.T) {
+	raw, err := base64.StdEncoding.DecodeString("UklGRhwAAABXRUJQVlA4TA8AAAAvAAAAAAcQ/Y/+ByKi/wEA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ValidateImageContent(raw, ImageWebP) != nil {
+		t.Fatal("valid still WebP rejected")
+	}
+	animation := append(bytes.Clone(raw), []byte{'A', 'N', 'I', 'M', 0, 0, 0, 0}...)
+	binary.LittleEndian.PutUint32(animation[4:8], uint32(len(animation)-8))
+	if ValidateImageContent(animation, ImageWebP) == nil {
+		t.Fatal("animated WebP accepted")
+	}
+	pngBytes, _ := imageFixture(t, ImagePNG)
+	binary.BigEndian.PutUint32(pngBytes[16:20], 10000)
+	binary.BigEndian.PutUint32(pngBytes[20:24], 10000)
+	binary.BigEndian.PutUint32(pngBytes[29:33], crc32.ChecksumIEEE(pngBytes[12:29]))
+	if ValidateImageContent(pngBytes, ImagePNG) == nil {
+		t.Fatal("unsafe allocation dimensions accepted")
+	}
+}
+
+func TestImageModelDeclarationKeepsOmittedTextConfigurationCompatible(t *testing.T) {
+	route := RoundRobin
+	agent := Agent{Name: "Fixture", Harness: Codex, ModelID: NewID(), Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Routing: &route, Options: AgentOptions{Permission: PermissionReadOnly}}
+	model := Model{Name: "Fixture", NativeID: "fixture", ProviderID: NewID(), Harnesses: []Harness{Codex}, MetadataSource: UserDeclared}
+	id := NewID()
+	text, err := ResolveExecutionConfiguration(id, 1, agent, 1, model, RoundRobin, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := text.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(text)
+	if bytes.Contains(raw, []byte("image_input_declared")) {
+		t.Fatal("text-only omitted profile changed")
+	}
+	model.InputModalities = []string{"text", "image"}
+	images, err := ResolveExecutionConfiguration(id, 1, agent, 1, model, RoundRobin, nil)
+	if err != nil || !images.ImageInputDeclared || images.Validate() != nil {
+		t.Fatal(images, err)
+	}
+	model.InputModalities = []string{"text"}
+	if !images.ImageInputDeclared {
+		t.Fatal("current model rewrote retained declaration")
+	}
+	after, err := text.Digest()
+	if err != nil || before != after {
+		t.Fatal("text digest changed", err)
 	}
 }

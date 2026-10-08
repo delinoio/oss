@@ -3,7 +3,6 @@ package worker
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"os"
@@ -108,7 +107,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if assignment.Fork != nil {
 		historyID = assignment.Fork.RuntimeID
 	}
-	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: sha256.Sum256([]byte(assignment.Input.Prompt)), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: assignment.Input.InputDigest(), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 	if err != nil {
 		return nil, err
 	}

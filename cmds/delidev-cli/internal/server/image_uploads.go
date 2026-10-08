@@ -70,6 +70,9 @@ func (s *Service) readOwnedImageUpload(ctx context.Context, id domain.ID) (domai
 		_, value, err = ownedImageUpload(tx, id, actor)
 		return err
 	})
+	if err == nil && value.Quarantined && value.State != domain.ImageDeleting && value.State != domain.ImageDeleted {
+		err = domain.Fail(domain.RecoveryRequired, "Restored images require original cleanup reconciliation.", "Retain the original session and Runner cleanup obligations.")
+	}
 	return value, err
 }
 func (s *Service) BeginUpload(ctx context.Context, req *connect.Request[pb.BeginUploadRequest]) (*connect.Response[pb.BeginUploadResponse], error) {
@@ -280,7 +283,7 @@ func (s *Service) DeleteDraftAttachment(ctx context.Context, req *connect.Reques
 	return connect.NewResponse(&pb.DeleteDraftAttachmentResponse{Upload: imageUploadMessage(value), Replayed: result.Replayed}), nil
 }
 func (s *Service) cleanupImageUpload(ctx context.Context, value domain.ImageUpload) error {
-	if value.State != domain.ImageDeleting || len(value.Owners) != 0 {
+	if value.State != domain.ImageDeleting || value.InputID != "" || len(value.Owners) != 0 {
 		return domain.InvalidImageInput()
 	}
 	if _, err := s.transferImage(ctx, &pb.AttachmentTransfer{Id: string(domain.NewID()), Attachment: imageinput.ToProto(value.Attachment), Operation: pb.AttachmentTransferOperation_ATTACHMENT_TRANSFER_OPERATION_DELETE}); err != nil {
@@ -294,7 +297,7 @@ func (s *Service) cleanupImageUpload(ctx context.Context, value domain.ImageUplo
 		if current.State == domain.ImageDeleted {
 			return current.Attachment.ID, nil
 		}
-		if current.State != domain.ImageDeleting || len(current.Owners) != 0 || current.Attachment != value.Attachment {
+		if current.State != domain.ImageDeleting || current.InputID != "" || len(current.Owners) != 0 || current.Attachment != value.Attachment {
 			return nil, domain.InvalidImageInput()
 		}
 		current.State = domain.ImageDeleted

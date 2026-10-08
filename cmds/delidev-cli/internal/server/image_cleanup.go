@@ -45,7 +45,7 @@ func (s *Service) reconcileImageDraftCleanups(ctx context.Context) error {
 			if domain.Decode(job.Input, &value) != nil || value.Version != 1 || value.Attachment.ID != row.ID || value.Attachment.Validate() != nil {
 				return domain.InvalidImageInput()
 			}
-			if value.State != domain.ImageDeleting || len(value.Owners) != 0 {
+			if value.State != domain.ImageDeleting || value.InputID != "" || len(value.Owners) != 0 {
 				continue
 			}
 			s.imageTransfersMu.Lock()

@@ -88,7 +88,7 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 
 func (i ExecutionJobInput) Validate() error {
 	if len(i.Input.Attachments) > 0 {
-		if i.Configuration.Harness != Codex || i.Configuration.SidechatPolicy != "" {
+		if i.Configuration.Harness != Codex || !i.Configuration.ImageInputDeclared || i.Configuration.SidechatPolicy != "" {
 			return UnsupportedImageInput()
 		}
 		for _, ref := range i.Input.Attachments {
