@@ -148,7 +148,8 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 		return nil, unavailable()
 	}
 	api = &sessionAPI{
-		client: client, origin: origin, password: password, cwd: config.Workspace,
+		protectedValues: slices.Clone(config.Probe.Process.ProtectedValues),
+		client:          client, origin: origin, password: password, cwd: config.Workspace,
 		runtimeHome:       filepath.Dir(config.Probe.Home),
 		checkpointProcess: checkpointProcessScope(config.Probe.Process),
 		claim:             config.Claim, logger: prepared.Logger, owner: prepared.OwnerID, gate: make(chan struct{}, 1),

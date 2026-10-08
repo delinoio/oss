@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 const maxQueuedEvents = 128
@@ -41,6 +42,7 @@ type NativeEvent struct {
 }
 
 type eventStream struct {
+	protected security.ProtectedJSON
 	mu        sync.Mutex
 	ctx       context.Context
 	parent    context.Context
@@ -128,7 +130,7 @@ func (s *sessionAPI) connectEvents(ctx, readyContext context.Context, seen map[s
 	if seen == nil {
 		seen = map[string]bool{}
 	}
-	stream := &eventStream{ctx: streamCtx, parent: ctx, body: response.Body, cancel: cancel, queue: make(chan NativeEvent, maxQueuedEvents), done: make(chan struct{}), seen: seen, last: time.Now(), cwd: s.cwd, alive: s.alive, logger: s.logger, owner: s.owner}
+	stream := &eventStream{protected: s.contentGuard(), ctx: streamCtx, parent: ctx, body: response.Body, cancel: cancel, queue: make(chan NativeEvent, maxQueuedEvents), done: make(chan struct{}), seen: seen, last: time.Now(), cwd: s.cwd, alive: s.alive, logger: s.logger, owner: s.owner}
 	go stream.run(streamCtx)
 	// The original connected record proves this listener was registered before
 	// the caller may submit input. Its event ID remains in the deduplication set.
@@ -304,6 +306,10 @@ func (s *eventStream) run(ctx context.Context) {
 }
 
 func (s *eventStream) accept(raw []byte) *domain.Error {
+	if !s.protected.Safe(raw) {
+		clear(raw)
+		return protectedContentRefused()
+	}
 	fields, err := shape(raw, []string{"id", "type", "properties"}, nil)
 	if err != nil {
 		return eventProblem()

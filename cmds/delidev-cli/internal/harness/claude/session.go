@@ -82,8 +82,9 @@ func OpenAPISession(ctx context.Context, config APIStreamConfig) (*APISession, e
 		return nil, settingsUncertain()
 	}
 	// The stream owns its secret launch state. The controller needs only the
-	// immutable non-secret settings used by each typed execution binding.
+	// immutable settings and transient reflection values for owned history reads.
 	origin, authority := config.API.ServerOrigin, sha256.Sum256([]byte(config.API.Token))
+	config.Process.ProtectedValues = config.ProtectedValues()
 	config.API = APIConfig{}
 	config.Process.Env = retainedLookupEnvironment(config.Process.Env)
 	config.Process.Args = nil

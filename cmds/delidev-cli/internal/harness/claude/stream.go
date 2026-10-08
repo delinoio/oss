@@ -11,6 +11,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
 const maxStreamFrame = 1 << 20
@@ -63,6 +64,7 @@ type streamArrival struct {
 // Stream owns Claude's NDJSON control/input transport, not session authority.
 // It never initializes, sends input, grants permissions or retries on its own.
 type Stream struct {
+	protected      security.ProtectedJSON
 	process        *process.Handle
 	logger         *slog.Logger
 	owner          domain.ID
@@ -99,6 +101,7 @@ func StartStream(ctx context.Context, config process.Config) (*Stream, error) {
 	life, cancel := context.WithCancel(ctx)
 	s := &Stream{cancel: cancel, done: make(chan struct{}), gate: make(chan struct{}, 1), notify: make(chan struct{}, 1), seen: map[domain.ID]bool{}, pending: map[domain.ID]*streamPending{}, incoming: map[string]streamArrival{}}
 	s.logger, s.owner = config.Logger, config.OwnerID
+	s.protected = security.NewProtectedJSON(config.ProtectedValues)
 	if s.logger == nil {
 		s.logger = slog.Default()
 	}
@@ -525,6 +528,10 @@ func (s *Stream) Reply(ctx context.Context, event StreamEvent, result any) error
 }
 
 func (s *Stream) receive(raw []byte) error {
+	if !s.protected.Safe(raw) {
+		clear(raw)
+		return streamIncompatible()
+	}
 	var fields map[string]json.RawMessage
 	if domain.Decode(raw, &fields) != nil || fields == nil {
 		return streamIncompatible()

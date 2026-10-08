@@ -78,6 +78,9 @@ func init() {
 		os.Exit(77)
 	}
 	result := fixtureResult()
+	if strings.HasPrefix(mode, "reflect-init-") {
+		result["agents"].([]any)[0].(map[string]any)["description"] = protectedFixtureForm(os.Getenv("ANTHROPIC_AUTH_TOKEN"), strings.TrimPrefix(mode, "reflect-init-"))
+	}
 	result["current_permission_mode"] = "plan"
 	result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact native context", "argumentHint": "[instructions]"}}
 	result["account"].(map[string]any)["tokenSource"] = "ANTHROPIC_AUTH_TOKEN"

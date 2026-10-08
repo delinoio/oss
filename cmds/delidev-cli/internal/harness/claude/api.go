@@ -73,6 +73,16 @@ type NativeSubscriptionProfile struct {
 // Worker reader; its readers still admit only proved native transcript paths.
 func NativeHistoryHome(config APIStreamConfig) string { return historyHome(config) }
 
+// ProtectedValues binds transient guards to this original runtime only. Native
+// subscription profiles deliver no relay token; caller values remain protected.
+func (config APIStreamConfig) ProtectedValues() []string {
+	values := slices.Clone(config.Process.ProtectedValues)
+	if config.Subscription == nil {
+		values = append(values, config.API.Token)
+	}
+	return values
+}
+
 func historyHome(config APIStreamConfig) string {
 	if config.Subscription != nil {
 		return config.Subscription.Home
@@ -197,6 +207,7 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	prepared := config.Process
 	env = config.OrdinaryTools.Apply(env)
 	prepared.Args, prepared.Env, prepared.Cwd = args, env, workspace
+	prepared.ProtectedValues = config.ProtectedValues()
 	return prepared, nil
 }
 
