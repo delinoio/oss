@@ -246,6 +246,11 @@ func (m *Manager) Control(ctx context.Context, action Action, id domain.ID, revi
 		r.Removed = false
 		r.Desired = Stopped
 	}
+	if action == Start && m.Kind == Server {
+		if err := r.Spec.Options.requireAbsoluteTLS(); err != nil {
+			return result, err
+		}
+	}
 	if action == Start && before.State != Running && !m.sharedIdle() {
 		return result, conflict()
 	}
@@ -421,6 +426,12 @@ func (m *Manager) Run(ctx context.Context, id domain.ID, run func(context.Contex
 	if err != nil {
 		gate.Close()
 		return err
+	}
+	if m.Kind == Server {
+		if err := r.Spec.Options.requireAbsoluteTLS(); err != nil {
+			gate.Close()
+			return err
+		}
 	}
 	runtimeLock, err := security.TryLock(m.path("-runtime.lock"))
 	if err != nil {

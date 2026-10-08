@@ -76,7 +76,10 @@ func serviceCommand(ctx context.Context, o *options, kind userservice.Kind, args
 		if err := server.ValidateConfig(config); err != nil {
 			return nil, err
 		}
-		manager.Options = userservice.ServerOptions{Listen: config.Listen, TLSCertificate: *cert, TLSKey: *key, AllowedOrigins: config.AllowedOrigins}
+		manager.Options, err = userservice.CaptureServerOptions(userservice.ServerOptions{Listen: config.Listen, TLSCertificate: *cert, TLSKey: *key, AllowedOrigins: config.AllowedOrigins})
+		if err != nil {
+			return nil, err
+		}
 	}
 	ensureRequest(o)
 	result, err := manager.Control(ctx, userservice.Action(args[0]), o.requestID, *revision, "local-user")
