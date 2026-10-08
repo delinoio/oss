@@ -153,7 +153,7 @@ export function interactionRows(base: readonly Resource[], live: ReadonlyMap<str
   return appendedRows(base, live, removed, arrivals, sessionId, lastPage, EntityKind.INTERACTION);
 }
 
-const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
+export const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Resource }) {
   useLocale();
   const data = readDocument(resource);
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
@@ -174,7 +174,7 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
       data.native_parent_id == null && data.input_id == null &&
       data.phase == null && data.tool == null &&
       data.artifact == null && data.progress == null;
-    return <article className="message" aria-label={copy("session.assistantMessage_8352f5")}>
+    return <article className={valid ? "message message-claude-assistant" : "message"} aria-label={copy("session.assistantMessage_8352f5")}>
       <header><strong>{copy("session.assistant_a39a7f")}</strong><small>{statusLabel(text(data.state))}</small></header>
       <NativeClaudeMessage content={valid ? data.claude : undefined} state={text(data.state)} />
     </article>;
@@ -188,7 +188,10 @@ const TranscriptItem = memo(function TranscriptItem({ resource }: { resource: Re
   const started = object(artifact.started);
   const progress = object(data.progress);
   const plan = object(progress.plan);
-  return <article className="message" aria-label={copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
+  const textRole = data.tool == null && data.artifact == null && data.progress == null &&
+    ["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
+  const roleClass = textRole && data.role === "user" ? " message-user" : textRole && data.role === "assistant" ? " message-assistant" : "";
+  return <article className={`message${roleClass}`} aria-label={copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
     {toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <details><summary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></summary>

@@ -45,7 +45,7 @@ export function NativeClaudeMessage({ content, state }: { content: unknown; stat
   useLocale();
   const retained = message(content, state);
   if (!retained) return <section aria-label={copy("native-claude-message.claudeMessageUnavailable_9efc2c")}><p>{copy("native-claude-message.theRetainedClaudeMessageIsUnavailable_453226")}</p></section>;
-  return <section aria-label={copy("native-claude-message.claudeMessageContent_fa712d")}>
+  return <section className="native-claude-message-content" aria-label={copy("native-claude-message.claudeMessageContent_fa712d")}>
     <ol>{retained.blocks.map((block) => <li key={block.index}>
       {block.kind === BlockKind.Tool ? <p><LocalizedText id="native-claude-message.toolProposal_e8bdb5" components={{ s0: <>{block.tool!.name}</>, s1: <small>{blockLabels[block.state]}</small> }} /></p> : block.kind === BlockKind.Thinking ? <details><summary><LocalizedText id="native-claude-message.reasoning_4d3137" components={{ s0: <>{blockLabels[block.state]}</> }} /></summary><pre>{block.text}</pre></details> : block.kind === BlockKind.Redacted ? <p><LocalizedText id="native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3" components={{ s0: <small>{blockLabels[block.state]}</small> }} /></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
       {block.citations ? <NativeClaudeCitations value={block.citations} /> : null}
