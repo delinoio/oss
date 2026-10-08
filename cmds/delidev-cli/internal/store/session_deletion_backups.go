@@ -44,7 +44,7 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 		}
 		contains := false
 		checked, e := s.inspectBackupContent(ctx, item.ID, v.ServerID, nil, func(db *sql.DB) error {
-			return db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM entities WHERE id=? OR session_id=? OR (kind='problem' AND json_extract(body,'$.type')='pull-request-remediation-attempt' AND json_extract(body,'$.session_id')=?))", v.SessionID, v.SessionID, v.SessionID).Scan(&contains)
+			return db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM entities WHERE id=? OR session_id=? OR (kind='job' AND json_extract(body,'$.type')='image-attachment' AND EXISTS(SELECT 1 FROM json_each(entities.body,'$.input.owners') WHERE value=?)) OR (kind='problem' AND json_extract(body,'$.type')='pull-request-remediation-attempt' AND json_extract(body,'$.session_id')=?))", v.SessionID, v.SessionID, v.SessionID, v.SessionID).Scan(&contains)
 		})
 		if e != nil {
 			return e

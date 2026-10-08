@@ -312,6 +312,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 }
 
 func (t *Tx) applySessionDeletion(v SessionDeletion) error {
+	if err := t.applyImageSessionDeletion(v); err != nil {
+		return err
+	}
 	if v.SidechatParentID != "" {
 		key := sidechatDependencyKey(v.SidechatParentID, v.SessionID)
 		if v.FinishedAt == nil {
@@ -462,6 +465,9 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 // foreign keys cascade search/FTS, usage, estimates, assignments and grants.
 // Receipt identities remain but their results lose the deleted content.
 func (t *Tx) purgeSession(v SessionDeletion) error {
+	if err := t.purgeSessionImages(v); err != nil {
+		return err
+	}
 	if e := t.requireTerminalCleanup(v.SessionID); e != nil {
 		return e
 	}
@@ -926,5 +932,9 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 		}
 	}
 
+	v, e = t.planImageSessionDeletion(v)
+	if e != nil {
+		return v, e
+	}
 	return v, v.validate()
 }

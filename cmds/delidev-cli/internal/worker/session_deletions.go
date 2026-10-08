@@ -11,6 +11,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/imageinput"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
@@ -110,13 +111,20 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if proof.Complete {
+		for _, ref := range w.Images {
+			if err := (imageinput.Manager{Root: root}).Removed(w.MachineID, ref); err != nil {
+				return proof, err
+			}
+		}
 		// Completion is reusable only while its original copies remain absent.
 		// A replacement at a formerly owned path is never blindly removed.
 		paths, e := sessionDeletionCopyPaths(ctx, root, w)
 		if e != nil {
 			return proof, e
 		}
-		paths = append(paths, filepath.Join(root, "workspaces", string(w.SessionID)))
+		if len(w.Copies) != 0 || w.Fork != nil {
+			paths = append(paths, filepath.Join(root, "workspaces", string(w.SessionID)))
+		}
 		if w.Fork != nil {
 			paths = append(paths, workspace.SidechatForkClaimPath(root, w.Fork.JobID))
 		}
@@ -220,58 +228,82 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			unpublishedPaths[workspace.SidechatForkClaimPath(root, copy.JobID)] = true
 		}
 	}
-	e = manager.DeleteOwnedWorkspace(ctx, w, allowAbsentWorkspace, func() error {
-		// Admission is tombstoned and every native/publisher owner was joined.
-		// Release handles before unlinking their lock files on Windows.
-		for _, lock := range locks {
-			if e := lock.Close(); e != nil {
-				return domain.SessionDeletionPending()
-			}
-		}
-		locks = nil
-		if !proof.RemovalStarted {
-			proof.RemovalStarted = true
-			if e := writeJSON(path, proof); e != nil {
-				return e
-			}
-		}
-		for _, binding := range w.SkillSnapshots {
-			if e := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); e != nil {
-				return domain.SessionDeletionPending()
-			}
-		}
-		paths, e := sessionDeletionCopyPaths(ctx, root, w)
-		if e != nil {
-			return e
-		}
-		for _, path := range paths {
-			if unpublishedPaths[path] {
-				if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+	if len(w.Copies) != 0 || w.Fork != nil {
+		e = manager.DeleteOwnedWorkspace(ctx, w, allowAbsentWorkspace, func() error {
+			// Admission is tombstoned and every native/publisher owner was joined.
+			// Release handles before unlinking their lock files on Windows.
+			for _, lock := range locks {
+				if e := lock.Close(); e != nil {
 					return domain.SessionDeletionPending()
 				}
-				continue
 			}
-			if e := removeSessionCopy(ctx, root, path); e != nil {
+			locks = nil
+			if !proof.RemovalStarted {
+				proof.RemovalStarted = true
+				if e := writeJSON(path, proof); e != nil {
+					return e
+				}
+			}
+			for _, binding := range w.SkillSnapshots {
+				if err := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); err != nil {
+					return domain.SessionDeletionPending()
+				}
+			}
+			paths, e := sessionDeletionCopyPaths(ctx, root, w)
+			if e != nil {
 				return e
 			}
-		}
-		// Re-inventory dynamic storage namespaces at the completion boundary. A
-		// final root published after the first inventory is absence-only: never
-		// let the generic remover adopt it, and keep the deletion recoverable.
-		remaining, e := workspace.SessionStorageRemnantPaths(ctx, root, w)
+			for _, path := range paths {
+				if unpublishedPaths[path] {
+					if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+						return domain.SessionDeletionPending()
+					}
+					continue
+				}
+				if e := removeSessionCopy(ctx, root, path); e != nil {
+					return e
+				}
+			}
+			// Re-inventory dynamic storage namespaces at the completion boundary. A
+			// final root published after the first inventory is absence-only: never
+			// let the generic remover adopt it, and keep the deletion recoverable.
+			remaining, e := workspace.SessionStorageRemnantPaths(ctx, root, w)
+			if e != nil {
+				return e
+			}
+			if len(remaining) != 0 {
+				return domain.SessionDeletionPending()
+			}
+			return nil
+		})
 		if e != nil {
-			return e
+			return proof, e
 		}
-		if len(remaining) != 0 {
-			return domain.SessionDeletionPending()
-		}
-		return nil
-	})
-	if e != nil {
-		return proof, e
 	}
 	if w.Fork != nil {
 		if err := manager.RetirePublishedSidechatFork(ctx, w.Fork.JobID, w.SessionID); err != nil {
+			return proof, err
+		}
+	}
+	// All original native and workspace owners have joined before image
+	// removal. Opaque references never grant access to original Local files.
+	if !proof.RemovalStarted {
+		proof.RemovalStarted = true
+		if err := writeJSON(path, proof); err != nil {
+			return proof, err
+		}
+	}
+	for _, binding := range w.SkillSnapshots {
+		if err := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); err != nil {
+			return proof, domain.SessionDeletionPending()
+		}
+	}
+	images := imageinput.Manager{Root: root}
+	for _, ref := range w.Images {
+		if _, err := images.Transfer(w.MachineID, &pb.AttachmentTransfer{Id: string(domain.NewID()), Attachment: imageinput.ToProto(ref), Operation: pb.AttachmentTransferOperation_ATTACHMENT_TRANSFER_OPERATION_DELETE}); err != nil {
+			return proof, err
+		}
+		if err := images.Removed(w.MachineID, ref); err != nil {
 			return proof, err
 		}
 	}
@@ -316,6 +348,9 @@ func removeSessionTree(ctx context.Context, root, path string) error {
 // title runtimes. A restored or replaced copy blocks acknowledgement; replay
 // never gains permission to delete it merely from the earlier completed proof.
 func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
+	if len(w.Copies) == 0 && w.Fork == nil {
+		return nil, nil
+	}
 	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
 	for _, binding := range w.SkillSnapshots {
 		paths = append(paths, filepath.Join(root, "skill-snapshots", string(binding.SnapshotID)))

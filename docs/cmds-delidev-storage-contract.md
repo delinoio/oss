@@ -1105,3 +1105,8 @@ Terminal lookups occur only for the exact request; maintenance never scans lifet
 receipt history. Tombstones reject delayed dispatch and preserve replacements.
 Prepared result recovery normalizes delivery instances only through the complete
 immutable original preparation proof; ordinary inventory scope checks stay strict.
+## Session image removal and restore
+
+Image attachment jobs retain closed references and the original Worker device. Empty entity session scope preserves independent Fork lifetime. Synchronized permanent deletion drops only its session owner. Last-owner images join original Worker plans; image-only plans grant no workspace authority. Native cleanup joins before deletion. Offline Workers retain durable pending work. Completion and replay require the original deletion receipt and absent data and metadata; reappearing files remain protected. Purge requires original Worker acknowledgement.
+
+Backup exclusion includes every current image owner. Restore discards historical image jobs, preserves current ownership and completed removal metadata, and quarantines retained references. Restored Ready or Claimed records grant no upload, input or readback authority. Jobs and backups contain no image bytes or paths. This adds no SQLite migration.

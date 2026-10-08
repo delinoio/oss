@@ -42,6 +42,7 @@ type SessionDeletionWork struct {
 	MachineID          ID                    `json:"machine_id"`
 	DeviceID           ID                    `json:"device_id"`
 	Copies             []SessionDeletionCopy `json:"copies"`
+	Images             []ImageAttachment     `json:"images,omitempty"`
 	PreparationDigests []string              `json:"preparation_digests"`
 }
 
@@ -54,7 +55,7 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 	}
-	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0) || len(w.Copies) > 4096 || len(w.PreparationDigests) > 4096 {
+	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0 && len(w.Images) == 0) || len(w.Copies) > 4096 || len(w.Images) > 4096 || len(w.PreparationDigests) > 4096 {
 		return SessionDeletionPending()
 	}
 	for _, id := range []ID{w.DeletionID, w.ServerID, w.SessionID, w.MachineID, w.DeviceID} {
@@ -94,6 +95,13 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 		seen[c.JobID] = true
+	}
+	images := make(map[ID]bool, len(w.Images))
+	for _, image := range w.Images {
+		if image.Validate() != nil || image.MachineID != w.MachineID || images[image.ID] {
+			return SessionDeletionPending()
+		}
+		images[image.ID] = true
 	}
 	for _, d := range w.PreparationDigests {
 		if !deletionHash(d) {
