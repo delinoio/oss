@@ -40,6 +40,6 @@
 
 /* A restored tiny body retains a reachable scrolling upper region instead of
    clipping its mounted compact composer and Info underneath the dock. */
-.session-workspace.terminal-open .session-upper-content[data-terminal-compact-restored=true] { overflow: auto; grid-template-rows: auto minmax(160px, 1fr); }
-.session-workspace.terminal-open .session-upper-content[data-terminal-compact-restored=true] .session-information { max-height: none; }
+.session-workspace.terminal-open .session-upper-content[data-terminal-compact-restored=true] { overflow: auto; grid-template-rows: max-content minmax(160px, 1fr); }
+.session-workspace.terminal-open .session-upper-content[data-terminal-compact-restored=true] .session-information { max-height: min(240px, 25cqh); }
 @container session-view (min-width: 900px) { .session-workspace.terminal-open .session-upper-content[data-terminal-compact-restored=true] { grid-template-rows: minmax(160px, 1fr); } }

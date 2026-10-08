@@ -716,7 +716,8 @@ native Browser visibility observer must Hide the retained child through its
 existing exact cleanup ownership before presenting again. Restore returns the
 upper geometry and prior available focus without registering or executing anew.
 When Restore leaves less than200px above the dock, that retained upper region
-scrolls its intrinsic conversation/composer and Info rows; controls stay reachable
+scrolls its intrinsic conversation/composer and Info rows; the compact Info
+track keeps its max-content height and existing bounded internal scroll cap, controls stay reachable
 without overlapping the dock, and native Browser bounds keep ancestor clipping.
 
 Authenticated generated operations follow the
