@@ -5,10 +5,10 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { clientFailure, EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { ProjectList } from "./project-list";
-import { repositoryDetails, RepositoryDetailsState, useProjectListMetadata } from "./project-list-metadata";
+import { repositoryDetails, RepositoryDetailsState, type RepositoryDetails, useProjectListMetadata } from "./project-list-metadata";
 
 const repository = (name = "Repository", url = "https://github.com/delinoio/oss.git") => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name, remote_url: url }) });
 const project = (rows: Resource[]) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Project", repositories: rows.map(row => row.id), primary_repository: rows.at(-1)?.id }) });
@@ -157,4 +157,67 @@ it.each(["window", "refresh", "reconnect"])("holds eight transport permits acros
   expect(maximum).toBe(8);
   if (mode === "window") for (const id of original) expect(screen.getByTestId("metadata").textContent).not.toContain(id);
   mounted.unmount();
+});
+
+
+it("compacts only exact matching-name singleton metadata while retaining inert source bytes and identities", () => {
+  const row = repository("Project", "git@example.org:team/Project.git"), saved = project([row]);
+  const edit = vi.fn(), remove = vi.fn();
+  const mounted = render(<ProjectList resources={[saved]} metadata={new Map([[row.id, repositoryDetails(row, row.id)!]])} edit={edit} remove={remove} />);
+  expect(screen.getAllByText("Project")).toHaveLength(1);
+  expect(screen.queryByText("1 repository")).toBeNull(); expect(screen.queryByText("Primary")).toBeNull();
+  expect(screen.getByText("git@example.org:team/Project.git")).toBeTruthy(); expect(screen.queryByRole("link")).toBeNull();
+  const details = mounted.container.querySelector("details")!;
+  expect(details.open).toBe(false); expect(within(details).getByText(saved.id)).toBeTruthy(); expect(within(details).getByText(row.id)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Edit Project" })); fireEvent.click(screen.getByRole("button", { name: "Delete Project" }));
+  expect(edit).toHaveBeenCalledWith(saved); expect(remove).toHaveBeenCalledWith(saved);
+});
+
+it.each([
+  ["different name", { state: RepositoryDetailsState.Ready, name: "Different project", url: "https://example.org/project.git" }, "Different project"],
+  ["case differs", { state: RepositoryDetailsState.Ready, name: "project", url: "https://example.org/project.git" }, "project"],
+  ["loading", { state: RepositoryDetailsState.Loading }, "Loading repository details…"],
+  ["unavailable", { state: RepositoryDetailsState.Unavailable }, "Repository details unavailable"],
+  ["missing URL", { state: RepositoryDetailsState.Ready, name: "Project", url: "" }, "URL not configured"],
+  ["stale", { state: RepositoryDetailsState.Ready, name: "Project", url: "https://example.org/project.git", stale: true }, "Showing previously loaded repository details. Refresh to read the latest details."],
+] satisfies [string, RepositoryDetails, string][])("retains singleton %s guidance and saved-ID cardinality", (_, details, label) => {
+  const row = repository(), saved = project([row]);
+  render(<ProjectList resources={[saved]} metadata={new Map([[row.id, details]])} edit={() => {}} remove={() => {}} />);
+  expect(screen.getByText(label)).toBeTruthy(); expect(screen.queryByText("1 repository")).toBeNull(); expect(screen.queryByText("Primary")).toBeNull();
+  expect(screen.getByRole("button", { name: "Edit Project" }).hasAttribute("disabled")).toBe(false);
+});
+
+it.each([0, 2, 3])("keeps the saved count for %i references even when metadata is unavailable", count => {
+  const rows = Array.from({ length: count }, () => repository()), saved = project(rows);
+  const mounted = render(<ProjectList resources={[saved]} metadata={new Map()} edit={() => {}} remove={() => {}} />);
+  expect(screen.getByText(`${count} repositories`)).toBeTruthy();
+  expect(mounted.container.querySelectorAll(".project-repository-rows > li")).toHaveLength(count);
+  for (const row of rows) expect(within(mounted.container.querySelector("details")!).getByText(row.id)).toBeTruthy();
+});
+
+it("preserves disabled schema actions and unreadable original singleton references", () => {
+  const saved = { ...project([]), schemaVersion: 99, documentJson: encode({ name: "Unsupported", repositories: ["unreadable-original-reference"] }) };
+  const mounted = render(<ProjectList resources={[saved]} metadata={new Map()} edit={() => {}} remove={() => {}} />);
+  expect(screen.getAllByRole("button")[0]!.hasAttribute("disabled")).toBe(true);
+  expect(screen.getAllByRole("button")[1]!.hasAttribute("disabled")).toBe(true);
+  expect(within(mounted.container.querySelector("details")!).getByText(saved.id)).toBeTruthy();
+  expect(screen.getByText("0 repositories")).toBeTruthy();
+});
+
+
+it("keeps unreadable saved references in supported project details", () => {
+  const saved = { ...project([]), documentJson: encode({ name: "Project", repositories: ["unreadable-original-reference"] }) };
+  const mounted = render(<ProjectList resources={[saved]} metadata={new Map([["unreadable-original-reference", { state: RepositoryDetailsState.Unavailable }]])} edit={() => {}} remove={() => {}} />);
+  expect(within(mounted.container.querySelector("details")!).getByText("unreadable-original-reference")).toBeTruthy();
+  expect(screen.getByText("Repository details unavailable")).toBeTruthy(); expect(screen.queryByText("1 repository")).toBeNull();
+});
+
+
+it("keeps sanitized failure guidance and retained singleton URLs outside identity details", () => {
+  const row = repository("Project"), saved = project([row]);
+  const metadata = new Map([[row.id, { ...repositoryDetails(row, row.id)!, stale: true, failure: clientFailure(new ConnectError("https://user:secret@private.invalid", Code.PermissionDenied)) }]]);
+  const mounted = render(<ProjectList resources={[saved]} metadata={metadata} edit={() => {}} remove={() => {}} />);
+  expect(screen.getByRole("alert")).toBeTruthy(); expect(screen.getByRole("status").textContent).toContain("previously loaded");
+  expect(screen.getByText("https://github.com/delinoio/oss.git")).toBeTruthy();
+  expect(mounted.container.textContent).not.toContain("secret"); expect(screen.queryByText("1 repository")).toBeNull();
 });
