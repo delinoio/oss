@@ -365,8 +365,8 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 				select {
 				case finish := <-authentication.finished:
 					defer clear(finish.Bundle)
-					if finish.Succeeded || !finish.CleanupConfirmed {
-						t.Fatal("inspection refusal fabricated success or lost joined authentication cleanup")
+					if !finish.Succeeded || !finish.CleanupConfirmed {
+						t.Fatal("inspection refusal lost independent bundle capture or joined authentication cleanup")
 					}
 				default:
 					t.Fatal("inspection refusal omitted original authentication cleanup")
