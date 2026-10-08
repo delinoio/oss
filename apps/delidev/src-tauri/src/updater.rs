@@ -142,8 +142,14 @@ impl AcceptedInstallation {
             // Catch at the effect boundary while the original outcome and
             // host pending guards remain valid. An installer panic proves no
             // safe terminal effect; retain uncertainty without replay.
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(installer))
-                .unwrap_or(Phase::Uncertain)
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(installer)).unwrap_or_else(|_| {
+                tracing::error!(
+                    operation = "desktop_update",
+                    phase = "installer-panic",
+                    state = "original-uncertain"
+                );
+                Phase::Uncertain
+            })
         };
         *outcome = Some(phase);
         phase
