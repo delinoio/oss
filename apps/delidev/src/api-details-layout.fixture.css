@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.api-details-fixture { max-width: 1000px; margin: auto; padding: 16px; }
+.api-details-fixture .settings-content { width: 100%; min-width: 0; overflow: auto; }
+.api-details-fixture .api-entry-row { margin-block: 16px; }

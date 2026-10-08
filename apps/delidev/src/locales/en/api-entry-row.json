@@ -39,7 +39,6 @@
   "api-entry-row.refreshFailedShowingStaleUsageFrom_b5be80": "Refresh failed. Showing stale usage from the last successful read.",
   "api-entry-row.usageIsUnavailableEntryControlsRemain_755eaf": "Usage is unavailable. Entry controls remain available.",
   "api-entry-row.retryUsageFor_40ac3c": "Retry usage for <s0/>",
-  "api-entry-row.details_2b5716": "<s0/> Details",
   "api-entry-row.viewUsage_2e4ae3": "View usage",
   "api-entry-row.entry_861e39": "Entry:",
   "api-entry-row.enabled_92c1cd": "Enabled",
@@ -63,5 +62,6 @@
   "api-entry-row.observedResponses_compatibility": "{{v0}} observed responses",
   "api-entry-row.observedUnits_one": "{{v0}} observed unit",
   "api-entry-row.observedResponses_other": "{{v0}} observed responses",
-  "api-entry-row.observedUnits_other": "{{v0}} observed units"
+  "api-entry-row.observedUnits_other": "{{v0}} observed units",
+  "api-entry-row.details": "Details"
 }

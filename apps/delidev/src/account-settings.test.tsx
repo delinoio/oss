@@ -361,9 +361,12 @@ it("requires a deliberate keyless connection and exposes provider-off state sepa
   const providerResource = create(ResourceSchema, { ...provider, id: providerId });
   const value = fixture({ resources: [account, providerResource], providerId: off.providerId });
   render(value.view(value.settings(AccountSettingsSection.Api, { providers: [off], eligibleProviders: [] })));
-  expect(await screen.findByText("Provider status:")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button",{name:"More actions for Local"})); fireEvent.click(screen.getByRole("button",{name:"Details"}));
+  expect(within(screen.getByRole("dialog",{name:"Details"})).getByText("Provider status:")).toBeTruthy();
   expect(screen.getByText("Off")).toBeTruthy();
   expect(screen.getByText("Disabled")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Close Details"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Manage connection" }));
   expect(await screen.findByText(/Enable it in API Providers/)).toBeTruthy();
 });
@@ -554,7 +557,10 @@ it("preserves every independent row fact, full fallback identity, server order a
   expect(within(rows[1]).getAllByText("Unavailable").length).toBeGreaterThan(0);
   expect(within(rows[1]).getAllByText("Unknown").length).toBeGreaterThan(0);
   expect(within(rows[2]).getByText("Credential cleanup pending")).toBeTruthy();
-  expect(within(rows[2]).getByText("Disabled")).toBeTruthy();
+  fireEvent.click(within(rows[2]).getByRole("button",{name:/More actions/})); fireEvent.click(screen.getByRole("button",{name:"Details"}));
+  expect(within(screen.getByRole("dialog",{name:"Details"})).getByText("Disabled")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Close Details"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
   expect(within(rows[2]).getByText("Confirmed exhausted")).toBeTruthy();
   for (const row of rows.slice(0, 3)) {
     fireEvent.click(within(row).getByRole("button", { name: /More actions/ }));
@@ -562,7 +568,11 @@ it("preserves every independent row fact, full fallback identity, server order a
     expect(within(row).getByRole("button", { name: "Delete entry" })).toBeTruthy();
   }
   expect((within(rows[3]).getByRole("button", { name: "Manage connection" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((within(rows[3]).getByRole("button", { name: /More actions/ }) as HTMLButtonElement).disabled).toBe(true);
+  const unknownMenu=within(rows[3]).getByRole("button",{name:/More actions/});
+  expect(unknownMenu).toHaveProperty("disabled",false); fireEvent.click(unknownMenu);
+  expect(within(rows[3]).getByRole("button",{name:"Edit preferences"})).toHaveProperty("disabled",true);
+  expect(within(rows[3]).getByRole("button",{name:"Delete entry"})).toHaveProperty("disabled",true);
+  expect(within(rows[3]).getByRole("button",{name:"Details"})).toHaveProperty("disabled",false);
   expect(screen.queryByLabelText("API key")).toBeNull();
 });
 
@@ -676,6 +686,7 @@ it("opens, refreshes and revisits API entries without inspecting account storage
   view.rerender(value.view(value.settings(AccountSettingsSection.Api)));
   await screen.findByRole("heading", { name: "Storage-independent API" });
   absent();
+  fireEvent.click(screen.getByRole("button",{name:"More actions for Storage-independent API"}));
   expect(screen.getByRole("button", { name: "Details" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "View usage" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Manage connection" })).toBeTruthy();
