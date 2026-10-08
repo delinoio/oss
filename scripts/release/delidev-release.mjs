@@ -9,7 +9,13 @@ import { artifactName, signingRoot } from './generate-delidev-updater.mjs';
 import { releaseTag, Project, readVersion } from './project.mjs';
 
 export const releaseTargets = nativeTargets.filter(t => t.platform !== 'win32');
-export function requireValue(condition, message) { if (!condition) throw new Error(message); }
+export function requireValue(condition, message) {
+  if (!condition) {
+    const error = new Error(message);
+    error.code = message.toLowerCase().replace(/[^a-z0-9]+/g,'_').slice(0,100);
+    throw error;
+  }
+}
 export function identity(version, revision) {
   requireValue(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) && version.split('.').every(n => BigInt(n) <= 0xffffffffn) && /^[a-f0-9]{40}$/.test(revision), 'Invalid DeliDev release identity');
   return { schemaVersion: 1, version, sourceRevision: revision, tag: releaseTag(Project.DeliDev, version), channel: 'download-only', excludedTargets: ['windows-amd64', 'windows-arm64'] };
@@ -196,4 +202,4 @@ export async function main(command) {
   } });
   output({ outcome, version: expected.version, revision: expected.sourceRevision, channel: expected.channel, windows: 'skipped' });
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv[2]).catch(() => { console.error(JSON.stringify({ component: 'delidev.release', phase: process.argv[2], outcome: 'failed' })); process.exitCode = 1; });
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv[2]).catch(error => { console.error(JSON.stringify({ component: 'delidev.release', phase: process.argv[2], outcome: 'failed', code: error.code ?? 'invalid_release_data_or_github_operation' })); process.exitCode = 1; });

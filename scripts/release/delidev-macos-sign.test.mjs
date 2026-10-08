@@ -21,7 +21,7 @@ test('profiles retain exact team, bundle ID, App Group, certificate, expiry and 
   validateProfile(value,id,team,thumb);
   for(const changed of [{TeamIdentifier:['other']},{ExpirationDate:'2020-01-01T00:00:00Z'},{DeveloperCertificates:[]},{ProvisionsAllDevices:false},{Entitlements:{...value.Entitlements,'get-task-allow':true}},{Entitlements:{...value.Entitlements,'com.apple.application-identifier':`${team}.other`}},{Entitlements:{...value.Entitlements,'com.apple.security.application-groups':['another']}}]) assert.throws(()=>validateProfile({...value,...changed},id,team,thumb));
 });
-for(const fail of [null,'import','codesign','submit','staple']) test(`signing ${fail ?? 'success'} retains helper entitlements and cleans original keychain/material`,t=>{
+for(const fail of [null,'import','codesign','submit','staple','cancel']) test(`signing ${fail ?? 'success'} retains helper entitlements and cleans original keychain/material`,async t=>{
   const folder=mkdtempSync(join(tmpdir(),'delidev-sign-test-'));t.after(()=>rmSync(folder,{recursive:true,force:true}));
   const bundle=join(folder,'DeliDev.app'),worker=join(folder,'worker'),desktop=join(folder,'desktop.dmg');
   for(const child of ['Contents/MacOS','Contents/PlugIns/DeliDevWidget.appex/Contents','Contents/PlugIns/DeliDevWidgetSelection.appex/Contents','Contents/Frameworks/Helper.app/Contents/MacOS'])mkdirSync(join(bundle,child),{recursive:true});
@@ -30,6 +30,7 @@ for(const fail of [null,'import','codesign','submit','staple']) test(`signing ${
   const runCommand=(program,args,input,env)=>{
     assert.ok(!Object.keys(env).some(key=>key.startsWith('DELIDEV_')));
     calls.push([program,args]);
+    if(fail==='cancel' && args[0]==='import') process.emit('SIGTERM');
     if(args[0]==='create-keychain')privateDirectory=args.at(-1).replace('/release.keychain-db','');
     if(fail==='import'&&args[0]==='import'||fail==='codesign'&&args.includes('--force')||fail==='submit'&&args.includes('submit')||fail==='staple'&&args.includes('staple'))throw new Error('fixture failure');
     if(args[0]==='find-identity')return `${thumb} Developer ID Application: fixture`;
@@ -41,7 +42,7 @@ for(const fail of [null,'import','codesign','submit','staple']) test(`signing ${
     return '';
   };
   const action=()=>signMacOS({bundle,worker,desktop,version:'0.1.1',source:{...config,SECRET_TOKEN:'must-not-leak'},runCommand});
-  if(fail)assert.throws(action,/fixture failure/);else action();
+  if(fail)await assert.rejects(action,fail==='cancel' ? /canceled/ : /fixture failure/);else await action();
   assert.equal(existsSync(privateDirectory),false);
   assert.ok(calls.some(([,args])=>args[0]==='delete-keychain'));
   if(!fail){

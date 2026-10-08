@@ -59,7 +59,7 @@ export async function main(args) {
       const resources = packageResources(app,root,cefCredits(selected,env));
       verifyNotices(join(bundle,'Contents/Resources'),resources);
       const desktop = join(stage,artifactName('desktop',target)); rmSync(desktop);
-      signMacOS({bundle,worker:join(stage,artifactName('worker',target)),desktop,version});
+      await signMacOS({bundle,worker:join(stage,artifactName('worker',target)),desktop,version});
       verifyNotices(join(bundle,'Contents/Resources'),resources);
     } else {
       const directory = join(root,'target/delidev-dry-run',selected.target,revision);
@@ -77,4 +77,4 @@ export async function main(args) {
     console.log(JSON.stringify({component:'delidev.release.package',target:selected.target,revision,outcome:'verified',nativeAcceptance:'unverified'}));
   } finally { try { if(stage) rmSync(stage,{recursive:true,force:true}); rmSync(scratch,{recursive:true,force:true}); } finally { unlock(); } }
 }
-if(process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).catch(() => { console.error(JSON.stringify({component:'delidev.release.package',outcome:'failed'})); process.exitCode=1; });
+if(process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).catch(error => { console.error(JSON.stringify({component:'delidev.release.package',outcome:'failed',code:error.code ?? 'invalid_package_or_signing_data'})); process.exitCode=1; });

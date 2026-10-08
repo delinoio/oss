@@ -174,7 +174,10 @@ payloads use hardened runtime and timestamps; app and Worker archives and the
 final DMG require accepted notarization. The app and DMG have stapled tickets;
 standalone command-line binaries are notarized through their archive submission.
 Original notices remain checked after signing. Keychain/private files are removed
-on success or failure. Ordinary build children receive only the existing bounded
+on success, failure or handled cancellation. Signing children are awaited through
+original process exit before cleanup; cancellation stops that retained child and
+forces it only after a two-second cancellation grace. Ordinary build children
+receive only the existing bounded
 keyless environment.
 
 The `delidev-release` GitHub Environment supplies these secrets:

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash, randomBytes } from 'node:crypto';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,20 +26,47 @@ function decoded(value) {
   requireValue(bytes.toString('base64') === value, 'Noncanonical signing material encoding');
   return bytes;
 }
-export function signMacOS({ bundle, worker, desktop, version, source = process.env, runCommand }) {
+export async function signMacOS({ bundle, worker, desktop, version, source = process.env, runCommand }) {
   validateSigningConfiguration(source);
   const env = dryRunEnvironment(source);
   const directory = mkdtempSync(join(tmpdir(),'delidev-sign-'));
   const keychain = join(directory,'release.keychain-db');
   const certificate = source.DELIDEV_MACOS_CERTIFICATE_SHA1.toUpperCase();
-  const run = (program,args,input) => {
-    if (runCommand) return runCommand(program,args,input,env);
-    try {
-      const result = spawnSync(program,args,{ env, input, encoding:'utf8', timeout: 20*60*1000, maxBuffer: 8*1024**2 });
-      if (result.error || result.status !== 0) throw new Error('Signing child failed');
-      return program === '/usr/bin/codesign' && args.includes('--display') ? result.stdout + result.stderr : result.stdout;
+  let child = null, canceled = false, cleaning = false, killTimer = null;
+  const cancel = () => {
+    if(cleaning) return;
+    canceled = true;
+    const original = child;
+    if(original && original.exitCode === null) {
+      original.kill('SIGTERM');
+      if(killTimer) clearTimeout(killTimer);
+      killTimer = setTimeout(() => { if(child === original && original.exitCode === null) original.kill('SIGKILL'); },2000);
     }
-    catch { throw new Error(`DeliDev macOS signing command failed: ${program}`); }
+  };
+  process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
+  const run = async (program,args,input) => {
+    requireValue(!canceled || cleaning, 'DeliDev signing was canceled');
+    if (runCommand) return runCommand(program,args,input,env);
+    return new Promise((resolve,reject) => {
+      const original = spawn(program,args,{env,stdio:['pipe','pipe','pipe']});
+      child = original;
+      const stdout = [], stderr = []; let size = 0, failed = false;
+      const stop = () => { failed = true; if(original.exitCode === null) original.kill('SIGKILL'); };
+      const timer = setTimeout(stop,20*60*1000);
+      const capture = chunks => bytes => { size += bytes.length; if(size > 8*1024**2) stop(); else chunks.push(bytes); };
+      original.stdout.on('data',capture(stdout)); original.stderr.on('data',capture(stderr));
+      original.stdin.on('error',() => { failed = true; });
+      original.on('error',() => { failed = true; });
+      original.on('close',code => {
+        clearTimeout(timer); if(killTimer) clearTimeout(killTimer); if(child === original) child = null;
+        if(failed || code !== 0 || canceled && !cleaning) {
+          const error = new Error(`DeliDev macOS signing command failed: ${program}`);
+          error.code = 'macos_signing_child_failed'; reject(error); return;
+        }
+        resolve(Buffer.concat(program === '/usr/bin/codesign' && args.includes('--display') ? [...stdout,...stderr] : stdout).toString('utf8'));
+      });
+      original.stdin.end(input);
+    });
   };
   const material = (name, value) => {
     const file = join(directory,name), bytes = decoded(value);
@@ -51,13 +78,14 @@ export function signMacOS({ bundle, worker, desktop, version, source = process.e
   const password = randomBytes(32).toString('hex');
   let created = false;
   try {
-    run('/usr/bin/security',['create-keychain','-p',password,keychain]); created = true;
-    run('/usr/bin/security',['set-keychain-settings','-lut','21600',keychain]);
-    run('/usr/bin/security',['unlock-keychain','-p',password,keychain]);
+    created = true;
+    await run('/usr/bin/security',['create-keychain','-p',password,keychain]);
+    await run('/usr/bin/security',['set-keychain-settings','-lut','21600',keychain]);
+    await run('/usr/bin/security',['unlock-keychain','-p',password,keychain]);
     const p12 = material('identity.p12',source.DELIDEV_MACOS_CERTIFICATE_BASE64);
-    run('/usr/bin/security',['import',p12,'-k',keychain,'-P',source.DELIDEV_MACOS_CERTIFICATE_PASSWORD,'-T','/usr/bin/codesign']);
-    run('/usr/bin/security',['set-key-partition-list','-S','apple-tool:,apple:,codesign:','-s','-k',password,keychain]);
-    const identities = run('/usr/bin/security',['find-identity','-v','-p','codesigning',keychain]);
+    await run('/usr/bin/security',['import',p12,'-k',keychain,'-P',source.DELIDEV_MACOS_CERTIFICATE_PASSWORD,'-T','/usr/bin/codesign']);
+    await run('/usr/bin/security',['set-key-partition-list','-S','apple-tool:,apple:,codesign:','-s','-k',password,keychain]);
+    const identities = await run('/usr/bin/security',['find-identity','-v','-p','codesigning',keychain]);
     requireValue(identities.includes(certificate) && identities.includes('Developer ID Application:'), 'Imported Developer ID identity mismatch');
     const profiles = [
       [bundle,'io.delino.delidev',source.DELIDEV_MACOS_APP_PROFILE_BASE64],
@@ -67,43 +95,43 @@ export function signMacOS({ bundle, worker, desktop, version, source = process.e
     const entitlements = new Map();
     for (const [path,id,value] of profiles) {
       const profileFile = material(`${id}.provisionprofile`,value);
-      const xml = run('/usr/bin/security',['cms','-D','-i',profileFile]);
+      const xml = await run('/usr/bin/security',['cms','-D','-i',profileFile]);
       // plistlib supports binary data and dates, unlike plutil's JSON converter.
-      const profile = JSON.parse(run('/usr/bin/python3',['-c','import sys,plistlib,json,base64,datetime\np=plistlib.loads(sys.stdin.buffer.read())\nprint(json.dumps(p,default=lambda v: base64.b64encode(v).decode() if isinstance(v,bytes) else v.isoformat()+"Z" if isinstance(v,datetime.datetime) else None))'],xml));
+      const profile = JSON.parse(await run('/usr/bin/python3',['-c','import sys,plistlib,json,base64,datetime\np=plistlib.loads(sys.stdin.buffer.read())\nprint(json.dumps(p,default=lambda v: base64.b64encode(v).decode() if isinstance(v,bytes) else v.isoformat()+"Z" if isinstance(v,datetime.datetime) else None))'],xml));
       const rights = validateProfile(profile,id,source.DELIDEV_APPLE_TEAM_ID,certificate);
-      const original = run('/usr/bin/codesign',['--display','--entitlements',':-',path]);
+      const original = await run('/usr/bin/codesign',['--display','--entitlements',':-',path]);
       const start = original.indexOf('<?xml');
       requireValue(start >= 0, 'Original DeliDev entitlements are unavailable');
-      const signedRights = run('/usr/bin/python3',['-c','import sys,plistlib,json\ne=plistlib.loads(sys.stdin.buffer.read())\ne.update(json.loads(sys.argv[1]))\nsys.stdout.buffer.write(plistlib.dumps(e))',JSON.stringify(Object.fromEntries(['com.apple.application-identifier','com.apple.developer.team-identifier'].map(k => [k,rights[k]])))],original.slice(start, original.indexOf('</plist>') + 8));
+      const signedRights = await run('/usr/bin/python3',['-c','import sys,plistlib,json\ne=plistlib.loads(sys.stdin.buffer.read())\ne.update(json.loads(sys.argv[1]))\nsys.stdout.buffer.write(plistlib.dumps(e))',JSON.stringify(Object.fromEntries(['com.apple.application-identifier','com.apple.developer.team-identifier'].map(k => [k,rights[k]])))],original.slice(start, original.indexOf('</plist>') + 8));
       const file = join(directory,`${id}.plist`); writeFileSync(file,signedRights,{mode:0o600});
       entitlements.set(path,file);
       copyFileSync(profileFile,join(path,'Contents/embedded.provisionprofile'));
     }
-    const retainHelperEntitlements = path => {
+    const retainHelperEntitlements = async path => {
       for (const name of readdirSync(path)) {
         const child = join(path,name);
         if (!lstatSync(child).isDirectory()) continue;
         if (name.endsWith('.app') && !entitlements.has(child)) {
-          const xml = run('/usr/bin/codesign',['--display','--entitlements',':-',child]);
+          const xml = await run('/usr/bin/codesign',['--display','--entitlements',':-',child]);
           if (xml.includes('<?xml')) {
             const file = join(directory,`helper-${entitlements.size}.plist`);
             writeFileSync(file,xml.slice(xml.indexOf('<?xml'),xml.indexOf('</plist>') + 8),{mode:0o600});
             entitlements.set(child,file);
           }
         }
-        retainHelperEntitlements(child);
+        await retainHelperEntitlements(child);
       }
     };
-    retainHelperEntitlements(bundle);
-    const sign = (path, entitlement) => run('/usr/bin/codesign',['--force','--sign',certificate,'--keychain',keychain,'--timestamp','--options','runtime','--generate-entitlement-der',...(entitlement ? ['--entitlements',entitlement] : []),path]);
+    await retainHelperEntitlements(bundle);
+    const sign = async (path, entitlement) => await run('/usr/bin/codesign',['--force','--sign',certificate,'--keychain',keychain,'--timestamp','--options','runtime','--generate-entitlement-der',...(entitlement ? ['--entitlements',entitlement] : []),path]);
     // Sign actual native files and bundle containers inside-out. Symlinks are
     // framework layout references, never separate executable signing targets.
-    const walk = path => {
+    const walk = async path => {
       for (const name of readdirSync(path)) {
         const child = join(path,name), stat = lstatSync(child);
-        if (stat.isDirectory()) { walk(child); if (/\.(?:app|appex|framework)$/.test(name)) {
+        if (stat.isDirectory()) { await walk(child); if (/\.(?:app|appex|framework)$/.test(name)) {
           const file = entitlements.get(child);
-          sign(child,file);
+          await sign(child,file);
         } }
         else if (stat.isFile()) {
           // Preserve original helper JIT entitlements at the container signing
@@ -111,38 +139,42 @@ export function signMacOS({ bundle, worker, desktop, version, source = process.e
           const { openSync,readSync,closeSync } = signingFS;
           const fd = openSync(child,'r'), header = Buffer.alloc(4);
           try { readSync(fd,header,0,4,0); } finally { closeSync(fd); }
-          if (['cffaedfe','cefaedfe','feedfacf','feedface','cafebabe','bebafeca'].includes(header.toString('hex'))) sign(child);
+          if (['cffaedfe','cefaedfe','feedfacf','feedface','cafebabe','bebafeca'].includes(header.toString('hex'))) await sign(child);
         }
       }
     };
-    walk(bundle); sign(bundle,entitlements.get(bundle)); sign(worker);
-    run('/usr/bin/codesign',['--verify','--deep','--strict',bundle]);
-    run('/usr/bin/codesign',['--verify','--strict',worker]);
+    await walk(bundle); await sign(bundle,entitlements.get(bundle)); await sign(worker);
+    await run('/usr/bin/codesign',['--verify','--deep','--strict',bundle]);
+    await run('/usr/bin/codesign',['--verify','--strict',worker]);
     for (const [path] of profiles) {
-      const metadata = run('/usr/bin/codesign',['--display','--verbose=4',path]);
+      const metadata = await run('/usr/bin/codesign',['--display','--verbose=4',path]);
       requireValue(metadata.includes(`TeamIdentifier=${source.DELIDEV_APPLE_TEAM_ID}`) && !metadata.includes('Signature=adhoc'), 'Production DeliDev signature mismatch');
     }
-    requireValue(run('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',join(bundle,'Contents/Info.plist')]).trim() === version, 'Signed macOS version mismatch');
+    requireValue((await run('/usr/libexec/PlistBuddy',['-c','Print :CFBundleShortVersionString',join(bundle,'Contents/Info.plist')])).trim() === version, 'Signed macOS version mismatch');
     const notaryKey = material('notary.p8',source.DELIDEV_APPLE_NOTARY_KEY_BASE64);
-    const submit = file => {
-      const result = JSON.parse(run('/usr/bin/xcrun',['notarytool','submit',file,'--key',notaryKey,'--key-id',source.DELIDEV_APPLE_NOTARY_KEY_ID,'--issuer',source.DELIDEV_APPLE_NOTARY_ISSUER_ID,'--wait','--timeout','15m','--output-format','json']));
+    const submit = async file => {
+      const result = JSON.parse(await run('/usr/bin/xcrun',['notarytool','submit',file,'--key',notaryKey,'--key-id',source.DELIDEV_APPLE_NOTARY_KEY_ID,'--issuer',source.DELIDEV_APPLE_NOTARY_ISSUER_ID,'--wait','--timeout','15m','--output-format','json']));
       requireValue(result.status === 'Accepted', 'DeliDev notarization was not accepted');
     };
     const appArchive = join(directory,'app.zip');
-    run('/usr/bin/ditto',['-c','-k','--keepParent',bundle,appArchive]); submit(appArchive);
-    run('/usr/bin/xcrun',['stapler','staple',bundle]); run('/usr/bin/xcrun',['stapler','validate',bundle]);
-    run('/usr/sbin/spctl',['--assess','--type','execute',bundle]);
+    await run('/usr/bin/ditto',['-c','-k','--keepParent',bundle,appArchive]); await submit(appArchive);
+    await run('/usr/bin/xcrun',['stapler','staple',bundle]); await run('/usr/bin/xcrun',['stapler','validate',bundle]);
+    await run('/usr/sbin/spctl',['--assess','--type','execute',bundle]);
     const workerArchive = join(directory,'worker.zip');
-    run('/usr/bin/ditto',['-c','-k','--keepParent',worker,workerArchive]); submit(workerArchive);
+    await run('/usr/bin/ditto',['-c','-k','--keepParent',worker,workerArchive]); await submit(workerArchive);
     const dmgSource = join(directory,'dmg'); mkdirSync(dmgSource);
-    run('/usr/bin/ditto',[bundle,join(dmgSource,'DeliDev.app')]);
-    run('/usr/bin/hdiutil',['create','-fs','HFS+','-format','UDZO','-volname','DeliDev','-srcfolder',dmgSource,desktop]);
-    sign(desktop); submit(desktop);
-    run('/usr/bin/xcrun',['stapler','staple',desktop]); run('/usr/bin/xcrun',['stapler','validate',desktop]);
-    run('/usr/bin/codesign',['--verify','--strict',desktop]);
+    await run('/usr/bin/ditto',[bundle,join(dmgSource,'DeliDev.app')]);
+    await run('/usr/bin/hdiutil',['create','-fs','HFS+','-format','UDZO','-volname','DeliDev','-srcfolder',dmgSource,desktop]);
+    await sign(desktop); await submit(desktop);
+    await run('/usr/bin/xcrun',['stapler','staple',desktop]); await run('/usr/bin/xcrun',['stapler','validate',desktop]);
+    await run('/usr/bin/codesign',['--verify','--strict',desktop]);
   } finally {
-    try { if (created) run('/usr/bin/security',['delete-keychain',keychain]); }
-    finally { rmSync(directory,{recursive:true,force:true}); }
+    cleaning = true;
+    try { if (created) await run('/usr/bin/security',['delete-keychain',keychain]); }
+    finally {
+      process.removeListener('SIGINT',cancel); process.removeListener('SIGTERM',cancel);
+      rmSync(directory,{recursive:true,force:true});
+    }
   }
 }
 import * as signingFS from 'node:fs';
