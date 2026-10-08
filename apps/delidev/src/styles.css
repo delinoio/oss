@@ -191,8 +191,16 @@ summary { cursor: pointer; padding: 3px; }
 .result > p { white-space: pre-wrap; margin-top: 10px; }
 .result > small { display: block; margin-top: 10px; }
 .provider-row { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-block: 10px; }
-.provider-row-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.provider-row-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.provider-row-heading > div:first-child { min-width: 0; max-width: 100%; flex: 1 1 160px; }
 .provider-row-heading h4 { margin: 0 0 4px; }
+.api-provider-name { display: flex; align-items: flex-start; gap: 8px; }
+.api-provider-name > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.api-provider-mark { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex: 0 0 24px; color: var(--muted); }
+.api-provider-mark img, .api-provider-mark svg { display: block; width: 24px; height: 24px; object-fit: contain; }
+:root[data-theme="dark"] .api-provider-mark img { filter: invert(1); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) .api-provider-mark img { filter: invert(1); } }
+.provider-row-heading .provider-toggle { flex: 0 1 auto; }
 .provider-row-heading p, .provider-row > p { color: var(--muted); font-size: .88rem; margin-bottom: 8px; }
 .provider-toggle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .provider-toggle > span { min-width: 2rem; font-weight: 600; }
