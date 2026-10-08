@@ -90,7 +90,7 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 	if original.Version == 4 {
 		restored.Version = 4
 	}
-	restored.Retry = nil
+	restored.Retry, restored.Fork = nil, nil
 	restored.ThreadRequestID, restored.TurnRequestID = domain.NewID(), domain.NewID()
 	intent := domain.ContinueAutomatically
 	var previous *domain.SessionCompactionRef
