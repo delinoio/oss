@@ -416,7 +416,7 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if err != nil {
 			return nil, err
 		}
-		if err := claimInputImages(tx, imageOperationActor(ctx), domain.ID(req.Msg.RequestId), r.ID, itemID, value.MachineID, input.Attachments, false); err != nil {
+		if err := claimInputImages(tx, func() domain.Principal { actor, _ := domain.PrincipalFrom(ctx); return actor }(), domain.ID(req.Msg.RequestId), r.ID, itemID, value.MachineID, input.Attachments, false); err != nil {
 			return nil, err
 		}
 		if _, err := tx.Put(domain.SessionKind, r.ID, r.Revision, r.ID, r.ProjectID, value); err != nil {
