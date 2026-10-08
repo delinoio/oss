@@ -53,10 +53,65 @@ func (g *GitHub) Check(ctx context.Context, p Pool) error {
 	})
 }
 
-type requestTrace struct {
-	status  int
-	retryAt time.Time
+type resourceOperation uint8
+
+const (
+	resourceNone resourceOperation = iota
+	resourceRunnerLookup
+	resourceRunnerRemoval
+	resourcePoolLookup
+	resourcePoolRemoval
+)
+
+// Resource absence is authority only for the exact operation requested by the
+// caller. The SDK may first exchange several tokens using the same context.
+// Keep request identities in memory; never put URLs or names in diagnostics.
+type resourceRequest struct {
+	operation resourceOperation
+	id        int
+	name      string
 }
+
+func (r resourceRequest) matches(req *http.Request) bool {
+	if req == nil || req.URL == nil || r.operation == resourceNone {
+		return false
+	}
+	method := http.MethodGet
+	if r.operation == resourceRunnerRemoval || r.operation == resourcePoolRemoval {
+		method = http.MethodDelete
+	}
+	if req.Method != method {
+		return false
+	}
+	path := "/_apis/distributedtask/pools/0/agents"
+	if r.operation == resourcePoolLookup || r.operation == resourcePoolRemoval {
+		path = "/_apis/runtime/runnerscalesets"
+	}
+	if r.id != 0 {
+		path += "/" + strconv.Itoa(r.id)
+	} else if r.operation != resourceRunnerLookup || req.URL.Query().Get("agentName") != r.name {
+		return false
+	}
+	// The official service URL can contain a deployment prefix. Match the
+	// complete SDK resource suffix, not an ID or a generic runner path.
+	return strings.HasSuffix(req.URL.Path, path)
+}
+
+var ownedResourceAbsent = errors.New("owned remote resource is absent")
+
+type requestTrace struct {
+	status   int
+	retryAt  time.Time
+	resource resourceRequest
+	matched  bool
+}
+
+func (t *requestTrace) observe(resp *http.Response) {
+	t.status = resp.StatusCode
+	t.retryAt = retryTime(resp, time.Now())
+	t.matched = t.resource.matches(resp.Request)
+}
+
 type traceKey struct{}
 
 func newHTTPClient() *retryablehttp.Client {
@@ -67,8 +122,7 @@ func newHTTPClient() *retryablehttp.Client {
 	c.HTTPClient.CheckRedirect = func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }
 	c.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		if t, ok := ctx.Value(traceKey{}).(*requestTrace); ok && resp != nil {
-			t.status = resp.StatusCode
-			t.retryAt = retryTime(resp, time.Now())
+			t.observe(resp)
 		}
 		return false, nil
 	}
@@ -78,8 +132,7 @@ func newHTTPClient() *retryablehttp.Client {
 	c.ResponseLogHook = func(_ retryablehttp.Logger, resp *http.Response) {
 		if resp != nil && resp.Request != nil {
 			if t, ok := resp.Request.Context().Value(traceKey{}).(*requestTrace); ok {
-				t.status = resp.StatusCode
-				t.retryAt = retryTime(resp, time.Now())
+				t.observe(resp)
 			}
 		}
 	}
@@ -130,19 +183,23 @@ func newGitHub(conn Connection, httpClient *retryablehttp.Client) (*GitHub, erro
 	}}, nil
 }
 func remoteCall(ctx context.Context, fn func(context.Context) error) error {
-	t := &requestTrace{}
+	return remoteResourceCall(ctx, resourceRequest{}, fn)
+}
+
+func remoteResourceCall(ctx context.Context, resource resourceRequest, fn func(context.Context) error) error {
+	t := &requestTrace{resource: resource}
 	err := fn(context.WithValue(ctx, traceKey{}, t))
 	if err == nil {
 		return nil
+	}
+	if t.matched && t.status == http.StatusNotFound {
+		return ownedResourceAbsent
 	}
 	if p, ok := err.(*Problem); ok {
 		return p
 	}
 	if errors.Is(err, scaleset.JobStillRunningError) {
 		return problem(ErrBusy, "GitHub assigned a job before idle retirement completed.", "Leave this runner running until the job finishes.")
-	}
-	if errors.Is(err, scaleset.RunnerNotFoundError) {
-		return &Problem{Code: ErrRetry, Message: "Runner registration no longer exists.", Recovery: "Reconcile the owned execution environment.", HTTPStatus: 404}
 	}
 	code := ErrRetry
 	message := "GitHub request failed temporarily."
@@ -257,7 +314,7 @@ func (g *GitHub) JIT(ctx context.Context, p PoolState, r Runner) (int, string, e
 }
 func (g *GitHub) lookup(ctx context.Context, p PoolState, r Runner) (*scaleset.RunnerReference, error) {
 	var v *scaleset.RunnerReference
-	err := remoteCall(ctx, func(ctx context.Context) error {
+	err := remoteResourceCall(ctx, resourceRequest{operation: resourceRunnerLookup, id: r.GitHubID, name: r.Name}, func(ctx context.Context) error {
 		var e error
 		if r.GitHubID != 0 {
 			v, e = g.client.GetRunner(ctx, r.GitHubID)
@@ -266,7 +323,7 @@ func (g *GitHub) lookup(ctx context.Context, p PoolState, r Runner) (*scaleset.R
 		}
 		return e
 	})
-	if q, ok := err.(*Problem); ok && q.HTTPStatus == 404 {
+	if errors.Is(err, ownedResourceAbsent) {
 		return nil, nil
 	}
 	if err != nil {
@@ -286,20 +343,20 @@ func (g *GitHub) Remove(ctx context.Context, p PoolState, r Runner) error {
 	if err != nil || v == nil {
 		return err
 	}
-	err = remoteCall(ctx, func(ctx context.Context) error { return g.client.RemoveRunner(ctx, int64(v.ID)) })
-	if q, ok := err.(*Problem); ok && q.HTTPStatus == 404 {
+	err = remoteResourceCall(ctx, resourceRequest{operation: resourceRunnerRemoval, id: v.ID}, func(ctx context.Context) error { return g.client.RemoveRunner(ctx, int64(v.ID)) })
+	if errors.Is(err, ownedResourceAbsent) {
 		return nil
 	}
 	return err
 }
 func (g *GitHub) DeletePool(ctx context.Context, p PoolState) error {
 	var v *scaleset.RunnerScaleSet
-	err := remoteCall(ctx, func(ctx context.Context) error {
+	err := remoteResourceCall(ctx, resourceRequest{operation: resourcePoolLookup, id: p.ScaleSetID}, func(ctx context.Context) error {
 		var e error
 		v, e = g.client.GetRunnerScaleSetByID(ctx, p.ScaleSetID)
 		return e
 	})
-	if q, ok := err.(*Problem); ok && q.HTTPStatus == 404 {
+	if errors.Is(err, ownedResourceAbsent) {
 		return nil
 	}
 	if err != nil {
@@ -308,7 +365,11 @@ func (g *GitHub) DeletePool(ctx context.Context, p PoolState) error {
 	if v == nil || !ownsScaleSet(v, p) {
 		return problem(ErrOwnership, "Scale-set ownership cannot be verified for removal.", "Preserve state and inspect the remote scale set.")
 	}
-	return remoteCall(ctx, func(ctx context.Context) error { return g.client.DeleteRunnerScaleSet(ctx, p.ScaleSetID) })
+	err = remoteResourceCall(ctx, resourceRequest{operation: resourcePoolRemoval, id: p.ScaleSetID}, func(ctx context.Context) error { return g.client.DeleteRunnerScaleSet(ctx, p.ScaleSetID) })
+	if errors.Is(err, ownedResourceAbsent) {
+		return nil
+	}
+	return err
 }
 
 type githubSession struct {
