@@ -1,5 +1,5 @@
 import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { object, text } from "./documents";
 import { Modal } from "./ui";
@@ -39,9 +39,19 @@ export function SavedConnectionProblem({ error }: { error?: unknown }) {
 }
 // Presentation stays in one portal even when its owning page leaves. The
 // parent retains every original name, private grant and revision-bound request.
-function SavedConnectionTask({ title, inline, visible, close, children }: { title: string; inline: boolean; visible: boolean; close: () => void; children: ReactNode }) {
+function SavedConnectionTask({ title, inline, visible, children }: { title: string; inline: boolean; visible: boolean; children: ReactNode }) {
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
-  return <><Modal title={title} visible={inline && visible} close={close} focusClose trapFocus><div ref={setTarget} /></Modal><PersistentConnectionView target={inline ? target ?? undefined : undefined} hidden={inline && !visible}>{children}</PersistentConnectionView></>;
+  const [presented, setPresented] = useState(true);
+  const resume = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (!inline || !visible || presented) return;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || focused.matches(":disabled") || focused.closest("[hidden], dialog:not([open])")) resume.current?.focus();
+  }, [inline, visible, presented]);
+  useEffect(() => { if (inline && visible) setPresented(true); }, [inline, visible]);
+  // Escape/Close releases presentation only. Explicit Discard/Keep controls
+  // remain the original owner's decision, including after an uncertain write.
+  return <>{inline && visible && !presented ? <button type="button" ref={resume} onClick={() => setPresented(true)}>{copy("settings.connections.continue", { title })}</button> : null}<Modal title={title} visible={inline && visible && presented} close={() => setPresented(false)} focusClose trapFocus><div ref={setTarget} /></Modal><PersistentConnectionView target={inline ? target ?? undefined : undefined} hidden={inline && (!visible || !presented)}>{children}</PersistentConnectionView></>;
 }
 export function SavedConnections({ visible, close, actions, target, advancedTarget }: { visible: boolean; close: () => void; actions: SavedConnectionActions; target?: HTMLElement; advancedTarget?: HTMLElement }) {
   useLocale();
@@ -138,7 +148,7 @@ export function SavedConnections({ visible, close, actions, target, advancedTarg
   };
   const staleRemoval = Boolean(removal && !removal.requestId && profiles?.some((profile) => profile.id === removal.profile.id && profile.revision !== removal.revision));
   const staleEdit = Boolean(edit && profiles?.some((profile) => profile.id === edit.profile.id && profile.revision !== edit.profile.revision));
-  const content = <section className={target ? "connections-saved" : undefined} aria-label={copy("saved-connections.savedServers_4bf084")}><header className="connections-section-heading"><h2>{copy("saved-connections.savedServers_4bf084")}</h2>{target ? <div className="actions"><button disabled={busy || fetching} onClick={() => void refresh()}>{copy("saved-connections.refreshSavedServers_91a8fa")}</button><button className="primary" disabled={busy || Boolean(attempt || edit || removal)} onClick={() => setAdding(true)}>{copy("settings.connections.add")}</button></div> : null}</header>
+  const content = <section className={target ? "connections-saved" : undefined} aria-label={copy("saved-connections.savedServers_4bf084")}><header className="connections-section-heading"><h2>{copy("saved-connections.savedServers_4bf084")}</h2>{target ? <div className="actions"><button disabled={busy || fetching} onClick={() => void refresh()}>{copy("saved-connections.refreshSavedServers_91a8fa")}</button><button className="primary" disabled={busy || Boolean(adding || attempt || edit || removal)} onClick={() => setAdding(true)}>{copy("settings.connections.add")}</button></div> : null}</header>
     <p>{copy("saved-connections.eachServerOpensInItsOwn_2934f3")}</p>
     <SavedConnectionProblem error={error} />{message ? <p role="status">{message}</p> : null}
     {target ? <p>{copy("settings.connections.authorization")}</p> : <button disabled={busy || fetching} onClick={() => void refresh()}>{copy("saved-connections.refreshSavedServers_91a8fa")}</button>}
@@ -151,14 +161,14 @@ export function SavedConnections({ visible, close, actions, target, advancedTarg
         <details className="connections-row-menu" open={!target ? true : undefined} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label={copy("settings.connections.menu", { name: profile.name })}>⋯</summary><div><button disabled={busy || Boolean(attempt || edit || removal)} onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); setEdit({ profile, name: profile.name }); setError(undefined); setMessage(""); }}>{copy("saved-connections.rename_089ce7", { v0: profile.name })}</button>
       <button disabled={busy || Boolean(attempt || edit || removal)} onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); beginRemoval(profile); }}>{copy("saved-connections.remove_86790c", { v0: profile.name })}</button></div></details></> : <button disabled={busy || Boolean(attempt || edit || removal)} onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); beginRemoval(profile); }}>{copy("saved-connections.retryRemovalOf_def714", { v0: profile.name })}</button>}</div>
     </li>)}</ul> : <p>{copy("saved-connections.noSavedServers_b0a3d9")}</p> : <p>{copy(fetching ? "settings.connections.loading" : "saved-connections.savedServerInventoryIsUnavailable_4a30fe")}</p>}
-    {edit ? <SavedConnectionTask title={copy("saved-connections.rename_089ce7", { v0: edit.profile.name })} inline={Boolean(target)} visible={visible} close={() => { if (!busy) setEdit(undefined); }}><section><h3><LocalizedText id="saved-connections.rename_286b04" components={{ s0: <>{edit.profile.name}</> }} /></h3>
+    {edit ? <SavedConnectionTask title={copy("saved-connections.rename_089ce7", { v0: edit.profile.name })} inline={Boolean(target)} visible={visible}><section><h3><LocalizedText id="saved-connections.rename_286b04" components={{ s0: <>{edit.profile.name}</> }} /></h3>
       <label>{copy("saved-connections.newConnectionName_7e3c81")}<input autoFocus value={edit.name} maxLength={256} disabled={busy || Boolean(edit.requestId)} onChange={(event) => setEdit({ ...edit, name: event.target.value })} /></label>
       {staleEdit ? <p role="alert">{copy("saved-connections.thisConnectionChangedWhileYouWere_67bff4")}</p> : null}
       <button disabled={busy || (!edit.requestId && staleEdit) || !edit.name.trim() || new TextEncoder().encode(edit.name).byteLength > 256} onClick={() => void rename()}>{edit.requestId ? copy("saved-connections.retryOriginalNameEdit_0efce4") : copy("saved-connections.saveConnectionName_63f298")}</button>
       <button disabled={busy} onClick={() => setEdit(undefined)}>{copy("saved-connections.discardNameEdit_ac773a")}</button>
       {edit.requestId ? <p>{copy("saved-connections.theOriginalNameEditMayAlready_1ba462")}</p> : null}
     </section></SavedConnectionTask> : null}
-    {removal ? <SavedConnectionTask title={copy("saved-connections.confirmConnectionRemoval_36e149")} inline={Boolean(target)} visible={visible} close={() => { if (!busy) setRemoval(undefined); }}><section aria-label={copy("saved-connections.confirmConnectionRemoval_36e149")}><h3><LocalizedText id="saved-connections.remove_d25d10" components={{ s0: <>{removal.profile.name}</> }} /></h3>
+    {removal ? <SavedConnectionTask title={copy("saved-connections.confirmConnectionRemoval_36e149")} inline={Boolean(target)} visible={visible}><section aria-label={copy("saved-connections.confirmConnectionRemoval_36e149")}><h3><LocalizedText id="saved-connections.remove_d25d10" components={{ s0: <>{removal.profile.name}</> }} /></h3>
       <p>{copy("saved-connections.thisClosesThisServerSWindow_340931")}</p>
       <p>{copy("saved-connections.thisIsLocalRemovalPreviouslyCopied_af18b5")}</p>
       {staleRemoval ? <p role="alert">{copy("saved-connections.theConnectionChangedKeepItRefresh_3297d6")}</p> : null}
@@ -166,7 +176,7 @@ export function SavedConnections({ visible, close, actions, target, advancedTarg
       <button disabled={busy} onClick={() => setRemoval(undefined)}>{removal.requestId ? copy("saved-connections.inspectRemovalStateLater_336970") : copy("saved-connections.keepConnection_264051")}</button>
       {removal.requestId ? <p>{copy("saved-connections.theOriginalRemovalMayAlreadyBe_a5878d")}</p> : null}
     </section></SavedConnectionTask> : null}
-    <SavedConnectionTask title={copy("saved-connections.addAServerConnection_191cce")} inline={Boolean(target)} visible={visible && adding} close={() => { if (!busy) setAdding(false); }}><section><h3>{copy("saved-connections.addAServerConnection_191cce")}</h3><p>{copy("saved-connections.obtainAShortLivedClientPairing_e08e27")}</p>
+    <SavedConnectionTask title={copy("saved-connections.addAServerConnection_191cce")} inline={Boolean(target)} visible={visible && adding}><section><h3>{copy("saved-connections.addAServerConnection_191cce")}</h3><p>{copy("saved-connections.obtainAShortLivedClientPairing_e08e27")}</p>
       <label>{copy("saved-connections.connectionName_686d4d")}<input value={name} maxLength={256} disabled={busy || Boolean(attempt)} onChange={(event) => setName(event.target.value)} /></label>
       <label>{copy("saved-connections.privateClientPairingDocument_9a8297")}<input type="password" autoComplete="off" spellCheck={false} value={grant} maxLength={32768} disabled={busy || Boolean(attempt)} onChange={(event) => setGrant(event.target.value)} /></label>
       {text(preview.endpoint) ? <p><LocalizedText id="saved-connections.pairingEndpoint_5b2ef5" components={{ s0: <>{text(preview.endpoint)}</> }} /></p> : null}{text(preview.server_id) ? <p><LocalizedText id="saved-connections.expectedServer_4ed0bf" components={{ s0: <>{text(preview.server_id)}</> }} /></p> : null}

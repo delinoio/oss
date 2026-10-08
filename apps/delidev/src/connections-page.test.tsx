@@ -70,6 +70,8 @@ it("retains saved rows after a failed inventory read and keeps pending private p
   fireEvent.change(screen.getByLabelText("Connection name"), { target: { value: "Original name" } }); fireEvent.change(input, { target: { value: grant } });
   vi.mocked(value.actions.pair).mockRejectedValueOnce("timed-out");
   fireEvent.click(screen.getByRole("button", { name: "Pair this server" })); await screen.findByRole("button", { name: "Retry original server pairing" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Add a server connection" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue Add a server connection" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" })); fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   expect((screen.getByLabelText("Private client pairing document") as HTMLInputElement).value).toBe(grant);
   fireEvent.click(screen.getByRole("button", { name: "Retry original server pairing" })); await waitFor(() => expect(value.actions.pair).toHaveBeenCalledTimes(2));
@@ -82,6 +84,8 @@ it("retains original saved-profile rename and removal receipts across page movem
   fireEvent.change(screen.getByLabelText("New connection name"), { target: { value: "Original rename" } });
   vi.mocked(value.actions.rename).mockRejectedValueOnce("timed-out");
   fireEvent.click(screen.getByRole("button", { name: "Save connection name" })); await screen.findByRole("button", { name: "Retry original name edit" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Rename Studio server" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue Rename Studio server" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" })); fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry original name edit" })); await waitFor(() => expect(value.actions.rename).toHaveBeenCalledTimes(2));
   expect(vi.mocked(value.actions.rename).mock.calls[0]).toEqual(vi.mocked(value.actions.rename).mock.calls[1]);
@@ -89,6 +93,8 @@ it("retains original saved-profile rename and removal receipts across page movem
   fireEvent.click(screen.getByRole("button", { name: "Remove Studio server" }));
   vi.mocked(value.actions.remove).mockRejectedValueOnce("timed-out");
   fireEvent.click(screen.getByRole("button", { name: "Confirm connection removal" })); await screen.findByRole("button", { name: "Retry original connection removal" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Confirm connection removal" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue Confirm connection removal" }));
   fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" })); fireEvent.click(screen.getByRole("button", { name: "Toggle Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry original connection removal" })); await waitFor(() => expect(value.actions.remove).toHaveBeenCalledTimes(2));
   expect(vi.mocked(value.actions.remove).mock.calls[0]).toEqual(vi.mocked(value.actions.remove).mock.calls[1]);

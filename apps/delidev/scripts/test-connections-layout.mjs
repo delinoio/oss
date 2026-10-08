@@ -54,17 +54,23 @@ try {
     await page.locator("dialog[open]").waitFor(); await page.keyboard.press("Escape");
     assert.equal(await page.locator("dialog[open]").count(), 0);
     assert(await menu.evaluate(node => node === document.activeElement));
+    await page.locator(".connections-saved > button").click();
+    await page.locator("dialog[open]").waitFor();
+    await page.getByRole("button", { name: language === "ko" ? "이름 편집 버리기" : "Discard name edit" }).click();
     await page.locator(".connections-row-menu button").nth(1).click();
     await page.locator("dialog[open]").waitFor(); await page.keyboard.press("Escape");
     assert.equal(await page.locator("dialog[open]").count(), 0);
     assert(await menu.evaluate(node => node === document.activeElement));
+    await page.locator(".connections-saved > button").click();
+    await page.locator("dialog[open]").waitFor();
+    await page.getByRole("button", { name: language === "ko" ? "연결 유지" : "Keep connection" }).click();
     const add = page.getByRole("button", { name: language === "ko" ? "서버 추가" : "Add server" });
     await add.click();
-        await page.locator("dialog[open]").waitFor();
+    await page.locator("dialog[open]").waitFor();
     assert.equal(await page.locator('dialog[open] input[type="password"]').count(), 1);
     await page.keyboard.press("Escape");
     assert.equal(await page.locator("dialog[open]").count(), 0);
-    assert(await add.evaluate(node => node === document.activeElement));
+    assert(await page.locator(".connections-saved > button").evaluate(node => node === document.activeElement));
     assert.equal(await page.locator("html").getAttribute("data-actions"), null);
     checks++;
   }

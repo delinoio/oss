@@ -170,5 +170,6 @@
   "settings.connections.menu": "Actions for {{name}}",
   "settings.connections.authorization": "Authorization is checked when you open a server.",
   "settings.connections.stale": "Saved server inventory is unavailable. Showing the last confirmed profiles.",
-  "settings.connections.loading": "Loading saved servers…"
+  "settings.connections.loading": "Loading saved servers…",
+  "settings.connections.continue": "Continue {{title}}"
 }

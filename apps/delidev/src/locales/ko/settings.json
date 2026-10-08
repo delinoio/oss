@@ -170,5 +170,6 @@
   "settings.connections.menu": "{{name}} 작업",
   "settings.connections.authorization": "서버를 열 때 권한을 확인합니다.",
   "settings.connections.stale": "저장된 서버 목록을 읽을 수 없습니다. 마지막으로 확인한 프로필을 표시합니다.",
-  "settings.connections.loading": "저장된 서버를 불러오는 중…"
+  "settings.connections.loading": "저장된 서버를 불러오는 중…",
+  "settings.connections.continue": "{{title}} 계속"
 }
