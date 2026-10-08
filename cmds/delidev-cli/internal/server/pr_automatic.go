@@ -248,6 +248,10 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 	if err != nil {
 		return err
 	}
+	// This transient preview has no durable attempt or execution authority. The
+	// same formatter runs again with current originals inside atomic acceptance.
+	preview := domain.PRFixExecution{AttemptID: domain.NewID(), Target: target, Strategy: policy.ConflictStrategy}
+	var overflow error
 	err = s.Store.Read(ctx, func(tx *store.Tx) error {
 		row, _, err := tx.GetPRProblemSet(input.SetID)
 		if err != nil {
@@ -280,8 +284,18 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 					return err
 				}
 				if reason == domain.PRRemediationEligible {
+					trial := append(problems, p)
+					if _, err := domain.PRFixPrompt(preview, trial); err != nil {
+						if domain.SafeError(err).Code != domain.ResourceExhausted {
+							return err
+						}
+						// Keep complete originals unhandled. A large early item must
+						// not starve a later item that fits the remaining byte budget.
+						overflow = err
+						continue
+					}
 					input.Problems = append(input.Problems, domain.PRFixProblem{ID: r.ID, Revision: r.Revision, ContentVersion: p.ContentVersion})
-					problems = append(problems, p)
+					problems = trial
 					if len(input.Problems) == 100 {
 						break
 					}
@@ -297,7 +311,7 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 		return err
 	}
 	if len(input.Problems) == 0 {
-		return nil
+		return overflow
 	}
 	used := map[domain.PRProblemKind]domain.RepositoryQueryResult{}
 	for _, p := range problems {
