@@ -1,3 +1,5 @@
+import { SettingsCategory } from "./settings-category";
+import { SettingsSearch, SettingsSearchFocus, type SettingsSearchRequest } from "./settings-search";
 import { AgentWorkerRow } from "./agent-worker-row";
 import { AgentWorkerMetadataProvider } from "./agent-worker-models";
 import { useRunnerRemediation } from "./runner-remediation";
@@ -203,6 +205,7 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
     <Problem error={error} />
     {error && resources ? <p className="notice" role="status">{copy("settings.refreshFailedShowingTheLastSuccessfully_df6f1e")}</p> : null}
     {resources && !complete ? <ServerPreferencesUnavailable rows={resources} section={section} /> : null}
+    <span data-settings-search-pending={!resources && !error ? "true" : undefined} hidden />
     {initial !== undefined ? <ConfigurationEditor kind={EntityKind.SETTINGS} initial={initial ?? undefined} serverPreferenceSection={section} active={active} saved={saved} cancel={() => {}} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{ complete, resource: complete ? resources?.[0] : undefined, fetching, error }} /> : null}
     {section !== ServerPreferenceSection.GitWorkflow ? <div className="server-preferences-network"><NetworkSettings active={active} authority={authority} onPresentationChange={onNetworkPresentationChange} /></div> : null}
   </>;
@@ -210,12 +213,7 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
 
 export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance }
-enum SettingsCategory {
-  Appearance = "appearance",
-  SubscriptionAccounts = "subscription-accounts", ApiAccounts = "api-accounts", Providers = "providers", AgentWorkers = "agent-workers", Instructions = "instructions",
-  Projects = "projects", Repositories = "repositories", ExecutionWorkers = "execution-workers", PairedDevices = "paired-devices",
-  ServerPreferences = "server-preferences", GitWorkflow = "git-workflow", Integrations = "integrations", Diagnostics = "diagnostics", Notifications = "notifications", Transfer = "transfer", Backups = "backups",
-}
+
 enum SettingsGroup { Ai = "AI", Coding = "Coding", Devices = "Device management", System = "System" }
 
 const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
@@ -289,10 +287,12 @@ export function Settings({ visible = true, ...props }: SettingsProps) {
 function SettingsVisit({ entryDestination, destinationConsumed, ...props }: SettingsProps) {
   useLocale();
   const closeDrawer = useCloseSidebarDrawer();
+  const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
   const [selection, setSelection] = useState(() => entrySelection(entryDestination));
   const initialDestination = useRef(entryDestination);
   const handledDestination = useRef<SettingsEntryDestination | undefined>(undefined);
   const navigate = useCallback<NavigateSettings>((category, entry) => {
+    setSearchRequest(undefined);
     closeDrawer();
     setSelection(current => current.category === category && !entry ? current : { category, entry, key: newRequestId() });
   }, [closeDrawer]);
@@ -309,7 +309,8 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
   }, [destinationConsumed, entryDestination, navigate]);
   return <>
     <SidebarSurface active title={copy("settings.settings_74a883")} className="settings-navigation">
-      <nav aria-label={copy("settings.settingsCategories_b9ed95")}>
+      <SettingsSearch categories={settingsGroups.flatMap(group => group.categories.map(category => ({ category, label: settingsCategories[category].label, help: settingsCategories[category].description })))} select={(target) => { navigate(target.category); setSearchRequest({ ...target, generation: newRequestId() }); }} />
+      <nav aria-label={copy("settings.settingsCategories_b9ed95")} data-settings-groups>
         {settingsGroups.map(group => <section className="settings-nav-group" key={group.label}>
           <h2>{copy(group.label === SettingsGroup.Ai ? "settings.group.aiAgents" : group.label === SettingsGroup.Coding ? "settings.group.coding" : group.label === SettingsGroup.Devices ? "settings.group.devices" : "settings.group.system")}</h2>
           {group.categories.map(category => <button type="button" className="settings-category-button" key={category} data-settings-category={category} aria-current={selection.category === category ? "page" : undefined} aria-pressed={selection.category === category} onClick={() => navigate(category)}>
@@ -320,11 +321,11 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
     </SidebarSurface>
     {/* Each category owns its waits and drafts. Disposal rejects late results
         without canceling or replaying already accepted server/native work. */}
-    <SettingsLifetime key={selection.key}>{opening => <MutationIntents><SettingsWorkspace {...props} selectedCategory={selection.category} entry={selection.entry} navigate={navigate} controlLocalWorker={props.controlLocalWorker ? Object.assign((action: LocalWorkerAction, generation?: string) => opening.native(() => props.controlLocalWorker!(action, generation)), { automatic: props.controlLocalWorker.automatic }) : undefined} /></MutationIntents>}</SettingsLifetime>
+    <SettingsLifetime key={selection.key}>{opening => <MutationIntents><SettingsWorkspace {...props} searchRequest={searchRequest} selectedCategory={selection.category} entry={selection.entry} navigate={navigate} controlLocalWorker={props.controlLocalWorker ? Object.assign((action: LocalWorkerAction, generation?: string) => opening.native(() => props.controlLocalWorker!(action, generation)), { automatic: props.controlLocalWorker.automatic }) : undefined} /></MutationIntents>}</SettingsLifetime>
   </>;
 }
 
-function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, entry, navigate }: SettingsProps & { selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
+function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, searchRequest, entry, navigate }: SettingsProps & { searchRequest?: SettingsSearchRequest; selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
   useLocale();
 
   const [device, setDevice] = useState<Resource>();
@@ -458,12 +459,13 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const taskTitle = device ? "Revoke device" : machine ? "Runner Device details" : deleting ? deleting.kind === EntityKind.ACCOUNT && document(deleting).type === "api" ? copy("account-deletion.api.title") : "Delete configuration" : routing ? copy("settings.previewRouting_02d4d9") : account ? "Manage connection" : editing && taskKind === EntityKind.REPOSITORY && !editing.initial ? copy("settings.addRepository_2eda4d") : editing && taskKind === EntityKind.PROJECT && !editing.initial ? copy("project-creation.title") : editing ? `${editing.initial ? copy("settings.edit_464c4f") : copy("settings.new_18fdd5")} ${taskKind === EntityKind.SETTINGS ? preferenceLabel : kindNames[taskKind]}` : "Settings task";
   const taskSize = deleting || device ? SettingsDialogSize.Confirmation : routing ? SettingsDialogSize.Form : machine || account || [EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.REPOSITORY].includes(taskKind) ? SettingsDialogSize.Wide : SettingsDialogSize.Form;
   return <SettingsTasks>
+      <SettingsSearchFocus request={searchRequest} root={deviceContent} category={selectedCategory} />
       <section className={selectedCategory === SettingsCategory.Repositories ? "settings-content settings-repositories" : isProjects ? "settings-content settings-projects" : isPreferenceCategory ? `settings-content settings-server-preferences${isGitWorkflow ? " settings-git-workflow" : ""}` : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices ? "settings-content settings-runner-devices" : area === SettingsArea.Diagnostics ? "settings-content settings-connections" : "settings-content"} aria-label={copy("settings.settingsContent_e4dcd3")}>
         <SettingsTaskBackground><div className="settings-content-column">
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
         {isGitWorkflow ? <p className="settings-breadcrumb">{copy("settings.gitWorkflow")}</p> : null}
         {area !== SettingsArea.Backups && !isApiAccounts && !isApiProviders ? <div className="settings-category-heading">
-          <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{selectedCategory === SettingsCategory.Repositories ? <p>{copy("settings.repositoryDescription")}</p> : isAgentWorkers ? <p className="settings-agent-summary">{copy("settings.reusableConfigurationsForYourAgents_5ba1a2")}</p> : isPreferenceCategory ? <p>{isGitWorkflow ? copy("settings.gitWorkflowDescription") : copy("settings.defaultRoutingWorktreeFetchAndPull_e19cf8")}</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isPreferenceCategory ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p> : null}</div>
+          <div className="settings-category-title"><h1 data-settings-search-target="category" aria-live="polite" aria-atomic="true">{selected.label}</h1>{selectedCategory === SettingsCategory.Repositories ? <p>{copy("settings.repositoryDescription")}</p> : isAgentWorkers ? <p className="settings-agent-summary">{copy("settings.reusableConfigurationsForYourAgents_5ba1a2")}</p> : isPreferenceCategory ? <p>{isGitWorkflow ? copy("settings.gitWorkflowDescription") : copy("settings.defaultRoutingWorktreeFetchAndPull_e19cf8")}</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isPreferenceCategory ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? "Refresh Git workflow" : undefined} onClick={() => { if (isProjects) projectMetadata.refresh(); if (isAgentWorkers) refreshModels(value => value + 1); void result.refetch(); }}>{isGitWorkflow ? copy("settings.refresh_0e9161") : copy("settings.refreshSettings_65dbd6")}</button>
 
@@ -479,9 +481,9 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} /></div> : null}
-          {area === SettingsArea.Diagnostics ? <div>{connectionSettings ?? <section aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}
+          {area === SettingsArea.Diagnostics ? <div>{connectionSettings ?? <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}
           {area === SettingsArea.Configuration ? <div>
-            {controlLocalWorker && isRunnerDevices ? <div><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
+            {controlLocalWorker && isRunnerDevices ? <div data-settings-search-target="local-worker"><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             {isApiAccounts ? <div>
               <AccountSettings apiFormatSelectingReady={Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && eligibleInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && !apiInventory.error && !eligibleInventory.error)} openUsage={openUsage} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} providerInventoryFailure={apiInventory.error?.failure} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { apiInventory.refreshExplicit(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={undefined} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />
@@ -532,7 +534,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
 
 function RunnerDeviceInventory({ query, root, active, resources, error, loading, page, nextPage, inspect }: { query: ReturnType<typeof useResourceScrollQuery>; root: import("react").RefObject<HTMLElement | null>; active: boolean; resources?: Resource[]; error: import("@delinoio/delidev-api-client").ClientFailure | undefined; loading: boolean; page: string; nextPage: string; inspect: (row: Resource) => void }) {
   useLocale();
-  return <section className="settings-runner-inventory" aria-label={copy("settings.savedRunnerDevices_9e6092")}>
+  return <section data-settings-search-target="runner-inventory" className="settings-runner-inventory" aria-label={copy("settings.savedRunnerDevices_9e6092")}>
     <h2>{copy("settings.savedRunnerDevices_9e6092")}</h2>
     {loading ? <><p role="status">{copy("settings.loadingRunnerDevices_a75d73")}</p><div aria-hidden="true" aria-busy="true" className="settings-runner-skeletons">{[0, 1].map((row) => <div aria-hidden="true" className="settings-runner-skeleton-row" key={row}><span /><span /><span /></div>)}</div></> : null}
     <Failure failure={error} />

@@ -139,7 +139,7 @@ export function AppearanceProvider({ children, bridge = nativeBridge }: { childr
 export function AppearanceSettings() {
   useLocale();
   const { snapshot, operation, select, reload } = useContext(AppearanceContext);
-  return <section className="appearance-settings" aria-label={copy("appearance.deviceAppearance_880cb9")}>
+  return <section data-settings-search-target="theme" className="appearance-settings" aria-label={copy("appearance.deviceAppearance_880cb9")}>
     <fieldset disabled={Boolean(operation || snapshot.problem)} aria-describedby="appearance-scope">
       <legend>{copy("appearance.theme_efb52e")}</legend>
       <div className="appearance-choices">{[Theme.System, Theme.Light, Theme.Dark].map((theme) => <label className="appearance-choice" key={theme}>

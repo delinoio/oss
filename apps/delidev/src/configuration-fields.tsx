@@ -207,9 +207,9 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All } = props;
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
   if (kind === EntityKind.SETTINGS) return <>
-    {serverPreferenceSection !== ServerPreferenceSection.GitWorkflow ? <section className="server-preference-section"><h4>{copy("configuration-fields.accountRouting_0c3707")}</h4><div className="server-routing-field"><Choice label={copy("configuration-fields.defaultAccountRouting_bb44ea")} value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>{copy("configuration-fields.usedByAgentWorkersThatInherit_4e05b2")}</p></div></section> : null}
+    {serverPreferenceSection !== ServerPreferenceSection.GitWorkflow ? <section data-settings-search-target="account-routing" className="server-preference-section"><h4>{copy("configuration-fields.accountRouting_0c3707")}</h4><div data-settings-search-target="default-routing" className="server-routing-field"><Choice label={copy("configuration-fields.defaultAccountRouting_bb44ea")} value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>{copy("configuration-fields.usedByAgentWorkersThatInherit_4e05b2")}</p></div></section> : null}
     {serverPreferenceSection !== ServerPreferenceSection.AccountRouting ? <>
-      <section className="server-preference-section"><h4>{copy("configuration-fields.worktreePreparation_24002c")}</h4><Check label={copy("configuration-fields.allowAutomaticFetchBeforeWorktreePreparation_6c9a8c")} value={data.automatic_fetch} change={field("automatic_fetch")} /><p>{copy("configuration-fields.fetchingRequiresBothThisServerPreference_10697f")}</p></section>
+      <section data-settings-search-target="worktree" className="server-preference-section"><h4>{copy("configuration-fields.worktreePreparation_24002c")}</h4><div data-settings-search-target="automatic-fetch"><Check label={copy("configuration-fields.allowAutomaticFetchBeforeWorktreePreparation_6c9a8c")} value={data.automatic_fetch} change={field("automatic_fetch")} /></div><p>{copy("configuration-fields.fetchingRequiresBothThisServerPreference_10697f")}</p></section>
       <section className="server-preference-section"><RemediationFields workflow={RunnerWorkflow.ServerRemediation} value={object(data.remediation)} change={field("remediation")} active={active} presentation={RemediationDetailPresentation.Collapsible} /></section>
     </> : null}
   </>;
@@ -296,8 +296,8 @@ function RemediationFields({ value, change, active, workflow = RunnerWorkflow.Re
   useEffect(() => { if (active && !touched.current && !value.machine_id && runner.suggestion) change({ ...value, machine_id: runner.suggestion.id }); }, [active, runner.suggestion, value.machine_id]);
   const identity = (key: string, id: string) => { const next = { ...value }; if (id) next[key] = id; else delete next[key]; change(next); };
   return <RemediationPolicyFields value={value} change={change} presentation={presentation}>
-    <ResourceChoice label={copy("configuration-fields.remediationAgentWorker_6bee33")} kind={EntityKind.AGENT} value={text(value.agent_id)} active={active} change={id => identity("agent_id", id)} />
-    <ResourceChoice label={copy("configuration-fields.remediationRunnerDevice_c56ba6")} kind={EntityKind.MACHINE} value={text(value.machine_id)} active={active} change={id => { touched.current = true; runner.touch(); identity("machine_id", id); }} />{runner.guidance}
+    <div data-settings-search-target={workflow === RunnerWorkflow.ServerRemediation ? "remediation-agent" : undefined}><ResourceChoice label={copy("configuration-fields.remediationAgentWorker_6bee33")} kind={EntityKind.AGENT} value={text(value.agent_id)} active={active} change={id => identity("agent_id", id)} /></div>
+    <div data-settings-search-target={workflow === RunnerWorkflow.ServerRemediation ? "remediation-runner" : undefined}><ResourceChoice label={copy("configuration-fields.remediationRunnerDevice_c56ba6")} kind={EntityKind.MACHINE} value={text(value.machine_id)} active={active} change={id => { touched.current = true; runner.touch(); identity("machine_id", id); }} /></div>{runner.guidance}
   </RemediationPolicyFields>;
 }
 

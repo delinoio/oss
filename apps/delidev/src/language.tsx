@@ -184,7 +184,7 @@ export function LanguageSettings() {
     document.addEventListener("pointerdown", dismiss);
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [popup]);
-  return <section className="language-settings" aria-labelledby={`${id}-title`}>
+  return <section data-settings-search-target="language" className="language-settings" aria-labelledby={`${id}-title`}>
     <label htmlFor={`${id}-input`}><span id={`${id}-title`}>{copy("language.title")}</span></label>
     <div ref={picker} className="language-picker" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) close(); }}>
       <div className="language-control">

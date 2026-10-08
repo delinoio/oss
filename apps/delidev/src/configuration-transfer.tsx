@@ -197,7 +197,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const stage = preview || report || mutation.uncertain ? TransferStage.Review : loaded ? TransferStage.Map : TransferStage.Load;
   return <section className="configuration-transfer" aria-label={copy("configuration-transfer.portableConfiguration_ca3e8a")}>
     {showCategoryIntro ? <header className="transfer-intro"><div><h1 aria-live="polite" aria-atomic="true">{copy("configuration-transfer.importExport_6e061f")}</h1><p>{copy("configuration-transfer.moveConfigurationBetweenDelidevServers_749ed7")}</p></div></header> : null}
-    <section className="transfer-panel" aria-labelledby="transfer-export-heading">
+    <section className="transfer-panel" data-settings-search-target="export" aria-labelledby="transfer-export-heading">
       <header className="transfer-export-header">
         <div><h2 id="transfer-export-heading">{copy("configuration-transfer.exportConfiguration_0657bc")}</h2><p>{copy("configuration-transfer.copyAPortableJsonDocumentFrom_777321")}</p></div>
         <button disabled={blocked || !active} onClick={() => void exportNow()}>{copy("configuration-transfer.exportConfiguration_0657bc")}</button>
@@ -205,7 +205,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
       <p className="transfer-scope">{copy("configuration-transfer.includesProvidersModelsAccountPreferencesAgent_57f3ec")}</p>
       {exported ? <><label>{copy("configuration-transfer.exportedConfiguration_9e0e54")}<textarea ref={exportText} readOnly value={exported} rows={6} spellCheck={false} /></label><button onClick={() => { exportText.current?.focus(); exportText.current?.select(); }}>{copy("configuration-transfer.selectExportForCopying_2d205e")}</button></> : null}
     </section>
-    <section className="transfer-panel" aria-labelledby="transfer-import-heading">
+    <section className="transfer-panel" data-settings-search-target="import" aria-labelledby="transfer-import-heading">
       <h2 id="transfer-import-heading">{copy("configuration-transfer.importConfiguration_8a507f")}</h2>
       <p>{copy("configuration-transfer.chooseAJsonFileOrPaste_3d11c9")}</p>
       <ol className="transfer-stages" aria-label={copy("configuration-transfer.configurationImportStages_9980b1")}>
@@ -255,7 +255,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     {mutation.uncertain ? <section className="transfer-panel" aria-label={copy("configuration-transfer.uncertainConfigurationImport_4b21c6")}><button disabled={mutation.busy || !active} onClick={mutation.retry}>{copy("configuration-transfer.retryTheSameConfigurationImport_9d3291")}</button></section> : null}
     {report ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationImportResult_7c1375")}><p role="status">{state === JobState.Succeeded ? copy("configuration-transfer.configurationImportCompletedConnectEachImported_2af629") : state === JobState.Failed || state === JobState.Canceled ? copy("configuration-transfer.configurationImportFailedExistingConfigurationWas_c7e5ad") : state === JobState.Queued || state === JobState.Claimed ? copy("configuration-transfer.importAcceptedWaitingForConfirmationOf_8ed561") : copy("configuration-transfer.theImportOutcomeIsUnavailableInspect_7a2ebb")}</p>{jobId && (job.error || (job.data && !jobValue)) ? <button disabled={job.isFetching || !active} onClick={() => void job.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}{text(importProblem.message) ? <ServiceProblem code={text(importProblem.code) || text(importProblem.problem_code)}><p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p></ServiceProblem> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setReport(undefined); invalidate(); }}>{copy("configuration-transfer.returnToRetainedImportDocument_9a833a")}</button> : null}</section> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
-    <aside className="transfer-guidance" aria-labelledby="transfer-guidance-heading">
+    <aside className="transfer-guidance" data-settings-search-target="transfer-guidance" aria-labelledby="transfer-guidance-heading">
       <h2 id="transfer-guidance-heading">{copy("configuration-transfer.beforeYouTransfer_1de385")}</h2>
       <ul><li>{copy("configuration-transfer.importedAccountsAreDisconnectedAndNeed_2a3422")}</li><li>{copy("configuration-transfer.authenticationDeviceRegistrationsObservedQuotasDiscovered_57d141")}</li></ul>
     </aside>

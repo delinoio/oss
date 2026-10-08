@@ -171,5 +171,10 @@
   "settings.connections.authorization": "Authorization is checked when you open a server.",
   "settings.connections.stale": "Saved server inventory is unavailable. Showing the last confirmed profiles.",
   "settings.connections.loading": "Loading saved servers…",
-  "settings.connections.continue": "Continue {{title}}"
+  "settings.connections.continue": "Continue {{title}}",
+  "settings.search.label": "Search settings",
+  "settings.search.clear": "Clear search",
+  "settings.search.empty": "No settings match this search.",
+  "settings.search.unavailable": "This setting is unavailable here.",
+  "settings.search.category": "Overview"
 }

@@ -102,7 +102,7 @@ export function Backups({ active }: { active: boolean }) {
     <p className="backups-scope">{copy("backups.backupsContainPrivateServerDataAnd_e910aa")}</p>
     <Problem error={create.error} summary={copy("backups.creationHelp")} />
     {create.uncertain ? <button disabled={!active || create.busy} onClick={create.retry}>{copy("backups.retryTheSameBackupCreation_52ba47")}</button> : null}
-    <section className="backups-panel backups-inventory" aria-labelledby={`${panelId}-inventory`}>
+    <section data-settings-search-target="backup-database" className="backups-panel backups-inventory" aria-labelledby={`${panelId}-inventory`}>
       <header className="backups-panel-header"><h2 id={`${panelId}-inventory`} ref={listHeading} tabIndex={-1}>{copy("backups.databaseBackups_e6ded7")}</h2>{inventory.loaded ? <span><LocalizedText id="backups.onThisPage_3ff888" components={{ s0: <>{inventory.rows.length}</> }} /></span> : null}</header>
       <div className="backups-read-state">
         <Problem error={inventory.error?.failure} summary={copy("backups.inventoryHelp")} />
@@ -137,7 +137,7 @@ export function Backups({ active }: { active: boolean }) {
       {trackedDeletions.map(job => <BackupJob key={job.id} kind={BackupJobKind.Deletion} accepted={job} active={active} completed={refresh} dismiss={() => setTrackedDeletions(current => current.filter(item => item.id !== job.id))} />)}
       {trackedCreations.length >= maxTrackedJobs || trackedDeletions.length >= maxTrackedJobs ? <p>{copy("backups.dismissCompletedTrackingEntriesToAccept_4bacdc")}</p> : null}
     </section> : null}
-    <section className="backups-panel backups-history" aria-label={copy("backups.operationHistory_93bf53")}>
+    <section data-settings-search-target="backup-history" className="backups-panel backups-history" aria-label={copy("backups.operationHistory_93bf53")}>
       <header className="backups-history-heading"><h2>{copy("backups.operationHistory_93bf53")}</h2><button hidden={historyTab !== HistoryTab.Creation} disabled={!active || Boolean(creations.loading)} onClick={creations.refreshExplicit}>{copy("backups.refreshCreationJobs_96e3e0")}</button></header>
       <div className="backups-tabs" role="tablist" aria-label={copy("backups.backupOperationHistory_8f9f32")}>{historyTabs.map(tab => <button key={tab} ref={node => { if (node) tabButtons.current.set(tab, node); else tabButtons.current.delete(tab); }} role="tab" id={`${panelId}-tab-${tab}`} aria-controls={`${panelId}-panel-${tab}`} aria-selected={historyTab === tab} tabIndex={focusedTab === tab ? 0 : -1} onFocus={() => setFocusedTab(tab)} onKeyDown={event => moveTabFocus(event, tab)} onClick={() => { setFocusedTab(tab); setHistoryTab(tab); }}>{tab === HistoryTab.Creation ? copy("backups.creationJobs_dd6156") : copy("backups.deletionJobs_74156e")}</button>)}</div>
       <div role="tabpanel" id={`${panelId}-panel-creation`} aria-labelledby={`${panelId}-tab-creation`} hidden={historyTab !== HistoryTab.Creation}>

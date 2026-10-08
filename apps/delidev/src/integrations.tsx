@@ -195,7 +195,7 @@ export function Integrations({ active, showCategoryIntro = true, onWorkflowReady
   return <section ref={content} className="github-integrations" aria-label={copy("integrations.githubIntegrations_edb779")}>
     {showCategoryIntro ? <SettingsHeading title={copy("integrations.integrations_090512")} description={copy("integrations.manageGithubProfilesForRepositoryAccess_42adb1")} actions={!editing && !selected ? <><button aria-label={copy("integrations.refreshGithubProfiles_c84a3b")} onClick={() => result.refreshExplicit()}>{copy("integrations.refresh_0e9161")}</button>{createProfile}</> : undefined} /> : null}
     <>
-      <section className="integration-panel" aria-label={copy("integrations.githubProfiles_e47e4e")} aria-busy={Boolean(result.loading)}>
+      <section data-settings-search-target="git-profiles" className="integration-panel" aria-label={copy("integrations.githubProfiles_e47e4e")} aria-busy={Boolean(result.loading)}>
         <header className="integration-panel-header"><div className="integration-provider"><span className="integration-provider-mark"><IntegrationIcon kind={IntegrationIconKind.GitHub} /></span><div><h3>{copy("integrations.github_f911e4")}</h3><p>{copy("integrations.githubComPersonalAccessTokens_03ef1a")}</p></div></div>
           {!showCategoryIntro ? <div className="actions"><button aria-label={copy("integrations.refreshGithubProfiles_c84a3b")} onClick={() => result.refreshExplicit()}>{copy("integrations.refresh_0e9161")}</button>{createProfile}</div> : null}
         </header>
