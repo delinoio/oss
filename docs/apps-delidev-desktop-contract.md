@@ -859,8 +859,19 @@ Validation covers open/close/save/failure/denial, unchanged list position, disca
 
 Routing preview remains a read-only 768px Settings task. Its fixed header shows
 `Preview routing`, the complete Agent Worker name and selected-server scope. The
-scrolling body orders read-only context, server selection result, project scope
-and refresh, ordered source comparisons and any distinct final decision evidence.
+scrolling body orders a compact read-only badge/Project/Refresh context row with
+the project restriction hint, one selected-result summary, initially collapsed
+Routing details, and the visible execution-time recheck note. The summary shows
+the final policy, alias/service and available selected-source/native-model context;
+eligibility and quota come only from the matching final candidate, with absent
+fields omitted. Account ID remains initially collapsed. Routing details counts
+only the final candidates array with localized singular/plural and explicit zero;
+null/unavailable evidence has an unavailable count. Its state survives refresh,
+project changes, language and reflow in one task; fresh tasks start collapsed.
+Toggles perform no reads. Ordered source comparisons and distinct complete final
+evidence remain inside, with initially collapsed account/source identities.
+No-selection, source problems, fallback, unavailable evidence and refresh-failure
+notices remain visible outside the disclosure. Use one left disclosure chevron.
 The top-level task delegates dismissal to its fixed header Close control (X)
 and Escape, without a duplicate footer Close action or empty footer spacing.
 Both dismissal paths share task disposal, background release and
@@ -909,7 +920,9 @@ provider deduplication, concurrency, retained refresh failures and disposed
 continuations. `test-routing-preview-layout.mjs` uses the opt-in synthetic
 Settings fixture to cover both languages/themes, 1440×900, 1280×820, 960×640,
 640×480 and effective 200% layouts, selection/source/empty/error states,
-disclosures, fixed actions, keyboard containment and opener restoration.
+disclosures, compact summary without body scrolling at 1440×900, one visible
+selected alias before expansion, fixed actions, keyboard containment and opener
+restoration.
 Browser fixtures and effective layout checks do not establish packaged CEF,
 actual browser chrome zoom or native account/platform acceptance.
 
