@@ -25,20 +25,11 @@ use crate::record::{
 
 pub mod supervise;
 
-const HEADER_BYTES: usize = 50;
-const MAX_PATH_BYTES: usize = 4096;
 const MAX_CONNECTIONS: usize = 4096;
 const POLL: Duration = Duration::from_millis(10);
 
 fn invalid(reason: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, reason)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FrameKind {
-    Hello,
-    Start,
-    Completion,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,178 +38,10 @@ pub enum Admission {
     Quit,
 }
 
-#[derive(Debug, Clone)]
-pub struct Frame {
-    pub kind: FrameKind,
-    pub operation: u8,
-    pub pid: u32,
-    pub parent_pid: u32,
-    pub tid: u64,
-    pub id: u64,
-    pub monotonic_ns: u64,
-    pub result: i64,
-    pub error: i32,
-    pub path: Vec<u8>,
-    pub handle_identity: Option<FileIdentity>,
-    pub requested_bytes: Option<u64>,
-    pub second_path: Option<Vec<u8>>,
-    pub sequence: u64,
-    pub access_path: Option<AccessPath>,
-    pub second_access_path: Option<AccessPath>,
-    pub requested_delay_ns: u64,
-    pub observed_delay_ns: u64,
-}
-
-pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
-    let mut header = [0_u8; HEADER_BYTES];
-    match reader.read(&mut header[..1])? {
-        0 => return Ok(None),
-        1 => reader.read_exact(&mut header[1..])?,
-        _ => unreachable!(),
-    }
-    let kind = match header[0] {
-        b'h' => FrameKind::Hello,
-        b's' => FrameKind::Start,
-        b'e' => FrameKind::Completion,
-        value => {
-            eprintln!("clibox fspy receiver: stage=frame_kind value={value}");
-            return Err(invalid("frame_kind"));
-        }
-    };
-    let operation = header[1];
-    let pid = u32::from_le_bytes(header[2..6].try_into().unwrap());
-    let parent_pid = u32::from_le_bytes(header[6..10].try_into().unwrap());
-    let tid = u64::from_le_bytes(header[10..18].try_into().unwrap());
-    let id = u64::from_le_bytes(header[18..26].try_into().unwrap());
-    let monotonic_ns = u64::from_le_bytes(header[26..34].try_into().unwrap());
-    let result = i64::from_le_bytes(header[34..42].try_into().unwrap());
-    let error = i32::from_le_bytes(header[42..46].try_into().unwrap());
-    let length = u32::from_le_bytes(header[46..50].try_into().unwrap()) as usize;
-    if length > MAX_PATH_BYTES || pid == 0 || tid == 0 {
-        return Err(invalid("frame_boundary"));
-    }
-    match kind {
-        FrameKind::Hello
-            if operation != 0 || id != 0 || result != 0 || error != 0 || length != 32 =>
-        {
-            return Err(invalid("hello_frame"))
-        }
-        FrameKind::Start
-            if operation_id(operation).is_none()
-                || id == 0
-                || (result != 0
-                    && !(operation == 1 && result == 1)
-                    && !(result == 2 && (2..=8).contains(&operation))
-                    && !(result == 3 && matches!(operation, 3 | 5)))
-                || error != 0
-                || !length.is_multiple_of(2)
-                || (result == 2 && length <= 24)
-                || (result == 3 && length <= 32) =>
-        {
-            return Err(invalid("start_frame"))
-        }
-        FrameKind::Completion
-            if operation_id(operation).is_none()
-                || id == 0
-                || length != 0
-                || ((result < 0) != (error != 0)) =>
-        {
-            return Err(invalid("completion_frame"))
-        }
-        _ => {}
-    }
-    let mut path = vec![0_u8; length];
-    reader.read_exact(&mut path)?;
-    let handle_identity = if kind == FrameKind::Start && matches!(result, 2 | 3) {
-        let volume = u64::from_le_bytes(path[..8].try_into().unwrap());
-        let file_id = u128::from_le_bytes(path[8..24].try_into().unwrap());
-        Some(FileIdentity::Windows { volume, file_id })
-    } else {
-        None
-    };
-    let requested_bytes = if kind == FrameKind::Start && result == 3 {
-        let requested = u64::from_le_bytes(path[24..32].try_into().unwrap());
-        path.drain(..32);
-        Some(requested)
-    } else {
-        if handle_identity.is_some() {
-            path.drain(..24);
-        }
-        None
-    };
-    let second_path = if kind == FrameKind::Start && operation == 9 && !path.is_empty() {
-        if path.len() < 8 {
-            return Err(invalid("mutation_paths"));
-        }
-        let source_len = u16::from_le_bytes([path[0], path[1]]) as usize;
-        let destination_len = u16::from_le_bytes([path[2], path[3]]) as usize;
-        if source_len == 0
-            || destination_len == 0
-            || !source_len.is_multiple_of(2)
-            || !destination_len.is_multiple_of(2)
-            || source_len + destination_len + 4 != path.len()
-        {
-            return Err(invalid("mutation_paths"));
-        }
-        let destination = path.split_off(4 + source_len);
-        path.drain(..4);
-        Some(destination)
-    } else {
-        None
-    };
-    Ok(Some(Frame {
-        kind,
-        operation,
-        pid,
-        parent_pid,
-        tid,
-        id,
-        monotonic_ns,
-        result,
-        error,
-        path,
-        handle_identity,
-        requested_bytes,
-        second_path,
-        sequence: 0,
-        access_path: None,
-        second_access_path: None,
-        requested_delay_ns: 0,
-        observed_delay_ns: 0,
-    }))
-}
-
-pub(crate) fn operation_id(value: u8) -> Option<Operation> {
-    Some(match value {
-        1 => Operation::Open,
-        2 => Operation::Close,
-        3 => Operation::Read,
-        4 => Operation::Write,
-        5 => Operation::PositionalRead,
-        6 => Operation::PositionalWrite,
-        7 => Operation::Metadata,
-        8 => Operation::Directory,
-        9 => Operation::Mutation,
-        10 => Operation::Exec,
-        _ => return None,
-    })
-}
-
-fn native_path(bytes: &[u8]) -> io::Result<NativePath> {
-    if !bytes.len().is_multiple_of(2) {
-        return Err(invalid("windows_path_length"));
-    }
-    let units = bytes
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .collect::<Vec<_>>();
-    if units.contains(&0) {
-        return Err(invalid("windows_path_nul"));
-    }
-    Ok(NativePath::WindowsUtf16(units))
-}
+#[cfg(test)]
+use crate::windows_frame::HEADER_BYTES;
+use crate::windows_frame::{native_path, operation_id};
+pub use crate::windows_frame::{read_frame, Frame, FrameKind};
 
 fn fs_path(units: &[u16]) -> PathBuf {
     if units.starts_with(&[b'\\' as u16, b'?' as u16, b'?' as u16, b'\\' as u16]) {
@@ -369,6 +192,65 @@ mod tests {
                 "file\\child".encode_utf16().collect()
             ))
         );
+    }
+
+    #[test]
+    fn descriptor_mutations_pair_success_and_failure_without_reopening_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let missing = root.join("moved-truncated-file");
+        let path = missing
+            .as_os_str()
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        for (result, error) in [(0_i64, 0_i32), (-1, -1_073_741_790)] {
+            let mut start = vec![0; super::HEADER_BYTES];
+            start[0] = b's';
+            start[1] = 9;
+            start[2..6].copy_from_slice(&1_u32.to_le_bytes());
+            start[10..18].copy_from_slice(&1_u64.to_le_bytes());
+            start[18..26].copy_from_slice(&1_u64.to_le_bytes());
+            start[34..42].copy_from_slice(&2_i64.to_le_bytes());
+            start[46..50].copy_from_slice(&((path.len() + 24) as u32).to_le_bytes());
+            start.extend_from_slice(&7_u64.to_le_bytes());
+            start.extend_from_slice(&11_u128.to_le_bytes());
+            start.extend_from_slice(&path);
+            let mut end = start[..super::HEADER_BYTES].to_vec();
+            end[0] = b'e';
+            end[34..42].copy_from_slice(&result.to_le_bytes());
+            end[42..46].copy_from_slice(&error.to_le_bytes());
+            end[46..50].fill(0);
+            let mut ledger = super::Ledger::default();
+            ledger
+                .push(
+                    read_frame(&mut start.as_slice()).unwrap().unwrap(),
+                    &root,
+                    2,
+                    1_000_000,
+                )
+                .unwrap();
+            ledger
+                .push(
+                    read_frame(&mut end.as_slice()).unwrap().unwrap(),
+                    &root,
+                    2,
+                    1_000_000,
+                )
+                .unwrap();
+            assert!(ledger.starts.is_empty());
+            assert_eq!(ledger.pairs.len(), 1);
+            let (start, completion) = &ledger.pairs[0];
+            assert!(start.second_path.is_none());
+            assert_eq!(
+                start.access_path.as_ref().unwrap().identity,
+                Some(FileIdentity::Windows {
+                    volume: 7,
+                    file_id: 11
+                })
+            );
+            assert_eq!((completion.result, completion.error), (result, error));
+        }
     }
 
     #[test]

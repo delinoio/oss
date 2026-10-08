@@ -26,3 +26,6 @@ pub mod macos;
 
 #[cfg(target_os = "windows")]
 pub mod windows;
+
+#[cfg(any(target_os = "windows", test))]
+mod windows_frame;
