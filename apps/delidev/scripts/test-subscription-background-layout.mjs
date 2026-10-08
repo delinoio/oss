@@ -54,7 +54,7 @@ try {
     await page.getByRole("button", { name: "Account details", exact: true }).click();
     await page.getByRole("button", { name: "Close Account details", exact: true }).click();
     await page.locator(".subscription-advanced summary").click();
-    for (const action of ["Delete account", "Edit preferences"]) for (const dismissal of ["X", "Escape", "Cancel"]) {
+    for (const action of ["Delete account", "Edit preferences"]) for (const dismissal of ["X", "Escape"]) {
       await opener.click();
       const taskAction = page.getByRole("button", { name: action, exact: true });
       await taskAction.scrollIntoViewIfNeeded();
