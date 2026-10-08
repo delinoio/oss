@@ -81,7 +81,11 @@
 }
 
 /* The task owns this disclosure across read generations; it never starts reads. */
-.routing-project-controls { align-items: center; }
+.routing-project-controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto minmax(40px, auto); gap: 8px; align-items: center; }
+.routing-project-controls > .routing-read-only { grid-column: 1; grid-row: 2; }
+.routing-project-controls > .resource-choice { grid-column: 2; grid-row: 1 / span 2; display: grid; grid-template-rows: subgrid; align-self: stretch; margin: 0; }
+.routing-project-controls > .resource-choice > .scroll-picker { grid-row: 1 / span 2; grid-template-rows: subgrid; margin: 0; }
+.routing-project-controls > button { grid-column: 3; grid-row: 2; }
 .routing-project-controls .routing-read-only { flex: none; }
 .routing-result h3 { font-size: 14px; line-height: 20px; }
 .routing-result .routing-account-id { border: 0; background: transparent; }
@@ -98,7 +102,9 @@
 .routing-details-count { margin-left: auto; font-size: 12px; color: var(--muted); text-align: end; overflow-wrap: anywhere; }
 .routing-details-body { padding-block: 8px 12px; }
 @container settings-body (width < 640px) {
-  .routing-project-controls { align-items: stretch; }
+  .routing-project-controls { display: flex; align-items: stretch; }
+  .routing-project-controls > .resource-choice { grid-template-rows: auto auto; }
+  .routing-project-controls > .resource-choice > .scroll-picker { grid-template-rows: auto auto; }
   .routing-project-controls .routing-read-only { align-self: start; }
   .routing-candidate-evidence { grid-template-columns: minmax(0, 1fr); }
 }

@@ -159,6 +159,13 @@ if (providerRefresh) Object.assign(window, {
   fixtureHoldProviders: () => { holdProviders = true; },
   fixtureReleaseProviders: () => { holdProviders = false; providerReplies.splice(0).forEach(reply => reply()); document.documentElement.dataset.providerRefreshPending = "false"; },
 });
+// Opt-in read-only routing response gate for browser alignment checks.
+let holdRouting = false;
+const routingReplies: Array<() => void> = [];
+if (args.get("routingHold") === "true") Object.assign(window, {
+  fixtureHoldRouting: () => { holdRouting = true; },
+  fixtureReleaseRouting: () => { holdRouting = false; routingReplies.splice(0).forEach(reply => reply()); document.documentElement.dataset.routingPending = "false"; },
+});
 const fixtureTransport = createRouterTransport(router => {
   router.service(IntegrationService, { listGitHubRepositories: request => {
     const profile = records.find(row => row.id === request.profileId)!;
@@ -184,7 +191,8 @@ const fixtureTransport = createRouterTransport(router => {
     },
   });
   router.service(AccountService, { getAccountStatus: () => ({}) });
-  router.service(ConfigurationService, { previewRouting: () => {
+  router.service(ConfigurationService, { previewRouting: async () => {
+    if (holdRouting) await new Promise<void>(resolve => { routingReplies.push(resolve); document.documentElement.dataset.routingPending = "true"; });
     if (!routingFixture) return { routeJson: encode({ policy: "fixed", selected: "", candidates: [] }) };
     document.documentElement.dataset.fixtureRoutingReads = String(Number(document.documentElement.dataset.fixtureRoutingReads ?? "0") + 1);
     if (routingFixture === "denied") throw new ConnectError("Synthetic routing denial", Code.PermissionDenied);

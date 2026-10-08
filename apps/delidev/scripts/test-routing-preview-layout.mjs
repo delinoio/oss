@@ -41,7 +41,7 @@ try {
   const open = async (language, theme, width, height, mode = "true", longNames = false) => {
     const c = key => catalogs[language][key];
     await page.setViewportSize({ width, height });
-    await page.goto(`${origin}/?populated=true&routingFixture=${mode}&theme=${theme}&language=${language}&longNames=${longNames}`);
+    await page.goto(`${origin}/?populated=true&routingFixture=${mode}&theme=${theme}&language=${language}&longNames=${longNames}&routingHold=true`);
     await page.getByRole("button", { name: c("settings.settings_74a883"), exact: true }).click();
     if (await page.locator(".sidebar-context-trigger").isVisible()) await page.locator(".sidebar-context-trigger").click();
     await page.getByRole("button", { name: c("settings.agentWorkers_e60c23"), exact: true }).click();
@@ -51,11 +51,25 @@ try {
     await dialog.waitFor();
     return { c, dialog, opener };
   };
+  const checkControlBand = async dialog => {
+    const geometry = await dialog.locator(".routing-project-controls").evaluate(node => {
+      const center = selector => { const rect = node.querySelector(selector).getBoundingClientRect(); return rect.top + rect.height / 2; };
+      const label = node.querySelector(".scroll-picker > span").getBoundingClientRect();
+      const picker = node.querySelector("[role=combobox]").getBoundingClientRect();
+      return { wide: getComputedStyle(node).display === "grid", badge: center(".routing-read-only"), picker: center("[role=combobox]"), refresh: center(":scope > button"), labelBottom: label.bottom, pickerTop: picker.top };
+    });
+    assert(geometry.labelBottom <= geometry.pickerTop, "Project label remains above control");
+    if (geometry.wide) {
+      assert(Math.abs(geometry.badge - geometry.picker) <= 1, JSON.stringify(geometry));
+      assert(Math.abs(geometry.refresh - geometry.picker) <= 1, JSON.stringify(geometry));
+    }
+  };
   const sizes = [[1440, 900], [1280, 820], [960, 640], [640, 480]];
   // Half-sized CSS viewports verify effective 200% layout, not native browser chrome zoom.
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [baseWidth, baseHeight] of sizes) for (const zoom of [1, 2]) {
     const width = baseWidth / zoom, height = baseHeight / zoom;
     const { c, dialog, opener } = await open(language, theme, width, height, "true", true);
+    await checkControlBand(dialog);
     assert.equal(await dialog.locator(".routing-details").evaluate(node => node.open), false);
     await dialog.locator(".routing-details > summary").click();
     await dialog.getByText("Complete-account-alias-".repeat(10), { exact: true }).waitFor();
@@ -105,7 +119,8 @@ try {
     if (mode === "invalid") await dialog.getByText(c("configuration-actions.routingEvidenceIsUnavailable_3f3ff4"), { exact: true }).waitFor();
     if (mode === "denied") await dialog.getByRole("alert").waitFor();
     if (screenshots && mode === "true") {
-      await dialog.getByRole("combobox", { name: c("configuration-actions.project_985959") }).selectOption({ label: "oss" });
+      await dialog.getByRole("combobox", { name: c("configuration-actions.project_985959") }).click();
+      await page.getByRole("option", { name: "oss", exact: true }).click();
       await dialog.getByText(c("configuration-actions.usingTheSelectedProjectSRestrictions_f4c29e"), { exact: true }).waitFor();
       await dialog.getByText("ChatGPT Personal", { exact: true }).waitFor();
       await page.screenshot({ path: join(screenshots, `${language}-${theme}-1440x900.png`) });
@@ -117,6 +132,7 @@ try {
     const { c, dialog, opener } = await open(language, theme, 1440, 900, "compact");
     await dialog.locator(".routing-result").getByText("Personal", { exact: true }).waitFor();
     assert.equal(await dialog.getByText("Personal", { exact: true }).evaluateAll(nodes => nodes.filter(node => node.checkVisibility()).length), 1);
+    await checkControlBand(dialog);
     assert.equal(await dialog.locator(".routing-details").evaluate(node => node.open), false);
     assert(await dialog.locator(".routing-details-count").getByText(c("routing-preview.candidateCount_one").replace("{{count}}", "1"), { exact: true }).isVisible());
     const compact = await dialog.evaluate(node => {
@@ -136,6 +152,26 @@ try {
     await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
     assert(await opener.evaluate(node => node === document.activeElement));
     cases++;
+  }
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) {
+    const { c, dialog } = await open(language, theme, 1440, 900, "compact");
+    await dialog.locator(".routing-result").waitFor(); await checkControlBand(dialog);
+    const before = Number(await page.locator("html").getAttribute("data-fixture-routing-reads"));
+    await page.evaluate(() => window.fixtureHoldRouting());
+    const refresh = dialog.getByRole("button", { name: c("configuration-actions.refreshRoutingPreview_3b8c83"), exact: true });
+    await refresh.click(); await page.waitForFunction(() => document.documentElement.dataset.routingPending === "true");
+    await page.waitForFunction(() => document.querySelector(".routing-project-controls > button").disabled); assert(await refresh.isDisabled()); await checkControlBand(dialog);
+    assert(await refresh.getByText(c("routing-preview.refreshing"), { exact: true }).isVisible());
+    await page.evaluate(() => window.fixtureReleaseRouting());
+    await page.waitForFunction(previous => Number(document.documentElement.dataset.fixtureRoutingReads) === previous + 1, before);
+    await page.waitForFunction(() => !document.querySelector(".routing-project-controls > button").disabled); await checkControlBand(dialog);
+    await dialog.getByRole("combobox", { name: c("configuration-actions.project_985959") }).click();
+    await page.getByRole("option", { name: "oss", exact: true }).click();
+    await dialog.getByText(c("configuration-actions.usingTheSelectedProjectSRestrictions_f4c29e"), { exact: true }).waitFor();
+    await page.waitForFunction(previous => Number(document.documentElement.dataset.fixtureRoutingReads) === previous + 2, before); await checkControlBand(dialog);
+    await page.setViewportSize({ width: 1280, height: 820 }); await checkControlBand(dialog);
+    assert.equal(Number(await page.locator("html").getAttribute("data-fixture-routing-reads")), before + 2, "Reflow adds no requests");
+    await dialog.locator(".settings-task-close").click(); cases++;
   }
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ operation: "routing_preview_layout", result: "passed", cases, languages: 2, themes: 2, ordinaryViewports: sizes.length, effectiveZoom: "200%", nativeAcceptance: "not-performed", screenshots }));
