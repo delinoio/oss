@@ -100,3 +100,5 @@ The macOS owned-group timeout fixture leaves two seconds for injected process st
 The control-PTY breakpoint fixture allows five seconds for injected test-runner startup before timing out a held read; its root-admission case retains a two-second deadline. A worker-ready gate can replace the held-read startup allowance. Native C threads and a `posix_spawn` descendant exercise six queued reads independently of Rust test-runner locks.
 
 Selected root executable relocation uses the same verified logical-alias/identity mapping as required-input collection. Rerun the staged alias with the original Unix argv zero and literal arguments; external executables retain their existing handling. Required link/content verification remains mandatory before staging.
+
+Final `min-repro` report encoding and publication retain the command cancellation state after verified bundle commit. Cancellation before report commit preserves the prior report and removes unpublished staging; it retains the committed bundle. Cancellation after report commit retains both outputs and returns the handled cancellation status. Quiet output still checks cancellation before success.

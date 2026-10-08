@@ -518,6 +518,50 @@ fn existing_report_destination(path: &Path) -> Result<Option<fs::Metadata>, &'st
     Ok(Some(metadata))
 }
 
+// Bundle ownership is already committed; cancellation only fences the final
+// report.
+fn finish_repro_report(
+    quiet: bool,
+    output: &OutputArgs,
+    encode: impl FnOnce() -> Result<Vec<u8>, &'static str>,
+    cancelled: impl Fn() -> bool,
+    cancel_status: impl Fn() -> i32,
+) -> i32 {
+    if cancelled() {
+        return cancel_status();
+    }
+    if wants_report(quiet, output) {
+        let mut report = match encode() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return if cancelled() {
+                    cancel_status()
+                } else {
+                    diagnostic(error, "min-repro")
+                }
+            }
+        };
+        if cancelled() {
+            return cancel_status();
+        }
+        if !report.ends_with(b"\n") {
+            report.push(b'\n');
+        }
+        if let Err(error) = publish_with_cancel(output, &report, &cancelled) {
+            return if error == "cancellation" || cancelled() {
+                cancel_status()
+            } else {
+                diagnostic(error, "min-repro")
+            };
+        }
+    }
+    if cancelled() {
+        cancel_status()
+    } else {
+        0
+    }
+}
+
 fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
     publish_with_cancel(output, bytes, || false)
 }
@@ -2527,34 +2571,34 @@ fn min_repro(args: MinReproArgs) -> i32 {
     if let Err(error) = publish_new_directory(bundle.path(), &bundle_path) {
         return diagnostic(error, "min-repro");
     }
-    if wants_report(args.quiet, &args.output) {
-        let mut report = if args.json {
-            match serde_json::to_vec_pretty(&serde_json::json!({
-                "verified": true,
-                "bundle_dir": bundle_path,
-                "collected_files": staged.len(),
-                "external_accesses": external.len(),
-            })) {
-                Ok(bytes) => bytes,
-                Err(_) => return diagnostic("report_encode", "min-repro"),
-            }
-        } else {
-            format!(
-                "Verified reproduction: {}\nCollected files: {}\nExternal accesses: {}\n",
-                bundle_path.display(),
-                staged.len(),
-                external.len()
-            )
-            .into_bytes()
-        };
-        if !report.ends_with(b"\n") {
-            report.push(b'\n');
-        }
-        if let Err(error) = publish(&args.output, &report) {
-            return diagnostic(error, "min-repro");
-        }
-    }
-    0
+    finish_repro_report(
+        args.quiet,
+        &args.output,
+        || {
+            let report = if args.json {
+                match serde_json::to_vec_pretty(&serde_json::json!({
+                    "verified": true,
+                    "bundle_dir": bundle_path,
+                    "collected_files": staged.len(),
+                    "external_accesses": external.len(),
+                })) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return Err("report_encode"),
+                }
+            } else {
+                format!(
+                    "Verified reproduction: {}\nCollected files: {}\nExternal accesses: {}\n",
+                    bundle_path.display(),
+                    staged.len(),
+                    external.len()
+                )
+                .into_bytes()
+            };
+            Ok(report)
+        },
+        || repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst),
+        || repro_cancel_status(&signals),
+    )
 }
 
 #[cfg(target_os = "linux")]
@@ -4274,6 +4318,100 @@ mod tests {
             assert!(text.contains("Uncovered files:\n"));
             assert_eq!(r.fails_threshold(50.0), percentage < 50.0);
         }
+    }
+
+    #[test]
+    fn min_repro_final_report_cancellation_preserves_committed_bundle() {
+        use super::*;
+        // Native handlers select these statuses: Unix INT/TERM and Windows
+        // control.
+        for status in [130, 143, 130] {
+            for existed in [false, true] {
+                for quiet in [false, true] {
+                    for cancel_at in 1..=6 {
+                        let dir = tempfile::tempdir().unwrap();
+                        let bundle = dir.path().join("bundle");
+                        std::fs::create_dir(&bundle).unwrap();
+                        std::fs::write(bundle.join("verified"), b"retained").unwrap();
+                        let path = dir.path().join("report");
+                        if existed {
+                            std::fs::write(&path, b"previous").unwrap();
+                        }
+                        let output = OutputArgs {
+                            output: Some(path.clone()),
+                            force: existed,
+                        };
+                        let checks = std::cell::Cell::new(0);
+                        let result = finish_repro_report(
+                            quiet,
+                            &output,
+                            || Ok(b"verified report".to_vec()),
+                            || {
+                                checks.set(checks.get() + 1);
+                                checks.get() >= cancel_at
+                            },
+                            || status,
+                        );
+                        assert_eq!(result, status);
+                        assert_eq!(std::fs::read(bundle.join("verified")).unwrap(), b"retained");
+                        if cancel_at <= 5 {
+                            if existed {
+                                assert_eq!(std::fs::read(&path).unwrap(), b"previous");
+                            } else {
+                                assert!(!path.exists());
+                            }
+                        } else {
+                            // Cancellation after report commit retains both
+                            // outputs.
+                            assert_eq!(std::fs::read(&path).unwrap(), b"verified report\n");
+                        }
+                        assert_eq!(
+                            std::fs::read_dir(dir.path()).unwrap().count(),
+                            1 + usize::from(path.exists())
+                        );
+                    }
+                }
+            }
+            let output = OutputArgs {
+                output: None,
+                force: false,
+            };
+            assert_eq!(
+                finish_repro_report(
+                    true,
+                    &output,
+                    || panic!("quiet encoded output"),
+                    || true,
+                    || status
+                ),
+                status
+            );
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report");
+        let output = OutputArgs {
+            output: Some(path.clone()),
+            force: false,
+        };
+        assert_eq!(
+            finish_repro_report(false, &output, || Ok(b"normal".to_vec()), || false, || 130),
+            0
+        );
+        assert_eq!(std::fs::read(path).unwrap(), b"normal\n");
+        let quiet = OutputArgs {
+            output: None,
+            force: false,
+        };
+        assert_eq!(
+            finish_repro_report(
+                true,
+                &quiet,
+                || panic!("quiet encoded output"),
+                || false,
+                || 130
+            ),
+            0
+        );
     }
 
     #[cfg(target_os = "macos")]
