@@ -231,4 +231,6 @@ type Snapshot struct {
 
 	// Private engine authority remains outside public artifact/status records.
 	DockerArtifactEndpoint string `json:"docker_artifact_endpoint,omitempty"`
+	// Quarantine causes are private and never enter public runner/status JSON.
+	RunnerQuarantines map[string]RunnerQuarantineCause `json:"runner_quarantines,omitempty"`
 }

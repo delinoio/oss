@@ -309,6 +309,7 @@ func (s *Store) Prune(now time.Time) error {
 		for id, r := range v.Runners {
 			if r.Phase == Completed && !r.CompletedAt.IsZero() && now.Sub(r.CompletedAt) > 7*24*time.Hour {
 				delete(v.Runners, id)
+				delete(v.RunnerQuarantines, id)
 				delete(v.RunnerTartStarts, id)
 				delete(v.HostExecutions, id)
 			}
