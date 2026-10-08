@@ -1,5 +1,6 @@
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
-import { acknowledgeImages } from "./image-input";
+import { acknowledgeSessionSubmission, nativeSubmissionInput, submissionQueueReadable, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
+import { imageMime } from "./image-input";
 import { ImageAttachmentInput, RetainedImages, imageEntryHandlers } from "./image-attachments";
 import { useImageDraft, useImageRoute } from "./image-drafts";
 import { RunnerTaskRemediation } from "./session-runner-remediation";
@@ -44,7 +45,7 @@ import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
   ConnectionState, EntityKind, ResourceQuery, ResourceService, SessionAction, SessionQuery,
-  SyncKind, newRequestId, synchronizeResources, clientFailure, type ClientFailure, type Resource,
+  SyncKind, newRequestId, synchronizeResources, clientFailure, supportsResourceSchema, type ClientFailure, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { useRetainedMutation } from "./mutation";
@@ -218,12 +219,47 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   </article>;
 });
 
+const submissionLabels = {
+  [SubmissionPhase.Preparing]: "session.submissionPreparing", [SubmissionPhase.Sending]: "session.submissionSending",
+  [SubmissionPhase.Queued]: "session.submissionQueued", [SubmissionPhase.Claimed]: "session.submissionClaimed",
+  [SubmissionPhase.Accepted]: "session.submissionAccepted", [SubmissionPhase.Uncertain]: "session.submissionUncertain",
+  [SubmissionPhase.Rejected]: "session.submissionRejected", [SubmissionPhase.Removed]: "session.submissionRemoved",
+} as const;
+
 enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics", Info = "info" }
 enum InfoTarget { Status = "status", Recovery = "recovery", Budget = "budget" }
 
 export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; openRunnerSettings?: () => void }) {
   useLocale();
   const live = useSessionStream(id);
+  const submissions = useSessionSubmissions();
+  const [submissionError, setSubmissionError] = useState<unknown>();
+  const [revealSubmission, setRevealSubmission] = useState<string>();
+  const submissionTransport = useTransport();
+  useEffect(() => {
+    const controller = new AbortController();
+    const client = createClient(ResourceService, submissionTransport);
+    const originals = submissions.store.snapshot().filter(row => row.sessionId === id && row.queueId && !row.native);
+    // ListQueue excludes removed tombstones. Reinspect only retained original
+    // IDs, serially, when this view or its authenticated transport is replaced.
+    void (async () => {
+      for (const original of originals) {
+        if (controller.signal.aborted || !submissions.store.alive) return;
+        try {
+          const result = await client.getResource({ kind: EntityKind.QUEUE, id: original.queueId! }, { signal: controller.signal });
+          if (controller.signal.aborted || !submissions.store.alive) return;
+          const row = result.resource;
+          if (!row || row.id !== original.queueId || row.sessionId !== id || row.kind !== EntityKind.QUEUE || row.revision < 1n || !supportsResourceSchema(row) || !submissionQueueReadable(row)) throw new ConnectError("The original input status could not be verified.", Code.DataLoss);
+          submissions.store.observe(id, [row], true);
+        } catch (error) {
+          if (controller.signal.aborted || !submissions.store.alive) return;
+          submissions.store.observationFailed(original.queueId!);
+          console.warn("delidev.session_input.observation_failed", { classification: clientFailure(error).code });
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [id, submissionTransport, submissions.store]);
   const [panel, setPanel] = useState(SessionPanel.Closed);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] = useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(null);
@@ -291,9 +327,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const images = useImageDraft(`session:${id}`);
   const [imageTextLimit, setImageTextLimit] = useState(false);
   const imageRoute = useImageRoute(text(data.machine_id), text(data.agent_id), active, images.images.length > 0, object(data.fork).sidechat_parent_snapshot ? "sidechat" : text(object(object(data.initial_execution).configuration).harness) || text(object(object(object(data.fork).snapshot).configuration).harness));
-  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, (_result, request) => { images.controller.accepted(request.requestId, request.attachments.map(image => image.id)); setDraft(""); skills.clearAccepted(); void queue.refresh(); });
+  const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, (_result, request) => { images.controller.accepted(request.requestId, request.attachments.map(image => image.id)); setDraft(""); skills.clearAccepted(); void queue.refresh(); }, acknowledgeSessionSubmission);
   useEffect(() => { if (send.error && !send.uncertain && !send.busy) images.controller.operationId = undefined; }, [send.error, send.uncertain, send.busy, images.controller]);
-  const locked = send.busy || send.uncertain || images.busy;
+  const locked = send.busy || send.uncertain || images.busy || submissions.store.preparing(id);
   const composer = useRef<HTMLTextAreaElement>(null);
   const skills = useSkillCompletion({ value: draft, change: (value, bindings) => { if (new TextEncoder().encode(value).byteLength > (256 << 10)) { setImageTextLimit(true); return false; } setImageTextLimit(false); return setDraft(value, bindings); }, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active, disabled: locked });
   const canSend = !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
@@ -301,9 +337,18 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     if (!canSend) return;
     const requestId = images.images.length ? images.controller.operationId ?? newRequestId() : newRequestId();
     const original = encode({ prompt: draft, mode });
+    const selections = skills.selections.map(selection => ({ ...selection }));
+    const attachmentCount = images.images.length, machine = imageRoute.machine;
+    try {
+      if (!submissions.store.freeze(requestId, id, draft, mode, attachmentCount)) return;
+    } catch (error) { setSubmissionError(error); return; }
+    setSubmissionError(undefined); setRevealSubmission(requestId);
     let attachments;
-    try { attachments = images.images.length && imageRoute.machine ? await images.controller.prepare(imageRoute.machine, requestId) : []; } catch { return; }
-    void send.send({ requestId, sessionId: id, documentJson: original, skills: skills.selections.length ? { selections: skills.selections } : undefined, attachments }, attachments.length ? (result, request) => acknowledgeImages(result.change, request.requestId, request.attachments, request.sessionId) : undefined);
+    try { attachments = attachmentCount && machine ? await images.controller.prepare(machine, requestId) : []; }
+    catch { submissions.store.preparationFailed(requestId); return; }
+    if (!submissions.store.alive) return;
+    submissions.store.prepared(requestId, attachments);
+    void send.send({ requestId, sessionId: id, documentJson: original, skills: selections.length ? { selections } : undefined, attachments });
   };
   const shortcuts = useShortcuts([
     { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
@@ -313,6 +358,15 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   // Stream arrivals have exact identities even when their JSON sequence exceeds
   // JavaScript's safe-integer range. Append only arrivals on the final page.
   const pending = queueRows(queue.data?.inputs ?? [], live.resources, live.removed, live.newQueueIds, id, !!queue.data && !queue.data.nextPageToken);
+  useEffect(() => {
+    submissions.store.observe(id, [...(messages.data?.resources ?? []), ...pending, ...live.resources.values()]);
+  }, [id, messages.data, queue.data, live.resources, submissions.store, submissions.rows]);
+  useLayoutEffect(() => {
+    if (!revealSubmission || !active) return;
+    const target = transcriptRoot.current?.querySelector<HTMLElement>(`[data-submission="${revealSubmission}"]`);
+    target?.scrollIntoView?.({ block: "nearest" });
+    setRevealSubmission(undefined);
+  }, [revealSubmission, active]);
   const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
   const queued = pending.filter((r) => text(readDocument(r).delivery) !== "removed");
   const panelButtons = {
@@ -341,6 +395,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const connectionLabel = live.state === ConnectionState.Live ? copy("session.connected_229655")
     : live.state === ConnectionState.Reconnecting ? copy("session.connectionLostRetainedStateShown_8cc737")
     : live.state === ConnectionState.Failed ? copy("session.connectionRequiresAttention_160d4a") : copy("session.connecting_72021e");
+  const projectedSubmissions = submissions.rows.filter(row => row.sessionId === id && !row.native && !rows.some(message => {
+    return Boolean(row.queueId) && row.queueId === nativeSubmissionInput(message);
+  }));
   const tools = [
     { panel: SessionPanel.Diff, icon: SessionIconKind.Diff, label: copy("session.diff_7ecf46") },
     { panel: SessionPanel.Files, icon: SessionIconKind.Files, label: copy("session.files_abc7e9") },
@@ -383,6 +440,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         {budgetBlocked ? <SessionNotice details={opener => showInfo(opener, InfoTarget.Budget)}>{copy("session-budget.budgetThresholdReachedNewTurnsAnd_6236ce")}</SessionNotice> : null}
         {control.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(control.error).code)}</SessionNotice> : null}
         {control.uncertain ? <SessionNotice details={opener => showInfo(opener)}><span>{copy("session.startupControlUncertain")}</span><button type="button" onClick={control.retry} disabled={control.busy}>{copy("session.retryTheSameControlRequest_609aff")}</button></SessionNotice> : null}
+        {submissionError ? <SessionNotice>{failureSummary(clientFailure(submissionError).code)}</SessionNotice> : null}
         {send.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(send.error).code)}</SessionNotice> : null}
       <RunnerTaskRemediation active={active} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
         <div ref={setRecoveryLauncherTarget} hidden={!inlineRecovery} />
@@ -391,9 +449,14 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={messages} root={transcriptRoot} active={true}>{payload => messageRows(payload, live.resources, live.removed, [], id, false).map(row => <TranscriptItem key={row.id} resource={row} active={active} />)}</ScrollPayloadWindow>{!messages.nextPageToken ? messageRows([], live.resources, live.removed, live.newMessageIds, id, true).filter(row => !messages.rows.some(known => known.id === row.id)).map(row => <TranscriptItem key={row.id} resource={row} active={active} />) : null}</> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={messages} root={transcriptRoot} active={true}>{payload => messageRows(payload, live.resources, live.removed, [], id, false).map(row => <TranscriptItem key={row.id} resource={row} active={active} />)}</ScrollPayloadWindow>{!messages.nextPageToken ? messageRows([], live.resources, live.removed, live.newMessageIds, id, true).filter(row => !messages.rows.some(known => known.id === row.id)).map(row => <TranscriptItem key={row.id} resource={row} active={active} />) : null}</> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
         <ScrollContinuation query={messages} root={transcriptRoot} active={live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
         {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
+        {projectedSubmissions.map(row => <article key={row.requestId} data-submission={row.requestId} className="message message-user" aria-label={copy("session.submittedMessage")}>
+          <header><strong>{copy("session.submittedUser")}</strong><small role="status">{copy(submissionLabels[row.observationUnavailable ? SubmissionPhase.Uncertain : row.phase])}</small></header>
+          {row.prompt ? <pre>{row.prompt}</pre> : null}
+          {row.attachments.length ? <RetainedImages value={row.attachments.map(image => ({ id: image.id, machine_id: image.machineId, media_type: imageMime[image.mediaType], byte_length: Number(image.byteLength), sha256: image.sha256 }))} sessionId={id} active={active} /> : row.attachmentCount ? <p>{copy("session.submittedImages", { count: row.attachmentCount })}</p> : null}
+        </article>)}
       </div>
       <div className="session-input-tray">
         <details className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><summary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</summary>

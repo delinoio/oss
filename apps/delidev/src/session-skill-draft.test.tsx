@@ -1,3 +1,4 @@
+import { sessionInputReceipt } from "./test-session-input";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
@@ -12,7 +13,7 @@ function fixture() {
  const make=(name:string)=>{const id=newRequestId();return create(ResourceSchema,{id,sessionId:id,kind:EntityKind.SESSION,revision:1n,schemaVersion:1,documentJson:encode({name,workspace:"general-chat",machine_id:machine,agent_id:agent,outcome:"stopped",archive:"active",dispatch:"paused",recovery:"none"})});};
  const original=make("Skill original"),other=make("Skill other");
  const selection={$typeName:"delidev.v1.SkillSelection" as const,workerDeviceId:newRequestId(),inventoryId:newRequestId(),skillId:newRequestId(),contentRevision:"a".repeat(64)};
- const enqueue=vi.fn(async(_request:EnqueueInputRequest)=>({change:{session:original}}));
+ const enqueue=vi.fn(async(request:EnqueueInputRequest)=>sessionInputReceipt(original,request));
  const transport=createRouterTransport(router=>{
   router.service(SystemService,{getStatus:()=>({capabilities:[]})});
   router.service(SkillService,{listSkills:()=>({skills:[{name:"retained",description:"Immutable selected fixture",provenance:SkillProvenance.USER,selection}]})});
@@ -33,7 +34,7 @@ it("retains the original opaque selection across same-identity reconnect",async(
  await f.returnToOriginal();fireEvent.click(screen.getByRole("button",{name:"Queue message"}));await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());expect(f.enqueue.mock.calls[0]![0].skills?.selections).toEqual([f.selection]);
 });
 it("clears only the original retained draft when its request accepts while hidden",async()=>{
- const f=fixture();let resolve!:()=>void;f.enqueue.mockImplementation(async()=>{await new Promise<void>(done=>{resolve=done;});return {change:{session:f.original}};});
+ const f=fixture();let resolve!:()=>void;f.enqueue.mockImplementation(async(request)=>{await new Promise<void>(done=>{resolve=done;});return sessionInputReceipt(f.original,request);});
  render(<App transport={f.transport}/>);await f.select();fireEvent.click(screen.getByRole("button",{name:"Queue message"}));await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());
  fireEvent.click(screen.getByRole("button",{name:/General Chat Skill other/}));const other=await screen.findByRole("textbox",{name:"Message"});fireEvent.change(other,{target:{value:"Keep other draft",selectionStart:16}});
  await act(async()=>resolve());await waitFor(()=>expect(other).toHaveProperty("value","Keep other draft"));

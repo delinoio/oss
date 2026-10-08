@@ -1577,8 +1577,44 @@ available areas start at 80px, with independently bounded upper rows. Compact
 sidebar navigation takes space from the workspace instead of displacing input.
 Keep the existing Execute/Plan selection, Enter behavior,
 connection-owned prompt limits, send locks and exact uncertain retries. An empty
-conversation states that content appears after the harness accepts input, never
-that enqueueing resumes a blocked session.
+conversation describes native transcript acceptance; submitted follow-ups have
+the separate immediate presentation below. Queueing never resumes a blocked session.
+
+Submitted follow-ups in existing sessions and General Chat appear immediately
+as presentation-only user bubbles when the valid submission is frozen. Freeze
+prompt, mode, selected skills and ordered image selection before attachment
+preparation or enqueue. Show localized Preparing attachments, Sending, Queued,
+Delivery in progress, Accepted by runner, Confirmation unavailable, Rejected and
+Removed states from local progress or original authoritative evidence. Enqueue
+acceptance is not runner acceptance or Resume. Native MESSAGE resources remain
+the transcript authority; native input acceptance without a MESSAGE retains its
+explicit projected status.
+
+The authenticated connection owns these per-session projections across keyed
+view changes and same-identity reconnect. Replacement identities dispose them
+and fence late results. Keep the existing 1,000-record and 4 MiB retained prompt
+admission bounds and 256 KiB per-input bound. Store immutable attachment metadata,
+not image bytes or native content. Verified retained mutation result notifications
+publish original request-to-queue mappings before clearing the accepted intent;
+original draft settlement then runs even while the sender is unmounted. Missing,
+foreign or malformed acknowledgments retain confirmation uncertainty and only
+the exact original explicit retry. Definite rejection keeps the draft.
+
+Reconcile solely through request ID, verified queue ID and native MESSAGE
+`input_id`, never prompt equality. Retain stream-before-response identity evidence;
+replace the projected bubble with the native message without changing native
+order. Newer queue edits/removals override stale receipt/page content. Display
+pending projections after loaded history without scanning all history. On view
+or authenticated-transport replacement, serially reinspect only retained original
+queue IDs through the existing ResourceService read. ListQueue omits removed
+tombstones; this exact read can recover their current state without inferring
+removal from absence. Failed/foreign evidence shows confirmation unavailable;
+only matching current or newer evidence restores status. Cancel visible reads
+on departure and fence their late results. Explicit sends reveal their bubble
+once; later status changes do not scroll again or steal focus. Preserve pagination,
+queued-input controls, IME/shortcuts, receipt-proven draft/image clearing, original
+recovery restrictions and independent attachment cleanup. No new RPC, allocation,
+migration, native behavior, feature flag or content logging is introduced.
 
 Info groups status/recovery, PR associations, execution settings, context,
 Subagents, usage/budget and workspace storage. Status/recovery starts expanded;

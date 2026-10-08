@@ -1,3 +1,4 @@
+import { sessionInputReceipt } from "./test-session-input";
 import { chooseScrollOption, scrollChoiceValue, waitScrollChoices } from "./test-scroll-picker";
 import { i18n } from "./localization";
 import { create } from "@bufbuild/protobuf";
@@ -44,7 +45,7 @@ it("screen shortcuts reuse guarded forms and preserve drafts across keyboard nav
   fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).not.toHaveBeenCalled();
   fireEvent.keyDown(screen.getByRole("button", { name: "Close keyboard shortcuts" }), { key: "Escape" });
   let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
-  value.enqueues.mockImplementationOnce(async () => { await gate; return { change: { session: value.session } }; });
+  value.enqueues.mockImplementationOnce(async request => { await gate; return sessionInputReceipt(value.session,request); });
   fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); await waitFor(() => expect(value.enqueues).toHaveBeenCalledTimes(1));
   fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).toHaveBeenCalledTimes(1);
   await act(async () => { release(); await gate; });
@@ -149,7 +150,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const message = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role: "assistant", text: '<script>window.invalid = true</script>', state: "completed" }) });
   const other = create(ResourceSchema, { ...session, id: newRequestId(), documentJson: encode({ name: "Other session", workspace: "general-chat", outcome: "idle", archive: "active", dispatch: "paused", recovery: "none" }) });
   other.sessionId = other.id;
-  const enqueues = vi.fn(async () => ({ change: { session } }));
+  const enqueues = vi.fn(async (request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => sessionInputReceipt(session, request));
   const controls = vi.fn(async () => ({ change: { session } }));
   const creates = vi.fn(async (_request: { requestId: string; documentJson: Uint8Array }) => ({ change: { session } }));
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Agent One" }) });
