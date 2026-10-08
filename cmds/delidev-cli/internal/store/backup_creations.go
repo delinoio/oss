@@ -183,6 +183,17 @@ func (s *Store) runBackupCreation(ctx context.Context, id, server domain.ID, cop
 		if err != nil || current.Revision != row.Revision || !reflect.DeepEqual(intent, original) {
 			return nil, backupUnavailable()
 		}
+		// The copy and its result commit have separate lifetimes. An accepted
+		// deletion between them owns this image irreversibly, even if unlink is
+		// still pending. Recheck in this transaction so settlement cannot race it.
+		var deleted bool
+		if err := tx.tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM backup_deletions WHERE backup_id=?)", original.BackupID).Scan(&deleted); err != nil {
+			return nil, err
+		}
+		if deleted {
+			attempt = deletionBlocked()
+			retained.State, retained.Problem = domain.JobFailed, domain.SafeError(attempt)
+		}
 		if retained.State.Terminal() {
 			retained.FinishedAt = &tx.now
 		}
