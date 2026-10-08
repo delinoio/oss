@@ -125,7 +125,7 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 			return Event{}, incompatible()
 		}
 		for key, value := range params.Limits {
-			if !slices.Contains([]string{"limitId", "limitName", "primary", "secondary", "credits", "planType", "individualLimit", "spendControlReached", "rateLimitReachedType"}, key) {
+			if !slices.Contains([]string{"limitId", "limitName", "normalModelSlug", "primary", "secondary", "credits", "planType", "individualLimit", "spendControlReached", "rateLimitReachedType"}, key) {
 				return Event{}, incompatible()
 			}
 			if string(value) != "null" {
@@ -193,19 +193,20 @@ func (c *Client) observeSettingsLocked(native nativewire.Event) (Event, error) {
 	var params struct {
 		ThreadID domain.ID `json:"threadId"`
 		Settings *struct {
-			Model          string            `json:"model"`
-			Provider       string            `json:"modelProvider"`
-			Effort         *string           `json:"effort"`
-			Tier           *string           `json:"serviceTier"`
-			Cwd            string            `json:"cwd"`
-			Approval       ApprovalPolicy    `json:"approvalPolicy"`
-			Reviewer       string            `json:"approvalsReviewer"`
-			Sandbox        Sandbox           `json:"sandboxPolicy"`
-			Collaboration  collaborationMode `json:"collaborationMode"`
-			MultiAgentMode string            `json:"multiAgentMode"`
-			Profile        json.RawMessage   `json:"activePermissionProfile"`
-			Personality    *string           `json:"personality"`
-			Summary        *string           `json:"summary"`
+			Model             string            `json:"model"`
+			Provider          string            `json:"modelProvider"`
+			Effort            *string           `json:"effort"`
+			Tier              *string           `json:"serviceTier"`
+			Cwd               string            `json:"cwd"`
+			Approval          ApprovalPolicy    `json:"approvalPolicy"`
+			Reviewer          string            `json:"approvalsReviewer"`
+			Sandbox           Sandbox           `json:"sandboxPolicy"`
+			Collaboration     collaborationMode `json:"collaborationMode"`
+			MultiAgentMode    string            `json:"multiAgentMode"`
+			Profile           json.RawMessage   `json:"activePermissionProfile"`
+			Personality       *string           `json:"personality"`
+			Summary           *string           `json:"summary"`
+			DisabledPluginIDs []string          `json:"disabledPluginIds,omitempty"`
 		} `json:"threadSettings"`
 	}
 	if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil || params.Settings == nil {

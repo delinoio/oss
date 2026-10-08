@@ -119,6 +119,7 @@ func TestNativeSettingsNotificationsCannotReplaceAcceptedAuthority(t *testing.T)
 		t.Run(changed, func(t *testing.T) {
 			c, _ := observationClient()
 			settings := nativeSettingsFixture(c)
+			settings["disabledPluginIds"] = []string{"private-plugin-reference"}
 			if changed != "" {
 				settings[changed] = "changed"
 				if changed == "sandboxPolicy" {
@@ -140,6 +141,34 @@ func TestNativeSettingsNotificationsCannotReplaceAcceptedAuthority(t *testing.T)
 				t.Fatalf("metadata exposed internal settings or lost validation: %v", err)
 			}
 		})
+	}
+}
+
+func TestAgentMessageQuestionsRemainPrivate(t *testing.T) {
+	for _, questions := range []any{nil, []any{}, []any{map[string]any{"private-question": "private-content"}}, true} {
+		c, turn := observationClient()
+		item := map[string]any{"type": "agentMessage", "id": "message", "text": "fixture", "questions": questions}
+		event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "item": item, "completedAtMs": 1})
+		switch value := questions.(type) {
+		case bool:
+			if err == nil {
+				t.Fatal("malformed questions accepted")
+			}
+		case []any:
+			if len(value) != 0 {
+				if err != nil || event.Kind != NativeExtensionEvent || event.Message != nil {
+					t.Fatal("populated questions became ordinary output", err)
+				}
+				continue
+			}
+			if err != nil || event.Kind != MessageCompletedEvent || event.Message == nil {
+				t.Fatal("empty questions rejected ordinary text", err)
+			}
+		default:
+			if err != nil || event.Kind != MessageCompletedEvent || event.Message == nil {
+				t.Fatal("empty questions rejected ordinary text", err)
+			}
+		}
 	}
 }
 

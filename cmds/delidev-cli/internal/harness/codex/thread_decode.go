@@ -42,6 +42,13 @@ type threadWire struct {
 	// on the experimental API or grant native execution capabilities.
 	Extra                json.RawMessage `json:"extra,omitempty"`
 	CanAcceptDirectInput *bool           `json:"canAcceptDirectInput,omitempty"`
+	// Codex 0.159.2 emits these observation fields on stable thread responses.
+	// They grant no model selection, environment, or execution authority.
+	DaybreakEnabled *bool             `json:"daybreakEnabled,omitempty"`
+	Environments    []json.RawMessage `json:"environments,omitempty"`
+	Model           *string           `json:"model,omitempty"`
+	Originator      *string           `json:"originator,omitempty"`
+	ReasoningEffort *string           `json:"reasoningEffort,omitempty"`
 }
 
 func (t threadWire) summary() Thread {
@@ -90,6 +97,8 @@ type boundThreadWire struct {
 	RuntimeWorkspaceRoots   []string        `json:"runtimeWorkspaceRoots,omitempty"`
 	MultiAgentMode          string          `json:"multiAgentMode,omitempty"`
 	InitialTurnsPage        json.RawMessage `json:"initialTurnsPage,omitempty"`
+	DisabledPluginIDs       []string        `json:"disabledPluginIds,omitempty"`
+	CollaborationMode       json.RawMessage `json:"collaborationMode,omitempty"`
 }
 
 func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID domain.ID, method threadMethod, version string) (*Thread, *EffectiveSettings, error) {

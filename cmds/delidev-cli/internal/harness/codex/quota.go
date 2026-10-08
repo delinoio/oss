@@ -22,11 +22,12 @@ type nativeQuotaWindow struct {
 	Reset       *int64 `json:"resetsAt"`
 }
 type nativeQuotaSnapshot struct {
-	LimitID   *string            `json:"limitId"`
-	LimitName *string            `json:"limitName"`
-	Primary   *nativeQuotaWindow `json:"primary"`
-	Secondary *nativeQuotaWindow `json:"secondary"`
-	Credits   *struct {
+	NormalModelSlug *string            `json:"normalModelSlug,omitempty"`
+	LimitID         *string            `json:"limitId"`
+	LimitName       *string            `json:"limitName"`
+	Primary         *nativeQuotaWindow `json:"primary"`
+	Secondary       *nativeQuotaWindow `json:"secondary"`
+	Credits         *struct {
 		HasCredits bool    `json:"hasCredits"`
 		Unlimited  bool    `json:"unlimited"`
 		Balance    *string `json:"balance"`

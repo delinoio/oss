@@ -173,7 +173,7 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 	if requests.Load() != 2 {
 		t.Fatalf("unexpected local fixture request count %d", requests.Load())
 	}
-	t.Logf("%s/%s Codex %s: resumed exact native thread, verified retained terminal input and continued once in Plan mode; two local scripted model responses; no external provider or user account", runtime.GOOS, runtime.GOARCH, SupportedVersion)
+	t.Logf("%s/%s Codex %s: resumed exact native thread, verified retained terminal input and continued once in Plan mode; two local scripted model responses; no external provider or user account", runtime.GOOS, runtime.GOARCH, first.Version())
 }
 
 func nativeFixtureConfig(t *testing.T, binary, providerURL string) Config {

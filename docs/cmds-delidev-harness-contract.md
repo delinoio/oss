@@ -34,6 +34,22 @@ legacy minimum fields remain readable but new diagnostics do not invent a minimu
 Keep the first failure separate from later cleanup/recovery. Raw native/provider
 text, URLs, secrets and user paths never enter presentation or logs.
 
+The installed Codex 0.159.2 protocol emits additional observation fields even on
+stable operations. Thread Start/Resume/read accepts nullable `daybreakEnabled`,
+`environments`, `model`, `originator` and `reasoningEffort`; binding responses
+also accept `disabledPluginIds` and Resume's `collaborationMode`. Settings
+notifications accept the saved disabled-plugin list. These observations are
+discarded and cannot replace the independently validated effective settings,
+enable plugins, select environments or grant Daybreak execution authority.
+Agent-message `questions` may be omitted, null or empty for ordinary text;
+populated questions retain the private extension boundary. Quota snapshots accept
+the advisory `normalModelSlug` without selecting a model. Response-usage
+`usageMetadata.metadata` stays opaque and excluded from publication, cost and
+logs; original counters and amount-evidence classification remain unchanged.
+Unknown fields, immutable history and managed-account recovery fences remain
+strict. Event validation logs retain only closed stages, original owner and safe
+code, without raw native methods or payloads.
+
 ### Codex model observation profile
 
 The [native model contract](cmds-delidev-native-models-contract.md) owns the separate

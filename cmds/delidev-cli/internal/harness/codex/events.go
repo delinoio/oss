@@ -14,6 +14,32 @@ import (
 
 type EventKind string
 
+type eventValidationStage string
+
+const (
+	validationOther    eventValidationStage = "other"
+	validationSettings eventValidationStage = "thread-settings"
+	validationItem     eventValidationStage = "message-item"
+	validationUsage    eventValidationStage = "response-usage"
+	validationQuota    eventValidationStage = "account-quota"
+)
+
+// Log a closed classification instead of untrusted native method or content.
+func validationStage(method string) eventValidationStage {
+	switch method {
+	case "thread/settings/updated":
+		return validationSettings
+	case "item/started", "item/completed":
+		return validationItem
+	case "rawResponse/completed":
+		return validationUsage
+	case "account/rateLimits/updated":
+		return validationQuota
+	default:
+		return validationOther
+	}
+}
+
 const (
 	CompactionEvent           EventKind = "compaction"
 	SubagentEvent             EventKind = "subagent"
@@ -171,7 +197,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 			c.execution.paused = true
 		}
 		if c.logger != nil {
-			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "code", c.problem.Code)
+			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
 		}
 		return Event{}, c.problem
 	}
@@ -542,12 +568,13 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		}
 	case "agentMessage":
 		var item struct {
-			Type           string          `json:"type"`
-			ID             string          `json:"id"`
-			Text           *string         `json:"text"`
-			Phase          *MessagePhase   `json:"phase"`
-			Delivery       json.RawMessage `json:"delivery"`
-			MemoryCitation json.RawMessage `json:"memoryCitation"`
+			Type           string            `json:"type"`
+			ID             string            `json:"id"`
+			Text           *string           `json:"text"`
+			Phase          *MessagePhase     `json:"phase"`
+			Delivery       json.RawMessage   `json:"delivery"`
+			MemoryCitation json.RawMessage   `json:"memoryCitation"`
+			Questions      []json.RawMessage `json:"questions,omitempty"`
 		}
 		if domain.Decode(params.Item, &item) != nil || item.Text == nil {
 			return Event{}, incompatible()
@@ -555,7 +582,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		if item.Phase != nil && *item.Phase != CommentaryPhase && *item.Phase != FinalAnswerPhase {
 			return Event{}, incompatible()
 		}
-		if (len(item.Delivery) > 0 && string(item.Delivery) != "null") || (len(item.MemoryCitation) > 0 && string(item.MemoryCitation) != "null") {
+		if len(item.Questions) != 0 || (len(item.Delivery) > 0 && string(item.Delivery) != "null") || (len(item.MemoryCitation) > 0 && string(item.MemoryCitation) != "null") {
 			return privateNative(native), nil
 		}
 		message.ID = item.ID
