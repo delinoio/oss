@@ -18,6 +18,8 @@ mod linux;
 mod macos;
 #[cfg(windows)]
 mod windows;
+#[cfg(any(windows, test))]
+mod windows_projection;
 #[cfg(target_os = "linux")]
 use linux::Native;
 #[cfg(target_os = "macos")]
@@ -312,7 +314,16 @@ pub fn execute(action: Action) -> Result<i32> {
     } else {
         OutputMode::Human
     };
-    write_report(&report, mode, terminate, &mut io::stdout().lock())?;
+    finish_report(&report, mode, terminate, &mut io::stdout().lock())
+}
+
+fn finish_report(
+    report: &Report,
+    mode: OutputMode,
+    terminate: bool,
+    out: &mut impl Write,
+) -> Result<i32> {
+    write_report(report, mode, terminate, out)?;
     for error in &report.errors {
         error.report(if terminate { "port-kill" } else { "port-list" });
     }
