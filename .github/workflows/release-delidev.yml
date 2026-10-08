@@ -9,6 +9,23 @@ on:
       revision:
         required: true
         type: string
+    secrets:
+      DELIDEV_MACOS_CERTIFICATE_BASE64:
+        required: true
+      DELIDEV_MACOS_CERTIFICATE_PASSWORD:
+        required: true
+      DELIDEV_MACOS_APP_PROFILE_BASE64:
+        required: true
+      DELIDEV_MACOS_WIDGET_PROFILE_BASE64:
+        required: true
+      DELIDEV_MACOS_SELECTION_PROFILE_BASE64:
+        required: true
+      DELIDEV_APPLE_NOTARY_KEY_BASE64:
+        required: true
+      DELIDEV_APPLE_NOTARY_KEY_ID:
+        required: true
+      DELIDEV_APPLE_NOTARY_ISSUER_ID:
+        required: true
 
 permissions:
   contents: read

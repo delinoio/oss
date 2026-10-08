@@ -153,6 +153,15 @@ jobs:
       contents: write
       actions: read
     uses: ./.github/workflows/release-delidev.yml
+    secrets:
+      DELIDEV_MACOS_CERTIFICATE_BASE64: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_BASE64 }}
+      DELIDEV_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_PASSWORD }}
+      DELIDEV_MACOS_APP_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_APP_PROFILE_BASE64 }}
+      DELIDEV_MACOS_WIDGET_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_WIDGET_PROFILE_BASE64 }}
+      DELIDEV_MACOS_SELECTION_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_SELECTION_PROFILE_BASE64 }}
+      DELIDEV_APPLE_NOTARY_KEY_BASE64: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_BASE64 }}
+      DELIDEV_APPLE_NOTARY_KEY_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_ID }}
+      DELIDEV_APPLE_NOTARY_ISSUER_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_ISSUER_ID }}
     with:
       version: ${{ needs.prepare.outputs.version }}
       revision: ${{ needs.prepare.outputs.revision }}

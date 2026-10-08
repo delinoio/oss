@@ -188,6 +188,12 @@ The `delidev-release` GitHub Environment supplies these secrets:
 - `DELIDEV_APPLE_NOTARY_KEY_BASE64`, `DELIDEV_APPLE_NOTARY_KEY_ID`,
   `DELIDEV_APPLE_NOTARY_ISSUER_ID`.
 
+The coordinator forwards only these named secret references to the reusable
+workflow, which declares each reference required. Its jobs select the Environment
+to obtain the values. Required declarations check the caller contract; the runtime
+preflight still rejects missing or empty signing material. No unrelated secrets
+are inherited.
+
 Its non-secret variables are `DELIDEV_APPLE_TEAM_ID` and
 `DELIDEV_MACOS_CERTIFICATE_SHA1`. Base64 material must be canonical single-line
 encoding. The workflow validates required configuration before native builds.

@@ -14,6 +14,25 @@ test('manual coordinator calls release at the prepared immutable identity withou
   assert.deepEqual(Object.keys(workflow.on),['workflow_call']);
   assert.equal(workflow.jobs.inspect.if,"github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'");
 });
+test('coordinator forwards only the required signing secret references to Environment-owned jobs',()=>{
+  const names = [
+    'DELIDEV_MACOS_CERTIFICATE_BASE64',
+    'DELIDEV_MACOS_CERTIFICATE_PASSWORD',
+    'DELIDEV_MACOS_APP_PROFILE_BASE64',
+    'DELIDEV_MACOS_WIDGET_PROFILE_BASE64',
+    'DELIDEV_MACOS_SELECTION_PROFILE_BASE64',
+    'DELIDEV_APPLE_NOTARY_KEY_BASE64',
+    'DELIDEV_APPLE_NOTARY_KEY_ID',
+    'DELIDEV_APPLE_NOTARY_ISSUER_ID',
+  ];
+  const caller = yaml.load(source('release-project.yml')).jobs.delidev;
+  assert.deepEqual(caller.secrets,Object.fromEntries(names.map(name=>[name,'${{ secrets.'+name+' }}'])));
+  assert.deepEqual(workflow.on.workflow_call.secrets,Object.fromEntries(names.map(name=>[name,{required:true}])));
+  const references = [...new Set([...source('release-delidev.yml').matchAll(/secrets\.(DELIDEV_[A-Z0-9_]+)/g)].map(match=>match[1]))].sort();
+  assert.deepEqual(references,[...names].sort());
+  assert.equal(workflow.jobs.preflight.environment,'delidev-release');
+  assert.equal(workflow.jobs.package.environment,'delidev-release');
+});
 test('publication is behind four-native matrix, signing preflight and original candidate validation',()=>{
   assert.deepEqual(workflow.permissions,{contents:'read',actions:'read'});
   assert.equal(workflow.jobs.package.strategy.matrix,'${{ fromJSON(needs.inspect.outputs.matrix) }}');
