@@ -955,3 +955,5 @@ barrel and both generated clients from the reconciled sources. No SQLite
 migration is required. The narrow owner-authorized simultaneous declaration and
 activation exception is defined in the sessions contract's Explicit native skills
 section; remaining allocation policy is unchanged.
+
+The allocation ledger retains the complete #1748 enum/message field closure and the SkillService.ListSkills input/output and nonstreaming profile. The repository descriptor checks enforce numeric ownership and closed RPC method profiles.

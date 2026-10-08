@@ -25,6 +25,20 @@ type HistoricalInput struct {
 	PromptDigest [sha256.Size]byte
 }
 
+// MarshalJSON preserves the original text-only checkpoint size and spelling.
+// Arrays do not honor omitempty for zero bytes, so use presence explicitly.
+func (input HistoricalInput) MarshalJSON() ([]byte, error) {
+	type legacy HistoricalInput
+	var digest *[sha256.Size]byte
+	if input.SkillDigest != ([sha256.Size]byte{}) {
+		digest = &input.SkillDigest
+	}
+	return json.Marshal(struct {
+		*legacy
+		SkillDigest *[sha256.Size]byte `json:",omitempty"`
+	}{(*legacy)(&input), digest})
+}
+
 // ContinuationCheckpoint must come from the preceding accepted execution, after
 // its terminal publication and independent owned-process cleanup. This private
 // adapter does not prove account authority, cleanup, interaction acceptance or

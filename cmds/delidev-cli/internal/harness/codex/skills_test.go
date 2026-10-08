@@ -44,6 +44,11 @@ func (f *threadFixture) handleSkills(id json.RawMessage, method string, raw json
 	return false
 }
 func TestStructuredSkillInputUsesOnlyRetainedPackage(t *testing.T) {
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		t.Run(string(mode), func(t *testing.T) { testStructuredSkillInput(t, mode) })
+	}
+}
+func testStructuredSkillInput(t *testing.T, mode domain.SessionMode) {
 	ctx := context.Background()
 	home := t.TempDir()
 	path := filepath.Join(home, ".agents", "skills", "add-issue")
@@ -62,7 +67,7 @@ func TestStructuredSkillInputUsesOnlyRetainedPackage(t *testing.T) {
 	}
 	c, _, _, _ := boundTurnFixture(t, "normal")
 	c.skillsRoot = m.Root
-	in := input(domain.ExecuteMode)
+	in := input(mode)
 	in.Skills = scope.Selections
 	result, e := c.StartTurn(ctx, domain.NewID(), domain.NewID(), in)
 	if e != nil {

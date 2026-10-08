@@ -104,3 +104,28 @@ test('FILE comparison still rejects semantic changes after explicit relocation',
   removed.file.find(file => file.name === 'known.proto').messageType[0].field = [];
   assert.throws(() => compare(removed), error => error.status !== 0 && /deleted|reserved|field/i.test(String(error.stdout) + String(error.stderr)));
 });
+
+test('new RPC ownership retains the closed method profile', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'delidev-rpc-allocation-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const output = join(directory, 'schema.json');
+  execFileSync(process.execPath, [join(root, 'node_modules/@bufbuild/buf/bin/buf'), 'build', '--as-file-descriptor-set', '--output', output], { cwd: root });
+  const descriptor = JSON.parse(readFileSync(output, 'utf8'));
+  const ledger = JSON.parse(readFileSync(join(root, 'protos/delidev/allocations.json'), 'utf8'));
+  const owned = new Set();
+  for (const reservation of ledger.rpcReservations ?? []) {
+    assert.ok(Number.isSafeInteger(reservation.issue) && reservation.issue > 0);
+    const identity = `${reservation.service}.${reservation.method}`;
+    assert.ok(!owned.has(identity), 'RPC ownership is unique');
+    owned.add(identity);
+    const services = descriptor.file.filter(file => file.package === 'delidev.v1').flatMap(file => file.service ?? []).filter(service => service.name === reservation.service);
+    assert.equal(services.length, 1);
+    const methods = services[0].method.filter(method => method.name === reservation.method);
+    assert.equal(methods.length, 1);
+    assert.equal(methods[0].inputType, `.delidev.v1.${reservation.input}`);
+    assert.equal(methods[0].outputType, `.delidev.v1.${reservation.output}`);
+    assert.equal(methods[0].clientStreaming ?? false, reservation.clientStreaming);
+    assert.equal(methods[0].serverStreaming ?? false, reservation.serverStreaming);
+  }
+});

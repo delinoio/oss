@@ -8532,6 +8532,180 @@
       "member": "replayed",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_SKILLS_V1",
+      "number": 44
+    },
+    {
+      "issue": 1748,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_SKILLS_V1",
+      "number": 24
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "CreateSessionRequest",
+      "member": "skills",
+      "number": 4
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "EnqueueInputRequest",
+      "member": "skills",
+      "number": 4
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "EditQueuedInputRequest",
+      "member": "skills",
+      "number": 4
+    },
+    {
+      "issue": 1748,
+      "kind": "enum",
+      "declaration": "SkillProvenance",
+      "member": "SKILL_PROVENANCE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "enum",
+      "declaration": "SkillProvenance",
+      "member": "SKILL_PROVENANCE_USER",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "enum",
+      "declaration": "SkillProvenance",
+      "member": "SKILL_PROVENANCE_PROJECT",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillSelection",
+      "member": "inventory_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillSelection",
+      "member": "skill_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillSelection",
+      "member": "content_revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillSelection",
+      "member": "worker_device_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillEntry",
+      "member": "selection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillEntry",
+      "member": "name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillEntry",
+      "member": "description",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "SkillEntry",
+      "member": "provenance",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "ListSkillsRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "ListSkillsRequest",
+      "member": "agent_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "ListSkillsRequest",
+      "member": "session_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "ListSkillsRequest",
+      "member": "project_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1748,
+      "kind": "message",
+      "declaration": "ListSkillsResponse",
+      "member": "skills",
+      "number": 1,
+      "newDeclaration": true
+    }
+  ],
+  "rpcReservations": [
+    {
+      "issue": 1748,
+      "service": "SkillService",
+      "method": "ListSkills",
+      "input": "ListSkillsRequest",
+      "output": "ListSkillsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
     }
   ]
 }

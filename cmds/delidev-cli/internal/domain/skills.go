@@ -2,9 +2,7 @@
 package domain
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 )
 
 const NativeSkillsV1 WorkerCapability = "native-skills-v1"
@@ -32,15 +30,6 @@ func ValidateSkills(values []SkillBinding) error {
 		seen[v.SkillID] = true
 	}
 	return nil
-}
-
-// Text-only digest spelling remains unchanged for historical native proofs.
-func (i SessionInput) NativeDigest() [32]byte {
-	if len(i.Skills) == 0 {
-		return sha256.Sum256([]byte(i.Prompt))
-	}
-	raw, _ := json.Marshal(i)
-	return sha256.Sum256(raw)
 }
 
 type SkillEntry struct {
