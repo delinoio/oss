@@ -5,6 +5,7 @@ import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
 import { useEffect, useId, useReducer, useRef, useState, type ReactNode } from "react";
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
 import { subscriptionCatalog, SubscriptionBrand } from "./subscription-catalog";
 
 export enum QuotaObservationState { Observed = "observed", Unknown = "unknown", Stale = "stale", Failed = "failed", Unsupported = "unsupported" }
@@ -31,6 +32,7 @@ export interface SubscriptionOperation {
 
 export interface SubscriptionAccountRow {
   id: string;
+  revision?: bigint;
   alias: string;
   providerName: string;
   /** An explicit verified native identity is required; editable names are insufficient. */
@@ -56,7 +58,10 @@ export interface SubscriptionAccountRow {
 export interface SubscriptionSettingsViewProps {
   accounts: readonly SubscriptionAccountRow[];
   state: SubscriptionReadState;
-  accountList?: (now: number) => ReactNode;
+  accountList?: (now: number, openDetails: (account: SubscriptionAccountRow, opener: HTMLElement) => void) => ReactNode;
+  /** Reached identities distinguish payload eviction from confirmed removal. */
+  accountIds?: readonly string[];
+  manageDetails?: (account: SubscriptionAccountDetails, opener: HTMLElement | null) => void;
   completeEmpty?: boolean;
   problem?: ReactNode;
   retryRead?: () => void;
@@ -139,12 +144,11 @@ function OperationNotice({ label, operation, retryBlocked = false }: { label: st
   </div>;
 }
 
-export function SubscriptionRow({ account, now, unavailable, actionsBlocked = false, active = true }: { account: SubscriptionAccountRow; now: number; unavailable: string; actionsBlocked?: boolean; active?: boolean }) {
+export function SubscriptionRow({ account, now, unavailable, actionsBlocked = false, active = true, openDetails }: { account: SubscriptionAccountRow; now: number; unavailable: string; actionsBlocked?: boolean; active?: boolean; openDetails?: (account: SubscriptionAccountRow, opener: HTMLElement) => void }) {
   useLocale();
   const [menu, setMenu] = useState(false);
-  const [details, setDetails] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const menuId = useId(), detailsId = useId();
+  const menuId = useId();
   const menuButton = useRef<HTMLButtonElement>(null);
   const disconnectButton = useRef<HTMLButtonElement>(null);
   const blocked = actionsBlocked || operationBlocked(account.refreshOperation) || operationBlocked(account.disconnectOperation);
@@ -164,14 +168,14 @@ export function SubscriptionRow({ account, now, unavailable, actionsBlocked = fa
         <div className="subscription-more" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setMenu(false); }}>
           <button ref={menuButton} type="button" aria-label={copy("subscription-settings.moreActionsFor_5057a7", { v0: account.alias })} aria-expanded={menu} aria-controls={menuId} onClick={() => setMenu(!menu)} onKeyDown={(event) => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}><span aria-hidden="true">⋯</span></button>
           {menu ? <div id={menuId} className="subscription-more-panel" role="group" aria-label={copy("subscription-settings.actionsFor_b59837", { v0: account.alias })} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}>
-            <button type="button" aria-controls={detailsId} onClick={() => { setDetails(true); closeMenu(); }}>{copy("subscription-settings.accountDetails_17be95")}</button>
+            <button type="button" aria-haspopup="dialog" onClick={() => { setMenu(false); menuButton.current?.focus(); if (menuButton.current) openDetails?.(account, menuButton.current); }}>{copy("subscription-settings.accountDetails_17be95")}</button>
             <button type="button" disabled={!account.metadataAvailable || actionsBlocked} onClick={() => { closeMenu(); account.edit(); }}>{copy("subscription-settings.editPreferences_00b4cc")}</button>
             <button type="button" disabled={!account.metadataAvailable || actionsBlocked} onClick={() => { closeMenu(); account.delete(); }}>{copy("subscription-settings.deleteAccount_a2e20a")}</button>
           </div> : null}
         </div>
       </div>
     </div>
-    {account.windows.length > 2 ? <button className="subscription-extra-windows" type="button" aria-expanded={details} aria-controls={detailsId} onClick={() => setDetails(!details)}><LocalizedText id="subscription-settings.allQuotaWindows_53404d" components={{ s0: <>{details ? copy("subscription-settings.hide_ac20a5") : copy("subscription-settings.show_0df6f1")}</>, s1: <>{account.windows.length}</> }} /></button> : null}
+    {account.windows.length > 2 ? <button className="subscription-extra-windows" type="button" aria-haspopup="dialog" onClick={event => { event.currentTarget.focus(); openDetails?.(account, event.currentTarget); }}>{copy("subscription-settings.openQuotaDetails", { count: account.windows.length })}</button> : null}
     {["expired", "revoked", "failed"].includes(account.health) || account.connection === SubscriptionConnectionState.CleanupPending ? <p className="subscription-operation">{copy(account.connection === SubscriptionConnectionState.CleanupPending ? "account-connection.inline.subscriptionRecovery" : "account-connection.inline.quota")}</p> : null}
     <OperationNotice label={copy("subscription-settings.refresh_0e9161")} operation={account.refreshOperation} retryBlocked={retryBlocked} />
     <OperationNotice label={copy("subscription-settings.disconnection_1913a2")} operation={account.disconnectOperation} retryBlocked={retryBlocked} />
@@ -179,11 +183,20 @@ export function SubscriptionRow({ account, now, unavailable, actionsBlocked = fa
       <p><LocalizedText id="subscription-settings.disconnectItsCredentialsWillBeRemoved_65894e" components={{ s0: <>{account.alias}</> }} /></p>
       <div className="actions"><button type="button" disabled={!canDisconnect} onClick={() => { setConfirm(false); account.disconnect?.(); disconnectButton.current?.focus(); }}>{copy("subscription-settings.confirmDisconnection_d61f53")}</button><button type="button" onClick={closeConfirm}>{copy("subscription-settings.keepAccountConnected_00ae06")}</button></div>
     </div> : null}
-    {details ? <div id={detailsId} className="subscription-details"><h4>{copy("subscription-settings.accountDetails_17be95")}</h4><dl><div><dt>{copy("subscription-settings.health_558984")}</dt><dd>{account.health || copy("subscription-settings.extra.b764cdc0eab7")}</dd></div><div><dt>{copy("subscription-settings.account_7e1b0d")}</dt><dd>{account.enabled ? copy("subscription-settings.enabled_92c1cd") : copy("subscription-settings.disabled_75081b")}</dd></div><div><dt>{copy("subscription-settings.serviceStatus_cce5ed")}</dt><dd>{account.providerState}</dd></div><div><dt>{copy("subscription-settings.exhaustion_c52628")}</dt><dd>{account.confirmedExhausted ? copy("subscription-settings.confirmedExhausted_763851") : copy("subscription-settings.notConfirmedExhausted_a80dbe")}</dd></div></dl>
-      {account.windows.length > 2 ? <div className="subscription-quota-grid">{account.windows.slice(2).map((window, index) => <QuotaWindow key={`${window.id}:${index + 2}`} window={window} now={now} active={active} />)}</div> : null}
-      <div className="actions"><button type="button" disabled={!account.metadataAvailable || actionsBlocked} onClick={account.details}>{copy("subscription-settings.manageMetadata_ddc14e")}</button><button type="button" onClick={() => { setDetails(false); menuButton.current?.focus(); }}>{copy("subscription-settings.closeAccountDetails_c62a46")}</button></div>
-    </div> : null}
+
   </article>;
+}
+
+/** Metadata-only copy: never retain original Resource documents or row callbacks. */
+export type SubscriptionAccountDetails = Pick<SubscriptionAccountRow, "id" | "revision" | "alias" | "providerName" | "brand" | "health" | "enabled" | "providerState" | "confirmedExhausted" | "metadataAvailable" | "windows">;
+function accountDetails(account: SubscriptionAccountRow): SubscriptionAccountDetails {
+  const { id, revision, alias, providerName, brand, health, enabled, providerState, confirmedExhausted, metadataAvailable, windows } = account;
+  return { id, revision, alias, providerName, brand, health, enabled, providerState, confirmedExhausted, metadataAvailable, windows: windows.map(({ id, label, remaining, observedAt, resetAt, state }) => ({ id, label, remaining, observedAt, resetAt, state })) };
+}
+function SubscriptionDetails({ account, now, active }: { account: SubscriptionAccountDetails; now: number; active: boolean }) {
+  return <div className="subscription-details"><dl><div><dt>{copy("subscription-settings.health_558984")}</dt><dd>{account.health || copy("subscription-settings.extra.b764cdc0eab7")}</dd></div><div><dt>{copy("subscription-settings.account_7e1b0d")}</dt><dd>{account.enabled ? copy("subscription-settings.enabled_92c1cd") : copy("subscription-settings.disabled_75081b")}</dd></div><div><dt>{copy("subscription-settings.serviceStatus_cce5ed")}</dt><dd>{account.providerState}</dd></div><div><dt>{copy("subscription-settings.exhaustion_c52628")}</dt><dd>{account.confirmedExhausted ? copy("subscription-settings.confirmedExhausted_763851") : copy("subscription-settings.notConfirmedExhausted_a80dbe")}</dd></div></dl>
+    {account.windows.length > 2 ? <div className="subscription-quota-grid">{account.windows.slice(2).map((window, index) => <QuotaWindow key={`${window.id}:${index + 2}`} window={window} now={now} active={active} />)}</div> : null}
+  </div>;
 }
 
 const readLabels: Partial<Record<SubscriptionReadState, string>> = {
@@ -195,16 +208,35 @@ const readLabels: Partial<Record<SubscriptionReadState, string>> = {
 };
 
 /** Presentation only; the owning controller negotiates every native action. */
-export function SubscriptionSettingsView({ accounts, accountList, completeEmpty = true, state, problem, retryRead, refreshAll, refreshAllOperation, cleanup, cleanupBusy, cleanupBlocked, cleanupUnavailable, cleanupStatus, actionsBlocked = false, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
+export function SubscriptionSettingsView({ accounts, accountList, accountIds, manageDetails, completeEmpty = true, state, problem, retryRead, refreshAll, refreshAllOperation, cleanup, cleanupBusy, cleanupBlocked, cleanupUnavailable, cleanupStatus, actionsBlocked = false, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
   useLocale();
   const noticeId = useId(), cleanupId = useId();
+  const category = useRef<HTMLElement>(null);
+  const detailsOpener = useRef<HTMLElement | null>(null);
+  const [selectedDetails, setSelectedDetails] = useState<SubscriptionAccountDetails>();
+  const candidate = selectedDetails && accounts.find(account => account.id === selectedDetails.id);
+  const latest = candidate && (selectedDetails?.revision === undefined || candidate.revision !== undefined && candidate.revision >= selectedDetails.revision) ? candidate : undefined;
+  const handedOff = useRef(false);
+  const displayed = latest ? accountDetails(latest) : selectedDetails;
+  const closeDetails = () => setSelectedDetails(undefined);
+  const openDetails = (account: SubscriptionAccountRow, opener: HTMLElement) => {
+    if (!active) return;
+    handedOff.current = false;
+    detailsOpener.current = opener;
+    opener.focus({ preventScroll: true });
+    setSelectedDetails(accountDetails(account));
+  };
+  useEffect(() => {
+    if (!active || [SubscriptionReadState.PermissionDenied, SubscriptionReadState.AuthenticationExpired, SubscriptionReadState.Unsupported].includes(state) || selectedDetails && accountIds && !accountIds.includes(selectedDetails.id)) closeDetails();
+    else if (latest) setSelectedDetails(accountDetails(latest));
+  }, [active, accounts, accountIds, state]);
   const [, expireObservation] = useReducer((revision: number) => revision + 1, 0);
   const presentationNow = now ?? Date.now();
   useEffect(() => {
     if (!active || now !== undefined) return;
     // Expire presentation at the next known boundary while this surface is
     // active. This makes no requests and stops when Settings is hidden/disposed.
-    const boundaries = accounts.flatMap((account) => account.windows.flatMap((window) => [
+    const boundaries = [...accounts, ...(displayed ? [displayed] : [])].flatMap((account) => account.windows.flatMap((window) => [
       Date.parse(window.resetAt ?? ""),
       ...(window.state === QuotaObservationState.Observed ? [Date.parse(window.observedAt ?? "") + 5 * 60 * 1000 + 1] : []),
     ]));
@@ -212,20 +244,32 @@ export function SubscriptionSettingsView({ accounts, accountList, completeEmpty 
     if (!Number.isFinite(next)) return;
     const timer = setTimeout(expireObservation, Math.min(next - presentationNow, 2 ** 31 - 1));
     return () => clearTimeout(timer);
-  }, [accounts, active, now, presentationNow]);
-  return <section className="subscription-settings" aria-label={copy("subscription-settings.aiSubscriptionAccountSettings_9f67d8")}>
+  }, [accounts, displayed, active, now, presentationNow]);
+  return <section ref={category} className="subscription-settings" aria-label={copy("subscription-settings.aiSubscriptionAccountSettings_9f67d8")}>
     {activeFilter ? <div className="subscription-active-filter" role="status"><span><LocalizedText id="subscription-settings.providerFilter_f3f61a" components={{ s0: <>{activeFilter}</> }} /></span><button type="button" onClick={clearFilter}>{copy("subscription-settings.clearProviderFilter_e0b8c0")}</button></div> : null}
-    <section aria-label={copy("subscription-settings.yourSubscriptions_b636e8")}><header className="subscription-section-heading"><h2>{copy("subscription-settings.yourSubscriptions_b636e8")}</h2><div className="subscription-header-actions"><button type="button" disabled={!cleanup} aria-disabled={cleanupBusy || cleanupBlocked || undefined} aria-describedby={cleanupId} onClick={() => { if (!cleanupBusy && !cleanupBlocked) cleanup?.(); }}>{copy(cleanupBusy ? "subscription-settings.cleanupBusy" : "subscription-settings.cleanupButton")}</button><button type="button" disabled={actionsBlocked || !refreshAll || operationBlocked(refreshAllOperation)} title={!refreshAll ? lifecycleUnavailable : undefined} aria-describedby={!refreshAll ? noticeId : undefined} onClick={refreshAll}>{copy("subscription-settings.refreshAll_3c128b")}</button></div></header>
+    <section aria-label={copy("subscription-settings.yourSubscriptions_b636e8")}><header className="subscription-section-heading"><h2 tabIndex={-1} data-subscription-details-fallback>{copy("subscription-settings.yourSubscriptions_b636e8")}</h2><div className="subscription-header-actions"><button type="button" disabled={!cleanup} aria-disabled={cleanupBusy || cleanupBlocked || undefined} aria-describedby={cleanupId} onClick={() => { if (!cleanupBusy && !cleanupBlocked) cleanup?.(); }}>{copy(cleanupBusy ? "subscription-settings.cleanupBusy" : "subscription-settings.cleanupButton")}</button><button type="button" disabled={actionsBlocked || !refreshAll || operationBlocked(refreshAllOperation)} title={!refreshAll ? lifecycleUnavailable : undefined} aria-describedby={!refreshAll ? noticeId : undefined} onClick={refreshAll}>{copy("subscription-settings.refreshAll_3c128b")}</button></div></header>
       <p id={cleanupId} className="subscription-cleanup-help">{copy("subscription-settings.cleanupHelp")}{cleanupUnavailable ? <> {cleanupUnavailable}</> : null}</p>
       {cleanupStatus}
       {state !== SubscriptionReadState.Ready ? <div role={state === SubscriptionReadState.Loading ? undefined : state === SubscriptionReadState.Failed || state === SubscriptionReadState.PermissionDenied || state === SubscriptionReadState.AuthenticationExpired ? "alert" : "status"}>{state === SubscriptionReadState.Loading ? <SettingsLoading label={copy("subscription-settings.loadingSubscriptions_d98d84")} /> : <p>{readLabels[state]}</p>}{accounts.length && state !== SubscriptionReadState.Loading ? <p>{copy("subscription-settings.showingTheLastSuccessfullyLoadedSubscriptions_3cc29c")}</p> : null}{problem}{retryRead && state !== SubscriptionReadState.Loading && state !== SubscriptionReadState.Unsupported ? <button type="button" onClick={retryRead}>{copy("subscription-settings.retrySubscriptionRead_3772f6")}</button> : null}</div> : null}
-      {accountList ? accountList(presentationNow) : accounts.length ? <div className="subscription-list">{accounts.map((account) => <SubscriptionRow key={account.id} account={account} now={presentationNow} active={active} unavailable={lifecycleUnavailable} actionsBlocked={actionsBlocked} />)}</div> : state === SubscriptionReadState.Ready && completeEmpty ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}
+      {accountList ? accountList(presentationNow, openDetails) : accounts.length ? <div className="subscription-list">{accounts.map((account) => <SubscriptionRow key={account.id} account={account} now={presentationNow} active={active} unavailable={lifecycleUnavailable} actionsBlocked={actionsBlocked} openDetails={openDetails} />)}</div> : state === SubscriptionReadState.Ready && completeEmpty ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}
       <OperationNotice label={copy("subscription-settings.refreshAll_3c128b")} operation={refreshAllOperation} />
       {pagination}
     </section>
     <section aria-label={copy("subscription-settings.connectASubscription_46b98e")}><header className="subscription-section-heading"><h2>{copy("subscription-settings.connectASubscription_46b98e")}</h2></header><p id={noticeId} className="subscription-unavailable">{lifecycleUnavailable}</p>
       <div className="subscription-provider-cards">{subscriptionCatalog.map((provider) => <article className="subscription-provider-card" key={provider.brand}><ProviderMark brand={provider.brand} /><h3>{provider.name}</h3><p>{provider.purpose}</p><button type="button" disabled={!selectService || !serviceLoginAvailable(provider.brand)} aria-label={copy("subscription-settings.message_78735b", { v0: provider.name, v1: selectService && serviceLoginAvailable(provider.brand) ? copy("subscription-settings.addAccount_ee7ee5") : copy("subscription-settings.comingSoon_4f7d64") })} onClick={() => selectService?.(provider.brand)}>{selectService && serviceLoginAvailable(provider.brand) ? copy("subscription-settings.addAccount_ee7ee5") : copy("subscription-settings.comingSoon_4f7d64")}</button></article>)}</div>
     </section>
+
+    {active && displayed ? <SettingsTaskDialog title={copy("subscription-settings.accountDetails_17be95")} subtitle={`${displayed.alias} · ${displayed.providerName}`} size={SettingsDialogSize.Form} focus={SettingsDialogFocus.Heading} close={closeDetails} fallbackFocus={() => detailsOpener.current?.isConnected && !detailsOpener.current.closest("[hidden]") && !detailsOpener.current.hasAttribute("disabled") ? detailsOpener.current : category.current?.querySelector<HTMLElement>("[data-subscription-details-fallback]") ?? null}>
+      <SubscriptionDetails account={displayed} now={presentationNow} active={active} />
+      <SettingsTaskActions><button type="button" disabled={!displayed.metadataAvailable || actionsBlocked || Boolean(latest && (operationBlocked(latest.refreshOperation) || operationBlocked(latest.disconnectOperation))) || (!manageDetails && !latest)} onClick={() => {
+        // Retained presentation cannot authorize an operation. Resolve the
+        // original controller by exact ID, then close before its once-only handoff.
+        if (handedOff.current || !displayed.metadataAvailable || actionsBlocked) return;
+        handedOff.current = true;
+        closeDetails();
+        if (manageDetails) manageDetails(displayed, detailsOpener.current); else latest?.details();
+      }}>{copy("subscription-settings.manageMetadata_ddc14e")}</button></SettingsTaskActions>
+    </SettingsTaskDialog> : null}
     <details className="subscription-advanced"><summary>{copy("subscription-settings.advancedSettings_7b0bd2")}</summary><div>{advanced}</div></details>
   </section>;
 }
