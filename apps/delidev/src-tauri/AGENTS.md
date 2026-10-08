@@ -85,7 +85,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Advance the durable account-removal cursor before acknowledgment attempts, rotating retained intents across process exits so offline receipts cannot starve later local profile purges. Keep original request/revision ownership and the existing per-exit bounds.
 
-- Forgotten-scope and account-removal cleanup have independent 45-second/64-intent budgets after native shutdown. A depleted forgotten-scope budget cannot prevent account cursor advancement or local account-profile purge.
+- Forgotten-scope and account-removal cleanup have independent 45-second/64-intent budgets after native shutdown. A depleted budget or local queue failure cannot prevent the other queue from running, account cursor advancement or local account-profile purge. Preserve shared shutdown/discovery/storage prerequisites and return the first local failure after both passes.
 
 - Quit denies presentations immediately but retains the CEF event loop until the worker's final bounded removal discovery finishes and every raw child closes. Perform that final discovery even when quit arrives during the poll sleep; never move its sidecar reads or durable intent writes onto the UI loop.
 

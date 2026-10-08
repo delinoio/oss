@@ -304,6 +304,9 @@ confirmation succeeds. A retry does not reopen the profile or infer completion.
 Each exit gives forgotten scopes and account-removal intents independent budgets
 of at most 64 intents and 45 seconds per queue. Offline forgotten-scope inspection
 cannot consume the account queue's time or prevent its cursor advancement.
+A local failure in either queue retains its original evidence while the other
+queue still runs after the shared native shutdown, discovery join and storage
+prerequisites. Return the first local failure only after both queue passes.
 Existing two-second observer and 40-second acknowledgment child bounds remain;
 an in-flight child retains its joined bound. Remaining or uncertain intents stay
 pending for a later process cleanup. A private durable account-removal cursor
