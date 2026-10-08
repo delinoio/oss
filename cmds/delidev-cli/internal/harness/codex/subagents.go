@@ -359,14 +359,20 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			return c.childMetadata(), true, nil
 		}
 		var v struct {
-			Type   string          `json:"type"`
-			ID     string          `json:"id"`
-			Text   string          `json:"text"`
-			Phase  *MessagePhase   `json:"phase"`
-			Memory json.RawMessage `json:"memoryCitation,omitempty"`
+			Type     string          `json:"type"`
+			ID       string          `json:"id"`
+			Text     string          `json:"text"`
+			Phase    *MessagePhase   `json:"phase"`
+			Memory   json.RawMessage `json:"memoryCitation,omitempty"`
+			Delivery json.RawMessage `json:"delivery,omitempty"`
 		}
 		if domain.Decode(fields["item"], &v) != nil {
 			return Event{}, true, incompatible()
+		}
+		// Omission or explicit native null carries no delivery metadata. Keep
+		// populated opaque delivery private, as in the root message decoder.
+		if len(v.Delivery) > 0 && string(v.Delivery) != "null" {
+			return privateNative(native), true, nil
 		}
 		o.SourceID = v.ID
 		o.Output = &domain.SubagentOutput{NativeMessageID: v.ID, Text: v.Text, Partial: true}
