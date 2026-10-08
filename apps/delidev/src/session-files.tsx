@@ -91,7 +91,7 @@ function Explorer({ owner, state }: { owner: FilesController; state: FilesSnapsh
     if (!state.preview && focusOwned.current && focused && !visible.some(row => row.path === focused)) focusRow(focusPath);
   }, [state.directories, state.expanded, state.preview, focused]);
   const open = (path: string) => { scrollPosition.current = scroll.current?.scrollTop ?? 0; owner.open(path); };
-  const activate = (path: string, entry: Entry) => { owner.select(path); setFocused(path); if (entry.kind === EntryKind.Directory) owner.toggle(path); else if (entry.kind === EntryKind.File) open(path); };
+  const activate = (path: string, entry: Entry) => { if (entry.kind !== EntryKind.Directory && entry.kind !== EntryKind.File) return; owner.select(path); setFocused(path); if (entry.kind === EntryKind.Directory) owner.toggle(path); else if (entry.kind === EntryKind.File) open(path); };
   const keyboard = (event: KeyboardEvent<HTMLElement>, path: string, parent: string, entry: Entry) => {
     if (event.nativeEvent.isComposing) return;
     const index = visible.findIndex(row => row.path === path);

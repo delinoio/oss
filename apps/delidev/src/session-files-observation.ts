@@ -20,4 +20,3 @@ export function observation(raw: Uint8Array): Observation {
     next: text(value.next_page_token), text: text(value.text), size: value.size, binary: value.binary, truncated: value.truncated,
   };
 }
-
