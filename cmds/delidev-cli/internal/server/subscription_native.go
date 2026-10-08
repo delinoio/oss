@@ -23,6 +23,7 @@ import (
 )
 
 type serverSubscriptionNative interface {
+	ConsumeServerResetCredit(context.Context, domain.ServerCreditOperation) (domain.SubscriptionResetOutcome, error)
 	ReadManagedQuota(context.Context, domain.ID) (domain.SubscriptionQuotaObservation, error)
 	Version() string
 	StartManagedLogin(context.Context, bool) (codex.ManagedLoginProgress, error)

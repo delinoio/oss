@@ -66,9 +66,10 @@ func TestCLISubscriptionExplicitWorkerAndOriginalOperation(t *testing.T) {
 
 type subscriptionCLISystem struct {
 	delidevv1connect.SystemServiceClient
-	quota       bool
-	serverQuota bool
-	supported   bool
+	quota         bool
+	serverQuota   bool
+	serverCredits bool
+	supported     bool
 }
 
 func (f *subscriptionCLISystem) GetStatus(context.Context, *connect.Request[pb.GetStatusRequest]) (*connect.Response[pb.GetStatusResponse], error) {
@@ -78,6 +79,9 @@ func (f *subscriptionCLISystem) GetStatus(context.Context, *connect.Request[pb.G
 	}
 	if f.quota {
 		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_QUOTA_V1)
+	}
+	if f.serverCredits {
+		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1)
 	}
 	if f.serverQuota {
 		result.Capabilities = append(result.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1)
@@ -120,5 +124,27 @@ func TestCLIServerQuotaNegotiatesOmittedMachine(t *testing.T) {
 				t.Fatal("server quota lost original selector", err)
 			}
 		})
+	}
+}
+
+func TestCLIServerCreditRequiresCapabilityAndExplicitConfirmation(t *testing.T) {
+	for _, supported := range []bool{false, true} {
+		for _, confirmed := range []bool{false, true} {
+			f := &subscriptionCLIClient{}
+			c := client{subscriptions: f, system: &subscriptionCLISystem{serverCredits: supported}}
+			requestID := domain.NewID()
+			args := []string{"consume-reset-credit", "--id", string(domain.NewID()), "--revision", "7", "--connection-id", string(domain.NewID()), "--generation-id", string(domain.NewID()), "--credits-observation-id", string(domain.NewID()), "--next-credit"}
+			if confirmed {
+				args = append(args, "--confirm")
+			}
+			_, err := subscriptionObservationCommand(context.Background(), c, options{requestID: requestID}, args)
+			if supported && confirmed {
+				if err != nil || f.observation == nil || f.observation.MachineId != "" || !f.observation.NextCredit || f.observation.CreditId != "" || f.observation.Mutation.RequestId != string(requestID) {
+					t.Fatal("confirmed server selector lost", err)
+				}
+			} else if err == nil || f.observation != nil {
+				t.Fatal("unconfirmed/unnegotiated consumption sent")
+			}
+		}
 	}
 }

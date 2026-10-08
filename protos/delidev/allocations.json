@@ -9493,6 +9493,13 @@
       "member": "removed_count",
       "number": 4,
       "newDeclaration": true
+    },
+    {
+      "issue": 1809,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1",
+      "number": 49
     }
   ],
   "rpcReservations": [

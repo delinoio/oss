@@ -57,7 +57,7 @@ func quotaObservationMachine(tx *store.Tx, a domain.Account, machine, epoch doma
 	return nil
 }
 func acceptSubscriptionObservation(tx *store.Tx, r store.Record, a domain.Account, op domain.SubscriptionObservationOperation, epoch domain.ID) error {
-	if !quotaAccountReady(a) || a.Subscription.ServerQuotaActive() || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
+	if !quotaAccountReady(a) || a.Subscription.ServerObservationActive() || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
 		return subscriptionDenied()
 	}
 	if op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || op.Validate() != nil {
@@ -109,7 +109,7 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		op.RequestedAt = time.Now().UTC()
 		// An omitted server selector cannot create a second owner while an
 		// execution holds the credential. Observe that exact original Worker.
-		if action == domain.SubscriptionQuota && op.MachineID == "" && a.Subscription != nil && a.Subscription.Lease != nil && a.Subscription.Lease.Action == domain.SubscriptionExecute {
+		if op.MachineID == "" && a.Subscription != nil && a.Subscription.Lease != nil && a.Subscription.Lease.Action == domain.SubscriptionExecute {
 			op.MachineID = a.Subscription.Lease.MachineID
 		}
 		if action == domain.SubscriptionResetCredit {
@@ -117,7 +117,7 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 				return nil, domain.InvalidSubscriptionObservation()
 			}
 			credits := a.Subscription.ResetCredits
-			if credits.ObservationID != op.CreditsObservationID || time.Since(credits.ObservedAt) > 5*time.Minute || credits.AvailableCount <= 0 {
+			if credits.ObservationID != op.CreditsObservationID || credits.ObservedAt.After(op.RequestedAt) || op.RequestedAt.Sub(credits.ObservedAt) > 5*time.Minute || credits.AvailableCount <= 0 {
 				return nil, domain.Fail(domain.Conflict, "The reset-credit inventory changed or is stale.", "Refresh native quota and explicitly confirm the current inventory.")
 			}
 			if op.NextCredit {
@@ -141,7 +141,11 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		} else if input.Confirmed {
 			return nil, domain.InvalidSubscriptionObservation()
 		}
-		if op.MachineID == "" && action == domain.SubscriptionQuota {
+		if op.MachineID == "" && action == domain.SubscriptionResetCredit {
+			if err := acceptServerCredit(tx, r, a, newServerCredit(a, op, s.subscriptionServerEpoch())); err != nil {
+				return nil, err
+			}
+		} else if op.MachineID == "" && action == domain.SubscriptionQuota {
 			if a.Connection == nil || a.Subscription == nil || op.ConnectionID.Validate() != nil || op.Generation.Validate() != nil || op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation {
 				return nil, domain.Fail(domain.Conflict, "The confirmed account generation changed.", "Read the current account and confirm the original operation again before sending.")
 			}
@@ -185,7 +189,7 @@ func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool, epoc
 		if err != nil {
 			return result, err
 		}
-		if !quotaAccountReady(a) || a.Subscription.ServerQuotaActive() || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
+		if !quotaAccountReady(a) || a.Subscription.ServerObservationActive() || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
 			continue
 		}
 		state := a.Subscription
@@ -333,7 +337,13 @@ func (s *Service) ReconcileSubscriptionCredit(ctx context.Context, req *connect.
 		if err != nil {
 			return nil, err
 		}
-		if !quotaAccountReady(a) || a.Subscription.ServerQuotaActive() || a.Subscription.Pending != nil || a.Connection.ID != input.Connection || a.Subscription.Generation != input.Generation {
+		if a.Subscription != nil && a.Subscription.ServerCredit != nil && a.Subscription.ServerCredit.ID == input.Operation {
+			if err := reconcileServerCredit(tx, r, a, input.Connection, input.Generation, actor, s.subscriptionServerEpoch()); err != nil {
+				return nil, err
+			}
+			return accountReceipt{ID: r.ID}, nil
+		}
+		if !quotaAccountReady(a) || a.Subscription.ServerObservationActive() || a.Subscription.Pending != nil || a.Connection.ID != input.Connection || a.Subscription.Generation != input.Generation {
 			return nil, subscriptionDenied()
 		}
 		op := a.Subscription.Observation

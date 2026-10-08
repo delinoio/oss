@@ -8,17 +8,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ResourceSchema, EntityKind, SubscriptionService, SystemService, SystemCapability, newRequestId } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
+import { i18n, copy } from "./localization";
 import { MutationIntents } from "./mutation";
  import { SubscriptionQuotaControls } from "./subscription-quota";
 
-function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "") {
+function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "", serverCredits = false, creditPhase = "", cleanup = false, workerUncertain = false) {
   const machine = newRequestId(), connection = newRequestId(), generation = newRequestId(), inventory = newRequestId();
-  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_quota: phase ? { id: newRequestId(), phase } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details } } };
+  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { observation: workerUncertain ? { id: newRequestId(), action: "reset-credit", phase: "uncertain" } : undefined, generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_credit: creditPhase ? { id: newRequestId(), phase: creditPhase, cleanup_confirmed: cleanup, outcome: "" } : undefined, server_quota: phase ? { id: newRequestId(), phase } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details } } };
   let account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 2, documentJson: encode(data) });
   const request = vi.fn(async (value) => ({ account, operationId: value.mutation?.requestId }));
-  const reconcile = vi.fn(async () => ({ account }));
+  const reconcile = vi.fn(async (_value: unknown) => ({ account }));
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1, ...(server && supported ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V1] : [SystemCapability.SUBSCRIPTION_QUOTA_V1])] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1, ...(serverCredits ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1] : []), ...(server && supported ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V1] : [SystemCapability.SUBSCRIPTION_QUOTA_V1])] }) });
     router.service(SubscriptionService, { requestSubscriptionObservation: request, reconcileSubscriptionCredit: reconcile });
   });
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
@@ -87,4 +88,48 @@ it.each([true, false])("negotiates server quota without a Runner Device (support
 it.each(["queued","sending","uncertain"])("retains the server quota %s fence in detail controls",async phase=>{
  const value=fixture(undefined,undefined,"",true,true,phase);render(<value.Harness />);await screen.findByText(/Last successful observation/);
  expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(true);expect(value.request).not.toHaveBeenCalled();
+});
+
+it.each([undefined, null])("confirms server reset credits with the original omitted-machine selector", async details => {
+ const value=fixture(details,undefined,"",true,true,"",true);render(<value.Harness />);
+ const next=details===null;
+ const review=await screen.findByRole("button",{name:next?"Review native next-credit selection":"Review reset credit credit_1"});
+ await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));fireEvent.click(review);
+ fireEvent.click(screen.getByRole("button",{name:"Confirm credit consumption"}));
+ await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));
+ expect(value.request.mock.calls[0][0]).toMatchObject({machineId:"",creditId:next?"":"credit_1",nextCredit:next,confirmed:true,connectionId:value.connection,generationId:value.generation,creditsObservationId:value.inventory});
+});
+it.each(["queued","sending","uncertain"])("server credit %s blocks competing refresh and consumption",async phase=>{
+ const value=fixture(undefined,undefined,"",true,true,"",true,phase);render(<value.Harness />);
+ await screen.findByText(/Last successful observation/);
+ expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole("button",{name:"Review reset credit credit_1"}) as HTMLButtonElement).disabled).toBe(true);
+ expect(value.request).not.toHaveBeenCalled();
+});
+it.each([false,true])("server credit reconciliation requires independently confirmed cleanup (%s)",async cleanup=>{
+ const value=fixture(undefined,undefined,"",true,true,"",true,"uncertain",cleanup);render(<value.Harness />);
+ const reconcile=await screen.findByRole("button",{name:"Reconcile original credit operation"});
+ await waitFor(()=>expect((reconcile as HTMLButtonElement).disabled).toBe(!cleanup));fireEvent.click(reconcile);
+ if(cleanup) {await waitFor(()=>expect(value.reconcile).toHaveBeenCalledTimes(1));expect(value.reconcile.mock.calls[0][0]).toMatchObject({connectionId:value.connection,generationId:value.generation});} else {expect(value.reconcile).not.toHaveBeenCalled()}
+});
+
+it("preserves the server confirmation selectors in Korean",async()=>{
+ await i18n.changeLanguage("ko");
+ try {
+  const value=fixture(undefined,undefined,"",true,true,"",true);render(<value.Harness />);
+  const review=await screen.findByRole("button",{name:/credit_1/});
+  await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));fireEvent.click(review);
+  fireEvent.click(screen.getByRole("button",{name:copy("subscription-quota.confirmCreditConsumption_251822")}));
+  await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));
+  expect(value.request.mock.calls[0][0]).toMatchObject({machineId:"",creditId:"credit_1",confirmed:true,connectionId:value.connection,generationId:value.generation,creditsObservationId:value.inventory});
+ } finally {await i18n.changeLanguage("en")}
+});
+
+it("retains original Worker reconciliation after a terminal server-credit history",async()=>{
+ const value=fixture(undefined,undefined,"",false,true,"",true,"succeeded",true,true);render(<value.Harness />);
+ const button=await screen.findByRole("button",{name:"Reconcile original credit operation"});
+ await waitFor(()=>expect((button as HTMLButtonElement).disabled).toBe(false));fireEvent.click(button);
+ await waitFor(()=>expect(value.reconcile).toHaveBeenCalledTimes(1));
+ const state=document(value.account).subscription as Record<string,unknown>;
+ expect(value.reconcile.mock.calls[0][0]).toMatchObject({operationId:(state.observation as Record<string,unknown>).id});
 });

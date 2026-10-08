@@ -16,7 +16,7 @@ func serverQuotaReady(a domain.Account) bool {
 		return false
 	}
 	s := a.Subscription
-	return s.OwnerMachineID == "" && s.Lease == nil && s.Pending == nil && !s.ServerQuotaActive() && (s.Observation == nil || !s.Observation.Active()) && s.ServerQuotaGeneration == s.Generation && (s.ServerOperation == nil || !s.ServerOperation.Active() && !s.ServerOperation.NativeStarted)
+	return s.OwnerMachineID == "" && s.Lease == nil && s.Pending == nil && !s.ServerObservationActive() && (s.Observation == nil || !s.Observation.Active()) && s.ServerQuotaGeneration == s.Generation && (s.ServerOperation == nil || !s.ServerOperation.Active() && !s.ServerOperation.NativeStarted)
 }
 func acceptServerQuota(tx *store.Tx, r store.Record, a domain.Account, op domain.ServerQuotaOperation) error {
 	if !serverQuotaReady(a) || op.Validate() != nil || op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || subscriptionActorValid(tx, op.Actor) != nil {
@@ -33,6 +33,9 @@ func newServerQuota(a domain.Account, id, epoch domain.ID, actor domain.Principa
 // Old claims remain evidence. A restart can settle independently checkpointed
 // cleanup, but cannot launch an earlier queued or sending native operation.
 func (s *Service) initializeServerQuotas(ctx context.Context) error {
+	if err := s.initializeServerCredits(ctx); err != nil {
+		return err
+	}
 	if err := s.initializeServerQuotaGenerations(ctx); err != nil {
 		return err
 	}
@@ -96,6 +99,9 @@ func (s *Service) runServerQuotas(ctx context.Context) {
 				if err != nil {
 					return err
 				}
+				if a.Subscription != nil && a.Subscription.ServerCredit != nil && a.Subscription.ServerCredit.Phase == domain.SubscriptionObservationQueued && a.Subscription.ServerCredit.AttemptEpoch == s.subscriptionServerEpoch() {
+					ids = append(ids, r.ID)
+				}
 				if a.Subscription != nil && a.Subscription.ServerQuota != nil && a.Subscription.ServerQuota.Phase == domain.SubscriptionObservationQueued && a.Subscription.ServerQuota.Epoch == s.subscriptionServerEpoch() {
 					ids = append(ids, r.ID)
 				}
@@ -111,7 +117,7 @@ func (s *Service) runServerQuotas(ctx context.Context) {
 			}
 			running[id] = true
 			workers.Add(1)
-			go func() { defer workers.Done(); s.runServerQuota(child, id); done <- id }()
+			go func() { defer workers.Done(); s.runServerCredit(child, id); s.runServerQuota(child, id); done <- id }()
 		}
 		select {
 		case <-child.Done():
@@ -397,5 +403,5 @@ func legacyServerQuotaGeneration(a domain.Account, epoch domain.ID) bool {
 	}
 	st := a.Subscription
 	o := st.ServerOperation
-	return st.ServerQuotaGeneration == "" && st.OwnerMachineID == "" && st.Lease == nil && st.Pending == nil && !st.ServerQuotaActive() && (st.Observation == nil || !st.Observation.Active()) && o != nil && o.Epoch != epoch && o.State == domain.SubscriptionSucceeded && !o.NativeStarted && o.FinishID == st.Generation && (o.Action == domain.SubscriptionLogin || o.Action == domain.SubscriptionRefresh)
+	return st.ServerQuotaGeneration == "" && st.OwnerMachineID == "" && st.Lease == nil && st.Pending == nil && !st.ServerObservationActive() && (st.Observation == nil || !st.Observation.Active()) && o != nil && o.Epoch != epoch && o.State == domain.SubscriptionSucceeded && !o.NativeStarted && o.FinishID == st.Generation && (o.Action == domain.SubscriptionLogin || o.Action == domain.SubscriptionRefresh)
 }

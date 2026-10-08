@@ -102,3 +102,50 @@ func TestManagedNativeResetLostResponseReconcilesOnlyOriginalOfficialKey(t *test
 		t.Fatal("provider attempt acquired a replacement key", err)
 	}
 }
+
+func TestManagedNativeServerCreditUsesOriginalOfficialKey(t *testing.T) {
+	for _, next := range []bool{false, true} {
+		t.Run(map[bool]string{false: "exact", true: "next"}[next], func(t *testing.T) {
+			config := fixtureConfig(t, "managed-ready")
+			config.Mode, config.ManagedAuthentication = SubscriptionProtocol, true
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			native, err := Open(ctx, config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer native.Close()
+			progress, err := native.StartManagedLogin(ctx, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := native.WaitManagedLogin(ctx, progress.LoginID); err != nil {
+				t.Fatal(err)
+			}
+			op := domain.ServerCreditOperation{ID: domain.NewID(), Epoch: domain.NewID(), AttemptID: domain.NewID(), AttemptEpoch: domain.NewID(), FinishID: domain.NewID(), ConnectionID: domain.NewID(), Generation: domain.NewID(), Actor: domain.Principal{Type: domain.OwnerDevice}, RequestedAt: time.Now().UTC(), CreditsObservationID: domain.NewID(), Phase: domain.SubscriptionObservationSending, SendClaimed: true, EverSent: true, NextCredit: next}
+			if !next {
+				op.CreditID = "credit_1"
+			}
+			outcome, err := native.ConsumeServerResetCredit(ctx, op)
+			if err != nil || outcome != domain.SubscriptionReset {
+				t.Fatal("original server consumption failed", outcome, err)
+			}
+			key, err := os.ReadFile(filepath.Join(config.Home, "credit-key"))
+			if err != nil || string(key) != string(op.ID) {
+				t.Fatal("provider received another key", err)
+			}
+			selector, err := os.ReadFile(filepath.Join(config.Home, "credit-selector"))
+			want := "credit_1"
+			if next {
+				want = "omitted"
+			}
+			if err != nil || string(selector) != want {
+				t.Fatal("provider credit selector changed", err)
+			}
+			op.SendClaimed = false
+			if _, err := native.ConsumeServerResetCredit(ctx, op); err == nil {
+				t.Fatal("missing durable send claim accepted")
+			}
+		})
+	}
+}

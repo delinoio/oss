@@ -978,3 +978,7 @@ cleanup ownership. No new RPC or SQLite migration is added.
 ## Project prompt history allocation
 
 Issue #1828 owns System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT_PROMPT_HISTORY = 35` and complete closed ConfigurationService `ListProjectPromptHistory` / `ClearProjectPromptHistory` declarations in `protos/delidev/allocations.json`. The complete owning feature PR records declarations and activation together under the allocation workflow. Existing ownership remains unchanged. No Worker capability, native change or SQLite migration is added. Allocations alone grant no support.
+
+## Server-owned reset-credit allocation closure
+
+Issue #1809 records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with complete implementation in the owning feature PR. Reuse the owner/client observation and reconciliation RPCs. Preserve System 19/30/46, existing allocations and separate Worker ownership; add no Worker/entity allocation or database migration. Follow the [server-credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits--issue-1809).

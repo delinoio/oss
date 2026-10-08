@@ -179,7 +179,7 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 					return nil, domain.SidechatUnavailable()
 				}
 				_, account, err := subscriptionAccount(tx, input.SourceAssignment.AccountID, 0)
-				if err != nil || account.Subscription == nil || account.Subscription.Generation == "" || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.ServerQuotaActive() || account.Subscription.Observation != nil && account.Subscription.Observation.Active() {
+				if err != nil || account.Subscription == nil || account.Subscription.Generation == "" || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.ServerObservationActive() || account.Subscription.Observation != nil && account.Subscription.Observation.Active() {
 					return nil, subscriptionDenied()
 				}
 				input.SubscriptionGeneration = account.Subscription.Generation

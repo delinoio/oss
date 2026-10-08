@@ -87,15 +87,27 @@ func (c *Client) ConsumeManagedResetCredit(ctx context.Context, operation domain
 	if c.managedHome == "" || operation.Validate() != nil || operation.Action != domain.SubscriptionResetCredit || operation.Phase != domain.SubscriptionObservationSending {
 		return "", incompatible()
 	}
+	return c.consumeManagedResetCredit(ctx, operation.ID, operation.CreditID)
+}
+
+// ConsumeServerResetCredit requires the server's original durable send claim.
+// It cannot turn a quota record or a renderer selector into consumption authority.
+func (c *Client) ConsumeServerResetCredit(ctx context.Context, operation domain.ServerCreditOperation) (domain.SubscriptionResetOutcome, error) {
+	if c.managedHome == "" || operation.Validate() != nil || operation.Phase != domain.SubscriptionObservationSending || !operation.SendClaimed {
+		return "", incompatible()
+	}
+	return c.consumeManagedResetCredit(ctx, operation.ID, operation.CreditID)
+}
+func (c *Client) consumeManagedResetCredit(ctx context.Context, key domain.ID, credit string) (domain.SubscriptionResetOutcome, error) {
 	var result struct {
 		Outcome domain.SubscriptionResetOutcome `json:"outcome"`
 	}
 	input := struct {
 		Key    string  `json:"idempotencyKey"`
 		Credit *string `json:"creditId,omitempty"`
-	}{Key: string(operation.ID)}
-	if operation.CreditID != "" {
-		input.Credit = &operation.CreditID
+	}{Key: string(key)}
+	if credit != "" {
+		input.Credit = &credit
 	}
 	if err := c.managedCall(ctx, "account/rateLimitResetCredit/consume", input, &result); err != nil {
 		return "", err
