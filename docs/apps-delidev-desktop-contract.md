@@ -871,7 +871,7 @@ is added.
 Use stored account names/aliases as the primary identity and the explicit
 subscription service or saved API provider name as secondary context. Resolve
 unique candidate and selected-account IDs through existing authenticated
-`ResourceService.GetResource` reads, with at most four concurrent metadata reads shared across the category owner, account/provider lookups and response generations. Empty source groups resolve exact API provider references through the same bounded reader. Verify
+`ResourceService.GetResource` reads, with at most four concurrent metadata reads shared across the category owner, account/provider lookups and response generations, including nested task close/reopen while the category remains mounted. Hold each permit until the deepest original upstream unary RPC settles, even when an intermediate Settings guard cancels its visible wait first. Preserve immediate visible cancellation and stale-result fences; completion observation grants no new read or mutation authority. Empty source groups resolve exact API provider references through the same bounded reader. Verify
 the exact requested ID, kind, positive revision and supported schema. Reject
 retired metadata. Provider display names require the same checks. Keep only safe
 name/service/provider-reference projections in private, task-scoped query

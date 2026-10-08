@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, clientFailure, isEntityId, newRequestId, subscriptionService, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
-import { useSettingsOpening } from "./settings-lifetime";
+import { observeSettingsUnaryCompletion, useSettingsOpening } from "./settings-lifetime";
 import { useSettingsTaskDismiss } from "./settings-task-context";
 import { document, text } from "./documents";
 
@@ -13,13 +13,20 @@ export interface RoutingAccountMetadata { state: RoutingMetadataState; name?: st
 class RoutingReadPool {
   private running = 0;
   private waiting: (() => void)[] = [];
-  async read<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+  async read<T>(signal: AbortSignal, operation: (retain: (completion: Promise<void>) => void) => Promise<T>): Promise<T> {
     await new Promise<void>(resolve => {
       const start = () => { this.running++; resolve(); };
       if (this.running < 4) start(); else this.waiting.push(start);
     });
-    try { if (signal.aborted) throw new Error("Disposed routing metadata read"); return await operation(); }
-    finally { this.running--; this.waiting.shift()?.(); }
+    const completions: Promise<void>[] = [];
+    try { if (signal.aborted) throw new Error("Disposed routing metadata read"); return await operation(completion => completions.push(completion)); }
+    finally {
+      const release = () => { this.running--; this.waiting.shift()?.(); };
+      // A nested opening rejects visible waits immediately on close. Its actual
+      // upstream RPC may ignore abort, so only deepest completion frees a slot.
+      if (completions.length) void Promise.all(completions).then(release);
+      else release();
+    }
   }
 }
 const categoryPools = new WeakMap<object, RoutingReadPool>();
@@ -67,7 +74,11 @@ export function useRoutingAccountMetadata(ids: readonly string[], active: boolea
       // Cancellation fences publication without opening another four slots.
       try {
         return await client.fetchQuery({ queryKey, retry: false, gcTime: 0, staleTime: 0, queryFn: async context => {
-          const result = await pool.read(controller.signal, async () => options.queryFn({ ...context, queryKey: options.queryKey }));
+          const result = await pool.read(controller.signal, async retain => {
+            const observed = observeSettingsUnaryCompletion(transport, retain);
+            const request = createQueryOptions(ResourceQuery.getResource, { kind, id }, { transport: observed });
+            return request.queryFn({ ...context, queryKey: options.queryKey });
+          });
           if (!result.resource) throw new Error("Missing routing display metadata");
           return projectMetadata(result.resource, kind, id);
         } });

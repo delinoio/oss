@@ -10,6 +10,23 @@ export const useSettingsOpening = () => useContext(Context);
 
 function canceled() { return new ConnectError("This Settings opening has closed.", Code.Canceled); }
 
+// Nested guards can reject before an abort-ignoring original RPC settles. Keep
+// that deepest completion separate from the visible cancellation outcome.
+const unaryCompletions = new WeakMap<Promise<unknown>, Promise<void>>();
+function unaryCompletion(pending: Promise<unknown>) {
+  return unaryCompletions.get(pending) ?? pending.then(() => undefined, () => undefined);
+}
+
+// Read-pool owners may retain a permit until original work settles. This wrapper
+// still invokes the same guarded transport and preserves its cancellation gates.
+export function observeSettingsUnaryCompletion(transport: Transport, observe: (completion: Promise<void>) => void): Transport {
+  return { ...transport, unary: (method, signal, timeout, headers, input, context) => {
+    const pending = transport.unary(method, signal, timeout, headers, input, context);
+    observe(unaryCompletion(pending));
+    return pending;
+  } };
+}
+
 // Reject client waits even when an accepted server/native operation ignores
 // abort. Its authoritative effects are observed by fresh reads, never replayed.
 function guarded<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -35,10 +52,15 @@ export class SettingsOpening {
   constructor(upstream: () => Transport, categoryOwner?: object) {
     this.categoryOwner = categoryOwner ?? this;
     this.transport = addStaticKeyToTransport({
-      unary: async (method, signal, timeout, headers, input, context) => {
+      unary: (method, signal, timeout, headers, input, context) => {
+        if (this.disposed || signal?.aborted) return Promise.reject(canceled());
         const linked = this.link(signal);
-        try { return await guarded(upstream().unary(method, linked.signal, timeout, headers, input, context), linked.signal); }
-        finally { linked.release(); }
+        try {
+          const pending = upstream().unary(method, linked.signal, timeout, headers, input, context);
+          const visible = guarded(pending, linked.signal).finally(linked.release);
+          unaryCompletions.set(visible, unaryCompletion(pending));
+          return visible;
+        } catch (error) { linked.release(); return Promise.reject(error); }
       },
       stream: async (method, signal, timeout, headers, input, context) => {
         const linked = this.link(signal);

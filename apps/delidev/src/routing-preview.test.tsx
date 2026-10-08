@@ -2,12 +2,14 @@ import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
-import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, ResourceSchema, ResourceService, configurationSchemaVersion, newRequestId, type GetResourceRequest, type PreviewRoutingRequest, type Resource } from "@delinoio/delidev-api-client";
+import { SettingsLifetime } from "./settings-lifetime";
+import { useRoutingAccountMetadata } from "./routing-account-metadata";
 import { RoutingPreview } from "./routing-preview";
 import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskDialog } from "./settings-task";
 import { encode, type Document } from "./documents";
@@ -286,4 +288,47 @@ it("keeps empty-source failure explicit without guessing a provider or hiding it
   expect(screen.getByText(/Insufficient comparable quota evidence/)).toBeTruthy();
   expect(document.body.textContent).not.toContain("private-metadata-value");
   expect(JSON.stringify(value.logs.mock.calls)).not.toContain(id);
+});
+
+it("retains four original RPC permits across nested dialog close and reopen", async () => {
+  const rows = Array.from({ length: 4 }, (_, index) => resource(EntityKind.PROVIDER, { name: `Original source ${index}` }));
+  const gates: (() => void)[] = [];
+  let running = 0, peak = 0, calls = 0;
+  const base = createRouterTransport(router => router.service(ResourceService, {
+    getResource: request => ({ resource: rows.find(row => row.id === request.id) }),
+  }));
+  const transport: Transport = { ...base, unary: async (method, _signal, timeout, headers, input, context) => {
+    const response = await base.unary(method, undefined, timeout, headers, input, context);
+    const generation = ++calls <= 4 ? "Original" : "Reopened";
+    peak = Math.max(peak, ++running);
+    await new Promise<void>(resolve => gates.push(() => { running--; resolve(); }));
+    const message = response.message as { resource?: Resource };
+    if (message.resource) message.resource.documentJson = encode({ name: `${generation} source ${rows.findIndex(row => row.id === message.resource?.id)}` });
+    return response;
+  } };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Names() {
+    const metadata = useRoutingAccountMetadata([], true, "revision", rows.map(row => `api:${row.id}`));
+    return <>{[...metadata.values()].map((value, index) => <p key={index}>{value.name ?? "Loading source"}</p>)}</>;
+  }
+  function Category() {
+    const [open, setOpen] = useState(true);
+    return <><button onClick={() => setOpen(true)}>Reopen preview</button>{open && <SettingsTaskDialog size={SettingsDialogSize.Form} title="Preview routing" close={() => setOpen(false)}><Names /></SettingsTaskDialog>}</>;
+  }
+  render(<QueryClientProvider client={client}><TransportProvider transport={transport}><SettingsLifetime>{() => <Category />}</SettingsLifetime></TransportProvider></QueryClientProvider>);
+  await waitFor(() => expect(calls).toBe(4));
+  fireEvent.click(screen.getByRole("button", { name: "Close Preview routing" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Reopen preview" }));
+  await screen.findByRole("dialog");
+  await act(async () => { await Promise.resolve(); });
+  expect(calls).toBe(4);
+  expect(running).toBe(4);
+  await act(async () => gates.splice(0).forEach(release => release()));
+  await waitFor(() => expect(calls).toBe(8));
+  expect(peak).toBe(4);
+  expect(screen.queryByText("Original source 0")).toBeNull();
+  await act(async () => gates.splice(0).forEach(release => release()));
+  await screen.findByText("Reopened source 0");
+  expect(screen.queryByText("Original source 0")).toBeNull();
 });
