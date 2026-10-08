@@ -1,6 +1,7 @@
 syntax = "proto3";
 package delidev.v1;
 
+import "delidev/v1/attachments.proto";
 import "delidev/v1/common.proto";
 import "delidev/v1/skills.proto";
 
@@ -106,6 +107,7 @@ message SessionChange {
 }
 
 message CreateSessionRequest {
+  repeated ImageAttachment attachments = 5;
   string request_id = 1;
   // Closed domain.CreateSession schema, including exactly one Agent Worker.
   bytes document_json = 2;
@@ -132,6 +134,7 @@ message ListSessionsResponse {
 }
 
 message EnqueueInputRequest {
+  repeated ImageAttachment attachments = 5;
   string request_id = 1;
   string session_id = 2;
   // Closed domain.SessionInput schema. Mode is immutable after acceptance.

@@ -38,3 +38,4 @@ export * as InstallationQuery from "./gen/delidev/v1/installation-InstallationSe
 
 export * from "./gen/delidev/v1/skills_pb.js";
 export * as SkillQuery from "./gen/delidev/v1/skills-SkillService_connectquery.js";
+export * as AttachmentQuery from "./gen/delidev/v1/attachments-AttachmentService_connectquery.js";

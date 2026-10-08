@@ -5,6 +5,7 @@ package delidev.v1;
 // to their service files; retain this forwarding file for existing schema users.
 import public "delidev/v1/account.proto";
 import public "delidev/v1/activity.proto";
+import public "delidev/v1/attachments.proto";
 import public "delidev/v1/browser.proto";
 import public "delidev/v1/common.proto";
 import public "delidev/v1/configuration.proto";

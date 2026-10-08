@@ -136,6 +136,7 @@ type RepositoryStart struct {
 // and templates are resolved into an immutable snapshot only at first dispatch.
 type CreateSession struct {
 	Skills              []SkillBinding       `json:"skills,omitempty"`
+	Attachments         []ImageAttachment    `json:"attachments,omitempty"`
 	EstimatedCostBudget *EstimatedCostBudget `json:"estimated_cost_budget,omitempty"`
 	Name                string               `json:"name"`
 	NameMode            SessionNameMode      `json:"name_mode,omitempty"`
@@ -207,13 +208,14 @@ func (c CreateSession) Validate() error {
 	if err := UniqueIDs(ids); err != nil {
 		return err
 	}
-	return (SessionInput{Prompt: c.Prompt, Mode: c.Mode, Skills: c.Skills}).Validate()
+	return (SessionInput{Prompt: c.Prompt, Mode: c.Mode, Skills: c.Skills, Attachments: c.Attachments}).Validate()
 }
 
 type SessionInput struct {
-	Skills []SkillBinding `json:"skills,omitempty"`
-	Prompt string         `json:"prompt"`
-	Mode   SessionMode    `json:"mode"`
+	Attachments []ImageAttachment `json:"attachments,omitempty"`
+	Skills      []SkillBinding    `json:"skills,omitempty"`
+	Prompt      string            `json:"prompt"`
+	Mode        SessionMode       `json:"mode"`
 }
 
 func (i *SessionInput) ApplyDefaults() {
@@ -229,7 +231,10 @@ func (i SessionInput) Validate() error {
 	if !i.Mode.Valid() {
 		return Fail(InvalidArgument, "Invalid input mode.", "Select execute or plan; native capability checks apply at dispatch.")
 	}
-	return Text(i.Prompt, "session input", MaxPromptBytes, true)
+	if err := ValidateImageAttachments(i.Attachments); err != nil {
+		return err
+	}
+	return Text(i.Prompt, "session input", MaxPromptBytes, len(i.Attachments) == 0)
 }
 
 // LocalOrigin is derived from secondary paired Worker authentication at creation.
@@ -331,16 +336,17 @@ type SessionStartPreparation struct {
 }
 
 type QueuedInput struct {
-	RetiredSkills   []SkillBinding `json:"retired_skills,omitempty"`
-	SkillNames      map[ID]string  `json:"skill_names,omitempty"`
-	Skills          []SkillBinding `json:"skills,omitempty"`
-	Sequence        uint64         `json:"sequence"`
-	ContentRevision uint64         `json:"content_revision"`
-	Prompt          string         `json:"prompt"`
-	Mode            SessionMode    `json:"mode"`
-	Delivery        InputDelivery  `json:"delivery"`
-	ExecutionID     ID             `json:"execution_id,omitempty"`
-	NativeRequestID ID             `json:"native_request_id,omitempty"`
+	RetiredSkills   []SkillBinding    `json:"retired_skills,omitempty"`
+	SkillNames      map[ID]string     `json:"skill_names,omitempty"`
+	Skills          []SkillBinding    `json:"skills,omitempty"`
+	Sequence        uint64            `json:"sequence"`
+	ContentRevision uint64            `json:"content_revision"`
+	Prompt          string            `json:"prompt"`
+	Mode            SessionMode       `json:"mode"`
+	Delivery        InputDelivery     `json:"delivery"`
+	ExecutionID     ID                `json:"execution_id,omitempty"`
+	NativeRequestID ID                `json:"native_request_id,omitempty"`
+	Attachments     []ImageAttachment `json:"attachments,omitempty"`
 }
 
 func SessionExecutionUnavailable() *Error {

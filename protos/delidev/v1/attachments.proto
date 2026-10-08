@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delidev.v1;
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Content is streamed in bounded chunks; resource documents contain metadata only.
+service AttachmentService {
+  rpc BeginUpload(BeginUploadRequest) returns (BeginUploadResponse);
+  rpc WriteChunk(WriteChunkRequest) returns (WriteChunkResponse);
+  rpc FinishUpload(FinishUploadRequest) returns (FinishUploadResponse);
+  rpc GetUpload(GetUploadRequest) returns (GetUploadResponse);
+  rpc ReadAttachment(ReadAttachmentRequest) returns (ReadAttachmentResponse);
+  rpc DeleteDraftAttachment(DeleteDraftAttachmentRequest) returns (DeleteDraftAttachmentResponse);
+  rpc WatchAttachmentTransfers(WatchAttachmentTransfersRequest) returns (stream WatchAttachmentTransfersResponse);
+  rpc ReportAttachmentTransfer(ReportAttachmentTransferRequest) returns (ReportAttachmentTransferResponse);
+}
+enum ImageMediaType {
+  IMAGE_MEDIA_TYPE_UNSPECIFIED = 0;
+  IMAGE_MEDIA_TYPE_PNG = 1;
+  IMAGE_MEDIA_TYPE_JPEG = 2;
+  IMAGE_MEDIA_TYPE_WEBP = 3;
+}
+enum AttachmentState {
+  ATTACHMENT_STATE_UNSPECIFIED = 0;
+  ATTACHMENT_STATE_UPLOADING = 1;
+  ATTACHMENT_STATE_READY = 2;
+  ATTACHMENT_STATE_CLAIMED = 3;
+  ATTACHMENT_STATE_DELETING = 4;
+  ATTACHMENT_STATE_DELETED = 5;
+}
+message ImageAttachment {
+  string id = 1;
+  string machine_id = 2;
+  ImageMediaType media_type = 3;
+  uint64 byte_length = 4;
+  string sha256 = 5;
+}
+message AttachmentUpload {
+  ImageAttachment attachment = 1;
+  AttachmentState state = 2;
+  uint64 uploaded_bytes = 3;
+  string draft_id = 4;
+  string operation_id = 5;
+}
+message BeginUploadRequest {
+  string request_id = 1;
+  string draft_id = 2;
+  string operation_id = 3;
+  string machine_id = 4;
+  uint64 machine_revision = 5;
+  string session_id = 6;
+  ImageMediaType media_type = 7;
+  uint64 byte_length = 8;
+  string sha256 = 9;
+}
+message BeginUploadResponse {
+  AttachmentUpload upload = 1;
+  bool replayed = 2;
+}
+message WriteChunkRequest {
+  string attachment_id = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+  string sha256 = 4;
+}
+message WriteChunkResponse {
+  AttachmentUpload upload = 1;
+}
+message FinishUploadRequest {
+  string attachment_id = 1;
+}
+message FinishUploadResponse {
+  AttachmentUpload upload = 1;
+}
+message GetUploadRequest {
+  string attachment_id = 1;
+}
+message GetUploadResponse {
+  AttachmentUpload upload = 1;
+}
+message ReadAttachmentRequest {
+  string session_id = 1;
+  string attachment_id = 2;
+  uint64 offset = 3;
+  uint32 limit = 4;
+}
+message ReadAttachmentResponse {
+  bytes data = 1;
+  string sha256 = 2;
+  bool complete = 3;
+}
+message DeleteDraftAttachmentRequest {
+  string request_id = 1;
+  string attachment_id = 2;
+}
+message DeleteDraftAttachmentResponse {
+  AttachmentUpload upload = 1;
+  bool replayed = 2;
+}
+// The original owning Worker alone receives and reports transfer requests.
+enum AttachmentTransferOperation {
+  ATTACHMENT_TRANSFER_OPERATION_UNSPECIFIED = 0;
+  ATTACHMENT_TRANSFER_OPERATION_WRITE = 1;
+  ATTACHMENT_TRANSFER_OPERATION_FINISH = 2;
+  ATTACHMENT_TRANSFER_OPERATION_READ = 3;
+  ATTACHMENT_TRANSFER_OPERATION_DELETE = 4;
+}
+message AttachmentTransfer {
+  string id = 1;
+  ImageAttachment attachment = 2;
+  AttachmentTransferOperation operation = 3;
+  uint64 offset = 4;
+  bytes data = 5;
+  string sha256 = 6;
+  uint32 limit = 7;
+}
+message WatchAttachmentTransfersRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+}
+message WatchAttachmentTransfersResponse {
+  AttachmentTransfer transfer = 1;
+  bool heartbeat = 2;
+}
+message ReportAttachmentTransferRequest {
+  string machine_id = 1;
+  string instance_id = 2;
+  string transfer_id = 3;
+  bytes data = 4;
+  string sha256 = 5;
+  string problem_code = 6;
+}
+message ReportAttachmentTransferResponse {}

@@ -26,6 +26,7 @@ type SystemCapability int32
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                    SystemCapability = 0
 	SystemCapability_SYSTEM_CAPABILITY_NATIVE_SKILLS_V1               SystemCapability = 44
+	SystemCapability_SYSTEM_CAPABILITY_IMAGE_INPUTS_V1                SystemCapability = 45
 	SystemCapability_SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1        SystemCapability = 38
 	SystemCapability_SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1 SystemCapability = 41
 	SystemCapability_SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1           SystemCapability = 43
@@ -78,6 +79,7 @@ var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
 		44: "SYSTEM_CAPABILITY_NATIVE_SKILLS_V1",
+		45: "SYSTEM_CAPABILITY_IMAGE_INPUTS_V1",
 		38: "SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1",
 		41: "SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1",
 		43: "SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1",
@@ -122,6 +124,7 @@ var (
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                      0,
 		"SYSTEM_CAPABILITY_NATIVE_SKILLS_V1":                 44,
+		"SYSTEM_CAPABILITY_IMAGE_INPUTS_V1":                  45,
 		"SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1":          38,
 		"SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1":   41,
 		"SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1":             43,
@@ -2926,10 +2929,11 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xf4\x0f\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x9b\x10\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12&\n" +
-	"\"SYSTEM_CAPABILITY_NATIVE_SKILLS_V1\x10,\x12-\n" +
+	"\"SYSTEM_CAPABILITY_NATIVE_SKILLS_V1\x10,\x12%\n" +
+	"!SYSTEM_CAPABILITY_IMAGE_INPUTS_V1\x10-\x12-\n" +
 	")SYSTEM_CAPABILITY_CLAUDE_SUBSCRIPTIONS_V1\x10&\x124\n" +
 	"0SYSTEM_CAPABILITY_FAILED_SUBSCRIPTION_CLEANUP_V1\x10)\x12*\n" +
 	"&SYSTEM_CAPABILITY_EXECUTION_STARTUP_V1\x10+\x120\n" +
