@@ -277,14 +277,17 @@ func (h *HostDriver) observe(ctx context.Context, c Config, r Runner, s Snapshot
 	if execution.Supervisor.PID > 0 && !sameHostProcess(execution.Supervisor, status.Supervisor) {
 		return obs, status, hostOwnership()
 	}
+	// Terminal status cannot erase a worker already recorded in durable state.
+	// Check before the status PID gate so missing identity retains ownership,
+	// reservations and the workspace without signaling uncertain processes.
+	if execution.Worker.PID > 0 && !sameHostProcess(execution.Worker, status.Worker) {
+		return obs, status, hostOwnership()
+	}
 	alive, err := h.native().Alive(status.Supervisor)
 	if err != nil {
 		return obs, status, hostPending()
 	}
 	if status.Worker.PID > 0 {
-		if execution.Worker.PID > 0 && !sameHostProcess(execution.Worker, status.Worker) {
-			return obs, status, hostOwnership()
-		}
 		members, e := h.native().Group(status.Worker)
 		if e != nil {
 			return obs, status, hostPending()
