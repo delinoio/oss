@@ -590,8 +590,12 @@ progress in private journals. Ownership checks reject foreign, replaced and
 escaping paths. Markerless interrupted publication is preserved. Cleanup moves
 the verified directory without replacement, removes content through the opened
 root, and commits final removal intent before deleting its marker. Repeated
-cleanup reconciles confirmed absence. Public status/doctor remain JSON v1 and do
-not expose these private journals. Seven-day completed history and existing
+cleanup validates the private host parent and each direct ancestor before any
+committed-absence proof. It binds child verification, no-replace staging and final
+removal to that same opened parent, rejects symlinks and unsafe or foreign-owned
+parents without repairing them, and preserves ownership on failure. Confirmed
+absence in a verified parent remains idempotent. Public status/doctor remain JSON
+v1 and do not expose these private journals. Seven-day completed history and existing
 seven-day/256 MiB redacted diagnostic limits remain unchanged.
 
 Copied distribution directories may receive new device/inode identities only

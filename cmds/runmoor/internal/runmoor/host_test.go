@@ -998,3 +998,121 @@ func TestHostManagerRegistrationCompletionTimeoutAndScopedStop(t *testing.T) {
 		t.Fatal("force-stop not cleaned", r.Phase, r.Problem)
 	}
 }
+
+func TestHostRemovalRejectsUnsafeParentBeforeCommittedAbsence(t *testing.T) {
+	for _, scenario := range []string{"parent symlink", "ancestor symlink", "unsafe parent"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, store, _, _ := hostFixture(t)
+			d, root, err := createHostDirectory(context.Background(), store, c, newID(), HostDistribution)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := root.Remove(hostOwnerFile); err != nil {
+				t.Fatal(err)
+			}
+			root.Close()
+			d.RemovalCommitted = true
+			if err := store.Update(func(s *Snapshot) error { s.HostDirectories[d.ID] = &d; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			parentPath := hostParent(c, d.Kind)
+			stage := ".remove-" + d.ID
+			if err := os.Rename(filepath.Join(parentPath, d.ID), filepath.Join(parentPath, stage)); err != nil {
+				t.Fatal(err)
+			}
+			preservedStage := filepath.Join(parentPath, stage)
+			original, err := os.Lstat(preservedStage)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "parent symlink", "ancestor symlink":
+				boundary := parentPath
+				if scenario == "ancestor symlink" {
+					boundary = c.Storage.Data
+				}
+				preserved := boundary + "-preserved"
+				if err := os.Rename(boundary, preserved); err != nil {
+					t.Fatal(err)
+				}
+				replacement := boundary + "-empty"
+				if err := os.Mkdir(replacement, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "ancestor symlink" {
+					if err := os.Mkdir(filepath.Join(replacement, filepath.Base(parentPath)), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Symlink(replacement, boundary); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "parent symlink" {
+					preservedStage = filepath.Join(preserved, stage)
+				} else {
+					preservedStage = filepath.Join(preserved, filepath.Base(parentPath), stage)
+				}
+			case "unsafe parent":
+				if err := os.Chmod(parentPath, 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			builder := &ManagedImageBuilder{Store: store}
+			requireCode(t, builder.cleanupHost(context.Background(), c, RunnerArtifact{ID: d.ID}), ErrOwnership)
+			if got := store.View().HostDirectories[d.ID]; got == nil || *got != d {
+				t.Fatal("unsafe parent discarded or changed durable ownership")
+			}
+			current, err := os.Lstat(preservedStage)
+			if err != nil || !os.SameFile(original, current) {
+				t.Fatal("unsafe parent changed the original staged directory", err)
+			}
+			entries, err := os.ReadDir(preservedStage)
+			if err != nil || len(entries) != 0 {
+				t.Fatal("unsafe parent changed staged contents", err)
+			}
+		})
+	}
+}
+
+func TestHostRemovalUsesVerifiedParentAfterPathReplacement(t *testing.T) {
+	c, store, _, _ := hostFixture(t)
+	d, root, err := createHostDirectory(context.Background(), store, c, newID(), HostDistribution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root.Close()
+	parent, err := openHostRemovalParent(c, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parent.Close()
+	path := hostParent(c, d.Kind)
+	preserved := path + "-preserved"
+	if err := os.Rename(path, preserved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Cleanup's child verification must keep using the already verified parent,
+	// rather than reopening the now-empty canonical parent pathname.
+	child, err := openHostRemovalDirectory(parent, d, false)
+	if err != nil {
+		t.Fatal("verified parent lost its original child", err)
+	}
+	child.Close()
+	if err := hostRenameNoReplace(parent, d.ID, ".remove-"+d.ID); err != nil {
+		t.Fatal(err)
+	}
+	child, err = openHostRemovalDirectory(parent, d, true)
+	if err != nil {
+		t.Fatal("staged child was reopened through replacement parent", err)
+	}
+	child.Close()
+	if _, err := os.Lstat(filepath.Join(preserved, ".remove-"+d.ID)); err != nil {
+		t.Fatal("original stage not retained", err)
+	}
+	if entries, err := os.ReadDir(path); err != nil || len(entries) != 0 {
+		t.Fatal("replacement parent was changed", err)
+	}
+}
