@@ -28,6 +28,7 @@
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
 - clibox Unix nested-wrapper ownership must prove bounded ancestry within the same process group through matching native executables and supported Node launchers to the matching outer owner; unknown or unavailable evidence fails closed. Preserve Linux/macOS deep-chain cleanup regressions and follow `docs/crates-clibox-foundation.md`.
+- clibox Linux port enumeration retains unmatched selected socket rows with null owners and a static port-scoped identity-unverifiable error. Preserve complete-empty success, original birth/socket checks, unknown-owner no-signal behavior and independently verified targets.
 - `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`: non-publishable clibox command-family implementations.
 - Linux fspy final-link policy is syscall-argument-specific: retain nofollow metadata and native entry mutations with ancestor containment and entry identity, honor linkat source-follow flags and raw trailing lookup semantics, and preserve ordinary following access/reproduction restrictions. Keep portable fixtures distinct from native Linux trace/watch acceptance; no record schema change.
 - Preserve macOS fspy final-entry nofollow policy and link identity through the private metadata channel; resolve parents for containment, retain following-call behavior, and keep selected escaping links excluded from reproduction bundles.
