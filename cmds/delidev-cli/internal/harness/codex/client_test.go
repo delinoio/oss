@@ -122,6 +122,25 @@ func init() {
 						os.Exit(55)
 					}
 					write(request.ID, map[string]any{"type": "chatgptAuthTokens"})
+					completion := map[string]any{"loginId": nil, "success": true, "error": nil, "onboardingEntrypoint": nil}
+					switch mode {
+					case "quota-completion-failed":
+						completion["success"] = false
+					case "quota-completion-foreign":
+						completion["loginId"] = "foreign-login"
+					case "quota-completion-error":
+						completion["error"] = "synthetic failure"
+					case "quota-completion-onboarding":
+						completion["onboardingEntrypoint"] = "foreign"
+					case "quota-completion-unknown":
+						completion["foreign"] = true
+					case "quota-completion-missing-success":
+						delete(completion, "success")
+					case "quota-completion-malformed-success":
+						completion["success"] = "true"
+					}
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/login/completed", "params": completion})
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/updated", "params": map[string]any{"authMode": "chatgptAuthTokens", "planType": "plus"}})
 					continue
 				case "account/rateLimits/read":
 					if len(request.Params) != 0 {

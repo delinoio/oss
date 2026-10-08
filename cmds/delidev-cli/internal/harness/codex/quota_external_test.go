@@ -53,3 +53,28 @@ func TestQuotaExternalAccessOnlyAndRefusedRefresh(t *testing.T) {
 		})
 	}
 }
+
+func TestQuotaExternalRejectsForeignOrMalformedCompletionBeforeRead(t *testing.T) {
+	for _, mode := range []string{"failed", "foreign", "error", "onboarding", "unknown", "missing-success", "malformed-success"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := fixtureConfig(t, "quota-completion-"+mode)
+			cfg.Mode = QuotaProtocol
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			c, err := Open(ctx, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.ReadExternalQuota(ctx, domain.NewID(), QuotaAuthentication{Access: "synthetic-access-only", Account: "synthetic-account", Plan: "plus"})
+			if err == nil {
+				t.Fatal("invalid completion authorized quota")
+			}
+			if _, err := os.Stat(filepath.Join(cfg.Home, "quota-read")); !os.IsNotExist(err) {
+				t.Fatal("invalid completion sent quota")
+			}
+			if err := c.Close(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

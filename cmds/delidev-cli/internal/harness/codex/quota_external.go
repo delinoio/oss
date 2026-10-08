@@ -33,6 +33,8 @@ func (c *Client) ReadExternalQuota(parent context.Context, observation domain.ID
 	done := make(chan struct{})
 	var refused atomic.Bool
 	var invalid atomic.Bool
+	var loginRequested, loginCompleted atomic.Bool
+	completed := make(chan struct{})
 	go func() {
 		defer close(done)
 		for {
@@ -64,6 +66,21 @@ func (c *Client) ReadExternalQuota(parent context.Context, observation domain.ID
 					continue
 				}
 			}
+			if event.Kind == nativewire.Notification && event.Method == "account/login/completed" {
+				var v struct {
+					LoginID              *string `json:"loginId"`
+					Success              *bool   `json:"success"`
+					Error                *string `json:"error"`
+					OnboardingEntrypoint *string `json:"onboardingEntrypoint"`
+				}
+				// The pinned external-token login emits this exact success
+				// notification with no managed login identity or callback.
+				// It is protocol metadata, never credential renewal authority.
+				if loginRequested.Load() && domain.Decode(event.Params, &v) == nil && v.LoginID == nil && v.Success != nil && *v.Success && v.Error == nil && v.OnboardingEntrypoint == nil && loginCompleted.CompareAndSwap(false, true) {
+					close(completed)
+					continue
+				}
+			}
 			if event.Kind == nativewire.Notification && event.Method == "account/updated" {
 				var v struct {
 					AuthMode *string `json:"authMode"`
@@ -82,10 +99,18 @@ func (c *Client) ReadExternalQuota(parent context.Context, observation domain.ID
 	var login struct {
 		Type string `json:"type"`
 	}
+	loginRequested.Store(true)
 	if err := c.externalQuotaCall(ctx, "account/login/start", map[string]any{"type": "chatgptAuthTokens", "accessToken": auth.Access, "chatgptAccountId": auth.Account, "chatgptPlanType": auth.Plan}, &login); err != nil {
 		return domain.SubscriptionQuotaObservation{}, err
 	}
 	if login.Type != "chatgptAuthTokens" {
+		return domain.SubscriptionQuotaObservation{}, incompatible()
+	}
+	// Wait for the original success notification before the quota request. This
+	// also prevents a failed/malformed completion from racing a fast read result.
+	select {
+	case <-completed:
+	case <-ctx.Done():
 		return domain.SubscriptionQuotaObservation{}, incompatible()
 	}
 	var value nativeQuotaRead
