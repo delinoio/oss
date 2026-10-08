@@ -131,6 +131,11 @@ summary { cursor: pointer; padding: 3px; }
 .new-session-content { width: min(100%, 820px); margin-top: -20px; }
 .new-session-header { display: flex; align-items: flex-start; flex-direction: column; gap: 18px; margin-bottom: 28px; }
 .new-session-header h2 { margin: 0; font-size: 30px; line-height: 1.2; letter-spacing: -.035em; font-weight: 650; }
+/* Keep General Chat's initial primary placement independent of Options height. */
+.new-general-chat-page { display: block; --general-chat-center: 1; --general-chat-center-adjustment: -10px; }
+.new-general-chat-page > .new-session-content { margin: 0 auto; padding-top: var(--general-chat-top, 0px); }
+.app main:has(> .new-general-chat-page:not([hidden])) { scrollbar-gutter: stable; }
+.new-general-chat-page .new-session-options h3 { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
 .new-general-chat-description { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .new-general-chat-page .new-session-selectors select { min-height: 40px; }
 .new-session-back { min-height: 34px; padding: 5px 9px; border-color: transparent; background: transparent; color: var(--text-secondary); font-size: 13px; }
@@ -163,10 +168,12 @@ summary { cursor: pointer; padding: 3px; }
 @media (max-width: 1100px) {
   .new-session-page { padding: 24px; }
   .new-session-content { margin-top: 0; }
+  .new-general-chat-page { --general-chat-center-adjustment: 0px; }
   .new-session-toolbar { align-items: stretch; flex-direction: column; }
   .new-session-submit-row { justify-content: flex-end; }
 }
 @media (max-height: 760px) {
+  .new-general-chat-page { --general-chat-center: 0; }
   .new-session-page { align-items: start; }
   .new-session-content { margin-top: 0; }
 }

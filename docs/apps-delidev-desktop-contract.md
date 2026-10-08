@@ -234,6 +234,21 @@ Home provides a 36px **New general chat** action immediately below **New session
 
 `NewSessionKind.GeneralChat` reuses the chat-first controller with an 820px content column, 210px composer, 18px card corners and 40px send control. Show **What would you like to talk about?**, **Ask questions or share ideas without a project.**, and **Ask a question, share an idea, or just chat…**. The accessible send action is **Start general chat**. Restore the independent last accepted General Chat Agent Worker/Runs on choices when permitted; without history, keep both unselected. Preserve Execute/Plan, collapsed Options and the existing optional estimated-cost budget. Omit Project, Git/Local controls and implementation-directory guidance. General Chat retains the selected Agent Worker's ordinary tools and permissions; it is not a tool-free execution profile.
 
+General Chat keeps one Options action. Opening it exposes the static localized
+optional estimated-cost budget heading, BudgetFields and complete explanations;
+there is no nested budget disclosure. Closing it retains all budget values.
+Preserve the existing form, inherited fieldset locks and request semantics.
+Measure the primary heading/composer/hints range independently of Options and
+use the visible main scroll-owner height to retain the initial centered placement.
+Observe primary and viewport size changes; never center against total page or
+scroll height. Clamp at the existing minimum padding and preserve responsive
+short-height top alignment. Options stays in normal flow below the hints and
+extends the page's scroll range without moving the primary content by more than
+1 CSS px at a fixed viewport/scroll position. Reserve the main scrollbar gutter
+only while this page is active, and keep focus and all drafts intact. Ordinary
+New session project/Git options and session budget editing retain their existing
+presentation. Browser geometry evidence remains separate from native acceptance.
+
 The existing authenticated CreateSession RPC submits `workspace=general-chat`, `source=MANUAL` and `name_mode=automatic`, without project, starting-reference or Local credential fields. Preserve server/native execution checks, automatic-title negotiation, byte bounds, validation and exact receipt retry. This presentation adds no protocol capability, migration, account or native authority.
 
 Keep each creation controller mounted after first entry until its connection identity changes. New session and General Chat retain independent messages, execution choices, Options/budgets, activation counters, heading/message IDs and mutation keys (`create-session` and `create-general-chat`). Navigation, Settings and same-identity reconnect preserve both drafts. A readable acceptance clears only its originating message, retains selections and opens the existing SessionView only while the original activation still owns navigation; otherwise show **Open conversation** for General Chat. Pending/uncertain operations cannot consume, unlock or retry another controller's request.

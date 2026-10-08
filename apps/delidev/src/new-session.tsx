@@ -9,6 +9,7 @@ import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { EntityKind, ResourceService, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource, WorkerCapability, supportsResourceSchema } from "@delinoio/delidev-api-client";
 import { creationPreferenceProblemMessage, useCreationPreferences, type CreationPreferenceBridge, type CreationPreferenceScope } from "./session-creation-preferences";
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
+import { useGeneralChatPlacement } from "./general-chat-placement";
 import { document, encode, items, Mode, object, text, Workspace } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { StartingReferences } from "./schedules";
@@ -48,8 +49,9 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   open: (id: string) => void;
   created: () => void;
 }) {
-  useLocale();
+  const language = useLocale();
   const generalChat = kind === NewSessionKind.GeneralChat;
+  const placement = useGeneralChatPlacement(generalChat && active, language);
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
   const images = useImageDraft(idPrefix);
   const local = useLocalWorkerProof(readLocalWorker);
@@ -237,9 +239,9 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const title = createdElsewhere ? text(document(createdElsewhere).name) || copy("new-session.extra.cffdba22adf2") : copy("new-session.extra.cffdba22adf2");
   const submitLabel = generalChat ? copy("new-session.startGeneralChat") : copy("new-session.createSession_38b6ef");
 
-  return <section hidden={!active} className={`new-session-page${generalChat ? " new-general-chat-page" : ""}`} aria-labelledby={`${idPrefix}-heading`}>
-    <div className="new-session-content">
-      <header className="new-session-header">
+  return <section ref={placement.page} hidden={!active} className={`new-session-page${generalChat ? " new-general-chat-page" : ""}`} aria-labelledby={`${idPrefix}-heading`}>
+    <div className="new-session-content" ref={placement.content}>
+      <header className="new-session-header" ref={placement.heading}>
         <button type="button" className="new-session-back" onClick={back}>{copy("new-session.backToSessions_3740d2")}</button>
         <h2 id={`${idPrefix}-heading`}>{generalChat ? copy("new-session.whatWouldYouLikeToTalkAbout") : copy("new-session.whatWouldYouLikeToWork_3c9309")}</h2>
         {generalChat ? <p className="new-general-chat-description">{copy("new-session.generalChatDescription")}</p> : null}
@@ -248,7 +250,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       {!generalChat && !project ? <p className="new-session-project-note">{copy("new-session.generalChatIsolatedProjectlessDirectoryOn_aac210")}</p> : null}
       <form {...imageEntryHandlers(images, blocked || !imageRoute.systemSupported)} onSubmit={submitForm}>
         <fieldset className="new-session-fieldset" disabled={blocked}>
-          <div className="new-session-composer">
+          <div className="new-session-composer" ref={placement.composer}>
             <label className="new-session-message-label" htmlFor={`${idPrefix}-message`}>{copy("new-session.firstMessage_ecffa2")}</label>
             <textarea
               ref={firstMessage}
@@ -281,7 +283,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               </div>
             </div>
           </div>
-          <div className="new-session-hints"><span>{generalChat ? copy("new-session.conversationsAreNamedAutomatically") : copy("new-session.sessionsAreNamedAutomatically_ba66e8")}</span><span>{copy("new-session.shiftEnterForANewLine_5e4b35")}</span></div>
+          <div className="new-session-hints" ref={placement.hints}><span>{generalChat ? copy("new-session.conversationsAreNamedAutomatically") : copy("new-session.sessionsAreNamedAutomatically_ba66e8")}</span><span>{copy("new-session.shiftEnterForANewLine_5e4b35")}</span></div>
           {optionsOpen ? <section className="new-session-options" aria-label={copy("new-session.sessionOptions_0bccf5")}>
             {!generalChat && project ? <>
               <p>{copy("new-session.aSeparateDetachedWorktreeIsPrepared_8c300d")}</p>
@@ -291,7 +293,11 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               </div>
               {workspace === Workspace.Local ? <p>{copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}</p> : <StartingReferences key={project} project={project} starting={starting} change={(value) => { touched.current = true; setStarting(value); }} active={active} />}
             </> : !generalChat ? <p>{copy("new-session.generalChatUsesAPrivateProjectless_64e0ee")}</p> : null}
-            <details><summary>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</summary><BudgetFields draft={budget} change={(value) => { touched.current = true; setBudget(value); }} /><p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p></details>
+            {generalChat ? <>
+              <h3>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</h3>
+              <BudgetFields draft={budget} change={(value) => { touched.current = true; setBudget(value); }} />
+              <p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p>
+            </> : <details><summary>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</summary><BudgetFields draft={budget} change={(value) => { touched.current = true; setBudget(value); }} /><p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p></details>}
           </section> : null}
         </fieldset>
       </form>
