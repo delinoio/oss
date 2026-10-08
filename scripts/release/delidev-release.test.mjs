@@ -4,7 +4,7 @@ import test from 'node:test';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { assemble, digest, identity, releaseTargets, expectedNames, updaterTarget, verifyDirectory, validateIndex, findRelease, reconcile, releaseNotes } from './delidev-release.mjs';
+import { assemble, digest, identity, sourceIdentity, releaseTargets, expectedNames, updaterTarget, verifyDirectory, validateIndex, findRelease, reconcile, releaseNotes } from './delidev-release.mjs';
 import { restoreCandidate, verifyCandidate } from './delidev-candidate.mjs';
 import { signingRoot } from './generate-delidev-updater.mjs';
 
@@ -119,4 +119,16 @@ test('same-run candidates restore without signing again; absent is distinct from
   assert.equal(await restoreCandidate({...options,list:async()=>[{id:1,name,expired:false}]}),true);
   await assert.rejects(restoreCandidate({...options,list:async()=>[{id:1,name,expired:true}]}),/expired/);
   await assert.rejects(restoreCandidate({...options,list:async()=>[{id:1,name,expired:false},{id:2,name,expired:false}]}),/ambiguous/);
+});
+
+test('tag source identity rejects foreign events, malformed versions and source conflicts', () => {
+  const input = { repository: 'delinoio/oss', event: 'push', ref: 'refs/tags/delidev-v0.1.1', revision: 'a'.repeat(40), head: 'a'.repeat(40), tagRevision: 'a'.repeat(40), version: '0.1.1' };
+  assert.deepEqual(sourceIdentity(input), { version: '0.1.1', revision: input.revision });
+  for (const changes of [
+    { repository: 'fork/oss' }, { event: 'workflow_dispatch' },
+    { ref: 'refs/heads/main' }, { ref: 'refs/tags/delidev-v01.1.1' },
+    { ref: 'refs/tags/delidev-v0.1.1-next.1' }, { ref: 'refs/tags/delidev-v0.1.1junk' },
+    { ref: 'refs/tags/delidev-v4294967296.1.1' }, { revision: 'invalid' },
+    { head: 'b'.repeat(40) }, { tagRevision: 'b'.repeat(40) }, { version: '0.1.2' },
+  ]) assert.throws(() => sourceIdentity({ ...input, ...changes }));
 });

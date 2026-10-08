@@ -6,32 +6,41 @@ import { spawnSync } from 'node:child_process';
 import yaml from 'js-yaml';
 const source = name => readFileSync(new URL(`../../.github/workflows/${name}`,import.meta.url),'utf8');
 const workflow=yaml.load(source('release-delidev.yml'));
-test('manual coordinator calls release at the prepared immutable identity without an extra dispatch',()=>{
+test('release starts independently from an immutable tag push',()=>{
   const coordinator=yaml.load(source('release-project.yml'));
-  assert.equal(coordinator.jobs.delidev.uses,'./.github/workflows/release-delidev.yml');
-  assert.deepEqual(coordinator.jobs.delidev.needs,['prepare','tag']);
-  assert.deepEqual(coordinator.jobs.delidev.with,{version:'${{ needs.prepare.outputs.version }}',revision:'${{ needs.prepare.outputs.revision }}'});
-  assert.deepEqual(Object.keys(workflow.on),['workflow_call']);
-  assert.equal(workflow.jobs.inspect.if,"github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'");
+  assert.equal(coordinator.jobs.delidev,undefined);
+  assert.deepEqual(coordinator.jobs.summary.needs,['prepare','registry','tag']);
+  assert.deepEqual(workflow.on,{push:{tags:['delidev-v*']}});
+  assert.equal(workflow.jobs.inspect.if,"github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/delidev-v') && github.event_name == 'push'");
+  const inspect=workflow.jobs.inspect;
+  assert.equal(inspect.steps[0].with.ref,'${{ github.sha }}');
+  assert.equal(inspect.steps[0].with['fetch-depth'],0);
+  assert.equal(inspect.steps.find(s=>s.id==='source').run,'node scripts/release/delidev-release.mjs source');
+  for(const name of ['version','revision']) assert.equal(inspect.outputs[name],'${{ steps.source.outputs.'+name+' }}');
+  for(const name of ['preflight','package','sign','publish','result']) {
+    const job=workflow.jobs[name];
+    assert.equal(job.env.RELEASE_VERSION,'${{ needs.inspect.outputs.version }}');
+    assert.equal(job.env.RELEASE_REVISION,'${{ needs.inspect.outputs.revision }}');
+    for(const step of job.steps) if(step.uses?.startsWith('actions/checkout')) assert.equal(step.with.ref,'${{ needs.inspect.outputs.revision }}');
+  }
+  assert.doesNotMatch(source('release-delidev.yml'),/inputs\.(version|revision)|workflow_call/);
 });
-test('coordinator forwards only the required signing secret references to Environment-owned jobs',()=>{
+test('only Environment-owned signing jobs read the required secret references',()=>{
   const names = [
-    'DELIDEV_MACOS_CERTIFICATE_BASE64',
-    'DELIDEV_MACOS_CERTIFICATE_PASSWORD',
-    'DELIDEV_MACOS_APP_PROFILE_BASE64',
-    'DELIDEV_MACOS_WIDGET_PROFILE_BASE64',
-    'DELIDEV_MACOS_SELECTION_PROFILE_BASE64',
-    'DELIDEV_APPLE_NOTARY_KEY_BASE64',
-    'DELIDEV_APPLE_NOTARY_KEY_ID',
-    'DELIDEV_APPLE_NOTARY_ISSUER_ID',
+    'DELIDEV_MACOS_CERTIFICATE_BASE64', 'DELIDEV_MACOS_CERTIFICATE_PASSWORD',
+    'DELIDEV_MACOS_APP_PROFILE_BASE64', 'DELIDEV_MACOS_WIDGET_PROFILE_BASE64',
+    'DELIDEV_MACOS_SELECTION_PROFILE_BASE64', 'DELIDEV_APPLE_NOTARY_KEY_BASE64',
+    'DELIDEV_APPLE_NOTARY_KEY_ID', 'DELIDEV_APPLE_NOTARY_ISSUER_ID',
   ];
-  const caller = yaml.load(source('release-project.yml')).jobs.delidev;
-  assert.deepEqual(caller.secrets,Object.fromEntries(names.map(name=>[name,'${{ secrets.'+name+' }}'])));
-  assert.deepEqual(workflow.on.workflow_call.secrets,Object.fromEntries(names.map(name=>[name,{required:true}])));
+  assert.doesNotMatch(source('release-project.yml'),/secrets\.DELIDEV_/);
   const references = [...new Set([...source('release-delidev.yml').matchAll(/secrets\.(DELIDEV_[A-Z0-9_]+)/g)].map(match=>match[1]))].sort();
   assert.deepEqual(references,[...names].sort());
-  assert.equal(workflow.jobs.preflight.environment,'delidev-release');
-  assert.equal(workflow.jobs.sign.environment,'delidev-release');
+  for(const name of ['preflight','sign']) {
+    assert.equal(workflow.jobs[name].environment,'delidev-release');
+    const secretSteps=workflow.jobs[name].steps.filter(s=>JSON.stringify(s.env ?? {}).includes('secrets.DELIDEV_'));
+    assert.equal(secretSteps.length,1);
+    for(const secret of names) assert.equal(secretSteps[0].env[secret],'${{ secrets.'+secret+' }}');
+  }
   assert.equal(workflow.jobs.package.environment,undefined);
 });
 test('publication is behind four-native matrix, signing preflight and original candidate validation',()=>{

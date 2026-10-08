@@ -43,7 +43,7 @@ function descriptor(project) {
 }
 
 // Rust source versioning is independent from registry distribution: clibox
-// and pnport ship only through npm and native packages.
+// and pnport ship through npm and native packages; DeliDev ships native downloads.
 export function requiresCargoPublish(project) {
   return descriptor(project).kind === Kind.Rust && ![Project.Clibox, Project.Pnport, Project.DeliDev].includes(project);
 }
@@ -440,7 +440,7 @@ export async function main(command) {
   }
   if (command === "plan") {
     const { changes, ...plan } = versionChanges(process.env.RELEASE_PROJECT, process.env.RELEASE_BUMP, (file) => readFileSync(path.join(root, file), "utf8"));
-    output({ ...plan, files: Object.keys(changes).join(",") });
+    output({ ...plan, cargo_publish: requiresCargoPublish(plan.project), files: Object.keys(changes).join(",") });
     return;
   }
   if (command === "bot-identity") {
