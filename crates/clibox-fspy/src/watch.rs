@@ -567,6 +567,11 @@ impl WatchSession {
         self.accepted_discovery_generation = self.discovery_generation.take();
         self.targets = Some(watcher);
         self.discovery = None;
+        tracing::debug!(
+            stage = "watch_dependencies_installed",
+            generation,
+            "watch dependency handoff completed"
+        );
         Ok(())
     }
 
@@ -574,7 +579,7 @@ impl WatchSession {
         &self,
         until: Instant,
         cancelled: &AtomicBool,
-    ) -> Result<Option<notify::Result<Event>>, WatchFailure> {
+    ) -> Result<Option<WatchEvent>, WatchFailure> {
         loop {
             if cancelled.load(Ordering::SeqCst) {
                 return Ok(None);
@@ -591,7 +596,7 @@ impl WatchSession {
                     if Some(event.generation) == self.target_generation
                         || Some(event.generation) == self.accepted_discovery_generation =>
                 {
-                    return Ok(Some(event.result));
+                    return Ok(Some(event));
                 }
                 Ok(_) => {}
                 Err(RecvTimeoutError::Timeout) => {}
@@ -620,8 +625,8 @@ impl WatchSession {
             return Ok(false);
         }
         let mut relevant = false;
-        for event in events {
-            let event = event.map_err(|_| WatchFailure::WatchLoss)?;
+        for observation in events {
+            let event = observation.result.map_err(|_| WatchFailure::WatchLoss)?;
             // notify's inotify backend includes open and close notifications in
             // every watch mask. Reads by the supervised command must not
             // restart autowatch; only create, remove, rename, and
@@ -638,6 +643,16 @@ impl WatchSession {
                     continue;
                 };
                 if dependencies.relevant(relative) {
+                    tracing::debug!(
+                        stage = "watch_dependency_invalidated",
+                        generation = observation.generation,
+                        target_generation = ?self.target_generation,
+                        discovery_generation = ?self.accepted_discovery_generation,
+                        kind = ?event.kind,
+                        path_depth = relative.components().count(),
+                        self_written = dependencies.self_written(relative),
+                        "watch dependency invalidation observed"
+                    );
                     if dependencies.self_written(relative) {
                         return Err(WatchFailure::UnsafeAmbiguity);
                     }
