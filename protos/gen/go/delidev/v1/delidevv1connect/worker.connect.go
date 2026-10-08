@@ -77,6 +77,9 @@ const (
 	// WorkerServiceReportWorkProcedure is the fully-qualified name of the WorkerService's ReportWork
 	// RPC.
 	WorkerServiceReportWorkProcedure = "/delidev.v1.WorkerService/ReportWork"
+	// WorkerServiceDiscoverRepositoryBranchesProcedure is the fully-qualified name of the
+	// WorkerService's DiscoverRepositoryBranches RPC.
+	WorkerServiceDiscoverRepositoryBranchesProcedure = "/delidev.v1.WorkerService/DiscoverRepositoryBranches"
 	// WorkerServiceInspectRepositoryProcedure is the fully-qualified name of the WorkerService's
 	// InspectRepository RPC.
 	WorkerServiceInspectRepositoryProcedure = "/delidev.v1.WorkerService/InspectRepository"
@@ -124,6 +127,7 @@ type WorkerServiceClient interface {
 	// An independent lane. Older Workers remain primary-only.
 	WatchAuxiliaryWork(context.Context, *connect.Request[v1.WatchAuxiliaryWorkRequest]) (*connect.ServerStreamForClient[v1.WatchAuxiliaryWorkResponse], error)
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
+	DiscoverRepositoryBranches(context.Context, *connect.Request[v1.DiscoverRepositoryBranchesRequest]) (*connect.Response[v1.DiscoverRepositoryBranchesResponse], error)
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	CloneRepository(context.Context, *connect.Request[v1.CloneRepositoryRequest]) (*connect.Response[v1.CloneRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
@@ -236,6 +240,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("ReportWork")),
 			connect.WithClientOptions(opts...),
 		),
+		discoverRepositoryBranches: connect.NewClient[v1.DiscoverRepositoryBranchesRequest, v1.DiscoverRepositoryBranchesResponse](
+			httpClient,
+			baseURL+WorkerServiceDiscoverRepositoryBranchesProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("DiscoverRepositoryBranches")),
+			connect.WithClientOptions(opts...),
+		),
 		inspectRepository: connect.NewClient[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse](
 			httpClient,
 			baseURL+WorkerServiceInspectRepositoryProcedure,
@@ -295,30 +305,31 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
-	syncWorkerNetwork       *connect.Client[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse]
-	reportWorkerNativeRoute *connect.Client[v1.ReportWorkerNativeRouteRequest, v1.ReportWorkerNativeRouteResponse]
-	listSessionDeletionWork *connect.Client[v1.ListSessionDeletionWorkRequest, v1.ListSessionDeletionWorkResponse]
-	reportSessionDeletion   *connect.Client[v1.ReportSessionDeletionRequest, v1.ReportSessionDeletionResponse]
-	watchTerminals          *connect.Client[v1.WatchTerminalsRequest, v1.WatchTerminalsResponse]
-	claimTerminal           *connect.Client[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse]
-	reportTerminal          *connect.Client[v1.ReportTerminalRequest, v1.ReportTerminalResponse]
-	publishTerminalOutput   *connect.Client[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse]
-	watchForwardRequests    *connect.Client[v1.WatchForwardRequestsRequest, v1.WatchForwardRequestsResponse]
-	watchWorkspaceReads     *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
-	reportWorkspaceRead     *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
-	attachWorker            *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
-	watchWork               *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
-	watchAuxiliaryWork      *connect.Client[v1.WatchAuxiliaryWorkRequest, v1.WatchAuxiliaryWorkResponse]
-	reportWork              *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
-	inspectRepository       *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
-	cloneRepository         *connect.Client[v1.CloneRepositoryRequest, v1.CloneRepositoryResponse]
-	discoverHarnesses       *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
-	reportExecutionStartup  *connect.Client[v1.ReportExecutionStartupRequest, v1.ReportExecutionStartupResponse]
-	registerExecution       *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
-	publishExecution        *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
-	claimQuestionResponse   *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
-	claimApprovalResponse   *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
-	claimSteerInput         *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+	syncWorkerNetwork          *connect.Client[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse]
+	reportWorkerNativeRoute    *connect.Client[v1.ReportWorkerNativeRouteRequest, v1.ReportWorkerNativeRouteResponse]
+	listSessionDeletionWork    *connect.Client[v1.ListSessionDeletionWorkRequest, v1.ListSessionDeletionWorkResponse]
+	reportSessionDeletion      *connect.Client[v1.ReportSessionDeletionRequest, v1.ReportSessionDeletionResponse]
+	watchTerminals             *connect.Client[v1.WatchTerminalsRequest, v1.WatchTerminalsResponse]
+	claimTerminal              *connect.Client[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse]
+	reportTerminal             *connect.Client[v1.ReportTerminalRequest, v1.ReportTerminalResponse]
+	publishTerminalOutput      *connect.Client[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse]
+	watchForwardRequests       *connect.Client[v1.WatchForwardRequestsRequest, v1.WatchForwardRequestsResponse]
+	watchWorkspaceReads        *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
+	reportWorkspaceRead        *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
+	attachWorker               *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
+	watchWork                  *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
+	watchAuxiliaryWork         *connect.Client[v1.WatchAuxiliaryWorkRequest, v1.WatchAuxiliaryWorkResponse]
+	reportWork                 *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
+	discoverRepositoryBranches *connect.Client[v1.DiscoverRepositoryBranchesRequest, v1.DiscoverRepositoryBranchesResponse]
+	inspectRepository          *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
+	cloneRepository            *connect.Client[v1.CloneRepositoryRequest, v1.CloneRepositoryResponse]
+	discoverHarnesses          *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
+	reportExecutionStartup     *connect.Client[v1.ReportExecutionStartupRequest, v1.ReportExecutionStartupResponse]
+	registerExecution          *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
+	publishExecution           *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
+	claimQuestionResponse      *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
+	claimApprovalResponse      *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
+	claimSteerInput            *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
 }
 
 // SyncWorkerNetwork calls delidev.v1.WorkerService.SyncWorkerNetwork.
@@ -396,6 +407,11 @@ func (c *workerServiceClient) ReportWork(ctx context.Context, req *connect.Reque
 	return c.reportWork.CallUnary(ctx, req)
 }
 
+// DiscoverRepositoryBranches calls delidev.v1.WorkerService.DiscoverRepositoryBranches.
+func (c *workerServiceClient) DiscoverRepositoryBranches(ctx context.Context, req *connect.Request[v1.DiscoverRepositoryBranchesRequest]) (*connect.Response[v1.DiscoverRepositoryBranchesResponse], error) {
+	return c.discoverRepositoryBranches.CallUnary(ctx, req)
+}
+
 // InspectRepository calls delidev.v1.WorkerService.InspectRepository.
 func (c *workerServiceClient) InspectRepository(ctx context.Context, req *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error) {
 	return c.inspectRepository.CallUnary(ctx, req)
@@ -459,6 +475,7 @@ type WorkerServiceHandler interface {
 	// An independent lane. Older Workers remain primary-only.
 	WatchAuxiliaryWork(context.Context, *connect.Request[v1.WatchAuxiliaryWorkRequest], *connect.ServerStream[v1.WatchAuxiliaryWorkResponse]) error
 	ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error)
+	DiscoverRepositoryBranches(context.Context, *connect.Request[v1.DiscoverRepositoryBranchesRequest]) (*connect.Response[v1.DiscoverRepositoryBranchesResponse], error)
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	CloneRepository(context.Context, *connect.Request[v1.CloneRepositoryRequest]) (*connect.Response[v1.CloneRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
@@ -567,6 +584,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("ReportWork")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceDiscoverRepositoryBranchesHandler := connect.NewUnaryHandler(
+		WorkerServiceDiscoverRepositoryBranchesProcedure,
+		svc.DiscoverRepositoryBranches,
+		connect.WithSchema(workerServiceMethods.ByName("DiscoverRepositoryBranches")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceInspectRepositoryHandler := connect.NewUnaryHandler(
 		WorkerServiceInspectRepositoryProcedure,
 		svc.InspectRepository,
@@ -653,6 +676,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServiceWatchAuxiliaryWorkHandler.ServeHTTP(w, r)
 		case WorkerServiceReportWorkProcedure:
 			workerServiceReportWorkHandler.ServeHTTP(w, r)
+		case WorkerServiceDiscoverRepositoryBranchesProcedure:
+			workerServiceDiscoverRepositoryBranchesHandler.ServeHTTP(w, r)
 		case WorkerServiceInspectRepositoryProcedure:
 			workerServiceInspectRepositoryHandler.ServeHTTP(w, r)
 		case WorkerServiceCloneRepositoryProcedure:
@@ -738,6 +763,10 @@ func (UnimplementedWorkerServiceHandler) WatchAuxiliaryWork(context.Context, *co
 
 func (UnimplementedWorkerServiceHandler) ReportWork(context.Context, *connect.Request[v1.ReportWorkRequest]) (*connect.Response[v1.ReportWorkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportWork is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) DiscoverRepositoryBranches(context.Context, *connect.Request[v1.DiscoverRepositoryBranchesRequest]) (*connect.Response[v1.DiscoverRepositoryBranchesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.DiscoverRepositoryBranches is not implemented"))
 }
 
 func (UnimplementedWorkerServiceHandler) InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error) {

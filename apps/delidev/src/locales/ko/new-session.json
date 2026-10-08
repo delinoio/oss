@@ -62,5 +62,20 @@
   "new-session.promptHistoryUnavailable": "프롬프트 기록을 사용할 수 없습니다. 세션은 계속 만들 수 있습니다.",
   "new-session.clearPromptHistory": "프롬프트 기록 지우기",
   "new-session.confirmPromptHistoryClear": "이 프로젝트의 현재 첫 메시지 기록을 지울까요? 원본 세션과 기존 백업은 유지됩니다. 백업을 복원하면 백업에 포함된 기록이 복원될 수 있습니다.",
-  "new-session.retryPromptHistoryClear": "원래 지우기 요청 재시도"
+  "new-session.retryPromptHistoryClear": "원래 지우기 요청 재시도",
+  "new-session.workspaceLabel": "워크스페이스",
+  "new-session.worktreeMode": "워크트리",
+  "new-session.localMode": "로컬",
+  "new-session.additionalRepositories": "추가 저장소",
+  "new-session.startingBranch": "시작 브랜치",
+  "new-session.savedStartingReference": "저장된 시작 참조 사용",
+  "new-session.manualStartingReference": "직접 지정한 시작 참조",
+  "new-session.searchBranches": "브랜치 검색",
+  "new-session.branchUnavailable": "선택한 브랜치를 사용할 수 없음",
+  "new-session.refreshBranches": "새로 고침",
+  "new-session.loadingBranches": "원격 브랜치를 읽는 중…",
+  "new-session.chooseBranchWorker": "원격 브랜치를 읽으려면 실행할 Worker를 선택하세요.",
+  "new-session.branchUnsupported": "브랜치 검색을 사용할 수 없습니다. 저장된 시작 참조 또는 직접 지정한 참조를 사용하세요.",
+  "new-session.noBranches": "원격 저장소에 브랜치가 없습니다.",
+  "new-session.branchLookupFailed": "원격 브랜치를 읽을 수 없습니다. 저장된 시작 참조 또는 직접 지정한 참조를 사용하세요."
 }

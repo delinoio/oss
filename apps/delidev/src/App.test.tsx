@@ -296,7 +296,7 @@ it("retains separate Local and General Chat drafts through Settings, language an
   await chooseScrollOption(original.getByRole("combobox", { name: "Project" }), project.id);
   fireEvent.change(original.getByLabelText("First message"), { target: { value: "Keep this Local task" } });
   fireEvent.click(original.getByRole("button", { name: "Options" }));
-  fireEvent.click(original.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  fireEvent.click(original.getByRole("radio", { name: "Local" }));
   await waitFor(() => expect((original.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).disabled).toBe(true));
   fireEvent.click(screen.getAllByRole("button", { name: "New general chat" })[0]);
   const general = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
@@ -447,7 +447,7 @@ it.each([false, true])("selects a project once, retains the draft, and focuses t
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(second.id);
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }))).toBe("");
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }))).toBe("");
-  expect(screen.getByRole("button", { name: "Use separate Worktrees" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("radio", { name: "Worktree" })).toHaveProperty("checked", true);
   expect(within(document.querySelector(".new-session-page")!).getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
   expect(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold")).toHaveProperty("value", "1.25");
   expect(screen.getByRole("button", { name: "Options" }).getAttribute("aria-expanded")).toBe("true");
@@ -509,14 +509,14 @@ it("locks shortcuts during Local proof and preserves the original project on com
   render(<App transport={value.transport} readLocalWorker={readLocalWorker} />);
   fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
-  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Local" }));
   const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
   expect(shortcut).toHaveProperty("disabled", true);
   fireEvent.click(shortcut);
   await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
   expect(shortcut).toHaveProperty("disabled", false);
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
-  expect(screen.getByRole("button", { name: "Use this computer's Local checkouts" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("radio", { name: "Local" })).toHaveProperty("checked", true);
   expect(value.creates).not.toHaveBeenCalled();
 });
 

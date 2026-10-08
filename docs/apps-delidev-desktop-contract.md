@@ -2854,3 +2854,23 @@ Settings > API Providers places one decorative 24px local monochrome mark before
 ### Routing preview context alignment — issue #1863
 
 The routing preview separates the Project label from the control band. At wide body widths, the Read-only preview badge, actual Project combobox and Refresh button share their vertical center within 1 CSS pixel. Picker margins are compact only within this preview. Preserve DOM order, below-640px stacking, short-height scrolling, original read-only requests, task disposal and focus restoration.
+
+## Creation workspace and starting branches — issue #1859
+
+Project session creation exposes Worktree/Local radios between Project and the
+composer. The primary repository has a searchable Starting branch selector;
+additional repositories retain their original order under a disclosure. The
+initial choice uses the saved starting reference. Explicit branch choices use
+existing per-repository remote starting overrides and never change comparison
+base. Advanced manual/commit overrides remain in Options. General Chat has no
+Git controls, Local hides branch selectors, and existing sessions cannot switch
+workspace modes.
+
+Open selectors load negotiated current configured-remote inventory through the
+selected Runs on Worker. Explicit Refresh preserves every selection, including a
+disappeared branch shown as unavailable. Search filters the complete verified
+inventory locally. Fence late responses on project/repository/source/machine
+revision or connection changes. Unsupported, unavailable or malformed inventories
+retain saved/manual creation behavior. Worktree clears runner and overrides;
+Local loads fresh proof, pins its machine and clears overrides. Submission still
+rereads proof; pending/uncertain creation retains exact original retries.

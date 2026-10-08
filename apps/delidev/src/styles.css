@@ -1101,3 +1101,24 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .file-back { margin-top: 4px; }
 
 .file-tree-node { outline: none; }
+
+/* Creation-only workspace selection shares the Project/composer content band. */
+.new-session-workspace { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-block: 12px; }
+.workspace-mode { border: 0; padding: 0; margin: 0; display: flex; gap: 8px; }
+.workspace-mode legend { margin-bottom: 4px; }
+.workspace-mode label { display: inline-flex; align-items: center; gap: 4px; }
+.starting-branches { flex: 1; min-width: min(260px, 100%); }
+.starting-branch { border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.starting-branch summary { overflow-wrap: anywhere; cursor: pointer; }
+.starting-branch summary small { display: block; }
+.starting-branch label { display: grid; gap: 4px; margin-block: 8px; }
+.starting-branch input, .starting-branch select { width: 100%; min-width: 0; }
+.workspace-mode input[type=radio] { width: auto; }
+.workspace-mode { position: relative; gap: 0; }
+.workspace-mode label { position: relative; min-height: 40px; padding: 8px 12px; margin: 0; border: 1px solid var(--border); background: var(--surface); cursor: pointer; }
+.workspace-mode label:first-of-type { border-radius: 8px 0 0 8px; }
+.workspace-mode label:last-of-type { border-radius: 0 8px 8px 0; }
+.workspace-mode label:has(input:checked) { background: var(--selected-background); color: var(--selected-text); border-color: var(--selected-border); }
+.workspace-mode label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; z-index: 1; }
+.workspace-mode label:has(input:disabled) { opacity: .55; cursor: default; }
+.workspace-mode input[type=radio] { position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0; }

@@ -354,7 +354,11 @@ func mutationDigest(id domain.ID, operation string, input any) (string, error) {
 		return "", err
 	}
 	body, err := json.Marshal(input)
-	if err != nil || len(body) > 1<<20 {
+	limit := 1 << 20
+	if operation == "worker.branches.report" {
+		limit = domain.MaxRepositoryBranchesJobBytes
+	}
+	if err != nil || len(body) > limit {
 		return "", domain.Fail(domain.InvalidArgument, "Invalid mutation document.", "Provide at most 1 MiB of JSON.")
 	}
 	hash := sha256.Sum256(append([]byte(operation+"\x00"), body...))
@@ -456,7 +460,11 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 		return Result{}, err
 	}
 	raw, err := json.Marshal(out)
-	if err != nil || len(raw) > 4<<20 {
+	resultLimit := 4 << 20
+	if operation == "worker.branches.report" {
+		resultLimit = 2 * domain.MaxRepositoryBranchesJobBytes
+	}
+	if err != nil || len(raw) > resultLimit {
 		return Result{}, domain.Fail(domain.ResourceExhausted, "The mutation result exceeds its bound.", "Split the operation into smaller batches.")
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO receipts(id,digest,result,created_at) VALUES(?,?,?,?)", id, digest, raw, t.now.UnixMilli()); err != nil {
@@ -641,9 +649,12 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	}
 	body, err := json.Marshal(value)
 	maxBodyBytes := 1 << 20
+	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.DiscoverRepositoryBranchesJob {
+		maxBodyBytes = domain.MaxRepositoryBranchesJobBytes
+	}
 	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.CompactSessionJob {
 		maxBodyBytes = maxCompactionJobEntityBytes
-	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind {
+	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type != domain.DiscoverRepositoryBranchesJob {
 		maxBodyBytes = workspace.StorageJobDocumentLimit(job)
 	}
 	if err != nil || len(body) > maxBodyBytes {
@@ -1021,7 +1032,10 @@ func Decode[T any](r Record) (T, error) {
 		var envelope struct {
 			Type domain.JobType `json:"type"`
 		}
-		if len(r.Data) <= workspace.MaxStorageRecoveryJobBytes && json.Unmarshal(r.Data, &envelope) == nil {
+		if len(r.Data) <= domain.MaxRepositoryBranchesJobBytes && json.Unmarshal(r.Data, &envelope) == nil {
+			if envelope.Type == domain.DiscoverRepositoryBranchesJob {
+				maxBytes = domain.MaxRepositoryBranchesJobBytes
+			}
 			if envelope.Type == domain.CompactSessionJob {
 				maxBytes = maxCompactionJobEntityBytes
 			} else if envelope.Type == domain.WorkspaceStorageJob {

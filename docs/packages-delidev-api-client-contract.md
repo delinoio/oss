@@ -276,3 +276,14 @@ Generated SubscriptionQuery exports cleanupFailedSubscriptions and getFailedSubs
 ## Project prompt history client
 
 Generated `ConfigurationQuery` exposes `listProjectPromptHistory` and `clearProjectPromptHistory`, the closed entry type, System capability 48 and entity kind 35. Preserve exact text, bigint acceptance order, actor/project-bound cursors and original confirmed-clear request identity. Reads never restore skill, image or execution authority. Capability absence preserves ordinary composer behavior.
+
+## Repository branch discovery — issue #1859
+
+Generated System 51 and Worker 27 plus `DiscoverRepositoryBranches` independently
+negotiate remote starting-branch metadata. Reuse existing Job resources and
+original revision/request identities. The desktop validates up to 10,000 sorted
+unique branch names in an 8 MiB result using a dedicated bounded 9 MiB Job reader;
+the general 1 MiB document parser remains unchanged. Result identity must match
+original project/repository/selected Worker revisions. Discovery remains advisory;
+session creation uses existing remote starting overrides and ordinary preparation
+validation. Older peers retain saved/manual reference flows.

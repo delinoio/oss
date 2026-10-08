@@ -80,6 +80,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1:
+			capabilities = append(capabilities, domain.RepositoryBranchDiscoveryV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1:
 			capabilities = append(capabilities, domain.NativeSkillsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1:
@@ -233,7 +235,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1}})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1}})
 	var networkStatus domain.WorkerNetworkStatus
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -441,6 +443,17 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					if j.State != domain.JobQueued {
 						return r, nil
 					}
+					if j.Type == domain.DiscoverRepositoryBranchesJob {
+						var input domain.RepositoryBranchesInput
+						if err := domain.Decode(j.Input, &input); err != nil {
+							return nil, err
+						}
+						if err := repositoryBranchAuthority(tx, input); err != nil {
+							now := time.Now().UTC()
+							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(err), &now
+							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+						}
+					}
 					if j.Type == domain.PrepareWorkspaceJob {
 						var input workspace.PrepareRequest
 						if domain.Decode(j.Input, &input) != nil {
@@ -632,6 +645,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 	}
 	machine, instance := domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)
 	actor, _ := domain.PrincipalFrom(ctx)
+	reportOperation := "worker.report"
 	// Check immutable assigned-device ownership before receipt lookup as well
 	// as before mutation. Historical jobs retain their existing machine scope.
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
@@ -642,6 +656,9 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		j, err := store.Decode[domain.Job](r)
 		if err != nil {
 			return err
+		}
+		if j.Type == domain.DiscoverRepositoryBranchesJob {
+			reportOperation = "worker.branches.report"
 		}
 		if j.AssignedDeviceID != "" && j.AssignedDeviceID != actor.DeviceID {
 			return domain.Fail(domain.PermissionDenied, "The assigned Worker device does not own this report.", "Use the original paired Worker device.")
@@ -664,7 +681,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		Output            json.RawMessage
 		Problem           *domain.Error
 	}{domain.ID(meta.Id), meta.ExpectedRevision, machine, instance, req.Msg.OutputJson, problem}
-	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "worker.report", input, func(tx *store.Tx) (any, error) {
+	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), reportOperation, input, func(tx *store.Tx) (any, error) {
 		record, err := tx.Get(domain.JobKind, domain.ID(meta.Id))
 		if err != nil {
 			return nil, err
@@ -768,6 +785,10 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 				if err != nil {
 					return nil, err
 				}
+			case domain.DiscoverRepositoryBranchesJob:
+				if err := finishRepositoryBranches(tx, job, outputJSON); err != nil {
+					problem = domain.SafeError(err)
+				}
 			case domain.InspectRepositoryJob:
 				var output workspace.Inspection
 				if err := domain.Decode(req.Msg.OutputJson, &output); err != nil {
@@ -868,7 +889,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		return nil, rpc.Error(err, correlation)
 	}
 	var record store.Record
-	if err := domain.Decode(result.Data, &record); err != nil {
+	if err := domain.DecodeWithLimit(result.Data, &record, reportResultLimit(reportOperation)); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	if record.Kind == "" {

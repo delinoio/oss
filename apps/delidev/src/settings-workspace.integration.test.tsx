@@ -119,7 +119,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   const changeNewSession = (name: string, value: string) => fireEvent.change(newSession.getByLabelText(name), { target: { value } });
   await choose(newSession.getByRole("combobox", { name: "Project" }), "Owned project");
   fireEvent.click(newSession.getByRole("button", { name: "Options" }));
-  fireEvent.click(newSession.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  fireEvent.click(newSession.getByRole("radio", { name: "Local" }));
   await waitFor(() => expect((newSession.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true));
   await choose(newSession.getByRole("combobox", { name: "Agent Worker" }), "Accountless schedule agent");
   changeNewSession("First message", "Local proof fixture without inference");

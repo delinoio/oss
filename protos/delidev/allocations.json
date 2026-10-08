@@ -9500,6 +9500,100 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1",
       "number": 49
+    },
+    {
+      "issue": 1859,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1",
+      "number": 51
+    },
+    {
+      "issue": 1859,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1",
+      "number": 27
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesRequest",
+      "member": "project_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesRequest",
+      "member": "project_revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesRequest",
+      "member": "repository_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesRequest",
+      "member": "repository_revision",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesRequest",
+      "member": "machine_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesRequest",
+      "member": "machine_revision",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1859,
+      "kind": "message",
+      "declaration": "DiscoverRepositoryBranchesResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -9599,6 +9693,15 @@
       "method": "ClearProjectPromptHistory",
       "input": "ClearProjectPromptHistoryRequest",
       "output": "ClearProjectPromptHistoryResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1859,
+      "service": "WorkerService",
+      "method": "DiscoverRepositoryBranches",
+      "input": "DiscoverRepositoryBranchesRequest",
+      "output": "DiscoverRepositoryBranchesResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }
