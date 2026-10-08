@@ -1,3 +1,4 @@
+import { SessionHarness } from "./session-harness";
 import { useSessionBrowserLayout } from "./session-browser-layout";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { acknowledgeSessionSubmission, nativeSubmissionInput, submissionQueueReadable, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
@@ -479,7 +480,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   }}>
     <header className="session-header">
       <div className="session-heading">
-        <div className="session-heading-line"><h2>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div>
+        <SessionHarness resource={session}><div className="session-heading-line"><h2>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div></SessionHarness>
         <p>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")} · {statusLabel(text(data.outcome))} · {statusLabel(text(data.dispatch))} · {statusLabel(text(data.archive))}</p>
         {titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? copy("session.message_2fa20b", { v0: titlePresentation.detail }) : ""}</p> : null}
       </div>

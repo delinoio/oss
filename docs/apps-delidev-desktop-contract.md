@@ -1590,6 +1590,24 @@ states. Stop and Resume retain their existing revision, uncertainty, budget and
 startup-rejection guards. Fork/Sidechat and Archive/Restore use a keyboard-operable
 Session actions popup; opening or closing it never creates or replaces authority.
 
+The header displays a decorative 32px licensed local harness mark and muted
+12px product name above the existing 20px semibold session title, with connection
+status beside the title. Branding reads only the supported retained Session
+resource: initial execution configuration first, or the fork snapshot only when
+initial execution is absent. Present malformed initial evidence, unknown harnesses
+and unsupported documents show localized unbranded Harness unavailable. Never
+infer branding from current execution, today's Agent/account/model or native
+inventory. Preserve the supplied mark colors, proportions, transparency, notices
+and OpenCode/Grok theme variants; branding adds no focus target or authority.
+
+Keep workspace/outcome/dispatch/Archive states below identity and the complete
+automatic-title observation on its own line. Right-align existing 40px Stop,
+Resume/startup Retry and Session actions controls with 8px corners. Use semantic
+tokens, a thin divider and 20px horizontal/16px vertical padding. At 520px available
+session width or less use 12px padding and wrap controls below identity; retain
+short-height bounded scrolling, accessible composer and all original action
+guards. Reflow must retain workspace controller and draft identities.
+
 A full-width tool strip exposes Diff, Files, Terminals, Browser, Diagnostics and
 Info. Info is a persistent inspector, independent of the five initially closed,
 mutually exclusive temporary tools. Its toolbar action focuses the original Info

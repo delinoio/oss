@@ -115,5 +115,6 @@
   "session.submissionAccepted": "Accepted by runner",
   "session.submissionUncertain": "Confirmation unavailable",
   "session.submissionRejected": "Rejected",
-  "session.submissionRemoved": "Removed"
+  "session.submissionRemoved": "Removed",
+  "session.harnessUnavailable": "Harness unavailable"
 }

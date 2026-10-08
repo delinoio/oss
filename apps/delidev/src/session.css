@@ -21,19 +21,34 @@
   align-items: flex-start;
   flex-direction: row;
   gap: 8px;
-  padding: 16px 20px 12px;
+  padding: 16px 20px;
   min-width: 0;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--background);
 }
-.session-heading { min-width: 0; }
+.session-heading { min-width: 0; flex: 1; }
+.session-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.session-identity-text { min-width: 0; }
+.session-harness-name { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.session-harness-mark { display: block; width: 32px; height: 32px; flex: 0 0 32px; background-position: center; background-repeat: no-repeat; background-size: contain; }
+.session-harness-mark-codex { background-image: url("../public/harness-marks/codex.webp"); }
+.session-harness-mark-claude-code { background-image: url("../public/harness-marks/claude-code.png"); }
+.session-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-light.svg"); }
+.session-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-light.svg"); }
+:root[data-theme="dark"] .session-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-dark.svg"); }
+:root[data-theme="dark"] .session-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-dark.svg"); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .session-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-dark.svg"); }
+  :root:not([data-theme]) .session-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-dark.svg"); }
+}
 .session-heading-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.session-workspace .session-header h2 { margin: 0; font-size: 20px; line-height: 26px; overflow-wrap: anywhere; }
+.session-workspace .session-header h2 { margin: 0; font-size: 20px; font-weight: 600; line-height: 26px; overflow-wrap: anywhere; }
 .session-workspace .session-header p { margin: 2px 0 0; font-size: 12px; overflow-wrap: anywhere; }
 .session-workspace .session-heading-line .connection { display: flex; align-items: center; gap: 6px; font-size: 11px; }
 .session-heading-line .connection::before { content: ""; width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--muted); }
 .session-heading-line .connection.is-live::before { background: var(--success-text); }
-.session-controls { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+.session-workspace .session-controls button { min-height: 40px; }
+.session-controls { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
 .session-actions-popup { position: relative; }
 .session-actions-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; display: grid; min-width: 180px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 16px var(--shadow-soft); }
 .session-actions-list button { text-align: left; border-color: transparent; }
@@ -140,6 +155,8 @@
 }
 @container session-view (max-width: 520px) {
   .session-workspace .session-header { flex-wrap: wrap; padding: 12px; min-height: 0; max-height: 25cqh; overflow: auto; }
+  .session-heading { flex-basis: 100%; }
+  .session-controls { width: 100%; justify-content: flex-end; }
   .session-workspace .session-toolbar { padding: 4px 8px; min-height: 0; max-height: 20cqh; overflow: auto; }
   .session-notices { padding-left: 12px; padding-right: 12px; }
   .session-workspace .transcript { padding: 12px; }
