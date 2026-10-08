@@ -603,7 +603,9 @@ func (m *Manager) poolProblemWithSource(id string, err error, suspend bool, sour
 	p := classify(err, ErrRetry, "Pool dependency is unavailable.", "Inspect status and retry after restoring the dependency.")
 	_ = m.Store.Update(func(s *Snapshot) error {
 		v := s.Pools[id]
-		if v == nil || v.Phase == Retired {
+		// Session and initialization results may arrive after preparation suspended
+		// the pool. Its original diagnosis remains the recovery authority.
+		if v == nil || v.Phase == Retired || v.Phase == Suspended {
 			return nil
 		}
 		p.Pool = v.Spec.Name
@@ -772,7 +774,11 @@ func (m *Manager) ensureScaleSetLocked(ctx context.Context, id string, remote Re
 		p := s.Pools[id]
 		p.ScaleSetID = scaleID
 		p.CreatePending = false
-		p.Problem = nil
+		// The owned result still settles creation, but cannot clear a failure
+		// committed by another worker while Ensure was in flight.
+		if p.Phase != Suspended {
+			p.Problem = nil
+		}
 		return nil
 	}); err != nil {
 		return nil, err
@@ -935,7 +941,10 @@ func (m *Manager) prepare(ctx context.Context, id string) {
 			r.Phase = Idle
 			r.Deadline = r.CreatedAt.Add(c.JobTimeout())
 		}
-		s.Pools[r.PoolID].PreparationFailures = 0
+		// A late success does not recover another worker's circuit breaker.
+		if pool := s.Pools[r.PoolID]; pool.Phase != Suspended {
+			pool.PreparationFailures = 0
+		}
 		return nil
 	}); e != nil {
 		m.runnerProblem(id, e, false)
