@@ -19,7 +19,7 @@ function fixture() {
     removed: vi.fn(async () => ({ connections: [] })),
     remove: vi.fn(async () => profile), retainedWorker: vi.fn(), pair: vi.fn(async () => profile), retry: vi.fn(async () => profile), rename: vi.fn(async () => profile), open: vi.fn(async () => {}),
   };
-  const stop = vi.fn(async () => ({})), start = vi.fn();
+  const stop = vi.fn(async (_request: unknown) => ({})), start = vi.fn();
   const transport = createRouterTransport(router => router.service(SystemService, { stopServer: stop }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   function Harness() {
