@@ -30,6 +30,14 @@ const (
 	validationThreadIdentity eventValidationStage = "thread-identity"
 	validationRawItem        eventValidationStage = "raw-item"
 	validationQueue          eventValidationStage = "thread-queue"
+	validationApps           eventValidationStage = "app-inventory"
+	validationGateway        eventValidationStage = "account-gateway"
+	validationSkills         eventValidationStage = "skills-inventory"
+	validationMCP            eventValidationStage = "mcp-startup"
+	validationHook           eventValidationStage = "native-hook"
+	validationThreadMetadata eventValidationStage = "thread-metadata"
+	validationLegacy         eventValidationStage = "legacy-notification"
+	validationStatus         eventValidationStage = "thread-status"
 )
 
 // Log a closed classification instead of untrusted native method or content.
@@ -59,6 +67,22 @@ func validationStage(method string) eventValidationStage {
 		return validationRawItem
 	case "thread/queue/changed":
 		return validationQueue
+	case "app/list/updated":
+		return validationApps
+	case "account/gatewayOAuth/changed":
+		return validationGateway
+	case "skills/changed":
+		return validationSkills
+	case "mcpServer/startupStatus/updated", "mcpServer/event/stream/notification", "mcpServer/oauthLogin/completed":
+		return validationMCP
+	case "hook/started", "hook/completed":
+		return validationHook
+	case "thread/name/updated", "thread/attachment/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/project/updated":
+		return validationThreadMetadata
+	case "thread/status/changed":
+		return validationStatus
+	case "codex/event/session_configured", "codex/event/task_started", "codex/event/mcp_startup_complete", "codex/event/mcp_startup_update", "codex/event/token_count":
+		return validationLegacy
 	default:
 		return validationOther
 	}
