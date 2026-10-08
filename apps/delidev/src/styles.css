@@ -1062,7 +1062,9 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .file-root-selector { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .file-root-selector select { width: 100%; min-width: 0; }
 .file-context { margin: 0; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
-.file-tree-scroll { min-height: 0; flex: 1; overflow: auto; }
+/* A short compact drawer scrolls the complete Files surface in its existing
+   outer panel. Never shrink its body to zero beneath the header/composer. */
+.file-tree-scroll { min-height: 160px; flex: 1; overflow: auto; }
 .file-tree-entries { padding: 0; margin: 0; list-style: none; }
 .file-tree-entries [role=group] { padding-left: 16px; }
 .file-tree-row { display: flex; gap: 6px; align-items: center; min-height: 32px; padding: 4px; border-radius: 4px; cursor: pointer; }
@@ -1077,7 +1079,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .file-tree-row small { font-size: .7rem; color: var(--muted); max-width: 42%; overflow-wrap: anywhere; }
 .file-directory-status { font-size: .8rem; }
 .file-directory-status:empty { display: none; }
-.file-preview { min-width: 0; overflow: auto; min-height: 0; }
+.file-preview { min-width: 0; overflow: auto; min-height: 160px; flex: 1; }
 .file-preview h3 { margin: 8px 0; overflow-wrap: anywhere; }
 .file-preview .file-path { margin: 4px 0; }
 .file-back { margin-top: 4px; }
