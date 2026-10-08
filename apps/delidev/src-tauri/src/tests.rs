@@ -33,16 +33,49 @@ fn sidecar_lookup_preserves_absolute_paths_without_relative_fallback() {
 fn github_presentation_uses_closed_sidecar_and_checks_acknowledgment() {
     use std::os::unix::fs::PermissionsExt;
     let temporary = tempfile::tempdir().unwrap();
-    for (index, response) in [
-        r#"{"dispatched":true}"#,
-        r#"{"dispatched":false}"#,
-        r#"{"dispatched":true,"token":"unexpected"}"#,
+    for (index, (output, diagnostic, status, expected)) in [
+        (
+            r#"{"version":1,"result":{"dispatched":true}}"#,
+            "",
+            0,
+            Ok(()),
+        ),
+        (
+            r#"{"version":1,"result":{"dispatched":false}}"#,
+            "",
+            0,
+            Err(NativeFailure::InvalidEvidence),
+        ),
+        (
+            r#"{"version":1,"result":{"dispatched":true,"token":"unexpected"}}"#,
+            "",
+            0,
+            Err(NativeFailure::InvalidEvidence),
+        ),
+        (
+            r#"{"version":1,"result":unclosed"#,
+            "",
+            0,
+            Err(NativeFailure::InvalidEvidence),
+        ),
+        (
+            r#"{"version":1,"result":{"dispatched":true}}"#,
+            "",
+            1,
+            Err(NativeFailure::SidecarFailed),
+        ),
+        (
+            r#"{"version":1,"result":{"dispatched":true}}"#,
+            "bounded benign diagnostic",
+            0,
+            Ok(()),
+        ),
     ]
-    .iter()
+    .into_iter()
     .enumerate()
     {
         let executable = temporary.path().join(format!("sidecar-{index}"));
-        let script = format!("#!/bin/sh\n[ \"$3\" = presentation ] && [ \"$4\" = open-github ] && [ \"$5\" = --url-stdin ] && [ \"$#\" = 5 ] || exit 2\naddress=$(/bin/cat)\n[ \"$address\" = https://github.com/owner/repo/pull/1 ] || exit 3\nprintf x >> \"$0.invocations\"\nprintf '%s' '{{\"version\":1,\"result\":{response}}}'\n");
+        let script = format!("#!/bin/sh\nprintf x >> \"$0.invocations\"\nexpected_root=\"${{0%/*}}/state\"\n[ \"$1\" = --data-dir ] && [ \"$2\" = \"$expected_root\" ] && [ \"$3\" = presentation ] && [ \"$4\" = open-github ] && [ \"$5\" = --url-stdin ] && [ \"$#\" = 5 ] || exit 2\naddress=$(/bin/cat)\n[ \"$address\" = https://github.com/owner/repo/pull/1 ] || exit 3\nprintf '%s' '{output}'\nprintf '%s' '{diagnostic}' >&2\nexit {status}\n");
         // Parallel fixture forks can retain a parent-authored writable script
         // description and make Linux exec fail with ETXTBSY. A joined writer
         // child keeps every writable description out of the test parent and
@@ -69,11 +102,6 @@ fn github_presentation_uses_closed_sidecar_and_checks_acknowledgment() {
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
         let connector = Connector::new(executable, temporary.path().join("state")).unwrap();
         let observed = connector.open_github("https://github.com/owner/repo/pull/1");
-        let expected = if index == 0 {
-            Ok(())
-        } else {
-            Err(NativeFailure::InvalidEvidence)
-        };
         assert_eq!(
             observed, expected,
             "presentation fixture response case {index}"
