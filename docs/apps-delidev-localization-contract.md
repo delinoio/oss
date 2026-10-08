@@ -222,3 +222,12 @@ strings, offsets and fractions remain inspectable and never become machine
 authority through localization. UTC backup and exact standalone PR-card labels
 retain their explicit modes. Catalog interpolation uses inert React timestamp
 slots so locale and display-clock updates do not stringify or remount them.
+
+Issue #1826 adds complete localized quota-reset countdown sentences to the
+React and native source catalogs. The existing generator produces Rust keys and
+Swift catalogs. Days mean 24 elapsed hours. Floor day/hour, hour/minute or minute
+units, omit a zero trailing unit and retain English singular/plural and Korean
+unit order. Below one minute uses Resets soon / 곧 리셋. Ordinary timestamps,
+source strings, device date preferences and successful observation times remain
+unchanged. Expiry returns to the surface's original timestamp/fallback and cannot
+prove quota recovery.

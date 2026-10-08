@@ -95,6 +95,21 @@ pub enum Message {
     StartupConflict,
     StartupIncompatible,
     StartupUnavailable,
+    ResetDay,
+    ResetDays,
+    ResetDayHour,
+    ResetDayHours,
+    ResetDaysHour,
+    ResetDaysHours,
+    ResetHour,
+    ResetHours,
+    ResetHourMinute,
+    ResetHourMinutes,
+    ResetHoursMinute,
+    ResetHoursMinutes,
+    ResetMinute,
+    ResetMinutes,
+    ResetSoon,
 }
 impl Message {
     pub fn key(self) -> &'static str {
@@ -192,6 +207,21 @@ impl Message {
             Self::StartupConflict => "startupConflict",
             Self::StartupIncompatible => "startupIncompatible",
             Self::StartupUnavailable => "startupUnavailable",
+            Self::ResetDay => "resetDay",
+            Self::ResetDays => "resetDays",
+            Self::ResetDayHour => "resetDayHour",
+            Self::ResetDayHours => "resetDayHours",
+            Self::ResetDaysHour => "resetDaysHour",
+            Self::ResetDaysHours => "resetDaysHours",
+            Self::ResetHour => "resetHour",
+            Self::ResetHours => "resetHours",
+            Self::ResetHourMinute => "resetHourMinute",
+            Self::ResetHourMinutes => "resetHourMinutes",
+            Self::ResetHoursMinute => "resetHoursMinute",
+            Self::ResetHoursMinutes => "resetHoursMinutes",
+            Self::ResetMinute => "resetMinute",
+            Self::ResetMinutes => "resetMinutes",
+            Self::ResetSoon => "resetSoon",
         }
     }
 }

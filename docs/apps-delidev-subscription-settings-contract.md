@@ -194,3 +194,13 @@ Claude selection retains bounded original machine observations and the typed inv
 Capability 46 enables row and detailed Refresh for eligible server-owned ChatGPT accounts without a Runner Device. Send the existing QUOTA request with omitted machine and exact account revision, connection and credential generation. Active executions use their original Worker machine. Keep queued, sending and uncertain server observations disabled, preserve retained values and last-success times after failures, and show explicit server-update guidance when the capability is absent. Reset-credit consumption remains bound to its original Runner Device. No mount, reconnect or presentation callback sends an unsupported quota request. Follow the [subscription server quota contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728).
 
 Subscription and API quota bars share the displayed integer remaining percentage: 0% uses danger-text, 50% warning-text and 100% success-text. Intermediate values interpolate the adjacent semantic tokens in sRGB. Each fill is uniform; retained stale and failed observations use the same percentage color while their original labels and timestamps remain independent. Numeric values, empty zero fills and invalid-value suppression remain unchanged. Theme changes add no observation or account operation.
+
+### Quota reset countdown presentation (issue #1826)
+
+All subscription quota windows, including Details-only additional windows, use
+the desktop quota-countdown mode for future validated reset instants. Preserve
+window order, fractions, observation times and existing independent quota clocks.
+Expiry returns to the original reset timestamp and elapsed/recovery-unconfirmed
+wording without restoring quota or requesting refresh. Invalid or missing reset
+evidence keeps its original presentation. Shared presentation scheduling grants
+no account, login, cleanup or reset-credit authority.

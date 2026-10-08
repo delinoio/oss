@@ -10,11 +10,12 @@ import WidgetKit
         guard CommandLine.arguments.count == 2 else { throw SnapshotFailure.invalid }
         let destination = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         let now = Date(), observed = ISO8601DateFormatter().string(from: now)
+        let reset = ISO8601DateFormatter().string(from: now.addingTimeInterval(6 * 86400 + 3 * 3600 + 120))
         let stale = ISO8601DateFormatter().string(from: now.addingTimeInterval(-3600))
         let summary = Summary(
             overview: Overview(observed_at: observed, stale: false, active_sessions: "12", pending_interactions: "1", registered_workers: "3", connected_workers: "2"),
             usage: Usage(known_tokens: "90071992547409930000", incomplete: true, estimates: [Estimate(currency: "USD", known_amount: "0.000000001"), Estimate(currency: "KRW", known_amount: "9007199254740993.000")]),
-            accounts: Accounts(entries: [Account(alias: "Original user name", windows: [Quota(state: .observed, remaining_basis_points: 1200, observed_at: observed, reset_at: nil)], more: true)], more: false))
+            accounts: Accounts(entries: [Account(alias: "Original user name", windows: [Quota(state: .observed, remaining_basis_points: 1200, observed_at: observed, reset_at: reset)], more: true)], more: false))
         let id = "01999ae2-9000-7000-8000-000000000001"
         let fresh = ServerSnapshot(id: id, name: "Original server", state: .observed, last_successful_at: observed, last_attempted_at: observed, summary: summary)
         let old = ServerSnapshot(id: id, name: "Original server", state: .stale, last_successful_at: stale, last_attempted_at: observed, summary: summary)

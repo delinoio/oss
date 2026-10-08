@@ -96,6 +96,21 @@ enum WidgetMessage: String {
     case startupConflict
     case startupIncompatible
     case startupUnavailable
+    case resetDay
+    case resetDays
+    case resetDayHour
+    case resetDayHours
+    case resetDaysHour
+    case resetDaysHours
+    case resetHour
+    case resetHours
+    case resetHourMinute
+    case resetHourMinutes
+    case resetHoursMinute
+    case resetHoursMinutes
+    case resetMinute
+    case resetMinutes
+    case resetSoon
 }
 private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
     .english: [
@@ -192,6 +207,21 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "startupConflict": "Another DeliDev app, server or service is using this data folder or port. Keep its data. Quit the other app or explicitly stop its server before retrying.",
         "startupIncompatible": "DeliDev and its bundled CLI are incompatible. Reinstall the desktop app with its bundled CLI, then retry.",
         "startupUnavailable": "DeliDev could not start on this computer. Check access to its data folder and bundled executable, then restart the app.",
+        "resetDay": "Resets in {{days}} day",
+        "resetDays": "Resets in {{days}} days",
+        "resetDayHour": "Resets in {{days}} day {{hours}} hour",
+        "resetDayHours": "Resets in {{days}} day {{hours}} hours",
+        "resetDaysHour": "Resets in {{days}} days {{hours}} hour",
+        "resetDaysHours": "Resets in {{days}} days {{hours}} hours",
+        "resetHour": "Resets in {{hours}} hour",
+        "resetHours": "Resets in {{hours}} hours",
+        "resetHourMinute": "Resets in {{hours}} hour {{minutes}} minute",
+        "resetHourMinutes": "Resets in {{hours}} hour {{minutes}} minutes",
+        "resetHoursMinute": "Resets in {{hours}} hours {{minutes}} minute",
+        "resetHoursMinutes": "Resets in {{hours}} hours {{minutes}} minutes",
+        "resetMinute": "Resets in {{minutes}} minute",
+        "resetMinutes": "Resets in {{minutes}} minutes",
+        "resetSoon": "Resets soon",
     ],
     .korean: [
         "show": "DeliDev 표시",
@@ -287,6 +317,21 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "startupConflict": "다른 DeliDev 앱, 서버 또는 서비스가 이 데이터 폴더나 포트를 사용 중입니다. 데이터를 보존하고, 다른 앱을 종료하거나 해당 서버를 명시적으로 중지한 뒤 다시 시도하세요.",
         "startupIncompatible": "DeliDev와 함께 제공된 CLI가 호환되지 않습니다. CLI가 포함된 데스크탑 앱을 다시 설치한 뒤 시도하세요.",
         "startupUnavailable": "이 컴퓨터에서 DeliDev를 시작하지 못했습니다. 데이터 폴더와 함께 제공된 실행 파일의 접근 권한을 확인한 뒤 앱을 다시 시작하세요.",
+        "resetDay": "{{days}}일 뒤 리셋",
+        "resetDays": "{{days}}일 뒤 리셋",
+        "resetDayHour": "{{days}}일 {{hours}}시간 뒤 리셋",
+        "resetDayHours": "{{days}}일 {{hours}}시간 뒤 리셋",
+        "resetDaysHour": "{{days}}일 {{hours}}시간 뒤 리셋",
+        "resetDaysHours": "{{days}}일 {{hours}}시간 뒤 리셋",
+        "resetHour": "{{hours}}시간 뒤 리셋",
+        "resetHours": "{{hours}}시간 뒤 리셋",
+        "resetHourMinute": "{{hours}}시간 {{minutes}}분 뒤 리셋",
+        "resetHourMinutes": "{{hours}}시간 {{minutes}}분 뒤 리셋",
+        "resetHoursMinute": "{{hours}}시간 {{minutes}}분 뒤 리셋",
+        "resetHoursMinutes": "{{hours}}시간 {{minutes}}분 뒤 리셋",
+        "resetMinute": "{{minutes}}분 뒤 리셋",
+        "resetMinutes": "{{minutes}}분 뒤 리셋",
+        "resetSoon": "곧 리셋",
     ],
 ]
 func widgetCopy(_ key: WidgetMessage, _ language: WidgetLanguage, _ values: [String: String] = [:]) -> String {

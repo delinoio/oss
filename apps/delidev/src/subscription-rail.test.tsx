@@ -93,3 +93,18 @@ it("offers a saved-evidence recheck in the owning account popup without quota mu
  const f=mount(()=>({resources:[resource("Original")] }));fireEvent.click(await screen.findByRole("button",{name:/Original ·/}));
  fireEvent.click(screen.getByRole("button",{name:"Recheck saved quota evidence"}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(2));expect(f.manage).not.toHaveBeenCalled();
 });
+
+it("shows sidebar reset countdowns without quota or account operations", async () => {
+  const reset = new Date(Date.now() + 529200000 + 120000).toISOString();
+  const row = resource("Countdown rail", "chatgpt", { quota: [{ id: "weekly", remaining: .28, state: "observed", observed_at: new Date().toISOString(), reset_at: reset, comparison_group: "weekly", blocking: true }] });
+  const read = vi.fn(() => ({ resources: [row] }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] }) });
+    router.service(ResourceService, { listResources: read });
+  });
+  const manage = vi.fn();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TransportProvider transport={transport}><SubscriptionRail enabled manage={manage} /></TransportProvider></QueryClientProvider>);
+  const opener = await screen.findByRole("button", { name: /Countdown rail/ }); fireEvent.click(opener);
+  expect(screen.getByText("Resets in 6 days 3 hours")).toBeTruthy(); expect(screen.getByTitle(reset).getAttribute("datetime")).toBe(reset);
+  expect(read).toHaveBeenCalledTimes(1); expect(manage).not.toHaveBeenCalled();
+});

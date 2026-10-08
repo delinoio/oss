@@ -23,6 +23,7 @@ pub mod date_format;
 pub mod language;
 pub mod oauth;
 pub mod provider_guidance;
+pub mod quota_countdown;
 pub mod session_creation_preferences;
 pub mod updater;
 pub mod widget_writer;
