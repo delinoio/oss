@@ -561,6 +561,7 @@ mod tests {
         env,
         io::Write,
         os::unix::{fs::PermissionsExt, process::CommandExt},
+        path::PathBuf,
         process::Stdio,
     };
 
