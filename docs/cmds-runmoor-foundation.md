@@ -591,7 +591,12 @@ fires. The timer enforces an observed deadline independently of the polling cade
 Process names and command arguments confer no ownership. Completed,
 cancelled and timed-out executions terminate only verified group members. Missing
 supervisors, changed process identity and uncertain termination retain reservations
-and actionable recovery. Daemons escaping the managed group are unsupported.
+and actionable recovery. Finished or failed status cannot omit or change a
+durably recorded worker PID/start/group identity. Reject that status before
+process inspection, signaling or termination accounting; preserve the execution
+record, workspace and reservations. Matching terminal workers still require
+verified empty groups. Genuine failures before worker publication retain their
+existing cleanup path. Daemons escaping the managed group are unsupported.
 
 SQLite v4 keeps directory creation intent, installation/execution identity,
 owner-only markers, device/inode identity, supervisor/worker identity and cleanup
