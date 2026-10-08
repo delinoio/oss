@@ -38,13 +38,16 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
   }
   return <article className="settings-agent-row">
     <div className="settings-agent-details">
-      <div className="settings-agent-heading">{supported && knownHarness ? <span className={`worker-harness-mark worker-harness-mark-${harness}`} aria-hidden="true" /> : null}<h3>{name}</h3>{supported && harness ? <span>{knownHarness ? workerHarnessNames[harness as Harness] : harness}</span> : null}</div>
+      <div className="settings-agent-mark" aria-hidden="true">{supported && knownHarness ? <span className={`worker-harness-mark worker-harness-mark-${harness}`} aria-hidden="true" /> : null}</div>
+      <div className="settings-agent-text">
+      <div className="settings-agent-heading"><h3>{name}</h3>{supported && harness ? <span>{knownHarness ? workerHarnessNames[harness as Harness] : harness}</span> : null}</div>
       {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
       {supported ? <div className="agent-model-summary"><span>{copy("agent-worker-row.configuredModel")}</span>{model(modelIDs[0] ?? "")}{accountCount(0)}{modelIDs.length > 1 ? <button type="button" aria-expanded={expanded} aria-controls={region} onClick={() => expand(value => !value)}>{copy("agent-worker-row.moreModels", { count: modelIDs.length - 1 })}</button> : null}</div> : null}
       {supported && modelIDs.length > 1 ? <div id={region} role="region" hidden={!expanded} aria-label={copy("agent-worker-row.configuredModels")}><ol className="agent-model-routes">{modelIDs.map((id, index) => <li key={index}>{model(id)}{accountCount(index)}</li>)}</ol></div> : null}
       {!supported && [1, 2, 3].includes(row.schemaVersion) ? <span className="agent-route-account-count">{copy("agent-worker-row.accountCountUnavailable")}</span> : null}
       {data.reconfiguration_required === true ? <p role="status">{copy("settings.reconfigurationRequired_a84a37")}</p> : null}
       <small>{row.id}</small>
+      </div>
     </div>
     <div className="actions settings-agent-actions">
       <button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={edit}>{copy("settings.edit_464c4f")}</button>

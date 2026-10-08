@@ -29,20 +29,35 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", error => console.error("fixture_page_error", error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [960,640], [640,480], [720,450], [480,320]]) {
-    await page.setViewportSize({ width, height }); await page.goto(`${origin}/?language=${language}&theme=${theme}`);
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height, availableWidth] of [[1440,900], [960,640], [640,480], [720,450], [480,320], [1100,900], [1099,900], [1440,900,640], [1440,900,639]]) {
+    await page.setViewportSize({ width, height }); await page.goto(`${origin}/?language=${language}&theme=${theme}${availableWidth ? `&availableWidth=${availableWidth}` : ""}`);
     await page.locator(".agent-model-native").first().waitFor();
     assert.equal(await page.locator("html").getAttribute("data-model-reads"), "1");
     assert.equal(await page.locator(".worker-harness-mark").count(), 4);
     const geometry = await page.locator(".settings-agent-row").evaluateAll(rows => rows.map(row => ({ width: row.clientWidth, overflow: row.scrollWidth > row.clientWidth + 1, mark: [...row.querySelectorAll(".worker-harness-mark")].map(mark => ({ width: mark.getBoundingClientRect().width, image: getComputedStyle(mark).backgroundImage, hidden: mark.getAttribute("aria-hidden") })), buttons: [...row.querySelectorAll("button")].map(button => ({ height: button.getBoundingClientRect().height, radius: getComputedStyle(button).borderRadius })) })));
     for (const row of geometry) { assert(!row.overflow, JSON.stringify(row)); for (const mark of row.mark) { assert.equal(mark.width, 32); assert.notEqual(mark.image, "none"); assert.equal(mark.hidden, "true"); } for (const button of row.buttons) { assert(button.height >= 40); assert.equal(button.radius, "8px"); } }
+    const anchors = await page.locator(".settings-agent-row").evaluateAll(rows => rows.map(row => {
+      const details = row.querySelector(".settings-agent-details").getBoundingClientRect();
+      const actions = row.querySelector(".settings-agent-actions").getBoundingClientRect();
+      const heading = row.querySelector("h3").getBoundingClientRect();
+      const identity = row.querySelector(".settings-agent-text > small").getBoundingClientRect();
+      const summary = row.querySelector(".agent-model-summary > span")?.getBoundingClientRect();
+      return { headingX: heading.x, identityX: identity.x, summaryX: summary?.x, detailsTop: details.top, actionsTop: actions.top, sideBySide: actions.left >= details.right - 1 };
+    }));
+    for (const row of anchors) {
+      assert(Math.abs(row.headingX - row.identityX) <= 1, JSON.stringify(row));
+      if (row.summaryX !== undefined) assert(Math.abs(row.headingX - row.summaryX) <= 1, JSON.stringify(row));
+      if (row.sideBySide) assert(Math.abs(row.detailsTop - row.actionsTop) <= 1, JSON.stringify(row));
+    }
     const toggle = page.getByRole("button", { name: language === "ko" ? "+2개 더 보기" : "+2 more" });
     await page.keyboard.press("Tab"); await toggle.focus(); assert(await toggle.evaluate(node => node.matches(":focus-visible") && parseFloat(getComputedStyle(node).outlineWidth) > 0));
+    const actionsTop = await page.locator(".settings-agent-actions").first().evaluate(node => node.getBoundingClientRect().top);
     await toggle.press("Enter"); assert.equal(await toggle.getAttribute("aria-expanded"), "true");
     await page.waitForFunction(() => document.documentElement.dataset.modelReads === "2");
+    if (anchors[0].sideBySide) assert(Math.abs(actionsTop - await page.locator(".settings-agent-actions").first().evaluate(node => node.getBoundingClientRect().top)) <= 1);
     const native = await page.locator(".agent-model-routes code").allTextContents(); assert.equal(native.length, 3); assert.equal(native[0], native[2]); assert.equal(native[1], "second-native");
     assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth));
-    await toggle.press("Space"); assert.equal(await toggle.getAttribute("aria-expanded"), "false"); assert.equal(await page.locator("html").getAttribute("data-model-reads"), "2"); checks++;
+    await toggle.press("Space"); assert.equal(await toggle.getAttribute("aria-expanded"), "false"); assert.equal(await page.locator("html").getAttribute("data-model-reads"), "2"); if (anchors[0].sideBySide) assert(Math.abs(actionsTop - await page.locator(".settings-agent-actions").first().evaluate(node => node.getBoundingClientRect().top)) <= 1); checks++;
   }
-  console.log(JSON.stringify({ operation: "agent_worker_rows_layout", result: "passed", checks, languages: 2, themes: 2, viewports: 5, effectiveZoom: [1,2], nativeAcceptance: "not-performed" }));
+  console.log(JSON.stringify({ operation: "agent_worker_rows_layout", result: "passed", checks, languages: 2, themes: 2, viewports: 7, availableRowBoundaries: [640,639], effectiveZoom: [1,2], nativeAcceptance: "not-performed" }));
 } finally { await browser?.close(); if (server?.listening) await new Promise(done => server.close(done)); await rm(directory, { recursive: true, force: true }); }
