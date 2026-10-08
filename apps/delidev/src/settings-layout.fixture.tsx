@@ -85,8 +85,8 @@ const subscription = create(ResourceSchema, { id: newRequestId(), kind: EntityKi
 const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, schemaVersion: 1, revision: 1n, documentJson: encode({ name: apiUsage ? "OpenRouter" : "Fixture provider", enabled: true, endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: false }) });
 // Opt-in routing fixtures contain display metadata only, never account/native authority.
 const routingAccounts = [
-  create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: longNames ? "Complete-account-alias-".repeat(10) : "ChatGPT Personal", type: "subscription", subscription_service: "chatgpt" }) }),
-  create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias: "Work API", type: "api", provider_id: provider.id }) }),
+  create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 2, revision: 1n, documentJson: encode({ alias: routingFixture === "compact" ? "Personal" : longNames ? "Complete-account-alias-".repeat(10) : "ChatGPT Personal", type: "subscription", subscription_service: "chatgpt" }) }),
+  create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ alias: routingFixture === "compact" ? "Work" : "Work API", type: "api", provider_id: provider.id }) }),
 ];
 if (apiFormatEdit) {
   const original = resourceDocument(provider);
@@ -161,6 +161,8 @@ const fixtureTransport = createRouterTransport(router => {
     const candidate = (account: typeof subscription, eligibility: string) => ({ id: account.id, weight: 1, eligibility, quota_state: "unknown" });
     const first = { policy: "priority", selected: "", candidates: [candidate(routingAccounts[0], "unauthenticated")] };
     const selected = { policy: "remaining-quota", selected: routingAccounts[1].id, fallback: true, candidates: [{ ...candidate(routingAccounts[1], "eligible"), score: 0.75, reset_at: "2026-10-07T00:00:00Z" }] };
+    const compact = { policy: "priority", selected: routingAccounts[1].id, candidates: [candidate(routingAccounts[0], "unauthenticated"), candidate(routingAccounts[1], "eligible")] };
+    if (routingFixture === "compact") return { routeJson: encode({ ...compact, source_index: 0, sources: [{ source: `api:${provider.id}`, model_id: model.id, native_model: "Model", route: compact }] }) };
     return { routeJson: encode(routingFixture === "empty" ? { ...first, candidates: [] } : routingFixture === "selected" ? selected : routingFixture === "sources" ? { ...selected, source_index: 1, sources: [{ source: "subscription:chatgpt", model_id: model.id, native_model: "Fixture subscription model", route: first, problem: { code: "missing_input", message: "Synthetic account state" } }, { source: `api:${provider.id}`, model_id: model.id, native_model: "Fixture API model", route: selected }] } : first) };
   }, saveConfiguration: projectWizard ? request => {
     // Synthetic acceptance makes accidental writes during Next observable.

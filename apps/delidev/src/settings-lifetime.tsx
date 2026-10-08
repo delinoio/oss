@@ -26,12 +26,14 @@ function guarded<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
 // transport while independent connection controllers stay mounted.
 export class SettingsOpening {
   readonly id = newRequestId();
+  readonly categoryOwner: object;
   readonly controller = new AbortController();
   readonly queryKey = ["settings-opening", this.id] as const;
   readonly mutationMeta = { settingsOpening: this.id };
   readonly transport: Transport;
 
-  constructor(upstream: () => Transport) {
+  constructor(upstream: () => Transport, categoryOwner?: object) {
+    this.categoryOwner = categoryOwner ?? this;
     this.transport = addStaticKeyToTransport({
       unary: async (method, signal, timeout, headers, input, context) => {
         const linked = this.link(signal);
@@ -96,6 +98,7 @@ export class SettingsOpening {
 export function SettingsLifetime({ children }: { children: (opening: SettingsOpening) => ReactNode }) {
   useLocale();
   const transport = useTransport();
+  const parent = useContext(Context);
   const upstream = useRef(transport);
   upstream.current = transport;
   const client = useQueryClient();
@@ -103,9 +106,9 @@ export function SettingsLifetime({ children }: { children: (opening: SettingsOpe
   useLayoutEffect(() => {
     // Strict Mode replays setup/cleanup. Each setup publishes a new generation
     // before mounting readers, so no child can reuse an aborted transport.
-    const current = new SettingsOpening(() => upstream.current);
+    const current = new SettingsOpening(() => upstream.current, parent?.categoryOwner);
     setOpening(current);
     return () => current.dispose(client);
-  }, [client]);
+  }, [client, parent?.categoryOwner]);
   return opening && !opening.disposed ? <Context.Provider key={opening.id} value={opening}><TransportProvider transport={opening.transport}>{children(opening)}</TransportProvider></Context.Provider> : null;
 }

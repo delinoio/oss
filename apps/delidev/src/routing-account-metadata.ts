@@ -3,11 +3,28 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, clientFailure, isEntityId, newRequestId, subscriptionService, subscriptionServiceNames, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { useSettingsOpening } from "./settings-lifetime";
 import { useSettingsTaskDismiss } from "./settings-task-context";
 import { document, text } from "./documents";
 
 export enum RoutingMetadataState { Loading = "loading", Ready = "ready", Unavailable = "unavailable" }
 export interface RoutingAccountMetadata { state: RoutingMetadataState; name?: string; source?: string; sourceState?: RoutingMetadataState }
+// One category owns four slots across account/provider reads and response generations.
+class RoutingReadPool {
+  private running = 0;
+  private waiting: (() => void)[] = [];
+  async read<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+    await new Promise<void>(resolve => {
+      const start = () => { this.running++; resolve(); };
+      if (this.running < 4) start(); else this.waiting.push(start);
+    });
+    try { if (signal.aborted) throw new Error("Disposed routing metadata read"); return await operation(); }
+    finally { this.running--; this.waiting.shift()?.(); }
+  }
+}
+const categoryPools = new WeakMap<object, RoutingReadPool>();
+function categoryPool(owner: object) { let pool = categoryPools.get(owner); if (!pool) { pool = new RoutingReadPool(); categoryPools.set(owner, pool); } return pool; }
+
 interface Projection { name: string; source?: string; providerId?: string }
 
 function projectMetadata(row: Resource, kind: EntityKind, id: string): Projection {
@@ -25,11 +42,14 @@ function projectMetadata(row: Resource, kind: EntityKind, id: string): Projectio
 // Names enrich the server's routing evidence only. Private query generations
 // prevent a disposed dialog or Strict Mode cleanup from canceling another read.
 // Project before caching so credentials and complete documents are not retained.
-export function useRoutingAccountMetadata(ids: readonly string[], active: boolean, revision: string) {
-  const transport = useTransport(), client = useQueryClient();
+export function useRoutingAccountMetadata(ids: readonly string[], active: boolean, revision: string, sources: readonly string[] = []) {
+  const transport = useTransport(), client = useQueryClient(), opening = useSettingsOpening();
+  const pool = categoryPool(opening?.categoryOwner ?? transport);
+  const sourcesKey = JSON.stringify([...new Set(sources)]);
+  const requestedSources = useMemo<string[]>(() => JSON.parse(sourcesKey), [sourcesKey]);
   const idsKey = JSON.stringify([...new Set(ids)]);
   const requested = useMemo<string[]>(() => JSON.parse(idsKey), [idsKey]);
-  const key = `${idsKey}:${revision}`;
+  const key = `${idsKey}:${sourcesKey}:${revision}`;
   const [state, setState] = useState<{ key: string; entries: Map<string, RoutingAccountMetadata> }>({ key: "", entries: new Map() });
   const owner = useRef<AbortController | undefined>(undefined);
   useSettingsTaskDismiss(() => owner.current?.abort());
@@ -43,11 +63,11 @@ export function useRoutingAccountMetadata(ids: readonly string[], active: boolea
       if (controller.signal.aborted || !isEntityId(id)) throw new Error("Unavailable routing display identity");
       const options = createQueryOptions(ResourceQuery.getResource, { kind, id }, { transport });
       const queryKey = [...options.queryKey, { routingMetadata: batch }];
-      const abort = () => { void client.cancelQueries({ queryKey, exact: true }); };
-      controller.signal.addEventListener("abort", abort, { once: true });
+      // Keep original waits in the shared pool until their transport settles.
+      // Cancellation fences publication without opening another four slots.
       try {
         return await client.fetchQuery({ queryKey, retry: false, gcTime: 0, staleTime: 0, queryFn: async context => {
-          const result = await options.queryFn({ ...context, queryKey: options.queryKey });
+          const result = await pool.read(controller.signal, async () => options.queryFn({ ...context, queryKey: options.queryKey }));
           if (!result.resource) throw new Error("Missing routing display metadata");
           return projectMetadata(result.resource, kind, id);
         } });
@@ -57,10 +77,24 @@ export function useRoutingAccountMetadata(ids: readonly string[], active: boolea
         });
         throw error;
       } finally {
-        controller.signal.removeEventListener("abort", abort);
         client.removeQueries({ queryKey, exact: true });
       }
     };
+    const providerRead = (id: string) => {
+      let pending = providers.get(id);
+      if (!pending) { pending = read(EntityKind.PROVIDER, id); providers.set(id, pending); }
+      return pending;
+    };
+    const sourceReads = requestedSources.map(async source => {
+      let metadata: RoutingAccountMetadata = { state: RoutingMetadataState.Unavailable };
+      const service = source.startsWith("subscription:") ? subscriptionService(source.slice(13)) : undefined;
+      if (service) metadata = { state: RoutingMetadataState.Ready, name: subscriptionServiceNames[service] };
+      else if (source.startsWith("api:") && isEntityId(source.slice(4))) {
+        try { metadata = { state: RoutingMetadataState.Ready, name: (await providerRead(source.slice(4))).name }; }
+        catch { /* Keep explicit unavailable metadata without guessing a provider. */ }
+      }
+      if (!controller.signal.aborted) setState(previous => ({ key, entries: new Map(previous.entries).set(`source:${source}`, metadata) }));
+    });
     let next = 0;
     const worker = async () => {
       while (!controller.signal.aborted) {
@@ -73,8 +107,7 @@ export function useRoutingAccountMetadata(ids: readonly string[], active: boolea
           metadata = { state: RoutingMetadataState.Ready, name: account.name, source: account.source, sourceState: account.providerId ? RoutingMetadataState.Loading : RoutingMetadataState.Ready };
           if (account.providerId) setState(previous => ({ key, entries: new Map(previous.entries).set(id, metadata) }));
           if (account.providerId) {
-            let provider = providers.get(account.providerId);
-            if (!provider) { provider = read(EntityKind.PROVIDER, account.providerId); providers.set(account.providerId, provider); }
+            const provider = providerRead(account.providerId);
             try { metadata = { ...metadata, source: (await provider).name, sourceState: RoutingMetadataState.Ready }; }
             catch { metadata = { ...metadata, sourceState: RoutingMetadataState.Unavailable }; }
           }
@@ -83,9 +116,9 @@ export function useRoutingAccountMetadata(ids: readonly string[], active: boolea
         setState(previous => ({ key, entries: new Map(previous.entries).set(id, metadata) }));
       }
     };
-    void Promise.all(Array.from({ length: Math.min(4, requested.length) }, () => worker()));
+    void Promise.all([...sourceReads, ...Array.from({ length: Math.min(4, requested.length) }, () => worker())]);
     return () => controller.abort();
-  }, [active, client, key, requested, transport]);
+  }, [active, client, key, pool, requested, requestedSources, transport]);
   // Fence old names synchronously when project/result identity changes, before
   // the next effect starts. Late continuations also check their original abort.
   return active && state.key === key ? state.entries : new Map<string, RoutingAccountMetadata>();

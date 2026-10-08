@@ -51,3 +51,31 @@
   .settings-task-dialog:has(.routing-preview) .settings-task-footer { padding: 8px 16px; }
   .routing-preview .routing-agent-name { display: block; color: var(--muted); font-size: 12px; line-height: 18px; }
 }
+
+/* Divided rows keep eligibility comparable before opening secondary evidence. */
+.routing-preview { gap: 12px; }
+.routing-result { padding: 12px; gap: 12px; }
+.routing-result > div { gap: 4px; }
+.routing-candidates { gap: 0; border-block: 1px solid var(--border); }
+.routing-candidate { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 10px 0; border: 0; border-radius: 0; background: transparent; }
+.routing-candidate + .routing-candidate { border-top: 1px solid var(--border); }
+.routing-candidate-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+.routing-candidate-heading .routing-selected-label { grid-column: 1 / -1; color: var(--selected-text); }
+.routing-candidate-evidence { gap: 8px 16px; align-self: start; }
+.routing-candidate-evidence dt { margin-bottom: 0; }
+.routing-candidate .routing-account-id { grid-column: 1 / -1; border: 0; background: transparent; }
+.routing-account-id summary, .routing-source-id summary { min-height: 40px; padding: 9px 0; font-size: 12px; cursor: pointer; }
+.routing-account-id code { padding: 0 0 8px; }
+.routing-detail-evidence { display: grid; gap: 8px; padding-bottom: 8px; }
+.routing-detail-evidence dt, .routing-source-id dt { color: var(--muted); font-size: 12px; }
+.routing-source { gap: 6px; }
+.routing-source h4, .routing-source-id code, .routing-result span { overflow-wrap: anywhere; }
+.routing-source-id { min-width: 0; }
+.routing-source-id dl { display: grid; gap: 8px; }
+.routing-policy > div { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.routing-eligibility { max-width: none; }
+@container settings-body (width < 640px) {
+  .routing-candidate { grid-template-columns: minmax(0, 1fr); }
+  .routing-candidate-heading { grid-template-columns: minmax(0, 1fr); }
+  .routing-candidate-evidence { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

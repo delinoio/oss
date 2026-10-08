@@ -34,5 +34,10 @@
   "routing-preview.incompatibleAccount": "호환되지 않는 계정",
   "routing-preview.disabled": "비활성화",
   "routing-preview.exhausted": "소진됨",
-  "routing-preview.automaticExcluded": "자동 라우팅에서 제외됨"
+  "routing-preview.automaticExcluded": "자동 라우팅에서 제외됨",
+  "routing-preview.modelUnavailable": "모델 정보 확인 불가",
+  "routing-preview.sourceDetails": "소스 식별 정보",
+  "routing-preview.sourceKey": "소스 키",
+  "routing-preview.modelId": "모델 ID",
+  "routing-preview.finalResult": "최종 결과 후보"
 }
