@@ -175,6 +175,12 @@ func init() {
 				write(request.ID, map[string]any{"data": data, "nextCursor": nil})
 				continue
 			}
+			if request.Method == "account/rateLimits/read" {
+				if key := os.Getenv("DELIDEV_CODEX_QUOTA_UPDATES"); key != "" {
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "account/rateLimits/updated", "params": map[string]any{"rateLimits": map[string]any{"limitId": key, "primary": map[string]any{"usedPercent": 100}, "spendControlReached": true}}})
+					_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"method": "warning", "params": map[string]any{"message": "fixture quota notifications completed"}})
+				}
+			}
 			if managedFixtureHandle(mode, request.ID, request.Method, request.Params, write) {
 				continue
 			}

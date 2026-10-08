@@ -2,10 +2,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -40,6 +42,10 @@ func (n *serverQuotaFixture) ReadManagedQuota(ctx context.Context, _ domain.ID) 
 }
 func (n *serverQuotaFixture) Close([]byte) error { return n.closeError }
 func newServerQuotaFixture(t *testing.T) (*subscriptionFixture, *serverQuotaFixture) {
+	return newServerQuotaFixtureAccount(t, "quota-server-account")
+}
+
+func newServerQuotaFixtureAccount(t *testing.T, account string) (*subscriptionFixture, *serverQuotaFixture) {
 	f := newSubscriptionFixture(t)
 	// Remove the common fixture's Runner registration. This lane must work with
 	// only its server-owned account, original protected generation and receipt.
@@ -54,7 +60,7 @@ func newServerQuotaFixture(t *testing.T) (*subscriptionFixture, *serverQuotaFixt
 		t.Fatal(err)
 	}
 	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
-	login := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle("quota-server-account", "first", time.Now().UTC())}
+	login := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle(account, "first", time.Now().UTC())}
 	done := f.serverRun(login)
 	awaitServerFixture(t, login.started)
 	close(login.finish)
@@ -464,3 +470,45 @@ func (q quotaNativeFixture) ReadExternalQuota(ctx context.Context, id domain.ID,
 	return q.n.ReadManagedQuota(ctx, id)
 }
 func (q quotaNativeFixture) Close() error { return q.n.closeError }
+
+func TestServerQuotaRejectsShortProtectedOriginalAndEncodedIDs(t *testing.T) {
+	for _, id := range []string{"acct:primary", "YWNjdA:primary", "YWNjdA==:primary"} {
+		t.Run(id, func(t *testing.T) {
+			f, n := newServerQuotaFixtureAccount(t, "acct")
+			ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+			// Publish a last good exhausted observation before a reflected fresh value.
+			exhausted := true
+			zero := 0.0
+			n.observed.Windows[0].Remaining = &zero
+			n.observed.SpendControlReached = &exhausted
+			if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, requestServerQuota(f))); err != nil {
+				t.Fatal(err)
+			}
+			f.service.runServerQuota(ctx, f.input.AccountID)
+			_, before := f.record()
+			if !before.ConfirmedExhausted {
+				t.Fatal("fixture did not retain original exhaustion")
+			}
+			available := 1.0
+			notExhausted := false
+			n.observed = domain.SubscriptionQuotaObservation{ObservedAt: time.Now().UTC(), Windows: []domain.SubscriptionQuotaWindow{{ID: id, Remaining: &available}}, SpendControlReached: &notExhausted}
+			var logs bytes.Buffer
+			f.service.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+			if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, requestServerQuota(f))); err != nil {
+				t.Fatal(err)
+			}
+			f.service.runServerQuota(ctx, f.input.AccountID)
+			_, after := f.record()
+			if !reflect.DeepEqual(before.Quota, after.Quota) || !reflect.DeepEqual(before.Subscription.QuotaObservedAt, after.Subscription.QuotaObservedAt) || after.ConfirmedExhausted != before.ConfirmedExhausted {
+				t.Fatal("reflected server quota replaced last good observation or exhaustion")
+			}
+			if after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || !after.Subscription.ServerQuota.CleanupConfirmed || after.Health != before.Health || after.Subscription.RecoveryRequired {
+				t.Fatal("reflection changed independent cleanup or account authority")
+			}
+			f.service.runServerQuota(ctx, f.input.AccountID)
+			if n.reads.Load() != 2 || strings.Contains(logs.String(), id) {
+				t.Fatal("terminal reflection retried native read or escaped diagnostic")
+			}
+		})
+	}
+}

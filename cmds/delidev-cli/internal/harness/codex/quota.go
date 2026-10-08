@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -231,19 +232,8 @@ func ValidateQuotaSecrets(value domain.SubscriptionQuotaObservation, secrets ...
 		if token == "" {
 			continue
 		}
-		// Even short identities cannot become public opaque IDs. Long substrings
-		// additionally cover raw and Base64 credential reflections.
-		for _, window := range value.Windows {
-			if window.ID == token {
-				return subscription.Invalid()
-			}
-		}
-		if value.Credits != nil && value.Credits.Credits != nil {
-			for _, credit := range *value.Credits.Credits {
-				if credit.ID == token {
-					return subscription.Invalid()
-				}
-			}
+		if quotaIdentifierReflects(value, token) {
+			return subscription.Invalid()
 		}
 		needle := []byte(token)
 		if len(needle) >= 8 && bytes.Contains(projected, needle) {
@@ -251,7 +241,7 @@ func ValidateQuotaSecrets(value domain.SubscriptionQuotaObservation, secrets ...
 		}
 		for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 			encoded := []byte(encoding.EncodeToString(needle))
-			found := len(needle) >= 8 && bytes.Contains(projected, encoded)
+			found := quotaIdentifierReflects(value, string(encoded)) || len(needle) >= 8 && bytes.Contains(projected, encoded)
 			clear(encoded)
 			if found {
 				return subscription.Invalid()
@@ -259,4 +249,29 @@ func ValidateQuotaSecrets(value domain.SubscriptionQuotaObservation, secrets ...
 		}
 	}
 	return nil
+}
+
+// Only the adapter-owned final window suffix is removed. Exact matching keeps
+// short protected words from rejecting unrelated public metadata substrings.
+func quotaIdentifierReflects(value domain.SubscriptionQuotaObservation, protected string) bool {
+	for _, window := range value.Windows {
+		id := window.ID
+		for _, suffix := range []string{":primary", ":secondary", ":spend"} {
+			if strings.HasSuffix(id, suffix) {
+				id = strings.TrimSuffix(id, suffix)
+				break
+			}
+		}
+		if window.ID == protected || id == protected {
+			return true
+		}
+	}
+	if value.Credits != nil && value.Credits.Credits != nil {
+		for _, credit := range *value.Credits.Credits {
+			if credit.ID == protected {
+				return true
+			}
+		}
+	}
+	return false
 }
