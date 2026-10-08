@@ -2,7 +2,7 @@
 use std::{
     collections::BTreeMap,
     sync::{
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -10,7 +10,7 @@ use std::{
 use delidev_desktop::{
     Connector, NativeFailure,
     oauth::OAuthHost,
-    updater::{Action, DesktopUpdateRequest, Phase, Prepared, PublicResult},
+    updater::{AcceptedInstallation, Action, DesktopUpdateRequest, Phase, Prepared, PublicResult},
 };
 use tauri::WebviewWindow;
 use tauri_runtime_cef::CefRuntime;
@@ -34,6 +34,145 @@ struct Attempt {
 pub struct UpdateHost {
     attempts: Mutex<BTreeMap<String, Attempt>>,
     busy: AtomicBool,
+    stopping: AtomicBool,
+    installation: Mutex<Option<Arc<Installation>>>,
+}
+#[derive(Default)]
+struct Installation {
+    result: Mutex<Option<Result<Prepared, NativeFailure>>>,
+    complete: Condvar,
+    join: Mutex<Option<std::thread::JoinHandle<()>>>,
+    pending: Mutex<Option<(AcceptedInstallation, Phase)>>,
+}
+impl Installation {
+    fn settle(&self, connector: &Connector) -> Result<Prepared, NativeFailure> {
+        let mut pending = self.pending.lock().map_err(|_| NativeFailure::Busy)?;
+        let (accepted, phase) = pending.as_ref().ok_or(NativeFailure::InvalidEvidence)?;
+        let result = accepted.settle(connector, *phase);
+        if result.is_ok() {
+            *pending = None;
+        }
+        result
+    }
+
+    fn wait(&self) -> Result<Prepared, NativeFailure> {
+        let mut result = self.result.lock().map_err(|_| NativeFailure::Busy)?;
+        while result.is_none() {
+            result = self
+                .complete
+                .wait(result)
+                .map_err(|_| NativeFailure::Busy)?;
+        }
+        result.as_ref().unwrap().clone()
+    }
+}
+impl UpdateHost {
+    fn settle_retained(
+        &self,
+        connector: &Connector,
+        server: &str,
+        id: &str,
+        revision: u64,
+    ) -> Result<(), NativeFailure> {
+        let owner = self.installation.lock().map_err(|_| NativeFailure::Busy)?;
+        if let Some(task) = owner.as_ref() {
+            if task
+                .result
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .is_none()
+            {
+                return Ok(());
+            }
+            let matches = task
+                .pending
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .as_ref()
+                .is_some_and(|(accepted, _)| accepted.matches(server, id, revision));
+            if matches {
+                task.settle(connector)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn request_stop(&self) {
+        self.stopping.store(true, Ordering::Release);
+    }
+
+    fn start(
+        self: &Arc<Self>,
+        run: impl FnOnce(Arc<Installation>) -> Result<Prepared, NativeFailure> + Send + 'static,
+    ) -> Result<Arc<Installation>, NativeFailure> {
+        let mut owner = self.installation.lock().map_err(|_| NativeFailure::Busy)?;
+        if self.stopping.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        if let Some(previous) = owner.as_ref() {
+            if previous
+                .result
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .is_none()
+                || previous
+                    .pending
+                    .lock()
+                    .map_err(|_| NativeFailure::Busy)?
+                    .is_some()
+            {
+                return Err(NativeFailure::Busy);
+            }
+            if let Some(join) = previous
+                .join
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .take()
+            {
+                join.join().map_err(|_| NativeFailure::SidecarFailed)?;
+            }
+        }
+        let task = Arc::new(Installation::default());
+        let worker = Arc::clone(&task);
+        *task.join.lock().map_err(|_| NativeFailure::Busy)? = Some(std::thread::spawn(move || {
+            let result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(Arc::clone(&worker))))
+                    .unwrap_or(Err(NativeFailure::SidecarFailed));
+            *worker.result.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
+            worker.complete.notify_all();
+        }));
+        *owner = Some(Arc::clone(&task));
+        Ok(task)
+    }
+
+    pub fn join(&self, connector: &Connector) {
+        self.request_stop();
+        // Called only by the tracked Quit worker or after native runtime
+        // return. Joining cannot depend on a renderer future or
+        // presentation epoch.
+        let owner = self.installation.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(task) = owner.as_ref() {
+            if let Some(join) = task.join.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                if join.join().is_err() {
+                    tracing::error!(operation = "desktop_update_join", code = "native-uncertain");
+                }
+            }
+            if task
+                .pending
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some()
+            {
+                if let Err(code) = task.settle(connector) {
+                    tracing::error!(
+                        operation = "desktop_update_join",
+                        state = "settlement-uncertain",
+                        ?code
+                    );
+                }
+            }
+        }
+    }
 }
 struct Busy(Arc<UpdateHost>);
 impl Drop for Busy {
@@ -126,10 +265,24 @@ pub async fn desktop_update_native(
             epoch,
         };
         let host = Arc::clone(host.inner());
+        if host.stopping.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
         if host.busy.swap(true, Ordering::AcqRel) {
             return Err(NativeFailure::Busy);
         }
         let _busy = Busy(Arc::clone(&host));
+        if action == Action::Inspect {
+            let retained = Arc::clone(&host);
+            let c = Arc::clone(connector.inner());
+            let sid = server.clone();
+            let oid = id.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                retained.settle_retained(&c, &sid, &oid, revision)
+            })
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)??;
+        }
         let (generation, command) = if action == Action::Prepare || action == Action::Inspect {
             (
                 uuid::Uuid::now_v7().to_string(),
@@ -238,8 +391,13 @@ pub async fn desktop_update_native(
         let sid = server.clone();
         let oid = id.clone();
         let native_generation = generation.clone();
-        let begun = tauri::async_runtime::spawn_blocking(move || {
-            c.desktop_update(
+        let native_window = window.clone();
+        let native_oauth = Arc::clone(oauth.inner());
+        let native_windows = Arc::clone(windows.inner());
+        let native_binding = binding.clone();
+        let native_original = original.clone();
+        let task = host.start(move |task| {
+            let begun = c.begin_desktop_installation(
                 saved.as_ref(),
                 DesktopUpdateRequest {
                     server: &sid,
@@ -249,32 +407,40 @@ pub async fn desktop_update_native(
                     action: "native-begin",
                     outcome: None,
                 },
-            )
-        })
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)??;
-        valid()?;
-        let c = Arc::clone(connector.inner());
-        let saved = expected;
-        let sid = server;
-        let oid = id;
-        let native_generation = generation;
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            let outcome = c.install_desktop(&begun);
-            c.desktop_update(
-                saved.as_ref(),
-                DesktopUpdateRequest {
-                    server: &sid,
-                    id: &oid,
-                    revision,
-                    generation: &native_generation,
-                    action: "native-outcome",
-                    outcome: Some(outcome),
-                },
-            )
-        })
-        .await
-        .map_err(|_| NativeFailure::SidecarFailed)??;
+            )?;
+            // Publish the original owner before any authority check or native
+            // effect. A pre-effect departure records Failed; an in-effect
+            // panic retains uncertainty without granting installation replay.
+            let mut pending = task.pending.lock().map_err(|_| NativeFailure::Busy)?;
+            *pending = Some((begun, Phase::Uncertain));
+            let valid = || -> Result<(), NativeFailure> {
+                if native_oauth.window_epoch(native_window.label())? != native_original.epoch {
+                    return Err(NativeFailure::InvalidEvidence);
+                }
+                if let Some(old) = &native_binding {
+                    let current = saved_binding(&native_window, &native_windows)?;
+                    if current.instance != old.instance
+                        || !current.profile.same_authority(&old.profile)
+                    {
+                        return Err(NativeFailure::InvalidEvidence);
+                    }
+                } else {
+                    trusted_local(&native_window)?;
+                }
+                Ok(())
+            };
+            let (accepted, phase) = pending.as_mut().unwrap();
+            *phase = if valid().is_ok() {
+                accepted.install(&c)
+            } else {
+                Phase::Failed
+            };
+            drop(pending);
+            task.settle(&c)
+        })?;
+        let result = tauri::async_runtime::spawn_blocking(move || task.wait())
+            .await
+            .map_err(|_| NativeFailure::SidecarFailed)??;
         host.attempts
             .lock()
             .map_err(|_| NativeFailure::Busy)?
@@ -295,4 +461,60 @@ pub async fn desktop_update_native(
     .await;
     super::recheck_authority(&response_window, &original_authority)?;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn quit_joins_original_task_after_caller_departure_and_fences_new_admission() {
+        let temp = tempfile::tempdir().unwrap();
+        let connector = Arc::new(
+            Connector::new(
+                temp.path().join("unused-sidecar"),
+                temp.path().to_path_buf(),
+            )
+            .unwrap(),
+        );
+        let host = Arc::new(UpdateHost::default());
+        let (entered, started) = std::sync::mpsc::channel();
+        let (release, finish) = std::sync::mpsc::channel();
+        let effects = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let observed = Arc::clone(&effects);
+        let task = host
+            .start(move |_| {
+                entered.send(()).unwrap();
+                finish.recv().unwrap();
+                observed.fetch_add(1, Ordering::AcqRel);
+                Err(NativeFailure::InvalidEvidence)
+            })
+            .unwrap();
+        started.recv().unwrap();
+        drop(task); // Renderer departure cannot own cancellation or the join.
+        host.request_stop();
+        assert!(matches!(
+            host.start(|_| Err(NativeFailure::SidecarFailed)),
+            Err(NativeFailure::Stopped)
+        ));
+        let owner = Arc::clone(&host);
+        let joining = std::thread::spawn(move || owner.join(&connector));
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        assert!(!joining.is_finished());
+        release.send(()).unwrap();
+        joining.join().unwrap();
+        assert_eq!(effects.load(Ordering::Acquire), 1);
+        assert!(matches!(
+            host.installation.lock().unwrap().as_ref().unwrap().wait(),
+            Err(NativeFailure::InvalidEvidence)
+        ));
+    }
+
+    #[test]
+    fn native_task_panic_releases_waiter_without_fabricating_success() {
+        let host = Arc::new(UpdateHost::default());
+        let task = host
+            .start(|_| panic!("controlled native fixture failure"))
+            .unwrap();
+        assert!(matches!(task.wait(), Err(NativeFailure::SidecarFailed)));
+    }
 }

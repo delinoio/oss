@@ -694,7 +694,20 @@ impl Connector {
         arguments: &[OsString],
         input: Option<Zeroizing<Vec<u8>>>,
     ) -> Result<serde_json::Value> {
-        if self.exiting.load(Ordering::Acquire) {
+        self.short_request_with_input_mode(arguments, input, self.command_timeout, true)
+    }
+
+    // Only retained native update outcomes use this uncanceled local child.
+    // Its caller constructs the closed original-journal arguments; it grants
+    // no new installation, resident runtime or credential authority.
+    fn short_request_with_input_mode(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+        timeout: Duration,
+        cancel_on_exit: bool,
+    ) -> Result<serde_json::Value> {
+        if cancel_on_exit && self.exiting.load(Ordering::Acquire) {
             return Err(NativeFailure::Stopped);
         }
         let mut command = self.sidecar_command(arguments, input.is_some())?;
@@ -713,14 +726,12 @@ impl Connector {
         });
         let started = std::time::Instant::now();
         let result = loop {
-            if self.exiting.load(Ordering::Acquire) {
+            if cancel_on_exit && self.exiting.load(Ordering::Acquire) {
                 break Err(NativeFailure::Stopped);
             }
             match child.try_wait() {
                 Ok(Some(status)) => break Ok(status),
-                Ok(None) if started.elapsed() < self.command_timeout => {
-                    thread::sleep(Duration::from_millis(25))
-                }
+                Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(25)),
                 Ok(None) => break Err(NativeFailure::TimedOut),
                 Err(_) => break Err(NativeFailure::SidecarFailed),
             }

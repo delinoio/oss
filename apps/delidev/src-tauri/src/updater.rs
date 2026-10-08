@@ -106,6 +106,143 @@ pub struct DesktopUpdateRequest<'a> {
     pub action: &'a str,
     pub outcome: Option<Phase>,
 }
+
+// Constructed only by a successful original native-begin. The renderer cannot
+// supply or change this cleanup authority, including its selected saved scope.
+pub struct AcceptedInstallation {
+    prepared: Prepared,
+    revision: u64,
+    saved: Option<SavedConnection>,
+    outcome: Mutex<Option<Phase>>,
+}
+
+impl AcceptedInstallation {
+    pub fn matches(&self, server: &str, id: &str, revision: u64) -> bool {
+        self.prepared.server_id == server
+            && self.prepared.operation_id == id
+            && self.revision == revision
+    }
+
+    pub fn install(&self, connector: &Connector) -> Phase {
+        self.install_with(connector.exiting.load(Ordering::Acquire), || {
+            connector.install_desktop(&self.prepared)
+        })
+    }
+
+    fn install_with(&self, stopping: bool, installer: impl FnOnce() -> Phase) -> Phase {
+        let Ok(mut outcome) = self.outcome.lock() else {
+            return Phase::Uncertain;
+        };
+        if let Some(phase) = *outcome {
+            return phase;
+        }
+        let phase = if stopping { Phase::Failed } else { installer() };
+        *outcome = Some(phase);
+        phase
+    }
+
+    pub fn settle(&self, connector: &Connector, phase: Phase) -> Result<Prepared> {
+        let name = match phase {
+            Phase::Installed => "installed",
+            Phase::Failed => "failed",
+            Phase::Uncertain => "uncertain",
+            _ => return Err(NativeFailure::InvalidInput),
+        };
+        let mut original = self.outcome.lock().map_err(|_| NativeFailure::Busy)?;
+        if original.is_some_and(|previous| previous != phase) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        *original = Some(phase);
+        let p = &self.prepared;
+        let mut args: Vec<OsString> = vec![
+            "update".into(),
+            "native-outcome".into(),
+            "--id".into(),
+            p.operation_id.clone().into(),
+            "--revision".into(),
+            self.revision.to_string().into(),
+            "--server-id".into(),
+            p.server_id.clone().into(),
+            "--native-generation".into(),
+            p.generation.clone().into(),
+            "--outcome".into(),
+            name.into(),
+        ];
+        if let Some(saved) = &self.saved {
+            args.extend(["--saved-connection".into(), saved.id.clone().into()]);
+        }
+        // Retry only the exact same-phase offline write. A lost atomic-write
+        // reply grants neither another installer invocation nor a new claim.
+        let started = std::time::Instant::now();
+        let mut last = NativeFailure::TimedOut;
+        for _ in 0..4 {
+            let remaining = Duration::from_secs(40).saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                break;
+            }
+            let result = connector
+                .short_request_with_input_mode(&args, None, remaining, false)
+                .and_then(|value| {
+                    let result: Prepared = serde_json::from_value(value)
+                        .map_err(|_| NativeFailure::InvalidEvidence)?;
+                    result.validate(
+                        &connector.root,
+                        &p.operation_id,
+                        &p.server_id,
+                        &p.generation,
+                    )?;
+                    if result.phase != phase {
+                        return Err(NativeFailure::InvalidEvidence);
+                    }
+                    Ok(result)
+                });
+            match result {
+                Ok(result) => return Ok(result),
+                Err(code) => {
+                    tracing::warn!(
+                        operation = "desktop_update_settlement",
+                        id = p.operation_id,
+                        ?phase,
+                        ?code
+                    );
+                    last = code;
+                    if !matches!(
+                        code,
+                        NativeFailure::Busy
+                            | NativeFailure::SidecarFailed
+                            | NativeFailure::TimedOut
+                    ) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }
+        }
+        Err(last)
+    }
+}
+
+impl Connector {
+    pub fn begin_desktop_installation(
+        &self,
+        expected: Option<&SavedConnection>,
+        mut request: DesktopUpdateRequest<'_>,
+    ) -> Result<AcceptedInstallation> {
+        request.action = "native-begin";
+        request.outcome = None;
+        let revision = request.revision;
+        let prepared = self.desktop_update(expected, request)?;
+        if prepared.phase != Phase::Installing {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(AcceptedInstallation {
+            prepared,
+            revision,
+            saved: expected.cloned(),
+            outcome: Mutex::new(None),
+        })
+    }
+}
 impl Connector {
     pub fn desktop_update(
         &self,
@@ -672,6 +809,109 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn original_outcomes_settle_offline_after_quit_and_contention_without_reinstallation() {
+        use std::os::unix::fs::PermissionsExt;
+        for phase in [Phase::Installed, Phase::Failed, Phase::Uncertain] {
+            let temp = tempfile::tempdir().unwrap();
+            let sidecar = temp.path().join("sidecar");
+            fs::write(
+                &sidecar,
+                "#!/bin/sh\nprintf x >> \"$2/invocations\"\nif [ ! -e \"$2/written\" ]; then \
+                 touch \"$2/written\"; exit 1; fi\nexec /bin/cat \"$2/response.json\"\n",
+            )
+            .unwrap();
+            fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
+            let connector = Connector::new(sidecar, temp.path().to_path_buf()).unwrap();
+            let id = uuid::Uuid::now_v7().to_string();
+            let server = uuid::Uuid::now_v7().to_string();
+            let generation = uuid::Uuid::now_v7().to_string();
+            let target = format!(
+                "{}-{}",
+                std::env::consts::OS,
+                if cfg!(target_arch = "aarch64") {
+                    "arm64"
+                } else {
+                    "amd64"
+                }
+            )
+            .replace("macos-", "darwin-");
+            let extension = if cfg!(target_os = "macos") {
+                ".dmg"
+            } else {
+                ".AppImage"
+            };
+            let descriptor = serde_json::json!({"version":1,"operation_id":id,"server_id":server,"generation":generation,"release_version":"0.2.0","target":target,"phase":phase,"artifact_path":temp.path().join("desktop-updates/downloads").join(format!("{}{}","a".repeat(64),extension)),"artifact_sha256":"a".repeat(64),"artifact_size":8,"manifest_sha256":"b".repeat(64)});
+            fs::write(
+                temp.path().join("response.json"),
+                serde_json::to_vec(&serde_json::json!({"version":1,"result":descriptor})).unwrap(),
+            )
+            .unwrap();
+            let mut installing: Prepared = serde_json::from_value(descriptor).unwrap();
+            installing.phase = Phase::Installing;
+            let accepted = AcceptedInstallation {
+                prepared: installing,
+                revision: 7,
+                saved: None,
+                outcome: Mutex::new(None),
+            };
+            let effects = std::sync::atomic::AtomicUsize::new(0);
+            assert_eq!(
+                accepted.install_with(false, || {
+                    effects.fetch_add(1, Ordering::AcqRel);
+                    phase
+                }),
+                phase
+            );
+            assert_eq!(
+                accepted.install_with(false, || panic!("installation must not replay")),
+                phase
+            );
+            assert_eq!(effects.load(Ordering::Acquire), 1);
+            connector.exiting.store(true, Ordering::Release);
+            let contention = connector.gate.lock().unwrap();
+            assert_eq!(accepted.settle(&connector, phase).unwrap().phase, phase);
+            assert_eq!(
+                fs::read(temp.path().join("invocations")).unwrap(),
+                b"xx",
+                "lost reply retries only original offline writer"
+            );
+            assert_eq!(
+                accepted.install(&connector),
+                phase,
+                "retained result forbids another installer effect"
+            );
+            assert!(matches!(
+                accepted.settle(
+                    &connector,
+                    if phase == Phase::Failed {
+                        Phase::Installed
+                    } else {
+                        Phase::Failed
+                    }
+                ),
+                Err(NativeFailure::InvalidEvidence)
+            ));
+            assert_eq!(fs::read(temp.path().join("invocations")).unwrap(), b"xx");
+            drop(contention);
+            assert!(matches!(
+                connector.desktop_update(
+                    None,
+                    DesktopUpdateRequest {
+                        server: &server,
+                        id: &id,
+                        revision: 7,
+                        generation: &generation,
+                        action: "native-prepare",
+                        outcome: None
+                    }
+                ),
+                Err(NativeFailure::Stopped)
+            ));
+        }
+    }
 
     #[test]
     fn mountinfo_decodes_kernel_path_escapes_once() {
