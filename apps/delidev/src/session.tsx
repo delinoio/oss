@@ -1,3 +1,4 @@
+import { useSessionBrowserLayout } from "./session-browser-layout";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { acknowledgeSessionSubmission, nativeSubmissionInput, submissionQueueReadable, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
 import { imageMime } from "./image-input";
@@ -261,6 +262,18 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     return () => controller.abort();
   }, [id, submissionTransport, submissions.store]);
   const [panel, setPanel] = useState(SessionPanel.Closed);
+  const conversationRegion = useRef<HTMLDivElement>(null);
+  const [conversationWidth, setConversationWidth] = useState(0);
+  const browserLayout = useSessionBrowserLayout(id, conversationWidth);
+  useLayoutEffect(() => {
+    const node = conversationRegion.current;
+    if (!node) return;
+    const measure = () => setConversationWidth(node.clientWidth);
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure); observer?.observe(node);
+    window.addEventListener("resize", measure);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
+  }, []);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] = useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(null);
   const terminalsButton = useRef<HTMLButtonElement>(null);
@@ -434,7 +447,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     { panel: SessionPanel.Browser, icon: SessionIconKind.Browser, label: copy("session.browser_d31de1") },
     { panel: SessionPanel.Diagnostics, icon: SessionIconKind.Diagnostics, label: copy("session.diagnostics_268f14") },
   ] as const;
-  return <section className={`session-workspace${panel !== SessionPanel.Closed ? " panel-open" : ""}`} aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
+  return <section className={`session-workspace${panel !== SessionPanel.Closed ? " panel-open" : ""}${panel === SessionPanel.Browser ? " browser-open" : ""}`} aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
     if (event.key === "Escape" && panel !== SessionPanel.Closed && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
       event.stopPropagation(); closePanel();
     }
@@ -459,7 +472,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}<button type="button" ref={infoButton} aria-controls={`info-${id}`} onClick={() => { infoHeading.current?.focus({ preventScroll: true }); infoHeading.current?.scrollIntoView?.({ block: "nearest" }); }}><SessionIcon kind={SessionIconKind.Info} />{copy("session.info")}</button></div>
     </div>
     <div className="session-content">
-    <div className="session-conversation-region">
+    <div ref={conversationRegion} className="session-conversation-region" style={{ "--browser-width": `${browserLayout.width}px` } as React.CSSProperties}>
     <div className="session-body">
       <div className="session-notices">
         {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={opener => showInfo(opener)}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
@@ -514,11 +527,19 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </ImageAttachmentInput>
         {send.uncertain ? <button className="composer-original-retry" type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
       </form>
+    {panel === SessionPanel.Browser && browserLayout.wide ? <div className="browser-splitter" role="separator" tabIndex={0} aria-label={copy("session-browser.splitter")} aria-orientation="vertical" aria-valuemin={browserLayout.minimum} aria-valuemax={browserLayout.maximum} aria-valuenow={browserLayout.width} onKeyDown={event => {
+      const width = event.key === "Home" ? browserLayout.minimum : event.key === "End" ? browserLayout.maximum : event.key === "ArrowLeft" ? browserLayout.width + 16 : event.key === "ArrowRight" ? browserLayout.width - 16 : undefined;
+      if (width !== undefined) { event.preventDefault(); browserLayout.resize(width); }
+    }} onPointerDown={event => { if (event.button === 0) { event.currentTarget.setPointerCapture(event.pointerId); event.currentTarget.focus(); } }} onPointerMove={event => {
+      if (!event.currentTarget.hasPointerCapture(event.pointerId) || !conversationRegion.current) return;
+      const node = conversationRegion.current, rect = node.getBoundingClientRect(), scale = rect.width / node.clientWidth;
+      browserLayout.resize((rect.right - event.clientX) / scale - 4);
+    }} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} /> : null}
     {panel === SessionPanel.Terminals && session ? <div id={`terminals-${id}`} className="session-app-panel"><SessionTerminals key={id} session={session} close={closePanel} /></div>
       : panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={closePanel} /></div>
       : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={closePanel} /></div>
       : panel === SessionPanel.Diagnostics ? <div id={`diagnostics-${id}`} className="session-app-panel"><RequestDiagnostics key={id} sessionId={id} close={closePanel} /></div>
-      : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} /></div> : null}
+      : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} layout={browserLayout} /></div> : null}
     </div>
     </div>
     <aside ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>

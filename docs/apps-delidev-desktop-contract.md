@@ -1574,6 +1574,18 @@ their original authority. This presentation adds no RPC, protocol allocation,
 database migration or native authority. Fixtures remain separate from packaged
 CEF, native/account and platform acceptance.
 
+Browser has the only wider split exception. Measure its 960px threshold against
+the conversation region excluding the persistent Info rail. Reserve an 8px
+splitter and default Browser to 55% of the remaining width, clamped to 480px and
+the width leaving 360px conversation. Pointer/keyboard resizing and Expand/Restore
+retain bounded per-session state in the connection owner outside the Browser
+mount. Below 960px retain the compact 400px overlay and remembered wide state.
+Follow the browser contract for exact accessible controls, initial opening card,
+complete explanation dialog, horizontal URL-based tabs, compact navigation and
+remaining-height viewport. Existing original native clipping/modal hide/cleanup,
+account selection, Session revisions and explicit registration/retry authority
+remain unchanged. Synthetic fixtures do not establish native/account acceptance.
+
 Conversation transcript presentation distinguishes recognized roles without
 changing content authority. Generic user messages and validated Grok user roots
 use intrinsic right-aligned bubbles capped at `min(75%, 720px)`, or 90% below
@@ -1660,8 +1672,8 @@ migration, native behavior, feature flag or content logging is introduced.
 
 Info groups status/recovery, PR associations, execution settings, context,
 Subagents, usage/budget and workspace storage. Status/recovery starts expanded;
-other groups start collapsed. Information controllers stay mounted while their
-presentation is hidden, including budget observation and staged editors. Preserve
+other groups start collapsed. Information controllers stay mounted while the
+session surface is hidden, including budget observation and staged editors. Preserve
 existing internal disclosure/query lifetimes and original mutation receipts.
 Closing or switching Browser releases its native presentation; hiding Terminals
 cannot close the independently Worker-owned shell.

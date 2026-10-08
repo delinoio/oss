@@ -26,5 +26,13 @@
   "session-browser.extra.c6d1ec80c1c4": "The local browser state is unavailable.",
   "session-browser.extra.51fee7071e2b": "The browser action failed. Check its address and the current server and account authorization.",
   "session-browser.cefBrowserProfilesRequireTheSupported_c9b9e8": "CEF browser profiles require the supported desktop host.",
-  "session-browser.retryCapability": "Retry browser capability read"
+  "session-browser.retryCapability": "Retry browser capability read",
+  "session-browser.accountProfile": "Account profile",
+  "session-browser.information": "Browser information",
+  "session-browser.expand": "Expand",
+  "session-browser.restore": "Restore",
+  "session-browser.splitter": "Browser width",
+  "session-browser.moreActions": "More browser actions",
+  "session-browser.tabLabel": "Tab {{number}} · {{url}}",
+  "session-browser.localSummary": "Tabs and browser data stay on this computer."
 }
