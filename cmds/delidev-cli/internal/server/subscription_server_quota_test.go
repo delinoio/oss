@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -367,5 +368,76 @@ func TestServerQuotaRejectsNonDirectWithoutNativeFallback(t *testing.T) {
 	_, a := f.record()
 	if n.reads.Load() != 0 || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || a.Subscription.ServerQuota.ErrorCode != domain.Unsupported || a.Subscription.RecoveryRequired {
 		t.Fatal("unsupported routing bypassed native authority")
+	}
+}
+
+func TestServerQuotaWireOwnership(t *testing.T) {
+	for _, field := range []string{"connection", "generation", "missing-connection", "missing-generation"} {
+		t.Run(field, func(t *testing.T) {
+			f, _ := newServerQuotaFixture(t)
+			req := requestServerQuota(f)
+			if field == "connection" {
+				req.ConnectionId = string(domain.NewID())
+			} else if field == "generation" {
+				req.GenerationId = string(domain.NewID())
+			} else if field == "missing-connection" {
+				req.ConnectionId = ""
+			} else {
+				req.GenerationId = ""
+			}
+			_, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, req))
+			if err == nil {
+				t.Fatal("foreign wire owner was admitted")
+			}
+		})
+	}
+}
+func TestServerQuotaProjectionFailureSettlesCleanedOwner(t *testing.T) {
+	for _, count := range []int{63, 64} {
+		t.Run(map[int]string{63: "partial", 64: "full"}[count], func(t *testing.T) {
+			f, n := newServerQuotaFixture(t)
+			ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.review.full.quota", nil, func(tx *store.Tx) (any, error) {
+				r, a, e := subscriptionAccount(tx, f.input.AccountID, 0)
+				if e != nil {
+					return nil, e
+				}
+				remaining := 0.8
+				for i := 0; i < count; i++ {
+					a.Quota = append(a.Quota, domain.QuotaWindow{ID: string(domain.NewID()), ComparisonGroup: "chatgpt", Blocking: true, Remaining: &remaining, ObservedAt: time.Now().UTC(), State: domain.Observed})
+				}
+				_, e = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+				return nil, e
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, before := f.record()
+			changed := 0.1
+			n.observed.Windows = append([]domain.SubscriptionQuotaWindow{{ID: before.Quota[0].ID, Remaining: &changed}}, n.observed.Windows...)
+			req := requestServerQuota(f)
+			_, err = f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, req))
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.service.runServerQuota(ctx, f.input.AccountID)
+			_, a := f.record()
+			if n.reads.Load() != 1 {
+				t.Fatal("no native read")
+			}
+			if !reflect.DeepEqual(before.Quota, a.Quota) {
+				t.Fatal("partial quota projection published")
+			}
+			if !a.Subscription.ServerQuota.CleanupConfirmed || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || !serverQuotaReady(a) {
+				t.Fatal("projection failure did not settle confirmed cleanup")
+			}
+			f.service.runServerQuota(ctx, f.input.AccountID)
+			if n.reads.Load() != 1 {
+				t.Fatal("terminal native read retried")
+			}
+			if a.Subscription.ServerQuota.Active() {
+				t.Fatalf("cleaned projection failure retains active %s fence", a.Subscription.ServerQuota.Phase)
+			}
+		})
 	}
 }

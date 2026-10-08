@@ -111,6 +111,9 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 			return nil, domain.InvalidSubscriptionObservation()
 		}
 		if op.MachineID == "" && action == domain.SubscriptionQuota {
+			if a.Connection == nil || a.Subscription == nil || op.ConnectionID.Validate() != nil || op.Generation.Validate() != nil || op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation {
+				return nil, domain.Fail(domain.Conflict, "The confirmed account generation changed.", "Read the current account and confirm the original operation again before sending.")
+			}
 			if op.CreditID != "" || op.NextCredit || op.CreditsObservationID != "" {
 				return nil, domain.InvalidSubscriptionObservation()
 			}

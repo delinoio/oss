@@ -281,10 +281,23 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 		}
 		recovered := false
 		if code == "" {
-			recovered, err = domain.ApplySubscriptionQuota(&a, observed, time.Now().UTC())
+			// Projection can update an earlier window before rejecting a later
+			// window at the retained inventory bound. Publish only a complete
+			// projection; confirmed native cleanup still settles a failed read.
+			projected := a
+			projectedState := *st
+			projected.Subscription = &projectedState
+			projected.Quota = append([]domain.QuotaWindow(nil), a.Quota...)
+			recovered, err = domain.ApplySubscriptionQuota(&projected, observed, time.Now().UTC())
 			if err != nil {
-				return nil, err
+				code = domain.SafeError(err).Code
+				recovered = false
+			} else {
+				a = projected
+				st = a.Subscription
 			}
+		}
+		if code == "" {
 			o.Phase = domain.SubscriptionObservationSucceeded
 		} else {
 			o.Phase = domain.SubscriptionObservationFailed
