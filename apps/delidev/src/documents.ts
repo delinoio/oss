@@ -1,13 +1,9 @@
 import { copy } from "./localization";
-import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { decodeResourceDocument, type Resource } from "@delinoio/delidev-api-client";
 
 export type Document = Record<string, unknown>;
 export function document(resource?: Resource): Document {
-  if (!resource || !supportsResourceSchema(resource) || resource.documentJson.byteLength > 1 << 20) return {};
-  try {
-    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson));
-    return object(value);
-  } catch { return {}; }
+  return resource ? decodeResourceDocument(resource) ?? {} : {};
 }
 export function object(value: unknown): Document {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Document : {};

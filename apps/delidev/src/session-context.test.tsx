@@ -10,7 +10,10 @@ import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { contextDocument, SessionContext } from "./session-context";
 
-it.each(["codex", "opencode"])("preserves one exact %s manual request through response loss and navigation", async (harness) => {
+it.each([
+ { harness: "codex", large: false }, { harness: "opencode", large: false },
+ { harness: "codex", large: true }, { harness: "opencode", large: true },
+])("preserves one exact $harness manual request through response loss and navigation (large=$large)", async ({ harness, large }) => {
  const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ initial_execution: { configuration: { harness } } }) });
  const requests: unknown[] = [];
  let action: unknown = null;
@@ -18,7 +21,9 @@ it.each(["codex", "opencode"])("preserves one exact %s manual request through re
   requests.push(request);
   action = { id: newRequestId(), document: { action_id: request.mutation.requestId, state: "claimed" } };
   if (requests.length === 1) throw new ConnectError("Lost reply", Code.Unavailable);
-  return { requestId: request.mutation.requestId, replayed: true, job: create(ResourceSchema, { kind: EntityKind.JOB, id: newRequestId(), sessionId: session.id, documentJson: encode({ input: { action_id: request.mutation.requestId, assignment: { session_id: session.id } } }) }) };
+  const bytes = encode({ type: "compact-session", input: { action_id: request.mutation.requestId, assignment: { session_id: session.id } } });
+  const documentJson = large ? new TextEncoder().encode(new TextDecoder().decode(bytes) + " ".repeat(2 << 20)) : bytes;
+  return { requestId: request.mutation.requestId, replayed: true, job: create(ResourceSchema, { kind: EntityKind.JOB, id: newRequestId(), schemaVersion: 1, revision: 1n, sessionId: session.id, documentJson }) };
  });
  const transport = createRouterTransport((router) => {
   router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_SESSION_COMPACTION_V1, SystemCapability.CODEX_SESSION_COMPACTION_V1, SystemCapability.OPENCODE_SESSION_COMPACTION_V1] }) });

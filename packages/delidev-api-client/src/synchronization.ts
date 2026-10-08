@@ -56,7 +56,7 @@ function cursor(value: string): void {
 }
 function validateResource(value: Resource, kind: EntityKind): void {
   requireEntityId(value.id);
-  if (value.kind !== kind || value.revision <= 0n || !supportsResourceSchema(value) || value.documentJson.byteLength > 1 << 20) invalid();
+  if (value.kind !== kind || value.revision <= 0n || !supportsResourceSchema(value)) invalid();
   if (value.sessionId) requireEntityId(value.sessionId);
   if (value.projectId) requireEntityId(value.projectId);
 }
