@@ -40,6 +40,16 @@ pub(crate) fn resolve_final_component<E>(
 ) -> Result<Option<PathBuf>, E> {
     match final_entry(logical, policy) {
         Some((parent, name)) => {
+            // Canonicalizing the parent can succeed without search permission
+            // on that final directory. Probe the native nofollow entry lookup
+            // before appending the leaf; otherwise an inaccessible ancestor
+            // would acquire guessed project containment. This never follows
+            // the final link, including a dangling or self-referencing link.
+            if fs::symlink_metadata(logical)
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
+            {
+                return Ok(None);
+            }
             resolve(parent).map(|parent| parent.map(|parent| parent.join(name)))
         }
         None => resolve(logical),
@@ -64,6 +74,37 @@ mod tests {
     use std::{io, os::unix::fs::symlink};
 
     use super::*;
+
+    #[test]
+    fn nofollow_inaccessible_parent_does_not_publish_guessed_entry() {
+        use std::{cell::Cell, os::unix::fs::PermissionsExt};
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let hidden = root.join("hidden");
+        fs::create_dir(&hidden).unwrap();
+        symlink("missing", hidden.join("link")).unwrap();
+        fs::set_permissions(&hidden, fs::Permissions::from_mode(0o000)).unwrap();
+        let logical = hidden.join("link");
+        let denied = fs::symlink_metadata(&logical)
+            .is_err_and(|error| error.kind() == io::ErrorKind::PermissionDenied);
+        let parent_resolved = Cell::new(false);
+        let observed = resolve_final_component(&logical, FinalSymlink::NoFollow, |parent| {
+            parent_resolved.set(true);
+            fs::canonicalize(parent).map(Some)
+        });
+        // Restore fixture cleanup access before assertions, including failure.
+        fs::set_permissions(&hidden, fs::Permissions::from_mode(0o700)).unwrap();
+        if denied {
+            assert!(observed.unwrap().is_none());
+            assert!(!parent_resolved.get());
+        }
+        let observed = resolve_final_component(&logical, FinalSymlink::NoFollow, |parent| {
+            fs::canonicalize(parent).map(Some)
+        })
+        .unwrap();
+        assert_eq!(observed, Some(logical.clone()));
+        assert!(path_identity(&logical, FinalSymlink::NoFollow).is_some());
+    }
 
     #[test]
     fn nofollow_preserves_entry_identity_without_reading_targets() {
