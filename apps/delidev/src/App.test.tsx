@@ -1233,7 +1233,6 @@ it("hands wide header focus to main before first Search autofocus and preserves 
   expect(window.document.querySelector(".sidebar-header-actions")).toBeNull();
   await screen.findByText("No retained requests or execution results.");
   fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
-  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await screen.findByText("No items match these filters.");
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   const search = headerAction("Search");

@@ -17,19 +17,21 @@ function fixture() {
   const questionView = create(InboxViewSchema, { entry, session, interaction });
   const terminalEntry = create(ResourceSchema, { id: newRequestId(), sessionId, kind: EntityKind.INBOX, revision: 1n, schemaVersion: 1, createdAt: "2026-09-29T00:15:00Z", documentJson: encode({ source: "execution-terminal", source_id: executionId, read_state: "read", terminal: { outcome: "succeeded" } }) });
   const terminalView = create(InboxViewSchema, { entry: terminalEntry, session });
-  const list = vi.fn((_request: unknown) => ({ entries: [questionView, terminalView], nextPageToken: "cursor-2" }));
+  const list = vi.fn(async (_request: unknown) => ({ entries: [questionView, terminalView], nextPageToken: "cursor-2" }));
   const get = vi.fn(async (request: { id?: string }) => ({ view: request.id === terminalEntry.id ? terminalView : questionView }));
   const setRead = vi.fn((_request: unknown) => ({ view: questionView, requestId: newRequestId(), replayed: false }));
   const answer = vi.fn((_request: unknown) => ({ interaction }));
+  const resourceList = vi.fn(async (_request: { filter?: { kind?: EntityKind } }) => ({ resources: [] as typeof session[] }));
+  const resourceGet = vi.fn(async (_request: { id: string }) => ({ resource: undefined as typeof session | undefined }));
   const readSignals: AbortSignal[] = [];
   const transport = createRouterTransport((router) => {
     router.service(InboxService, { listInbox: list, getInboxEntry: (request, context) => { readSignals.push(context.signal); return get(request); }, setInboxReadState: setRead });
-    router.service(ResourceService, { listResources: () => ({ resources: [] }) });
+    router.service(ResourceService, { listResources: resourceList, getResource: resourceGet });
     router.service(InteractionService, { respondQuestion: answer });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
   const renderInbox = (props: { active?: boolean; notificationId?: string; notificationActivation?: number } = {}) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Inbox active={props.active ?? true} open={() => {}} notificationId={props.notificationId} notificationActivation={props.notificationActivation} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { entry, interaction, questionView, session, terminalEntry, list, get, setRead, answer, readSignals, renderInbox };
+  return { entry, interaction, questionView, session, terminalEntry, list, get, setRead, answer, readSignals, resourceList, resourceGet, renderInbox };
 }
 
 describe("selected Inbox background refresh", () => {
@@ -214,11 +216,8 @@ it("applies source and read filters on the server and resets the active cursor",
   fireEvent.click(screen.getByRole("button", { name: "Load more Items" }));
   await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ pageToken: "cursor-2" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
-  expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.UNSPECIFIED, readState: InboxReadState.UNSPECIFIED, pageToken: "cursor-2" });
-  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.INTERACTION, readState: InboxReadState.UNSPECIFIED, pageToken: "" }));
   fireEvent.click(screen.getByRole("button", { name: "Unread" }));
-  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.INTERACTION, readState: InboxReadState.UNREAD, pageToken: "" }));
 });
 
@@ -232,7 +231,6 @@ it("preserves editable response fields when selection and server filters change"
   fireEvent.click(await screen.findByRole("button", { name: /Execution succeeded, Refactor authentication, Read/ }));
   await screen.findByText("Original terminal observation");
   fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
-  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await screen.findByRole("button", { name: /Agent question/ });
   fireEvent.click(screen.getByRole("button", { name: /Agent question/ }));
   expect((await screen.findByRole("textbox", { name: "Your answer" }) as HTMLTextAreaElement).value).toBe("Passkeys and SSO");
@@ -318,7 +316,7 @@ it("renders account quota recovery with no terminal or session authority", async
  const observed="2026-10-04T01:23:45Z";
  const entry=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.INBOX,schemaVersion:1,revision:1n,documentJson:encode({source:"subscription-recovery",source_id:newRequestId(),read_state:"unread",recovery:{account_id:account.id,connection_id:newRequestId(),observed_at:observed}})});
  const view=create(InboxViewSchema,{entry,account});
- value.list.mockReturnValue({entries:[view],nextPageToken:""});
+ value.list.mockResolvedValue({entries:[view],nextPageToken:""});
  value.get.mockResolvedValue({view});
  render(value.renderInbox());
  fireEvent.click(await screen.findByRole("button",{name:/Subscription quota recovered, Recovered subscription, Unread/}));
@@ -328,4 +326,127 @@ it("renders account quota recovery with no terminal or session authority", async
  expect(screen.queryByText("Original terminal observation")).toBeNull();
  expect((screen.getByRole("button",{name:"Open session"}) as HTMLButtonElement).disabled).toBe(true);
  expect(value.answer).not.toHaveBeenCalled(); expect(value.setRead).not.toHaveBeenCalled();
+});
+
+
+it("applies every read/source selection immediately while preserving other conditions", async () => {
+  const value = fixture();
+  value.list.mockImplementation(async raw => {
+    const request = raw as { source: InboxSource; readState: InboxReadState };
+    const entries = [value.questionView, create(InboxViewSchema, { entry: value.terminalEntry, session: value.session })].filter(view =>
+      (request.source === InboxSource.UNSPECIFIED || request.source === InboxSource.INTERACTION && view.interaction !== undefined || request.source === InboxSource.EXECUTION_TERMINAL && view.interaction === undefined) &&
+      (request.readState === InboxReadState.UNSPECIFIED || document(view.entry).read_state === (request.readState === InboxReadState.READ ? "read" : "unread")));
+    return { entries, nextPageToken: "" };
+  });
+  render(value.renderInbox());
+  await screen.findByRole("button", { name: /Agent question/ });
+  expect(screen.queryByRole("button", { name: "Apply filters" })).toBeNull();
+  for (const [label, readState] of [["Unread", InboxReadState.UNREAD], ["Read", InboxReadState.READ], ["All items", InboxReadState.UNSPECIFIED]] as const) {
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ readState, pageToken: "" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Agent question/ }) !== null).toBe(readState !== InboxReadState.READ));
+    expect(screen.getByRole("button", { name: label }).getAttribute("aria-pressed")).toBe("true");
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+  for (const source of [InboxSource.INTERACTION, InboxSource.EXECUTION_TERMINAL, InboxSource.SUBSCRIPTION_RECOVERY, InboxSource.UNSPECIFIED]) {
+    fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: source } });
+    await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source, readState: InboxReadState.UNREAD, pageToken: "" }));
+  }
+  expect(value.setRead).not.toHaveBeenCalled();
+  expect(value.answer).not.toHaveBeenCalled();
+});
+
+it("accepts and clears exact resource filters without cascading Project into Session", async () => {
+  const value = fixture();
+  const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Project filter" }) });
+  value.resourceList.mockImplementation(async request => ({ resources: request.filter?.kind === EntityKind.PROJECT ? [project] : [value.session] }));
+  value.resourceGet.mockImplementation(async request => ({ resource: request.id === project.id ? project : value.session }));
+  render(value.renderInbox());
+  await screen.findByRole("button", { name: /Agent question/ });
+  fireEvent.click(screen.getByRole("combobox", { name: "Session" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Refactor authentication" }));
+  await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ sessionId: value.session.id, projectId: "", pageToken: "" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Project" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Project filter" }));
+  await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ sessionId: value.session.id, projectId: project.id, pageToken: "" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Project" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Select project" }));
+  await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ sessionId: value.session.id, projectId: "", pageToken: "" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Session" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Select session" }));
+  await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ sessionId: "", projectId: "", pageToken: "" }));
+});
+
+it("Reset disposes a pending exact resource choice without restoring its obsolete filter", async () => {
+  const value = fixture();
+  const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Pending project" }) });
+  value.resourceList.mockImplementation(async request => ({ resources: request.filter?.kind === EntityKind.PROJECT ? [project] : [] }));
+  let resolve!: (result: { resource: typeof project }) => void;
+  value.resourceGet.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  render(value.renderInbox());
+  await screen.findByRole("button", { name: /Agent question/ });
+  fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+  await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ readState: InboxReadState.UNREAD }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Project" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Pending project" }));
+  await waitFor(() => expect(resolve).toBeTruthy());
+  const reset = screen.getByRole("button", { name: "Reset" });
+  reset.focus(); fireEvent.click(reset);
+  await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ source: InboxSource.UNSPECIFIED, readState: InboxReadState.UNSPECIFIED, projectId: "", sessionId: "", pageToken: "" }));
+  await act(async () => resolve({ resource: project }));
+  expect(screen.getByRole("combobox", { name: "Project" }).dataset.value).toBe("");
+  expect(window.document.activeElement).toBe(reset);
+  expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ projectId: "", readState: InboxReadState.UNSPECIFIED });
+  expect(value.setRead).not.toHaveBeenCalled();
+  expect(value.answer).not.toHaveBeenCalled();
+});
+
+it("rejects a preceding continuation result after an immediate filter change", async () => {
+  const value = fixture();
+  render(value.renderInbox());
+  await screen.findByRole("button", { name: /Agent question/ });
+  const oldSession = create(ResourceSchema, { ...value.session, documentJson: encode({ ...document(value.session), name: "Obsolete continuation" }) });
+  let resolve!: (result: { entries: InboxView[]; nextPageToken: string }) => void;
+  value.list.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Items" }));
+  await waitFor(() => expect(resolve).toBeTruthy());
+  value.list.mockImplementation(async () => ({ entries: [value.questionView], nextPageToken: "" }));
+  fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+  await waitFor(() => expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ readState: InboxReadState.UNREAD, pageToken: "" }));
+  await act(async () => resolve({ entries: [create(InboxViewSchema, { entry: value.terminalEntry, session: oldSession })], nextPageToken: "" }));
+  expect(screen.queryByRole("button", { name: /Obsolete continuation/ })).toBeNull();
+  expect(screen.getByRole("button", { name: /Agent question/ })).toBeTruthy();
+});
+
+
+it("keeps an excluded detail and its mounted response draft when filters change", async () => {
+  const value = fixture();
+  value.list.mockImplementation(async raw => ({ entries: (raw as { readState: InboxReadState }).readState === InboxReadState.READ ? [] : [value.questionView], nextPageToken: "" }));
+  render(value.renderInbox());
+  fireEvent.click(await screen.findByRole("button", { name: /Agent question/ }));
+  const answer = await screen.findByRole("textbox", { name: "Your answer" });
+  fireEvent.change(answer, { target: { value: "Retained excluded answer" } });
+  fireEvent.click(screen.getByRole("button", { name: "Read" }));
+  await screen.findByText("No items match these filters.");
+  expect(screen.getByRole("textbox", { name: "Your answer" })).toBe(answer);
+  expect((answer as HTMLTextAreaElement).value).toBe("Retained excluded answer");
+  expect(value.get).toHaveBeenCalledTimes(1);
+  expect(value.setRead).not.toHaveBeenCalled();
+  expect(value.answer).not.toHaveBeenCalled();
+});
+
+it("retains failed filtered-read conditions for explicit retry instead of restoring old rows", async () => {
+  const value = fixture();
+  render(value.renderInbox());
+  await screen.findByRole("button", { name: /Agent question/ });
+  value.list.mockRejectedValueOnce(new ConnectError("Synthetic filtered read failed", Code.Unavailable));
+  fireEvent.click(screen.getByRole("button", { name: "Unread" }));
+  const retry = await screen.findByRole("button", { name: "Retry" });
+  expect(screen.queryByRole("button", { name: /Agent question/ })).toBeNull();
+  value.list.mockResolvedValue({ entries: [value.questionView], nextPageToken: "" });
+  fireEvent.click(retry);
+  await screen.findByRole("button", { name: /Agent question/ });
+  expect(value.list.mock.calls.at(-1)?.[0]).toMatchObject({ readState: InboxReadState.UNREAD, pageToken: "" });
+  expect(value.setRead).not.toHaveBeenCalled();
+  expect(value.answer).not.toHaveBeenCalled();
 });

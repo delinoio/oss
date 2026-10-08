@@ -16,7 +16,7 @@ import { Interaction } from "./interactions";
 import { currentInboxSource, inboxResponseCurrent } from "./inbox-source";
 import { draftByteLength, initialInteractionDraft, interactionRequestIdentity, isEmptyInteractionDraft, type InboxInteractionDraft, type InteractionDraftState } from "./inbox-drafts";
 import { ResourceChoice } from "./configuration-fields";
-import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
+import { SidebarSurface } from "./sidebar-context";
 
 const inboxIdentity = (view: InboxView) => view.entry!.id;
 const inboxRevision = (view: InboxView) => view.entry!.revision;
@@ -94,8 +94,9 @@ function closureText(value: unknown): string {
 export function Inbox({ active, open, notificationId = "", notificationActivation = 0 }: { active: boolean; open: (sessionId: string) => void; notificationId?: string; notificationActivation?: number }) {
   useLocale();
   const emptyFilters = { source: InboxSource.UNSPECIFIED, readState: InboxReadState.UNSPECIFIED, projectId: "", sessionId: "" };
-  const [draftFilters, setDraftFilters] = useState(emptyFilters);
   const [filters, setFilters] = useState(emptyFilters);
+  const selectorEpoch = useRef(0);
+  const [selectorGeneration, setSelectorGeneration] = useState(0);
   const listHeading = useRef<HTMLHeadingElement>(null);
   const listScroller = useRef<HTMLDivElement>(null);
   const lastRowFocus = useRef("");
@@ -112,7 +113,6 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
   const [draftCollection, setDraftCollection] = useState<DraftCollection>({ values: new Map(), errors: new Map() });
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const closeDrawer = useCloseSidebarDrawer();
   const request = useCallback((token: string) => ({ ...filters, pageSize: 20, pageToken: token }), [filters]);
   const reader = useConnectPaginationReader(InboxQuery.listInbox, request, inboxPage);
   const list = usePaginationChain(JSON.stringify(filters), active, reader);
@@ -255,17 +255,26 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
     setDetailRead(undefined);
   };
 
-  const applyFilters = (next = draftFilters) => { setFilters(next); closeDrawer(); };
+  const resetFilters = () => {
+    // Remount only Inbox selectors so an earlier exact-ID read cannot apply after
+    // Reset. The retained detail, response drafts and drawer keep their owners.
+    selectorEpoch.current++;
+    setSelectorGeneration(selectorEpoch.current);
+    setFilters({ ...emptyFilters });
+  };
+  const selectResource = (field: "projectId" | "sessionId", id: string) => {
+    if (selectorGeneration === selectorEpoch.current) setFilters(current => ({ ...current, [field]: id }));
+  };
 
   return <>
     <SidebarSurface active={active} title={copy("inbox.inbox_94835e")}>
       <div className="sidebar-filter-options" aria-label={copy("inbox.inboxReadState_b2b35f")}>
-        {([[InboxReadState.UNSPECIFIED, copy("inbox.extra.51107686754a")], [InboxReadState.UNREAD, copy("inbox.extra.1b9f384c1436")], [InboxReadState.READ, copy("inbox.extra.9b9a8d05a7ec")]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={draftFilters.readState === value} onClick={() => setDraftFilters((current) => ({ ...current, readState: value }))}>{label}</button>)}
+        {([[InboxReadState.UNSPECIFIED, copy("inbox.extra.51107686754a")], [InboxReadState.UNREAD, copy("inbox.extra.1b9f384c1436")], [InboxReadState.READ, copy("inbox.extra.9b9a8d05a7ec")]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filters.readState === value} onClick={() => setFilters((current) => ({ ...current, readState: value }))}>{label}</button>)}
       </div>
-      <label>{copy("inbox.source_0e570c")}<select value={draftFilters.source} onChange={(event) => setDraftFilters((current) => ({ ...current, source: Number(event.target.value) as InboxSource }))}><option value={InboxSource.UNSPECIFIED}>{copy("inbox.allSources_08e774")}</option><option value={InboxSource.INTERACTION}>{copy("inbox.requests_ada275")}</option><option value={InboxSource.SUBSCRIPTION_RECOVERY}>{copy("inbox.quotaRecovery_26ec8e")}</option><option value={InboxSource.EXECUTION_TERMINAL}>{copy("inbox.executionResults_d2adcc")}</option></select></label>
-      <ResourceChoice label={copy("inbox.project_985959")} kind={EntityKind.PROJECT} value={draftFilters.projectId} change={(projectId) => setDraftFilters((current) => ({ ...current, projectId }))} active={active} />
-      <ResourceChoice label={copy("inbox.session_6959b4")} kind={EntityKind.SESSION} value={draftFilters.sessionId} change={(sessionId) => setDraftFilters((current) => ({ ...current, sessionId }))} active={active} />
-      <div className="actions"><button className="primary" onClick={() => applyFilters()}>{copy("inbox.applyFilters_d80ab1")}</button><button onClick={() => { const defaults = { ...emptyFilters }; setDraftFilters(defaults); applyFilters(defaults); }}>{copy("inbox.reset_daee76")}</button></div>
+      <label>{copy("inbox.source_0e570c")}<select value={filters.source} onChange={(event) => setFilters((current) => ({ ...current, source: Number(event.target.value) as InboxSource }))}><option value={InboxSource.UNSPECIFIED}>{copy("inbox.allSources_08e774")}</option><option value={InboxSource.INTERACTION}>{copy("inbox.requests_ada275")}</option><option value={InboxSource.SUBSCRIPTION_RECOVERY}>{copy("inbox.quotaRecovery_26ec8e")}</option><option value={InboxSource.EXECUTION_TERMINAL}>{copy("inbox.executionResults_d2adcc")}</option></select></label>
+      <ResourceChoice key={`project:${selectorGeneration}`} label={copy("inbox.project_985959")} kind={EntityKind.PROJECT} value={filters.projectId} change={(projectId) => selectResource("projectId", projectId)} active={active} />
+      <ResourceChoice key={`session:${selectorGeneration}`} label={copy("inbox.session_6959b4")} kind={EntityKind.SESSION} value={filters.sessionId} change={(sessionId) => selectResource("sessionId", sessionId)} active={active} />
+      <div className="actions"><button type="button" onClick={resetFilters}>{copy("inbox.reset_daee76")}</button></div>
       <p className="sidebar-help">{copy("inbox.openingAnItemDoesNotMark_d46181")}</p>
     </SidebarSurface>
   <section className={`inbox ${selectedId ? "has-selection" : ""}`} aria-label={copy("inbox.inboxWorkspace_bcd93a")} hidden={!active}>
@@ -291,7 +300,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
           })}</ul>}</ScrollPayloadWindow>
           {list.loaded && !list.loading && !list.error && list.rows.length === 0 ? filters.source === InboxSource.UNSPECIFIED && filters.readState === InboxReadState.UNSPECIFIED && !filters.projectId && !filters.sessionId
             ? <p className="inbox-empty">{copy("inbox.noRetainedRequestsOrExecutionResults_8f8962")}</p>
-            : <div className="inbox-empty"><p>{copy("inbox.noItemsMatchTheseFilters_da10bc")}</p><button onClick={() => { setDraftFilters({ ...emptyFilters }); applyFilters({ ...emptyFilters }); }}>{copy("inbox.resetFilters_10afa9")}</button></div> : null}
+            : <div className="inbox-empty"><p>{copy("inbox.noItemsMatchTheseFilters_da10bc")}</p><button onClick={resetFilters}>{copy("inbox.resetFilters_10afa9")}</button></div> : null}
           <ScrollContinuation query={list} root={listScroller} active={active} label={copy("inbox.items_fb8e7a")} />
         </div>
 
