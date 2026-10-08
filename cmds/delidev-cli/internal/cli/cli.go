@@ -153,6 +153,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	defer c.transport.CloseIdleConnections()
 	if command != "events" && !(command == "session" && (followsTerminalOutput(rest) || (len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start"))) {
 		limit := 30 * time.Second
+		if extended := extendedUnaryBudget(command, rest); extended != 0 {
+			limit = extended
+			c.transport.ResponseHeaderTimeout = extended
+		}
 		// Network credential work and backup inspection/replacement own bounded
 		// 30-second server work. Allow its typed outcome to arrive first.
 		if command == "machine" && len(rest) > 0 && rest[0] == "ssh" {
@@ -487,4 +491,30 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	default:
 		return emit(nil, usage())
 	}
+}
+
+// Leave room for the original bounded server work and its typed settlement.
+// This changes only these unary commands; caller cancellation still wins.
+func extendedUnaryBudget(command string, args []string) time.Duration {
+	if len(args) == 0 {
+		return 0
+	}
+	switch command {
+	case "account":
+		if args[0] == "validate" {
+			return 50 * time.Second
+		}
+		if len(args) >= 2 && args[0] == "oauth" && args[1] == "complete" {
+			return 35 * time.Second
+		}
+	case "provider":
+		if args[0] == "discover" {
+			return 50 * time.Second
+		}
+	case "update":
+		if args[0] == "check" {
+			return 35 * time.Second
+		}
+	}
+	return 0
 }

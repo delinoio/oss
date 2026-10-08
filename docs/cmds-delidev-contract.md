@@ -286,3 +286,5 @@ implicit `server ensure` recovery before replacement. Inspection or status never
 restores credentials, Worker files or historical execution. See the
 [storage contract](cmds-delidev-storage-contract.md) for settled ownership,
 permanent-deletion enforcement, bounded staging and startup recovery.
+
+CLI `account oauth complete` and public `update check` select 35 seconds for both the outer command and response-header budget. `account validate` and `provider discover` select 50 seconds for optional OAuth refresh, independent protected settlement and provider inspection. Shorter caller deadlines/cancellation retain priority. Other commands keep their existing limits, and timeout never grants a retry or new mutation identity.

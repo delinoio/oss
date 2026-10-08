@@ -99,3 +99,5 @@ original target acceptance. The existing `--check-root` gate and signer are reta
 the automated download-only path neither accesses an updater private key nor changes
 the currently unset root. The packaging contract owns the new release workflow and
 GitHub Environment configuration.
+
+Public CLI `update check` uses a 35-second outer context and response-header limit so the original bounded 30-second release lookup can return its typed result. A shorter caller deadline wins. Checks never retry automatically after timeout; exact original request identities, update reads, Worker acceptance/cancellation and native installation deadlines retain their existing semantics.
