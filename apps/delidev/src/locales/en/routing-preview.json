@@ -39,5 +39,9 @@
   "routing-preview.sourceDetails": "Source identities",
   "routing-preview.sourceKey": "Source key",
   "routing-preview.modelId": "Model ID",
-  "routing-preview.finalResult": "Final result candidates"
+  "routing-preview.finalResult": "Final result candidates",
+  "routing-preview.details": "Routing details",
+  "routing-preview.candidateCount_one": "{{count}} candidate",
+  "routing-preview.candidateCount_other": "{{count}} candidates",
+  "routing-preview.countUnavailable": "Candidate count unavailable"
 }

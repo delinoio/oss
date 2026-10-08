@@ -31,7 +31,7 @@ function setup(rows: Resource[], route: Document) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Fixture() {
     const [open, setOpen] = useState(true);
-    return <QueryClientProvider client={client}><TransportProvider transport={transport}>{open ? <SettingsTaskDialog size={SettingsDialogSize.Form} title="Preview routing" subtitle="Luna MAX · Saved on the selected server." focus={SettingsDialogFocus.Heading} close={() => setOpen(false)}><RoutingPreview agent={agent} active close={() => setOpen(false)} /></SettingsTaskDialog> : <p>Closed preview</p>}</TransportProvider></QueryClientProvider>;
+    return <QueryClientProvider client={client}><TransportProvider transport={transport}>{open ? <SettingsTaskDialog size={SettingsDialogSize.Form} title="Preview routing" subtitle="Luna MAX · Saved on the selected server." focus={SettingsDialogFocus.Heading} close={() => setOpen(false)}><RoutingPreview agent={agent} active close={() => setOpen(false)} /></SettingsTaskDialog> : <><p>Closed preview</p><button onClick={() => setOpen(true)}>Reopen preview</button></>}</TransportProvider></QueryClientProvider>;
   }
   return { Fixture, preview, get, save, client, logs };
 }
@@ -283,7 +283,8 @@ it("keeps empty-source failure explicit without guessing a provider or hiding it
   const value = setup([], { policy: "priority", candidates: [], sources: [{ source: `api:${id}`, model_id: newRequestId(), native_model: "Original model", route: { policy: "priority", candidates: [], fallback: true }, problem: { code: "missing_input", message: "Original source problem" } }] });
   value.get.mockRejectedValue(new ConnectError("private-metadata-value", Code.PermissionDenied));
   render(<value.Fixture />);
-  await screen.findByText("Service information unavailable · Original model");
+  await screen.findAllByText("Service information unavailable · Original model");
+  expect(document.querySelector(".routing-source-notices")?.textContent).toContain("Service information unavailable · Original model");
   expect(screen.getByText("Original source problem")).toBeTruthy();
   expect(screen.getByText(/Insufficient comparable quota evidence/)).toBeTruthy();
   expect(document.body.textContent).not.toContain("private-metadata-value");
@@ -345,4 +346,63 @@ it("keeps routing reset countdowns read-only and preserves independent original 
   await act(() => i18n.changeLanguage("ko")); expect(screen.getByText("6일 3시간 뒤 리셋")).toBeTruthy();
   expect(value.preview).toHaveBeenCalledTimes(1); expect(value.get).toHaveBeenCalledTimes(2); expect(value.save).not.toHaveBeenCalled();
   value.logs.mockRestore();
+});
+
+it("starts with one selected summary and expands all evidence without reads", async () => {
+  const project = resource(EntityKind.PROJECT, { name: "Another project" });
+  const row = account("Personal"), inner = { policy: "priority", selected: row.id, candidates: [{ ...candidate(row, "eligible"), quota_state: "stale", score: 0, reset_at: "2026-10-08T00:00:00Z" }] };
+  const value = setup([row, project], { ...inner, source_index: 0, sources: [{ source: "subscription:chatgpt", model_id: newRequestId(), native_model: "gpt-6", route: inner }] });
+  render(<value.Fixture />);
+  await waitFor(() => expect(screen.getAllByText("Personal")).toHaveLength(2));
+  const details = document.querySelector<HTMLDetailsElement>(".routing-details")!;
+  expect(details.open).toBe(false);
+  expect(details.querySelector(".routing-candidate")).toBeTruthy();
+  expect(screen.getByText("1 candidate")).toBeTruthy();
+  expect(document.querySelectorAll(".routing-candidates")).toHaveLength(1);
+  expect(document.querySelector(".routing-result")?.textContent).toContain("stale");
+  expect(document.querySelector(".routing-result")?.textContent).not.toContain("Score");
+  const reads = value.get.mock.calls.length;
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+  expect(details.open).toBe(true);
+  expect(screen.getByText("후보 1개")).toBeTruthy();
+  expect(value.get).toHaveBeenCalledTimes(reads);
+  expect(value.preview).toHaveBeenCalledTimes(1);
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh routing preview" }));
+  await waitFor(() => expect(value.preview).toHaveBeenCalledTimes(2));
+  expect(document.querySelector<HTMLDetailsElement>(".routing-details")?.open).toBe(true);
+  await chooseScrollOption(screen.getByLabelText("Project"), project.id);
+  await waitFor(() => expect(value.preview).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: project.id }), expect.anything()));
+  await screen.findByText("1 candidate");
+  expect(document.querySelector<HTMLDetailsElement>(".routing-details")?.open).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Close Preview routing" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reopen preview" }));
+  await screen.findByText("1 candidate");
+  expect(document.querySelector<HTMLDetailsElement>(".routing-details")?.open).toBe(false);
+});
+
+it.each([null, []])("distinguishes unavailable candidate counts from explicit zero (%j)", async candidates => {
+  const value = setup([], { policy: "priority", candidates, fallback: true, sources: [{ source: "subscription:chatgpt", model_id: newRequestId(), native_model: "Model", route: { policy: "priority", candidates: [] }, problem: { code: "missing_input", message: "Original source problem" } }] });
+  render(<value.Fixture />);
+  await screen.findByText(candidates === null ? "Candidate count unavailable" : "0 candidates");
+  const details = document.querySelector<HTMLDetailsElement>(".routing-details")!;
+  expect(details.open).toBe(false);
+  expect(document.querySelector(".routing-notices")?.textContent).toContain("Original source problem");
+  expect(document.querySelector(".routing-notices")?.textContent).toContain("Insufficient comparable quota evidence");
+  expect(document.querySelector(".routing-notices")?.contains(screen.getByText("Original source problem"))).toBe(true);
+  expect(details.contains(screen.getByText("Original source problem"))).toBe(false);
+  if (candidates === null) expect(screen.queryByText("0 candidates")).toBeNull();
+});
+
+it("does not infer selected eligibility or quota from source-only evidence", async () => {
+  const row = account("Personal"), value = setup([row], { policy: "priority", selected: row.id, candidates: [], source_index: 0, sources: [{ source: "subscription:chatgpt", model_id: newRequestId(), native_model: "Model", route: { policy: "priority", selected: row.id, candidates: [candidate(row, "eligible")] } }] });
+  render(<value.Fixture />);
+  await waitFor(() => expect(screen.getAllByText("Personal")).toHaveLength(2));
+  const summary = document.querySelector(".routing-result")!;
+  expect(summary.textContent).toContain("Priority");
+  expect(summary.textContent).not.toContain("Eligible");
+  expect(summary.textContent).not.toContain("Quota");
+  expect(screen.getByText("0 candidates")).toBeTruthy();
 });

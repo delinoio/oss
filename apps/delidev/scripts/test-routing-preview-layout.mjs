@@ -56,6 +56,8 @@ try {
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [baseWidth, baseHeight] of sizes) for (const zoom of [1, 2]) {
     const width = baseWidth / zoom, height = baseHeight / zoom;
     const { c, dialog, opener } = await open(language, theme, width, height, "true", true);
+    assert.equal(await dialog.locator(".routing-details").evaluate(node => node.open), false);
+    await dialog.locator(".routing-details > summary").click();
     await dialog.getByText("Complete-account-alias-".repeat(10), { exact: true }).waitFor();
     await dialog.getByText("ChatGPT", { exact: true }).waitFor();
     assert(await dialog.getByText(c("routing-preview.noEligible"), { exact: true }).isVisible());
@@ -83,12 +85,15 @@ try {
     await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
     assert(await opener.evaluate(node => node === document.activeElement), "Escape restores the original row opener");
     await opener.click(); await dialog.waitFor();
+    await dialog.locator(".routing-details").waitFor();
+    assert.equal(await dialog.locator(".routing-details").evaluate(node => node.open), false, "A fresh task collapses details");
     await close.click(); await dialog.waitFor({ state: "hidden" });
     assert(await opener.evaluate(node => node === document.activeElement), "Header dismissal restores opener");
     cases++;
   }
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const mode of ["true", "selected", "sources", "empty", "invalid", "denied"]) {
     const { c, dialog } = await open(language, theme, 1440, 900, mode);
+    if (mode === "true" || mode === "empty") await dialog.locator(".routing-details > summary").click();
     if (mode === "true") await dialog.getByText("ChatGPT Personal", { exact: true }).waitFor();
     if (mode === "selected" || mode === "sources") {
       await dialog.getByText("Work API", { exact: true }).first().waitFor();
@@ -110,15 +115,21 @@ try {
   }
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) {
     const { c, dialog, opener } = await open(language, theme, 1440, 900, "compact");
-    await dialog.getByText("Personal", { exact: true }).waitFor();
-    await dialog.getByText("Work", { exact: true }).first().waitFor();
-    const comparison = await dialog.evaluate(node => {
+    await dialog.locator(".routing-result").getByText("Personal", { exact: true }).waitFor();
+    assert.equal(await dialog.getByText("Personal", { exact: true }).evaluateAll(nodes => nodes.filter(node => node.checkVisibility()).length), 1);
+    assert.equal(await dialog.locator(".routing-details").evaluate(node => node.open), false);
+    assert(await dialog.locator(".routing-details-count").getByText(c("routing-preview.candidateCount_one").replace("{{count}}", "1"), { exact: true }).isVisible());
+    const compact = await dialog.evaluate(node => {
       const body = node.querySelector(".settings-task-body");
-      const visible = element => { const rect = element.getBoundingClientRect(), limit = body.getBoundingClientRect(); return rect.top >= limit.top && rect.bottom <= limit.bottom; };
-      return { lists: node.querySelectorAll(".routing-candidates").length, result: visible(node.querySelector(".routing-result")), eligibility: [...node.querySelectorAll(".routing-eligibility")].map(visible), scrollTop: body.scrollTop };
+      return { scrollHeight: body.scrollHeight, height: body.clientHeight, note: node.querySelector(".routing-note").getBoundingClientRect().bottom, bodyBottom: body.getBoundingClientRect().bottom };
     });
-    assert.equal(comparison.lists, 1);
-    assert(comparison.result && comparison.eligibility.length === 2 && comparison.eligibility.every(Boolean) && comparison.scrollTop === 0, "Selected result and both eligibility states fit before scrolling");
+    assert(compact.scrollHeight <= compact.height + 1 && compact.note <= compact.bodyBottom, "Collapsed summary and note fit without scrolling");
+    const reads = await page.locator("html").getAttribute("data-fixture-routing-reads");
+    await dialog.locator(".routing-details > summary").focus(); await page.keyboard.press("Enter");
+    assert.equal(await dialog.locator(".routing-details").evaluate(node => node.open), true);
+    assert.equal(await page.locator("html").getAttribute("data-fixture-routing-reads"), reads, "Disclosure performs no routing read");
+    assert.equal(await dialog.locator(".routing-candidates").count(), 1);
+    assert(await dialog.locator(".routing-candidate").getByText("Personal", { exact: true }).isVisible());
     assert.equal(await dialog.locator(".routing-source-id").evaluate(node => node.open), false);
     await dialog.locator(".routing-source-id summary").focus(); await page.keyboard.press("Enter");
     assert(await dialog.locator(".routing-source-id code").first().isVisible());
