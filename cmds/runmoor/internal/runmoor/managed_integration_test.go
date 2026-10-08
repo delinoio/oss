@@ -21,7 +21,11 @@ func TestManagedDockerImageIntegration(t *testing.T) {
 	p.Image = ""
 	p.Resources = Resources{1, 1024}
 	a := RunnerArtifact{ID: newID(), Pool: p.Name, Backend: Docker, Phase: ArtifactPreparing, Reserved: true, Resources: p.Resources, CreatedAt: nowUTC()}
-	if err := s.Update(func(s *Snapshot) error { s.Artifacts[a.ID] = &a; return nil }); err != nil {
+	endpoint, err := dockerEndpoint(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(s *Snapshot) error { s.DockerArtifactEndpoint = endpoint; s.Artifacts[a.ID] = &a; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

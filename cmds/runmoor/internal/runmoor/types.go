@@ -228,4 +228,7 @@ type Snapshot struct {
 	Stopping             bool                        `json:"stopping"`
 	Cursor               int                         `json:"cursor"`
 	PowerProblem         *Problem                    `json:"power_problem,omitempty"`
+
+	// Private engine authority remains outside public artifact/status records.
+	DockerArtifactEndpoint string `json:"docker_artifact_endpoint,omitempty"`
 }

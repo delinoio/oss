@@ -102,7 +102,15 @@ func (m *Manager) accept(c Config, restart bool) error {
 	return m.acceptWithValidatedReload(c, restart, false)
 }
 func (m *Manager) acceptWithValidatedReload(c Config, restart, validatedReload bool) error {
+	endpoint, err := guardDockerArtifactEndpoint(m.ctx, c, m.Store.View())
+	if err != nil {
+		m.Log.Warn("docker_artifact_endpoint_rejected", "error_code", classify(err, ErrOwnership, "Managed Docker origin remains protected.", "Restore the original engine.").Code)
+		return err
+	}
 	return m.Store.Update(func(s *Snapshot) error {
+		if err := checkDockerArtifactEndpoint(*s, endpoint); err != nil {
+			return err
+		}
 		stopping := s.Stopping
 		if validatedReload {
 			recordValidatedManagedRecovery(s, c)
@@ -1533,12 +1541,18 @@ func (m *Manager) Reload(ctx context.Context) error {
 // Preflight is also used by the newer CLI before replacing a legacy manager.
 // It reads a snapshot and probes dependencies without publishing a generation.
 func validateReloadCandidate(ctx context.Context, c Config, s Snapshot, capacity func(context.Context, Config) (Config, error), drivers DriverFactory, remotes func(Connection) (Remote, error)) (Config, error) {
+	if _, err := guardDockerArtifactEndpoint(ctx, c, s); err != nil {
+		return c, err
+	}
 	if capacity != nil {
 		var err error
 		c, err = capacity(ctx, c)
 		if err != nil {
 			return c, err
 		}
+	}
+	if _, err := guardDockerArtifactEndpoint(ctx, c, s); err != nil {
+		return c, err
 	}
 	if c.Storage != s.Config.Storage {
 		return c, problem(ErrConfig, "Storage locations cannot change during reload.", "Drain and stop before restoring a complete installation into new locations.")

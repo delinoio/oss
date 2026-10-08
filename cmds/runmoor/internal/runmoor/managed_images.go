@@ -68,6 +68,10 @@ func (b *ManagedImageBuilder) archive(ctx context.Context, c Config, p Pool, a R
 	return output, nil
 }
 func (b *ManagedImageBuilder) prepareDocker(ctx context.Context, c Config, p Pool, a RunnerArtifact, r RunnerRelease) (Pool, error) {
+	c, err := dockerArtifactConfig(c, b.Store.View())
+	if err != nil {
+		return p, err
+	}
 	cli, err := dockerClient(ctx, c)
 	if err != nil {
 		return p, err
@@ -404,6 +408,11 @@ func (b *ManagedImageBuilder) Cleanup(ctx context.Context, c Config, a RunnerArt
 		return b.cleanupHost(ctx, c, a)
 	}
 	if a.Backend == Docker {
+		var err error
+		c, err = dockerArtifactConfig(c, b.Store.View())
+		if err != nil {
+			return err
+		}
 		cli, err := dockerClient(ctx, c)
 		if err != nil {
 			return err
