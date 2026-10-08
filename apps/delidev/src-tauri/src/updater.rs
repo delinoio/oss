@@ -820,7 +820,9 @@ mod tests {
             fs::write(
                 &sidecar,
                 "#!/bin/sh\nprintf x >> \"$2/invocations\"\nif [ ! -e \"$2/written\" ]; then \
-                 touch \"$2/written\"; exit 1; fi\nexec /bin/cat \"$2/response.json\"\n",
+                 touch \"$2/written\"; printf \
+                 '{\"version\":1,\"error\":{\"code\":\"unavailable\"}}'; exit 1; fi\nexec \
+                 /bin/cat \"$2/response.json\"\n",
             )
             .unwrap();
             fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
