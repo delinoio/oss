@@ -77,7 +77,7 @@ func settlePRStartupRejection(tx *store.Tx, record store.Record, job domain.Job,
 	if err != nil {
 		return store.Record{}, true, err
 	}
-	if ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || (recoveryID == "" && queued.Delivery != domain.InputClaimed || recoveryID != "" && queued.Delivery != domain.InputUncertain) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
+	if ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || (recoveryID == "" && queued.Delivery != domain.InputClaimed || recoveryID != "" && queued.Delivery != domain.InputUncertain) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || !queuedSessionInput(queued).Equal(input.Input) || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 		return store.Record{}, false, nil
 	}
 	queued.Delivery = domain.InputRejected

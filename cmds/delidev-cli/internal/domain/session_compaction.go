@@ -85,7 +85,7 @@ func (i SessionCompactionInput) Validate() error {
 		history = a.Continuation.HistoryExecutionID
 	}
 	sameRef := i.Previous == nil && c.Compaction == nil || i.Previous != nil && c.Compaction != nil && *i.Previous == *c.Compaction
-	if err != nil || actualErr != nil || originalErr != nil || !bytes.Equal(expected, actual) || !sameRef || c.HistoryExecutionID != history || c.Previous.ExecutionID != a.ExecutionID || c.Previous.InputID != a.InputID || c.AssignmentInputDigest != compactionDigest(original) || c.PromptDigest != compactionDigest([]byte(a.Input.Prompt)) || UniqueIDs([]ID{i.ActionID, i.Restore.InputID, i.Restore.ThreadRequestID, i.Restore.TurnRequestID, c.HistoryRequestID, a.InputID}) != nil || i.Intent != "" && i.Intent != ContinueAutomatically && i.Intent != ContinueExplicitly {
+	if err != nil || actualErr != nil || originalErr != nil || !bytes.Equal(expected, actual) || !sameRef || c.HistoryExecutionID != history || c.Previous.ExecutionID != a.ExecutionID || c.Previous.InputID != a.InputID || c.AssignmentInputDigest != compactionDigest(original) || c.PromptDigest != BindSessionInput(a.InputID, a.Input).PromptDigest || UniqueIDs([]ID{i.ActionID, i.Restore.InputID, i.Restore.ThreadRequestID, i.Restore.TurnRequestID, c.HistoryRequestID, a.InputID}) != nil || i.Intent != "" && i.Intent != ContinueAutomatically && i.Intent != ContinueExplicitly {
 		return CompactionUncertain()
 	}
 	return nil

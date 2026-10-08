@@ -111,7 +111,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	queued, err := store.Decode[domain.QueuedInput](ir)
-	if err != nil || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Mode != input.Input.Mode || queued.Prompt != input.Input.Prompt {
+	if err != nil || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || !queuedSessionInput(queued).Equal(input.Input) {
 		return empty, executionDenied()
 	}
 	if session.ProjectID != "" {

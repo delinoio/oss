@@ -149,10 +149,10 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		return result, err
 	}
 	primaryInput, err := store.Decode[domain.QueuedInput](primary)
-	if err != nil || primaryInput.NativeRequestID != input.TurnRequestID {
+	if err != nil || primaryInput.NativeRequestID != input.TurnRequestID || !queuedSessionInput(primaryInput).Equal(input.Input) {
 		return result, domain.ExecutionRecoveryUncertain()
 	}
-	bindings, err := domain.CheckedExecutionInputs(input.InputID, continuationDigest([]byte(input.Input.Prompt)), progress.AcceptedInputs)
+	bindings, err := domain.CheckedExecutionInputs(input.InputID, domain.BindSessionInput(input.InputID, input.Input).PromptDigest, progress.AcceptedInputs)
 	if err != nil {
 		return result, err
 	}
@@ -178,7 +178,7 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	result = domain.ExecutionRecoveryRequest{
 		Version: 1, ServerID: serverID, DeviceID: grant.DeviceID, InstanceID: claim.InstanceID, JobID: original.ID, SessionID: sr.ID, MachineID: session.MachineID,
 		AssignmentRevision: assigned.Revision, AssignmentDigest: continuationDigest(assigned.Data), AssignmentInputDigest: continuationDigest(claim.Input), ConfigurationDigest: input.ConfigurationDigest,
-		AccountID: input.AccountID, ConnectionID: input.ConnectionID, HistoryExecutionID: history, InputMode: input.Input.Mode, PromptDigest: continuationDigest([]byte(input.Input.Prompt)), AcceptedInputs: progress.AcceptedInputs, Preparation: input.Preparation, Manifest: input.Manifest,
+		AccountID: input.AccountID, ConnectionID: input.ConnectionID, HistoryExecutionID: history, InputMode: input.Input.Mode, PromptDigest: domain.BindSessionInput(input.InputID, input.Input).PromptDigest, AcceptedInputs: progress.AcceptedInputs, Preparation: input.Preparation, Manifest: input.Manifest,
 		Completion: domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(progress.NativeThreadID), NativeTurnID: domain.NativeIdentity(progress.NativeTurnID), LastSequence: progress.LastSequence, Outcome: progress.Outcome, CleanupVerified: true},
 	}
 	if input.Configuration.Harness == domain.OpenCode {

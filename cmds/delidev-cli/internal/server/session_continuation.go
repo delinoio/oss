@@ -102,7 +102,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if ir.SessionID != sr.ID || next.Delivery != domain.InputQueued || next.ExecutionID != "" || next.NativeRequestID != "" || next.Sequence <= queued.Sequence || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(next.Prompt)) {
 		return store.Record{}, continuationConflict()
 	}
-	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: next.Prompt, Mode: next.Mode, Skills: next.Skills}
+	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: next.Prompt, Mode: next.Mode, Skills: next.Skills, Attachments: next.Attachments}
 	if input.Configuration.Harness == domain.OpenCode {
 		if _, err := input.Configuration.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
 			return store.Record{}, err
@@ -131,7 +131,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 }
 
 func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domain.ExecutionJobInput, progress domain.ExecutionProgress) error {
-	bindings, err := domain.CheckedExecutionInputs(assignment.InputID, continuationDigest([]byte(assignment.Input.Prompt)), progress.AcceptedInputs)
+	bindings, err := domain.CheckedExecutionInputs(assignment.InputID, domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest, progress.AcceptedInputs)
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domai
 		if err != nil {
 			return err
 		}
-		if record.SessionID != sessionID || input.Delivery != domain.InputAccepted || input.ExecutionID != assignment.ExecutionID || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || domain.BindSessionInput(record.ID, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Attachments: input.Attachments}) != binding {
+		if record.SessionID != sessionID || input.Delivery != domain.InputAccepted || input.ExecutionID != assignment.ExecutionID || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || record.ID == assignment.InputID && !queuedSessionInput(input).Equal(assignment.Input) || domain.BindSessionInput(record.ID, queuedSessionInput(input)) != binding {
 			return nativeCompletionUncertain()
 		}
 		requests[input.NativeRequestID] = true
@@ -186,7 +186,7 @@ func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domai
 	if err != nil {
 		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", err
 	}
-	if priorInput.SessionID != sr.ID || queued.Delivery != domain.InputAccepted || queued.ExecutionID != assignment.ExecutionID || queued.NativeRequestID != assignment.TurnRequestID || queued.Prompt != assignment.Input.Prompt || queued.Mode != assignment.Input.Mode {
+	if priorInput.SessionID != sr.ID || queued.Delivery != domain.InputAccepted || queued.ExecutionID != assignment.ExecutionID || queued.NativeRequestID != assignment.TurnRequestID || !queuedSessionInput(queued).Equal(assignment.Input) {
 		return domain.ExecutionJobInput{}, domain.ExecutionCompletion{}, "", nativeCompletionUncertain()
 	}
 	if err := checkContinuationInputs(tx, sr.ID, assignment, *session.Execution); err != nil {
@@ -206,11 +206,16 @@ func continuationAssignment(session domain.Session, assignment domain.ExecutionJ
 	input.Fork = nil
 	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
 	input.AccountID, input.ConnectionID = account, connection
-	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: continuationDigest([]byte(assignment.Input.Prompt)), Intent: intent}
+	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest, Intent: intent}
 	// A switch back may select the same account after its connection rotated.
 	// The checkpoint still belongs to the complete original account/connection.
 	if account != assignment.AccountID || connection != assignment.ConnectionID {
 		input.Continuation.PreviousAccountID, input.Continuation.PreviousConnectionID = assignment.AccountID, assignment.ConnectionID
 	}
 	return input
+}
+
+// queuedSessionInput retains every immutable input component for original authority comparisons.
+func queuedSessionInput(input domain.QueuedInput) domain.SessionInput {
+	return domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Skills: input.Skills, Attachments: input.Attachments}
 }

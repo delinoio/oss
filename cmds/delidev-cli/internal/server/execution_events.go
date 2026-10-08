@@ -83,7 +83,7 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		if ir.SessionID != sr.ID || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted && queued.Delivery != domain.InputUncertain) {
+		if ir.SessionID != sr.ID || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || !queuedSessionInput(queued).Equal(input.Input) || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted && queued.Delivery != domain.InputUncertain) {
 			return nil, executionEventConflict()
 		}
 		if input.Version == 4 && event.Kind != domain.ExecutionThreadBound {
