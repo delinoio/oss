@@ -683,3 +683,5 @@ GitHub jobs. The real authentication/registration matrix remains unvalidated.
 Existing Docker/Tart, service and distribution evidence retains its original limits.
 Record commands, source revision, results and these gaps in the PR. Public guides
 must disclose host's unreleased status until a manual release provides it.
+
+Completed, closed mutable Tart images (`ImagePreparing` with `CreationComplete`) may accompany drained paired host backups and explicit storage relocation. Host distribution rebinding retains all artifact/execution guards and requires empty private image process maps plus confirmed run-alias absence at both recorded and destination storage. Incomplete creation, open/removing images and uncertain alias inspection retain the original directory identities; ordinary live runtime identity checks remain strict.

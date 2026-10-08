@@ -127,7 +127,12 @@ func verifyHostDirectoryRoot(root *os.Root, d HostDirectory, installation string
 	return root, nil
 }
 
-func hostRestoreBoundary(s Snapshot) bool {
+func hostRestoreBoundary(s Snapshot, destinations ...Config) bool {
+	// Closed setup images may share a drained backup only after all private
+	// process and run-alias authority has settled. Never infer exit from phase.
+	if len(s.ImageTartPIDs) != 0 || len(s.ImageTartStarts) != 0 {
+		return false
+	}
 	for _, r := range s.Runners {
 		if r.Phase != Completed {
 			return false
@@ -139,8 +144,16 @@ func hostRestoreBoundary(s Snapshot) bool {
 		}
 	}
 	for _, im := range s.Images {
-		if im.Phase == ImageOpen || im.Phase == ImagePreparing || im.Phase == ImageRemoving {
+		if im.Phase == ImageOpen || im.Phase == ImageRemoving || im.Phase == ImagePreparing && !im.CreationComplete {
 			return false
+		}
+	}
+	for _, configuration := range append([]Config{s.Config}, destinations...) {
+		for _, im := range s.Images {
+			present, err := tartRunAliasPresent(configuration, tartRunAlias(im.ID))
+			if err != nil || present {
+				return false
+			}
 		}
 	}
 	for _, e := range s.HostExecutions {
@@ -158,7 +171,7 @@ func hostRestoreBoundary(s Snapshot) bool {
 
 func rebindHostDistributions(ctx context.Context, store *Store, c Config) error {
 	s := store.View()
-	if !hostRestoreBoundary(s) {
+	if !hostRestoreBoundary(s, c) {
 		return hostOwnership()
 	}
 	for id, d := range s.HostDirectories {
@@ -192,7 +205,7 @@ func rebindHostDistributions(ctx context.Context, store *Store, c Config) error 
 				return err
 			}
 			err = store.Update(func(v *Snapshot) error {
-				if !hostRestoreBoundary(*v) || v.HostDirectories[id] == nil || *v.HostDirectories[id] != *d {
+				if !hostRestoreBoundary(*v, c) || v.HostDirectories[id] == nil || *v.HostDirectories[id] != *d {
 					return hostOwnership()
 				}
 				v.HostDirectories[id].Identity = identity

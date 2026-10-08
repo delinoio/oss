@@ -248,7 +248,7 @@ func OpenStore(c Config) (*Store, error) {
 	}
 	// Rebind copied distribution identities only under the exclusive manager lock
 	// at a completed stop or explicit storage relocation. Live restart never does.
-	if len(s.state.HostDirectories) > 0 && (relocated || s.state.Stopping) && hostRestoreBoundary(s.state) {
+	if len(s.state.HostDirectories) > 0 && (relocated || s.state.Stopping) && hostRestoreBoundary(s.state, c) {
 		if err := rebindHostDistributions(context.Background(), s, c); err != nil {
 			db.Close()
 			return fail(err)
