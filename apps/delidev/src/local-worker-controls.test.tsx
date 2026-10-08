@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { LocalWorkerAction, LocalWorkerControls, LocalWorkerPresentation, LocalWorkerState, LocalWorkerManagementState, type ControlLocalWorker, type LocalWorkerStatus } from "./local-worker-controls";
@@ -26,16 +26,37 @@ it("keeps automatic management paused until an explicit Start", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Start local Worker" }));
   await waitFor(() => expect(control.mock.calls.filter(([action]) => action === LocalWorkerAction.Start)).toHaveLength(1));
 });
-it("reports blocked original ownership and navigates to diagnostics without replacing it", async () => {
-  const value: LocalWorkerStatus = { ...running(), state: LocalWorkerState.Uncertain, controller_active: false, management: { state: LocalWorkerManagementState.Blocked, attempts: 1, retry_ms: 0, failure: "invalid-evidence", owned_by_app: false } };
-  const diagnostics = vi.fn(), control = vi.fn(async () => value);
-  render(<LocalWorkerControls control={control} active onDiagnostics={diagnostics} changed={() => {}} />);
-  await screen.findByRole("alert");
+it.each(["service-managed", "permission-denied", "credential-unavailable", "unconfirmed-exit", "private-secret-unknown"])("presents safe original problem details without controller calls (%s)", async failure => {
+  let value: LocalWorkerStatus = { ...running(), state: LocalWorkerState.Uncertain, controller_active: false, management: { state: LocalWorkerManagementState.Blocked, attempts: 1, retry_ms: 0, failure, owned_by_app: false } };
+  const control = vi.fn(async () => value);
+  const view = render(<LocalWorkerControls presentation={LocalWorkerPresentation.RunnerDevices} control={control} active changed={() => {}} />);
+  const opener = await screen.findByRole("button", { name: "View problem details" });
+  opener.focus(); fireEvent.click(opener);
+  const dialog = screen.getByRole("dialog", { name: "Local Worker problem" });
+  expect(within(dialog).getByText(`Execution machine: ${value.machine_id}`)).toBeTruthy();
+  expect(dialog.textContent).not.toContain(failure);
   expect(screen.queryByRole("button", { name: "Start local Worker" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
-  expect(diagnostics).toHaveBeenCalledOnce();
   expect(control).toHaveBeenCalledOnce();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close Local Worker problem" }));
+  expect(document.activeElement).toBe(opener); expect(control).toHaveBeenCalledOnce();
+  fireEvent.click(opener);
+  value = { ...value, machine_id: newRequestId() };
+  fireEvent.click(screen.getByRole("button", { name: "Refresh local Worker" }));
+  await waitFor(() => expect(within(screen.getByRole("dialog")).getByText(`Execution machine: ${value.machine_id}`)).toBeTruthy());
+  expect(control).toHaveBeenCalledTimes(2);
+  fireEvent(screen.getByRole("dialog"), new Event("cancel", {cancelable:true}));
+  expect(document.activeElement).toBe(opener); expect(control).toHaveBeenCalledTimes(2);
+  view.unmount(); expect(screen.queryByRole("dialog")).toBeNull();
 });
+it("closes local problem presentation on category inactivity without reading or reviving it", async () => {
+ const value: LocalWorkerStatus = { ...running(), state: LocalWorkerState.Uncertain, management: { state: LocalWorkerManagementState.Blocked, attempts:0, retry_ms:0, owned_by_app:false } };
+ const control = vi.fn(async () => value), props = { presentation: LocalWorkerPresentation.RunnerDevices, control, changed: () => {} };
+ const view = render(<LocalWorkerControls {...props} active />);
+ fireEvent.click(await screen.findByRole("button", { name:"View problem details" }));
+ view.rerender(<LocalWorkerControls {...props} active={false} />);
+ expect(screen.queryByRole("dialog")).toBeNull(); expect(control).toHaveBeenCalledOnce();
+});
+
 it("registers separately from explicit startup and never automatically retries an uncertain start", async () => {
   let value: LocalWorkerStatus | undefined;
   const control = vi.fn(async (action: LocalWorkerAction) => {

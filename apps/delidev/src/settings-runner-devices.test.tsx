@@ -52,19 +52,16 @@ it("preserves automatic presentation through the category lifetime before native
   expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
 });
 
-it("keeps keyboard focus in the main region when blocked recovery opens diagnostics", async () => {
-  const value = fixture(), current: LocalWorkerStatus = { ...status(), management: { state: LocalWorkerManagementState.Blocked, attempts: 1, retry_ms: 0, owned_by_app: false, failure: "unconfirmed-exit" } };
-  const control = Object.assign(vi.fn(async (_action: LocalWorkerAction) => current), { automatic: true });
-  render(value.view(<main id="main" tabIndex={-1}><Settings controlLocalWorker={control} /></main>));
-  fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
-  const worker = await screen.findByRole("region", { name: "Worker on this computer" });
-  const diagnostics = await within(worker).findByRole("button", { name: "Connection & diagnostics" });
-  diagnostics.focus();
-  expect(document.activeElement).toBe(diagnostics);
-  fireEvent.click(diagnostics);
-  expect(document.activeElement).toBe(screen.getByRole("main"));
-  expect(screen.getByRole("heading", { level: 1, name: "Connection & diagnostics" })).toBeTruthy();
-  expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+it("keeps the original Runner Devices controller mounted under the local problem dialog", async () => {
+ const value = fixture(), current: LocalWorkerStatus = { ...status(), management: { state:LocalWorkerManagementState.Blocked,attempts:1,retry_ms:0,owned_by_app:false,failure:"unconfirmed-exit" } };
+ const control = Object.assign(vi.fn(async (_action:LocalWorkerAction) => current),{automatic:true});
+ open(value,control);
+ const opener = await screen.findByRole("button",{name:"View problem details"});opener.focus();fireEvent.click(opener);
+ const dialog = screen.getByRole("dialog",{name:"Local Worker problem"});
+ expect(screen.getByRole("heading",{level:1,name:"Runner Devices"})).toBeTruthy();
+ const reads = control.mock.calls.length; expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+ fireEvent.click(within(dialog).getByRole("button",{name:"Close Local Worker problem"}));
+ expect(document.activeElement).toBe(opener);expect(control).toHaveBeenCalledTimes(reads);
 });
 
 it("renders the approved uncertain/loading hierarchy without duplicate guidance or fake records", async () => {

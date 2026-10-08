@@ -30,8 +30,7 @@ import { LocalWorkerControls, LocalWorkerPresentation, type ControlLocalWorker, 
 import { SSHSetup } from "./ssh-setup";
 import { MachineSettings } from "./machine-settings";
 import { NetworkSettings } from "./network-settings";
-import { DeviceAction, DeviceRow, DeviceRevocation, DeviceRevocationExit, Doctor } from "./device-settings";
-import { DoctorTitle } from "./doctor";
+import { DeviceAction, DeviceRow, DeviceRevocation, DeviceRevocationExit } from "./device-settings";
 import { AccountConnection } from "./account-connection";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
@@ -234,7 +233,7 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
   [SettingsCategory.ServerPreferences]: { get label() { return copy("settings.serverPreferences_eba66b"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
   [SettingsCategory.GitWorkflow]: { get label() { return copy("settings.gitWorkflow"); }, get description() { return copy("settings.gitWorkflowDescription"); }, kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
   [SettingsCategory.Integrations]: { get label() { return copy("settings.integrations_090512"); }, get description() { return copy("settings.manageGithubProfilesForRepositoryAccess_42adb1"); }, area: SettingsArea.Integrations },
-  [SettingsCategory.Diagnostics]: { get label() { return copy("settings.connectionDiagnostics_b30b0d"); }, get description() { return copy("settings.readOnlyObservationsFromTheSelected_92a18a"); }, area: SettingsArea.Diagnostics },
+  [SettingsCategory.Diagnostics]: { get label() { return copy("settings.connectionDiagnostics_b30b0d"); }, get description() { return copy("settings.connectionDescription"); }, area: SettingsArea.Diagnostics },
   [SettingsCategory.Notifications]: { get label() { return copy("settings.notifications_788011"); }, get description() { return copy("settings.thesePreferencesBelongToThisClient_082e1e"); }, area: SettingsArea.Notifications },
   [SettingsCategory.Transfer]: { get label() { return copy("settings.importExport_6e061f"); }, get description() { return copy("settings.moveConfigurationBetweenDelidevServers_749ed7"); }, area: SettingsArea.Transfer },
 };
@@ -327,11 +326,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
 
 function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, entry, navigate }: SettingsProps & { selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
   useLocale();
-  const openConnectionDiagnostics = () => {
-    // Keep focus in the persistent main region when this category is disposed.
-    window.document.getElementById("main")?.focus({ preventScroll: true });
-    navigate(SettingsCategory.Diagnostics);
-  };
+
   const [device, setDevice] = useState<Resource>();
   const [expandedDevices, setExpandedDevices] = useState<ReadonlySet<string>>(() => new Set());
   const pairedPageIds = useRef<ReadonlySet<string>>(new Set());
@@ -467,7 +462,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
         <SettingsTaskBackground><div className="settings-content-column">
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
         {isGitWorkflow ? <p className="settings-breadcrumb">{copy("settings.gitWorkflow")}</p> : null}
-        {area !== SettingsArea.Diagnostics && area !== SettingsArea.Backups && !isApiAccounts && !isApiProviders ? <div className="settings-category-heading">
+        {area !== SettingsArea.Backups && !isApiAccounts && !isApiProviders ? <div className="settings-category-heading">
           <div className="settings-category-title"><h1 aria-live="polite" aria-atomic="true">{selected.label}</h1>{selectedCategory === SettingsCategory.Repositories ? <p>{copy("settings.repositoryDescription")}</p> : isAgentWorkers ? <p className="settings-agent-summary">{copy("settings.reusableConfigurationsForYourAgents_5ba1a2")}</p> : isPreferenceCategory ? <p>{isGitWorkflow ? copy("settings.gitWorkflowDescription") : copy("settings.defaultRoutingWorktreeFetchAndPull_e19cf8")}</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isPreferenceCategory ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
             <button type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? "Refresh Git workflow" : undefined} onClick={() => { if (isProjects) projectMetadata.refresh(); if (isAgentWorkers) refreshModels(value => value + 1); void result.refetch(); }}>{isGitWorkflow ? copy("settings.refresh_0e9161") : copy("settings.refreshSettings_65dbd6")}</button>
@@ -484,9 +479,9 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} /></div> : null}
-          {area === SettingsArea.Diagnostics ? <div>{connectionSettings ? <section aria-label={copy("settings.connection_639a40")}><h2>{copy("settings.connection_639a40")}</h2>{connectionSettings}</section> : null}<Doctor title={DoctorTitle.ConnectionDiagnostics} active={visible && area === SettingsArea.Diagnostics} visible={visible} /></div> : null}
+          {area === SettingsArea.Diagnostics ? <div><section aria-label={copy("settings.connection_639a40")}><h2>{copy("settings.connection_639a40")}</h2>{connectionSettings ?? <p>{copy("settings.connectionUnavailable")}</p>}</section></div> : null}
           {area === SettingsArea.Configuration ? <div>
-            {controlLocalWorker && isRunnerDevices ? <div><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} onDiagnostics={openConnectionDiagnostics} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
+            {controlLocalWorker && isRunnerDevices ? <div><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             {isApiAccounts ? <div>
               <AccountSettings apiFormatSelectingReady={Boolean(apiInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && eligibleInventory.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1) && !apiInventory.error && !eligibleInventory.error)} openUsage={openUsage} section={AccountSettingsSection.Api} active={visible && isApiAccounts && !hasOverlay} accountTypeFilteringReady={apiAccountTypeFilteringReady} providerInventoryFailure={apiInventory.error?.failure} accountTypeFilteringLoading={apiInventory.isLoading} accountTypeFilteringFetching={apiInventory.isFetching} retryAccountCapabilities={() => { apiInventory.refreshExplicit(); }} providerIdFilter={apiProviderID} clearProviderFilter={() => { setApiProviderID(""); setApiProviderHint(undefined); setStartApiWizard(undefined); }} setProviderFilter={(providerId, provider) => { setApiProviderID(providerId); setApiProviderHint(provider); }} providers={apiProviders} eligibleProviders={eligibleProviders} providerSearch="" setProviderSearch={() => {}} providerSearchLoading={apiInventory.isFetching} providerSearchError={undefined} providerPicker={providerPicker} subscriptionProviderResources={[]} subscriptionProviderManagement={null} openApiProviders={() => navigate(SettingsCategory.Providers)} manageAccount={setAccount} editAccount={(resource) => setEditing({ kind: EntityKind.ACCOUNT, initial: resource, key: newRequestId() })} deleteAccount={setDeleting} startApiWizard={startApiWizard} providerHint={apiProviderHint} />

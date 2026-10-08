@@ -42,10 +42,11 @@
   "local-worker-controls.autoPermission": "The original registration or permission could not be verified. Preserve existing registration files. Check that private directories belong to your account and are accessible only to you (0700 directories, 0600 files on macOS/Linux), then refresh this Worker.",
   "local-worker-controls.autoNeedsAttention": "Needs attention",
   "local-worker-controls.autoStopped": "Stopped",
-  "local-worker-controls.autoDiagnostics": "Connection & diagnostics",
   "local-worker-controls.autoRunning": "Running",
   "local-worker-controls.autoRunningDescription": "The Worker process is running. Server connectivity and execution readiness are checked separately.",
   "local-worker-controls.autoRegisteringBadge": "Registering",
   "local-worker-controls.autoRetryingBadge": "Retrying",
-  "local-worker-controls.autoCheckingBadge": "Checking"
+  "local-worker-controls.autoCheckingBadge": "Checking",
+  "local-worker-controls.viewProblemDetails": "View problem details",
+  "local-worker-controls.problemTitle": "Local Worker problem"
 }

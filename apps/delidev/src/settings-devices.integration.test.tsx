@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { EntityKind, ResourceService, SystemService, createDeliDevTransport } from "@delinoio/delidev-api-client";
+import { Doctor } from "./doctor";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { document } from "./documents";
@@ -23,7 +24,7 @@ it("revokes a real paired client through settings and reads bounded server diagn
   const paired = createDeliDevTransport({ origin: credential.endpoint as string, getToken: () => credential.token as string });
   await createClient(SystemService, paired).getStatus({});
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
+  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" }));
   fireEvent.click(await screen.findByRole("button", { name: "Revoke DeliDev desktop" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement).disabled).toBe(false));
@@ -36,6 +37,9 @@ it("revokes a real paired client through settings and reads bounded server diagn
   fireEvent.click(screen.getByRole("button", { name: "Return to devices" }));
   await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Details for DeliDev desktop" })));
   fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
+  await screen.findByText("Native Connection controls are unavailable in this window.");
+  expect(screen.queryByRole("button", { name:"Refresh diagnostics" })).toBeNull();
+  view.rerender(<TransportProvider transport={transport}><QueryClientProvider client={client}><Doctor active /></QueryClientProvider></TransportProvider>);
   await screen.findByText("Server owner credential loaded");
   expect(screen.getByText("Read succeeded")).toBeTruthy();
   expect(screen.getByText("Not performed")).toBeTruthy();

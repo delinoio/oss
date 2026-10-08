@@ -155,5 +155,7 @@
   "settings.projectRepositoryStale": "Showing previously loaded repository details. Refresh to read the latest details.",
   "settings.projectRepositoryPrimary": "Primary",
   "settings.projectOriginalID": "Project ID",
-  "settings.projectRepositoryOriginalIDs": "Repository IDs"
+  "settings.projectRepositoryOriginalIDs": "Repository IDs",
+  "settings.connectionUnavailable": "Native Connection controls are unavailable in this window.",
+  "settings.connectionDescription": "Manage the original connection and saved server controls."
 }
