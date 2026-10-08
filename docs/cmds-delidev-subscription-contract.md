@@ -272,7 +272,7 @@ Update the account/harness/session/protocol/client contracts and affected scoped
 
 System capabilities 18 (`SUBSCRIPTION_QUOTA_V1`) and 19
 (`SUBSCRIPTION_RESET_CREDITS_V1`) negotiate the two product operations separately.
-Worker capability 8 requires the verified managed Codex 0.151.0 profile. The
+Worker capability 8 retains the verified managed Codex profile for fresh idle native-owner admission. Active original Execute quota reads use the initialized execution protocol as described below. The
 pinned upstream source is commit `78c290807ce710180111df227df3b7a4fe845452`.
 `account/rateLimits/read` omits its unit parameters; the native wire encoder's
 explicit `OmittedParams` profile preserves the ordinary structured-parameter
@@ -284,7 +284,18 @@ refreshes are authenticated SubscriptionService operations with UUID-v7 receipts
 refresh-all derives its complete account set on the server, independent of client
 pagination. An idle read takes a short exclusive credential lease. An active
 execution uses its registered original Codex process and lease; it cannot create
-a second credential writer. Original native rate-limit updates pass the same
+a second credential writer. Explicit-original, omitted-machine, Refresh all and due
+maintenance use the same active-execution eligibility. For that read, missing or
+unverified saved installation discovery and numeric version metadata cannot deny
+an already initialized direct-v4 execution. Admission and send/publication retain
+the original account, connection, credential generation, Execute lease/revision,
+server epoch, authenticated Worker device, current machine/instance, negotiated
+managed subscription and observation capabilities, and initiating actor. The
+Worker observation registry uses only the actual original initialized Codex
+client; an absent registry owner permits no read or replacement process. Idle
+quota, lifecycle operations and reset-credit consumption/reconciliation retain
+their existing saved-installation and independent cleanup requirements. This
+boundary adds no RPC, capability or database migration. Original native rate-limit updates pass the same
 bounded projection. Failed observations preserve the last successful timestamp,
 values and exhaustion state. Sparse null fields retain original values, window
 identities and individual observation times. Comparable windows use their minimum
