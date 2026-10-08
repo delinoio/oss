@@ -326,3 +326,5 @@ cleanup ownership. No new RPC or SQLite migration is added.
 ## Project prompt history ownership
 
 Issue #1828 adds server-persisted project first-message history under the sessions, storage, protocol, desktop and API-client contracts. Go owns immutable 100-entry acceptance order, authenticated pagination and receipt-bound confirmed clear. Desktop owns text-only boundary keyboard recall. History survives source-session deletion, belongs to project deletion, is captured by managed backups and is excluded from portable configuration. System 48 / entity 35 add no Worker, native or migration authority.
+
+Subscription Account details follows the [subscription Settings modal boundary](apps-delidev-subscription-settings-contract.md#account-details-dialog-issue-1824): category-owned read-only metadata survives virtualized row eviction, while explicit management retains its original fresh account authority.

@@ -1033,3 +1033,5 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .inbox-execution-metadata > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
 .inbox-execution-metadata pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .inbox-recovery > h4 { font-size: 16px; }
+
+.settings-task-dialog .subscription-details { margin-top: 0; padding-top: 0; border-top: 0; }

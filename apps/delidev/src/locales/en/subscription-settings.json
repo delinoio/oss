@@ -96,5 +96,6 @@
   "subscription-settings.cleanupReasonUnconfirmed": "Credential or sign-in process cleanup could not be confirmed.",
   "subscription-settings.cleanupReasonOwnership": "The original cleanup ownership is unavailable.",
   "subscription-settings.cleanupReasonAuthorization": "The original requester is no longer authorized.",
-  "subscription-settings.cleanupReasonUnavailable": "The account could not be safely deleted."
+  "subscription-settings.cleanupReasonUnavailable": "The account could not be safely deleted.",
+  "subscription-settings.openQuotaDetails": "View all {{count}} quota windows"
 }

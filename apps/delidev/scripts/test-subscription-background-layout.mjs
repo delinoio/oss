@@ -52,8 +52,9 @@ try {
     const opener = inventory.locator(".subscription-more > button");
     await opener.click();
     await page.getByRole("button", { name: "Account details", exact: true }).click();
+    await page.getByRole("button", { name: "Close Account details", exact: true }).click();
     await page.locator(".subscription-advanced summary").click();
-    for (const action of ["Delete account", "Edit preferences"]) for (const dismissal of ["X", "Escape", "Cancel"]) {
+    for (const action of ["Delete account", "Edit preferences"]) for (const dismissal of ["X", "Escape"]) {
       await opener.click();
       const taskAction = page.getByRole("button", { name: action, exact: true });
       await taskAction.scrollIntoViewIfNeeded();
@@ -67,7 +68,7 @@ try {
         const background = node.closest("fieldset"), dialog = document.querySelector(".settings-task-dialog[open]");
         return { height: node.getBoundingClientRect().height, scroll: document.querySelector("main").scrollTop, hidden: Boolean(node.closest("[hidden]")), disabled: background.disabled, inert: background.inert, ariaHidden: background.getAttribute("aria-hidden"), modalOutside: !background.contains(dialog), details: Boolean(node.querySelector(".subscription-details")), advanced: document.querySelector(".subscription-advanced").open };
       });
-      assert(!state.hidden && state.disabled && state.inert && state.ariaHidden === "true" && state.modalOutside && state.details && state.advanced, JSON.stringify(state));
+      assert(!state.hidden && state.disabled && state.inert && state.ariaHidden === "true" && state.modalOutside && !state.details && state.advanced, JSON.stringify(state));
       assert.equal(state.height, before.height, "Opening the task changed the list layout");
       assert.equal(state.scroll, before.scroll, "Opening the task moved the background scroll position");
       assert(await opener.isDisabled(), "The background allows a replacement operation");
@@ -87,7 +88,7 @@ try {
       else await dialog.getByRole("button", { name: action === "Delete account" ? "Keep account" : "Cancel edit", exact: true }).click();
       await dialog.waitFor({ state: "detached" });
       assert(await original.evaluate(node => node.isConnected && node === document.querySelector(".subscription-row")), "Dismissal replaced the inventory controller");
-      assert(await inventory.locator(".subscription-details").isVisible(), "Dismissal lost the expanded details");
+      assert.equal(await inventory.locator(".subscription-details").count(), 0, "Details returned to inline presentation");
       assert(await page.locator(".subscription-advanced").evaluate(node => node.open), "Dismissal lost the Advanced disclosure");
       await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "More actions for ChatGPT fixture");
       assert.equal(await page.locator("main").evaluate(node => node.scrollTop), before.scroll, "Dismissal moved the background scroll position");

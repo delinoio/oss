@@ -92,7 +92,8 @@ it.each([
   const opener = within(inventory).getByRole("button", { name: `More actions for ${alias}` });
   fireEvent.click(opener);
   fireEvent.click(screen.getByRole("button", { name: "Account details" }));
-  const details = within(inventory).getByRole("heading", { name: "Account details" });
+  expect(screen.getByRole("dialog", { name: "Account details" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close Account details" }));
   const advanced = screen.getByText("Advanced settings").closest("details")!;
   fireEvent.click(advanced.querySelector("summary")!);
   expect(advanced.open).toBe(true);
@@ -102,7 +103,7 @@ it.each([
   const background = inventory.closest("fieldset")!;
   expect(inventory.isConnected).toBe(true);
   expect(inventory.closest("[hidden]")).toBeNull();
-  expect(details.isConnected).toBe(true);
+  expect(screen.queryByRole("dialog", { name: "Account details" })).toBeNull();
   expect(advanced.open).toBe(true);
   expect(background.disabled).toBe(true);
   expect(background.hasAttribute("inert")).toBe(true);
@@ -113,7 +114,7 @@ it.each([
   else fireEvent.click(within(dialog).getByRole("button", { name: action === "Delete account" ? "Keep account" : "Cancel edit" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("article", { name: alias })).toBe(inventory);
-  expect(within(inventory).getByRole("heading", { name: "Account details" })).toBe(details);
+  expect(within(inventory).queryByRole("heading", { name: "Account details" })).toBeNull();
   expect(advanced.open).toBe(true);
   await waitFor(() => expect(globalThis.document.activeElement).toBe(opener));
   expect(background.disabled).toBe(false);
@@ -586,5 +587,50 @@ it("retains the original paused deletion recovery action", async () => {
   const recovery = await screen.findByRole("button", { name: "Refresh account for confirmation" });
   expect(screen.getByRole("dialog").querySelector(".account-deletion .actions")?.contains(recovery)).toBe(true);
   expect(screen.queryByRole("button", { name: "Back to subscriptions" })).toBeNull();
+  expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("subscription details opens and closes without reads, then one management task uses the original fresh reader under Strict Mode", async () => {
+  const value = fixture();
+  render(<value.Harness settings />);
+  await screen.findByRole("article", { name: alias });
+  const reads = value.read.mock.calls.length, lists = value.list.mock.calls.length;
+  const opener = screen.getByRole("button", { name: `More actions for ${alias}` });
+  fireEvent.click(opener); fireEvent.click(screen.getByRole("button", { name: "Account details" }));
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Close Account details" }));
+  expect(value.read).toHaveBeenCalledTimes(reads); expect(value.list).toHaveBeenCalledTimes(lists);
+  fireEvent.click(opener); fireEvent.click(screen.getByRole("button", { name: "Account details" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage metadata" }));
+  await screen.findByRole("dialog", { name: "Manage subscription" });
+  await waitFor(() => expect(value.read).toHaveBeenCalledTimes(reads + 2));
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  expect(screen.queryByRole("dialog", { name: "Account details" })).toBeNull();
+  expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Close Manage subscription" }));
+  await waitFor(() => expect(globalThis.document.activeElement).toBe(opener));
+});
+
+
+it("subscription details retains its proven revision floor after stale inventory refresh before metadata management", async () => {
+  const value = fixture();
+  render(<value.Harness settings />);
+  await screen.findByRole("article", { name: alias });
+  fireEvent.click(screen.getByRole("button", { name: `More actions for ${alias}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Account details" }));
+  const provenRevision = value.current.revision;
+  const staleInventory = create(ResourceSchema, { ...value.current, revision: provenRevision - 2n });
+  value.list.mockResolvedValue({ resources: [staleInventory] });
+  const lists = value.list.mock.calls.length;
+  await act(async () => { await value.client.invalidateQueries({ predicate: query => query.queryKey.some(part => typeof part === "object" && part !== null && "scrollPaginationRefresh" in part) }); });
+  await waitFor(() => expect(value.list.mock.calls.length).toBeGreaterThan(lists));
+  expect(screen.getByRole("dialog", { name: "Account details" })).toBeTruthy();
+  // A fresh response above the regressed list but below the displayed proof
+  // cannot authorize controls for this original account.
+  value.read.mockResolvedValue({ resource: create(ResourceSchema, { ...value.current, revision: provenRevision - 1n }) });
+  fireEvent.click(screen.getByRole("button", { name: "Manage metadata" }));
+  const management = await screen.findByRole("dialog", { name: "Manage subscription" });
+  await waitFor(() => expect(within(management).getByRole("alert")).toBeTruthy());
+  expect(within(management).queryByRole("button", { name: "Disconnect" })).toBeNull();
   expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
 });
