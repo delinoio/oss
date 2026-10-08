@@ -44,7 +44,9 @@ export function ScrollPicker({ options, label, value, change, query, active, dis
       const bounds = pickerSurfaceBounds(opener);
       // Top-layer coordinates remain in CSS layout units under effective zoom.
       // Measure the popup scale instead of assuming ancestor zoom or device DPI.
-      const scale = popup.offsetWidth ? popup.getBoundingClientRect().width / popup.offsetWidth : 1;
+      // offsetWidth rounds fractional CSS widths and can cause observer oscillation.
+      const cssWidth = Number.parseFloat(getComputedStyle(popup).width);
+      const scale = cssWidth > 0 ? popup.getBoundingClientRect().width / cssWidth : 1;
       const factor = Number.isFinite(scale) && scale > 0 ? scale : 1;
       const geometry = pickerOverlayGeometry(opener.getBoundingClientRect(), bounds, (popup.scrollHeight + 2) * factor);
       Object.assign(popup.style, { left: `${geometry.left / factor}px`, top: `${geometry.top / factor}px`, width: `${geometry.width / factor}px`, maxHeight: `${geometry.maxHeight / factor}px` });
