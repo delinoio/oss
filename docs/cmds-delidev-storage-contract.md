@@ -1095,3 +1095,13 @@ outcome and cannot authorize preparation cleanup. Cleanup requires positively
 absent original receipts after joined handlers or exclusive restart; original
 paired-device removal tombstones prevent delayed copying and root replacement.
 Accepted snapshots retain ordinary session deletion ownership.
+
+Active server staging journals have a 4,096-entry admission bound. Confirmed
+accepted or removed outcomes move atomically to exact-ID hash-sharded private
+terminal receipts before active-record removal. Worker intents retain capacity
+while original snapshot bytes exist. Confirmed original session deletion validates
+those intents and moves compact removal tombstones outside the active bound.
+Terminal lookups occur only for the exact request; maintenance never scans lifetime
+receipt history. Tombstones reject delayed dispatch and preserve replacements.
+Prepared result recovery normalizes delivery instances only through the complete
+immutable original preparation proof; ordinary inventory scope checks stay strict.

@@ -259,6 +259,9 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 		if domain.Decode(reply.document, &result) != nil || validateSkillResult(result) != nil {
 			return empty, skillUnavailable()
 		}
+		if cleanup && len(result.Entries) != 0 {
+			return empty, skillUnavailable()
+		}
 		for _, entry := range result.Entries {
 			if entry.WorkerDeviceID != reader.device {
 				return empty, skillUnavailable()

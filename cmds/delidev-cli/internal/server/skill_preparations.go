@@ -64,6 +64,29 @@ func preparationIdentityDigest(raw []byte) string {
 func (s *Service) skillPreparationPath(id domain.ID) string {
 	return filepath.Join(s.Store.Root(), "skill-preparations", string(id)+".json")
 }
+func (s *Service) terminalSkillPreparationPath(id domain.ID) string {
+	return filepath.Join(s.Store.Root(), "skill-preparation-receipts", preparationIdentityDigest([]byte(id))[:2], string(id)+".json")
+}
+func (s *Service) retainedSkillPreparation(id domain.ID) (skillPreparationJournal, error) {
+	v, e := readSkillPreparation(s.terminalSkillPreparationPath(id))
+	if !errors.Is(e, os.ErrNotExist) {
+		return v, e
+	}
+	return readSkillPreparation(s.skillPreparationPath(id))
+}
+func (s *Service) retireSkillPreparation(v skillPreparationJournal) error {
+	path := s.terminalSkillPreparationPath(v.RequestID)
+	if e := security.PrivateDir(filepath.Dir(path)); e != nil {
+		return e
+	}
+	if e := writeSkillPreparation(path, v); e != nil {
+		return e
+	}
+	if e := os.Remove(s.skillPreparationPath(v.RequestID)); e != nil && !errors.Is(e, os.ErrNotExist) {
+		return e
+	}
+	return security.SyncParent(s.skillPreparationPath(v.RequestID))
+}
 func readSkillPreparation(path string) (skillPreparationJournal, error) {
 	var v skillPreparationJournal
 	raw, err := security.ReadPrivate(path, skillPreparationJournalBytes)
@@ -112,7 +135,7 @@ func (s *Service) prepareSkills(ctx context.Context, scope domain.SkillReadReque
 		liveSkillPreparations.Unlock()
 		return empty, finish, domain.Fail(domain.Conflict, "The original skill preparation is still active.", "Wait for the original operation and retry its exact request.")
 	}
-	if retained, err := readSkillPreparation(s.skillPreparationPath(request)); err == nil {
+	if retained, err := s.retainedSkillPreparation(request); err == nil {
 		if retained.IdentityDigest != preparationIdentityDigest(raw) || retained.Operation != operation || retained.Actor != actor || retained.State == skillPreparationCleaning || retained.State == skillPreparationRemoved {
 			liveSkillPreparations.Unlock()
 			return empty, finish, skillUnavailable()
@@ -149,7 +172,7 @@ func (s *Service) retainSkillPreparation(ctx context.Context, scope *domain.Skil
 		return skillUnavailable()
 	}
 	path := s.skillPreparationPath(owner.RequestID)
-	old, err := readSkillPreparation(path)
+	old, err := s.retainedSkillPreparation(owner.RequestID)
 	if err == nil {
 		if old.IdentityDigest != preparationIdentityDigest(owner.Identity) || old.Operation != owner.Operation || old.Actor != owner.Actor || old.State == skillPreparationCleaning || old.State == skillPreparationRemoved || old.Scope.WorkerDeviceID != scope.WorkerDeviceID {
 			return skillUnavailable()
@@ -213,6 +236,9 @@ func (s *Service) reconcileSkillPreparations(ctx context.Context) error {
 			return skillUnavailable()
 		}
 		if journal.State == skillPreparationRemoved {
+			if err = s.retireSkillPreparation(journal); err != nil {
+				return domain.SafeError(err)
+			}
 			continue
 		}
 		liveSkillPreparations.Lock()
@@ -228,7 +254,7 @@ func (s *Service) reconcileSkillPreparations(ctx context.Context) error {
 		}
 		if found {
 			journal.State = skillPreparationAccepted
-			err = writeSkillPreparation(path, journal)
+			err = s.retireSkillPreparation(journal)
 			liveSkillPreparations.Unlock()
 			if err != nil {
 				return domain.SafeError(err)
@@ -253,7 +279,7 @@ func (s *Service) reconcileSkillPreparations(ctx context.Context) error {
 			continue
 		}
 		journal.State = skillPreparationRemoved
-		if err = writeSkillPreparation(path, journal); err != nil {
+		if err = s.retireSkillPreparation(journal); err != nil {
 			return domain.SafeError(err)
 		}
 		if s.logger != nil {

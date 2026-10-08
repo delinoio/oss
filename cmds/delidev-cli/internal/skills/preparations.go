@@ -41,6 +41,53 @@ type preparationIntent struct {
 func (m Manager) preparationPath(id domain.ID) string {
 	return filepath.Join(m.Root, "skill-preparations", string(id)+".json")
 }
+func (m Manager) terminalPreparationPath(id domain.ID) string {
+	hash := sha256.Sum256([]byte(id))
+	return filepath.Join(m.Root, "skill-preparation-receipts", hex.EncodeToString(hash[:])[:2], string(id)+".json")
+}
+func (m Manager) retainedPreparation(id domain.ID) (preparationIntent, error) {
+	v, e := readPreparation(m.terminalPreparationPath(id))
+	if !errors.Is(e, os.ErrNotExist) {
+		return v, e
+	}
+	return readPreparation(m.preparationPath(id))
+}
+func (m Manager) retirePreparation(id domain.ID, v preparationIntent) error {
+	v.Files = nil
+	v.Ready = false
+	path := m.terminalPreparationPath(id)
+	if e := security.PrivateDir(filepath.Dir(path)); e != nil {
+		return e
+	}
+	if e := writePreparation(path, v); e != nil {
+		return e
+	}
+	if e := os.Remove(m.preparationPath(id)); e != nil && !errors.Is(e, os.ErrNotExist) {
+		return e
+	}
+	return security.SyncParent(m.preparationPath(id))
+}
+
+// Session deletion already joined original native owners. Retire the original
+// preparation only for its exact bound references, then prove byte absence.
+func (m Manager) DeletePreparedSnapshot(ctx context.Context, machine domain.ID, binding domain.SkillBinding) error {
+	intent, e := m.retainedPreparation(binding.SnapshotID)
+	if e != nil || intent.Scope.MachineID != machine || intent.Scope.WorkerDeviceID != binding.WorkerDeviceID {
+		return unavailable()
+	}
+	found := false
+	for _, v := range intent.Scope.Selections {
+		if v == binding {
+			found = true
+		}
+	}
+	if !found {
+		return unavailable()
+	}
+	scope := intent.Scope
+	scope.Action = domain.CleanupSkillPreparation
+	return m.CleanupPreparation(ctx, scope)
+}
 func (m Manager) preparationGate(id domain.ID) (*security.Lock, error) {
 	if id.Validate() != nil {
 		return nil, unavailable()
@@ -117,7 +164,7 @@ func (m Manager) Prepare(ctx context.Context, scope domain.SkillReadRequest) err
 	}
 	defer gate.Close()
 	journal := m.preparationPath(id)
-	intent, err := readPreparation(journal)
+	intent, err := m.retainedPreparation(id)
 	if errors.Is(err, os.ErrNotExist) {
 		if err = security.PrivateDir(filepath.Dir(journal)); err != nil {
 			return unavailable()
@@ -342,7 +389,7 @@ func (m Manager) CleanupPreparation(ctx context.Context, scope domain.SkillReadR
 	}
 	defer gate.Close()
 	journal := m.preparationPath(id)
-	intent, err := readPreparation(journal)
+	intent, err := m.retainedPreparation(id)
 	if errors.Is(err, os.ErrNotExist) {
 		// A lost dispatch may never have entered Prepare. Publish a removal-only
 		// original intent under the same gate before proving absence. It fences
@@ -360,7 +407,7 @@ func (m Manager) CleanupPreparation(ctx context.Context, scope domain.SkillReadR
 		if e != nil || len(entries) >= preparationLimit {
 			return bound()
 		}
-		return writePreparation(journal, intent)
+		return m.retirePreparation(id, intent)
 	}
 	if err != nil {
 		return unavailable()
@@ -373,7 +420,7 @@ func (m Manager) CleanupPreparation(ctx context.Context, scope domain.SkillReadR
 	if errors.Is(statErr, os.ErrNotExist) {
 		intent.Removing = true
 		intent.Deleted = true
-		return writePreparation(journal, intent)
+		return m.retirePreparation(id, intent)
 	}
 	if statErr != nil || intent.Deleted || intent.RootIdentity == "" || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return unavailable()
@@ -431,7 +478,7 @@ func (m Manager) CleanupPreparation(ctx context.Context, scope domain.SkillReadR
 				return unavailable()
 			}
 			metadata, e := f.Stat()
-			if e != nil || !metadata.Mode().IsRegular() || metadata.Size() != claim.Size {
+			if e != nil || !metadata.Mode().IsRegular() || metadata.Size() != claim.Size || (metadata.Mode().Perm()&0111 != 0) != claim.Executable {
 				f.Close()
 				return unavailable()
 			}
@@ -480,5 +527,5 @@ func (m Manager) CleanupPreparation(ctx context.Context, scope domain.SkillReadR
 		return unavailable()
 	}
 	intent.Deleted = true
-	return writePreparation(journal, intent)
+	return m.retirePreparation(id, intent)
 }

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"testing"
 )
 
@@ -28,14 +30,14 @@ func journalFixture(t *testing.T) (*firstDispatchFixture, context.Context, domai
 }
 func TestPreparationJournalBeforeDispatchAndOriginalMutationJoin(t *testing.T) {
 	f, ctx, s, id, _ := journalFixture(t)
-	v, e := readSkillPreparation(f.service.skillPreparationPath(id))
+	v, e := f.service.retainedSkillPreparation(id)
 	if e != nil || v.State != skillPreparationPending || domain.ValidateSkillPreparation(v.Scope) != nil || v.Scope.Preparation.ServerID != f.service.Identity.ServerID {
 		t.Fatal(v, e)
 	}
 	if e = f.service.reconcileSkillPreparations(ctx); e != nil {
 		t.Fatal(e)
 	}
-	v, _ = readSkillPreparation(f.service.skillPreparationPath(id))
+	v, _ = f.service.retainedSkillPreparation(id)
 	if v.State != skillPreparationPending {
 		t.Fatal("cleanup crossed original mutation", v.State)
 	}
@@ -43,7 +45,7 @@ func TestPreparationJournalBeforeDispatchAndOriginalMutationJoin(t *testing.T) {
 	if e = f.service.reconcileSkillPreparations(ctx); e != nil {
 		t.Fatal(e)
 	}
-	v, _ = readSkillPreparation(f.service.skillPreparationPath(id))
+	v, _ = f.service.retainedSkillPreparation(id)
 	if v.State != skillPreparationCleaning || v.Scope.WorkerDeviceID != s.WorkerDeviceID || v.Scope.Preparation.ScopeDigest != s.Preparation.ScopeDigest {
 		t.Fatal("offline cleanup lost original ownership", v)
 	}
@@ -57,7 +59,7 @@ func TestPreparationReceiptRetainsAcceptedCopies(t *testing.T) {
 	if e := f.service.reconcileSkillPreparations(ctx); e != nil {
 		t.Fatal(e)
 	}
-	v, e := readSkillPreparation(f.service.skillPreparationPath(id))
+	v, e := f.service.retainedSkillPreparation(id)
 	if e != nil || v.State != skillPreparationAccepted {
 		t.Fatal(v, e)
 	}
@@ -71,7 +73,7 @@ func TestPreparationConflictingReceiptKeepsUncertainOwnership(t *testing.T) {
 	if e := f.service.reconcileSkillPreparations(ctx); e != nil {
 		t.Fatal(e)
 	}
-	v, e := readSkillPreparation(f.service.skillPreparationPath(id))
+	v, e := f.service.retainedSkillPreparation(id)
 	if e != nil || v.State != skillPreparationPending {
 		t.Fatal("unknown receipt dispatched cleanup", v, e)
 	}
@@ -88,5 +90,55 @@ func TestPreparationRejectedConcurrentRetryCannotFinishOriginalOwner(t *testing.
 	liveSkillPreparations.Unlock()
 	if !active {
 		t.Fatal("rejected handler released original owner")
+	}
+}
+
+func TestPreparationCanceledReportLossReconcilesOriginalReadLane(t *testing.T) {
+	f, ctx, stream := skillReaderFixture(t)
+	id := domain.NewID()
+	scope := domain.SkillReadRequest{MachineID: domain.ID(f.machine.Id), AgentID: domain.ID(f.agent.Id), Selections: []domain.SkillBinding{{InventoryID: domain.NewID(), SkillID: domain.NewID(), ContentRevision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", SnapshotID: id, WorkerDeviceID: f.workerDevice}}}
+	callctx, cancel := context.WithCancel(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}))
+	done := make(chan error, 1)
+	go func() {
+		_, finish, e := f.service.prepareSkills(callctx, scope, id, "session.create", map[string]string{"fixture": "report-loss"})
+		defer finish()
+		done <- e
+	}()
+	if !stream.Receive() {
+		t.Fatal(stream.Err())
+	}
+	var request workspace.ReadRequest
+	if e := domain.Decode(stream.Msg().RequestJson, &request); e != nil || request.Skills == nil || request.Skills.Preparation == nil {
+		t.Fatal(request, e)
+	}
+	v, e := f.service.retainedSkillPreparation(id)
+	if e != nil || v.State != skillPreparationPending || v.Scope.Preparation.ScopeDigest != request.Skills.Preparation.ScopeDigest {
+		t.Fatal("dispatch preceded durable ownership", v, e)
+	}
+	cancel()
+	if e = <-done; e == nil {
+		t.Fatal("lost response accepted")
+	}
+	reconciled := make(chan error, 1)
+	go func() {
+		reconciled <- f.service.reconcileSkillPreparations(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}))
+	}()
+	if !stream.Receive() {
+		t.Fatal(stream.Err())
+	}
+	var cleanup workspace.ReadRequest
+	if e = domain.Decode(stream.Msg().RequestJson, &cleanup); e != nil || cleanup.Skills == nil || cleanup.Skills.Action != domain.CleanupSkillPreparation || *cleanup.Skills.Preparation != *request.Skills.Preparation || cleanup.Skills.WorkerDeviceID != f.workerDevice {
+		t.Fatal("cleanup changed original authority", cleanup, e)
+	}
+	raw, _ := json.Marshal(domain.SkillReadResult{Entries: []domain.SkillEntry{}})
+	if _, e = f.workerClient.ReportWorkspaceRead(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkspaceReadRequest{MachineId: f.machine.Id, InstanceId: f.workerInstance, ReadId: string(cleanup.ID), DocumentJson: raw})); e != nil {
+		t.Fatal(e)
+	}
+	if e = <-reconciled; e != nil {
+		t.Fatal(e)
+	}
+	v, e = f.service.retainedSkillPreparation(id)
+	if e != nil || v.State != skillPreparationRemoved {
+		t.Fatal(v, e)
 	}
 }

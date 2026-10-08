@@ -3,6 +3,7 @@ package skills
 
 import (
 	"context"
+	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
 	"path/filepath"
@@ -149,5 +150,60 @@ func TestPreparationPartialCopyRestart(t *testing.T) {
 	}
 	if _, e = os.Stat(target); !os.IsNotExist(e) {
 		t.Fatal("partial bytes remain", e)
+	}
+}
+
+func TestPreparationCapacityRejectsBeforeCopy(t *testing.T) {
+	m, s := preparationFixture(t)
+	dir := filepath.Dir(m.preparationPath(s.Preparation.RequestID))
+	if e := os.MkdirAll(dir, 0700); e != nil {
+		t.Fatal(e)
+	}
+	for i := 0; i < preparationLimit; i++ {
+		if e := os.WriteFile(filepath.Join(dir, fmt.Sprintf("%04d.json", i)), []byte("{}"), 0600); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if e := m.Prepare(context.Background(), s); e == nil {
+		t.Fatal("capacity admitted copying")
+	}
+	if _, e := os.Stat(snapshotPath(m.Root, s.Preparation.RequestID)); !os.IsNotExist(e) {
+		t.Fatal("copy bytes created at capacity", e)
+	}
+}
+
+func TestPreparationOriginalRetryAcrossReconnect(t *testing.T) {
+	m, s := preparationFixture(t)
+	if e := m.Prepare(context.Background(), s); e != nil {
+		t.Fatal(e)
+	}
+	s.WorkerInstanceID = domain.NewID()
+	if e := m.Prepare(context.Background(), s); e != nil {
+		t.Fatal(e)
+	}
+	if entries, e := m.PreparedEntries(context.Background(), s); e != nil || len(entries) != 1 {
+		t.Fatal(entries, e)
+	}
+	changed := *s.Preparation
+	changed.OriginalInstanceID = domain.NewID()
+	s.Preparation = &changed
+	if _, e := m.PreparedEntries(context.Background(), s); e == nil {
+		t.Fatal("replacement original instance accepted")
+	}
+}
+func TestPreparationSessionCleanupReleasesActiveCapacity(t *testing.T) {
+	m, s := preparationFixture(t)
+	if e := m.Prepare(context.Background(), s); e != nil {
+		t.Fatal(e)
+	}
+	if e := m.DeletePreparedSnapshot(context.Background(), s.MachineID, s.Selections[0]); e != nil {
+		t.Fatal(e)
+	}
+	entries, e := os.ReadDir(filepath.Dir(m.preparationPath(s.Preparation.RequestID)))
+	if e != nil || len(entries) != 0 {
+		t.Fatal("completed cleanup still occupies capacity", entries, e)
+	}
+	if e = m.Prepare(context.Background(), s); e == nil {
+		t.Fatal("terminal tombstone allowed resurrection")
 	}
 }

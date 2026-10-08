@@ -632,3 +632,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Codex completion retains the original accepted assignment before direct startup resolves executable/version metadata on a local copy. Preserve its exact digest and independent original startup journal; never normalize mutated runtime evidence into accepted input. Log checkpoint retention failure using closed stages and error codes only.
 
 - Selected native skills copy complete bounded packages into private immutable snapshots, retain original context and resource digests, and use structured native invocation. Preserve separate text and skill native history evidence for retries and recovery; delete accepted snapshots only through original durable session deletion work.
+
+- Selected skill snapshot deletion must use the original private preparation intent after native owners join. Validate original machine/bindings/root/resources, observe absence, and retain the compact tombstone; generic session copy deletion cannot adopt skill snapshot roots.

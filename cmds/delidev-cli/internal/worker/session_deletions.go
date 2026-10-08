@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -234,6 +235,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				return e
 			}
 		}
+		for _, binding := range w.SkillSnapshots {
+			if e := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); e != nil {
+				return domain.SessionDeletionPending()
+			}
+		}
 		paths, e := sessionDeletionCopyPaths(ctx, root, w)
 		if e != nil {
 			return e
@@ -285,6 +291,12 @@ func removeSessionCopy(ctx context.Context, root, path string) error {
 		// replacement or an old name without a published proof remains
 		// protected here. The generic session remover must never acquire
 		// authority over it.
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+		return nil
+	}
+	if parent == filepath.Join(root, "skill-snapshots") {
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 			return domain.SessionDeletionPending()
 		}

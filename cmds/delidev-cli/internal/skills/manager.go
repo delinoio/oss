@@ -494,7 +494,17 @@ func (m Manager) PreparedEntries(ctx context.Context, scope domain.SkillReadRequ
 	}
 	b, err := readBounded(filepath.Join(snapshotPath(m.Root, scope.Selections[0].SnapshotID), "snapshot.json"), 256<<10)
 	var saved snapshot
-	if err != nil || domain.Decode(b, &saved) != nil || !sameScope(saved.Scope, scope) {
+	if err != nil || domain.Decode(b, &saved) != nil {
+		return nil, unavailable()
+	}
+	// Delivery may reconnect while the original copied scope remains immutable.
+	// This normalization is exclusive to a complete original preparation proof;
+	// ordinary inventory observations still require their current instance.
+	if scope.Preparation != nil && saved.Scope.Preparation != nil {
+		if domain.ValidateSkillPreparation(scope) != nil || *scope.Preparation != *saved.Scope.Preparation || domain.SkillPreparationDigest(scope) != domain.SkillPreparationDigest(saved.Scope) {
+			return nil, unavailable()
+		}
+	} else if !sameScope(saved.Scope, scope) {
 		return nil, unavailable()
 	}
 	return saved.Entries, nil
