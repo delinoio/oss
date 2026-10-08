@@ -20,6 +20,8 @@
 
 - Recheck the merged managed configuration using the actual execution workspace before both thread start and resume. Startup-directory verification alone cannot authorize workspace-specific provider or authentication overrides.
 
+- Private quota reads accept optional nullable `ordinaryUsageAllowed` booleans, `accountId` strings and opaque `rateLimitUpsell` JSON from the official Codex response. Discard these fields before projection; they grant no identity, routing, recovery or consumption authority. Preserve strict unknown-field, typed-field, duplicate-key and envelope-bound checks.
+
 - Pinned native quota/reset-credit adapters omit unit parameters where the original protocol requires it, project bounded sparse metadata and preserve the official idempotency key and closed outcomes. Exclude display/billing fields and credential reflection; native updated notifications cannot grant authentication or execution authority.
 
 - Owned API proxies use only canonical authenticated ephemeral loopback URLs. Reconstruct proxy environment, pin and verify disabled system discovery plus all native shell exclusions before start/resume, and retain execution/local credentials only in transient protected forms. Keep upstream credentials in Go; native frame reflection fails before durable publication. Normal and title API profiles share this route ownership without granting subscription routing.

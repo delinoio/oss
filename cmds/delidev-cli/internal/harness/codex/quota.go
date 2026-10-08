@@ -52,9 +52,13 @@ type nativeResetCredit struct {
 	Description *string `json:"description"`
 }
 type nativeQuotaRead struct {
-	Legacy       *nativeQuotaSnapshot           `json:"rateLimits"`
-	Buckets      map[string]nativeQuotaSnapshot `json:"rateLimitsByLimitId"`
-	ResetCredits *struct {
+	// Official optional observations are decoded privately and never projected.
+	OrdinaryUsageAllowed *bool                          `json:"ordinaryUsageAllowed"`
+	AccountID            *string                        `json:"accountId"`
+	RateLimitUpsell      json.RawMessage                `json:"rateLimitUpsell"`
+	Legacy               *nativeQuotaSnapshot           `json:"rateLimits"`
+	Buckets              map[string]nativeQuotaSnapshot `json:"rateLimitsByLimitId"`
+	ResetCredits         *struct {
 		Count   *int64               `json:"availableCount"`
 		Credits *[]nativeResetCredit `json:"credits"`
 	} `json:"rateLimitResetCredits"`
