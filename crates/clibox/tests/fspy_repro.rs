@@ -559,7 +559,7 @@ fn alias_only_executable_reproduction_preserves_argv_zero_and_empty_arguments() 
                 "42",
                 "--expect-stderr",
                 "EXPECTED",
-                "--max-input-bytes",
+                "--max-snapshot-bytes",
                 "100000000",
                 "--max-result-bytes",
                 "100000000",
