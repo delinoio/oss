@@ -63,6 +63,8 @@ pub struct SnapshotFile {
 
 #[derive(Debug, Clone)]
 pub struct SnapshotLink {
+    /// Original nofollow entry identity; unavailable platforms retain None.
+    pub entry_identity: Option<FileIdentity>,
     /// Canonical project-relative target used for containment and identity
     /// checks.
     pub target: PathBuf,
@@ -237,6 +239,33 @@ fn source_identity(path: &Path, _metadata: &fs::Metadata) -> Result<FileIdentity
         .map_err(|_| ReproFailure::Unavailable)
 }
 
+fn link_entry_identity(
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> Result<Option<FileIdentity>, ReproFailure> {
+    #[cfg(unix)]
+    {
+        source_identity(path, metadata).map(Some)
+    }
+    #[cfg(windows)]
+    {
+        let _ = (path, metadata);
+        Ok(None)
+    }
+}
+
+fn verify_link_entry(path: &Path, link: &SnapshotLink) -> Result<(), ReproFailure> {
+    let Some(expected) = link.entry_identity else {
+        return Ok(());
+    };
+    let metadata = fs::symlink_metadata(path).map_err(|_| ReproFailure::UnstableInput)?;
+    if !metadata.file_type().is_symlink() || link_entry_identity(path, &metadata)? != Some(expected)
+    {
+        return Err(ReproFailure::UnstableInput);
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn stage_symlink(source: &Path, target: &Path, link: &Path) -> io::Result<()> {
     let _ = source;
@@ -334,6 +363,40 @@ impl Snapshot {
         valid_relative(relative)
             && self.eligible.contains(relative)
             && self.snapshot_file(relative).map(|file| file.identity) == Some(identity)
+    }
+
+    /// Admit a metadata entry only when the recorded resolution identifies
+    /// that final link, rather than the target used by following/content calls.
+    pub fn selected_link_entry_has_identity(
+        &self,
+        relative: &Path,
+        resolved: &Path,
+        identity: FileIdentity,
+    ) -> bool {
+        if !valid_relative(relative)
+            || !(self.eligible.contains(relative)
+                || self.eligible_directories.contains_key(relative))
+        {
+            return false;
+        }
+        self.snapshot_link(relative).is_some_and(|(backing, link)| {
+            backing == resolved && link.entry_identity == Some(identity)
+        })
+    }
+
+    fn snapshot_link<'a>(&'a self, relative: &Path) -> Option<(PathBuf, &'a SnapshotLink)> {
+        let mut prefix = PathBuf::new();
+        for component in relative.components() {
+            prefix.push(component.as_os_str());
+            if let Some(link) = self.links.get(&prefix) {
+                let suffix = relative.strip_prefix(&prefix).ok()?;
+                if suffix.as_os_str().is_empty() {
+                    return Some((prefix, link));
+                }
+                return self.snapshot_link(&append_link_suffix(&link.target, suffix));
+            }
+        }
+        None
     }
 
     fn snapshot_file(&self, relative: &Path) -> Option<&SnapshotFile> {
@@ -547,6 +610,7 @@ impl Snapshot {
                     self.links.insert(
                         prefix.clone(),
                         SnapshotLink {
+                            entry_identity: link_entry_identity(&source, &metadata)?,
                             target: target.clone(),
                             raw_target: raw_target.clone(),
                         },
@@ -670,6 +734,7 @@ impl Snapshot {
                 self.links.insert(
                     prefix.clone(),
                     SnapshotLink {
+                        entry_identity: link_entry_identity(&source, &metadata)?,
                         target,
                         raw_target: raw_target.clone(),
                     },
@@ -708,6 +773,7 @@ impl Snapshot {
             if let Some(link) = self.links.get(&prefix) {
                 self.verify_raw_link_chain(&prefix, &link.raw_target)?;
                 let source = self.root.join(&prefix);
+                verify_link_entry(&source, link)?;
                 let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
                 if actual_raw != link.raw_target {
                     return Err(ReproFailure::UnstableInput);
@@ -777,6 +843,7 @@ impl Snapshot {
                 continue;
             };
             let source = self.root.join(&prefix);
+            verify_link_entry(&source, expected)?;
             let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
             if actual_raw != expected.raw_target {
                 return Err(ReproFailure::UnstableInput);
@@ -1440,7 +1507,12 @@ mod tests {
         let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
         let snapshot = Snapshot::take(directory.path(), &selector, 1024, 100).unwrap();
         let required = BTreeSet::from([PathBuf::from("alias.txt")]);
-        fs::remove_file(directory.path().join("bridge")).unwrap();
+        // Retain the original entry so restoring it also restores its inode.
+        fs::rename(
+            directory.path().join("bridge"),
+            directory.path().join("retained-bridge"),
+        )
+        .unwrap();
         symlink("./real", directory.path().join("bridge")).unwrap();
         let changed_candidate = tempfile::tempdir().unwrap();
         assert!(matches!(
@@ -1448,7 +1520,11 @@ mod tests {
             Err(ReproFailure::UnstableInput)
         ));
         fs::remove_file(directory.path().join("bridge")).unwrap();
-        symlink("real", directory.path().join("bridge")).unwrap();
+        fs::rename(
+            directory.path().join("retained-bridge"),
+            directory.path().join("bridge"),
+        )
+        .unwrap();
         let candidate = tempfile::tempdir().unwrap();
         snapshot
             .stage_required(&required, candidate.path())
