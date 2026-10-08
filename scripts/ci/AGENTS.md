@@ -25,3 +25,5 @@
 - Go timing reports retain source revision, commands, phase times and top-level test metadata only. Keep raw output and dynamic subtest names out of artifacts. Preserve failure status, native affected selection and exhaustive shard coverage when changing instrumentation. Windows workspace tests run on their own runner and use the retained 45-minute fixture watchdog.
 
 - Exact `AGENTS.md` files are policy metadata and do not seed affected Go selection. Resolved production/internal-test/external-test embeds remain authoritative; embedded deletions/moves and other unknown resources retain conservative fallbacks.
+
+- Go formatting inventory uses NUL-separated Git paths and passes literal arguments to the formatter. Preserve source bytes and Git, formatter, missing-scope and empty-inventory failures; cover quoted non-ASCII and newline names in the central contract fixtures.

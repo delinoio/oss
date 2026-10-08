@@ -4,8 +4,8 @@ const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "
 const scopes = process.argv.slice(2);
 if (scopes.length === 0) throw new Error("at least one repository-relative Go scope is required");
 
-const tracked = execFileSync("git", ["ls-files", "--", ...scopes], { cwd: root, encoding: "utf8" })
-  .split("\n")
+const tracked = execFileSync("git", ["ls-files", "-z", "--", ...scopes], { cwd: root, encoding: "utf8" })
+  .split("\0")
   .filter((path) => path.endsWith(".go"));
 if (tracked.length === 0) throw new Error(`no tracked Go files found under ${scopes.join(", ")}`);
 
