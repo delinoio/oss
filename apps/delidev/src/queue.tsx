@@ -38,9 +38,18 @@ export function QueuedInput({ resource, session, refresh, draft, changeDraft, re
 }
 
 function queuedSkillBindings(data: Record<string, unknown>): SkillTokenBinding[] {
- const prompt=text(data.prompt), names=object(data.skill_names);
- return items(data.skills).map(value=>{const binding=object(value),name=text(names[text(binding.skill_id)]),token=`$${name}`;let start=prompt.indexOf(token);while(start>=0 && (start>0 && !/\s/u.test(prompt[start-1]!) || start+token.length<prompt.length && !/\s/u.test(prompt[start+token.length]!))) start=prompt.indexOf(token,start+1);
- return {start:Math.max(0,start),end:Math.max(0,start)+token.length,token,stale:!name || start<0,selection:{$typeName:"delidev.v1.SkillSelection",inventoryId:text(binding.inventory_id),skillId:text(binding.skill_id),contentRevision:text(binding.content_revision),workerDeviceId:text(binding.worker_device_id)}};});
+ const prompt=text(data.prompt), names=object(data.skill_names), values=items(data.skills).map(object);
+ return values.map(binding=>{
+  const name=text(names[text(binding.skill_id)]),token=`$${name}`,positions:number[]=[];
+  for(let start=prompt.indexOf(token);start>=0;start=prompt.indexOf(token,start+1)) {
+   if((start===0 || /\s/u.test(prompt[start-1]!)) && (start+token.length===prompt.length || /\s/u.test(prompt[start+token.length]!))) positions.push(start);
+  }
+  // Accepted package identity does not prove which same-named visible token was selected.
+  // Preserve ambiguous bindings as stale until explicit clear and reselection.
+  const ambiguous=positions.length!==1 || values.filter(value=>text(names[text(value.skill_id)])===name).length!==1;
+  const start=positions[0]??0;
+  return {start,end:start+token.length,token,stale:!name || ambiguous,ambiguous,selection:{$typeName:"delidev.v1.SkillSelection",inventoryId:text(binding.inventory_id),skillId:text(binding.skill_id),contentRevision:text(binding.content_revision),workerDeviceId:text(binding.worker_device_id)}};
+ });
 }
 function QueuedInputEditor({edit,setEdit,current,session,busy,autoFocus,save}: {edit:QueuedInputDraft;setEdit:(draft?:QueuedInputDraft)=>void;current:Resource;session?:Resource;busy:boolean;autoFocus:boolean;save:(prompt:string,selections:SkillSelection[])=>void}) {
  const textarea=useRef<HTMLTextAreaElement>(null), data=document(session);

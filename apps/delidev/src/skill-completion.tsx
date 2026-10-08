@@ -11,12 +11,13 @@ export function skillToken(value: string, caret: number): SkillToken | undefined
   const suffix = /^[^\s$]*/u.exec(value.slice(caret))![0];
   return { start: caret - match[1]!.length - 1, end: caret + suffix.length, prefix: match[1]! };
 }
-export interface SkillTokenBinding { start: number; end: number; token: string; selection: SkillSelection; stale: boolean }
+export interface SkillTokenBinding { start: number; end: number; token: string; selection: SkillSelection; stale: boolean; ambiguous?: boolean }
 export function editedBindings(before: string, after: string, bindings: readonly SkillTokenBinding[]): SkillTokenBinding[] {
   let start = 0; while (start < before.length && start < after.length && before[start] === after[start]) start++;
   let end = before.length, nextEnd = after.length; while (end > start && nextEnd > start && before[end - 1] === after[nextEnd - 1]) { end--; nextEnd--; }
   const delta = after.length - before.length;
   return bindings.flatMap(binding => {
+    if (binding.ambiguous) return [binding];
     if (end > binding.start && start < binding.end || start > binding.start && start < binding.end) return [];
     const shift = start <= binding.start ? delta : 0, next = { ...binding, start: binding.start + shift, end: binding.end + shift };
     return after.slice(next.start, next.end) === next.token ? [next] : [];

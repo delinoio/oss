@@ -2414,3 +2414,8 @@ snapshot, native input, recovery, protocol and cleanup ownership.
 Typed queued edits restore selected token bindings from immutable accepted metadata.
 They support explicit selection clearing and reselection, preserve bindings and
 drafts across payload eviction, and keep skill-bound Steer unavailable.
+
+Restored queued bindings require one unique matching token and one accepted
+package with that display name. Ambiguous same-named packages or literal tokens
+remain stale through text edits until explicit clearing and reselection; package
+metadata cannot infer the original token span.
