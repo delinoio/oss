@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -91,6 +92,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	resources := delidevv1connect.NewResourceServiceClient(http.DefaultClient, endpoint.URL)
 	instance := string(domain.NewID())
 	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version}
+	originalAttach := *attach
 	attached, err := client.AttachWorker(ctx, ownerRequest(worker, attach))
 	if err != nil {
 		t.Fatal(err)
@@ -242,6 +244,16 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	}
 	if machine.DiscoveryRevision != 2 || machine.Installations[0].ExplicitPath != "/selected/codex" || machine.Installations[0].ObservedAt == nil || machine.Installations[0].State != domain.InstallationDetected || !machine.Installations[0].ProtocolVerified {
 		t.Fatalf("incorrect observations: %+v", machine)
+	}
+	// Reconnect uses the original attachment request. It must observe refreshed
+	// discovery without another Machine revision or replacing its receipt.
+	reconnected, err := client.AttachWorker(ctx, ownerRequest(worker, &originalAttach))
+	if err != nil || reconnected.Msg.Machine.Revision != current.Msg.Resource.Revision || !bytes.Equal(reconnected.Msg.Machine.DocumentJson, current.Msg.Resource.DocumentJson) {
+		t.Fatalf("original attachment hid current discovery or repeated its write: %v %v", reconnected, err)
+	}
+	afterReplay, err := resources.GetResource(ctx, ownerRequest(owner, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, Id: device.Machine.Id}))
+	if err != nil || afterReplay.Msg.Resource.Revision != current.Msg.Resource.Revision {
+		t.Fatal("attachment replay incremented Machine revision", err)
 	}
 	claude := machine.Installations[1]
 	if claude.Version != domain.ClaudeProtocolVersion || !claude.ProtocolVerified || claude.ObservedAt == nil || claude.Protocol == nil || claude.Protocol.Protocol != domain.ClaudeStreamJSON || len(claude.Capabilities) != 0 {

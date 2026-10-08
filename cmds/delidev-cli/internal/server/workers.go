@@ -241,12 +241,22 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		if err := tx.Authorize(); err != nil {
 			return err
 		}
+		if err := currentInstance(tx, machine, instance); err != nil {
+			return err
+		}
+		// Attachment receipts retain immutable acceptance. Negotiation reads the
+		// current authorized observation, without repeating the accepted write.
 		var err error
+		record, _, err = activeMachine(tx, machine)
+		if err != nil {
+			return err
+		}
 		networkStatus, err = workerNetworkStatus(tx, machine)
 		return err
 	}); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
+	response.Msg.Machine = rpc.Resource(record)
 	response.Msg.NetworkStatusJson, _ = json.Marshal(networkStatus)
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
