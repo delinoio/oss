@@ -2288,10 +2288,10 @@ mod tests {
     fn simultaneous_cleanup_failures_return_first_error_after_account_checkpoint() {
         let (_temp, host, mut account) = storage_fixture();
         let cache = browser::profile_path(&host.root.join("profiles"), &account).unwrap();
-        fs::set_permissions(&cache, fs::Permissions::from_mode(0o755)).unwrap();
         account.data.state = ProfileState::RemovalPending;
         account.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
         host.prepare_removal(account.clone(), None).unwrap();
+        fs::set_permissions(&cache, fs::Permissions::from_mode(0o755)).unwrap();
         browser::write_private(
             &host.root.join("forgotten/malformed.json"),
             &"malformed fixture",
