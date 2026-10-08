@@ -203,3 +203,12 @@ it("restores the section heading instead of an inert original selection opener",
  fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
  expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();
 });
+
+it("renders expiry only for a valid supplied RFC3339 timestamp",async()=>{
+ const value=fixture([
+  {id:"credit-bad-date",reset_type:"codexRateLimits",status:"available",expires_at:"2030"},
+  {id:"credit-valid-date",reset_type:"codexRateLimits",status:"available",expires_at:"2030-10-31T00:00:00Z"}
+ ]);render(<value.Harness />);const use=await screen.findByRole("button",{name:"Use"});await waitFor(()=>expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
+ expect(globalThis.document.querySelectorAll(".reset-credit-row time").length).toBe(1);
+ expect(globalThis.document.querySelector(".reset-credit-row time")?.getAttribute("datetime")).toBe("2030-10-31T00:00:00Z");expect(value.request).not.toHaveBeenCalled();
+});

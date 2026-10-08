@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Timestamp } from "./timestamp-display";
+import { timestampInstant } from "./timestamp-format";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
@@ -115,7 +116,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
         <p className="reset-credit-secondary">{details === null ? copy("subscription-quota.detailsUnavailable") : credits ? copy("subscription-quota.returnedDetailCount", { v0: credits.length }) : copy("subscription-quota.creditDetailsMalformed")}</p>
         <div className="reset-credit-rows">
           {credits?.map((credit, index) => <div className="reset-credit-row" key={index}>
-            <div><span>{text(credit.id) || copy("subscription-quota.extra.ca1844969742")}</span><span className="reset-credit-secondary">{copy(credit.status === "available" ? "subscription-quota.creditAvailable" : "subscription-quota.creditUnavailable")}</span>{Number.isFinite(Date.parse(text(credit.expires_at))) ? <span className="reset-credit-secondary">{copy("subscription-quota.creditExpiry")} <Timestamp value={text(credit.expires_at)} /></span> : null}</div>
+            <div><span>{text(credit.id) || copy("subscription-quota.extra.ca1844969742")}</span><span className="reset-credit-secondary">{copy(credit.status === "available" ? "subscription-quota.creditAvailable" : "subscription-quota.creditUnavailable")}</span>{timestampInstant(text(credit.expires_at)) !== undefined ? <span className="reset-credit-secondary">{copy("subscription-quota.creditExpiry")} <Timestamp value={text(credit.expires_at)} /></span> : null}</div>
             {selectable.includes(credit) ? <button type="button" disabled={!creditReady || originalActive || !inventoryAvailable} onClick={event => confirmCredit(text(credit.id), false, event.currentTarget)} aria-label={copy("subscription-quota.selectCreditName", { v0: text(credit.id) })}>{copy("subscription-quota.selectCredit")}</button> : null}
           </div>)}
         </div>
