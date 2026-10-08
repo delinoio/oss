@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -60,6 +61,13 @@ type serviceReloadJournal struct {
 	ClaimSHA256     string                  `json:"claim_sha256,omitempty"`
 }
 
+// The retained descriptor addresses one process generation even if systemd's
+// MainPID or the numeric PID is replaced before dispatch.
+type reloadManagerHandle interface {
+	Kill() error
+	Close() error
+}
+
 type serviceReloader struct {
 	Platform, Unit, Binary, Version string
 	Exec                            CommandExecutor
@@ -72,6 +80,7 @@ type serviceReloader struct {
 	BeforePublish                   func()
 	RenameDefinition                func(string, string) error
 	SyncDefinitionDir               func(string) error
+	OpenManager                     func(int) (reloadManagerHandle, error)
 }
 
 func newServiceReloader(out io.Writer) *serviceReloader {
@@ -741,16 +750,95 @@ func (r *serviceReloader) replaceLinux(ctx context.Context, path string, c Confi
 	if err != nil || !target {
 		return reloadFailure()
 	}
-	if err := r.originalProcess(ctx, c, j); err != nil {
+	// A previous manager may have restarted while its old definition was
+	// active. Retain the currently admitted generation, not the stale journal
+	// PID, and prove it before recording replacement intent.
+	pid, _, err = r.nativePID(ctx)
+	if err != nil {
+		return err
+	}
+	if pid <= 0 {
+		return nil // Observe readiness; an inactive unit grants no signal authority.
+	}
+	// Capture the admitted restart's expected identity before acquisition.
+	// Final proof after open rejects PID reuse at the acquisition boundary.
+	start := j.ProcessStart
+	if pid != j.PID {
+		start, err = r.ProcessStart(pid)
+		if err != nil || start == "" {
+			return reloadFailure()
+		}
+	}
+	open := r.OpenManager
+	if open == nil {
+		open = openReloadManager
+	}
+	handle, err := open(pid)
+	if err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return nil // The selected original exited; never signal the unit instead.
+		}
+		r.Log.Warn("service_reload_process_handle_unavailable", "stage", j.Stage)
+		return reloadFailure()
+	}
+	defer handle.Close()
+	if err := r.proveRetainedLinuxManager(ctx, c, j, pid, start); err != nil {
 		return err
 	}
 	if err := r.stopping(c, j); err != nil {
 		return err
 	}
-	if err := r.stage(c, j, reloadRestartPending); err != nil {
+	// Checkpoint a verified restart of the older manager together with the
+	// dispatch stage. Recovery must not revert to an earlier PID generation.
+	next := *j
+	next.PID, next.ProcessStart, next.Stage = pid, start, reloadRestartPending
+	if err := r.saveJournal(j, &next); err != nil {
 		return err
 	}
-	return r.command(ctx, "systemctl", "--user", "kill", "--kill-who=main", "--signal=SIGKILL", systemdServiceName)
+	r.Log.Info("service_reload_stage", "stage", reloadRestartPending, "previous_version", j.PreviousVersion, "target_version", j.Version)
+	if err := r.stopping(c, j); err != nil || ctx.Err() != nil {
+		return reloadFailure()
+	}
+	if err := handle.Kill(); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return nil // A retained pidfd cannot be redirected to a reused PID.
+		}
+		r.Log.Warn("service_reload_process_signal_uncertain", "stage", j.Stage)
+		return reloadFailure()
+	}
+	return nil
+}
+
+func (r *serviceReloader) proveRetainedLinuxManager(ctx context.Context, c Config, j *serviceReloadJournal, pid int, start string) error {
+	current, _, err := r.nativePID(ctx)
+	if err != nil || current != pid {
+		return reloadFailure()
+	}
+	args, err := reloadArguments(r.Platform, j.Original)
+	if err != nil || r.invocation(pid, args) != nil {
+		return reloadFailure()
+	}
+	actual, err := r.ProcessStart(pid)
+	if err != nil || actual != start {
+		return reloadFailure()
+	}
+	if pid != j.PID {
+		response, peer, err := r.Control(ctx, c, ControlRequest{Action: "status"}, pid)
+		if err != nil || peer != pid || response.Status == nil || !response.Status.Running || response.Status.Stopping || response.Status.Version != j.PreviousVersion {
+			return reloadFailure()
+		}
+	}
+	// Recheck the same generation after authentication, while the handle is
+	// already held. Exit/reuse after this proof can only affect that handle.
+	current, _, err = r.nativePID(ctx)
+	if err != nil || current != pid {
+		return reloadFailure()
+	}
+	actual, err = r.ProcessStart(pid)
+	if err != nil || actual != start {
+		return reloadFailure()
+	}
+	return nil
 }
 
 func (r *serviceReloader) replaceLaunchd(ctx context.Context, path string, c Config, j *serviceReloadJournal) error {
