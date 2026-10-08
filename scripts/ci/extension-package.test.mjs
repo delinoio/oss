@@ -171,8 +171,12 @@ await event("zip:done");
     const summaries = await readdir(join(cwd, ".turbo/runs"));
     const summary = JSON.parse(await readFile(join(cwd, ".turbo/runs", summaries.sort().at(-1)), "utf8"));
     const tasks = Object.fromEntries(summary.tasks.map(task => [task.task, task]));
-    assert.ok(tasks["build:test"].execution.startTime >= tasks["test:package"].execution.endTime);
-    assert.ok(tasks["ci:zip"].execution.startTime >= tasks["build:test"].execution.endTime);
+    // Run-summary wall-clock timestamps can overlap even when the graph and
+    // observed operations are ordered, especially for restored cached tasks.
+    // The paused destructive interval and exact event sequence above prove the
+    // live order; also verify the scheduler's explicit dependency edges.
+    assert.ok(tasks["build:test"].dependencies.includes("devhud-chrome-extension#test:package"));
+    assert.ok(tasks["ci:zip"].dependencies.includes("devhud-chrome-extension#build:test"));
     if (warm) {
       assert.deepEqual(store, expectedArchive);
       for (const name of ["build:test", "ci:zip"]) assert.equal(tasks[name].cache.status, "HIT");
