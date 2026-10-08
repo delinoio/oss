@@ -25,6 +25,7 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1      WorkerCapability = 26
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1               WorkerCapability = 24
 	WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1                WorkerCapability = 25
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1 WorkerCapability = 20
@@ -55,6 +56,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		26: "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
 		24: "WORKER_CAPABILITY_NATIVE_SKILLS_V1",
 		25: "WORKER_CAPABILITY_IMAGE_INPUTS_V1",
 		20: "WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1",
@@ -81,6 +83,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":         26,
 		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                  24,
 		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                   25,
 		"WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1":    20,
@@ -3791,9 +3794,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x0ecorrelation_id\x18\b \x01(\tR\rcorrelationId\x12P\n" +
 	"\x0einput_delivery\x18\t \x01(\x0e2).delidev.v1.ExecutionStartupInputDeliveryR\rinputDelivery\x12=\n" +
 	"\acleanup\x18\n" +
-	" \x01(\x0e2#.delidev.v1.ExecutionStartupCleanupR\acleanup*\xa0\t\n" +
+	" \x01(\x0e2#.delidev.v1.ExecutionStartupCleanupR\acleanup*\xd1\t\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12&\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
+	"+WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1\x10\x1a\x12&\n" +
 	"\"WORKER_CAPABILITY_NATIVE_SKILLS_V1\x10\x18\x12%\n" +
 	"!WORKER_CAPABILITY_IMAGE_INPUTS_V1\x10\x19\x124\n" +
 	"0WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1\x10\x14\x12*\n" +

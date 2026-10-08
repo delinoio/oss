@@ -966,3 +966,11 @@ The image input allocation ledger includes every AttachmentService method with i
 ## Issue #1728 batch allocation exception
 
 The owner explicitly permits System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` allocation, declaration, generated bindings and activation in the same complete feature PR for issue #1728. This narrow exception waives only the prior main reservation merge. Existing QUOTA and Refresh all RPCs retain their allocations; no new RPC, Worker capability, migration or native change is introduced. Follow the [server quota ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728). Capabilities 18, 19 and 30 retain independent ownership.
+
+Managed ChatGPT/Codex Sidechat (issue #1829) composes System 47, Worker 26,
+existing Sidechat 27/16 and managed authentication Worker 3. The session detail
+action menu exposes Open Sidechat only for the original eligible completed
+source and negotiated Runner. Independent subscription Fork remains unsupported.
+See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829)
+for protected lease/Finish publication, read-only continuation and dependent
+cleanup ownership. No new RPC or SQLite migration is added.

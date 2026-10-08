@@ -466,6 +466,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	}
 	defer unlock()
 	directExecution := false
+	var forkRevision uint64
 	result, err := s.Store.Mutate(ctx, input.Lease, "subscription.take", input, func(tx *store.Tx) (any, error) {
 		// Take retains the original observation while another lease or metadata
 		// update advances the account. Lifecycle authority is the exact still-queued
@@ -516,6 +517,17 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				if domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil {
 					return nil, subscriptionDenied()
 				}
+
+			case domain.ForkSessionJob:
+				var fork domain.ForkJobInput
+				if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != state.Generation || fork.SourceSessionID != jr.SessionID {
+					return nil, subscriptionDenied()
+				}
+				if err := validateForkAuthority(tx, fork); err != nil {
+					return nil, err
+				}
+				execution = fork.SourceAssignment
+				forkRevision = jr.Revision
 			case domain.CompactSessionJob:
 				var compact domain.SessionCompactionInput
 				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || compact.Version != 2 {
@@ -570,7 +582,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 			return nil, err
 		}
-		state.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
+		state.Lease = &domain.SubscriptionLease{ForkRevision: forkRevision, ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
 		}
@@ -753,6 +765,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				return err
 			}
 			_, original, err = s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+			if err == nil && original.Subscription.Lease.Action == domain.SubscriptionExecute {
+				_, err = managedSidechatLease(tx, *original.Subscription.Lease)
+			}
 			return err
 		})
 		if err != nil {
@@ -850,6 +865,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				return nil, err
 			}
 			state := a.Subscription
+			if lease.Action == domain.SubscriptionExecute {
+				if _, err := managedSidechatLease(tx, *lease); err != nil {
+					return nil, err
+				}
+			}
 			if state.RecoveryRequired || state.Generation != input.Generation {
 				return nil, subscriptionDenied()
 			}
@@ -928,7 +948,26 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
 			}
-			return accountReceipt{ID: r.ID}, nil
+
+			receipt := accountReceipt{ID: r.ID}
+			if usable && input.Cleanup && lease.Action == domain.SubscriptionExecute && lease.ForkRevision != 0 {
+				jr, err := tx.Get(domain.JobKind, lease.OperationID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](jr)
+				if err != nil {
+					return nil, err
+				}
+				if job.Type == domain.ForkSessionJob {
+					var fork domain.ForkJobInput
+					if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != input.Generation || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+						return nil, subscriptionDenied()
+					}
+					receipt.ManagedSidechat = &domain.SubscriptionForkFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
+				}
+			}
+			return receipt, nil
 		})
 		if err != nil {
 			return nil, rpc.Error(err, c)
@@ -1095,4 +1134,32 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 		}
 	}
 	return err
+}
+
+// managedSidechatLease checks original Fork ownership before vault staging and
+// again inside protected Finish. Ordinary execution and compaction keep their
+// existing Finish behavior; a Sidechat cannot borrow those jobs' authority.
+func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain.ForkJobInput, error) {
+	if lease.ForkRevision == 0 {
+		return nil, nil
+	}
+	jr, err := tx.Get(domain.JobKind, lease.OperationID)
+	if err != nil {
+		return nil, err
+	}
+	job, err := store.Decode[domain.Job](jr)
+	if err != nil {
+		return nil, err
+	}
+	if job.Type != domain.ForkSessionJob {
+		return nil, nil
+	}
+	var fork domain.ForkJobInput
+	if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != lease.Generation || lease.ForkRevision == 0 || jr.Revision != lease.ForkRevision || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+		return nil, subscriptionDenied()
+	}
+	if err := validateForkAuthority(tx, fork); err != nil {
+		return nil, err
+	}
+	return &fork, nil
 }

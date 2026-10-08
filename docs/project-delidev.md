@@ -314,3 +314,11 @@ Issue #1699 composes desktop-wide inline causes and supported remediation under 
 Image inputs follow the [image input contract](cmds-delidev-image-input-contract.md): private Worker byte ownership, immutable ordered references and original session/Fork/Sidechat cleanup apply across desktop, protocol, server and harness flows. Issue #1746 alone permits its complete declarations and activation in one PR without a database migration.
 Routing preview presentation follows the [desktop contract](apps-delidev-desktop-contract.md#agent-worker-routing-preview-presentation). Compact source comparisons preserve server ordering and every decision field. Only complete identical ordered final evidence may be deduplicated. Task-scoped safe account/provider projections share four read slots across the category owner and response generations; names grant no routing or execution authority.
 Server-owned ChatGPT quota uses independent System 46 under the [subscription ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728). The explicit issue #1728 batch exception permits same-PR allocation and activation; original Worker/execution/reset-credit ownership and confirmed cleanup remain independent.
+
+Managed ChatGPT/Codex Sidechat (issue #1829) composes System 47, Worker 26,
+existing Sidechat 27/16 and managed authentication Worker 3. The session detail
+action menu exposes Open Sidechat only for the original eligible completed
+source and negotiated Runner. Independent subscription Fork remains unsupported.
+See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829)
+for protected lease/Finish publication, read-only continuation and dependent
+cleanup ownership. No new RPC or SQLite migration is added.

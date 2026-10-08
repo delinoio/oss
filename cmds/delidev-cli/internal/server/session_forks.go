@@ -173,6 +173,17 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 				s.logger.InfoContext(ctx, "sidechat_admission_rejected", "source_session_id", input.SourceSessionID, "worker_capability", slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1), "harness", input.SourceAssignment.Configuration.Harness, "code", domain.Unsupported)
 				return nil, domain.SidechatUnavailable()
 			}
+
+			if input.SourceAssignment.Configuration.Subscription {
+				if !domain.ManagedSidechatSupported(machine.WorkerCapabilities) {
+					return nil, domain.SidechatUnavailable()
+				}
+				_, account, err := subscriptionAccount(tx, input.SourceAssignment.AccountID, 0)
+				if err != nil || account.Subscription == nil || account.Subscription.Generation == "" || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.ServerQuotaActive() || account.Subscription.Observation != nil && account.Subscription.Observation.Active() {
+					return nil, subscriptionDenied()
+				}
+				input.SubscriptionGeneration = account.Subscription.Generation
+			}
 			input.Version, input.Purpose, input.Workspace = 3, purpose, session.Workspace
 			origin = session.LocalOrigin
 		}
@@ -326,6 +337,17 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 			return domain.SidechatUnavailable()
 		}
 	}
+
+	if input.SubscriptionGeneration != "" {
+		_, machine, err := activeMachine(tx, source.MachineID)
+		if err != nil || !domain.ManagedSidechatSupported(machine.WorkerCapabilities) {
+			return domain.SidechatUnavailable()
+		}
+		_, account, err := subscriptionAccount(tx, input.SourceAssignment.AccountID, 0)
+		if err != nil || account.Subscription == nil || account.Subscription.RecoveryRequired || account.Connection == nil || account.Connection.ID != input.SourceAssignment.ConnectionID || account.Subscription.Generation != input.SubscriptionGeneration {
+			return subscriptionDenied()
+		}
+	}
 	if err := validateForkSharing(input); err != nil {
 		return err
 	}
@@ -344,7 +366,22 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
 	if problem == nil {
-		if err := validateForkAuthority(tx, input); err != nil {
+
+		authorityInput := input
+		if input.SubscriptionGeneration != "" {
+			proof, err := tx.ManagedSidechatFinish(outputFinish(raw))
+			if err != nil || proof.Job != r.ID || proof.JobRevision != r.Revision || proof.Account != input.SourceAssignment.AccountID || proof.Machine != job.MachineID || proof.Instance != job.InstanceID || proof.Device != job.AssignedDeviceID || proof.Generation != input.SubscriptionGeneration {
+				problem = domain.Fail(domain.RecoveryRequired, "Sidechat authentication finish is unconfirmed.", "Retain the original child, lease and cleanup evidence; do not repeat Fork.")
+			} else {
+				_, account, err := subscriptionAccount(tx, proof.Account, 0)
+				if err != nil || account.Subscription == nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != proof.Finish {
+					problem = domain.Fail(domain.RecoveryRequired, "Sidechat authentication ownership changed before publication.", "Retain the original child and protected Finish receipt.")
+				} else {
+					authorityInput.SubscriptionGeneration = proof.Finish
+				}
+			}
+		}
+		if err := validateForkAuthority(tx, authorityInput); err != nil {
 			problem = domain.Fail(domain.RecoveryRequired, "Fork publication lost its original authority.", "Preserve the accepted native child and reconcile its original job before another fork.")
 		}
 		_, machine, err := activeMachine(tx, job.MachineID)
@@ -417,6 +454,7 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 }
 
 func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.PrepareRequest, manifest workspace.Manifest) error {
+
 	if err := validateForkSharing(input); err != nil {
 		return err
 	}
@@ -490,3 +528,11 @@ func forkInputDigest(raw []byte) string {
 }
 
 func mustForkValueJSON(v any) []byte { raw, _ := json.Marshal(v); return raw }
+
+func outputFinish(raw json.RawMessage) domain.ID {
+	var result domain.ForkJobResult
+	if domain.Decode(raw, &result) != nil {
+		return ""
+	}
+	return result.ManagedFinish
+}

@@ -9329,6 +9329,20 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1",
       "number": 46
+    },
+    {
+      "issue": 1829,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
+      "number": 47
+    },
+    {
+      "issue": 1829,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
+      "number": 26
     }
   ],
   "rpcReservations": [

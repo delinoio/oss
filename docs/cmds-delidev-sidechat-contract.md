@@ -165,3 +165,49 @@ envelope, evict accepted references, add RPCs or add a migration.
 ## Inherited image references
 
 Sidechat adds no image deletion owner. Readback requires the current nondeleting parent owner and exact original succeeded Fork job prefix. Validate its input digest, session, machine, Worker device and runtime. Later parent images, changed jobs and restored quarantined metadata grant no access. Parent deletion joins dependent cleanup before last-owner image removal.
+
+## Managed ChatGPT Sidechat — issue #1829
+
+System `MANAGED_CODEX_SIDECHAT_V1 = 47` and Worker
+`MANAGED_CODEX_SIDECHAT_V1 = 26` extend the closed Codex Sidechat profile.
+System 27 and Worker 16 retain API Sidechat ownership; protected subscriptions
+retain Worker 3. Negotiate all original adapters before managed admission,
+claim, publication and continuation. Capabilities describe implemented adapters;
+the original actual native process must verify the combined managed file-backed
+ChatGPT/OpenAI authentication and read-only enforcement before native Fork,
+every child input/Steer and manual compaction. Ordinary independent subscription
+Fork remains unsupported. No migration, new login or credential conversion is
+introduced.
+
+Admission freezes the original protected account generation in the Fork input.
+Only its exact claimed Sidechat job, actor, source boundary, account connection,
+Runner, paired device and current instance may Take an EXECUTE lease. Receipt
+replay cannot distribute credentials again. Source inspection uses its original
+credential-free retained home and validates the same managed/read-only profile;
+credentials are materialized only in the new owned private child home outside
+workspace roots. The built-in OpenAI provider preserves the original model route.
+API Sidechat keeps its existing unregistered relay profile.
+
+Capture the final original-account bundle, join the original native process and
+descendants, and independently compare/remove/scan private plaintext before
+protected Finish. Finish rechecks the original actor/job/source before vault
+staging and in its final transaction. Its server-owned receipt records only
+opaque Fork/account/device/instance/generation/Finish references. Publication
+requires that exact successful Finish receipt, the settled current generation,
+confirmed native history, immutable read-only overlay and workspace reference.
+A Worker result contains only the receipt reference. Missing or changed proof
+retains the original unpublished child and recovery; it grants no fresh Fork.
+
+The child starts paused with its original account/model/instructions and exact
+native prefix. Later execution uses the existing protected Take/Finish lifecycle.
+Parent-dependent cleanup, independent child queue/deletion and explicit
+revision-bound findings transfer keep their existing ownership. Logs contain
+operation IDs, closed phases and stable codes, never credentials, prompt text,
+findings, paths or raw native content.
+
+Local synthetic RPC/process fixtures cover capability and generation changes,
+protected delivery/Finish replay, publication fences and combined profile drift
+before input/Steer/compaction. Actual installed-native, real-account and platform
+acceptance is owner-skipped for this batch and remains unperformed; local
+fixtures do not establish it. Record commands/revisions/results in PRs and CI,
+not repository evidence documents.

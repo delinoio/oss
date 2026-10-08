@@ -23,25 +23,26 @@ type ForkOrigin struct {
 }
 
 type ForkJobInput struct {
-	Startup          *ExecutionStartupSelection `json:"startup,omitempty"`
-	Purpose          ForkPurpose                `json:"purpose,omitempty"`
-	Version          uint32                     `json:"version"`
-	OpenCode         *OpenCodeForkRequests      `json:"opencode,omitempty"`
-	SourceSessionID  ID                         `json:"source_session_id"`
-	SourceRevision   uint64                     `json:"source_revision"`
-	ChildSessionID   ID                         `json:"child_session_id"`
-	RuntimeID        ID                         `json:"runtime_id"`
-	NativeRequestID  ID                         `json:"native_request_id"`
-	Name             string                     `json:"name"`
-	Workspace        WorkspaceType              `json:"workspace"`
-	LocalOrigin      *LocalOrigin               `json:"local_origin,omitempty"`
-	CreatedBy        ID                         `json:"created_by"`
-	Actor            Principal                  `json:"actor"`
-	SourceJobID      ID                         `json:"source_job_id"`
-	SourceAssignment ExecutionJobInput          `json:"source_assignment"`
-	Completion       ExecutionCompletion        `json:"completion"`
-	Progress         ExecutionProgress          `json:"progress"`
-	Snapshot         InitialExecution           `json:"snapshot"`
+	SubscriptionGeneration ID                         `json:"subscription_generation,omitempty"`
+	Startup                *ExecutionStartupSelection `json:"startup,omitempty"`
+	Purpose                ForkPurpose                `json:"purpose,omitempty"`
+	Version                uint32                     `json:"version"`
+	OpenCode               *OpenCodeForkRequests      `json:"opencode,omitempty"`
+	SourceSessionID        ID                         `json:"source_session_id"`
+	SourceRevision         uint64                     `json:"source_revision"`
+	ChildSessionID         ID                         `json:"child_session_id"`
+	RuntimeID              ID                         `json:"runtime_id"`
+	NativeRequestID        ID                         `json:"native_request_id"`
+	Name                   string                     `json:"name"`
+	Workspace              WorkspaceType              `json:"workspace"`
+	LocalOrigin            *LocalOrigin               `json:"local_origin,omitempty"`
+	CreatedBy              ID                         `json:"created_by"`
+	Actor                  Principal                  `json:"actor"`
+	SourceJobID            ID                         `json:"source_job_id"`
+	SourceAssignment       ExecutionJobInput          `json:"source_assignment"`
+	Completion             ExecutionCompletion        `json:"completion"`
+	Progress               ExecutionProgress          `json:"progress"`
+	Snapshot               InitialExecution           `json:"snapshot"`
 }
 
 func (i ForkJobInput) Validate() error {
@@ -59,11 +60,13 @@ func (i ForkJobInput) Validate() error {
 	if i.Purpose == SidechatFork && (i.Version != 3 || i.SourceAssignment.Configuration.Harness != Codex || i.SourceAssignment.Configuration.SidechatPolicy != "" || i.OpenCode != nil || i.Workspace != i.sourceWorkspace() || len(i.Progress.Subagents) != 0 || i.SourceAssignment.Fork != nil) {
 		return SidechatUnavailable()
 	}
-	// Native Fork currently opens an API-authenticated child outside the
-	// managed execution lease. Reject subscriptions before job acceptance or
-	// Worker journaling until Fork has its own joined protected lease profile.
-	if i.SourceAssignment.Configuration.Subscription {
+	// Independent Fork retains the API-only profile. Managed Sidechat alone
+	// carries the original protected generation for its exact claimed Fork lease.
+	if i.SourceAssignment.Configuration.Subscription && (i.Purpose != SidechatFork || i.SourceAssignment.Configuration.SubscriptionService != SubscriptionChatGPT || i.SubscriptionGeneration.Validate() != nil) {
 		return Fail(Unsupported, "Managed subscription sessions do not support native Fork yet.", "Keep the original session; Fork requires a separately verified managed authentication lease.")
+	}
+	if !i.SourceAssignment.Configuration.Subscription && i.SubscriptionGeneration != "" {
+		return SidechatUnavailable()
 	}
 	harness := i.SourceAssignment.Configuration.Harness
 	primary, primaryErr := i.SourceAssignment.Configuration.OpenCodePrimaryForInput(i.SourceAssignment.Input.Mode)
@@ -85,6 +88,7 @@ func (i ForkJobInput) Validate() error {
 }
 
 type ForkJobResult struct {
+	ManagedFinish    ID                           `json:"managed_finish,omitempty"`
 	Version          uint32                       `json:"version"`
 	OpenCodeMappings []OpenCodeForkMessageMapping `json:"opencode_mappings,omitempty"`
 	ChildSessionID   ID                           `json:"child_session_id"`
@@ -128,6 +132,9 @@ func canonicalDigest(value string) bool {
 func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 	harness := input.SourceAssignment.Configuration.Harness
 	validProfile := harness == Codex && r.Version == input.Version && r.OpenCodeMappings == nil && r.NativeTurnID == input.Completion.NativeTurnID || harness == OpenCode && r.Version == 2 && validateOpenCodeForkMappings(r.OpenCodeMappings, input.Completion.NativeTurnID, r.NativeTurnID) == nil && r.NativeTurnID != input.Completion.NativeTurnID && r.NativeTurnID.Validate(OpenCode, NativeTurnIdentity) == nil
+	if (input.SubscriptionGeneration != "" && r.ManagedFinish.Validate() != nil) || (input.SubscriptionGeneration == "" && r.ManagedFinish != "") {
+		return SidechatUnavailable()
+	}
 	if !validProfile || !r.CleanupVerified || r.ChildSessionID != input.ChildSessionID || r.RuntimeID != input.RuntimeID || r.NativeThreadID == input.Completion.NativeThreadID || r.NativeThreadID.Validate(harness, NativeThreadIdentity) != nil || !canonicalDigest(r.CheckpointDigest) {
 		return Fail(RecoveryRequired, "Fork completion lacks its exact verified child boundary.", "Retain the original Worker operation without repeating native Fork.")
 	}
