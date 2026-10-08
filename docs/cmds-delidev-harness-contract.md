@@ -46,6 +46,13 @@ populated questions retain the private extension boundary. Quota snapshots accep
 the advisory `normalModelSlug` without selecting a model. Response-usage
 `usageMetadata.metadata` stays opaque and excluded from publication, cost and
 logs; original counters and amount-evidence classification remain unchanged.
+The installed schema also declares scoped `model/verification` notifications.
+Accept only a required empty verification array bound to the original known root
+turn as discarded metadata. Populated verification remains a private extension;
+the empty observation cannot establish model eligibility or account readiness.
+Unsupported native families log only a closed classification, never a raw method
+or payload. The installed scripted thread smoke rejects private extensions so
+parser-level success cannot conceal an unsupported Worker event family.
 Unknown fields, immutable history and managed-account recovery fences remain
 strict. Event validation logs retain only closed stages, original owner and safe
 code, without raw native methods or payloads.

@@ -17,11 +17,19 @@ type EventKind string
 type eventValidationStage string
 
 const (
-	validationOther    eventValidationStage = "other"
-	validationSettings eventValidationStage = "thread-settings"
-	validationItem     eventValidationStage = "message-item"
-	validationUsage    eventValidationStage = "response-usage"
-	validationQuota    eventValidationStage = "account-quota"
+	validationOther          eventValidationStage = "other"
+	validationSettings       eventValidationStage = "thread-settings"
+	validationItem           eventValidationStage = "message-item"
+	validationUsage          eventValidationStage = "response-usage"
+	validationQuota          eventValidationStage = "account-quota"
+	validationVerification   eventValidationStage = "model-verification"
+	validationAuthRecovery   eventValidationStage = "provider-auth-recovery"
+	validationModeration     eventValidationStage = "turn-moderation"
+	validationBuffering      eventValidationStage = "model-safety-buffering"
+	validationDeprecation    eventValidationStage = "deprecation"
+	validationThreadIdentity eventValidationStage = "thread-identity"
+	validationRawItem        eventValidationStage = "raw-item"
+	validationQueue          eventValidationStage = "thread-queue"
 )
 
 // Log a closed classification instead of untrusted native method or content.
@@ -35,6 +43,22 @@ func validationStage(method string) eventValidationStage {
 		return validationUsage
 	case "account/rateLimits/updated":
 		return validationQuota
+	case "model/verification":
+		return validationVerification
+	case "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
+		return validationAuthRecovery
+	case "turn/moderationMetadata":
+		return validationModeration
+	case "model/safetyBuffering/updated":
+		return validationBuffering
+	case "deprecationNotice":
+		return validationDeprecation
+	case "thread/started":
+		return validationThreadIdentity
+	case "rawResponseItem/completed":
+		return validationRawItem
+	case "thread/queue/changed":
+		return validationQueue
 	default:
 		return validationOther
 	}
@@ -130,7 +154,8 @@ type Event struct {
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
-	Native *nativewire.Event `json:"-"`
+	Native         *nativewire.Event    `json:"-"`
+	ExtensionStage eventValidationStage `json:"-"`
 }
 
 // NextEvent preserves wire order even with concurrent consumers. If cancellation
@@ -214,7 +239,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	return event, nil
 }
 func privateNative(event nativewire.Event) Event {
-	return Event{Kind: NativeExtensionEvent, Native: &event}
+	return Event{Kind: NativeExtensionEvent, Native: &event, ExtensionStage: validationStage(event.Method)}
 }
 func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 	if native.Kind == nativewire.LateResponse {

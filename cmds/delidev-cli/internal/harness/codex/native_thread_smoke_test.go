@@ -111,6 +111,9 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if event.Kind == NativeExtensionEvent {
+			t.Fatalf("native execution requires an additional typed adapter: %s", event.ExtensionStage)
+		}
 		if event.Kind != TurnCompletedEvent {
 			continue
 		}
@@ -169,6 +172,9 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 		event, err := client.NextEvent(ctx)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if event.Kind == NativeExtensionEvent {
+			t.Fatalf("native continuation requires an additional typed adapter: %s", event.ExtensionStage)
 		}
 		if event.Kind != TurnCompletedEvent {
 			continue

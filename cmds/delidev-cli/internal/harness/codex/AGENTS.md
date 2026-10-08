@@ -1,5 +1,7 @@
 # Codex harness ownership
 
+- Empty native model verification is discarded metadata only for the original known root turn. Populated/foreign verification remains a private extension; missing/null/malformed arrays or unknown fields fail. Closed extension classifications provide diagnostics without logging native methods or payloads. Installed thread fixtures must reject unhandled extensions.
+
 - Ordinary native closure uses a three-second stdin EOF window with fenced writes and joined original input/process handles before forced cancellation. Preserve immediate failure/cancellation termination, independent credential scans, symlink refusal and all existing recovery fences. Native temporary helper destructor cleanup never authorizes an account recovery or altered completion receipt.
 
 - Accept the installed Codex 0.159.2 observation fields in thread Start/Resume/read, settings notifications, empty agent-message questions and quota/response-usage metadata under the harness contract. Discard private observations without replacing immutable effective settings, enabling plugins/environments/Daybreak or inferring billing cost. Populated questions remain a private extension. Keep unknown-field rejection, original history and managed-account recovery fences. Event failure logs use closed validation stages, never raw methods or payloads.

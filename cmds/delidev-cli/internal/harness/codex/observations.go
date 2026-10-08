@@ -11,12 +11,13 @@ import (
 type MetadataKind string
 
 const (
-	ThreadIdentityChecked  MetadataKind = "thread-identity-checked"
-	ThreadSettingsChecked  MetadataKind = "thread-settings-checked"
-	RemoteControlDisabled  MetadataKind = "remote-control-disabled"
-	QuotaUnavailable       MetadataKind = "quota-unavailable"
-	RawSupplementDiscarded MetadataKind = "raw-supplement-discarded"
-	NativeGoalAbsent       MetadataKind = "native-goal-absent"
+	ThreadIdentityChecked   MetadataKind = "thread-identity-checked"
+	ThreadSettingsChecked   MetadataKind = "thread-settings-checked"
+	RemoteControlDisabled   MetadataKind = "remote-control-disabled"
+	QuotaUnavailable        MetadataKind = "quota-unavailable"
+	RawSupplementDiscarded  MetadataKind = "raw-supplement-discarded"
+	NativeGoalAbsent        MetadataKind = "native-goal-absent"
+	ModelVerificationAbsent MetadataKind = "model-verification-absent"
 )
 
 type tokenCountsWire struct {
@@ -65,6 +66,27 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "model/verification":
+		var params struct {
+			ThreadID      domain.ID `json:"threadId"`
+			TurnID        domain.ID `json:"turnId"`
+			Verifications []string  `json:"verifications"`
+		}
+		if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil || params.TurnID.Validate() != nil || params.Verifications == nil {
+			return Event{}, incompatible()
+		}
+		if params.ThreadID != c.thread || len(params.Verifications) != 0 {
+			return privateNative(native), nil
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known {
+			return Event{}, incompatible()
+		}
+		// Empty hosted verification metadata grants neither model availability
+		// nor account readiness. Populated verification remains a private profile.
+		event := c.metadata(ModelVerificationAbsent)
+		event.TurnID, event.Late = params.TurnID, turn.Turn.Status.terminal()
+		return event, nil
 	case "thread/goal/cleared":
 		var params struct {
 			ThreadID domain.ID `json:"threadId"`

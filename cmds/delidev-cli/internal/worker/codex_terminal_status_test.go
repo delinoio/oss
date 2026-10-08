@@ -27,6 +27,25 @@ func codexTerminalStatusFixture(t *testing.T) (*CodexEventPublisher, *openCodeBi
 	return c, rpc
 }
 
+func TestCodexEmptyModelVerificationDoesNotPublishOrCompleteInput(t *testing.T) {
+	for _, foreign := range []bool{false, true} {
+		c, rpc := codexTerminalStatusFixture(t)
+		before := len(rpc.events)
+		event := codex.Event{Kind: codex.MetadataEvent, Metadata: codex.ModelVerificationAbsent, Correlated: true, ThreadID: c.thread, TurnID: c.turn}
+		if foreign {
+			event.TurnID = domain.NewID()
+		}
+		handled, err := c.PublishCore(context.Background(), event)
+		if foreign {
+			if err == nil || handled {
+				t.Fatal("foreign metadata crossed original turn boundary")
+			}
+		} else if err != nil || !handled || c.finished || c.blocked || len(rpc.events) != before {
+			t.Fatal("empty verification gained publication/completion authority", err)
+		}
+	}
+}
+
 func TestSubagentCodexTerminalStatusKeepsLiveChildCleanup(t *testing.T) {
 	c, rpc := codexTerminalStatusFixture(t)
 	ctx := context.Background()

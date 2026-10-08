@@ -30,6 +30,31 @@ func usageCounts(total int64) map[string]any {
 	return map[string]any{"inputTokens": int64(11), "cachedInputTokens": int64(4), "outputTokens": int64(7), "reasoningOutputTokens": int64(3), "totalTokens": total}
 }
 
+func TestEmptyModelVerificationPreservesOriginalTurnAndAuthority(t *testing.T) {
+	c, turn := observationClient()
+	paused := c.execution.paused
+	params := map[string]any{"threadId": c.thread, "turnId": turn, "verifications": []string{}}
+	event, err := observeFixture(c, "model/verification", params)
+	if err != nil || event.Kind != MetadataEvent || event.Metadata != ModelVerificationAbsent || !event.Correlated || event.TurnID != turn || c.execution.active != turn || c.execution.paused != paused {
+		t.Fatal("empty verification changed execution authority", err)
+	}
+	for _, value := range []any{nil, map[string]any{}, map[string]any{"threadId": c.thread, "turnId": turn, "verifications": nil}, map[string]any{"threadId": c.thread, "turnId": domain.NewID(), "verifications": []string{}}, map[string]any{"threadId": c.thread, "turnId": turn, "verifications": []string{}, "unknown": true}} {
+		if _, err := observeFixture(c, "model/verification", value); err == nil {
+			t.Fatal("unowned or malformed verification accepted")
+		}
+	}
+	params["verifications"] = []string{"trustedAccessForCyber"}
+	event, err = observeFixture(c, "model/verification", params)
+	if err != nil || event.Kind != NativeExtensionEvent || event.ExtensionStage != validationVerification {
+		t.Fatal("populated verification gained product authority", err)
+	}
+	params["threadId"], params["verifications"] = domain.NewID(), []string{}
+	event, err = observeFixture(c, "model/verification", params)
+	if err != nil || event.Kind != NativeExtensionEvent {
+		t.Fatal("foreign verification attributed to root", err)
+	}
+}
+
 func TestNativeResumeGoalAbsenceHasNoExecutionAuthority(t *testing.T) {
 	c, turn := observationClient()
 	c.execution.paused = true
