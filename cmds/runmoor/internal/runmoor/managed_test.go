@@ -42,6 +42,7 @@ func (f *fakeRunnerBuilder) Cleanup(ctx context.Context, c Config, a RunnerArtif
 func managedFixture(t *testing.T) (*Manager, Config, *fakeRunnerBuilder, string) {
 	t.Helper()
 	m, c, _, _, id := testManager(t)
+	c.DockerSocket = "unix:///fixture-managed.sock"
 	c.Pools[0].RunnerVersion = LatestRunner
 	if err := m.accept(c, false); err != nil {
 		t.Fatal(err)
@@ -359,6 +360,7 @@ func TestManagedUnreferencedReadyArtifactIsCollectedWithoutPools(t *testing.T) {
 	a := RunnerArtifact{ID: newID(), Backend: Docker, Phase: ArtifactReady, Image: "sha256:" + strings.Repeat("c", 64)}
 	if err := m.Store.Update(func(s *Snapshot) error {
 		s.Managed = nil
+		s.DockerArtifactEndpoint = s.Config.DockerSocket
 		s.Artifacts[a.ID] = &a
 		return nil
 	}); err != nil {

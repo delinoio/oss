@@ -161,6 +161,9 @@ func (m *Manager) retryDockerCapacity(ctx context.Context) error {
 	}
 	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	if _, err := guardDockerArtifactEndpoint(probe, s.Requested, s); err != nil {
+		return err
+	}
 	c, err := m.ResolveCapacity(probe, s.Requested)
 	if err != nil {
 		return err
