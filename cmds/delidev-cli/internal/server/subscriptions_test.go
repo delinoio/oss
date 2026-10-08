@@ -577,6 +577,8 @@ func TestSubscriptionQueuedInitiatorRevocationSettlesOperations(t *testing.T) {
 				}
 				if _, err := f.take(requested.Msg, action); err == nil {
 					t.Fatal("revoked operation granted native authority")
+				} else if problem := domain.SafeError(rpc.ClientError(err)); problem.Code != domain.Canceled || problem.Cause != "subscription_take_not_admitted" {
+					t.Fatalf("revoked queued operation did not prove no grant: %+v", problem)
 				}
 				replacement := f.start(action)
 				if _, err := devices.RevokeDevice(ctx, subscriptionRequest(f.service.Identity.Token, revoke)); err != nil {

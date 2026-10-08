@@ -209,3 +209,104 @@ func TestManagedSubscriptionAcknowledgedFailureKeepsLane(t *testing.T) {
 		t.Fatal("acknowledged failure lost its confirmed completion", err)
 	}
 }
+
+func TestManagedLifecycleExactTakeRefusalKeepsLaneWithoutCompletion(t *testing.T) {
+	for _, action := range []domain.SubscriptionAction{domain.SubscriptionLogin, domain.SubscriptionRefresh, domain.SubscriptionLogout} {
+		t.Run(string(action), func(t *testing.T) {
+			root, f, credential := managedLaneFixture(t, nil)
+			var account domain.Account
+			if err := json.Unmarshal(f.account.DocumentJson, &account); err != nil {
+				t.Fatal(err)
+			}
+			account.Subscription.Pending.Action = action
+			f.account.DocumentJson, _ = json.Marshal(account)
+			f.takes = make(chan *pb.TakeSubscriptionRequest, 4)
+			problem := domain.Fail(domain.Canceled, "Original queued operation retired.", "")
+			problem.Cause = "subscription_take_not_admitted"
+			f.firstTakeError = rpc.Error(problem, "")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- watchSubscriptions(ctx, Config{Root: root}, credential, domain.NewID()) }()
+			var original *pb.TakeSubscriptionRequest
+			select {
+			case original = <-f.takes:
+			case <-time.After(3 * time.Second):
+				t.Fatal("Take missing")
+			}
+			paths, err := filepath.Glob(filepath.Join(root, "managed-auth", "*.json"))
+			if err != nil || len(paths) != 1 {
+				t.Fatal(paths, err)
+			}
+			deadline := time.Now().Add(3 * time.Second)
+			for {
+				var journal managedSubscriptionJournal
+				raw, err := os.ReadFile(paths[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = json.Unmarshal(raw, &journal); err != nil {
+					t.Fatal(err)
+				}
+				if journal.State == managedNotAdmitted {
+					if journal.Lease != domain.ID(original.Mutation.RequestId) || journal.LeaseRevision != 0 || journal.NativeStarted {
+						t.Fatal("retired claim gained authority")
+					}
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("no-grant claim not retired")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			select {
+			case <-done:
+				t.Fatal("exact pre-grant refusal closed lane")
+			case <-f.finished:
+				t.Fatal("refusal invented Finish")
+			case <-f.takes:
+				t.Fatal("refusal retried")
+			case <-time.After(100 * time.Millisecond):
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("lane did not join")
+			}
+		})
+	}
+}
+
+func TestManagedLifecycleUnprovenTakeRefusalsRemainLaneFatal(t *testing.T) {
+	for _, variant := range []string{"plain-canceled", "wrong-cause", "wrong-code", "recovery"} {
+		t.Run(variant, func(t *testing.T) {
+			root, f, credential := managedLaneFixture(t, nil)
+			f.takes = make(chan *pb.TakeSubscriptionRequest, 4)
+			problem := domain.Fail(domain.Canceled, "Unproven refusal.", "")
+			switch variant {
+			case "wrong-cause":
+				problem.Cause = "other"
+			case "wrong-code":
+				problem.Code = domain.Internal
+				problem.Cause = "subscription_take_not_admitted"
+			case "recovery":
+				problem.Code = domain.RecoveryRequired
+			}
+			f.firstTakeError = rpc.Error(problem, "")
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := watchSubscriptions(ctx, Config{Root: root}, credential, domain.NewID()); domain.SafeError(err).Code != problem.Code {
+				t.Fatal(err)
+			}
+			if len(f.takes) != 1 {
+				t.Fatal("unproven refusal retried")
+			}
+			select {
+			case <-f.finished:
+				t.Fatal("unproven refusal invented Finish")
+			default:
+			}
+		})
+	}
+}

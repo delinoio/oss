@@ -321,8 +321,16 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 			return nil, err
 		}
 		st := a.Subscription
-		if st == nil || st.RecoveryRequired || st.NativeProfileID == "" || st.OwnerMachineID != input.Machine {
+		if st == nil || st.RecoveryRequired {
 			return nil, subscriptionDenied()
+		}
+		if st.NativeProfileID == "" || st.OwnerMachineID != input.Machine {
+			// Queued initial login cancellation retires its unused profile owner.
+			// Only the retained original canceled operation proves no native grant.
+			o := st.NativeOperation
+			if action == domain.SubscriptionExecute || st.Pending != nil || o == nil || o.ID != input.Operation || o.Action != action || o.MachineID != input.Machine || o.State != domain.SubscriptionCanceled {
+				return nil, subscriptionDenied()
+			}
 		}
 		if st.Lease != nil {
 			return nil, domain.Fail(domain.ResourceExhausted, "This Claude account is exclusively owned by another operation.", "Wait for that original operation and cleanup on this Runner Device.")
@@ -352,7 +360,16 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		} else {
 			op := st.Pending
 			o := st.NativeOperation
-			if op == nil || o == nil || op.ID != input.Operation || op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued || op.Canceled || o.Epoch != s.subscriptionServerEpoch() || !o.ExpiresAt.After(time.Now().UTC()) || input.Revision > r.Revision {
+			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
+				return nil, err
+			}
+			if input.Revision > r.Revision || (op != nil && (op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued)) {
+				return nil, subscriptionDenied()
+			}
+			if op == nil || op.ID != input.Operation || op.Canceled {
+				return nil, subscriptionTakeNotAdmitted()
+			}
+			if o == nil || o.Epoch != s.subscriptionServerEpoch() || !o.ExpiresAt.After(time.Now().UTC()) {
 				return nil, subscriptionDenied()
 			}
 			if err := subscriptionActorValid(tx, op.Actor); err != nil {

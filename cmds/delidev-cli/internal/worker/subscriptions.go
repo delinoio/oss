@@ -41,9 +41,10 @@ type managedSubscriptionLease struct {
 type managedJournalState string
 
 const (
-	managedClaimed  managedJournalState = "claimed"
-	managedClosed   managedJournalState = "closed"
-	managedReported managedJournalState = "reported"
+	managedNotAdmitted managedJournalState = "not-admitted"
+	managedClaimed     managedJournalState = "claimed"
+	managedClosed      managedJournalState = "closed"
+	managedReported    managedJournalState = "reported"
 )
 
 type managedSubscriptionJournal struct {
@@ -91,7 +92,18 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 			break
 		}
 		problem := rpc.ClientError(err)
-		if domain.SafeError(problem).Code != domain.ResourceExhausted {
+		safe := domain.SafeError(problem)
+		lifecycle := action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN || action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH || action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
+		if lifecycle && safe.Code == domain.Canceled && safe.Cause == "subscription_take_not_admitted" {
+			// This exact server proof precedes every lease/native side effect.
+			// Record local retirement without fabricating a Finish acknowledgment.
+			claim.State = managedNotAdmitted
+			if err := writeJSON(journalPath, claim); err != nil {
+				return nil, subscription.Invalid()
+			}
+			return nil, &managedTakeNotAdmitted{problem}
+		}
+		if safe.Code != domain.ResourceExhausted {
 			code := domain.SafeError(problem).Code
 			if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE && (code == domain.ServerUnavailable || code == domain.Unavailable || code == domain.Canceled || code == domain.Internal || code == domain.RecoveryRequired) {
 				return nil, &managedExecutionUncertain{problem}
@@ -151,6 +163,10 @@ func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, succe
 
 // A failed operation with acknowledged completion no longer owns a lease.
 // It must not interrupt unrelated accounts still running on this lane.
+type managedTakeNotAdmitted struct{ error }
+
+func (e *managedTakeNotAdmitted) Unwrap() error { return e.error }
+
 type managedReportedFailure struct{ error }
 
 func (e *managedReportedFailure) Unwrap() error { return e.error }
@@ -238,6 +254,13 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 				return runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op)
 			}
 			if err := run(); err != nil {
+				var refused *managedTakeNotAdmitted
+				if errors.As(err, &refused) {
+					if config.Logger != nil {
+						config.Logger.InfoContext(ctx, "subscription_take_not_admitted", "account_id", r.Id, "operation_id", op.ID, "action", op.Action)
+					}
+					return
+				}
 				if config.Logger != nil {
 					config.Logger.WarnContext(ctx, "managed_subscription_requires_reconciliation", "account_id", r.Id, "operation_id", op.ID, "action", op.Action, "code", domain.SafeError(err).Code)
 				}
