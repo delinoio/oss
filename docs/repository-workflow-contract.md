@@ -427,6 +427,8 @@ All nine packages require a Trusted Publisher permitting publication from `delin
 
 Repository-wide Go quality/tests and ach-specific compilation must first generate the app-owned ach UI embed using `pnpm --filter async-commit-hook build:embedded`. The root Go checks also retain the existing administrator embed prerequisite. The consolidated `public-docs` build renders the async content under `/async-commit-hook`; the executable release builder regenerates the local UI before cross-compilation.
 
+The scoped Go formatting helper discovers tracked files with `git ls-files -z` and passes original NUL-separated paths as literal `gofmt -l` arguments. Git display quoting and embedded newlines must not omit or split files. Checks leave source bytes unchanged and retain discovery, formatter, missing-scope and empty-inventory failures. `scripts/ci/check-go-format.test.mjs` belongs to the existing central CI contract fixture suite.
+
 
 ### React Forge validation
 
