@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -21,23 +22,28 @@ import (
 )
 
 type reloadFixture struct {
-	t            *testing.T
-	r            *serviceReloader
-	m            *Manager
-	c            Config
-	path         string
-	pid, peer    int
-	loaded       bool
-	version      string
-	args         map[int][]string
-	commands     []string
-	envs         [][]string
-	actions      []string
-	preflightErr error
-	onCommand    func(string) error
-	controlErr   error
-	waits        int
-	log          bytes.Buffer
+	t               *testing.T
+	r               *serviceReloader
+	m               *Manager
+	c               Config
+	path            string
+	pid, peer       int
+	loaded          bool
+	version         string
+	args            map[int][]string
+	commands        []string
+	envs            [][]string
+	actions         []string
+	preflightErr    error
+	onCommand       func(string) error
+	controlErr      error
+	waits           int
+	pidfdOpened     []int
+	pidfdSignaled   []int
+	pidfdClosed     int
+	onOpenManager   func(int) error
+	onSignalManager func(int) error
+	log             bytes.Buffer
 }
 
 func newReloadFixture(t *testing.T, platform string) *reloadFixture {
@@ -79,7 +85,7 @@ func newReloadFixture(t *testing.T, platform string) *reloadFixture {
 	}
 	f := &reloadFixture{t: t, m: m, c: c, path: path, pid: 101, peer: 101, loaded: true, version: "0.2.7", args: map[int][]string{101: oldArgs}}
 	f.r = &serviceReloader{Platform: platform, Unit: unit, Binary: filepath.Join(home, "new", "runmoor"), Version: Version, Exec: f, Log: slog.New(slog.NewTextHandler(&f.log, nil)),
-		Control: f.control, ProcessArgs: func(pid int) ([]string, error) {
+		Control: f.control, OpenManager: f.openManager, ProcessArgs: func(pid int) ([]string, error) {
 			args, ok := f.args[pid]
 			if !ok {
 				return nil, os.ErrNotExist
@@ -153,6 +159,48 @@ func (f *reloadFixture) Run(_ context.Context, name string, args, env []string, 
 	return nil, nil
 }
 
+type fixtureReloadHandle struct {
+	fixture *reloadFixture
+	pid     int
+}
+
+func (f *reloadFixture) openManager(pid int) (reloadManagerHandle, error) {
+	f.pidfdOpened = append(f.pidfdOpened, pid)
+	if f.onOpenManager != nil {
+		if err := f.onOpenManager(pid); err != nil {
+			return nil, err
+		}
+	}
+	return &fixtureReloadHandle{fixture: f, pid: pid}, nil
+}
+func (h *fixtureReloadHandle) Close() error { h.fixture.pidfdClosed++; return nil }
+func (h *fixtureReloadHandle) Kill() error {
+	f := h.fixture
+	j, err := readReloadJournal(f.r.Unit)
+	if err != nil || j == nil || j.Stage != reloadRestartPending || j.PID != h.pid {
+		return reloadFailure()
+	}
+	command := "pidfd --signal=SIGKILL " + strconv.Itoa(h.pid)
+	f.commands = append(f.commands, command)
+	f.envs = append(f.envs, minimalEnv())
+	if f.onCommand != nil {
+		if err := f.onCommand(command); err != nil {
+			return err
+		}
+	}
+	if f.onSignalManager != nil {
+		if err := f.onSignalManager(h.pid); err != nil {
+			return err
+		}
+	}
+	f.pidfdSignaled = append(f.pidfdSignaled, h.pid)
+	if f.pid != h.pid {
+		return syscall.ESRCH
+	}
+	f.replaceManager()
+	return nil
+}
+
 func (f *reloadFixture) replaceManager() {
 	body, err := os.ReadFile(f.r.Unit)
 	if err != nil {
@@ -188,7 +236,7 @@ func (f *reloadFixture) control(ctx context.Context, c Config, req ControlReques
 func (f *reloadFixture) reload() error { return f.r.Reload(context.Background(), f.path, f.c) }
 func (f *reloadFixture) mutated() bool {
 	for _, command := range f.commands {
-		if strings.Contains(command, " daemon-reload") || strings.Contains(command, " kill ") || strings.Contains(command, " debug ") || strings.Contains(command, " kickstart ") || strings.Contains(command, " bootout ") || strings.Contains(command, " bootstrap ") {
+		if strings.HasPrefix(command, "pidfd ") || strings.Contains(command, " daemon-reload") || strings.Contains(command, " kill ") || strings.Contains(command, " debug ") || strings.Contains(command, " kickstart ") || strings.Contains(command, " bootout ") || strings.Contains(command, " bootstrap ") {
 			return true
 		}
 	}
@@ -231,7 +279,7 @@ func TestServiceReloadReplacesOnlyManagerAndPreservesJobs(t *testing.T) {
 			if err != nil || args[0] != f.r.Binary {
 				t.Fatal("service kept old executable")
 			}
-			if platform == "linux" && !strings.Contains(strings.Join(f.commands, "\n"), "systemctl --user kill --kill-who=main --signal=SIGKILL runmoor.service") {
+			if platform == "linux" && !slices.Equal(f.pidfdSignaled, []int{101}) {
 				t.Fatal("kill not limited to the manager")
 			}
 			for i, command := range f.commands {

@@ -183,8 +183,15 @@ acceptance succeed.
 
 
 Linux atomically publishes the target definition, performs `daemon-reload`,
-revalidates the original active invocation against its captured definition, and
-uses `systemctl --user kill --kill-who=main --signal=SIGKILL runmoor.service`.
+opens a retained Linux pidfd before final process proof, and revalidates the
+active original invocation, native MainPID and process-start identity. If the
+previous binary restarted before dispatch, authenticate its exact older-manager
+version and checkpoint its verified PID/start identity with replacement intent.
+Keep the pidfd through that checkpoint and send manager-only SIGKILL through
+`pidfd_send_signal`; never use a numeric PID, process group or unit-name fallback.
+Confirmed original exit observes replacement readiness instead of signaling a
+new generation. Descriptor acquisition or identity uncertainty retains the
+journal, Stop/pauses, independent executions and recovery authority.
 Existing `Restart=on-failure` starts the replacement; `KillMode=process` remains
 unchanged. This path does not issue service restart, manager Stop, or drain.
 Session selectors remain limited to the documented `systemctl` environment.
