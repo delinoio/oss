@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { SkillQuery, SkillProvenance, type SkillEntry, type SkillSelection } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
@@ -33,6 +33,7 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
   const [bindings, setBindings] = useState<SkillTokenBinding[]>(initialBindings), [caret, setCaret] = useState(0), [dismissed, setDismissed] = useState(false), [selected, setSelected] = useState(0);
   useEffect(() => { bindingsChanged?.(bindings); }, [bindings, bindingsChanged]);
   const composing = useRef(false), editable = useRef(false);
+  const completion = useRef<HTMLDivElement>(null), keyboardNavigation = useRef(false);
   editable.current = active && !disabled;
   const canEdit = () => editable.current && Boolean(textarea.current?.isConnected) && !textarea.current?.matches(":disabled") && !textarea.current?.closest("[inert], [hidden]");
   const token = !dismissed && !composing.current ? skillToken(value, caret) : undefined;
@@ -58,8 +59,8 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDismissed(true); return true; }
     if (candidates.length && ["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(event.key) && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
       event.preventDefault(); event.stopPropagation();
-      if (event.key === "ArrowDown") setSelected((validIndex + 1) % candidates.length);
-      else if (event.key === "ArrowUp") setSelected((validIndex + candidates.length - 1) % candidates.length);
+      if (event.key === "ArrowDown") { keyboardNavigation.current = true; setSelected((validIndex + 1) % candidates.length); }
+      else if (event.key === "ArrowUp") { keyboardNavigation.current = true; setSelected((validIndex + candidates.length - 1) % candidates.length); }
       else accept(candidates[validIndex]!); return true;
     }
     return false;
@@ -67,8 +68,22 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
   const distinct = new Map(bindings.filter(binding => !binding.stale && value.slice(binding.start,binding.end)===binding.token).map(binding => [binding.selection.skillId, binding.selection]));
   const blocked = contextChanged && bindings.length > 0 || bindings.some(binding => binding.stale || binding.context && (!machineId || !agentId || binding.context !== scope) || !binding.ambiguous && value.slice(binding.start,binding.end)!==binding.token) || distinct.size > 16;
   const visible = active && !disabled && Boolean(token);
-  const list = visible ? <div className="skill-completion">
-    {enabled ? query.isFetching ? <p role="status">{copy("skills.loading")}</p> : query.error ? <><p role="status">{copy("skills.unavailable")}</p><button type="button" onClick={() => { if (canEdit()) void query.refetch(); }}>{copy("skills.retry")}</button></> : candidates.length ? <ul role="listbox" id={id} aria-label={copy("skills.available")}>{candidates.map((entry, index) => <li key={entry.selection!.skillId} id={`${id}-${index}`} role="option" aria-selected={index === validIndex} onMouseDown={event => event.preventDefault()} onClick={() => accept(entry)}><strong>{entry.name}</strong> <span>{entry.provenance === SkillProvenance.PROJECT ? copy("skills.project") : copy("skills.user")}</span><p>{entry.description}</p></li>)}</ul> : <p role="status">{copy("skills.empty")}</p> : <p role="status">{copy("skills.unsupported")}</p>}
+  useLayoutEffect(() => {
+    if (!keyboardNavigation.current) return;
+    keyboardNavigation.current = false;
+    const container = completion.current;
+    const option = container?.querySelector<HTMLElement>(`[aria-selected="true"]`);
+    if (!container || !option || !canEdit()) return;
+    // Scroll only this list. scrollIntoView can move ancestor composers or the
+    // page and displace the textarea while its original focus is retained.
+    const bounds = container.getBoundingClientRect(), row = option.getBoundingClientRect();
+    const scale = bounds.height / container.offsetHeight || 1;
+    const top = bounds.top + container.clientTop * scale, bottom = top + container.clientHeight * scale;
+    if (row.top < top) container.scrollTop += (row.top - top) / scale;
+    else if (row.bottom > bottom) container.scrollTop += (row.bottom - bottom) / scale;
+  }, [validIndex, visible, query.isFetching]);
+  const list = visible ? <div ref={completion} className="skill-completion">
+    {enabled ? query.isFetching ? <p role="status">{copy("skills.loading")}</p> : query.error ? <><p role="status">{copy("skills.unavailable")}</p><button type="button" onClick={() => { if (canEdit()) void query.refetch(); }}>{copy("skills.retry")}</button></> : candidates.length ? <ul role="listbox" id={id} aria-label={copy("skills.available")}>{candidates.map((entry, index) => <li key={entry.selection!.skillId} id={`${id}-${index}`} role="option" aria-selected={index === validIndex} onMouseDown={event => event.preventDefault()} onClick={() => accept(entry)}><strong className="skill-completion-name">{entry.name}</strong><span className="skill-completion-description">{entry.description}</span><span className="skill-completion-provenance">{entry.provenance === SkillProvenance.PROJECT ? copy("skills.project") : copy("skills.user")}</span></li>)}</ul> : <p role="status">{copy("skills.empty")}</p> : <p role="status">{copy("skills.unsupported")}</p>}
   </div> : null;
   return { selections: [...distinct.values()], blocked, list, clear: () => { if (canEdit()) setBindings([]); }, // Original receipt acceptance settles ownership before the pending render unlocks.
     replaceUnbound: (next: string, position: number) => { if (!canEdit()) return; if (change(next, []) === false) return; setBindings([]); bindingsChanged?.([]); setCaret(position); setDismissed(true); setSelected(0); },

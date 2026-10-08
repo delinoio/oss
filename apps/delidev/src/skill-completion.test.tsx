@@ -62,3 +62,30 @@ it("recalling identical text drops typed skill authority and respects the creati
  const view = render(tree(true)); fireEvent.click(screen.getByRole("button", { name: "Recall text only" })); expect(view.container.querySelector("[data-history-selections]")!.textContent).toBe("1");
  view.rerender(tree(false)); fireEvent.click(screen.getByRole("button", { name: "Recall text only" })); expect(screen.getByRole("textbox", { name: "History skill draft" })).toHaveProperty("value", "$add-issue"); expect(view.container.querySelector("[data-history-selections]")!.textContent).toBe("0");
 });
+
+
+it("retains original option text with description before the separate provenance badge", async () => {
+ const long = { ...entries[0]!, name: "길고긴스킬이름-long-name", description: "Original 한글 description ".repeat(100), provenance: SkillProvenance.PROJECT };
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async () => ({ skills: [long, { ...entries[1]!, description: "" }] }) }));
+ const view = render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);
+ const input = screen.getByRole("textbox"); fireEvent.change(input, { target: { value: "$", selectionStart: 1 } });
+ const option = await screen.findByRole("option", { name: new RegExp(long.name) });
+ expect([...option.children].map(child => child.className)).toEqual(["skill-completion-name", "skill-completion-description", "skill-completion-provenance"]);
+ expect(option.children[1]!.textContent).toBe(long.description); expect(option.children[2]!.textContent).toBe("Project");
+ expect(screen.getAllByRole("option")).toHaveLength(2); expect(view.container.querySelectorAll(".skill-completion-description")[0]!.textContent).toBe("");
+ expect(input.getAttribute("aria-activedescendant")).toBe(screen.getAllByRole("option")[0]!.id);
+});
+
+it.each([1, 2])("scrolls only the completion container at scale %s and retains textarea focus", async (scale) => {
+ const f = fixture(); const view = render(f.view()); const input = screen.getByRole("textbox"); input.focus();
+ fireEvent.change(input, { target: { value: "$add", selectionStart: 4 } }); await screen.findAllByRole("option");
+ const container = view.container.querySelector<HTMLElement>(".skill-completion")!;
+ Object.defineProperty(container, "clientHeight", { value: 100 }); Object.defineProperty(container, "clientTop", { value: 1 }); Object.defineProperty(container, "offsetHeight", { value: 102 });
+ vi.spyOn(container, "getBoundingClientRect").mockReturnValue({ top: 10, bottom: 10 + 102 * scale, height: 102 * scale } as DOMRect);
+ const rows = screen.getAllByRole("option");
+ vi.spyOn(rows[0]!, "getBoundingClientRect").mockReturnValue({ top: 10 - 39 * scale, bottom: 10 + scale } as DOMRect);
+ vi.spyOn(rows[1]!, "getBoundingClientRect").mockReturnValue({ top: 10 + 101 * scale, bottom: 10 + 141 * scale } as DOMRect);
+ fireEvent.keyDown(input, { key: "ArrowDown" }); expect(container.scrollTop).toBe(40); expect(document.activeElement).toBe(input);
+ expect(input.getAttribute("aria-activedescendant")).toBe(rows[1]!.id);
+ fireEvent.keyDown(input, { key: "ArrowUp" }); expect(container.scrollTop).toBe(0); expect(document.activeElement).toBe(input); expect(f.send).not.toHaveBeenCalled();
+});
