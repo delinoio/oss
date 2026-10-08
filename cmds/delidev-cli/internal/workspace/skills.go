@@ -6,6 +6,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"os"
+	"time"
 )
 
 // Skill reads share original workspace observation locks and identity checks.
@@ -13,6 +14,14 @@ func (m *Manager) ReadSkills(ctx context.Context, request ReadRequest) (domain.S
 	result := domain.SkillReadResult{Entries: []domain.SkillEntry{}}
 	if request.Skills == nil || request.Skills.MachineID != request.Preparation.MachineID || request.Skills.ActorID.Validate() != nil {
 		return result, ResultUncertain()
+	}
+	if request.Deadline.IsZero() || request.Deadline.After(time.Now().Add(31*time.Second)) {
+		return result, ResultUncertain()
+	}
+	ctx, cancel := context.WithDeadline(ctx, request.Deadline)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return result, domain.SafeError(err)
 	}
 	home, e := os.UserHomeDir()
 	if e != nil {
