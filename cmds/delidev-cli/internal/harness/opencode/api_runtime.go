@@ -15,6 +15,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 )
 
@@ -25,6 +26,8 @@ import (
 // selected-account readiness. Root comes from independent Worker Git /
 // General Chat workspace inspection, never from a native message's own path.
 type apiSessionConfig struct {
+	OrdinaryTools executionenv.Ordinary `json:"-"`
+
 	Probe        ProbeConfig                               `json:"-"`
 	Workspace    string                                    `json:"-"`
 	Root         WorkspaceRoot                             `json:"-"`
@@ -147,6 +150,7 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	if err := profile.writeReferences(root, config.Workspace); err != nil {
 		return nil, nil, err
 	}
+	env = config.OrdinaryTools.Apply(env)
 	return env, profile, nil
 }
 

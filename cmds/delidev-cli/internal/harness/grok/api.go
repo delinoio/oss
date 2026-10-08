@@ -14,6 +14,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -29,6 +30,8 @@ const credentialVariable = "DELIDEV_GROK_EXECUTION_TOKEN"
 // Durable session claims, typed events and permission delivery independently
 // govern any later execution; discovery never calls it.
 type apiConfig struct {
+	OrdinaryTools executionenv.Ordinary `json:"-"`
+
 	Probe         ProbeConfig        `json:"-"`
 	Workspace     string             `json:"-"`
 	Instructions  string             `json:"-"`
@@ -252,6 +255,7 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	}
 	inspection := prepared
 	inspection.Cwd = config.Workspace
+	env = config.OrdinaryTools.Apply(env)
 	prepared.Env = append(env, credentialVariable+"="+config.Token, "GROK_DEFAULT_MODEL="+selectedModel)
 	prepared.Args = []string{"--no-auto-update", "agent", "stdio"}
 	phase = launchPhase

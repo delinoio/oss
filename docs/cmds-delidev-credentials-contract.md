@@ -164,3 +164,7 @@ Both profiles share exact-match, redacted-error and platform session constraints
 
 
 The direct PAT primitive is now composed by [IntegrationService and its CLI/desktop clients](cmds-delidev-integrations-contract.md). That layer supplies actor-bound reference receipts, durable denial before native replacement/deletion, exact pending-generation recovery and joined identity-inspection cancellation. Native storage success remains separate from GitHub identity and repository feature authorization.
+
+### Ordinary session gh authority
+
+Issue #1857's bounded tool exception follows the [harness contract](cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context). Only the executing Worker's in-memory gh directory selector reaches ordinary native session tool environments. gh owns all file/OS-store credential access and explicit configuration writes. DeliDev never reads, copies, logs, transfers or deletes those credentials/configuration, inherits `GH_TOKEN`/`GITHUB_TOKEN`, or substitutes server integration credentials. Native provider isolation and every protected execution/proxy exclusion remain unchanged; excluded auxiliary, inspection and Sidechat flows retain their isolation.

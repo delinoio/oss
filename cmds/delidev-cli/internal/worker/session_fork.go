@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"os"
@@ -143,6 +144,10 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, executionCheckpointUncertain()
 	}
+	var ordinaryTools executionenv.Ordinary
+	if input.Purpose != domain.SidechatFork {
+		ordinaryTools = ordinaryExecutionTools(config.Logger)
+	}
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, executionCheckpointUncertain()
@@ -259,6 +264,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
 	nativeConfig := codex.Config{ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	if input.Purpose != domain.SidechatFork {
+		nativeConfig.OrdinaryTools = ordinaryTools
+	}
 	if input.Purpose == domain.SidechatFork {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}

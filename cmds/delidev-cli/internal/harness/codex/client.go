@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -22,6 +23,8 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
+	OrdinaryTools executionenv.Ordinary `json:"-"`
+
 	SkillsRoot       string
 	ImageRoot        string
 	ImageMachineID   domain.ID
@@ -157,6 +160,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err := configureSidechat(&config); err != nil {
 		return nil, err
 	}
+	configureOrdinaryTools(&config)
 	config.Process.Args = append(config.Process.Args, "app-server")
 	phase = launchPhase
 	wire, err := nativewire.Start(ctx, config.Process)
@@ -285,4 +289,11 @@ func (c *Client) recordFailureAtStage(ctx context.Context, phase domain.CodexPha
 		}
 		c.logger.WarnContext(ctx, "codex_native_operation_failed", attributes...)
 	}
+}
+
+func configureOrdinaryTools(config *Config) {
+	if config.Mode != ThreadProtocol || config.Sidechat != "" || config.ModelObservation || config.API != nil && config.API.TitleProfile {
+		config.OrdinaryTools = executionenv.Ordinary{}
+	}
+	config.Process.Env = config.OrdinaryTools.Apply(config.Process.Env)
 }

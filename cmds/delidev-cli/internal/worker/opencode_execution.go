@@ -103,6 +103,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
 	}
+	ordinaryTools := ordinaryExecutionTools(config.Logger)
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -155,7 +156,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := opencode.APIExecutionConfig{
+	nativeConfig := opencode.APIExecutionConfig{OrdinaryTools: ordinaryTools,
 		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
 		Workspace: lease.WorkingDirectory(), Root: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
 		References: openCodeWorkspaceReferences(manifest),
