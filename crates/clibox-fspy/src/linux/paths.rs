@@ -11,7 +11,10 @@ use std::{
 use libc::{c_void, iovec};
 
 use super::{supervision, RawEntry, TraceFailure};
-use crate::record::{AccessPath, FileIdentity, NativePath, Operation, PathClass};
+use crate::{
+    record::{AccessPath, FileIdentity, NativePath, Operation, PathClass},
+    unix_paths::{path_identity, resolve_final_component, FinalSymlink},
+};
 
 const MAX_PATH_BYTES: usize = 4096;
 
@@ -24,14 +27,14 @@ pub struct DecodedOperation {
     pub descriptor: Option<i32>,
 }
 
-fn open_mutates(entry: &RawEntry) -> bool {
+fn open_flags(entry: &RawEntry) -> Option<u64> {
     #[cfg(target_arch = "x86_64")]
     if entry.syscall == libc::SYS_creat as u64 {
-        return true;
+        return None;
     }
     let flags = if entry.syscall == libc::SYS_openat2 as u64 {
         if entry.args[3] < 8 || entry.args[2] == 0 {
-            return true;
+            return None;
         }
         let mut flags = 0_u64;
         let local = iovec {
@@ -54,7 +57,7 @@ fn open_mutates(entry: &RawEntry) -> bool {
             )
         } != 8
         {
-            return true;
+            return None;
         }
         flags
     } else if entry.syscall == libc::SYS_openat as u64 {
@@ -62,8 +65,14 @@ fn open_mutates(entry: &RawEntry) -> bool {
     } else {
         entry.args[1]
     };
-    flags & (libc::O_CREAT as u64 | libc::O_TRUNC as u64) != 0
-        || flags & libc::O_TMPFILE as u64 == libc::O_TMPFILE as u64
+    Some(flags)
+}
+
+fn open_mutates(entry: &RawEntry) -> bool {
+    open_flags(entry).is_none_or(|flags| {
+        flags & (libc::O_CREAT as u64 | libc::O_TRUNC as u64) != 0
+            || flags & libc::O_TMPFILE as u64 == libc::O_TMPFILE as u64
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -71,6 +80,76 @@ enum Source {
     Path(usize),
     At(usize, usize),
     Descriptor(usize),
+}
+
+// Policy belongs to each native pathname argument, rather than the broad
+// operation category: linkat can follow its source while retaining its target.
+fn final_symlink(entry: &RawEntry, source: Source) -> FinalSymlink {
+    use FinalSymlink::{Follow, NoFollow};
+    let number = entry.syscall;
+    let first = matches!(source, Source::Path(0) | Source::At(0, 1));
+    if matches!(source, Source::Descriptor(_)) {
+        return Follow;
+    }
+    if number == libc::SYS_readlinkat as u64
+        || number == libc::SYS_unlinkat as u64
+        || number == libc::SYS_renameat as u64
+        || number == libc::SYS_renameat2 as u64
+        || number == libc::SYS_symlinkat as u64
+        || number == libc::SYS_mkdirat as u64
+        || number == libc::SYS_mknodat as u64
+    {
+        return NoFollow;
+    }
+    if number == libc::SYS_linkat as u64 {
+        return if first && entry.args[4] & libc::AT_SYMLINK_FOLLOW as u64 != 0 {
+            Follow
+        } else {
+            NoFollow
+        };
+    }
+    let flags = if number == libc::SYS_statx as u64 {
+        entry.args[2]
+    } else if number == libc::SYS_newfstatat as u64
+        || number == libc::SYS_faccessat2 as u64
+        || number == libc::SYS_utimensat as u64
+    {
+        entry.args[3]
+    } else if number == libc::SYS_fchownat as u64 || number == libc::SYS_execveat as u64 {
+        entry.args[4]
+    } else {
+        0
+    };
+    if flags & libc::AT_SYMLINK_NOFOLLOW as u64 != 0 {
+        return NoFollow;
+    }
+    if number == libc::SYS_openat as u64 || number == libc::SYS_openat2 as u64 {
+        return if open_flags(entry).is_some_and(|flags| flags & libc::O_NOFOLLOW as u64 != 0) {
+            NoFollow
+        } else {
+            Follow
+        };
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if number == libc::SYS_lstat as u64
+            || number == libc::SYS_readlink as u64
+            || number == libc::SYS_unlink as u64
+            || number == libc::SYS_rmdir as u64
+            || number == libc::SYS_rename as u64
+            || number == libc::SYS_link as u64
+            || number == libc::SYS_symlink as u64
+            || number == libc::SYS_mkdir as u64
+        {
+            return NoFollow;
+        }
+        if number == libc::SYS_open as u64
+            && open_flags(entry).is_some_and(|flags| flags & libc::O_NOFOLLOW as u64 != 0)
+        {
+            return NoFollow;
+        }
+    }
+    Follow
 }
 
 fn spec(number: u64) -> Option<(Operation, Source, Option<Source>)> {
@@ -364,8 +443,9 @@ fn access_path(
     root: &Path,
     logical: PathBuf,
     identity: Option<FileIdentity>,
+    policy: FinalSymlink,
 ) -> Result<Option<AccessPath>, TraceFailure> {
-    let Some(resolved) = resolve_even_if_absent(&logical)? else {
+    let Some(resolved) = resolve_final_component(&logical, policy, resolve_even_if_absent)? else {
         return Ok(None);
     };
     let project_relative = resolved.strip_prefix(root).ok();
@@ -387,7 +467,7 @@ fn access_path(
                 bytes.to_vec()
             })
         }),
-        identity,
+        identity: identity.or_else(|| path_identity(&logical, policy)),
     }))
 }
 
@@ -435,7 +515,7 @@ fn from_source(
     let Some(path) = path else {
         return Ok((None, !matches!(source, Source::Descriptor(_))));
     };
-    let classified = access_path(root, path, identity)?;
+    let classified = access_path(root, path, identity, final_symlink(entry, source))?;
     let unavailable = classified.is_none();
     Ok((classified, unavailable))
 }
@@ -482,6 +562,263 @@ mod tests {
 
     use super::*;
 
+    fn entry(number: i64, args: [u64; 6]) -> RawEntry {
+        RawEntry {
+            ordinal: 1,
+            pid: std::process::id(),
+            tid: std::process::id(),
+            parent_pid: None,
+            syscall: number as u64,
+            args,
+            monotonic_ns: 1,
+        }
+    }
+
+    #[test]
+    fn nofollow_metadata_handlers_retain_each_native_entry() {
+        use std::ffi::CString;
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().canonicalize().unwrap();
+        let root = base.join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("inside"), b"inside").unwrap();
+        fs::write(base.join("outside"), b"outside").unwrap();
+        for (name, target) in [
+            ("internal", root.join("inside")),
+            ("external", base.join("outside")),
+            ("self", root.join("self")),
+            ("dangling", base.join("missing")),
+        ] {
+            let logical = root.join(name);
+            symlink(target, &logical).unwrap();
+            let path = CString::new(logical.as_os_str().as_bytes()).unwrap();
+            let pointer = path.as_ptr() as u64;
+            let at = libc::AT_FDCWD as u64;
+            let flag = libc::AT_SYMLINK_NOFOLLOW as u64;
+            let mut cases = vec![
+                entry(libc::SYS_readlinkat, [at, pointer, 0, 0, 0, 0]),
+                entry(libc::SYS_newfstatat, [at, pointer, 0, flag, 0, 0]),
+                entry(libc::SYS_statx, [at, pointer, flag, 0, 0, 0]),
+                entry(libc::SYS_faccessat2, [at, pointer, 0, flag, 0, 0]),
+                entry(libc::SYS_fchownat, [at, pointer, 0, 0, flag, 0]),
+                entry(libc::SYS_utimensat, [at, pointer, 0, flag, 0, 0]),
+            ];
+            #[cfg(target_arch = "x86_64")]
+            cases.extend([
+                entry(libc::SYS_lstat, [pointer, 0, 0, 0, 0, 0]),
+                entry(libc::SYS_readlink, [pointer, 0, 0, 0, 0, 0]),
+            ]);
+            for case in cases {
+                let decoded = decode(&case, &root).unwrap().unwrap();
+                assert!(!decoded.path_unavailable);
+                assert_eq!(decoded.paths.len(), 1);
+                let observed = &decoded.paths[0];
+                assert_eq!(
+                    observed.class,
+                    PathClass::Project,
+                    "{} {name}",
+                    case.syscall
+                );
+                assert_eq!(
+                    observed.logical,
+                    NativePath::UnixBytes(logical.as_os_str().as_bytes().to_vec())
+                );
+                assert_eq!(observed.resolved, Some(observed.logical.clone()));
+                assert_eq!(
+                    observed.identity,
+                    path_identity(&logical, FinalSymlink::NoFollow)
+                );
+            }
+            let parent = fs::File::open(&root).unwrap();
+            let relative = CString::new(name).unwrap();
+            let relative_call = entry(
+                libc::SYS_readlinkat,
+                [
+                    parent.as_raw_fd() as u64,
+                    relative.as_ptr() as u64,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+            );
+            assert_eq!(
+                decode(&relative_call, &root).unwrap().unwrap().paths[0].logical,
+                NativePath::UnixBytes(logical.as_os_str().as_bytes().to_vec())
+            );
+            let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
+            let mut target = [0_u8; MAX_PATH_BYTES];
+            // SAFETY: fixture-owned terminated pathname and bounded outputs.
+            unsafe {
+                assert_eq!(libc::lstat(path.as_ptr(), metadata.as_mut_ptr()), 0);
+                assert_eq!(
+                    libc::fstatat(
+                        libc::AT_FDCWD,
+                        path.as_ptr(),
+                        metadata.as_mut_ptr(),
+                        libc::AT_SYMLINK_NOFOLLOW
+                    ),
+                    0
+                );
+                assert!(
+                    libc::readlink(path.as_ptr(), target.as_mut_ptr().cast(), target.len()) > 0
+                );
+                assert!(
+                    libc::readlinkat(
+                        libc::AT_FDCWD,
+                        path.as_ptr(),
+                        target.as_mut_ptr().cast(),
+                        target.len()
+                    ) > 0
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn syscall_specific_flags_preserve_following_and_entry_mutations() {
+        use std::ffi::CString;
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().canonicalize().unwrap();
+        let root = base.join("root");
+        fs::create_dir(&root).unwrap();
+        let outside = base.join("outside");
+        fs::write(&outside, b"outside").unwrap();
+        let logical = root.join("link");
+        symlink(&outside, &logical).unwrap();
+        let path = CString::new(logical.as_os_str().as_bytes()).unwrap();
+        let destination = CString::new(root.join("destination").as_os_str().as_bytes()).unwrap();
+        symlink(&outside, root.join("destination")).unwrap();
+        let pointer = path.as_ptr() as u64;
+        let target = destination.as_ptr() as u64;
+        let at = libc::AT_FDCWD as u64;
+        for case in [
+            entry(libc::SYS_newfstatat, [at, pointer, 0, 0, 0, 0]),
+            entry(libc::SYS_statx, [at, pointer, 0, 0, 0, 0]),
+            entry(
+                libc::SYS_openat,
+                [at, pointer, libc::O_RDONLY as u64, 0, 0, 0],
+            ),
+            entry(
+                libc::SYS_linkat,
+                [at, pointer, at, target, libc::AT_SYMLINK_FOLLOW as u64, 0],
+            ),
+        ] {
+            let decoded = decode(&case, &root).unwrap().unwrap();
+            assert_eq!(decoded.paths[0].class, PathClass::External);
+        }
+        for case in [
+            entry(libc::SYS_unlinkat, [at, pointer, 0, 0, 0, 0]),
+            entry(libc::SYS_renameat, [at, pointer, at, target, 0, 0]),
+            entry(libc::SYS_renameat2, [at, pointer, at, target, 0, 0]),
+            entry(libc::SYS_linkat, [at, pointer, at, target, 0, 0]),
+            entry(
+                libc::SYS_openat,
+                [
+                    at,
+                    pointer,
+                    (libc::O_PATH | libc::O_NOFOLLOW) as u64,
+                    0,
+                    0,
+                    0,
+                ],
+            ),
+        ] {
+            let decoded = decode(&case, &root).unwrap().unwrap();
+            assert!(decoded
+                .paths
+                .iter()
+                .all(|path| path.class == PathClass::Project));
+            assert_eq!(
+                decoded.paths[0].identity,
+                path_identity(&logical, FinalSymlink::NoFollow)
+            );
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        for case in [
+            entry(libc::SYS_stat, [pointer, 0, 0, 0, 0, 0]),
+            entry(libc::SYS_open, [pointer, libc::O_RDONLY as u64, 0, 0, 0, 0]),
+        ] {
+            assert_eq!(
+                decode(&case, &root).unwrap().unwrap().paths[0].class,
+                PathClass::External
+            );
+        }
+        #[cfg(target_arch = "x86_64")]
+        for case in [
+            entry(libc::SYS_unlink, [pointer, 0, 0, 0, 0, 0]),
+            entry(libc::SYS_rename, [pointer, target, 0, 0, 0, 0]),
+            entry(libc::SYS_link, [pointer, target, 0, 0, 0, 0]),
+        ] {
+            assert!(decode(&case, &root)
+                .unwrap()
+                .unwrap()
+                .paths
+                .iter()
+                .all(|path| path.class == PathClass::Project));
+        }
+        let how = [libc::O_PATH as u64 | libc::O_NOFOLLOW as u64, 0, 0];
+        let case = entry(
+            libc::SYS_openat2,
+            [at, pointer, how.as_ptr() as u64, 24, 0, 0],
+        );
+        assert_eq!(
+            decode(&case, &root).unwrap().unwrap().paths[0].class,
+            PathClass::Project
+        );
+        let invalid_how = entry(libc::SYS_openat2, [at, pointer, 0, 24, 0, 0]);
+        let decoded = decode(&invalid_how, &root).unwrap().unwrap();
+        assert!(decoded.open_mutates);
+        assert_eq!(decoded.paths[0].class, PathClass::External);
+        let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
+        // SAFETY: terminated fixture pathname, valid stat output and returned
+        // fd.
+        unsafe {
+            assert_eq!(libc::stat(path.as_ptr(), metadata.as_mut_ptr()), 0);
+            let fd = libc::open(path.as_ptr(), libc::O_RDONLY);
+            assert!(fd >= 0);
+            assert_eq!(libc::close(fd), 0);
+        }
+        fs::remove_file(root.join("destination")).unwrap();
+        // Native link/rename/unlink operate on the fixture link entry, not its
+        // outside target. Decode before each operation, as the tracer does.
+        unsafe {
+            assert_eq!(
+                libc::linkat(
+                    libc::AT_FDCWD,
+                    path.as_ptr(),
+                    libc::AT_FDCWD,
+                    destination.as_ptr(),
+                    0
+                ),
+                0
+            );
+        }
+        assert!(fs::symlink_metadata(root.join("destination"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            path_identity(&logical, FinalSymlink::NoFollow),
+            path_identity(&root.join("destination"), FinalSymlink::NoFollow)
+        );
+        fs::remove_file(root.join("destination")).unwrap();
+        unsafe {
+            assert_eq!(
+                libc::renameat(
+                    libc::AT_FDCWD,
+                    path.as_ptr(),
+                    libc::AT_FDCWD,
+                    destination.as_ptr()
+                ),
+                0
+            );
+            assert_eq!(libc::unlinkat(libc::AT_FDCWD, destination.as_ptr(), 0), 0);
+        }
+        assert_eq!(fs::read(&outside).unwrap(), b"outside");
+    }
+
     #[test]
     fn empty_at_path_uses_descriptor_only_with_native_flag() {
         let directory = tempfile::tempdir().unwrap();
@@ -524,7 +861,9 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().canonicalize().unwrap();
         let path = root.join("missing/../../outside");
-        let decoded = access_path(&root, path, None).unwrap().unwrap();
+        let decoded = access_path(&root, path, None, FinalSymlink::Follow)
+            .unwrap()
+            .unwrap();
         assert_eq!(decoded.class, PathClass::External);
         assert!(decoded.project_relative.is_none());
     }
@@ -535,7 +874,7 @@ mod tests {
         let root = directory.path().canonicalize().unwrap();
         fs::create_dir(root.join("inside")).unwrap();
         symlink(root.join("inside"), root.join("alias")).unwrap();
-        let decoded = access_path(&root, root.join("alias/absent"), None)
+        let decoded = access_path(&root, root.join("alias/absent"), None, FinalSymlink::Follow)
             .unwrap()
             .unwrap();
         assert_eq!(decoded.class, PathClass::Project);
@@ -550,9 +889,14 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().canonicalize().unwrap();
         fs::write(root.join("parent.txt"), b"content").unwrap();
-        let decoded = access_path(&root, root.join("parent.txt/child"), None)
-            .unwrap()
-            .unwrap();
+        let decoded = access_path(
+            &root,
+            root.join("parent.txt/child"),
+            None,
+            FinalSymlink::Follow,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(decoded.class, PathClass::Project);
         assert_eq!(
             decoded.project_relative,
@@ -591,7 +935,11 @@ mod tests {
         let denied = fs::canonicalize(&target)
             .is_err_and(|error| error.kind() == io::ErrorKind::PermissionDenied);
         if denied {
-            assert!(access_path(&root, target, None).unwrap().is_none());
+            for policy in [FinalSymlink::Follow, FinalSymlink::NoFollow] {
+                assert!(access_path(&root, target.clone(), None, policy)
+                    .unwrap()
+                    .is_none());
+            }
         }
         fs::set_permissions(&hidden, fs::Permissions::from_mode(0o700)).unwrap();
     }
