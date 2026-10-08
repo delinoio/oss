@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { expect, it, vi } from "vitest";
 import { AccountingUnitKind, EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, SystemService, UsageTimeGranularity, UsageAccountingProfile, UsageTotalsSchema, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
+import { i18n, SupportedLanguage } from "./localization";
 import { SidebarOutletProvider } from "./sidebar-context";
 import { encode } from "./documents";
 
@@ -25,6 +26,34 @@ function fixture() {
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Usage active={active} open={open} /></QueryClientProvider></TransportProvider>;
   return { ids, data, read, open, view };
 }
+
+it.each([
+  { language: SupportedLanguage.English, historical: false },
+  { language: SupportedLanguage.English, historical: true },
+  { language: SupportedLanguage.Korean, historical: false },
+  { language: SupportedLanguage.Korean, historical: true },
+])("guides future pricing through Usage in $language with historical basis=$historical", async ({ language, historical }) => {
+  await i18n.changeLanguage(language);
+  const f = fixture();
+  if (historical) {
+    f.data.pricing = [create(PricingUsageSchema, { pricing: { id: newRequestId(), modelId: f.ids.model, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Retained original price source", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "1", exclusions: ["Original exclusion"] } } })];
+  }
+  render(f.view());
+  const english = language === SupportedLanguage.English;
+  const guidance = await screen.findByText(english ? /To configure future prices, select a Model in the Usage sidebar/ : /향후 가격을 설정하려면 사용량 사이드바에서 모델을 선택/);
+  fireEvent.click(screen.getByRole("tab", { name: english ? "Cost evidence" : "비용 근거" }));
+  const panel = screen.getByRole("tabpanel", { name: english ? "Cost evidence" : "비용 근거" });
+  expect(panel.contains(guidance)).toBe(true);
+  expect(guidance.textContent).toContain(english ? "open Model details and token pricing, then open Token pricing" : "모델 상세 및 토큰 가격을 연 다음 토큰 가격을 여세요");
+  expect(guidance.textContent).toContain(english ? "Currencies are separate" : "통화는 별도로 관리합니다");
+  expect(guidance.textContent).toContain(english ? "do not establish complete native usage, actual spend or budget compliance" : "전체 네이티브 사용량, 실제 지출 또는 예산 준수를 보장하지 않습니다");
+  expect(panel.textContent).not.toContain("Settings → Models");
+  expect(panel.textContent).not.toContain("설정 → 모델");
+  if (historical) {
+    expect(within(panel).getByText("Retained original price source")).toBeTruthy();
+    expect(within(panel).getByText("Original exclusion")).toBeTruthy();
+  }
+});
 
 it("shows exact known subtotals, missing fields and separate unavailable costs", async () => {
   const f = fixture(); render(f.view());
