@@ -282,4 +282,5 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Selected skill preparation must journal the exact original mutation identity before dispatch and retain its unique live claim through mutation. Joined reconciliation removes only after positive original receipt absence; unknown outcomes and replacement Workers retain original ownership.
 
+- Empty image selections preserve ordinary text-only queue admission and receipt replay without image-specific Runner or Worker registration checks. Nonempty image claims retain their original actor, operation, Runner revision and Worker Device fences.
 - Image Begin, claim and metadata updates use the store-owned session capacity fence before writing new metadata or Worker bytes. Preserve existing per-input limits and exact actor/operation/Runner authority; capacity rejection never admits or retires an uncertain image. Follow the image-input contract.

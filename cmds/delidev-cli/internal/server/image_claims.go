@@ -66,6 +66,11 @@ func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, refs []domain.I
 // This runs inside the same original session/input acceptance transaction.
 // Receipt replay returns current records without re-entering this claim.
 func claimInputImages(tx *store.Tx, actor domain.Principal, operation, sessionID, inputID, machineID domain.ID, refs []domain.ImageAttachment, creating bool) error {
+	// Retained text-only queues keep their ordinary session admission rules.
+	// Worker registration is required only when claiming image ownership.
+	if len(refs) == 0 {
+		return nil
+	}
 	machineRow, _, err := activeMachine(tx, machineID)
 	if err != nil {
 		return err
