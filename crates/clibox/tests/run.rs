@@ -850,7 +850,15 @@ fn interactive_workload_keeps_foreground_terminal_access() {
         );
         thread::sleep(Duration::from_millis(10));
     };
-    assert_process_chain_in_group(fixture.child.id(), group, group);
+    // This fixture has one direct shell, unlike the nested-chain controls.
+    // The admitted foreground leader must still be that live owned child.
+    let processes = process_snapshot();
+    let workload = processes
+        .get(&group)
+        .expect("foreground shell disappeared before terminal input");
+    assert_eq!(workload.parent, fixture.child.id() as i32);
+    assert_eq!(workload.group, group);
+    assert!(!workload.state_is_zombie);
     fixture.terminal.write_all(b"answer\n").unwrap();
     let status = fixture.wait(Duration::from_secs(10));
     assert!(
