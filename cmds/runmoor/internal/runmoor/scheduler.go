@@ -250,8 +250,16 @@ func retirementCandidates(s Snapshot) []string {
 		if r.Backend == Tart && !r.Terminated {
 			remainingVMs--
 		}
+		dockerUsed := dockerUsage(future)
 		needDemand := false
 		for pool, demand := range future.Pools {
+			// Non-Docker retirement cannot release engine CPU or memory. Account
+			// for selected retirements and synthetic demand in the same private
+			// snapshot used by allocation.
+			cost := demand.Spec.Cost()
+			if demand.Spec.Backend == Docker && r.Backend != Docker && validResources(future.Config.DockerBudget) && (dockerUsed.CPU+cost.CPU > future.Config.DockerBudget.CPU || dockerUsed.MemoryMiB+cost.MemoryMiB > future.Config.DockerBudget.MemoryMiB) {
+				continue
+			}
 			n, _ := liveCount(future, pool)
 			if eligible(future, demand) && n < demand.Demand && logicalCount(future, demand.Spec.Name) < demand.Spec.MaxRunners && (demand.Spec.Backend != Tart || remainingVMs < 2) {
 				needDemand = true
