@@ -62,7 +62,7 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 	if err != nil {
 		return nil, err
 	}
-	last, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]))
+	last, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]), c.nativeImageInput)
 	if err != nil || last.ID != checkpoint.TurnID || last.Status != TurnCompleted || !slices.Equal(inputs, checkpoint.Inputs) {
 		return nil, continuationUncertain()
 	}
@@ -156,7 +156,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 			return nil, unsupportedFork()
 		}
 		for _, raw := range page.Data {
-			turn, _, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{raw}))
+			turn, _, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{raw}), c.nativeImageInput)
 			if err != nil || turn.Status != TurnCompleted || seen[string(turn.ID)] {
 				return nil, unsupportedFork()
 			}

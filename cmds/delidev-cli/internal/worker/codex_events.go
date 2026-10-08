@@ -105,7 +105,7 @@ func (c *CodexEventPublisher) AcceptInput(ctx context.Context, result codex.Turn
 	if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionInputAccepted}); err != nil {
 		return err
 	}
-	c.acceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(result.InputID, c.publisher.input.Input.Prompt)}
+	c.acceptedInputs = []domain.ExecutionInputBinding{domain.BindSessionInput(result.InputID, c.publisher.input.Input)}
 	return nil
 }
 
@@ -115,7 +115,7 @@ func (c *CodexEventPublisher) completionInputs() ([]domain.ExecutionInputBinding
 	if c.blocked || !c.finished || c.publisher == nil || len(c.acceptedInputs) == 0 {
 		return nil, publicationUncertain()
 	}
-	primary := domain.BindExecutionInput(c.publisher.input.InputID, c.publisher.input.Input.Prompt)
+	primary := domain.BindSessionInput(c.publisher.input.InputID, c.publisher.input.Input)
 	return domain.CheckedExecutionInputs(primary.InputID, primary.PromptDigest, c.acceptedInputs)
 }
 
@@ -254,6 +254,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			}
 			message.Phase = &phase
 		}
+		message.Attachments = append([]domain.ImageAttachment(nil), event.Message.Attachments...)
 		message.Text = event.Message.Text
 		kind := domain.ExecutionMessageStarted
 		if event.Kind == codex.MessageCompletedEvent {

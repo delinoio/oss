@@ -366,3 +366,7 @@ func (s Session) NativeExecutionRoot() ID {
 	}
 	return ""
 }
+
+func (i SessionInput) Equal(other SessionInput) bool {
+	return i.Prompt == other.Prompt && i.Mode == other.Mode && slices.Equal(i.Attachments, other.Attachments) && slices.Equal(i.Skills, other.Skills)
+}

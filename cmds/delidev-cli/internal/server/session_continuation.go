@@ -145,7 +145,7 @@ func checkContinuationInputs(tx *store.Tx, sessionID domain.ID, assignment domai
 		if err != nil {
 			return err
 		}
-		if record.SessionID != sessionID || input.Delivery != domain.InputAccepted || input.ExecutionID != assignment.ExecutionID || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || domain.BindExecutionInput(record.ID, input.Prompt) != binding {
+		if record.SessionID != sessionID || input.Delivery != domain.InputAccepted || input.ExecutionID != assignment.ExecutionID || input.Mode != assignment.Input.Mode || input.NativeRequestID.Validate() != nil || requests[input.NativeRequestID] || domain.BindSessionInput(record.ID, domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Attachments: input.Attachments}) != binding {
 			return nativeCompletionUncertain()
 		}
 		requests[input.NativeRequestID] = true

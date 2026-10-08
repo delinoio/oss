@@ -2,7 +2,6 @@ package codex
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -135,6 +134,7 @@ const (
 )
 
 type Message struct {
+	Attachments   []domain.ImageAttachment
 	ID            string
 	ClientInputID domain.ID
 	Role          MessageRole
@@ -578,52 +578,30 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			}
 			message.ClientInputID = *item.ClientID
 		}
-		selectedSkills := []nativeTextInput{}
-		for _, raw := range item.Content {
-			var fields map[string]json.RawMessage
-			if domain.Decode(raw, &fields) != nil {
-				return Event{}, incompatible()
-			}
-			var partType string
-			if json.Unmarshal(fields["type"], &partType) != nil {
-				return Event{}, incompatible()
-			}
-			if partType == "skill" {
-				var part nativeTextInput
-				if domain.Decode(raw, &part) != nil || part.Name == "" || part.Path == "" || part.Text != "" {
-					return Event{}, incompatible()
-				}
-				selectedSkills = append(selectedSkills, part)
-				continue
-			}
-			if partType != "text" {
-				return privateNative(native), nil
-			}
-			var part struct {
-				Type     string            `json:"type"`
-				Text     *string           `json:"text"`
-				Elements []json.RawMessage `json:"text_elements"`
-			}
-			if domain.Decode(raw, &part) != nil || part.Text == nil {
-				return Event{}, incompatible()
-			}
-			if len(part.Elements) != 0 {
-				return privateNative(native), nil
-			}
-			if domain.Text(*part.Text, "native user content", nativewire.MaxFrame, false) != nil {
-				return Event{}, incompatible()
-			}
-			message.Parts = append(message.Parts, *part.Text)
+		plainParts, selectedSkills, skillError := nativeInputSkills(item.Content)
+		if skillError != nil {
+			return Event{}, skillError
 		}
-		if len(message.Parts) == 1 {
-			message.Text = message.Parts[0]
+
+		decoded, decodeError := c.nativeImageInput(plainParts)
+		if decodeError != nil {
+			if message.ClientInputID == "" {
+				return privateNative(native), nil
+			}
+			return Event{}, decodeError
+		}
+		message.Text = decoded.Prompt
+		message.Attachments = decoded.Attachments
+		if decoded.Prompt != "" {
+			message.Parts = []string{decoded.Prompt}
 		}
 		if message.ClientInputID != "" {
 			attempt, known := c.execution.inputs[message.ClientInputID]
-			if !known || len(message.Parts) != 1 || attempt.Digest != sha256.Sum256([]byte(message.Text)) || attempt.SkillDigest != nativeSkillDigest(selectedSkills) || (attempt.TurnID != "" && attempt.TurnID != params.TurnID) {
+			if !known || attempt.Digest != decoded.InputDigest() || attempt.SkillDigest != nativeSkillDigest(selectedSkills) || attempt.TurnID != "" && attempt.TurnID != params.TurnID {
 				return Event{}, incompatible()
 			}
 		}
+
 	case "agentMessage":
 		var item struct {
 			Type           string            `json:"type"`

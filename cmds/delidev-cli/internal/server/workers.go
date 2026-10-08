@@ -82,6 +82,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		switch capability {
 		case pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1:
 			capabilities = append(capabilities, domain.NativeSkillsV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1:
+			capabilities = append(capabilities, domain.ImageInputsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1:
 			capabilities = append(capabilities, domain.ExecutionStartupV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1:

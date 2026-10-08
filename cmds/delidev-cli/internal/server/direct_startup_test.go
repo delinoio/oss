@@ -3,7 +3,6 @@ package server
 
 import (
 	"context"
-	"slices"
 	"strings"
 	"testing"
 
@@ -253,7 +252,7 @@ func TestDirectStartupExplicitRetryRetainsOriginalSelectionAndReceipt(t *testing
 	if domain.Decode(retry.DocumentJson, &retryJob) != nil || domain.Decode(retryJob.Input, &next) != nil || next.Validate() != nil {
 		t.Fatal("invalid retry assignment")
 	}
-	if retry.Id == original.Id || next.ExecutionID == input.ExecutionID || next.InputID == input.InputID || next.Retry == nil || next.Retry.JobID != domain.ID(original.Id) || next.Input.Prompt != input.Input.Prompt || next.Input.Mode != input.Input.Mode || !slices.Equal(next.Input.Skills, input.Input.Skills) || next.ConfigurationDigest != input.ConfigurationDigest || next.AccountID != input.AccountID || next.ConnectionID != input.ConnectionID || next.MachineID != input.MachineID || *next.Startup != *input.Startup {
+	if retry.Id == original.Id || next.ExecutionID == input.ExecutionID || next.InputID == input.InputID || next.Retry == nil || next.Retry.JobID != domain.ID(original.Id) || !next.Input.Equal(input.Input) || next.ConfigurationDigest != input.ConfigurationDigest || next.AccountID != input.AccountID || next.ConnectionID != input.ConnectionID || next.MachineID != input.MachineID || *next.Startup != *input.Startup {
 		t.Fatal("retry replaced original selection or input")
 	}
 	sr, err = f.service.Store.Get(ctx, domain.SessionKind, domain.ID(f.change.Session.Id))

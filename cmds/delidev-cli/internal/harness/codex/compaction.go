@@ -96,7 +96,7 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 		if source.Context != nil && contextMatchesHistory(*source.Context, before) != nil {
 			return compactionUncertain()
 		}
-		turn, inputs, e := decodeLatestTurnInputs(marshalForkPage(before[len(before)-1:]))
+		turn, inputs, e := decodeLatestTurnInputs(marshalForkPage(before[len(before)-1:]), c.nativeImageInput)
 		if e != nil || turn.ID != source.TurnID || turn.Status != TurnCompleted || !slices.Equal(inputs, source.Inputs) {
 			return compactionUncertain()
 		}
@@ -367,7 +367,7 @@ func (c *Client) verifyCompactedHistoryLocked(source ContinuationCheckpoint, p C
 		return compactionUncertain()
 	}
 	sourceIndex := len(turns) - len(p.Records) - 1
-	turn, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[sourceIndex : sourceIndex+1]))
+	turn, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[sourceIndex:sourceIndex+1]), c.nativeImageInput)
 	if err != nil || turn.ID != source.TurnID || turn.Status != TurnCompleted || !slices.Equal(inputs, source.Inputs) {
 		return compactionUncertain()
 	}

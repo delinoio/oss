@@ -2,7 +2,6 @@ package codex
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"slices"
 
@@ -263,8 +262,12 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	if err != nil {
 		return result, err
 	}
-	params := startTurnParams{ThreadID: c.thread, Input: append([]nativeTextInput{{Type: nativeText, Text: input.Prompt}}, selected...), ClientInputID: inputID, Model: s.Model, Effort: s.Effort, Cwd: s.Cwd, ApprovalPolicy: s.ApprovalPolicy, ApprovalsReviewer: s.ApprovalsReviewer, Sandbox: s.Sandbox, ServiceTier: s.ServiceTier, Collaboration: collaborationMode{Mode: mode, Settings: collaborationSettings{Model: s.Model, Effort: s.Effort}}}
-	op := turnOperation{Action: StartTurnAction, RequestID: requestID, InputID: inputID, Mode: input.Mode, InputDigest: sha256.Sum256([]byte(input.Prompt)), SkillDigest: nativeSkillDigest(selected)}
+	nativeParts, err := c.nativeImageParts(ctx, input)
+	if err != nil {
+		return result, err
+	}
+	params := startTurnParams{ThreadID: c.thread, Input: append(nativeParts, selected...), ClientInputID: inputID, Model: s.Model, Effort: s.Effort, Cwd: s.Cwd, ApprovalPolicy: s.ApprovalPolicy, ApprovalsReviewer: s.ApprovalsReviewer, Sandbox: s.Sandbox, ServiceTier: s.ServiceTier, Collaboration: collaborationMode{Mode: mode, Settings: collaborationSettings{Model: s.Model, Effort: s.Effort}}}
+	op := turnOperation{Action: StartTurnAction, RequestID: requestID, InputID: inputID, Mode: input.Mode, InputDigest: input.InputDigest(), SkillDigest: nativeSkillDigest(selected)}
 	response, err := c.callTurnLocked(ctx, op, params)
 	if err != nil {
 		return result, err
@@ -290,6 +293,9 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 		if err := id.Validate(); err != nil {
 			return result, err
 		}
+	}
+	if len(input.Attachments) > 0 {
+		return result, domain.UnsupportedImageInput()
 	}
 	if err := input.Validate(); err != nil {
 		return result, err
@@ -330,7 +336,7 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 		InputID        domain.ID         `json:"clientUserMessageId"`
 		Input          []nativeTextInput `json:"input"`
 	}{c.thread, expectedTurnID, inputID, []nativeTextInput{{Type: nativeText, Text: input.Prompt}}}
-	op := turnOperation{Action: SteerTurnAction, RequestID: requestID, InputID: inputID, TurnID: expectedTurnID, Mode: input.Mode, InputDigest: sha256.Sum256([]byte(input.Prompt))}
+	op := turnOperation{Action: SteerTurnAction, RequestID: requestID, InputID: inputID, TurnID: expectedTurnID, Mode: input.Mode, InputDigest: input.InputDigest()}
 	response, err := c.callTurnLocked(ctx, op, params)
 	attempt := &steerAttempt{operation: op, delivery: SteerNotSent}
 	state.steers[requestID] = attempt

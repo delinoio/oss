@@ -39,7 +39,7 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 	if method == "model/list" {
 		entries := []any{}
 		for _, name := range []string{"child-model", "fixture-model"} {
-			entries = append(entries, map[string]any{"id": name, "model": name, "displayName": name, "description": "Controlled model compatibility", "hidden": false, "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium", "description": "Moderate"}, map[string]any{"reasoningEffort": "high", "description": "High"}}, "defaultReasoningEffort": "medium", "inputModalities": []string{"text"}, "serviceTiers": []any{}, "defaultServiceTier": nil, "multiAgentVersion": "v1"})
+			entries = append(entries, map[string]any{"id": name, "model": name, "displayName": name, "description": "Controlled model compatibility", "hidden": false, "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium", "description": "Moderate"}, map[string]any{"reasoningEffort": "high", "description": "High"}}, "defaultReasoningEffort": "medium", "inputModalities": fixtureModalities(f.mode), "serviceTiers": []any{}, "defaultServiceTier": nil, "multiAgentVersion": "v1"})
 		}
 		write(id, map[string]any{"data": entries, "nextCursor": nil})
 		return true
@@ -545,4 +545,11 @@ func TestNewerThreadAndHistoryKeepExactNativeVersion(t *testing.T) {
 	if _, err := decodeThread(raw, cfg.Version); err == nil {
 		t.Fatal("minimum substituted for exact historical native version")
 	}
+}
+
+func fixtureModalities(mode string) []string {
+	if mode == "thread-turn-images" {
+		return []string{"text", "image"}
+	}
+	return []string{"text"}
 }

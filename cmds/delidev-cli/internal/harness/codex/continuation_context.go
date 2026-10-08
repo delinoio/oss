@@ -155,7 +155,7 @@ func (c *Client) RetainContinuationContext(ctx context.Context, source Continuat
 	if err != nil {
 		return nil, err
 	}
-	turn, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]))
+	turn, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]), c.nativeImageInput)
 	if err != nil || turn.ID != source.TurnID || !slices.Equal(inputs, source.Inputs) {
 		return nil, compactionUncertain()
 	}
