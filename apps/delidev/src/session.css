@@ -204,6 +204,18 @@
   .session-workspace .composer textarea { max-height: 64px; }
 }
 
+/* Browser alone owns the wider conversation-region split. Info is excluded. */
+.browser-splitter { display: none; }
+.browser-open .session-conversation-region { overflow: hidden; }
+.browser-open .session-body { grid-template-columns: minmax(0, 1fr); }
+.session-workspace.browser-open .session-app-panel { grid-area: 1 / 1 / 3 / 2; width: min(400px, calc(100% - 16px)); box-shadow: -4px 0 12px var(--shadow-soft); }
+@container conversation (min-width: 960px) {
+  .browser-open .session-body { grid-template-columns: minmax(360px, 1fr) 8px clamp(480px, var(--browser-width), calc(100cqw - 368px)); }
+  .browser-open .browser-splitter { display: block; grid-area: 1 / 2 / 5 / 3; cursor: col-resize; touch-action: none; background: var(--surface-subtle); border-inline: 1px solid var(--border-subtle); z-index: 3; }
+  .browser-open .browser-splitter:hover, .browser-open .browser-splitter:focus-visible { background: var(--selected-background); }
+  .session-workspace.browser-open .session-app-panel { grid-area: 1 / 3 / 5 / 4; width: 100%; box-shadow: none; }
+}
+
 /* A compact Info band can leave less room than one input control. Scroll the
    retained conversation inside its bounds rather than clipping the composer or
    growing the page. Its original transcript and tray keep their own scrollports. */

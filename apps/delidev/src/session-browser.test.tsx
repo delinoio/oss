@@ -41,6 +41,11 @@ async function open() {
   await waitFor(()=>expect((button as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(button);
 }
+function retryView() {
+  const summary = screen.getByLabelText("More browser actions");
+  if (!(summary.closest("details") as HTMLDetailsElement).open) fireEvent.click(summary);
+  fireEvent.click(screen.getByRole("button", { name: "Retry native view" }));
+}
 it("registers only metadata and preserves the original uncertain request without automatic retry", async () => {
  const f=fixture();f.register.mockRejectedValueOnce(new ConnectError("uncertain", Code.Unavailable));render(<f.View />);await open();
  await screen.findByRole("button",{name:"Retry the same registration"});expect(f.register).toHaveBeenCalledTimes(1);expect(native).not.toHaveBeenCalled();
@@ -50,7 +55,7 @@ it("registers only metadata and preserves the original uncertain request without
 });
 it("uses distinct native presentation identities and never gives external content a DOM frame", async()=>{
  const f=fixture();const view=render(<StrictMode><f.View /></StrictMode>);await open();await waitFor(()=>expect(native.mock.calls.some(([op])=>op==="open_browser")).toBe(true));
- const first=native.mock.calls.find(([op])=>op==="open_browser")![1];fireEvent.click(screen.getByRole("button",{name:"Retry native view"}));
+ const first=native.mock.calls.find(([op])=>op==="open_browser")![1];retryView();
  await waitFor(()=>expect(native.mock.calls.filter(([op])=>op==="open_browser")).toHaveLength(2));const second=native.mock.calls.filter(([op])=>op==="open_browser")[1][1];
  expect(first.viewId).not.toBe(second.viewId);expect(native.mock.calls.some(([op,args])=>op==="control_browser"&&args.action==="hide"&&args.viewId===first.viewId)).toBe(true);
  expect(view.container.querySelector("iframe,webview,script,a")).toBeNull();view.unmount();await waitFor(()=>expect(native.mock.calls.some(([op,args])=>op==="control_browser"&&args.action==="hide"&&args.viewId===second.viewId)).toBe(true));
@@ -92,7 +97,7 @@ it("surfaces a delayed native child failure and reopens only after explicit retr
   const first = native.mock.calls.find(([operation]) => operation === "open_browser")![1];
   await screen.findByText("The local browser state is unavailable.", {}, { timeout: 2500 });
   expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: "Retry native view" }));
+  retryView();
   await waitFor(() => expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(2));
   expect(native.mock.calls.filter(([operation]) => operation === "open_browser")[1][1].viewId).not.toBe(first.viewId);
 });
@@ -144,7 +149,7 @@ it("retries failed cleanup after unmount with only its original view identity", 
 });
 it("closes only the earlier instance when its native open resolves after replacement",async()=>{
  const f=fixture();let finish!:(value:typeof f.local)=>void;native.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}));render(<f.View />);await open();await waitFor(()=>expect(native).toHaveBeenCalledTimes(1));const first=native.mock.calls[0][1];
- fireEvent.click(screen.getByRole("button",{name:"Retry native view"}));await waitFor(()=>expect(native.mock.calls.filter(([op])=>op==="open_browser")).toHaveLength(2));const second=native.mock.calls.filter(([op])=>op==="open_browser")[1][1];
+ retryView();await waitFor(()=>expect(native.mock.calls.filter(([op])=>op==="open_browser")).toHaveLength(2));const second=native.mock.calls.filter(([op])=>op==="open_browser")[1][1];
  await act(async()=>finish(f.local));await waitFor(()=>expect(native.mock.calls.some(([op,args])=>op==="control_browser"&&args.action==="hide"&&args.viewId===first.viewId)).toBe(true));
  expect(native.mock.calls.some(([op,args])=>op==="control_browser"&&args.action==="hide"&&args.viewId===second.viewId)).toBe(false);
 });
@@ -182,4 +187,47 @@ it("rechecks failed browser capabilities locally without registration or clearin
  await waitFor(() => expect(capabilities).toHaveBeenCalledTimes(2));
  expect(address).toHaveProperty("value", "https://fixture.test/original");
  expect(register).not.toHaveBeenCalled(); expect(native).not.toHaveBeenCalled();
+});
+
+
+it("opens an information modal through the original native hide owner without registering again", async () => {
+  const f = fixture(); render(<f.View />); await open();
+  await screen.findByRole("button", { name: /Tab 1/ });
+  const original = native.mock.calls.find(([operation]) => operation === "open_browser")![1];
+  const information = screen.getByRole("button", { name: "Browser information" });
+  information.focus(); fireEvent.click(information);
+  const dialog = screen.getByRole("dialog", { name: "Browser information" });
+  expect(dialog.textContent).toContain("Tabs, cookies, history and browser credentials stay local.");
+  await waitFor(() => expect(native).toHaveBeenCalledWith("control_browser", expect.objectContaining({ action: "hide", viewId: original.viewId })));
+  fireEvent.click(screen.getByRole("button", { name: "Close Browser information" }));
+  await waitFor(() => expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(2));
+  expect(f.register).toHaveBeenCalledTimes(1); expect(document.activeElement).toBe(information);
+  expect(native.mock.calls.some(([, args]) => args.action === "navigate")).toBe(false);
+});
+
+it("keeps local tab and navigation commands on the original profile/view and enforces the 16-tab cap", async () => {
+  const f = fixture();
+  for (let n = 1; n < 16; n++) f.local.tabs.tabs.push({ id: newRequestId(), url: `https://fixture.test/${n}` });
+  render(<f.View />); await open(); await screen.findByRole("button", { name: /Tab 16/ });
+  const original = native.mock.calls.find(([operation]) => operation === "open_browser")![1];
+  expect(screen.getByRole("button", { name: "New tab" })).toHaveProperty("disabled", true);
+  for (const name of ["Back", "Forward", "Reload"]) { fireEvent.click(screen.getByRole("button", { name })); await waitFor(() => expect(screen.getByRole("button", { name })).toHaveProperty("disabled", false)); }
+  fireEvent.click(screen.getByRole("button", { name: /Tab 2 ·/ }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Go" })).toHaveProperty("disabled", false));
+  fireEvent.click(screen.getByRole("button", { name: "Close tab 2" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Go" })).toHaveProperty("disabled", false));
+  fireEvent.change(screen.getByRole("textbox", { name: "Address" }), { target: { value: "https://fixture.test/explicit" } });
+  fireEvent.click(screen.getByRole("button", { name: "Go" }));
+  await waitFor(() => expect(native).toHaveBeenCalledWith("control_browser", expect.objectContaining({ action: "navigate", profileId: f.profileId, viewId: original.viewId, url: "https://fixture.test/explicit" })));
+  const controls = native.mock.calls.filter(([operation, args]) => operation === "control_browser" && !["resize", "hide"].includes(args.action));
+  expect(controls.map(([, args]) => args.action)).toEqual(["back", "forward", "reload", "select-tab", "close-tab", "navigate"]);
+  expect(controls.every(([, args]) => args.profileId === f.profileId && args.viewId === original.viewId)).toBe(true);
+  expect(f.register).toHaveBeenCalledTimes(1);
+});
+
+it.each(["file:///fixture", "https://user:secret@fixture.test/"])("blocks invalid initial addresses without native authority: %s", async address => {
+  const f = fixture(); render(<f.View />);
+  fireEvent.change(screen.getByRole("textbox", { name: "Address" }), { target: { value: address } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Open account browser" })).toHaveProperty("disabled", true));
+  expect(document.querySelector(".browser-viewport")).toBeNull(); expect(f.register).not.toHaveBeenCalled(); expect(native).not.toHaveBeenCalled();
 });

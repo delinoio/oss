@@ -71,11 +71,42 @@ The CLI equivalents are `browser-profile capabilities`, `register --id SESSION
 for clients which actually completed native cleanup, not an automatic CLI action.
 `browser-storage prepare` only prepares the native client's private cache root.
 
-The session Browser button opens a side panel while retaining the conversation
-and unsent composer. Browser shares the single session-panel selection with
-Terminals, Files and Diff.
-Switching away releases its native presentation while retaining its profile and
-the composer; the other panels keep their independent original operation lifetimes.
+The session Browser button opens a workspace while retaining the conversation,
+unsent composer and request tray. Browser shares the temporary panel selection
+with Terminals, Files, Diff and Diagnostics, independently of persistent Info.
+At 960 CSS pixels of available conversation-region width, excluding the Info
+rail, Browser uses an 8px splitter. Default its width to 55% of the remaining
+space, clamped between 480px and the width leaving 360px for conversation.
+Pointer resizing and the focusable vertical separator adjust only presentation;
+Left/Right change the Browser width by 16px, Home selects minimum and End maximum.
+Expose the current width and bounds accessibly. Expand retains the previous split
+and selects maximum; Restore clamps that previous split to current bounds.
+
+Retain split width/expansion as bounded per-session presentation metadata owned
+by the authenticated connection QueryClient, outside Browser controller mounts.
+Same-identity reconnect/tool switches and session re-entry retain it; replacement
+connection identities receive fresh state. No disk, RPC or browser-profile data
+owns this width. Below 960px use the existing overlay capped at 400px, excluding
+Info, request tray and composer; disable resizing/expansion and restore remembered
+wide state when space permits. CSS clamps geometry immediately during reflow,
+while the existing native controller observes only the clipped visible viewport.
+
+Use a compact header with a non-secret account-profile indicator, information,
+Expand/Restore and Close. Move the complete profile-sharing/local-data explanation
+into the shared keyboard-accessible native information dialog; existing modal
+hiding/focus restoration owns its lifetime. Before registration show the centered
+local-summary/address/explicit-opening card without an empty native viewport.
+After registration use horizontal scrolling URL-derived tabs with selected state,
+complete accessible URLs, per-tab Close and the original 16-tab New tab gate.
+Do not fetch titles or favicons. Back/Forward/Reload, labelled address and Go share
+a compact toolbar; explicit native-view Retry is in its accessible overflow.
+Keep original registration uncertainty/retry beside its owning problem. The
+viewport fills the remaining bounded height without a fixed 400px minimum;
+localized chrome wraps/scrolls with semantic themes, 8px controls and 40px targets.
+These changes introduce no protocol allocation, migration or native interface.
+
+Switching away releases only the original native presentation while retaining
+its profile and the composer; other panels retain independent operation lifetimes.
 The user selects an HTTP(S) address before registration;
 there is no automatic provider login or implicit external navigation. Back,
 Forward, Reload and bounded local tab controls use trusted native commands. A
