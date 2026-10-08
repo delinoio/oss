@@ -1,0 +1,212 @@
+name: Release DeliDev
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      revision:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: delidev-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
+  RELEASE_REVISION: ${{ inputs.revision }}
+
+jobs:
+  inspect:
+    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      published: ${{ steps.existing.outputs.published }}
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc, package-manager-cache: false }
+      - id: targets
+        env:
+          DELIDEV_WINDOWS_SIGNING_ENABLED: ${{ vars.DELIDEV_WINDOWS_SIGNING_ENABLED }}
+        run: node scripts/release/delidev-release.mjs plan
+      - id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release/delidev-release.mjs inspect
+
+  preflight:
+    needs: inspect
+    if: needs.inspect.outputs.published != 'true'
+    runs-on: ubuntu-24.04
+    environment: delidev-release
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with: { ref: '${{ inputs.revision }}', persist-credentials: false }
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc, package-manager-cache: false }
+      - name: Validate signing configuration before native builds
+        env:
+          DELIDEV_MACOS_CERTIFICATE_BASE64: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_BASE64 }}
+          DELIDEV_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_PASSWORD }}
+          DELIDEV_MACOS_APP_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_APP_PROFILE_BASE64 }}
+          DELIDEV_MACOS_WIDGET_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_WIDGET_PROFILE_BASE64 }}
+          DELIDEV_MACOS_SELECTION_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_SELECTION_PROFILE_BASE64 }}
+          DELIDEV_APPLE_NOTARY_KEY_BASE64: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_BASE64 }}
+          DELIDEV_APPLE_NOTARY_KEY_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_ID }}
+          DELIDEV_APPLE_NOTARY_ISSUER_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_ISSUER_ID }}
+          DELIDEV_APPLE_TEAM_ID: ${{ vars.DELIDEV_APPLE_TEAM_ID }}
+          DELIDEV_MACOS_CERTIFICATE_SHA1: ${{ vars.DELIDEV_MACOS_CERTIFICATE_SHA1 }}
+        run: |
+          node --input-type=module <<'JS'
+          import { validateSigningConfiguration } from './scripts/release/delidev-macos-sign.mjs';
+          validateSigningConfiguration(process.env);
+          console.log(JSON.stringify({component: 'delidev.release', phase: 'signing-preflight', outcome: 'configured', windows: 'skipped'}));
+          JS
+
+  package:
+    needs: [inspect, preflight]
+    if: needs.inspect.outputs.published != 'true'
+    environment: delidev-release
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.inspect.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { ref: '${{ inputs.revision }}', lfs: true, persist-credentials: false }
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          architecture: ${{ matrix.arch }}
+          package-manager-cache: false
+      - name: Restore the original candidate from this release run
+        id: retained
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: node scripts/release/delidev-candidate.mjs
+      - uses: pnpm/action-setup@v5
+        if: steps.retained.outputs.reused != 'true'
+        with: { version: 10.26.2 }
+      - uses: actions/setup-go@v6
+        if: steps.retained.outputs.reused != 'true'
+        with: { go-version-file: go.mod, cache: false }
+      - uses: dtolnay/rust-toolchain@v1
+        if: steps.retained.outputs.reused != 'true'
+        with: { toolchain: nightly-2026-09-28 }
+      - name: Select native Rust host
+        if: steps.retained.outputs.reused != 'true'
+        run: rustup set default-host ${{ matrix.target }}
+      - name: Install both macOS CEF helper targets
+        if: runner.os == 'macOS' && steps.retained.outputs.reused != 'true'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Install Linux package tools
+        if: runner.os == 'Linux' && steps.retained.outputs.reused != 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libayatana-appindicator3-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libgbm-dev libx11-dev libxkbcommon-x11-0 libxtst-dev libssl-dev pkg-config patchelf
+      - uses: ./.github/actions/setup-prebuilt
+        if: steps.retained.outputs.reused != 'true'
+      - name: Install locked build dependencies
+        if: steps.retained.outputs.reused != 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify release tooling
+        if: steps.retained.outputs.reused != 'true'
+        run: node --test scripts/release/delidev*.test.mjs scripts/release/generate-delidev-updater.test.mjs
+      - name: Build keyless verified inputs
+        if: steps.retained.outputs.reused != 'true'
+        run: pnpm --dir apps/delidev bundle:updater-dry-run --target ${{ matrix.target }}
+      - name: Assemble Linux release files
+        if: runner.os == 'Linux' && steps.retained.outputs.reused != 'true'
+        run: pnpm --dir apps/delidev bundle:release --target ${{ matrix.target }}
+      - name: Sign and notarize macOS release files
+        if: runner.os == 'macOS' && steps.retained.outputs.reused != 'true'
+        env:
+          DELIDEV_MACOS_CERTIFICATE_BASE64: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_BASE64 }}
+          DELIDEV_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_PASSWORD }}
+          DELIDEV_MACOS_APP_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_APP_PROFILE_BASE64 }}
+          DELIDEV_MACOS_WIDGET_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_WIDGET_PROFILE_BASE64 }}
+          DELIDEV_MACOS_SELECTION_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_SELECTION_PROFILE_BASE64 }}
+          DELIDEV_APPLE_NOTARY_KEY_BASE64: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_BASE64 }}
+          DELIDEV_APPLE_NOTARY_KEY_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_ID }}
+          DELIDEV_APPLE_NOTARY_ISSUER_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_ISSUER_ID }}
+          DELIDEV_APPLE_TEAM_ID: ${{ vars.DELIDEV_APPLE_TEAM_ID }}
+          DELIDEV_MACOS_CERTIFICATE_SHA1: ${{ vars.DELIDEV_MACOS_CERTIFICATE_SHA1 }}
+        run: pnpm --dir apps/delidev bundle:release --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        if: steps.retained.outputs.reused != 'true'
+        with:
+          name: delidev-release-${{ matrix.target }}-${{ inputs.revision }}-${{ github.run_id }}
+          path: target/delidev-release-candidate/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [inspect, package]
+    if: needs.inspect.outputs.published != 'true'
+    environment: delidev-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_INPUTS: target/delidev-release-inputs
+      RELEASE_OUTPUT: target/delidev-public-release
+    steps:
+      - uses: actions/checkout@v6
+        with: { ref: '${{ inputs.revision }}', persist-credentials: false }
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc, package-manager-cache: false }
+      - name: Download original candidates
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { mkdirSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { releaseTargets, identity } from './scripts/release/delidev-release.mjs';
+          import { verifyCandidate } from './scripts/release/delidev-candidate.mjs';
+          const expected = identity(process.env.RELEASE_VERSION, process.env.RELEASE_REVISION);
+          for (const target of releaseTargets) {
+            const directory = join(process.env.RELEASE_INPUTS, target.target);
+            mkdirSync(directory, {recursive: true});
+            execFileSync('gh', ['run', 'download', process.env.GITHUB_RUN_ID, '--repo', 'delinoio/oss', '--name', `delidev-release-${target.target}-${expected.sourceRevision}-${process.env.GITHUB_RUN_ID}`, '--dir', directory], {stdio: 'pipe'});
+            await verifyCandidate(directory, target.target, expected);
+          }
+          JS
+      - name: Verify complete download-only inventory
+        run: node scripts/release/delidev-release.mjs assemble
+      - name: Publish or reconcile immutable release
+        run: node scripts/release/delidev-release.mjs publish
+
+  result:
+    if: always()
+    needs: [inspect, preflight, package, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Report publication and skipped Windows targets
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const results = JSON.parse(process.env.RESULTS);
+          const reused = results.inspect.result === 'success' && results.inspect.outputs.published === 'true';
+          const success = reused || Object.values(results).every(job => job.result === 'success');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `DeliDev ${process.env.RELEASE_VERSION}: ${success ? (reused ? 'verified existing public release' : 'published') : 'incomplete'}\n\nWindows x64/arm64: skipped (production signing unavailable). Download-only; no update manifest. Native/platform/account acceptance remains unverified.\n\n` + Object.entries(results).map(([name, job]) => `${name}: ${job.result}\n`).join(''));
+          if (!success) process.exitCode = 1;
+          JS

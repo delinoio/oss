@@ -5,14 +5,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, requiresCargoPublish, reactForgeVersionPublished } from "./project.mjs";
+import { Bump, Project, Kind, bumpVersion, readVersion, versionChanges, sourceMetadata, git, prepareRelease, validateCommit, preflightVersion, pushReleaseTag, tagRevision, requiresCargoPublish, releaseTag, reactForgeVersionPublished } from "./project.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const achFiles = [
   "cmds/async-commit-hook/internal/core/model.go", "apps/async-commit-hook/package.json",
   "packages/async-commit-hook-api-client/package.json", "packaging/async-commit-hook/release-metadata.json",
 ];
-const files = ["Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", "packages/react-forge/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-core", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
+const files = ["apps/delidev/package.json", "apps/delidev/src-tauri/Cargo.toml", "apps/delidev/src-tauri/tauri.conf.json", "Cargo.lock", "packages/clibox/package.json", "packages/pnport/package.json", "packages/react-forge/package.json", ...["binpm", "cargo-mono", "nodeup", "with-watch", "clibox", "pnport", "pnport-core", "pnport-preload"].map((name) => `crates/${name}/Cargo.toml`), "cmds/derun/internal/version/version.go", "cmds/runmoor/internal/runmoor/types.go", ...achFiles];
 const sources = Object.fromEntries(files.map((file) => [file, readFileSync(path.join(root, file), "utf8")]));
 // These lifecycle fixtures start before pnport's first publication. Keep that
 // state explicit so a real version commit cannot change their starting point,
@@ -54,7 +54,7 @@ for (const project of Object.values(Project)) for (const bump of Object.values(B
     assert.equal(plan.version, bump === Bump.Next ? "0.1.0-next.1" : bumpVersion(plan.previous_version, bump));
     const updated = { ...sources, ...plan.changes };
     for (const candidate of Object.values(Project)) assert.equal(readVersion(candidate, (file) => updated[file]), candidate === project ? plan.version : readVersion(candidate, read));
-    assert.equal(Object.keys(plan.changes).length, project === Project.Pnport ? 5 : project === Project.AsyncCommitHook ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
+    assert.equal(Object.keys(plan.changes).length, project === Project.DeliDev ? 4 : project === Project.Pnport ? 5 : project === Project.AsyncCommitHook ? 4 : project === Project.Clibox ? 3 : plan.kind === Kind.Rust ? 2 : 1);
     if (project === Project.AsyncCommitHook) {
       assert.equal(plan.kind, Kind.Go);
       assert.equal(plan.tag, `async-commit-hook@v${plan.version}`);
@@ -192,7 +192,7 @@ test("async-commit-hook rejects foreign identities and ambiguously formatted JSO
 test("Downstream manual and tag metadata must agree with source before builds", () => {
   for (const project of Object.values(Project).filter((project) => project !== Project.AsyncCommitHook)) {
     const version = readVersion(project, read);
-    const tag = `${project}@v${version}`;
+    const tag = releaseTag(project, version);
     const input = { project, event: "workflow_dispatch", ref: "refs/heads/main", requestedVersion: version, requestedDryRun: "false" };
     assert.deepEqual(sourceMetadata(input, read), { version, tag, dry_run: "false" });
     assert.deepEqual(sourceMetadata({ ...input, event: "push", ref: `refs/tags/${tag}` }, read), { version, tag, dry_run: "false" });

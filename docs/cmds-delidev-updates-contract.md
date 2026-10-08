@@ -63,3 +63,22 @@ Update the project index, allocation ledger and affected domain AGENTS when auth
 - [Credentials](cmds-delidev-credentials-contract.md)
 - [Packaging](apps-delidev-packaging-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+### Download-only automated release exception
+
+The owner-authorized automatic release workflow may publish a stable
+`delidev-v<semver>` release containing macOS/Linux x64/arm64 desktop and CLI/Worker
+files while Windows production signing is unavailable. Such releases are strictly
+download-only: they contain no `delidev-update-manifest.json` and provide no updater
+candidate. The existing verifier still requires all twelve desktop/Worker entries;
+no partial manifest, protocol change or migration is introduced. Release notes and
+the index declare skipped Windows targets and unverified installed-platform/account
+acceptance. Missing manifests do not authorize a verifier fallback.
+
+Public release bytes and target inventory are immutable. Later Windows support or
+updater activation requires a new version. A full updater release still requires
+the compiled production Ed25519 root, matching private key, platform signing and
+original target acceptance. The existing `--check-root` gate and signer are retained;
+the automated download-only path neither accesses an updater private key nor changes
+the currently unset root. The packaging contract owns the new release workflow and
+GitHub Environment configuration.

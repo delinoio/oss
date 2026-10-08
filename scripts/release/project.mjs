@@ -4,13 +4,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isPreviewVersion } from "../../packages/pnport/scripts/version.mjs";
 
-export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", Pnport: "pnport", AsyncCommitHook: "async-commit-hook", ReactForge: "react-forge" });
+export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", Pnport: "pnport", AsyncCommitHook: "async-commit-hook", ReactForge: "react-forge", DeliDev: "delidev" });
 export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major", Next: "next" });
 export const Kind = Object.freeze({ Rust: "rust", Go: "go", Node: "node" });
 const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
 const root = fileURLToPath(new URL("../..", import.meta.url));
+export function releaseTag(project, version) {
+  return project === Project.DeliDev ? `delidev-v${version}` : `${project}@v${version}`;
+}
 const versions = Object.freeze({
+  delidev: { kind: Kind.Rust, file: "apps/delidev/src-tauri/Cargo.toml" },
   clibox: { kind: Kind.Rust, file: "crates/clibox/Cargo.toml" },
   pnport: { kind: Kind.Rust, file: "crates/pnport/Cargo.toml" },
   binpm: { kind: Kind.Rust, file: "crates/binpm/Cargo.toml" },
@@ -41,10 +45,11 @@ function descriptor(project) {
 // Rust source versioning is independent from registry distribution: clibox
 // and pnport ship only through npm and native packages.
 export function requiresCargoPublish(project) {
-  return descriptor(project).kind === Kind.Rust && ![Project.Clibox, Project.Pnport].includes(project);
+  return descriptor(project).kind === Kind.Rust && ![Project.Clibox, Project.Pnport, Project.DeliDev].includes(project);
 }
 
 function replaceLockVersion(lock, project, previous, next) {
+  if (project === Project.DeliDev) project = "delidev-desktop";
   const sections = [...lock.matchAll(/^\[\[package\]\]\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu)]
     .filter(([section]) => section.split("\n").includes(`name = "${project}"`));
   requireValue(sections.length === 1, "Missing or ambiguous Cargo.lock package");
@@ -77,6 +82,7 @@ export function bumpVersion(version, bump) {
 // complete TOML sections, never a dependency's version or an external lock entry.
 // Reject ambiguous/new layouts until their release contract is explicitly added.
 function replaceVersion(source, project, kind, next) {
+  if (project === Project.DeliDev) project = "delidev-desktop";
   if (kind === Kind.Node) {
     const manifest = JSON.parse(source);
     requireValue(manifest.name === "@delino/react-forge" && manifest.private === true, "React Forge source package identity mismatch");
@@ -124,6 +130,18 @@ function asyncCommitHookVersionChanges(read, current, next = current) {
   }));
 }
 
+function delidevVersionChanges(read, current, next = current) {
+  return Object.fromEntries(["apps/delidev/package.json", "apps/delidev/src-tauri/tauri.conf.json"].map(file => {
+    const source = read(file);
+    const value = JSON.parse(source);
+    requireValue(file.endsWith("package.json") ? value.name === "delidev-desktop" && value.private === true : value.identifier === "io.delino.delidev", "DeliDev release identity mismatch");
+    requireValue(value.version === current && [...source.matchAll(/"version"\s*:/gu)].length === 1, "DeliDev source versions disagree");
+    const pattern = /^  "version": "([^"\r\n]+)",$/gmu;
+    requireValue([...source.matchAll(pattern)].length === 1, "Missing or ambiguous DeliDev version");
+    return [file, source.replace(pattern, `  "version": "${next}",`)];
+  }));
+}
+
 export function readVersion(project, read = (file) => readFileSync(path.join(root, file), "utf8")) {
   const { file, kind } = descriptor(project);
   const current = replaceVersion(read(file), project, kind).current;
@@ -137,6 +155,7 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
     for (const name of ["pnport-core", "pnport-preload"]) requireValue(replaceVersion(read(`crates/${name}/Cargo.toml`), name, Kind.Rust).current === current, "pnport CLI/core/preload versions disagree");
   }
   if (project === Project.AsyncCommitHook) asyncCommitHookVersionChanges(read, current);
+  if (project === Project.DeliDev) delidevVersionChanges(read, current);
   return current;
 }
 
@@ -178,7 +197,11 @@ export function versionChanges(project, bump, read) {
     changes[npm] = source.replace(/^  "version": "[^"]+",$/mu, `  "version": "${version}",`);
   }
   if (project === Project.AsyncCommitHook) Object.assign(changes, asyncCommitHookVersionChanges(read, previous_version, version));
-  return { project, bump, kind, previous_version, version, tag: `${project}@v${version}`, changes };
+  if (project === Project.DeliDev) {
+    requireValue(version.split(".").every(part => BigInt(part) <= 0xffffffffn), "DeliDev version component overflow");
+    Object.assign(changes, delidevVersionChanges(read, previous_version, version));
+  }
+  return { project, bump, kind, previous_version, version, tag: releaseTag(project, version), changes };
 }
 
 export function sourceMetadata({ project, event, ref, requestedVersion, requestedDryRun }, read) {
@@ -186,11 +209,11 @@ export function sourceMetadata({ project, event, ref, requestedVersion, requeste
   requireValue(["push", "workflow_dispatch"].includes(event), "Unsupported release event");
   const dry_run = event === "push" ? "false" : requestedDryRun;
   requireValue(["true", "false"].includes(dry_run), "Invalid release dry-run mode");
-  const version = event === "push" ? ref?.replace(`refs/tags/${project}@v`, "") : requestedVersion;
+  const version = event === "push" ? ref?.replace(`refs/tags/${releaseTag(project, "")}`, "") : requestedVersion;
   versionParts(version, project === Project.Pnport);
   if (project === Project.Pnport && isPreviewVersion(version)) requireValue(JSON.parse(read("packages/pnport/package.json")).pnportPreviewVersion === version, "pnport preview source is not the exact authorized version");
   requireValue(readVersion(project, read) === version, "Requested release version does not match source");
-  const tag = `${project}@v${version}`;
+  const tag = releaseTag(project, version);
   requireValue(event !== "push" || ref === `refs/tags/${tag}`, "Release push must be the exact project tag");
   requireValue(dry_run === "true" || ref === "refs/heads/main" || ref === `refs/tags/${tag}`, "Publication requires main or the exact version tag");
   if (descriptor(project).kind === Kind.Rust) replaceLockVersion(read("Cargo.lock"), project, version, version);
