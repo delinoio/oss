@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useRef } from "react";
+import { StrictMode, useRef } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { i18n } from "./localization";
 import { SettingsCategory } from "./settings-category";
@@ -54,3 +54,5 @@ it("preserves native summary tab order after search focuses delivery guidance",a
 
 it("cancels an armed target on locale changes without rearming its generation",async()=>{const view=render(<FocusFixture request={request} pending/>);await act(()=>i18n.changeLanguage('ko'));view.rerender(<FocusFixture request={request} present/>);await act(async()=>{await new Promise(done=>setTimeout(done,40));});expect(document.activeElement?.getAttribute('data-settings-search-target')).not.toBe('remediation-attempts');expect(screen.getByText('Details').closest('details')?.open).toBe(false);await act(()=>i18n.changeLanguage('en'));await act(async()=>{await new Promise(done=>setTimeout(done,40));});expect(screen.getByText('Details').closest('details')?.open).toBe(false);});
 it("cancels an armed target on responsive reflow before a late read",async()=>{const view=render(<FocusFixture request={request} pending/>);fireEvent(window,new Event('resize'));view.rerender(<FocusFixture request={request} present/>);await act(async()=>{await new Promise(done=>setTimeout(done,40));});expect(document.activeElement?.getAttribute('data-settings-search-target')).not.toBe('remediation-attempts');expect(screen.getByText('Details').closest('details')?.open).toBe(false);});
+
+it("retains a once-only target across Strict Mode setup cleanup replay",async()=>{render(<StrictMode><FocusFixture request={request} present/></StrictMode>);await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('remediation-attempts'));expect(screen.getByText('Details').closest('details')?.open).toBe(true);});

@@ -45,15 +45,19 @@ export function SettingsSearch({ categories, select }: { categories: readonly Se
 /** A navigation generation owns one presentation-only focus; polling cannot repeat it. */
 export function SettingsSearchFocus({request,category,root}:{request?:SettingsSearchRequest;category:Category;root:RefObject<HTMLElement|null>}) {
  const locale=useLocale(); const [unavailable,setUnavailable]=useState(false);
- const handled=useRef<string>(undefined);
+ const handled=useRef<{generation:string;locale:string;consumed:boolean}>(undefined);
  useEffect(()=>{
   if(!request){handled.current=undefined;setUnavailable(false);return;}
   // Locale changes clean up an armed wait without replaying this generation.
-  if(handled.current===request.generation)return;
-  handled.current=request.generation;setUnavailable(false);
+  if(handled.current?.generation===request.generation){
+   if(handled.current.locale!==locale)handled.current.consumed=true;
+   if(handled.current.consumed)return;
+  }
+  handled.current={generation:request.generation,locale,consumed:false};setUnavailable(false);
   if(request.category!==category||!root.current)return;
   const scope=root.current; let pending=true,frame=0;
-  const cancel=()=>{pending=false;observer.disconnect();cancelAnimationFrame(frame);};
+  const dispose=()=>{pending=false;observer.disconnect();cancelAnimationFrame(frame);};
+  const cancel=()=>{if(handled.current?.generation===request.generation)handled.current.consumed=true;dispose();};
   const intent=(event:Event)=>{if(event.type==="keydown"&&!['Tab','Enter',' ','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes((event as KeyboardEvent).key))return;cancel();};
   const focus=(node:HTMLElement)=>{cancel();if(node.tabIndex<0)node.tabIndex=-1;node.focus({preventScroll:true});node.scrollIntoView?.({block:"nearest",inline:"nearest"});};
   const attempt=()=>{
@@ -73,7 +77,8 @@ export function SettingsSearchFocus({request,category,root}:{request?:SettingsSe
   observer.observe(scope,{subtree:true,childList:true,attributes:true,attributeFilter:['data-settings-search-pending','inert','hidden']});
   document.addEventListener('pointerdown',intent,true);document.addEventListener('keydown',intent,true);document.addEventListener('focusin',intent,true);window.addEventListener('resize',cancel);
   frame=requestAnimationFrame(attempt);
-  return()=>{cancel();document.removeEventListener('pointerdown',intent,true);document.removeEventListener('keydown',intent,true);document.removeEventListener('focusin',intent,true);window.removeEventListener('resize',cancel);};
+  // Strict Mode cleanup disposes the observer without consuming an unhandled target.
+  return()=>{dispose();document.removeEventListener('pointerdown',intent,true);document.removeEventListener('keydown',intent,true);document.removeEventListener('focusin',intent,true);window.removeEventListener('resize',cancel);};
  },[request?.generation,category,root,locale]);
  return unavailable?<p className="settings-search-unavailable" role="status">{copy("settings.search.unavailable")}</p>:null;
 }
