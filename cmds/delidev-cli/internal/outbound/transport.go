@@ -91,7 +91,11 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	transport.DisableKeepAlives = true
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		if p.Mode == domain.ProxyDirect || p.Bypasses(address) {
-			return t.Base.DialContext(ctx, network, address)
+			dial := t.Base.DialContext
+			if dial == nil {
+				dial = (&net.Dialer{}).DialContext
+			}
+			return dialDirectDestination(ctx, network, address, dial)
 		}
 		conn, err := dialProxy(ctx, p, credential, network, address, t.Base.TLSClientConfig)
 		if err != nil {
@@ -239,14 +243,20 @@ func (c *bufferedConn) Read(p []byte) (int, error) { return c.reader.Read(p) }
 
 // DirectDial pins localhost to actual loopback, including proxy endpoints.
 func DirectDial(ctx context.Context, network, address string) (net.Conn, error) {
+	d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: -1}
+	return dialDirectDestination(ctx, network, address, d.DialContext)
+}
+
+// Keep the original TLS hostname on the request. Only the socket destination
+// changes, before any caller dialer can resolve localhost through ambient DNS.
+func dialDirectDestination(ctx context.Context, network, address string, dial func(context.Context, string, string) (net.Conn, error)) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, unavailable()
 	}
-	d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: -1}
 	if strings.EqualFold(host, "localhost") {
 		for _, ip := range []string{"127.0.0.1", "::1"} {
-			conn, e := d.DialContext(ctx, network, net.JoinHostPort(ip, port))
+			conn, e := dial(ctx, network, net.JoinHostPort(ip, port))
 			if e == nil {
 				return conn, nil
 			}
@@ -257,5 +267,5 @@ func DirectDial(ctx context.Context, network, address string) (net.Conn, error) 
 		}
 		return nil, err
 	}
-	return d.DialContext(ctx, network, address)
+	return dial(ctx, network, address)
 }
