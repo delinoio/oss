@@ -216,12 +216,18 @@ func (c *Client) validateQuotaReflection(value domain.SubscriptionQuotaObservati
 	if err != nil {
 		return err
 	}
+	return ValidateQuotaSecrets(value, bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.ID, identity.Email, identity.Account, identity.User)
+}
+
+// ValidateQuotaSecrets keeps protected credentials and original account identity
+// out of bounded quota identifiers, including common encoded reflections.
+func ValidateQuotaSecrets(value domain.SubscriptionQuotaObservation, secrets ...string) error {
 	projected, err := json.Marshal(value)
 	if err != nil {
 		return subscription.Invalid()
 	}
 	defer clear(projected)
-	for _, token := range []string{bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.ID, identity.Email, identity.Account, identity.User} {
+	for _, token := range secrets {
 		if token == "" {
 			continue
 		}

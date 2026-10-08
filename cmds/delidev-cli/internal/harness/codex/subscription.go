@@ -94,7 +94,7 @@ func (c *Client) readManagedAccount(ctx context.Context, refresh bool) (managedA
 }
 
 func (c *Client) managedCall(ctx context.Context, method string, input any, output any) error {
-	if c.managedHome == "" {
+	if c.managedHome == "" && !(c.mode == QuotaProtocol && method == "config/read") {
 		return incompatible()
 	}
 	r, err := c.wire.Call(ctx, domain.NewID(), method, input)
@@ -117,7 +117,11 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 	if err := c.managedCall(ctx, "config/read", map[string]any{"cwd": cwd, "includeLayers": false}, &result); err != nil {
 		return err
 	}
-	for key, want := range map[string]string{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt"} {
+	store := "file"
+	if c.mode == QuotaProtocol {
+		store = "ephemeral"
+	}
+	for key, want := range map[string]string{"cli_auth_credentials_store": store, "model_provider": "openai", "forced_login_method": "chatgpt"} {
 		var value string
 		if json.Unmarshal(result.Config[key], &value) != nil || value != want {
 			return incompatible()

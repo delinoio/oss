@@ -33,10 +33,13 @@ func subscriptionObservationCommand(ctx context.Context, c client, o options, ar
 		capability = pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1
 	}
 	serverCredits := slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1)
-	if !slices.Contains(status.Msg.Capabilities, capability) && !((args[0] == "consume-reset-credit" && *machine == "" || args[0] == "reconcile-reset-credit") && serverCredits) && !((args[0] == "refresh-quota" && *machine == "" || args[0] == "refresh-all-quotas") && slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1)) {
+	if !slices.Contains(status.Msg.Capabilities, capability) && !((args[0] == "consume-reset-credit" && *machine == "" || args[0] == "reconcile-reset-credit") && serverCredits) && !((args[0] == "refresh-quota" && *machine == "" || args[0] == "refresh-all-quotas") && slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2)) {
 		return nil, domain.Fail(domain.Unsupported, "The server lacks this native subscription capability.", "Update the selected server and Runner Device before requesting quota or credit operations.")
 	}
 	if args[0] == "refresh-all-quotas" {
+		if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2) {
+			return nil, domain.Fail(domain.Unsupported, "The server cannot refresh all quotas independently of execution.", "Update the selected server.")
+		}
 		if *id != "" || *revision != 0 || *machine != "" || *connection != "" || *generation != "" || *credit != "" || *next || *inventory != "" || *confirm || *operation != "" {
 			return nil, domain.InvalidSubscriptionObservation()
 		}
@@ -61,8 +64,8 @@ func subscriptionObservationCommand(ctx context.Context, c client, o options, ar
 		return map[string]any{"account": resourceJSON(response.Msg.Account), "replayed": response.Msg.Replayed}, nil
 	}
 	if *machine == "" && args[0] == "refresh-quota" {
-		if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1) {
-			return nil, domain.Fail(domain.Unsupported, "The server cannot observe quota without a Runner Device.", "Update the server or select the original Runner Device.")
+		if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2) {
+			return nil, domain.Fail(domain.Unsupported, "The server cannot observe quota without a Runner Device.", "Update the selected server.")
 		}
 	} else if *machine == "" && args[0] == "consume-reset-credit" {
 		if !serverCredits {

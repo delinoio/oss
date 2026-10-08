@@ -245,3 +245,7 @@ and stack detail rows. Preserve parent dialog dismissal and keyboard ownership.
 Browser fixtures cover 640px/320px sections, both languages/themes and 200% zoom;
 they grant no installed-native, real-account or platform acceptance. Add no RPC,
 allocation, migration, persistent preference or native behavior.
+
+## Server quota V2 negotiation — issue #1854
+
+Individual row/detail Refresh and Refresh all require System 50 and send an omitted machine selector even when the account retains Worker ownership or an Execute lease. The selected server owns five-minute quota maintenance. An absent or disconnected Runner Device does not disable this quota lane; lifecycle/recovery/removal and independent quota/reset-credit obligations still fence competing work. Older servers receive update guidance and no expanded request. Preserve exact retained mutation bytes, last-success evidence, failed/stale status and observed-recovery preferences. Reset-credit confirmation keeps its original idle server versus explicit Worker ownership and is not widened by quota availability. No broad settings redesign is introduced.

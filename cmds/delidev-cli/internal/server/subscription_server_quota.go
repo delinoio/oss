@@ -6,9 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
 func serverQuotaReady(a domain.Account) bool {
@@ -16,7 +19,7 @@ func serverQuotaReady(a domain.Account) bool {
 		return false
 	}
 	s := a.Subscription
-	return s.OwnerMachineID == "" && s.Lease == nil && s.Pending == nil && !s.ServerObservationActive() && (s.Observation == nil || !s.Observation.Active()) && s.ServerQuotaGeneration == s.Generation && (s.ServerOperation == nil || !s.ServerOperation.Active() && !s.ServerOperation.NativeStarted)
+	return s.Pending == nil && !s.ServerObservationActive() && (s.Lease == nil || s.Lease.Action == domain.SubscriptionExecute) && (s.Observation == nil || !s.Observation.Active()) && (s.ServerOperation == nil || !s.ServerOperation.Active() && !s.ServerOperation.NativeStarted)
 }
 func acceptServerQuota(tx *store.Tx, r store.Record, a domain.Account, op domain.ServerQuotaOperation) error {
 	if !serverQuotaReady(a) || op.Validate() != nil || op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || subscriptionActorValid(tx, op.Actor) != nil {
@@ -27,7 +30,7 @@ func acceptServerQuota(tx *store.Tx, r store.Record, a domain.Account, op domain
 	return err
 }
 func newServerQuota(a domain.Account, id, epoch domain.ID, actor domain.Principal, now time.Time) domain.ServerQuotaOperation {
-	return domain.ServerQuotaOperation{ID: id, Epoch: epoch, FinishID: domain.NewID(), ConnectionID: a.Connection.ID, Generation: a.Subscription.Generation, Actor: actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: now}
+	return domain.ServerQuotaOperation{AccessOnly: true, ID: id, Epoch: epoch, FinishID: domain.NewID(), ConnectionID: a.Connection.ID, Generation: a.Subscription.Generation, Actor: actor, Phase: domain.SubscriptionObservationQueued, RequestedAt: now}
 }
 
 // Old claims remain evidence. A restart can settle independently checkpointed
@@ -63,8 +66,11 @@ func (s *Service) initializeServerQuotas(ctx context.Context) error {
 			} else {
 				o.Phase = domain.SubscriptionObservationUncertain
 				o.ErrorCode = domain.RecoveryRequired
-				a.Subscription.RecoveryRequired = true
-				a.Health = domain.AccountFailed
+				a.Subscription.QuotaState = domain.ObservationFailed
+				if !o.AccessOnly {
+					a.Subscription.RecoveryRequired = true
+					a.Health = domain.AccountFailed
+				}
 			}
 			if _, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
@@ -72,7 +78,10 @@ func (s *Service) initializeServerQuotas(ctx context.Context) error {
 		}
 		return struct{}{}, nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return s.reconcileRetainedServerQuotas(ctx)
 }
 func (s *Service) runServerQuotas(ctx context.Context) {
 	ctx = domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
@@ -144,7 +153,7 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 		}
 		o := st.ServerQuota
 		original = *o
-		if !quotaAccountReady(a) || st.Pending != nil || st.Lease != nil || st.OwnerMachineID != "" || st.ServerQuotaGeneration != o.Generation || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Observation != nil && st.Observation.Active() || subscriptionActorValid(tx, o.Actor) != nil {
+		if !o.AccessOnly || !quotaAccountReady(a) || st.Pending != nil || st.Lease != nil && st.Lease.Action != domain.SubscriptionExecute || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerOperation != nil && (st.ServerOperation.Active() || st.ServerOperation.NativeStarted) || st.Observation != nil && st.Observation.Active() || subscriptionActorValid(tx, o.Actor) != nil {
 			o.Phase = domain.SubscriptionObservationFailed
 			o.ErrorCode = domain.Canceled
 		} else {
@@ -160,7 +169,7 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 	if err != nil || !claimed {
 		return
 	}
-	s.logger.InfoContext(ctx, "server_quota_claimed", "operation_id", original.ID, "generation", original.Generation)
+	s.logger.InfoContext(ctx, "server_quota_claimed", "operation_id", original.ID)
 	// Cancellation is checked independently of the read. Revocation and ownership
 	// changes cancel the original process; they never substitute another account.
 	checked := make(chan struct{})
@@ -169,16 +178,7 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			err := s.Store.Read(ctx, func(tx *store.Tx) error {
-				_, a, err := subscriptionAccount(tx, id, 0)
-				if err != nil {
-					return err
-				}
-				if !quotaAccountReady(a) || a.Subscription.Pending != nil || a.Subscription.Generation != original.Generation || a.Connection.ID != original.ConnectionID || subscriptionActorValid(tx, original.Actor) != nil {
-					return subscriptionDenied()
-				}
-				return nil
-			})
+			err := s.checkQuotaBinding(ctx, id, original)
 			if err != nil {
 				cancel()
 				return
@@ -200,28 +200,54 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 	}
 	var bundle []byte
 	if readErr == nil {
-		bundle, readErr = vault.Get(ctx, credentials.Ref{Owner: id, ID: original.Generation, Purpose: credentials.AccountLogin})
+		bundle, readErr = s.readQuotaBundle(ctx, vault, id, original)
 	}
 	cleanup := true
 	var observed domain.SubscriptionQuotaObservation
 	if readErr == nil {
-		opener := s.subscriptionOpen
-		if opener == nil {
-			opener = openServerSubscription
+		parsed, identity, parseErr := subscription.Parse(bundle)
+		readErr = parseErr
+		if readErr == nil {
+			readErr = s.Store.Read(ctx, func(tx *store.Tx) error {
+				_, a, err := subscriptionAccount(tx, id, 0)
+				if err != nil {
+					return err
+				}
+				raw, _ := json.Marshal(struct{ Account, User string }{identity.Account, identity.User})
+				defer clear(raw)
+				if a.Subscription.IdentityCommitment != s.accountCommitment(s.Identity.ServerID, raw) || a.Subscription.Generation != original.Generation || a.Connection.ID != original.ConnectionID || subscriptionActorValid(tx, original.Actor) != nil {
+					return subscriptionDenied()
+				}
+				return nil
+			})
 		}
-		native, openErr := opener(ctx, s.Store.Root(), original.ID, bundle, s.logger)
-		readErr = openErr
-		if native == nil {
-			cleanup = openErr != nil && domain.SafeError(openErr).Code != domain.RecoveryRequired
-		} else {
-			observed, readErr = native.ReadManagedQuota(ctx, original.ID)
-			// A read cannot rotate credentials. Capture and compare before joined close.
-			cleanup = native.Close(bundle) == nil
-			if !cleanup {
-				readErr = subscriptionDenied()
+		if readErr == nil {
+			opener := s.quotaOpen
+			if opener == nil {
+				opener = openServerQuota
+			}
+			auth := codex.QuotaAuthentication{Access: parsed.Tokens.Access, Account: identity.Account, Plan: identity.Plan}
+			native, openErr := opener(ctx, s.Store.Root(), original.ID, auth, s.logger)
+			readErr = openErr
+			if native == nil {
+				cleanup = openErr != nil && domain.SafeError(openErr).Code != domain.RecoveryRequired
+			} else {
+				if openErr == nil {
+					if readErr = s.checkQuotaBinding(ctx, id, original); readErr == nil {
+						observed, readErr = native.ReadExternalQuota(ctx, original.ID, auth)
+						if readErr == nil {
+							readErr = codex.ValidateQuotaSecrets(observed, parsed.Tokens.Access, parsed.Tokens.ID, parsed.Tokens.Refresh, identity.Account, identity.User, identity.Email)
+						}
+					}
+				}
+				cleanup = native.Close() == nil
+				if !cleanup {
+					readErr = subscriptionDenied()
+				}
 			}
 		}
 	}
+
 	clear(bundle)
 	cancel()
 	<-checked
@@ -245,15 +271,18 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 			return nil, err
 		}
 		o := a.Subscription.ServerQuota
-		if o == nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Phase != domain.SubscriptionObservationSending {
+		if o == nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Actor != original.Actor || o.Generation != original.Generation || o.ConnectionID != original.ConnectionID || o.AccessOnly != original.AccessOnly || o.Phase != domain.SubscriptionObservationSending {
 			return nil, subscriptionDenied()
 		}
 		o.CleanupConfirmed = cleanup
 		if !cleanup {
 			o.Phase = domain.SubscriptionObservationUncertain
 			o.ErrorCode = domain.RecoveryRequired
-			a.Subscription.RecoveryRequired = true
-			a.Health = domain.AccountFailed
+			a.Subscription.QuotaState = domain.ObservationFailed
+			if !o.AccessOnly {
+				a.Subscription.RecoveryRequired = true
+				a.Health = domain.AccountFailed
+			}
 		}
 		_, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
 		return struct{}{}, err
@@ -278,10 +307,10 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 		}
 		st := a.Subscription
 		o := st.ServerQuota
-		if o == nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Generation != original.Generation || o.ConnectionID != original.ConnectionID || o.Phase != domain.SubscriptionObservationSending || !o.CleanupConfirmed {
+		if o == nil || o.ID != original.ID || o.Epoch != original.Epoch || o.Generation != original.Generation || o.ConnectionID != original.ConnectionID || o.Actor != original.Actor || o.AccessOnly != original.AccessOnly || o.Phase != domain.SubscriptionObservationSending || !o.CleanupConfirmed {
 			return nil, subscriptionDenied()
 		}
-		authorized := quotaAccountReady(a) && st.Pending == nil && st.Lease == nil && st.Generation == original.Generation && a.Connection.ID == original.ConnectionID && subscriptionActorValid(tx, original.Actor) == nil
+		authorized := quotaAccountReady(a) && st.Pending == nil && (st.Lease == nil || st.Lease.Action == domain.SubscriptionExecute) && st.Generation == original.Generation && a.Connection.ID == original.ConnectionID && subscriptionActorValid(tx, original.Actor) == nil
 		if !authorized {
 			code = domain.Canceled
 		}
@@ -404,4 +433,31 @@ func legacyServerQuotaGeneration(a domain.Account, epoch domain.ID) bool {
 	st := a.Subscription
 	o := st.ServerOperation
 	return st.ServerQuotaGeneration == "" && st.OwnerMachineID == "" && st.Lease == nil && st.Pending == nil && !st.ServerObservationActive() && (st.Observation == nil || !st.Observation.Active()) && o != nil && o.Epoch != epoch && o.State == domain.SubscriptionSucceeded && !o.NativeStarted && o.FinishID == st.Generation && (o.Action == domain.SubscriptionLogin || o.Action == domain.SubscriptionRefresh)
+}
+
+// Account serialization protects reference capture only, never native/network
+// work. The durable original quota record retains that reference through rotation.
+func (s *Service) readQuotaBundle(ctx context.Context, vault accountSecrets, id domain.ID, o domain.ServerQuotaOperation) ([]byte, error) {
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if err := s.checkQuotaBinding(ctx, id, o); err != nil {
+		return nil, err
+	}
+	return vault.Get(ctx, credentials.Ref{Owner: id, ID: o.Generation, Purpose: credentials.AccountLogin})
+}
+func (s *Service) checkQuotaBinding(ctx context.Context, id domain.ID, o domain.ServerQuotaOperation) error {
+	return s.Store.Read(ctx, func(tx *store.Tx) error {
+		_, a, err := subscriptionAccount(tx, id, 0)
+		if err != nil {
+			return err
+		}
+		st := a.Subscription
+		if !quotaAccountReady(a) || st.Pending != nil || st.Generation != o.Generation || a.Connection.ID != o.ConnectionID || st.ServerQuota == nil || st.ServerQuota.ID != o.ID || st.ServerQuota.Epoch != o.Epoch || st.ServerQuota.Phase != domain.SubscriptionObservationSending || st.ServerQuota.Actor != o.Actor || subscriptionActorValid(tx, o.Actor) != nil {
+			return subscriptionDenied()
+		}
+		return nil
+	})
 }

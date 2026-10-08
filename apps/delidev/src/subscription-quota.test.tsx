@@ -12,14 +12,14 @@ import { i18n, copy } from "./localization";
 import { MutationIntents } from "./mutation";
  import { SubscriptionQuotaControls } from "./subscription-quota";
 
-function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "", serverCredits = false, creditPhase = "", cleanup = false, workerUncertain = false, inventoryFields: Record<string, unknown> = {}) {
+function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "", serverCredits = false, creditPhase = "", cleanup = false, workerUncertain = false, inventoryFields: Record<string, unknown> = {}, quotaError = "") {
   const machine = newRequestId(), connection = newRequestId(), generation = newRequestId(), inventory = newRequestId();
-  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { observation: workerUncertain ? { id: newRequestId(), action: "reset-credit", phase: "uncertain" } : undefined, generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_credit: creditPhase ? { id: newRequestId(), phase: creditPhase, cleanup_confirmed: cleanup, outcome: "" } : undefined, server_quota: phase ? { id: newRequestId(), phase } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details, ...inventoryFields } } };
+  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { observation: workerUncertain ? { id: newRequestId(), action: "reset-credit", phase: "uncertain" } : undefined, generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_credit: creditPhase ? { id: newRequestId(), phase: creditPhase, cleanup_confirmed: cleanup, outcome: "" } : undefined, server_quota: phase ? { id: newRequestId(), phase, error_code: quotaError } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details, ...inventoryFields } } };
   let account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 2, documentJson: encode(data) });
   const request = vi.fn(async (value) => ({ account, operationId: value.mutation?.requestId }));
   const reconcile = vi.fn(async (_value: unknown) => ({ account }));
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1, ...(serverCredits ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1] : []), ...(server && supported ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V1] : [SystemCapability.SUBSCRIPTION_QUOTA_V1])] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1, ...(serverCredits ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1] : []), ...(supported ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2] : [SystemCapability.SUBSCRIPTION_QUOTA_V1])] }) });
     router.service(SubscriptionService, { requestSubscriptionObservation: request, reconcileSubscriptionCredit: reconcile });
   });
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
@@ -67,13 +67,13 @@ it("explicit quota refresh does not consume credits or refresh authentication", 
 });
 
 
-it("keeps detail quota refresh bound to the active execution owner despite a different selected device",async()=>{
+it("refreshes detail quota on the server during execution despite a different selected device",async()=>{
  const runner=newRequestId(),value=fixture(undefined,{action:"execute",machine_id:runner},newRequestId());
  render(<value.Harness />);
  await waitFor(()=>expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(screen.getByRole("button",{name:"Refresh quota"}));
  await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));
- expect(value.request.mock.calls[0]?.[0]).toMatchObject({machineId:runner});
+ expect(value.request.mock.calls[0]?.[0]).toMatchObject({machineId:""});
 });
 it("blocks detail quota refresh while a different native lease kind owns the account",async()=>{
  const value=fixture(undefined,{action:"refresh",machine_id:newRequestId()},newRequestId());
@@ -211,4 +211,13 @@ it("renders expiry only for a valid supplied RFC3339 timestamp",async()=>{
  ]);render(<value.Harness />);const use=await screen.findByRole("button",{name:"Use"});await waitFor(()=>expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
  expect(globalThis.document.querySelectorAll(".reset-credit-row time").length).toBe(1);
  expect(globalThis.document.querySelector(".reset-credit-row time")?.getAttribute("datetime")).toBe("2030-10-31T00:00:00Z");expect(value.request).not.toHaveBeenCalled();
+});
+it.each(["unsupported", "unavailable"])("shows selected-server quota troubleshooting for %s without Worker fallback", async code => {
+ const value = fixture(undefined, undefined, "", false, true, "failed", false, "", false, false, {}, code);
+ render(<value.Harness />);
+ await screen.findByText(code === "unsupported" ? /Check the selected server’s Codex installation/ : /Check the selected server connection/);
+ expect(value.request).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button", { name: "Refresh quota" }));
+ await waitFor(() => expect(value.request).toHaveBeenCalledTimes(1));
+ expect(value.request.mock.calls[0][0]).toMatchObject({ machineId: "" });
 });

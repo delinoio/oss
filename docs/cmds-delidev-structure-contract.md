@@ -457,3 +457,7 @@ Issue #1828 records System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT
 ## Server-owned reset-credit allocation closure
 
 Issue #1809 records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with complete implementation in the owning feature PR. Reuse the owner/client observation and reconciliation RPCs. Preserve System 19/30/46, existing allocations and separate Worker ownership; add no Worker/entity allocation or database migration. Follow the [server-credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits--issue-1809).
+
+### Server quota V2 allocation closure
+
+Issue #1854 owns System 50 `SERVER_SUBSCRIPTION_QUOTA_V2`, recorded with its complete feature implementation under the [allocation workflow](#allocation-workflow). It expands omitted-machine server quota only; retain original System 18/46/49 and all Worker allocations. No migration or new RPC is required. Real native/account/remote/platform acceptance remains owner-assigned and nonblocking for the authorized batch; fixtures/builds never substitute for that evidence.

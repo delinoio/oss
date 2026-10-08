@@ -5,9 +5,9 @@
   "subscription-quota.noResetCreditWasAvailable_648345": "No reset credit was available",
   "subscription-quota.nativeQuotaAndResetCredits_8a07a3": "Native quota and reset credits",
   "subscription-quota.quota_6c105c": "Quota",
-  "subscription-quota.updateTheServerAndRunnerDevice_57363b": "Update the server and Runner Device to use native quota observations.",
+  "subscription-quota.updateTheServerAndRunnerDevice_57363b": "Update the selected server to refresh subscription quota.",
   "subscription-quota.theLatestRefreshFailedTheLast_78f81e": "The latest refresh failed; the last successful values remain.",
-  "subscription-quota.quotaIsObservedByTheOriginal_16d486": "Quota is observed by the original Codex owner every five minutes while connected.",
+  "subscription-quota.quotaIsObservedByTheOriginal_16d486": "The selected server refreshes quota every five minutes, including during execution.",
   "subscription-quota.lastSuccessfulObservation_836238": "Last successful observation: <s0/>. <s1/>",
   "subscription-quota.refreshQuota_3e8708": "Refresh quota",
   "subscription-quota.notifyMeOfObservedQuotaRecovery_b8f166": "Notify me of observed quota recovery",
@@ -34,7 +34,7 @@
   "subscription-quota.retryOriginalRecoveryPreference_fa3cb3": "Retry original recovery preference",
   "subscription-quota.extra.ca1844969742": "Unavailable",
   "subscription-quota.accountPreferencesCouldNotBeSavedReload_0d91a4": "Account preferences could not be saved. Reload the current account before saving.",
-  "subscription-quota.serverQuotaUnsupported": "Update the server to refresh quota for an account without a Runner Device.",
+  "subscription-quota.serverQuotaUnsupported": "Update the selected server to refresh quota independently of the Runner Device.",
   "subscription-quota.serverCreditsUnavailable": "Update the server to consume reset credits for an account without a Runner Device.",
   "subscription-quota.useCredit": "Use",
   "subscription-quota.hideDetails": "Hide details",
@@ -57,5 +57,7 @@
   "subscription-quota.noCredits": "No reset credits are available.",
   "subscription-quota.creditInventoryStale": "Refresh the account to review a current credit inventory.",
   "subscription-quota.creditDetailsMalformed": "Individual credit details are unknown or invalid.",
-  "subscription-quota.noEligibleCredits": "No returned credit is eligible for selection."
+  "subscription-quota.noEligibleCredits": "No returned credit is eligible for selection.",
+  "subscription-quota.serverNativeQuotaUnavailable": "Check the selected server’s Codex installation and native routing, then retry quota.",
+  "subscription-quota.serverQuotaAuthenticationUnavailable": "Check the selected server connection. If account authentication has expired, refresh it explicitly before retrying quota."
 }

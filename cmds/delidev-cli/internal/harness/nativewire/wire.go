@@ -333,6 +333,24 @@ func (c *Connection) Reply(ctx context.Context, event Event, result any) error {
 	if err != nil || len(raw) > MaxFrame {
 		return domain.Fail(domain.ResourceExhausted, "Native response exceeds its bound.", "Reduce the response size.")
 	}
+	return c.replyEnvelope(ctx, event, key, raw)
+}
+
+// RefuseExternalTokenRefresh answers only the exact pending token callback with a fixed safe error.
+func (c *Connection) RefuseExternalTokenRefresh(ctx context.Context, event Event) error {
+	key, err := idKey(event.ID)
+	if err != nil || event.Kind != ServerRequest || event.Method != "account/chatgptAuthTokens/refresh" {
+		return protocolFailure()
+	}
+	code, message := int64(-32000), "External token refresh is disabled for quota observation."
+	raw, err := json.Marshal(envelope{JSONRPC: c.jsonrpc, ID: event.ID, Error: &wireError{Code: &code, Message: &message}})
+	if err != nil {
+		return protocolFailure()
+	}
+	return c.replyEnvelope(ctx, event, key, raw)
+}
+
+func (c *Connection) replyEnvelope(ctx context.Context, event Event, key string, raw []byte) error {
 	var checked envelope
 	if err := domain.Decode(raw, &checked); err != nil {
 		return err
