@@ -72,7 +72,7 @@ export function SessionFiles({ sessionId, close }: { sessionId: string; close: (
 }
 function Explorer({ owner, state }: { owner: FilesController; state: FilesSnapshot }) {
   const scroll = useRef<HTMLDivElement>(null), tree = useRef<HTMLDivElement>(null), previewHeading = useRef<HTMLHeadingElement>(null);
-  const scrollPosition = useRef(0), returning = useRef(false), focusOwned = useRef(false);
+  const scrollPosition = useRef({ top: 0, left: 0 }), ancestors = useRef<{ owner: FilesController; repository: string | undefined; positions: { element: HTMLElement; top: number; left: number }[] } | undefined>(undefined), returning = useRef(false), focusOwned = useRef(false);
   const [focused, setFocused] = useState<string>();
   const visible: { path: string; parent: string; entry: Entry }[] = [];
   const visit = (parent: string) => { for (const entry of state.directories.get(parent)?.rows ?? []) { const path = childPath(parent, entry.name); visible.push({ path, parent, entry }); if (entry.kind === EntryKind.Directory && state.expanded.has(path)) visit(path); } };
@@ -82,19 +82,37 @@ function Explorer({ owner, state }: { owner: FilesController; state: FilesSnapsh
     return undefined;
   };
   const focusPath = findVisible(focused) ?? findVisible(state.selected) ?? visible[0]?.path;
-  const focusRow = (path?: string) => {
+  const focusRow = (path?: string, preventScroll = false) => {
     setFocused(path); const row = [...(tree.current?.querySelectorAll<HTMLElement>("[role=treeitem]") ?? [])].find(element => element.dataset.path === path);
-    (row ?? tree.current)?.focus();
+    (row ?? tree.current)?.focus({ preventScroll });
   };
   useLayoutEffect(() => {
     if (state.preview) { previewHeading.current?.focus(); return; }
-    if (returning.current) { returning.current = false; if (scroll.current) scroll.current.scrollTop = scrollPosition.current; focusRow(findVisible(state.selected)); }
+    if (returning.current) {
+      returning.current = false;
+      focusRow(findVisible(state.selected), true);
+      if (scroll.current) { scroll.current.scrollTop = scrollPosition.current.top; scroll.current.scrollLeft = scrollPosition.current.left; }
+      const original = ancestors.current; ancestors.current = undefined;
+      if (original?.owner === owner && original.repository === state.repository) for (const { element, top, left } of original.positions) {
+        if (element.isConnected && tree.current && element.contains(tree.current)) { element.scrollTop = top; element.scrollLeft = left; }
+      }
+    }
     // Refresh can remove the focused row; only repair focus if the tree owned it.
   }, [Boolean(state.preview)]);
   useLayoutEffect(() => {
     if (!state.preview && focusOwned.current && focused && !visible.some(row => row.path === focused)) focusRow(focusPath);
   }, [state.directories, state.expanded, state.preview, focused]);
-  const open = (path: string) => { scrollPosition.current = scroll.current?.scrollTop ?? 0; owner.open(path); };
+  const open = (path: string) => {
+    scrollPosition.current = { top: scroll.current?.scrollTop ?? 0, left: scroll.current?.scrollLeft ?? 0 };
+    const positions: { element: HTMLElement; top: number; left: number }[] = [];
+    // Preview focus can move every compact enclosing scroll owner. Retain only
+    // original mounted ancestors of this repository/owner, never replacement DOM.
+    for (let element = scroll.current?.parentElement; element && element !== window.document.body && element !== window.document.documentElement; element = element.parentElement) {
+      positions.push({ element, top: element.scrollTop, left: element.scrollLeft });
+      if (element.classList.contains("session-workspace")) break;
+    }
+    ancestors.current = { owner, repository: state.repository, positions }; owner.open(path);
+  };
   const activate = (path: string, entry: Entry) => { if (entry.kind !== EntryKind.Directory && entry.kind !== EntryKind.File) return; owner.select(path); setFocused(path); if (entry.kind === EntryKind.Directory) owner.toggle(path); else if (entry.kind === EntryKind.File) open(path); };
   const keyboard = (event: KeyboardEvent<HTMLElement>, path: string, parent: string, entry: Entry) => {
     if (event.nativeEvent.isComposing) return;

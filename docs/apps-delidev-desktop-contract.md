@@ -698,6 +698,11 @@ The selected detail refreshes while Inbox is active and the window is visible, a
 
 Question/approval forms share their typed controls with the session view, but Inbox drafts remain React-memory-only and scoped to the effective connection identity. Each draft retains the original interaction ID, interaction revision and request identity. Preserve a draft after source/request changes for inspection and block applying it to a new request. Bound the serialized collection to 4 MiB and 1,000 nonempty requests per connection; a limit error keeps the previous draft intact. An uncertain submission retains its exact mutation identity and may be retried only after a fresh current-source read. The persistent Inbox controller preserves drafts while the user visits other app surfaces. This UI work does not establish native notification delivery on a supported operating system.
 
+Files preview Back also restores the original compact panel and enclosing Session
+scroll owners with preventScroll focus, alongside the inner tree position. These
+memory-only snapshots belong to the original controller/repository and only
+connected original ancestors containing the returned tree may receive them.
+
 ### Session terminals
 
 The session's Terminals tool is the sole bottom dock: it spans the Session

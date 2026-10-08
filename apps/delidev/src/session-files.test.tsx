@@ -121,15 +121,25 @@ it.each(["continuation", "refresh"])("rejects a whole directory page with duplic
 });
 
 it("restores tree scroll, selected focus and metadata on Back without another observation", async () => {
-  const f = fixture(); render(<f.View />);
+  const f = fixture(); const mounted = render(<div className="session-workspace"><div className="session-upper-content"><div className="session-app-panel"><f.View /></div></div></div>);
   const row = await screen.findByRole("treeitem", { name: "note.txt 42 bytes" });
-  const scroll = row.closest<HTMLElement>(".file-tree-scroll")!; scroll.scrollTop = 137;
-  fireEvent.click(row); await screen.findByText("<script>globalThis.unsafe = true</script>");
+  const scroll = row.closest<HTMLElement>(".file-tree-scroll")!, outer = mounted.container.querySelector<HTMLElement>(".session-app-panel")!, upper = mounted.container.querySelector<HTMLElement>(".session-upper-content")!;
+  row.focus(); scroll.scrollTop = 137; outer.scrollTop = 238; upper.scrollTop = 59;
+  Object.defineProperties(outer, { clientHeight: { value: 88 }, scrollHeight: { value: 366 } });
+  const nativeFocus = HTMLElement.prototype.focus;
+  const focus = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function(this: HTMLElement, options?: FocusOptions) {
+    nativeFocus.call(this, options);
+    // Model native focus scrolling unchanged-range compact ancestors.
+    if (!options?.preventScroll) { outer.scrollTop = 191; upper.scrollTop = 37; }
+  });
+  fireEvent.keyDown(row, { key: "Enter" }); await screen.findByText("<script>globalThis.unsafe = true</script>");
   const before = f.read.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
   const restored = screen.getByRole("treeitem", { name: "note.txt 42 bytes" });
   expect(restored.getAttribute("aria-selected")).toBe("true"); expect(document.activeElement).toBe(restored);
   expect(restored.closest<HTMLElement>(".file-tree-scroll")!.scrollTop).toBe(137);
+  expect(outer.scrollTop).toBe(238); expect(upper.scrollTop).toBe(59);
+  expect(focus.mock.calls.some(([options]) => options?.preventScroll === true)).toBe(true); focus.mockRestore();
   expect(screen.queryByText("<script>globalThis.unsafe = true</script>")).toBeNull();
   expect(f.read).toHaveBeenCalledTimes(before);
   await waitFor(() => expect(f.client.getQueryCache().getAll()).toHaveLength(0));
