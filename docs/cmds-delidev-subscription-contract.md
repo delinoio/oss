@@ -357,7 +357,7 @@ Missing executables report discovery with no detected version. Invalid or lower 
 
 System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` separately negotiates quota reads for idle server-owned ChatGPT accounts. For this issue, the owner's explicit batch instruction permits allocation and activation in one complete feature PR without a prior main reservation merge. This exception changes no other allocation, migration or native authority rule.
 
-The existing QUOTA request can omit `machine_id` under capability 46. Explicit machines retain capability 18 and the strict Worker claim/receipt lane. An active execution uses its original Worker process and lease, including an omitted-machine request resolved to that original lease. Reset-credit consumption remains exclusively under capability 19 and original Worker ownership. Authentication success or capability 30 alone grants no server quota authority.
+The existing QUOTA request can omit `machine_id` under capability 46. Explicit machines retain capability 18 and the strict Worker claim/receipt lane. An active execution uses its original Worker process and lease, including an omitted-machine request resolved to that original lease. Worker reset-credit consumption retains capability 19 and original Worker ownership. The separately negotiated server lane is defined under issue #1809 below. Authentication success or capability 30 alone grants no server quota authority.
 
 Optional `server_quota_generation` records eligibility only after successful original server login/authentication refresh and final protected-reference cleanup. First observation, complete Refresh all and five-minute maintenance derive eligible accounts on the server. A previous settled server generation can become eligible at startup only from its original successful non-native-active owner, valid current protected reference and confirmed reference cleanup. Missing, restored or uncertain evidence grants no eligibility. No SQLite migration or credential format conversion occurs.
 
@@ -365,10 +365,70 @@ The independent `server_quota` record retains original actor, server epoch, oper
 
 Server quota ownership excludes lifecycle requests, Worker credential grants, observations, configuration deletion, saved-storage diagnostics and database restore. Sixteen joined account tasks run independently; shutdown cancels and joins them before protected stores close. Original native/process/file closure and unchanged final authentication bytes precede the durable cleanup checkpoint and quota/result publication. Read failures after confirmed cleanup retain last-success windows/time and permit a later explicit or due read. Unconfirmed cleanup retains original recovery and cannot relaunch. Publication rechecks actor, generation and connection; stale or revoked reads settle as failed after cleanup without publishing windows. Restart never repeats a previous queued or sending operation. Independently checkpointed cleanup can settle a failed original read; absent confirmation preserves recovery.
 
-Successful projection shares sparse-window merging, minimum remaining fractions and atomic recovery Inbox deduplication. Elapsed resets alone grant no recovery. Frontend and CLI refresh negotiate capability 46 before omitting the machine, retain exact revisions/selectors/retries and expose unsupported/failed/pending states. Server quota support grants no reset-credit consumption on that lane. Structured logs contain operation/generation references, closed phases, safe error codes and cleanup confirmation only.
+Successful projection shares sparse-window merging, minimum remaining fractions and atomic recovery Inbox deduplication. Elapsed resets alone grant no recovery. Frontend and CLI refresh negotiate capability 46 before omitting the machine, retain exact revisions/selectors/retries and expose unsupported/failed/pending states. Capability 46 alone grants no server reset-credit consumption; that operation independently requires capability 49. Structured logs contain operation/generation references, closed phases, safe error codes and cleanup confirmation only.
 
 The owner will perform real-account, installed-native, remote and platform acceptance separately. This batch's automated fixture/build validation does not establish those results; that skipped acceptance is nonblocking for this feature PR under the owner's explicit instruction.
 
 Managed ChatGPT Sidechat follows [issue #1829’s protected Fork profile](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829). EXECUTE Take admits only its exact claimed original Fork job. Protected Finish writes a metadata-only original-job receipt after actor/source/lease rechecks; that receipt gates child publication. Independent managed Fork remains unsupported.
 
 Managed subscription installation refusal describes missing verified Codex installation evidence, not an exact or minimum native version. Existing bounded version metadata, detected state, path, protocol, observation and capability predicates remain authoritative. Safe guidance directs the user to the selected Runner Device’s installed Codex and protocol verification without exposing native paths or output.
+
+## Server-owned ChatGPT reset credits — issue #1809
+
+Managed Sidechat admission rejects an active original server-credit owner before
+creating a Fork job. Protected Take and Finish retain their original account,
+credential generation and independent cleanup fences.
+
+System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` independently enables explicit
+reset-credit consumption for an idle eligible server-owned ChatGPT account.
+Record allocation and complete implementation together under the allocation
+workflow. Preserve capabilities 19, 30 and 46. Reuse RequestSubscriptionObservation
+and ReconcileSubscriptionCredit without a new RPC, Worker capability, database
+migration or credential conversion.
+
+An omitted machine selects the original settled server credential generation
+and protected AccountLogin reference. An active execution resolves an omitted
+selector to its exact original Worker; explicit-machine requests retain the
+Worker lane. Never manufacture a Runner, transfer accepted consumption or acquire
+a second credential writer. Fresh inventory and explicit confirmation bind the
+account revision, connection, generation and inventory ID. A positive count
+permits an available unexpired exact credit, or explicit native next-credit
+selection only when details are unavailable. Unknown, future or stale inventory
+requires a successful quota refresh first.
+
+The separate optional `server_credit` record retains the original UUID as the
+official idempotencyKey, actor, epoch, connection, credential generation,
+inventory identity and immutable credit/next selector. Each explicit attempt
+has separate current server epoch, attempt/finish IDs, a durable send claim,
+provider outcome and independent cleanup checkpoint. A monotonic ever-sent flag
+retains possible earlier consumption even when reconciliation has not sent. Quota-only records retain
+their meaning. The shared narrow native selector validates Worker and server
+ownership separately. Verify actual native readiness, original authorization and
+the configured Direct route before send. Unsupported routing fails before launch
+without direct fallback, native traffic or proxy-secret access.
+
+Receipt replay, status, polling, reconnect and restart never relaunch consumption.
+Possible-send uncertainty retains the original key and selection. Only explicit
+reconciliation by the still-valid original actor, connection and generation can
+create a new attempt after independently confirmed original process/file cleanup.
+The provider key and selector remain unchanged, including alreadyRedeemed results.
+Unconfirmed cleanup keeps recovery fenced. Another actor or new inventory cannot
+transfer a retained attempt.
+
+Checkpoint reset/alreadyRedeemed/nothingToReset/noCredit before a separate quota
+read and cleanup. Read failure cannot erase consumption, replace last-success
+quota or invent recovery. Active credit ownership fences lifecycle, execution
+credentials, account deletion, failed-subscription cleanup, saved-storage
+inspection and backup/restore. The existing bounded controller joins native tasks
+before protected stores close. Cleanup checkpoints remain independent of outcome
+and finish publication; lost finish or restart cannot authorize another send.
+
+Desktop Review, Confirm and original-operation reconciliation negotiate 49,
+retain exact request retries and preserve English/Korean guidance and Settings
+lifetime. CLI consumption/reconciliation require --confirm; omitted-machine
+consumption independently negotiates 49. Missing support, zero/unknown inventory,
+pending ownership and failures remain truthful product states. Logs retain only
+closed operation/code/cleanup metadata without native content or credentials.
+Fixture/build/package evidence remains separate from installed-native,
+real-account, remote-machine and platform acceptance. Record revision, commands,
+results and unresolved limits in PRs, issues and CI artifacts.

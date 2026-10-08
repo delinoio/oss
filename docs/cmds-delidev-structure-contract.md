@@ -453,3 +453,7 @@ required. Follow the [Sidechat contract](cmds-delidev-sidechat-contract.md#manag
 ## Project prompt history allocation closure
 
 Issue #1828 records System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT_PROMPT_HISTORY = 35` and complete closed list/clear declarations in its owning feature PR. This follows the allocation workflow; no separate reservation merge is required. Preserve every original allocation. No Worker capability or SQLite migration is added. Allocation records alone activate no support.
+
+## Server-owned reset-credit allocation closure
+
+Issue #1809 records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with complete implementation in the owning feature PR. Reuse the owner/client observation and reconciliation RPCs. Preserve System 19/30/46, existing allocations and separate Worker ownership; add no Worker/entity allocation or database migration. Follow the [server-credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits--issue-1809).

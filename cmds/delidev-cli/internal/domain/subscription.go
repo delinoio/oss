@@ -23,6 +23,7 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
+	ServerCredit           *ServerCreditOperation            `json:"server_credit,omitempty"`
 	ServerQuota            *ServerQuotaOperation             `json:"server_quota,omitempty"`
 	ServerQuotaGeneration  ID                                `json:"server_quota_generation,omitempty"`
 	NativeProfileID        ID                                `json:"native_profile_id,omitempty"`
@@ -79,13 +80,19 @@ func (s SubscriptionState) Validate(account Account) error {
 	if s.Generation != "" && (s.Generation.Validate() != nil || account.Connection == nil && !s.RecoveryRequired || account.Connection != nil && account.Connection.Authentication != SubscriptionAuth || len(s.IdentityCommitment) != 64) {
 		return invalid()
 	}
-	if s.ServerQuota != nil && account.SubscriptionService != SubscriptionChatGPT {
+	if (s.ServerQuota != nil || s.ServerCredit != nil) && account.SubscriptionService != SubscriptionChatGPT {
+		return invalid()
+	}
+	if s.ServerCredit != nil && s.ServerCredit.Validate() != nil {
+		return invalid()
+	}
+	if s.ServerCreditActive() && (s.ServerQuotaActive() || s.Observation != nil && s.Observation.Active() || s.Pending != nil || s.OwnerMachineID != "") {
 		return invalid()
 	}
 	if s.ServerQuotaGeneration != "" && s.ServerQuotaGeneration.Validate() != nil || s.ServerQuota != nil && s.ServerQuota.Validate() != nil {
 		return invalid()
 	}
-	if s.ServerQuota != nil && s.ServerQuota.Active() && (s.Lease != nil || s.ServerOperation != nil && s.ServerOperation.NativeStarted) {
+	if s.ServerObservationActive() && (s.Lease != nil || s.ServerOperation != nil && s.ServerOperation.NativeStarted) {
 		return invalid()
 	}
 	if s.OwnerMachineID != "" && s.OwnerMachineID.Validate() != nil || s.Observation != nil && s.Observation.Validate() != nil || s.ResetCredits != nil && s.ResetCredits.Validate() != nil {
@@ -145,7 +152,7 @@ func (s SubscriptionState) Validate(account Account) error {
 			return invalid()
 		}
 		if o.CleanupPhase != "" {
-			if o.Action != SubscriptionLogin || o.Generation != "" || account.Connection != nil || s.Generation != "" || s.IdentityCommitment != "" || s.Lease != nil || s.OwnerMachineID != "" || s.Observation != nil || s.ResetCredits != nil || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting || (o.CleanupPhase != SubscriptionNativeCleanupConfirmed && o.CleanupPhase != SubscriptionCredentialCleanupConfirmed) {
+			if o.Action != SubscriptionLogin || o.Generation != "" || account.Connection != nil || s.Generation != "" || s.IdentityCommitment != "" || s.Lease != nil || s.OwnerMachineID != "" || s.Observation != nil || s.ServerCredit != nil || s.ResetCredits != nil || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting || (o.CleanupPhase != SubscriptionNativeCleanupConfirmed && o.CleanupPhase != SubscriptionCredentialCleanupConfirmed) {
 				return invalid()
 			}
 			if o.CleanupPhase == SubscriptionCredentialCleanupConfirmed && (o.Active() || o.State == SubscriptionSucceeded || o.NativeStarted || s.RecoveryRequired || s.Pending != nil) {

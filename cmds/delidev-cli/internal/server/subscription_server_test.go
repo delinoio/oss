@@ -38,6 +38,9 @@ type serverLoginFixture struct {
 	calls      atomic.Int32
 }
 
+func (n *serverLoginFixture) ConsumeServerResetCredit(context.Context, domain.ServerCreditOperation) (domain.SubscriptionResetOutcome, error) {
+	return "", domain.InvalidSubscriptionObservation()
+}
 func (n *serverLoginFixture) ReadManagedQuota(context.Context, domain.ID) (domain.SubscriptionQuotaObservation, error) {
 	return domain.SubscriptionQuotaObservation{}, domain.InvalidSubscriptionObservation()
 }

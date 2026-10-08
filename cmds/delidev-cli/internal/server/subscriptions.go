@@ -180,7 +180,7 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 			a.Subscription = &domain.SubscriptionState{}
 		}
 		state := a.Subscription
-		if state.ServerQuotaActive() || state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
+		if state.ServerObservationActive() || state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
 			return nil, subscriptionDenied()
 		}
 		if action == domain.SubscriptionLogin && (a.Connection != nil || state.Generation != "" || state.Lease != nil) {
@@ -482,7 +482,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if state == nil || state.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
-		if state.ServerQuotaActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
+		if state.ServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
 			return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {

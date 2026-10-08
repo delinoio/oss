@@ -101,6 +101,13 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		if domain.Decode(params, &input) != nil || domain.ID(input.Key).Validate() != nil {
 			os.Exit(43)
 		}
+		selector := "omitted"
+		if input.Credit != nil {
+			selector = *input.Credit
+		}
+		if security.WriteAtomic(filepath.Join(home, "credit-selector"), []byte(selector)) != nil {
+			os.Exit(46)
+		}
 		keyPath := filepath.Join(home, "credit-key")
 		if old, err := os.ReadFile(keyPath); err == nil {
 			if string(old) != input.Key {

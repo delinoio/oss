@@ -32,7 +32,8 @@ func subscriptionObservationCommand(ctx context.Context, c client, o options, ar
 	if args[0] == "consume-reset-credit" || args[0] == "reconcile-reset-credit" {
 		capability = pb.SystemCapability_SYSTEM_CAPABILITY_SUBSCRIPTION_RESET_CREDITS_V1
 	}
-	if !slices.Contains(status.Msg.Capabilities, capability) && !((args[0] == "refresh-quota" && *machine == "" || args[0] == "refresh-all-quotas") && slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1)) {
+	serverCredits := slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_RESET_CREDITS_V1)
+	if !slices.Contains(status.Msg.Capabilities, capability) && !((args[0] == "consume-reset-credit" && *machine == "" || args[0] == "reconcile-reset-credit") && serverCredits) && !((args[0] == "refresh-quota" && *machine == "" || args[0] == "refresh-all-quotas") && slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1)) {
 		return nil, domain.Fail(domain.Unsupported, "The server lacks this native subscription capability.", "Update the selected server and Runner Device before requesting quota or credit operations.")
 	}
 	if args[0] == "refresh-all-quotas" {
@@ -62,6 +63,10 @@ func subscriptionObservationCommand(ctx context.Context, c client, o options, ar
 	if *machine == "" && args[0] == "refresh-quota" {
 		if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1) {
 			return nil, domain.Fail(domain.Unsupported, "The server cannot observe quota without a Runner Device.", "Update the server or select the original Runner Device.")
+		}
+	} else if *machine == "" && args[0] == "consume-reset-credit" {
+		if !serverCredits {
+			return nil, domain.Fail(domain.Unsupported, "The server cannot consume reset credits without a Runner Device.", "Update the server or select the original Runner Device.")
 		}
 	} else if domain.ID(*machine).Validate() != nil {
 		return nil, domain.InvalidSubscriptionObservation()

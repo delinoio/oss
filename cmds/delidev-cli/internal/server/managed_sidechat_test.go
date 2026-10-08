@@ -130,6 +130,66 @@ func managedSidechatResult(t *testing.T, input domain.ForkJobInput, finish domai
 	return raw
 }
 
+func TestManagedSidechatServerCreditOwnerRejectsBeforeForkJob(t *testing.T) {
+	f, generation, _ := managedSidechatFixture(t)
+	credits := domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: time.Now().UTC(), AvailableCount: 1}
+	var accountRecord store.Record
+	var connection domain.ID
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.sidechat-server-credit", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := subscriptionAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return nil, err
+		}
+		a.Subscription.ServerQuotaGeneration = generation
+		a.Subscription.ResetCredits = &credits
+		connection = a.Connection.ID
+		accountRecord, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	creditID := domain.NewID()
+	client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.endpoint.URL)
+	credit := &pb.RequestSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(creditID), Id: string(f.input.AccountID), ExpectedRevision: accountRecord.Revision}, Action: pb.SubscriptionObservationAction_SUBSCRIPTION_OBSERVATION_ACTION_RESET_CREDIT, ConnectionId: string(connection), GenerationId: string(generation), CreditsObservationId: string(credits.ObservationID), NextCredit: true, Confirmed: true}
+	if _, err := client.RequestSubscriptionObservation(context.Background(), ownerRequest(f.identity, credit)); err != nil {
+		t.Fatal("server credit acceptance", err)
+	}
+	jobCount := func() int {
+		t.Helper()
+		count := 0
+		if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+			jobs, err := all(tx, domain.JobKind)
+			count = len(jobs)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return count
+	}
+	before := jobCount()
+	parent := f.refresh(t)
+	req := &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(parent.ID), ExpectedRevision: parent.Revision}, ExpectedTurnId: string(f.turn), Name: "Managed Sidechat", Purpose: pb.ForkPurpose_FORK_PURPOSE_SIDECHAT}
+	if _, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, req)); err == nil {
+		t.Fatal("Sidechat admitted while original server credit owns authentication")
+	}
+	if after := jobCount(); after != before {
+		t.Fatalf("rejected Sidechat created a Fork job: before=%d after=%d", before, after)
+	}
+	if err := f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		_, a, err := subscriptionAccount(tx, f.input.AccountID, 0)
+		if err != nil {
+			return err
+		}
+		if a.Subscription.ServerCredit == nil || a.Subscription.ServerCredit.ID != creditID || !a.Subscription.ServerCreditActive() || a.Subscription.ServerCredit.SendClaimed || a.Subscription.Lease != nil || a.Subscription.Generation != generation || a.Connection.ID != connection {
+			t.Fatal("rejected Sidechat changed the original unsent credit owner")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestManagedSidechatProtectedFinishPrecedesPublication(t *testing.T) {
 	for _, fault := range []string{"valid", "missing-finish", "unconfirmed-cleanup", "changed-generation", "missing-capability"} {
 		t.Run(fault, func(t *testing.T) {
