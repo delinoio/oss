@@ -139,11 +139,41 @@ fn staged_link_target(
         .ok_or(ReproFailure::Unavailable)
 }
 
-// Keep component traversal in native order: a directory link must be followed
-// before a later parent component. The returned backing paths include
-// directories visited before `..`; lexical normalization would lose both their
-// identities and the links needed to recreate the original raw target in a
-// candidate.
+// Windows reduces parent components in a relative reparse target before
+// looking up the substituted path. Do not apply this to absolute namespaces
+// or to the remaining suffix: their normalization is a separate native rule.
+#[cfg(any(windows, test))]
+fn windows_relative_components(
+    base: &Path,
+    target: VecDeque<PathBuf>,
+    cancelled: &AtomicBool,
+) -> Result<VecDeque<PathBuf>, ReproFailure> {
+    let mut reduced = VecDeque::new();
+    for component in base
+        .components()
+        .map(|component| PathBuf::from(component.as_os_str()))
+        .chain(target)
+    {
+        check_cancelled(cancelled)?;
+        if component == Path::new("..") {
+            if reduced.pop_back().is_none() {
+                return Err(ReproFailure::ExternalLink);
+            }
+        } else {
+            // Preserve credential denial even when a later parent cancels it.
+            if denied(&component) {
+                return Err(ReproFailure::BlockedInput);
+            }
+            reduced.push_back(component);
+        }
+    }
+    Ok(reduced)
+}
+
+// Keep platform-native traversal order. Unix follows a directory link before
+// a later parent component; Windows reduces a relative reparse target first.
+// Retain the backing actually traversed, including Unix directories visited
+// before `..`, for identity checks and staging.
 fn raw_link_chain(
     root: &Path,
     link: &Path,
@@ -172,6 +202,14 @@ fn raw_link_chain(
             components(raw_target)?,
         )
     };
+    #[cfg(windows)]
+    if !raw_target.is_absolute() {
+        pending = windows_relative_components(&current, pending, cancelled)?;
+        current = PathBuf::new();
+    } else if pending.iter().any(|component| component == Path::new("..")) {
+        // Do not guess parent semantics in an absolute or verbatim namespace.
+        return Err(ReproFailure::Unavailable);
+    }
     let mut chain = Vec::new();
     if !current.as_os_str().is_empty() {
         chain.push(current.clone());
@@ -210,6 +248,20 @@ fn raw_link_chain(
                 )?
             } else {
                 components(&target)?
+            };
+            #[cfg(windows)]
+            let expansion = if !target.is_absolute() {
+                let expansion = windows_relative_components(&current, expansion, cancelled)?;
+                current = PathBuf::new();
+                expansion
+            } else {
+                if expansion
+                    .iter()
+                    .any(|component| component == Path::new(".."))
+                {
+                    return Err(ReproFailure::Unavailable);
+                }
+                expansion
             };
             for component in expansion.into_iter().rev() {
                 pending.push_front(component);
@@ -1605,6 +1657,231 @@ mod tests {
         );
     }
 
+    #[test]
+    fn windows_relative_projection_preserves_native_lookup_and_guards() {
+        let target = |names: &[&str]| names.iter().map(PathBuf::from).collect();
+        let idle = AtomicBool::new(false);
+        assert_eq!(
+            windows_relative_components(
+                Path::new(""),
+                target(&["shortcut", "..", "target.txt"]),
+                &idle
+            )
+            .unwrap(),
+            target(&["target.txt"])
+        );
+        assert_eq!(
+            windows_relative_components(
+                Path::new("deep"),
+                target(&["bridge", "unused", "..", "target.txt"]),
+                &idle
+            )
+            .unwrap(),
+            target(&["deep", "bridge", "target.txt"])
+        );
+        assert!(matches!(
+            windows_relative_components(Path::new(""), target(&["..", "target.txt"]), &idle),
+            Err(ReproFailure::ExternalLink)
+        ));
+        assert!(matches!(
+            windows_relative_components(
+                Path::new(""),
+                target(&[".env", "..", "target.txt"]),
+                &idle
+            ),
+            Err(ReproFailure::BlockedInput)
+        ));
+        assert!(matches!(
+            windows_relative_components(
+                Path::new(""),
+                target(&["target.txt"]),
+                &AtomicBool::new(true)
+            ),
+            Err(ReproFailure::Cancellation)
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_canceled_directory_link_does_not_select_its_decoy() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        if !parent_link_fixture(&root) {
+            return;
+        }
+        fs::write(root.join("target.txt"), b"fixture").unwrap();
+        fs::write(root.join("deep/target.txt"), b"decoy").unwrap();
+        // Native Windows lookup cancels shortcut in the relative substitute.
+        assert_eq!(fs::read(root.join("input.txt")).unwrap(), b"fixture");
+        let selector = Selector::new(&["input.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(&root, &selector, 32, 2).unwrap();
+        assert!(!snapshot.links.contains_key(Path::new("shortcut")));
+        assert!(matches!(
+            Snapshot::take(&root, &selector, 32, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("input.txt")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("input.txt")).unwrap(),
+            b"fixture"
+        );
+        assert_eq!(
+            fs::read_link(candidate.path().join("input.txt"))
+                .unwrap()
+                .as_os_str(),
+            parent_link_target().as_os_str()
+        );
+        assert!(!candidate.path().join("shortcut").exists());
+        assert!(!candidate.path().join("deep").exists());
+    }
+
+    #[cfg(windows)]
+    fn windows_retained_parent_fixture(root: &Path) -> bool {
+        fs::create_dir_all(root.join("deep/nested")).unwrap();
+        fs::write(root.join("deep/nested/target.txt"), b"fixture").unwrap();
+        fs::write(root.join("target.txt"), b"decoy").unwrap();
+        for (source, target, link) in [
+            (
+                root.join("deep/nested"),
+                PathBuf::from("deep").join("nested"),
+                root.join("bridge"),
+            ),
+            (
+                root.join("deep/nested/target.txt"),
+                PathBuf::from("bridge")
+                    .join("unused")
+                    .join("..")
+                    .join("target.txt"),
+                root.join("input.txt"),
+            ),
+        ] {
+            if let Err(error) = stage_symlink(&source, &target, &link) {
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::Unsupported
+                ) {
+                    return false;
+                }
+                panic!("fixture link failed: {error}");
+            }
+        }
+        true
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn stages_directory_link_before_parent_component() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        if !windows_retained_parent_fixture(&root) {
+            return;
+        }
+        assert_eq!(fs::read(root.join("input.txt")).unwrap(), b"fixture");
+        let selector = Selector::new(&["input.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(&root, &selector, 32, 3).unwrap();
+        assert!(matches!(
+            Snapshot::take(&root, &selector, 32, 2),
+            Err(ReproFailure::FileLimit)
+        ));
+        let required = BTreeSet::from([PathBuf::from("input.txt")]);
+        assert_eq!(
+            snapshot
+                .selected_entries_within(Path::new(""))
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            required
+        );
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("input.txt")).unwrap(),
+            b"fixture"
+        );
+        assert_eq!(
+            fs::read_link(candidate.path().join("input.txt"))
+                .unwrap()
+                .as_os_str(),
+            PathBuf::from("bridge")
+                .join("unused")
+                .join("..")
+                .join("target.txt")
+                .as_os_str()
+        );
+        assert_eq!(
+            fs::read_link(candidate.path().join("bridge"))
+                .unwrap()
+                .as_os_str(),
+            PathBuf::from("deep").join("nested").as_os_str()
+        );
+        assert!(candidate.path().join("deep/nested").is_dir());
+        assert!(!candidate.path().join("bridge/unused").exists());
+        assert!(!candidate.path().join("target.txt").exists());
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "repro::tests::parent_component_child_reads_candidate",
+                "--nocapture",
+            ])
+            .env("CLIBOX_PARENT_COMPONENT_CHILD", "1")
+            .current_dir(candidate.path())
+            .output()
+            .unwrap();
+        assert_eq!(child.status.code(), Some(42));
+        assert!(String::from_utf8_lossy(&child.stderr).contains("PARENT_COMPONENT_FIXTURE"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_replaced_directory_visited_before_parent_component() {
+        for replace_link in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = fs::canonicalize(directory.path()).unwrap();
+            if !windows_retained_parent_fixture(&root) {
+                return;
+            }
+            let selector = Selector::new(&["input.txt".into()], &[]).unwrap();
+            let snapshot = Snapshot::take(&root, &selector, 32, 3).unwrap();
+            if replace_link {
+                fs::create_dir(root.join("deep/other")).unwrap();
+                fs::write(root.join("deep/other/target.txt"), b"fixture").unwrap();
+                fs::remove_dir(root.join("bridge")).unwrap();
+                stage_symlink(
+                    &root.join("deep/other"),
+                    &PathBuf::from("deep").join("other"),
+                    &root.join("bridge"),
+                )
+                .unwrap();
+            } else {
+                fs::rename(root.join("deep/nested"), root.join("deep/previous")).unwrap();
+                fs::create_dir(root.join("deep/nested")).unwrap();
+                // Keep the leaf inode, isolating the original directory guard.
+                fs::rename(
+                    root.join("deep/previous/target.txt"),
+                    root.join("deep/nested/target.txt"),
+                )
+                .unwrap();
+            }
+            assert_eq!(fs::read(root.join("input.txt")).unwrap(), b"fixture");
+            let candidate = tempfile::tempdir().unwrap();
+            assert!(matches!(
+                snapshot.stage_required(
+                    &BTreeSet::from([PathBuf::from("input.txt")]),
+                    candidate.path()
+                ),
+                Err(ReproFailure::UnstableInput)
+            ));
+            assert_eq!(fs::read_dir(candidate.path()).unwrap().count(), 0);
+        }
+    }
+
     #[cfg(any(unix, windows))]
     fn parent_link_target() -> PathBuf {
         // Relative Windows reparse targets need native backslash separators:
@@ -1644,7 +1921,7 @@ mod tests {
         true
     }
 
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     #[test]
     fn stages_directory_link_before_parent_component() {
         for decoy in [false, true] {
@@ -1723,7 +2000,7 @@ mod tests {
         std::process::exit(42);
     }
 
-    #[cfg(any(unix, windows))]
+    #[cfg(unix)]
     #[test]
     fn rejects_replaced_directory_visited_before_parent_component() {
         for replace_link in [false, true] {
