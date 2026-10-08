@@ -98,5 +98,5 @@
   "doctor.attribute.7ebf691bfd08": "This check does not repair state, connect an account or run model inference.",
   "doctor.sentence.4c59147c97a5": "{{v0}} bytes",
   "doctor.title.diagnostics": "Diagnostics",
-  "doctor.title.connection": "Connection & diagnostics"
+  "doctor.title.connection": "Connections"
 }

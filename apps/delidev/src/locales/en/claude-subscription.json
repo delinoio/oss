@@ -28,7 +28,7 @@
   "claude-subscription.unsupported": "Claude Code 2.1.236 is required on the selected Runner Device.",
   "claude-subscription.recovery": "The original Runner must confirm native cleanup before another sign-in.",
   "claude-subscription.failed": "Claude sign-in failed. Inspect the original operation and Runner Device.",
-  "claude-subscription.noRunner": "No verified Claude Runner is available in this page. Check Connection & diagnostics.",
+  "claude-subscription.noRunner": "No verified Claude Runner is available in this page. Check Connections.",
   "claude-subscription.requestUnconfirmed": "The original request could not be confirmed. Keep this operation and retry only its original request.",
   "claude-subscription.statusUnconfirmed": "The original sign-in status could not be verified. No new sign-in will start.",
   "claude-subscription.browserFailed": "The browser could not be opened. Open the original page again.",

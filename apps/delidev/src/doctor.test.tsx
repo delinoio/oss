@@ -130,7 +130,7 @@ for (const exit of ["navigation", "Escape then navigation"]) it(`never mounts Do
   }
   const view = render(value.view(<Harness />));
   const opener = screen.getByRole("button", { name:"Open settings" }); opener.focus(); fireEvent.click(opener);
-  fireEvent.click(screen.getByRole("button", { name:"Connection & diagnostics" }));
+  fireEvent.click(screen.getByRole("button", { name:"Connections" }));
   await screen.findByText("Native Connection controls are unavailable in this window.");
   expect(view.container.querySelector(".diagnostics")).toBeNull();
   if (exit === "Escape then navigation") fireEvent.keyDown(screen.getByRole("region", {name:"Settings content"}), {key:"Escape"});
@@ -138,7 +138,7 @@ for (const exit of ["navigation", "Escape then navigation"]) it(`never mounts Do
   expect(document.activeElement).not.toBe(opener);
   fireEvent.click(opener);
   expect(screen.getByRole("heading",{level:1,name:"AI Subscription"})).toBeTruthy();
-  fireEvent.click(screen.getByRole("button",{name:"Connection & diagnostics"}));
+  fireEvent.click(screen.getByRole("button",{name:"Connections"}));
   await screen.findByText("Native Connection controls are unavailable in this window.");
   expect(value.doctor).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled();
 });
