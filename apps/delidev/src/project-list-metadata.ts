@@ -6,6 +6,34 @@ import { clientFailure, EntityKind, isEntityId, newRequestId, ResourceQuery, sup
 import { document, items, text } from "./documents";
 import { repositoryCloneURL } from "./repository-clone-fields";
 
+// Permits outlive response generations. Disposed queued reads release their
+// place without dispatch, while started transport waits hold their original
+// permit until they settle, even when a query observer has been canceled.
+class ProjectRepositoryReadPool {
+  private running = 0;
+  private waiting: (() => void)[] = [];
+  async read<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+    const admitted = await new Promise<boolean>(resolve => {
+      const cancel = () => {
+        const index = this.waiting.indexOf(start);
+        if (index >= 0) this.waiting.splice(index, 1);
+        resolve(false);
+      };
+      const start = () => {
+        signal.removeEventListener("abort", cancel);
+        if (signal.aborted) { resolve(false); return; }
+        this.running++; resolve(true);
+      };
+      if (signal.aborted) resolve(false);
+      else if (this.running < 8) start();
+      else { this.waiting.push(start); signal.addEventListener("abort", cancel, { once: true }); }
+    });
+    if (!admitted) throw new Error("Disposed project repository read");
+    try { if (signal.aborted) throw new Error("Disposed project repository read"); return await operation(); }
+    finally { this.running--; this.waiting.shift()?.(); }
+  }
+}
+
 export enum RepositoryDetailsState { Loading, Ready, Unavailable }
 export interface RepositoryDetails { state: RepositoryDetailsState; name?: string; url?: string; revision?: bigint; stale?: boolean; pending?: boolean; failure?: ClientFailure }
 export function projectRepositoryIds(row: Resource): string[] { return items(document(row).repositories).map(text); }
@@ -25,6 +53,7 @@ export function useProjectListMetadata(ids: readonly string[], active: boolean) 
   const transport = useTransport(), client = useQueryClient();
   const [rows, setRows] = useState<ReadonlyMap<string, RepositoryDetails>>(new Map());
   const retained = useRef(new Map<string, RepositoryDetails>()), owner = useRef<AbortController | undefined>(undefined);
+  const pool = useRef(new ProjectRepositoryReadPool());
   const identity = JSON.stringify([...new Set(ids)]), selected = useRef(ids), enabled = useRef(active);
   selected.current = ids; enabled.current = active;
   const start = useCallback((refresh: boolean) => {
@@ -45,11 +74,9 @@ export function useProjectListMetadata(ids: readonly string[], active: boolean) 
         const id = pending[next++]; if (id === undefined) return;
         const options = createQueryOptions(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id }, { transport });
         const queryKey = [...options.queryKey, { projectListMetadata: newRequestId() }];
-        const abort = () => { void client.cancelQueries({ queryKey, exact: true }); };
-        controller.signal.addEventListener("abort", abort, { once: true });
         try {
           let result = await client.fetchQuery({ queryKey, retry: false, gcTime: 0, staleTime: 0, queryFn: async context => {
-            const response = await options.queryFn({ ...context, queryKey: options.queryKey });
+            const response = await pool.current.read(controller.signal, async () => options.queryFn({ ...context, queryKey: options.queryKey }));
             return repositoryDetails(response.resource, id) ?? null;
           } });
           if (controller.signal.aborted) return;
@@ -64,7 +91,7 @@ export function useProjectListMetadata(ids: readonly string[], active: boolean) 
           const safe = { ...failure, message: "Repository details could not be read.", guidance: "Refresh the Projects list after checking the selected connection." };
           retained.current.set(id, previous?.name ? { ...previous, stale: true, pending: false, failure: safe } : { state: RepositoryDetailsState.Unavailable, failure: safe });
         } finally {
-          controller.signal.removeEventListener("abort", abort); client.removeQueries({ queryKey, exact: true });
+          client.removeQueries({ queryKey, exact: true });
         }
         if (!controller.signal.aborted) setRows(new Map(retained.current));
       }

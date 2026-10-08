@@ -61,7 +61,7 @@ it("prunes off-window IDs and fences disposed generations without starting more 
   mounted.rerender(value.wrap(<Reader ids={[]} />));
   await act(async () => { for (const row of rows.slice(0, 8)) pending.get(row.id)!({ resource: row }); });
   expect(screen.getByTestId("metadata").textContent).toBe("[]"); expect(value.get).toHaveBeenCalledTimes(8);
-  mounted.unmount(); expect(value.client.getQueryCache().getAll()).toHaveLength(0);
+  mounted.unmount(); await waitFor(() => expect(value.client.getQueryCache().getAll()).toHaveLength(0));
 });
 it.each(["https://user:secret@example.org/oss", "https://example.org/a/../secret", "https://example.org/oss?token=secret", "https://example.org/%2e%2e/secret", "https://example.org/oss#secret", "https://example.org/oss\\secret"])("rejects unsafe configured source bytes %s", url => {
   const row = repository("Repository", url); expect(repositoryDetails(row, row.id)).toBeUndefined();
@@ -125,4 +125,36 @@ it("preserves accepted projections across same-identity authentication transport
   expect(screen.getByTestId("metadata").textContent).toContain("Retained across reconnect"); expect(second.get).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Refresh metadata" }));
   await waitFor(() => expect(screen.getByTestId("metadata").textContent).toContain("Refreshed after reconnect"));
+});
+
+it.each(["window", "refresh", "reconnect"])("holds eight transport permits across overlapping %s generations and prunes obsolete queued refs", async mode => {
+  const rows = Array.from({ length: 20 }, (_, index) => repository(`Overlapping ${index}`));
+  const pending: { id: string; release: () => void }[] = [];
+  let concurrent = 0, maximum = 0;
+  const read = (id: string) => new Promise<{ resource?: Resource }>(resolve => {
+    concurrent++; maximum = Math.max(maximum, concurrent);
+    pending.push({ id, release: () => { concurrent--; resolve({ resource: rows.find(row => row.id === id) }); } });
+  });
+  const first = fixture(read), second = fixture(read), original = rows.slice(0, 12).map(row => row.id);
+  const mounted = render(first.wrap(<Reader ids={original} />));
+  await waitFor(() => expect(first.get).toHaveBeenCalledTimes(8));
+  const current = mode === "window" ? rows.slice(12).map(row => row.id) : original;
+  if (mode === "window") mounted.rerender(first.wrap(<Reader ids={current} />));
+  else if (mode === "refresh") fireEvent.click(screen.getByRole("button", { name: "Refresh metadata" }));
+  else mounted.rerender(second.wrap(<Reader ids={current} />, first.client));
+  // Await queued query publication; an abort-ignoring original transport must
+  // still own every permit instead of making another eight slots available.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(first.get.mock.calls.length + second.get.mock.calls.length).toBe(8);
+  await act(async () => { for (const entry of pending.slice(0, 8)) entry.release(); });
+  await waitFor(() => expect(pending.length).toBe(16));
+  if (mode === "window") expect(pending.slice(8).map(entry => entry.id)).toEqual(current);
+  for (let index = 8; index < 8 + current.length; index++) {
+    await waitFor(() => expect(pending[index]).toBeTruthy());
+    await act(async () => pending[index]!.release());
+  }
+  await waitFor(() => expect(first.client.getQueryCache().getAll()).toHaveLength(0));
+  expect(maximum).toBe(8);
+  if (mode === "window") for (const id of original) expect(screen.getByTestId("metadata").textContent).not.toContain(id);
+  mounted.unmount();
 });
