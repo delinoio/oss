@@ -96,7 +96,10 @@
 .api-usage-metric .api-entry-exhausted { color: var(--danger-text); font-size: 14px; }
 .api-quota-window { display: grid; gap: 4px; overflow-wrap: anywhere; }
 .api-quota-window strong { font-size: 14px; line-height: 20px; }
-.api-quota-window progress { width: 100%; height: 6px; accent-color: var(--success-text); }
+.api-quota-window progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; accent-color: var(--quota-fill); }
+.api-quota-window progress::-webkit-progress-bar { border-radius: 3px; background: var(--border-subtle); }
+.api-quota-window progress::-webkit-progress-value { border-radius: 3px; background: var(--quota-fill); }
+.api-quota-window progress::-moz-progress-bar { border-radius: 3px; background: var(--quota-fill); }
 .api-entry-controls { display: flex; align-items: start; gap: 8px; }
 .api-entry-more { position: relative; }
 .api-entry-more > button { min-width: 40px; }

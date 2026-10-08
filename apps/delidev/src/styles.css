@@ -821,11 +821,10 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .subscription-quota-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; font-size: .8rem; }
 .subscription-quota-heading strong { font-weight: 500; overflow-wrap: anywhere; }
 .subscription-quota small { display: block; color: var(--muted); font-size: .72rem; line-height: 1.5; overflow-wrap: anywhere; }
-.subscription-quota progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; accent-color: var(--success-text); }
+.subscription-quota progress { display: block; width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; accent-color: var(--quota-fill); }
 .subscription-quota progress::-webkit-progress-bar { border-radius: 3px; background: var(--border-subtle); }
-.subscription-quota progress::-webkit-progress-value { border-radius: 3px; background: var(--success-text); }
-.subscription-quota progress::-moz-progress-bar { border-radius: 3px; background: var(--success-text); }
-.subscription-quota[data-state=stale] progress::-webkit-progress-value, .subscription-quota[data-state=failed] progress::-webkit-progress-value { background: var(--warning-text); }
+.subscription-quota progress::-webkit-progress-value { border-radius: 3px; background: var(--quota-fill); }
+.subscription-quota progress::-moz-progress-bar { border-radius: 3px; background: var(--quota-fill); }
 .subscription-no-quota { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: .85rem; }
 .subscription-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .subscription-more { position: relative; }

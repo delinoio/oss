@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 
 const directory = join(process.cwd(), "src");
 const source = readFileSync(join(directory, "themes.css"), "utf8");
+const quotaColors = readFileSync(join(directory, "quota-color.ts"), "utf8");
 const palettes = [...source.matchAll(/color-scheme: (?:light|dark);([^}]+)/g)].map(match => new Map([...match[1].matchAll(/--([\w-]+):\s*(#[\da-f]+);/g)].map(item => [item[1], item[2]])));
 
 function luminance(hex: string) {
@@ -23,7 +24,15 @@ test("every existing surface uses shared tokens with complete light/dark and fir
     const css = readFileSync(join(directory, filename), "utf8");
     expect(css, filename).not.toMatch(/#[\da-fA-F]{3,8}\b|:\s*white\b|:\s*black\b|rgba?\(/);
     expect(css, filename).not.toMatch(/(--[\w-]+):\s*var\(\1\)/);
-    for (const match of css.matchAll(/var\(--([\w-]+)\)/g)) expect(palettes[0].has(match[1]), `${filename}: ${match[1]}`).toBe(true);
+    for (const match of css.matchAll(/var\(--([\w-]+)\)/g)) {
+      // Quota fills are component-local interpolation of audited semantic tokens.
+      // Keep the exception bounded to their two consumers and validate its inputs.
+      if (match[1] === "quota-fill") {
+        expect(["styles.css", "api-account.css"]).toContain(filename);
+        expect(quotaColors).toContain('"--quota-fill": quotaColor(percent)');
+        for (const token of quotaColors.matchAll(/var\(--([\w-]+)\)/g)) expect(palettes[0].has(token[1]), `quota-color: ${token[1]}`).toBe(true);
+      } else expect(palettes[0].has(match[1]), `${filename}: ${match[1]}`).toBe(true);
+    }
   }
   expect(source).toContain(':root[data-theme="dark"]');
   expect(source).toContain("@media (prefers-color-scheme: dark)");
