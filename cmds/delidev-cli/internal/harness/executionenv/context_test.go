@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -50,5 +51,29 @@ func TestOrdinaryGhWorkersNeverShareContext(t *testing.T) {
 	b := Resolve("linux", []string{"HOME=" + remote}, remote)
 	if a.ghDirectory == b.ghDirectory || b.ghDirectory != filepath.Join(remote, ".config", "gh") {
 		t.Fatal("remote Worker inherited desktop context")
+	}
+}
+
+func TestOrdinaryGhLinuxKeyringSessionIsolation(t *testing.T) {
+	cwd := t.TempDir()
+	original := []string{"HOME=" + cwd, "DBUS_SESSION_BUS_ADDRESS=unix:path=/synthetic/user-bus", "XDG_RUNTIME_DIR=/synthetic/user-runtime", "GH_TOKEN=secret", "GITHUB_TOKEN=secret"}
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		env := Resolve(goos, append(original, "USERPROFILE="+cwd), cwd).Apply([]string{"HOME=private", "DBUS_SESSION_BUS_ADDRESS=foreign", "XDG_RUNTIME_DIR=foreign"})
+		want := []string{"HOME=private", "GH_CONFIG_DIR=" + filepath.Join(cwd, ".config", "gh")}
+		if goos == "linux" {
+			want = append(want, original[1], original[2])
+		}
+		if !reflect.DeepEqual(env, want) {
+			t.Fatalf("%s: widened or lost session selectors", goos)
+		}
+	}
+	for _, value := range []string{"bad\naddress", "bad\x00address", strings.Repeat("x", 4097)} {
+		c := Resolve("linux", []string{"HOME=" + cwd, "DBUS_SESSION_BUS_ADDRESS=" + value, "XDG_RUNTIME_DIR=" + value}, cwd)
+		if c.sessionBusAddress != "" || c.runtimeDirectory != "" {
+			t.Fatal("unbounded session selector accepted")
+		}
+	}
+	if got := (Ordinary{}).Apply(original); !reflect.DeepEqual(got, []string{original[0]}) {
+		t.Fatal("zero context inherited session authority")
 	}
 }
