@@ -21,6 +21,7 @@ import {
   SubscriptionLoginState,
   SubscriptionService,
   SubscriptionServiceId,
+  WorkerService,
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { OAuthNativeAction, OAuthNativeProvider } from "./account-oauth";
@@ -29,6 +30,7 @@ import { useSubscriptionLogin } from "./subscription-login";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsDialogSize, SettingsTaskDialog } from "./settings-task";
 import { document, encode } from "./documents";
+import { RunnerRemediationProvider, useRunnerRemediation } from "./runner-remediation";
 const authorization = new URL("https://claude.com/cai/oauth/authorize");
 for (const [key, value] of Object.entries({
   client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
@@ -42,7 +44,7 @@ for (const [key, value] of Object.entries({
 }))
   authorization.searchParams.set(key, value);
 const originalURL = authorization.href;
-function fixture(dialog = false) {
+function fixture(dialog = false, diagnostics = false) {
   const machine = create(ResourceSchema, {
     id: newRequestId(),
     kind: EntityKind.MACHINE,
@@ -125,7 +127,9 @@ function fixture(dialog = false) {
     ) => ({ generation: browser }),
   );
   const list = vi.fn((_request: { filter?: { pageToken: string } }) => ({ resources: [machine], nextPageToken: "" }));
+  const discover = vi.fn(async (_request: unknown) => { throw new ConnectError("Original diagnostic receipt lost", Code.Unavailable); });
   const transport = createRouterTransport((router) => {
+    router.service(WorkerService, { discoverHarnesses: discover });
     router.service(ConfigurationService, { saveConfiguration: save });
     router.service(ResourceService, {
       listResources: list,
@@ -170,13 +174,15 @@ function fixture(dialog = false) {
       </>
     );
   }
+  function Diagnostics() { const inspection = useRunnerRemediation(); return <><button onClick={() => inspection?.(machine)}>Open explicit Runner diagnostics</button>{inspection?.body}</>; }
   const view = () => (
     <StrictMode>
       <TransportProvider transport={transport}>
         <QueryClientProvider client={client}>
-          <OAuthNativeProvider control={native}>
+          <RunnerRemediationProvider active><OAuthNativeProvider control={native}>
             <SettingsLifetime>{() => <Body />}</SettingsLifetime>
-          </OAuthNativeProvider>
+            {diagnostics ? <Diagnostics /> : null}
+          </OAuthNativeProvider></RunnerRemediationProvider>
         </QueryClientProvider>
       </TransportProvider>
     </StrictMode>
@@ -184,6 +190,7 @@ function fixture(dialog = false) {
   return {
     view,
     client,
+    discover,
     list,
     save,
     login,
@@ -215,6 +222,7 @@ function fixture(dialog = false) {
 async function start(f: ReturnType<typeof fixture>) {
   render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
+  expect(screen.queryByRole("button", { name: "Inspect this Runner" })).toBeNull();
   const runner = await screen.findByRole("combobox", { name: "Runner Device" });
   fireEvent.click(runner);
   await screen.findByRole("option", { name: "Remote Linux" });
@@ -396,4 +404,28 @@ it("retains selected Runner after failed refresh and grants no new sign-in while
   expect(f.save).not.toHaveBeenCalled(); expect(f.login).not.toHaveBeenCalled();
   await act(async () => resolve({ resources: [f.machine], nextPageToken: "" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Start sign-in" }) as HTMLButtonElement).disabled).toBe(false));
+});
+
+it("keeps Start blocked by a retained pending and uncertain original Runner diagnostic", async () => {
+  const f = fixture(false, true); let loseReceipt!: () => void;
+  f.discover.mockImplementationOnce(() => new Promise<never>((_resolve, reject) => { loseReceipt = () => reject(new ConnectError("Original lost receipt", Code.Unavailable)); }));
+  render(f.view()); fireEvent.click(screen.getByRole("button", { name: "Add Claude" }));
+  const runner = await screen.findByRole("combobox", { name: "Runner Device" }); fireEvent.click(runner);
+  fireEvent.click(await screen.findByRole("option", { name: "Remote Linux" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start sign-in" })).toHaveProperty("disabled", false));
+  expect(screen.queryByRole("button", { name: "Inspect this Runner" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open explicit Runner diagnostics" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit executable paths" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
+  await waitFor(() => expect(f.discover).toHaveBeenCalledOnce());
+  expect(screen.getByRole("button", { name: "Start sign-in" }).matches(":disabled")).toBe(true);
+  await act(async () => loseReceipt()); await screen.findByRole("button", { name: "Retry the same harness check" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
+  expect(screen.getByRole("button", { name: "Start sign-in" })).toHaveProperty("disabled", true);
+  expect(f.login).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled(); expect(f.native).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Open explicit Runner diagnostics" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry the same harness check" }));
+  await waitFor(() => expect(f.discover).toHaveBeenCalledTimes(2)); expect(f.discover.mock.calls[1][0]).toEqual(f.discover.mock.calls[0][0]);
+  expect(screen.getByRole("button", { name: "Start sign-in" }).matches(":disabled")).toBe(true);
+  f.client.clear();
 });

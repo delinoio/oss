@@ -9,6 +9,8 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, ProviderService, newRequestId } from "@delinoio/delidev-api-client";
 import { ResourceChoice } from "./configuration-fields";
 import { encode } from "./documents";
+import { RunnerRemediationProvider } from "./runner-remediation";
+import { i18n } from "./localization";
 
 it("applies a delayed exact selection to the current sibling form draft", async () => {
   const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Runner" }) });
@@ -67,4 +69,24 @@ it.each(["duplicate", "oversized"])("rejects an entire malformed %s append befor
   expect(control.dataset.value).toBe(row.id); expect(change).not.toHaveBeenCalled();
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
   expect(read).toHaveBeenCalledTimes(2);
+});
+
+it("retains exact selected Runner changes without a shortcut or inspection presentation", async () => {
+  const first = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "First Runner", disabled: false, installations: null }) });
+  const second = create(ResourceSchema, { ...first, id: newRequestId(), revision: 11n, documentJson: encode({ name: "Second Runner", disabled: false, installations: null }) });
+  const change = vi.fn(), reads = vi.fn(request => ({ resource: request.id === first.id ? first : second }));
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [first, second] }), getResource: reads }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() { const [value, setValue] = useState(first.id); return <ResourceChoice label="Runner" kind={EntityKind.MACHINE} value={value} active change={(id, data, resource) => { change(id, data, resource); setValue(id); }} />; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  const picker = screen.getByRole("combobox", { name: "Runner" }); fireEvent.click(picker);
+  fireEvent.click(await screen.findByRole("option", { name: "Second Runner" }));
+  await waitFor(() => expect(change).toHaveBeenCalledOnce());
+  expect(change.mock.calls[0][0]).toBe(second.id); expect(change.mock.calls[0][2]).toMatchObject({ id: second.id, kind: second.kind, revision: second.revision, schemaVersion: second.schemaVersion });
+  expect(Array.from(change.mock.calls[0][2].documentJson as Uint8Array)).toEqual(Array.from(second.documentJson));
+  expect(picker.dataset.value).toBe(second.id); expect(reads.mock.calls.some(([request]) => request.id === second.id && request.kind === EntityKind.MACHINE)).toBe(true);
+  expect(screen.queryByRole("button", { name: "Inspect this Runner" })).toBeNull(); expect(screen.queryByRole("dialog")).toBeNull();
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  expect(screen.queryByRole("button", { name: "이 Runner 검사" })).toBeNull(); expect(picker.dataset.value).toBe(second.id);
+  client.clear();
 });

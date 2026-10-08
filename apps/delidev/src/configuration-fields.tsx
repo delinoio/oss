@@ -92,6 +92,7 @@ export const ResourceSelectionPending = createContext<((identity: string, pendin
 // only for the retained selection and a deliberate selection callback.
 export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
   useLocale();
+  // The retained diagnostic owner still fences consuming effects for this exact Runner.
   const inspectRunner = useRunnerRemediation({ active });
   const reportRead = useContext(AgentReadProblem), reportPending = useContext(ResourceSelectionPending), readIdentity = useId(), remediationIdentity = useId();
   const transport = useTransport(), client = useQueryClient(), generation = useRef(0);
@@ -178,8 +179,6 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
     {selected.error ? <button type="button" disabled={!active || disabled || selectionBusy || selected.isFetching} onClick={() => void selected.refetch()}>{copy("ui.retryCurrentRead")}</button> : null}
     {needsProviderCapability && inventory.error ? <button type="button" disabled={!active || disabled || selectionBusy || inventory.isFetching} onClick={() => void inventory.refetch()}>{copy("ui.retryCurrentRead")}</button> : null}
     {needsProviderCapability && kind === EntityKind.MODEL && selectedProvider.error ? <button type="button" disabled={!active || disabled || selectionBusy || selectedProvider.isFetching} onClick={() => void selectedProvider.refetch()}>{copy("agent-worker-wizard.retrySourceDetails")}</button> : null}
-    {kind === EntityKind.MACHINE && inspectRunner && selectedResource ? <button type="button" disabled={!active || disabled || selectionBusy || Boolean(failure) || selected.isFetching || (inspectRunner.locked && !inspectRunner.pendingFor(value))} onClick={() => inspectRunner(selectedResource)}>{copy("claude-subscription.inspectRunner")}</button> : null}
-    {kind === EntityKind.MACHINE ? inspectRunner?.body : null}
   </div>;
 }
 
