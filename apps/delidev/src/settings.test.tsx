@@ -260,7 +260,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
   const values = ["subscription-accounts", "api-accounts", "providers", "agent-workers", "instructions", "projects", "repositories", "integrations", "git-workflow", "execution-workers", "paired-devices", "appearance", "server-preferences", "diagnostics", "notifications", "transfer", "backups"];
   expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI", "Coding", "Device management", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
@@ -1102,9 +1102,9 @@ it.each(["cancel", "close", "done"])("retains a failed first model through %s an
 it("retains Connection controls without mounting or reading Settings Doctor", async () => {
  const doctor = vi.fn(() => ({})); const value = fixture([], {doctor});
  render(value.view(<Settings connectionSettings={<button>Original native connection</button>} />));
- fireEvent.click(screen.getByRole("button",{name:"Connection & diagnostics"}));
+ fireEvent.click(screen.getByRole("button",{name:"Connections"}));
  await screen.findByRole("button",{name:"Original native connection"});
- expect(screen.getByRole("heading",{name:"Connection & diagnostics"})).toBeTruthy();
+ expect(screen.getByRole("heading",{name:"Connections"})).toBeTruthy();
  expect(screen.queryByRole("button",{name:"Refresh diagnostics"})).toBeNull();
  expect(screen.queryByText("Reading server diagnostics")).toBeNull();
  expect(doctor).not.toHaveBeenCalled();

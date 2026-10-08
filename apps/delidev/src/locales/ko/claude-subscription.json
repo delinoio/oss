@@ -28,7 +28,7 @@
   "claude-subscription.unsupported": "선택한 실행 장치에 Claude Code 2.1.236이 필요합니다.",
   "claude-subscription.recovery": "다시 로그인하려면 원래 실행 장치의 네이티브 정리 확인이 필요합니다.",
   "claude-subscription.failed": "Claude 로그인에 실패했습니다. 원래 작업과 실행 장치를 확인하세요.",
-  "claude-subscription.noRunner": "이 페이지에 확인된 Claude 실행 장치가 없습니다. 연결 및 진단을 확인하세요.",
+  "claude-subscription.noRunner": "이 페이지에 확인된 Claude 실행 장치가 없습니다. 연결을 확인하세요.",
   "claude-subscription.requestUnconfirmed": "원래 요청 결과를 확인하지 못했습니다. 이 작업을 유지하고 원래 요청만 다시 확인하세요.",
   "claude-subscription.statusUnconfirmed": "원래 로그인 상태를 확인하지 못했습니다. 새 로그인을 시작하지 않습니다.",
   "claude-subscription.browserFailed": "브라우저를 열지 못했습니다. 원래 로그인 페이지를 다시 여세요.",

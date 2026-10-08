@@ -67,8 +67,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   expect(JSON.stringify(bridge.invoke.mock.calls)).not.toContain(value.connection.token);
   expect(screen.queryByText(value.connection.token)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
-  fireEvent.click(screen.getByRole("button", { name: "Connection controls" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connections" }));
   fireEvent.click(screen.getByRole("button", { name: "Verify saved connection" }));
   await waitFor(() => expect(bridge.invoke.mock.calls.filter(([command]) => command === "connect_saved")).toHaveLength(2));
   await waitFor(() => expect((screen.getByRole("button", { name: "Verify saved connection" }) as HTMLButtonElement).disabled).toBe(false));
@@ -159,9 +158,9 @@ it("enters the verified product automatically and hides routine infrastructure c
   expect(screen.queryByText("Server 0.1.0")).toBeNull();
   expect(bridge.invoke.mock.calls.some(([command]) => command === "connect_local" || command === "retry_local")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
-  fireEvent.click(screen.getByRole("button", { name: "Connection controls" }));
-  expect(screen.getByRole("button", { name: "Saved servers" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Connections" }));
+  expect(screen.getByRole("heading", { name: "Saved servers" })).toBeTruthy();
+  fireEvent.click(screen.getByText("Advanced"));
   expect(screen.getByRole("button", { name: "Check desktop registration" })).toBeTruthy();
 }, 15_000);
 it("keeps a pending observation across remount and serializes explicit Retry", async () => {
@@ -202,11 +201,9 @@ it("retains the original Stop and confirmation across diagnostics hiding and Set
   await screen.findByText("Your sessions, in one place");
   const open = () => {
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
-    fireEvent.click(screen.getByRole("button", { name: "Connection controls" }));
-  };
+    fireEvent.click(screen.getByRole("button", { name: "Connections" }));
+    };
   const hide = () => {
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Connection & diagnostics" })).getByRole("button", { name: "Close Connection & diagnostics" }));
     fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   };
   open();

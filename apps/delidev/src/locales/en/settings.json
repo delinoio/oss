@@ -46,7 +46,7 @@
   "settings.gitWorkflowDescription": "Default branch, Worktree fetch, and pull request remediation.",
   "settings.integrations_090512": "Git Profiles",
   "settings.manageGithubProfilesForRepositoryAccess_42adb1": "Manage GitHub profiles for repository access. AI accounts are configured separately.",
-  "settings.connectionDiagnostics_b30b0d": "Connection & diagnostics",
+  "settings.connectionDiagnostics_b30b0d": "Connections",
   "settings.readOnlyObservationsFromTheSelected_92a18a": "Read-only observations from the selected server. This check does not repair state, connect an account or run model inference.",
   "settings.notifications_788011": "Notifications",
   "settings.thesePreferencesBelongToThisClient_082e1e": "These preferences belong to this client on the selected server. Inbox requests stay available when notifications are disabled or cannot be delivered.",
@@ -157,5 +157,18 @@
   "settings.projectOriginalID": "Project ID",
   "settings.projectRepositoryOriginalIDs": "Repository IDs",
   "settings.connectionUnavailable": "Native Connection controls are unavailable in this window.",
-  "settings.connectionDescription": "Manage the original connection and saved server controls."
+  "settings.connectionDescription": "Manage this computer and your saved servers.",
+  "settings.connections.current": "Current connection",
+  "settings.connections.advanced": "Advanced",
+  "settings.connections.advancedHelp": "Registration recovery and app updates",
+  "settings.connections.attention": "Advanced controls need attention.",
+  "settings.connections.thisComputer": "This computer",
+  "settings.connections.address": "Server address",
+  "settings.connections.connected": "Connected",
+  "settings.connections.add": "Add server",
+  "settings.connections.saved": "Saved",
+  "settings.connections.menu": "Actions for {{name}}",
+  "settings.connections.authorization": "Authorization is checked when you open a server.",
+  "settings.connections.stale": "Saved server inventory is unavailable. Showing the last confirmed profiles.",
+  "settings.connections.loading": "Loading saved servers…"
 }

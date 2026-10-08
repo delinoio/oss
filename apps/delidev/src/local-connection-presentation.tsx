@@ -21,11 +21,11 @@ export function LocalConnectionPresentationProvider({ target, inline, children, 
 }
 // Move only the view. The original controller stays mounted in its authenticated
 // mutation scope when diagnostics opens or closes, retaining confirmations.
-export function LocalConnectionPresentation({ children, diagnosticsOnly = false }: { children: ReactNode; diagnosticsOnly?: boolean }) {
+export function LocalConnectionPresentation({ children, diagnosticsOnly = false, destination: explicitDestination }: { children: ReactNode; diagnosticsOnly?: boolean; destination?: HTMLElement }) {
   const { target, inline, helpTarget } = useContext(Presentation);
   const [host] = useState(() => document.createElement("div"));
   const fallback = useRef<HTMLDivElement>(null);
-  const destination = diagnosticsOnly ? target : helpTarget ?? target;
+  const destination = explicitDestination ?? (diagnosticsOnly ? target : helpTarget ?? target);
   const hidden = !inline || diagnosticsOnly;
   useLayoutEffect(() => {
     const ownedFocus = host.contains(document.activeElement) ? document.activeElement as HTMLElement : undefined;

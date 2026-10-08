@@ -1,7 +1,7 @@
 import { validateDesktopRuntime } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { PersistentConnectionView } from "./connections-page";
 import { invoke } from "@tauri-apps/api/core";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { Modal } from "./ui";
@@ -75,7 +75,7 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
     } catch (reason) { if (alive.current) setError(reason); }
     finally { operating.current = false; if (current()) setBusy(false); }
   };
-  const view = <section aria-label={copy("local-registration.desktopRegistration_65a097")}>
+  const view = <section data-connection-attention={Boolean(pending || error || busy)} aria-label={copy("local-registration.desktopRegistration_65a097")}>
     <button disabled={busy} onClick={() => void inspect()}>{copy("local-registration.checkDesktopRegistration_a540c5")}</button>
     {status ? <p role="status">{status.state === RegistrationState.Authorized ? copy("local-registration.thisDesktopRegistrationIsAuthorized_f356ec") : status.state === RegistrationState.Revoked ? copy("local-registration.thisDesktopRegistrationWasRevokedYou_1f8ea7") : copy("local-registration.aDesktopRegistrationRecoveryIsPending_de3baf")}</p> : null}
     {status && (status.state !== RegistrationState.Authorized || pending) ? <button disabled={busy} onClick={() => setConfirm(true)}>{pending ? copy("local-registration.continueDesktopRecovery_250cf5") : copy("local-registration.reRegisterThisDesktop_405621")}</button> : null}
@@ -88,5 +88,5 @@ export function LocalRegistrationRecovery({ busy, setBusy, recovered, active = t
       <button disabled={busy || !status} onClick={() => void recover()}>{busy ? copy("local-registration.recovering_959bdc") : pending ? copy("local-registration.retryOriginalDesktopRecovery_3b14fa") : copy("local-registration.confirmDesktopReRegistration_d9ee3f")}</button>
     </Modal>
   </section>;
-  return target ? createPortal(view, target) : <div hidden={!inline}>{view}</div>;
+  return <PersistentConnectionView target={target} hidden={!inline}>{view}</PersistentConnectionView>;
 }

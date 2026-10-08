@@ -9,7 +9,7 @@ async function check(directory) {
     if (entry.isDirectory()) await check(path);
     else if (/\.(js|html|json)$/.test(entry.name)) {
       const bytes = await readFile(path, "utf8");
-      if (/__qa\/|delidev-qa-appearance|DeliDev browser QA|qa-environments|qa-owner\.json|__prSidebarFixture|__usageFixture|__accountRemediationFixture|__sessionRemediationFixture|__claudeRunnersFixture|__transcriptRoleFixture|__imageInputFixture|__sessionComposerFixture|__sessionHeaderFixture|__browserSplitFixture|__generalChatFixture|__planModeFixture|__apiDetailsFixture|__inboxFilterFixture|__apiVerificationFixture/.test(bytes)) throw new Error("QA code leaked into the release frontend");
+      if (/__qa\/|delidev-qa-appearance|DeliDev browser QA|qa-environments|qa-owner\.json|__prSidebarFixture|__usageFixture|__accountRemediationFixture|__sessionRemediationFixture|__claudeRunnersFixture|__transcriptRoleFixture|__imageInputFixture|__sessionComposerFixture|__sessionHeaderFixture|__browserSplitFixture|__generalChatFixture|__planModeFixture|__apiDetailsFixture|__inboxFilterFixture|__apiVerificationFixture|__connectionsFixture/.test(bytes)) throw new Error("QA code leaked into the release frontend");
 
     }
   }

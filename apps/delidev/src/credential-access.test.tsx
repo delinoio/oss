@@ -74,7 +74,7 @@ it("changes locale without repeating native access and keeps diagnostics availab
   await act(async () => { await i18n.changeLanguage("ko"); });
   expect(screen.getByRole("heading", { name: "키체인 접근을 확인하지 못했습니다" })).toBeTruthy();
   expect(native.invoke).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "연결 및 진단" }));
+  fireEvent.click(screen.getByRole("button", { name: "연결" }));
   expect(f.diagnostics).toHaveBeenCalledOnce();
 });
 it("leaves other platforms and saved remote authority outside startup access", () => {

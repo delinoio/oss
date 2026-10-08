@@ -1,0 +1,34 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.connections-page { display: grid; gap: 24px; min-width: 0; }
+.settings-content[aria-label] .connections-page h2 { font-size: 18px; margin: 0 0 16px; }
+.connections-current { border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.connections-current .local-server { padding: 0; border: 0; margin: 0; }
+.connections-page p, .connections-page small { overflow-wrap: anywhere; }
+.connections-page button { min-height: 40px; border-radius: 8px; }
+.connections-section-heading, .connections-saved-row { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.connections-section-heading .actions { flex-wrap: wrap; }
+.connections-saved-list { list-style: none; padding: 0; margin: 0; }
+.connections-saved-row { padding: 16px 0; border-bottom: 1px solid var(--border); }
+.connections-saved-row > div { min-width: 0; }
+.connections-saved-row h3 { margin: 0; }
+.connections-saved-row p { margin: 8px 0; }
+.connections-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.connections-row-menu { position: relative; border: 0; padding: 0; margin: 0; }
+.connections-row-menu summary { cursor: pointer; min-width: 40px; text-align: center; border: 1px solid var(--control-border); border-radius: 8px; padding: 8px; }
+.connections-row-menu > div { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.connections-advanced { border: 0; padding: 0; margin: 0; }
+.connections-advanced > summary { cursor: pointer; }
+.connections-advanced > div { display: grid; gap: 16px; }
+.connections-attention { color: var(--danger-text); margin: 0; }
+@media (max-width: 759px) { .connections-saved-row, .connections-section-heading { flex-direction: column; } .connections-row-actions { width: 100%; } }
+
+.settings-content.settings-connections[aria-label] .settings-category-title h1 { font-size: 28px; }
+
+.connections-local-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.connections-local-heading h3, .connections-local-heading p { margin: 0 0 8px; }
+.connections-local-heading .actions { flex-wrap: wrap; }
+.connections-address { border-top: 1px solid var(--border); padding-top: 16px; }
+.connections-connected { color: var(--text); font-weight: 600; }
+.connections-row-menu summary { list-style: none; }
+.connections-row-menu summary::-webkit-details-marker { display: none; }
+@media (max-width: 759px) { .connections-local-heading { flex-direction: column; } }

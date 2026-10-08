@@ -9,6 +9,7 @@ import { type Transport } from "@connectrpc/connect";
 import { createDeliDevTransport } from "@delinoio/delidev-api-client";
 import { Updates, type DesktopUpdateControls } from "./updates";
 import { App } from "./App";
+import { ConnectionsPage, type ConnectionPageSlots } from "./connections-page";
 import { LocalConnectionPresentation } from "./local-connection-presentation";
 import { Modal, Problem } from "./ui";
 import { SavedConnections, SavedConnectionProblem, type SavedConnection, type SavedConnectionActions } from "./saved-connections";
@@ -38,6 +39,7 @@ function LocalDesktop() {
   const [inlineRecovery, setInlineRecovery] = useState(false);
   const [inlineRecoveryTarget, setInlineRecoveryTarget] = useState<HTMLElement>();
   const [showConnection, setShowConnection] = useState(false);
+  const [pageSlots, setPageSlots] = useState<ConnectionPageSlots>();
   const [connectionTarget, setConnectionTarget] = useState<HTMLDivElement | null>(null);
   const [recoveryTarget, setRecoveryTarget] = useState<HTMLDivElement | null>(null);
   const previous = useRef<NativeConnection>(undefined);
@@ -170,7 +172,7 @@ function LocalDesktop() {
     return value;
   }, { automatic: true });
   const problem = typeof error === "string" && Object.hasOwn(nativeProblems, error) ? <p role="alert">{nativeProblems[error]}</p> : <Problem error={error} />;
-  const connectionSettings = <button onClick={() => setShowConnection(true)}>{copy("desktop.connectionControls_6f99ea")}</button>;
+  const connectionSettings = <ConnectionsPage local onSlots={setPageSlots} />;
   const updateControls = useMemo<DesktopUpdateControls>(() => ({ readContext: () => invoke("desktop_update_context"), control: async (action, id, revision) => {
     const selected = previous.current;
     if (!selected) throw "invalid-evidence";
@@ -178,18 +180,18 @@ function LocalDesktop() {
     if (previous.current !== selected) throw "invalid-evidence";
     return result;
   } }), []);
-  const controls = <><LocalServerControls status={status} restart={() => void connect()} busy={busy} problem={problem} /><LocalConnectionPresentation diagnosticsOnly><Updates active={showConnection} controls={updateControls} /></LocalConnectionPresentation></>;
+  const controls = <><LocalServerControls endpoint={previous.current?.endpoint} connected={connectionVerified} status={status} restart={() => void connect()} busy={busy} problem={problem} /><LocalConnectionPresentation diagnosticsOnly destination={showConnection ? undefined : pageSlots?.advanced}><Updates active={showConnection || Boolean(pageSlots)} controls={updateControls} /></LocalConnectionPresentation></>;
   const oauthServer = previous.current?.server_id ?? "";
   const controlOAuth = useCallback<OAuthNativeControl>((opening, action, generation, attempt, authorization) => invoke("account_oauth_native", { server: oauthServer, opening, action, generation, attempt, authorization }), [oauthServer]);
-  return <>{transport ? <CredentialAccessGate connection={previous.current!} registration={() => setInlineRecovery(true)} diagnostics={() => setShowConnection(true)}><OAuthNativeProvider control={controlOAuth}><WorkerNetworkControlProvider control={controlWorkerNetwork}><App onConnectionHelp={target => { setInlineRecoveryTarget(target); setInlineRecovery(Boolean(target)); }} serverPresentation={{ kind: ServerPresentationKind.Local }} pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} readLocalWorker={readLocalWorker} transport={transport} connectionReady={connectionVerified && status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} connectionSettings={connectionSettings} connectionTarget={showConnection ? connectionTarget ?? undefined : undefined} localServer={controls} /></WorkerNetworkControlProvider></OAuthNativeProvider></CredentialAccessGate> : <main className="connect-page"><h1>{copy("desktop.delidev_44fcad")}</h1>{isTauri() ? <><p role="status">{busy ? copy("desktop.startingDelidev_e37cda") : copy("desktop.delidevCouldNotConnect_ed9a4c")}</p>{error ? <><p role="alert">{error === "stopped" ? copy("desktop.delidevIsDisconnectedOnThisComputer_12b4ca") : copy("desktop.delidevCouldNotFinishStartingRetry_c06c30")}</p><button className="primary" disabled={busy} onClick={() => void connect(error === "stopped" ? undefined : "retry_local")}>{copy(error === "stopped" ? "desktop.startLocalServer_4d64e3" : "desktop.retry_942087")}</button>{!showConnection ? problem : null}</> : null}<button onClick={() => setShowConnection(true)}>{copy("desktop.troubleshooting_c3af07")}</button></> : <p>{copy("desktop.openTheDelidevDesktopAppTo_5990b4")}</p>}</main>}
+  return <>{transport ? <CredentialAccessGate connection={previous.current!} registration={() => setInlineRecovery(true)} diagnostics={() => setShowConnection(true)}><OAuthNativeProvider control={controlOAuth}><WorkerNetworkControlProvider control={controlWorkerNetwork}><App onConnectionHelp={target => { setInlineRecoveryTarget(target); setInlineRecovery(Boolean(target)); }} serverPresentation={{ kind: ServerPresentationKind.Local }} pairingAuthority={previous.current ? { endpoint: previous.current.endpoint, serverId: previous.current.server_id } : undefined} currentDeviceId={previous.current?.device_id} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} readLocalWorker={readLocalWorker} transport={transport} connectionReady={connectionVerified && status?.state === LocalServerState.Ready} connectionEpoch={connectionEpoch} connectionSettings={connectionSettings} connectionTarget={showConnection ? connectionTarget ?? undefined : pageSlots?.current} localServer={controls} /></WorkerNetworkControlProvider></OAuthNativeProvider></CredentialAccessGate> : <main className="connect-page"><h1>{copy("desktop.delidev_44fcad")}</h1>{isTauri() ? <><p role="status">{busy ? copy("desktop.startingDelidev_e37cda") : copy("desktop.delidevCouldNotConnect_ed9a4c")}</p>{error ? <><p role="alert">{error === "stopped" ? copy("desktop.delidevIsDisconnectedOnThisComputer_12b4ca") : copy("desktop.delidevCouldNotFinishStartingRetry_c06c30")}</p><button className="primary" disabled={busy} onClick={() => void connect(error === "stopped" ? undefined : "retry_local")}>{copy(error === "stopped" ? "desktop.startLocalServer_4d64e3" : "desktop.retry_942087")}</button>{!showConnection ? problem : null}</> : null}<button onClick={() => setShowConnection(true)}>{copy("desktop.troubleshooting_c3af07")}</button></> : <p>{copy("desktop.openTheDelidevDesktopAppTo_5990b4")}</p>}</main>}
     <Modal title={copy("desktop.connectionDiagnostics_b30b0d")} visible={showConnection} close={() => setShowConnection(false)}>
       <section aria-label={copy("desktop.connection_639a40")}><h3>{copy("desktop.connectionOnThisComputer_dbc9be")}</h3><div ref={setConnectionTarget} />{!transport ? <><LocalServerStatusText status={status} /><button disabled={busy} onClick={() => void connect()}>{copy("desktop.startLocalServer_4d64e3")}</button>{showConnection ? problem : null}</> : null}
         <div ref={setRecoveryTarget} />
         <button onClick={() => setShowSaved(true)}>{copy("desktop.savedServers_4bf084")}</button>
       </section>
     </Modal>
-    <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptRecovery} readGeneration={() => connectionReadGeneration.current} active={showConnection || inlineRecovery || error === "permission-denied" || error === "credential-unavailable"} target={inlineRecoveryTarget ?? (showConnection ? recoveryTarget ?? undefined : undefined)} inline={inlineRecovery || error === "permission-denied" || error === "credential-unavailable"} />
-    <SavedConnections visible={showSaved} close={() => setShowSaved(false)} actions={savedActions} />
+    <LocalRegistrationRecovery busy={busy} setBusy={setBusy} recovered={acceptRecovery} readGeneration={() => connectionReadGeneration.current} active={showConnection || Boolean(pageSlots) || inlineRecovery || error === "permission-denied" || error === "credential-unavailable"} target={inlineRecoveryTarget ?? (showConnection ? recoveryTarget ?? undefined : pageSlots?.advanced)} inline={inlineRecovery || error === "permission-denied" || error === "credential-unavailable"} />
+    <SavedConnections target={showSaved ? undefined : pageSlots?.saved} advancedTarget={showSaved ? undefined : pageSlots?.advanced} visible={showSaved || Boolean(pageSlots)} close={() => setShowSaved(false)} actions={savedActions} />
   </>;
 
 }
@@ -206,6 +208,7 @@ const savedActions: SavedConnectionActions = {
 function SavedDesktop({ profile }: { profile: SavedConnection }) {
   useLocale();
   const [showConnection, setShowConnection] = useState(false);
+  const [pageSlots, setPageSlots] = useState<ConnectionPageSlots>();
   const [connectionTarget, setConnectionTarget] = useState<HTMLDivElement | null>(null);
   const [transport, setTransport] = useState<Transport>();
   const [error, setError] = useState<unknown>();
@@ -259,10 +262,11 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
     if (previous.current !== selected) throw "invalid-evidence";
     return result;
   } }), []);
-  const controls = <LocalConnectionPresentation><p>{profile.name}</p><small>{profile.endpoint}</small><button disabled={busy} onClick={() => void connect()}>{copy("desktop.verifySavedConnection_9161de")}</button><button onClick={() => void invoke("show_connection_manager").catch(setError)}>{copy("desktop.showLocalWindow_746012")}</button><SavedConnectionProblem error={error} /><Updates active={showConnection} controls={updateControls} /></LocalConnectionPresentation>;
+  const controls = <LocalConnectionPresentation><p>{profile.name}</p><small>{profile.endpoint}</small><button disabled={busy} onClick={() => void connect()}>{copy("desktop.verifySavedConnection_9161de")}</button><button onClick={() => void invoke("show_connection_manager").catch(setError)}>{copy("desktop.showLocalWindow_746012")}</button><SavedConnectionProblem error={error} /></LocalConnectionPresentation>;
+  const updateView = <LocalConnectionPresentation diagnosticsOnly destination={showConnection ? undefined : pageSlots?.advanced}><Updates active={showConnection || Boolean(pageSlots)} controls={updateControls} /></LocalConnectionPresentation>;
   const oauthServer = profile.server_id;
   const controlOAuth = useCallback<OAuthNativeControl>((opening, action, generation, attempt, authorization) => invoke("account_oauth_native", { server: oauthServer, opening, action, generation, attempt, authorization }), [oauthServer]);
-  return <>{transport ? <CredentialAccessGate connection={previous.current!} diagnostics={() => setShowConnection(true)}><OAuthNativeProvider control={controlOAuth}><WorkerNetworkControlProvider control={controlWorkerNetwork}><App localServer={controls} connectionTarget={showConnection ? connectionTarget ?? undefined : undefined} serverPresentation={{ kind: ServerPresentationKind.Saved, name: profile.name }} pairingAuthority={{ endpoint: profile.endpoint, serverId: profile.server_id }} transport={transport} readLocalWorker={readLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} controlLocalWorker={controlLocalWorker} currentDeviceId={profile.device_id} connectionEpoch={epoch} connectionSettings={<button onClick={() => setShowConnection(true)}>{copy("desktop.connectionControls_6f99ea")}</button>} /></WorkerNetworkControlProvider></OAuthNativeProvider></CredentialAccessGate> : <main className="connect-page"><h1>{copy("desktop.delidev_44fcad")}</h1><p role="status">{busy ? copy("desktop.connecting_72021e") : copy("desktop.delidevCouldNotConnect_ed9a4c")}</p>{error ? <p role="alert">{copy("desktop.delidevCouldNotVerifyThisConnection_862b8e")}</p> : null}<button disabled={busy} onClick={() => void connect()}>{copy("desktop.retry_942087")}</button><button onClick={() => setShowConnection(true)}>{copy("desktop.troubleshooting_c3af07")}</button></main>}
+  return <>{transport ? <CredentialAccessGate connection={previous.current!} diagnostics={() => setShowConnection(true)}><OAuthNativeProvider control={controlOAuth}><WorkerNetworkControlProvider control={controlWorkerNetwork}><App localServer={<>{controls}{updateView}</>} connectionTarget={showConnection ? connectionTarget ?? undefined : pageSlots?.current} serverPresentation={{ kind: ServerPresentationKind.Saved, name: profile.name }} pairingAuthority={{ endpoint: profile.endpoint, serverId: profile.server_id }} transport={transport} readLocalWorker={readLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} controlLocalWorker={controlLocalWorker} currentDeviceId={profile.device_id} connectionEpoch={epoch} connectionSettings={<ConnectionsPage onSlots={setPageSlots} />} /></WorkerNetworkControlProvider></OAuthNativeProvider></CredentialAccessGate> : <main className="connect-page"><h1>{copy("desktop.delidev_44fcad")}</h1><p role="status">{busy ? copy("desktop.connecting_72021e") : copy("desktop.delidevCouldNotConnect_ed9a4c")}</p>{error ? <p role="alert">{copy("desktop.delidevCouldNotVerifyThisConnection_862b8e")}</p> : null}<button disabled={busy} onClick={() => void connect()}>{copy("desktop.retry_942087")}</button><button onClick={() => setShowConnection(true)}>{copy("desktop.troubleshooting_c3af07")}</button></main>}
     <Modal title={copy("desktop.connectionDiagnostics_b30b0d")} visible={showConnection} close={() => setShowConnection(false)}><section aria-label={copy("desktop.savedConnection_4df074")}><h3>{copy("desktop.savedConnection_4df074")}</h3><div ref={setConnectionTarget} />{!transport ? <SavedConnectionProblem error={error} /> : null}</section></Modal>
   </>;
 

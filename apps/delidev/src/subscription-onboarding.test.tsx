@@ -107,7 +107,7 @@ it("shows local manual recovery and an explicit original inspection without auth
  const inspect=vi.fn();const value=props({stage:Stage.Recovery,canReopen:false,canCancel:false,inspect});
  render(<SubscriptionOnboarding {...value} />);
  expect(screen.getByRole("alert").textContent).toContain("Inspection does not retry terminal sign-in or cleanup");
- expect(screen.queryByText(/Check Connection.*diagnostics/)).toBeNull();expect(inspect).not.toHaveBeenCalled();
+ expect(screen.queryByText(/Check Connections/)).toBeNull();expect(inspect).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Inspect original sign-in status"}));expect(inspect).toHaveBeenCalledOnce();expect(value.reopen).not.toHaveBeenCalled();expect(value.cancel).not.toHaveBeenCalled();
 });
 

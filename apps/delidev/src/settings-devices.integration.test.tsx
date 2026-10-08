@@ -36,7 +36,7 @@ it("revokes a real paired client through settings and reads bounded server diagn
   expect(document(retained.resource).revoked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Return to devices" }));
   await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Details for DeliDev desktop" })));
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connections" }));
   await screen.findByText("Native Connection controls are unavailable in this window.");
   expect(screen.queryByRole("button", { name:"Refresh diagnostics" })).toBeNull();
   view.rerender(<TransportProvider transport={transport}><QueryClientProvider client={client}><Doctor active /></QueryClientProvider></TransportProvider>);
