@@ -348,13 +348,16 @@ func removeSessionTree(ctx context.Context, root, path string) error {
 // title runtimes. A restored or replaced copy blocks acknowledgement; replay
 // never gains permission to delete it merely from the earlier completed proof.
 func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
-	if len(w.Copies) == 0 && w.Fork == nil {
-		return nil, nil
-	}
-	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
+	paths := make([]string, 0, len(w.SkillSnapshots)+5)
 	for _, binding := range w.SkillSnapshots {
 		paths = append(paths, filepath.Join(root, "skill-snapshots", string(binding.SnapshotID)))
 	}
+	// Skill-only and skill/image plans still observe every original snapshot
+	// on completed replay. They grant no execution or workspace authority.
+	if len(w.Copies) == 0 && w.Fork == nil {
+		return paths, nil
+	}
+	paths = append(paths, filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock"))
 	paths = append(paths, workspace.SessionStorageCopyPaths(root, w)...)
 	remnants, err := workspace.SessionStorageRemnantPaths(ctx, root, w)
 	if err != nil {

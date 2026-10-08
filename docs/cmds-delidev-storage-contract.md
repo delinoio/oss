@@ -1094,7 +1094,7 @@ They remain outside portable backups. Restore receipt quarantine is an unknown
 outcome and cannot authorize preparation cleanup. Cleanup requires positively
 absent original receipts after joined handlers or exclusive restart; original
 paired-device removal tombstones prevent delayed copying and root replacement.
-Accepted snapshots retain ordinary session deletion ownership.
+Accepted snapshots retain ordinary session deletion ownership. Skill-only and mixed skill/image plans always observe original skill snapshot absence on completed replay, without acquiring execution or workspace namespace authority.
 
 Active server staging journals have a 4,096-entry admission bound. Confirmed
 accepted or removed outcomes move atomically to exact-ID hash-sharded private
