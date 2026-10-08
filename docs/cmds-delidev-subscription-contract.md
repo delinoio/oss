@@ -359,3 +359,5 @@ Successful projection shares sparse-window merging, minimum remaining fractions 
 The owner will perform real-account, installed-native, remote and platform acceptance separately. This batch's automated fixture/build validation does not establish those results; that skipped acceptance is nonblocking for this feature PR under the owner's explicit instruction.
 
 Managed ChatGPT Sidechat follows [issue #1829’s protected Fork profile](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829). EXECUTE Take admits only its exact claimed original Fork job. Protected Finish writes a metadata-only original-job receipt after actor/source/lease rechecks; that receipt gates child publication. Independent managed Fork remains unsupported.
+
+Managed subscription installation refusal describes missing verified Codex installation evidence, not an exact or minimum native version. Existing bounded version metadata, detected state, path, protocol, observation and capability predicates remain authoritative. Safe guidance directs the user to the selected Runner Device’s installed Codex and protocol verification without exposing native paths or output.
