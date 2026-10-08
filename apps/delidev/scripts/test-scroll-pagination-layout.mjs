@@ -64,8 +64,33 @@ try {
   assert(await page.locator("main").evaluate(node=>node.scrollWidth<=node.clientWidth),"Effective zoom cannot overflow horizontally");
   await page.screenshot({path:join(screenshots,`${language}-${theme}-${compact ? "compact-200" : "wide"}.png`)});
  }
+
+ const stable = async () => page.evaluate(() => Object.fromEntries(["picker","refresh","helper","following"].map(key=>{const r=document.querySelector(`[data-measure-${key}]`).getBoundingClientRect();return [key,{top:r.top,left:r.left,height:r.height}];})));
+ const assertStable = (before,after) => {for(const key of Object.keys(before)) for(const axis of ["top","left","height"]) assert(Math.abs(before[key][axis]-after[key][axis])<=1,`${key}.${axis} moved on picker disclosure`);};
+ const containsPopup = async () => {const geometry=await page.locator(".scroll-picker-popup").evaluate(popup=>{const r=popup.getBoundingClientRect(),owner=popup.closest(".settings-task-body,.sidebar-pane,.sidebar-pane-dialog,.sidebar,[data-picker-boundary]")?.getBoundingClientRect()??{left:0,top:0,right:innerWidth,bottom:innerHeight};return {popup:{left:r.left,right:r.right,top:r.top,bottom:r.bottom},owner:{left:owner.left,right:owner.right,top:owner.top,bottom:owner.bottom},width:innerWidth,height:innerHeight,scale:r.width/popup.offsetWidth};});const {popup:r,owner,width,height}=geometry;assert(r.left>=Math.max(0,owner.left)-1 && r.right<=Math.min(width,owner.right)+1 && r.top>=Math.max(0,owner.top)-1 && r.bottom<=Math.min(height,owner.bottom)+1,`Popover must stay in original bounds: ${JSON.stringify(geometry)}`);};
+ let overlayCases=0;
+ for(const language of ["en","ko"]) for(const theme of ["light","dark"]) for(const surface of ["ordinary","dialog","sidebar"]) for(const compact of [false,true]) {
+  await page.setViewportSize({width:compact?640:1440,height:compact?640:900});
+  await page.goto(`http://127.0.0.1:${server.address().port}/?overlay=1&surface=${surface}&language=${language}&theme=${theme}&zoom=${compact?2:1}`);
+  process.stdout.write(JSON.stringify({case:surface,language,theme,compact})+"\n");
+  const picker=page.getByRole("combobox");await picker.waitFor();await picker.scrollIntoViewIfNeeded();
+  const before=await stable();await picker.click();await page.getByRole("listbox").waitFor();await page.waitForTimeout(50);assertStable(before,await stable());await containsPopup();
+  assert(await page.getByRole("listbox").evaluate(node=>node.matches(":popover-open")),"Native top-layer popup required");
+  const popupId=await page.getByRole("listbox").getAttribute("id");await picker.focus();await page.keyboard.press("ArrowDown");await page.keyboard.press("Escape");assertStable(before,await stable());assert(await picker.evaluate(node=>node===document.activeElement));
+  assert.equal(await picker.getAttribute("data-value"),"off-page");
+  if(surface==="dialog") assert(await page.locator("[data-overlay-parent]").evaluate(node=>node.open),"Picker Escape preserves parent task");
+  await picker.click();await page.setViewportSize({width:compact?620:1200,height:compact?620:760});await page.waitForTimeout(50);assert.equal(await page.getByRole("listbox").getAttribute("id"),popupId);await containsPopup();
+  if(surface!=="ordinary") {await page.locator("[data-overlay-owner]").evaluate(node=>node.scrollTop+=20);await page.waitForTimeout(50);assert.equal(await page.getByRole("listbox").getAttribute("id"),popupId);await containsPopup();}
+  assert.equal(await picker.getAttribute("data-value"),"off-page");await page.screenshot({path:join(screenshots,`overlay-${surface}-${language}-${theme}-${compact?"effective-200":"wide"}.png`)});overlayCases++;
+ }
+ await page.setViewportSize({width:960,height:640});await page.goto(`http://127.0.0.1:${server.address().port}/?overlay=1&surface=ordinary&many=1`);
+ await page.getByRole("button",{name:"Fixture picker Load"}).click();await page.waitForFunction(()=>Number(document.querySelector("[data-picker-count]").textContent)===20);
+ const manyPicker=page.getByRole("combobox");const initial=await stable();await manyPicker.click();await page.getByRole("option").first().waitFor();assertStable(initial,await stable());
+ const popup=page.getByRole("listbox");await popup.evaluate(node=>node.scrollTop=node.scrollHeight);await page.waitForTimeout(150);await page.waitForFunction(()=>document.querySelector("[data-overlay-state]").textContent.includes("page-two"));
+ const retry=popup.getByRole("button",{name:"Retry",exact:true});await retry.waitFor();assert.equal((await page.locator("[data-overlay-state]").textContent()).split("page-two").length-1,1,"Failed page is not retried automatically");await retry.click();await page.waitForFunction(()=>document.querySelectorAll("[role=option]").length===40);assertStable(initial,await stable());await containsPopup();
+ await manyPicker.focus();await page.keyboard.press("End");await page.keyboard.press("Enter");assert.equal(await manyPicker.getAttribute("data-value"),"option-39");assert((await page.locator("[data-overlay-state]").textContent()).startsWith("option-39:1:"),"Exact once-only callback");overlayCases++;
  assert.deepEqual(errors,[]);
- process.stdout.write(JSON.stringify({operation:"scroll-pagination-layout",cases:8,screenshots,nativeAcceptance:"not-performed",accountAcceptance:"not-performed",actualChromeZoom:"effective-CSS-200-percent"})+"\n");
+ process.stdout.write(JSON.stringify({operation:"scroll-pagination-layout",cases:8,overlayCases,screenshots,nativeAcceptance:"not-performed",accountAcceptance:"not-performed",actualChromeZoom:"effective-CSS-200-percent"})+"\n");
 } finally {
  await browser?.close();
  if (server) await new Promise(done => server.close(done));

@@ -300,6 +300,20 @@ Generated Connect Query batches use isolated disposable keys; this does not
 replace the global inactive-query retention guard or a domain's disposal rules.
 Locale and geometry remain presentation inputs, never scope identity.
 
+Shared ScrollPicker choices use a native manual popover in the original DOM
+owner. Only the label and trigger participate in ordinary form layout. Position
+the mounted listbox against its trigger within the visible viewport and original
+Settings task body or sidebar pane; flip above or reduce scrollable height when
+needed. Container scroll, resize and effective zoom update geometry without
+resetting selection, continuation state or query scope. Compact display-contents
+sidebar wrappers grant no geometry; their rendered pane owns the boundary.
+Preserve native nested-modal focus, fixed task header/footer, the actual listbox
+scroll root and exact-ID admission. Escape closes the picker first and restores
+its opener. Inert, hidden, closed, disabled or disposed owners reject late selection
+and retire positioning observers. IME commits and repeated shortcut events cannot
+select an option.
+
+
 All pagination surfaces share this behavior: Home/contextual navigation, PR
 repository selection, Search/Activity/Inbox/Schedules, Settings inventories,
 Runner Devices, network/diagnostics/integrations/providers/models/accounts and
