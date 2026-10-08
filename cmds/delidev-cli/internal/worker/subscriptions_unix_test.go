@@ -115,6 +115,14 @@ func init() {
 			}
 			write(req.ID, map[string]string{"outcome": outcome})
 		case "account/rateLimits/read":
+			if mode == "active-quota" {
+				file, err := os.OpenFile(filepath.Join(home, "quota-reads"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+				if err != nil {
+					os.Exit(42)
+				}
+				_, _ = file.WriteString("read\n")
+				_ = file.Close()
+			}
 			write(req.ID, map[string]any{"rateLimits": map[string]any{"limitId": "codex", "primary": nil, "secondary": nil}, "rateLimitsByLimitId": nil})
 		case "account/logout":
 			if os.Remove(filepath.Join(home, "auth.json")) != nil {
