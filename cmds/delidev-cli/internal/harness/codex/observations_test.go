@@ -55,6 +55,22 @@ func TestEmptyModelVerificationPreservesOriginalTurnAndAuthority(t *testing.T) {
 	}
 }
 
+func TestPrivateExtensionClassificationCannotReflectNativeContent(t *testing.T) {
+	for _, method := range []string{"app/list/updated", "account/gatewayOAuth/changed", "mcpServer/startupStatus/updated", "private-native-method-sentinel"} {
+		event := privateNative(nativewire.Event{Kind: nativewire.Notification, Method: method, Params: json.RawMessage(`{"private":"native-payload-sentinel"}`)})
+		raw, err := json.Marshal(event)
+		if err != nil || strings.Contains(string(raw), method) || strings.Contains(string(raw), "native-payload-sentinel") {
+			t.Fatal("private native observation entered serialized diagnostic")
+		}
+		if method == "private-native-method-sentinel" && event.ExtensionStage != validationOther {
+			t.Fatal("unknown method changed the closed log vocabulary")
+		}
+		if method != "private-native-method-sentinel" && event.ExtensionStage == validationOther {
+			t.Fatal("known private startup family lost its diagnostic classification")
+		}
+	}
+}
+
 func TestNativeResumeGoalAbsenceHasNoExecutionAuthority(t *testing.T) {
 	c, turn := observationClient()
 	c.execution.paused = true
