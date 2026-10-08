@@ -21,6 +21,18 @@ fn directory_reproduction_workload() {
     let Some(directory) = std::env::var_os("CLIBOX_FSPY_DIRECTORY_REPRO") else {
         return;
     };
+    if std::env::var_os("CLIBOX_FSPY_RESTORE_DIRECTORY").is_some() {
+        fs::rename("assets", "original-assets").unwrap();
+        fs::create_dir("assets").unwrap();
+        fs::write("assets/flag", b"replacement").unwrap();
+        for entry in fs::read_dir("assets").unwrap() {
+            entry.unwrap();
+        }
+        fs::remove_dir_all("assets").unwrap();
+        fs::rename("original-assets", "assets").unwrap();
+        eprintln!("EXPECTED");
+        std::process::exit(42);
+    }
     if !directory.is_empty() {
         for entry in fs::read_dir(directory).unwrap() {
             entry.unwrap();
@@ -471,4 +483,37 @@ fn reproduction_preserves_selected_file_and_directory_symlinks() {
             assert!(links.is_empty());
         }
     }
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires opt-in native injection and directory mutation acceptance"]
+fn restored_selected_directory_identity_is_unstable() {
+    let _fixture = REPRO_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("project");
+    let private = temporary.path().join("private");
+    fs::create_dir_all(root.join("assets")).unwrap();
+    fs::create_dir(&private).unwrap();
+    fs::write(root.join("assets/flag"), b"original").unwrap();
+    let bundle = temporary.path().join("bundle");
+    let output = reproduction_command(
+        &root,
+        &bundle,
+        &["--include", "assets", "--include", "assets/**"],
+        "assets",
+        None,
+    )
+    .env("CLIBOX_FSPY_RESTORE_DIRECTORY", "1")
+    .env("TMPDIR", &private)
+    .output()
+    .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("unstable_input"), "{stderr}");
+    assert!(!bundle.exists());
+    assert_eq!(fs::read_dir(&private).unwrap().count(), 0);
+    assert_eq!(fs::read(root.join("assets/flag")).unwrap(), b"original");
 }

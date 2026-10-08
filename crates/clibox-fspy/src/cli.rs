@@ -1845,6 +1845,16 @@ fn collect_required(
                         if crate::repro::Snapshot::is_blocked(&directory) {
                             return Err(ReproFailure::BlockedInput);
                         }
+                        // Check captured identity before expanding descendants.
+                        // Live checks cannot detect an observed replacement
+                        // after the original directory has been restored.
+                        if snapshot.contains_selected_directory(&directory)
+                            && path.identity.is_some_and(|identity| {
+                                !snapshot.selected_directory_has_identity(&directory, identity)
+                            })
+                        {
+                            return Err(ReproFailure::UnstableInput);
+                        }
                         for entry in snapshot.selected_entries_within(&directory) {
                             snapshot.check_cancelled()?;
                             required.insert(entry.clone());
@@ -4583,9 +4593,20 @@ mod tests {
         fs::hard_link(root.join("a.txt"), root.join("b.txt")).unwrap();
         fs::create_dir(root.join("assets")).unwrap();
         fs::write(root.join("assets/flag"), b"present").unwrap();
-        let selector =
-            coverage::Selector::new(&["*.txt".into(), "assets".into(), "assets/**".into()], &[])
-                .unwrap();
+        fs::create_dir(root.join("empty")).unwrap();
+        std::os::unix::fs::symlink("assets", root.join("alias")).unwrap();
+        let selector = coverage::Selector::new(
+            &[
+                "*.txt".into(),
+                "assets".into(),
+                "assets/**".into(),
+                "empty".into(),
+                "alias".into(),
+                "alias/**".into(),
+            ],
+            &[],
+        )
+        .unwrap();
         let snapshot = crate::repro::Snapshot::take(&root, &selector, 1024, 10).unwrap();
         let metadata = fs::metadata(root.join("b.txt")).unwrap();
         let identity = record::FileIdentity::Inode {
@@ -4684,7 +4705,126 @@ mod tests {
             device: directory_metadata.dev(),
             inode: directory_metadata.ino(),
         };
+        record.operations[0].start.paths[0].identity = Some(identity);
+        assert!(matches!(
+            collect_required(&record, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
         record.operations[0].start.paths[0].identity = Some(directory_identity);
+        assert_eq!(
+            collect_required(&record, &root, &selector, &snapshot).unwrap(),
+            std::collections::BTreeSet::from([
+                PathBuf::from("assets"),
+                PathBuf::from("assets/flag"),
+            ])
+        );
+        let mut query = record.clone();
+        for (relative, expected) in [
+            (
+                "empty",
+                std::collections::BTreeSet::from([PathBuf::from("empty")]),
+            ),
+            (
+                "alias",
+                std::collections::BTreeSet::from([
+                    PathBuf::from("alias"),
+                    PathBuf::from("alias/flag"),
+                ]),
+            ),
+        ] {
+            let path = &mut query.operations[0].start.paths[0];
+            path.logical =
+                NativePath::UnixBytes(root.join(relative).as_os_str().as_bytes().to_vec());
+            path.project_relative = Some(NativePath::UnixBytes(relative.as_bytes().to_vec()));
+            let metadata = fs::metadata(root.join(relative)).unwrap();
+            path.identity = Some(record::FileIdentity::Inode {
+                device: metadata.dev(),
+                inode: metadata.ino(),
+            });
+            let required = collect_required(&query, &root, &selector, &snapshot).unwrap();
+            assert_eq!(required, expected);
+            let candidate = tempfile::tempdir().unwrap();
+            snapshot
+                .stage_required(&required, candidate.path())
+                .unwrap();
+            assert!(candidate.path().join(relative).is_dir());
+            query.operations[0].start.paths[0].identity = Some(identity);
+            assert!(matches!(
+                collect_required(&query, &root, &selector, &snapshot),
+                Err(crate::repro::ReproFailure::UnstableInput)
+            ));
+            query.operations[0].start.paths[0].identity = None;
+            assert_eq!(
+                collect_required(&query, &root, &selector, &snapshot).unwrap(),
+                expected
+            );
+        }
+        // Root and unselected ancestors retain the old expansion contract;
+        // captured identity admission applies only to selected directories.
+        query.operations[0].start.paths[0].logical =
+            NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec());
+        query.operations[0].start.paths[0].project_relative =
+            Some(NativePath::UnixBytes(Vec::new()));
+        for captured in [None, Some(identity)] {
+            query.operations[0].start.paths[0].identity = captured;
+            assert_eq!(
+                collect_required(&query, &root, &selector, &snapshot).unwrap(),
+                snapshot
+                    .selected_entries_within(Path::new(""))
+                    .cloned()
+                    .collect()
+            );
+        }
+        let child_selector = coverage::Selector::new(&["assets/flag".into()], &[]).unwrap();
+        let child_snapshot =
+            crate::repro::Snapshot::take(&root, &child_selector, 1024, 10).unwrap();
+        query.operations[0].start.paths[0].logical =
+            NativePath::UnixBytes(root.join("assets").as_os_str().as_bytes().to_vec());
+        query.operations[0].start.paths[0].project_relative =
+            Some(NativePath::UnixBytes(b"assets".to_vec()));
+        assert_eq!(
+            collect_required(&query, &root, &child_selector, &child_snapshot).unwrap(),
+            std::collections::BTreeSet::from([PathBuf::from("assets/flag")])
+        );
+        // Capture a real replacement directory's identity, restore the source,
+        // then reject the query even though live snapshot verification
+        // succeeds.
+        fs::rename(root.join("assets"), root.join("original-assets")).unwrap();
+        fs::create_dir(root.join("assets")).unwrap();
+        fs::write(root.join("assets/replacement"), b"different").unwrap();
+        let replacement = fs::metadata(root.join("assets")).unwrap();
+        let replacement_identity = record::FileIdentity::Inode {
+            device: replacement.dev(),
+            inode: replacement.ino(),
+        };
+        fs::read_dir(root.join("assets"))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        fs::remove_file(root.join("assets/replacement")).unwrap();
+        fs::remove_dir(root.join("assets")).unwrap();
+        fs::rename(root.join("original-assets"), root.join("assets")).unwrap();
+        snapshot
+            .verify_required(&std::collections::BTreeSet::from([
+                PathBuf::from("assets"),
+                PathBuf::from("assets/flag"),
+            ]))
+            .unwrap();
+        query = record.clone();
+        query.operations[0].start.paths[0].identity = Some(replacement_identity);
+        assert!(matches!(
+            collect_required(&query, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
+        // Captured admission does not replace the existing live recheck: a
+        // matching captured identity cannot authorize a missing source
+        // directory.
+        fs::rename(root.join("assets"), root.join("original-assets")).unwrap();
+        assert!(matches!(
+            collect_required(&record, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
+        fs::rename(root.join("original-assets"), root.join("assets")).unwrap();
         for operation in [record::Operation::Metadata, record::Operation::Open] {
             record.operations[0].start.operation = operation;
             assert_eq!(
