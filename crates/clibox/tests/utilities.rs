@@ -421,6 +421,95 @@ fn time_formats_epochs_custom_inputs_and_nanoseconds() {
 }
 
 #[test]
+fn time_custom_optional_and_repeated_fractions_preserve_precision() {
+    for (value, input_format, expected) in [
+        (
+            "2024-02-29 12:34:56.123",
+            "%F %T%.3f%.f",
+            "2024-02-29T12:34:56.123Z\n",
+        ),
+        (
+            "2024-02-29 12:34:56.000",
+            "%F %T%.3f%.f",
+            "2024-02-29T12:34:56.000Z\n",
+        ),
+        (
+            "2024-02-29 12:34:56",
+            "%F %T%.3f%.f",
+            "2024-02-29T12:34:56Z\n",
+        ),
+        (
+            "2024-02-29 12:34:56.123/.123000",
+            "%F %T%.3f/%.6f",
+            "2024-02-29T12:34:56.123000Z\n",
+        ),
+        (
+            "2024-02-29 12:34:56.123000/.123",
+            "%F %T%.6f/%.3f",
+            "2024-02-29T12:34:56.123000Z\n",
+        ),
+        (
+            "2024-02-29 12:34:56 123/123000",
+            "%F %T %3f/%6f",
+            "2024-02-29T12:34:56.123000Z\n",
+        ),
+        (
+            "2024-02-29 12:34:56 123000/123",
+            "%F %T %6f/%3f",
+            "2024-02-29T12:34:56.123000Z\n",
+        ),
+        (
+            "2024-02-29 12:34:56 000/000000",
+            "%F %T %3f/%6f",
+            "2024-02-29T12:34:56.000000Z\n",
+        ),
+        (
+            "2024-02-29 12:34:56 123000000/123",
+            "%F %T %f/%3f%.f",
+            "2024-02-29T12:34:56.123000000Z\n",
+        ),
+    ] {
+        success(
+            &["time", "format", value, "--input-format", input_format],
+            b"",
+            expected.as_bytes(),
+        );
+    }
+    for (extra, expected) in [
+        (["--to", "unix-ms"], "1709210096123\n"),
+        (["--to", "unix-s"], "1709210096\n"),
+        (["--format", "%F %T"], "2024-02-29 12:34:56\n"),
+    ] {
+        let mut args = vec![
+            "time",
+            "format",
+            "2024-02-29 12:34:56.123",
+            "--input-format",
+            "%F %T%.3f%.f",
+        ];
+        args.extend(extra);
+        success(&args, b"", expected.as_bytes());
+    }
+    for (value, input_format) in [
+        ("2024-02-29 12:34:56.123/.124000", "%F %T%.3f/%.6f"),
+        ("2024-02-29 12:34:56 123/124000", "%F %T %3f/%6f"),
+        ("2024-02-29 12:34:56.1234567890", "%F %T%.f"),
+        ("2024-02-29 12:34:60.123", "%F %T%.3f%.f"),
+        ("2023-02-29 12:34:56.123", "%F %T%.3f%.f"),
+    ] {
+        let output = run(
+            &["time", "format", value, "--input-format", input_format],
+            b"",
+        );
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("InvalidTime"));
+        assert!(!stderr.contains(value));
+    }
+}
+
+#[test]
 fn calendar_arithmetic_clamps_then_applies_days_and_elapsed_time() {
     for (args, expected) in [
         (
