@@ -1606,22 +1606,31 @@ mod tests {
     }
 
     #[cfg(any(unix, windows))]
+    fn parent_link_target() -> PathBuf {
+        // Relative Windows reparse targets need native backslash separators:
+        // CreateSymbolicLinkW retains forward slashes instead of converting
+        // them as ordinary Win32 pathname lookup does. Joining components
+        // keeps the parent traversal intact and the Unix fixture unchanged.
+        PathBuf::from("shortcut").join("..").join("target.txt")
+    }
+
+    #[cfg(any(unix, windows))]
     fn parent_link_fixture(root: &Path) -> bool {
         fs::create_dir_all(root.join("deep/nested")).unwrap();
         fs::write(root.join("deep/target.txt"), b"fixture").unwrap();
         for (source, target, link) in [
             (
                 root.join("deep/nested"),
-                Path::new("deep/nested"),
+                PathBuf::from("deep").join("nested"),
                 root.join("shortcut"),
             ),
             (
                 root.join("deep/target.txt"),
-                Path::new("shortcut/../target.txt"),
+                parent_link_target(),
                 root.join("input.txt"),
             ),
         ] {
-            if let Err(error) = stage_symlink(&source, target, &link) {
+            if let Err(error) = stage_symlink(&source, &target, &link) {
                 #[cfg(windows)]
                 if matches!(
                     error.kind(),
@@ -1672,12 +1681,16 @@ mod tests {
                 b"fixture"
             );
             assert_eq!(
-                fs::read_link(candidate.path().join("input.txt")).unwrap(),
-                Path::new("shortcut/../target.txt")
+                fs::read_link(candidate.path().join("input.txt"))
+                    .unwrap()
+                    .as_os_str(),
+                parent_link_target().as_os_str()
             );
             assert_eq!(
-                fs::read_link(candidate.path().join("shortcut")).unwrap(),
-                Path::new("deep/nested")
+                fs::read_link(candidate.path().join("shortcut"))
+                    .unwrap()
+                    .as_os_str(),
+                PathBuf::from("deep").join("nested").as_os_str()
             );
             assert!(candidate.path().join("deep/nested").is_dir());
             assert!(!candidate.path().join("target.txt").exists());
@@ -1729,7 +1742,7 @@ mod tests {
                 fs::remove_dir(root.join("shortcut")).unwrap();
                 stage_symlink(
                     &root.join("deep/other"),
-                    Path::new("deep/other"),
+                    &PathBuf::from("deep").join("other"),
                     &root.join("shortcut"),
                 )
                 .unwrap();
