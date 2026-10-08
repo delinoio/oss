@@ -197,3 +197,54 @@ func widgetDate(_ value: Date, _ language: WidgetLanguage) -> String {
     formatter.timeStyle = .short
     return formatter.string(from: value)
 }
+
+// Validate reset wall components before countdown formatting. Foundation's
+// ISO8601 parser can normalize impossible dates; they grant no duration proof.
+func widgetResetInstant(_ value: String) -> Date? {
+    guard value.utf8.count <= 35,
+          let expression = try? NSRegularExpression(pattern: #"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$"#),
+          let match = expression.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) else { return nil }
+    func part(_ index: Int) -> String { Range(match.range(at: index), in: value).map { String(value[$0]) } ?? "" }
+    guard let year = Int(part(1)), let month = Int(part(2)), let day = Int(part(3)),
+          let hour = Int(part(4)), let minute = Int(part(5)), let second = Int(part(6)),
+          (1...12).contains(month), (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second) else { return nil }
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    let monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    guard (1...monthDays[month-1]).contains(day) else { return nil }
+    let zone = part(8)
+    var offset = 0
+    if zone != "Z" {
+        let digits = Array(zone)
+        guard let hours = Int(String(digits[1...2])), let minutes = Int(String(digits[4...5])), hours <= 23, minutes <= 59 else { return nil }
+        offset = (hours * 60 + minutes) * 60 * (digits[0] == "+" ? 1 : -1)
+    }
+    // Match proleptic Gregorian elapsed-day arithmetic in the other renderers.
+    let adjustedYear = year - (month <= 2 ? 1 : 0)
+    let era = Int(floor(Double(adjustedYear) / 400))
+    let yearOfEra = adjustedYear - era * 400
+    let shiftedMonth = month + (month > 2 ? -3 : 9)
+    let dayOfYear = (153 * shiftedMonth + 2) / 5 + day - 1
+    let days = era * 146097 + yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear - 719468
+    let fraction = Double("0" + part(7)) ?? 0
+    return Date(timeIntervalSince1970: Double(days * 86400 + hour * 3600 + minute * 60 + second - offset) + fraction)
+}
+func widgetQuotaReset(_ value: String, at now: Date, language: WidgetLanguage) -> String {
+    guard let reset = widgetResetInstant(value) else {
+        let at = widgetTimestamp(value).map { widgetDate($0, language) } ?? value
+        return widgetCopy(.resetAt, language, ["at": at])
+    }
+    let remaining = reset.timeIntervalSince(now)
+    guard remaining > 0 else { return widgetCopy(.resetAt, language, ["at": widgetDate(reset, language)]) }
+    let days = Int(floor(remaining / 86400)), hours = Int(floor(remaining / 3600)) % 24, minutes = Int(floor(remaining / 60)) % 60
+    let key: WidgetMessage
+    if days > 0 {
+        if hours == 0 { key = days == 1 ? .resetDay : .resetDays }
+        else if days == 1 { key = hours == 1 ? .resetDayHour : .resetDayHours }
+        else { key = hours == 1 ? .resetDaysHour : .resetDaysHours }
+    } else if hours > 0 {
+        if minutes == 0 { key = hours == 1 ? .resetHour : .resetHours }
+        else if hours == 1 { key = minutes == 1 ? .resetHourMinute : .resetHourMinutes }
+        else { key = minutes == 1 ? .resetHoursMinute : .resetHoursMinutes }
+    } else { key = minutes == 0 ? .resetSoon : minutes == 1 ? .resetMinute : .resetMinutes }
+    return widgetCopy(key, language, ["days": String(days), "hours": String(hours), "minutes": String(minutes)])
+}

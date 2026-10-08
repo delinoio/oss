@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { quotaColorStyle } from "./quota-color";
-import { Timestamp } from "./timestamp-display";
+import { Timestamp, TimestampMode } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsHeading, SettingsEmpty, SettingsLoading } from "./settings-presentation";
@@ -121,7 +121,7 @@ function QuotaWindow({ window, now, active }: { window: SubscriptionQuotaWindow;
     <div className="subscription-quota-heading"><strong>{label}</strong><span>{presentation.percent === undefined ? copy("subscription-settings.remainingUnknown_e49e1a") : copy("subscription-settings.remaining_fe6b6b", { v0: presentation.percent })}</span></div>
     {presentation.percent !== undefined ? <progress style={quotaColorStyle(presentation.percent)} max="100" value={presentation.percent} aria-label={copy("subscription-settings.remaining_f33475", { v0: label })} /> : null}
     <small>{quotaLabels[presentation.state]}{window.observedAt ? <><LocalizedText id="subscription-settings.observed_c0c869" components={{ s0: <Timestamp active={active} value={window.observedAt} /> }} /></> : copy("subscription-settings.noObservationTime_02689f")}</small>
-    {window.resetAt ? <small><LocalizedText id="subscription-settings.reset_22f04d" components={{ s0: <Timestamp active={active} value={window.resetAt} />, s1: <>{Date.parse(window.resetAt) <= now ? copy("subscription-settings.elapsedRecoveryUnconfirmed_4f7d23") : ""}</> }} /></small> : null}
+    {window.resetAt ? <small><Timestamp active={active} value={window.resetAt} mode={TimestampMode.QuotaCountdown} expired={timestamp => <LocalizedText id="subscription-settings.reset_22f04d" components={{ s0: <>{timestamp}</>, s1: <>{Date.parse(window.resetAt!) <= now ? copy("subscription-settings.elapsedRecoveryUnconfirmed_4f7d23") : ""}</> }} />} /></small> : null}
   </div>;
 }
 

@@ -1,0 +1,17 @@
+{
+  "quota-countdown.resetDay": "{{days}}일 뒤 리셋",
+  "quota-countdown.resetDays": "{{days}}일 뒤 리셋",
+  "quota-countdown.resetDayHour": "{{days}}일 {{hours}}시간 뒤 리셋",
+  "quota-countdown.resetDayHours": "{{days}}일 {{hours}}시간 뒤 리셋",
+  "quota-countdown.resetDaysHour": "{{days}}일 {{hours}}시간 뒤 리셋",
+  "quota-countdown.resetDaysHours": "{{days}}일 {{hours}}시간 뒤 리셋",
+  "quota-countdown.resetHour": "{{hours}}시간 뒤 리셋",
+  "quota-countdown.resetHours": "{{hours}}시간 뒤 리셋",
+  "quota-countdown.resetHourMinute": "{{hours}}시간 {{minutes}}분 뒤 리셋",
+  "quota-countdown.resetHourMinutes": "{{hours}}시간 {{minutes}}분 뒤 리셋",
+  "quota-countdown.resetHoursMinute": "{{hours}}시간 {{minutes}}분 뒤 리셋",
+  "quota-countdown.resetHoursMinutes": "{{hours}}시간 {{minutes}}분 뒤 리셋",
+  "quota-countdown.resetMinute": "{{minutes}}분 뒤 리셋",
+  "quota-countdown.resetMinutes": "{{minutes}}분 뒤 리셋",
+  "quota-countdown.resetSoon": "곧 리셋"
+}

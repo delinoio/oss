@@ -31,7 +31,11 @@ pub fn text_in(key: Message, language: SupportedLanguage) -> &'static str {
 pub fn format(key: Message, values: &[(&str, &str)]) -> String {
     format_in(key, values, active())
 }
-fn format_in(key: Message, values: &[(&str, &str)], language: SupportedLanguage) -> String {
+pub(crate) fn format_in(
+    key: Message,
+    values: &[(&str, &str)],
+    language: SupportedLanguage,
+) -> String {
     let mut parts = text_in(key, language).split("{{");
     let mut result = parts.next().unwrap_or_default().to_owned();
     for part in parts {
@@ -54,7 +58,7 @@ fn format_in(key: Message, values: &[(&str, &str)], language: SupportedLanguage)
 pub fn date(value: &str) -> String {
     date_in(value, active())
 }
-fn date_in(value: &str, language: SupportedLanguage) -> String {
+pub(crate) fn date_in(value: &str, language: SupportedLanguage) -> String {
     // Retain the observation's offset and fractional precision. Presentation
     // must not turn a source timestamp into a different local wall-clock time.
     if !value.is_ascii() || value.len() < 20 || value.len() > 64 {

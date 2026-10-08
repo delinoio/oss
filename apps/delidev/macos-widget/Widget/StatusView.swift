@@ -43,7 +43,7 @@ struct StatusContent: View {
                                         Text(quota.label(at: now, snapshotStale: server.isStale(at: now), language: entry.language)).font(detailFont).lineLimit(2).privacySensitive()
                                         if family == .systemLarge {
                                             if let observed = quota.observed_at.flatMap(widgetTimestamp) { Text(copy(.observedAt, ["at": date(observed)])).font(detailFont) }
-                                            if let reset = quota.reset_at.flatMap(widgetTimestamp) { Text(copy(.resetAt, ["at": date(reset)])).font(detailFont) }
+                                            if let reset = quota.reset_at, widgetTimestamp(reset) != nil { Text(widgetQuotaReset(reset, at: now, language: entry.language)).font(detailFont) }
                                         }
                                     } else { Text(copy(.quotaUnavailable)).font(detailFont) }
                                     if family == .systemLarge && (account.more || account.windows.count > 1) { Text(copy(.widgetMoreWindows)).font(detailFont) }

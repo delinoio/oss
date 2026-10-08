@@ -332,3 +332,17 @@ it("retains four original RPC permits across nested dialog close and reopen", as
   await screen.findByText("Reopened source 0");
   expect(screen.queryByText("Original source 0")).toBeNull();
 });
+
+it("keeps routing reset countdowns read-only and preserves independent original evidence", async () => {
+  const first = account("First countdown"), second = account("Second countdown");
+  const resets = [new Date(Date.now() + 529200000 + 120000).toISOString(), new Date(Date.now() + 12000000 + 30000).toISOString()];
+  const value = setup([first, second], { policy: "priority", candidates: [
+    { ...candidate(first), reset_at: resets[0] }, { ...candidate(second), reset_at: resets[1] },
+  ] });
+  render(<value.Fixture />); await screen.findByText("First countdown");
+  expect(screen.getByText("Resets in 6 days 3 hours")).toBeTruthy(); expect(screen.getByText("Resets in 3 hours 20 minutes")).toBeTruthy();
+  expect(screen.getByTitle(resets[0]!).getAttribute("datetime")).toBe(resets[0]);
+  await act(() => i18n.changeLanguage("ko")); expect(screen.getByText("6일 3시간 뒤 리셋")).toBeTruthy();
+  expect(value.preview).toHaveBeenCalledTimes(1); expect(value.get).toHaveBeenCalledTimes(2); expect(value.save).not.toHaveBeenCalled();
+  value.logs.mockRestore();
+});

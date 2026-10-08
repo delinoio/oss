@@ -2529,7 +2529,7 @@ Every human-facing desktop timestamp uses `Timestamp` from
 `timestamp-display.tsx`. Its centralized formatter validates the original
 RFC3339/RFC3339Nano wall date before converting the instant. Ordinary past labels
 show now below 60 seconds, whole minutes below one hour, whole hours below 24
-hours, and absolute time at 24 hours or older. Future instants are absolute.
+hours, and absolute time at 24 hours or older. Future instants are absolute except for the explicit quota reset countdown mode below.
 Missing values retain the surface's unavailable presentation; invalid values
 remain inert original text. Relative wording never changes status, readiness,
 freshness, ordering or scheduling evidence.
@@ -2581,3 +2581,30 @@ Skill completion handles keys first. IME, modifiers, selections and pending or u
 ## Quota percentage colors
 
 API quota bars share the subscription percentage color rule: interpolate danger-text → warning-text at 0–50% and warning-text → success-text at 50–100%, using the displayed rounded integer and active semantic tokens. Accent, WebKit and Mozilla fills use one uniform color independent of freshness; text continues to distinguish retained and unavailable evidence. This presentation grants no quota recovery or account authority.
+
+### Quota reset countdowns (issue #1826)
+
+`TimestampMode.QuotaCountdown` applies only to quota reset instants in subscription
+Settings/Details, the subscription sidebar, API-account Details and routing
+candidate evidence. Strictly validate the original RFC3339 wall date. Compare
+elapsed instants independently of date preferences, timezone and daylight saving.
+At least 24 hours shows whole days and remaining whole hours; below 24 hours
+shows whole hours and remaining whole minutes; below one hour shows whole
+minutes; below one minute says Resets soon. Floor units, omit a zero trailing
+unit and use complete English/Korean sentences with correct plurals.
+
+Retain one presentation timer per renderer window. Schedule floored-unit changes
+just after the exact boundary, schedule reset expiry exactly, suspend hidden
+windows and inactive surfaces, and recompute on visibility/focus. At or after
+expiry, use the original ordinary timestamp and surface wording, including stale
+and recovery-unconfirmed disclosures. Missing/invalid values keep their original
+fallback. Preserve the exact source in `dateTime`, tooltip and accessible
+inspection. Countdown updates never refresh quota, consume reset credits, replay
+requests, change routing or advance observations.
+
+Native tray countdowns use the same duration rules and catalogs. Its existing
+joined 15-second supervision task compares retained reset labels to the last
+successful menu presentation and schedules a repaint only when needed. Repaint
+retains original observations and performs no RPC or widget publication. Widget
+reset text follows the same rules at entry rendering under the existing
+OS-controlled five-minute timeline; it promises no continuous updates.

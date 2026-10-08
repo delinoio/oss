@@ -118,3 +118,34 @@ try store.setLanguage(WidgetLanguageDocument(version: 1, language: .english))
 checkEqual(try store.readLanguage(), .english)
 checkEqual(try Data(contentsOf: file), observationBytes)
 print("Widget fixture checks passed: exact values, currencies, isolation, stale/closure, masking, corruption and private storage")
+
+
+// Countdown fixtures leave observations, protected snapshots and OS timelines unchanged.
+let countdownNow = widgetResetInstant("2026-10-08T00:00:00Z")!
+for (seconds, english, korean) in [
+    (529200, "Resets in 6 days 3 hours", "6일 3시간 뒤 리셋"),
+    (86400, "Resets in 1 day", "1일 뒤 리셋"),
+    (86340, "Resets in 23 hours 59 minutes", "23시간 59분 뒤 리셋"),
+    (12000, "Resets in 3 hours 20 minutes", "3시간 20분 뒤 리셋"),
+    (3540, "Resets in 59 minutes", "59분 뒤 리셋"), (60, "Resets in 1 minute", "1분 뒤 리셋"),
+    (59, "Resets soon", "곧 리셋"), (3600, "Resets in 1 hour", "1시간 뒤 리셋"),
+    (3660, "Resets in 1 hour 1 minute", "1시간 1분 뒤 리셋"),
+    (90000, "Resets in 1 day 1 hour", "1일 1시간 뒤 리셋"),
+    (176400, "Resets in 2 days 1 hour", "2일 1시간 뒤 리셋"),
+    (7320, "Resets in 2 hours 2 minutes", "2시간 2분 뒤 리셋")
+] {
+    let reset = "2026-10-14T03:00:00.999Z"
+    let now = widgetResetInstant(reset)!.addingTimeInterval(-Double(seconds) - 0.999)
+    checkEqual(widgetQuotaReset(reset, at: now, language: .english), english)
+    checkEqual(widgetQuotaReset(reset, at: now, language: .korean), korean)
+}
+checkEqual(widgetQuotaReset("2026-10-14T03:00:00Z", at: countdownNow, language: .english), "Resets in 6 days 3 hours")
+checkEqual(widgetResetInstant("2026-10-14T03:00:00Z"), widgetResetInstant("2026-10-14T12:00:00+09:00"))
+checkEqual(widgetResetInstant("2026-11-01T02:00:00-05:00")!.timeIntervalSince(widgetResetInstant("2026-11-01T01:00:00-04:00")!), 7200)
+for invalid in ["bad", "2026-02-30T00:00:00Z", "2026-01-01T25:00:00Z", "2026-01-01T00:00:00+24:00", "2026-01-01T00:00:00.1234567890Z"] {
+    assert(widgetResetInstant(invalid) == nil)
+    assert(!widgetQuotaReset(invalid, at: countdownNow, language: .english).contains("Resets in"))
+}
+assert(!widgetQuotaReset("2026-10-08T00:00:00Z", at: countdownNow, language: .english).contains("Resets in"))
+assert(resetQuota.label(at: now, snapshotStale: false) == "100.00% remaining · stale")
+print("widget_countdown_fixture thresholds=12 languages=2 evidence=unchanged timeline=unchanged native_acceptance=not-performed")

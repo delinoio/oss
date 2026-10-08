@@ -280,3 +280,21 @@ it.each([
   expect(f.read).toHaveBeenCalledTimes(1);
   expect(f.callbacks.manage).not.toHaveBeenCalled();
 });
+
+it("renders independent future reset countdowns in Details without additional usage reads", async () => {
+  await i18n.changeLanguage("en");
+  const f = fixture(), observed = new Date().toISOString();
+  const first = new Date(Date.now() + 529200000 + 120000).toISOString(), second = new Date(Date.now() + 12000000 + 30000).toISOString();
+  f.row.documentJson = encode({ alias: "Countdown fixture", type: "api", enabled: true, health: "unverified", quota: [
+    { id: "weekly", state: "failed", remaining: .5, observed_at: observed, reset_at: first },
+    { id: "daily", state: "stale", remaining: .25, observed_at: observed, reset_at: second },
+  ] });
+  render(f.view()); await waitFor(() => expect(f.read).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Countdown fixture" })); fireEvent.click(screen.getByRole("button", { name: "Details" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Resets in 6 days 3 hours")).toBeTruthy(); expect(within(dialog).getByText("Resets in 3 hours 20 minutes")).toBeTruthy();
+  expect(within(dialog).getByTitle(first).getAttribute("datetime")).toBe(first);
+  for (const time of within(dialog).getAllByTitle(observed)) expect(time.textContent).not.toMatch(/Resets/);
+  await act(() => i18n.changeLanguage("ko")); expect(within(dialog).getByText("6일 3시간 뒤 리셋")).toBeTruthy();
+  expect(f.read).toHaveBeenCalledTimes(1); for (const callback of Object.values(f.callbacks)) expect(callback).not.toHaveBeenCalled();
+});

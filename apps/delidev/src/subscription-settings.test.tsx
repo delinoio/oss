@@ -188,6 +188,8 @@ it.each([Quota.Stale, Quota.Failed])("updates reset warnings for retained %s win
   const rendered = render(view([first], { now: undefined }));
   try {
     expect(screen.queryByText(/Elapsed; recovery unconfirmed/)).toBeNull();
+    expect(screen.getByText("Resets in 1 minute")).toBeTruthy();
+    expect(screen.getByText("Resets in 2 minutes")).toBeTruthy();
     expect(vi.getTimerCount()).toBe(2);
     act(() => vi.advanceTimersByTime(60_000));
     expect(screen.getAllByText(/Elapsed; recovery unconfirmed/)).toHaveLength(1);

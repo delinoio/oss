@@ -184,3 +184,18 @@ Notification Center/widget-gallery interactions and real-server/provider evidenc
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
+
+### Quota reset countdowns (issue #1826)
+
+The large widget's existing reset labels use localized elapsed-duration
+countdowns calculated when an entry renders. Strict reset validation rejects
+impossible wall dates; invalid, missing and expired values retain their existing
+fallback. Use whole days/hours above one day, hours/minutes below one day,
+minutes below one hour and Resets soon below one minute. Floor units, omit zero
+trailing units and preserve bilingual plurals. Do not add labels to other sizes.
+
+Retain the existing five-minute, OS-controlled best-effort timeline and original
+successful-refresh timestamp. Countdown expiry cannot make observations fresh,
+restore quota, initiate network/native operations or promise continuous updates.
+Formatter/offscreen widget fixtures remain separate from installed WidgetKit
+acceptance.

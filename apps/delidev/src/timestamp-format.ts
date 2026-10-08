@@ -2,7 +2,7 @@
 import { copy, displayLocale } from "./localization";
 
 export enum DateFormatPreference { System = "system", Ymd = "ymd", Mdy = "mdy", Dmy = "dmy" }
-export enum TimestampMode { Ordinary = "ordinary", Absolute = "absolute", Exact = "exact" }
+export enum TimestampMode { Ordinary = "ordinary", Absolute = "absolute", Exact = "exact", QuotaCountdown = "quota-countdown" }
 export interface TimestampOptions { preference?: DateFormatPreference; mode?: TimestampMode; now?: number; timeZone?: string }
 
 /** Validate source wall time before converting its instant. Date.parse alone
@@ -17,7 +17,15 @@ export function timestampInstant(value: string): number | undefined {
   return Number.isFinite(instant) ? instant : undefined;
 }
 
-export function nextTimestampTransition(instant: number, now: number): number | undefined {
+export function nextTimestampTransition(instant: number, now: number, mode = TimestampMode.Ordinary): number | undefined {
+  if (mode === TimestampMode.QuotaCountdown && instant > now) {
+    const remaining = instant - now;
+    if (remaining < 60000) return instant;
+    const unit = remaining >= 86400000 ? 3600000 : 60000;
+    // Floored countdowns change just after an exact unit boundary. Scheduling
+    // that next millisecond avoids a zero-delay loop and keeps expiry exact.
+    return Math.min(instant, instant - Math.floor(remaining / unit) * unit + 1);
+  }
   const age = now - instant;
   if (age < 0) return instant;
   if (age >= 86400000) return;
@@ -25,11 +33,21 @@ export function nextTimestampTransition(instant: number, now: number): number | 
   return instant + (Math.floor(age / unit) + 1) * unit;
 }
 
+
+/** Complete sentences keep plural choices and Korean unit ordering in catalogs. */
+function quotaCountdown(remaining: number): string {
+  const days = Math.floor(remaining / 86400000), hours = Math.floor(remaining / 3600000) % 24, minutes = Math.floor(remaining / 60000) % 60;
+  if (days) return copy(hours ? days === 1 ? hours === 1 ? "quota-countdown.resetDayHour" : "quota-countdown.resetDayHours" : hours === 1 ? "quota-countdown.resetDaysHour" : "quota-countdown.resetDaysHours" : days === 1 ? "quota-countdown.resetDay" : "quota-countdown.resetDays", { days, hours });
+  if (hours) return copy(minutes ? hours === 1 ? minutes === 1 ? "quota-countdown.resetHourMinute" : "quota-countdown.resetHourMinutes" : minutes === 1 ? "quota-countdown.resetHoursMinute" : "quota-countdown.resetHoursMinutes" : hours === 1 ? "quota-countdown.resetHour" : "quota-countdown.resetHours", { hours, minutes });
+  return copy(minutes ? minutes === 1 ? "quota-countdown.resetMinute" : "quota-countdown.resetMinutes" : "quota-countdown.resetSoon", { minutes });
+}
+
 export function formatTimestampLabel(value: string, { preference = DateFormatPreference.System, mode = TimestampMode.Ordinary, now = Date.now(), timeZone }: TimestampOptions = {}): string {
   const instant = timestampInstant(value);
   if (instant === undefined || mode === TimestampMode.Exact) return value;
   const age = now - instant;
-  if (mode === TimestampMode.Ordinary && age >= 0 && age < 86400000) {
+  if (mode === TimestampMode.QuotaCountdown && age < 0) return quotaCountdown(-age);
+  if ((mode === TimestampMode.Ordinary || mode === TimestampMode.QuotaCountdown) && age >= 0 && age < 86400000) {
     if (age < 60000) return copy("timestamp.now");
     const count = Math.floor(age / (age < 3600000 ? 60000 : 3600000));
     return copy(age < 3600000 ? count === 1 ? "timestamp.minute" : "timestamp.minutes" : count === 1 ? "timestamp.hour" : "timestamp.hours", { count });

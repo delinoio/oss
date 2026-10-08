@@ -12,6 +12,7 @@ use delidev_desktop::{
     NativeFailure,
     localization::{Message, date, format as translated, number, text},
     presentation::{TrayDestination, TraySummary, menu_alias},
+    quota_countdown::{now_millis, reset},
     widget_writer::{Publication, WidgetWriter},
 };
 use tauri::{
@@ -52,8 +53,21 @@ struct State {
     windows: BTreeMap<String, Presentation>,
     actions: BTreeMap<String, Activation>,
     pending: BTreeMap<String, TrayAction>,
+    reset_labels: Vec<String>,
 }
 impl State {
+    fn reset_labels(&self, now: i64) -> Vec<String> {
+        self.windows
+            .values()
+            .filter_map(|value| value.summary.as_ref())
+            .filter_map(|summary| summary.accounts.as_ref())
+            .flat_map(|accounts| &accounts.entries)
+            .flat_map(|account| &account.windows)
+            .filter_map(|window| window.reset_at.as_ref())
+            .map(|at| reset(at, now))
+            .collect()
+    }
+
     fn publish(
         &mut self,
         label: &str,
@@ -429,6 +443,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
         Ok(state) => state,
         Err(_) => return Ok(()),
     };
+    let now = now_millis();
     state.actions.clear();
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(
@@ -673,13 +688,7 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
                         )?;
                     }
                     if let Some(at) = &window.reset_at {
-                        append(
-                            app,
-                            &quota,
-                            &translated(Message::ResetAt, &[("at", &date(at))]),
-                            None,
-                            &mut state,
-                        )?;
+                        append(app, &quota, &reset(at, now), None, &mut state)?;
                     }
                 }
                 if account.more {
@@ -728,7 +737,9 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?)?;
-    tray.set_menu(Some(menu))
+    tray.set_menu(Some(menu))?;
+    state.reset_labels = state.reset_labels(now);
+    Ok(())
 }
 fn activate(app: &AppHandle<CefRuntime>, id: &str) {
     if id == "tray-quit" {
@@ -866,7 +877,10 @@ impl TrayHost {
                 }
                 let host = app.state::<Arc<TrayHost>>();
                 let changed = if let Ok(mut state) = host.state.lock() {
-                    let mut changed = false;
+                    // Compare retained presentation only. This joined task
+                    // never republishes observations,
+                    // reloads widgets or requests quota.
+                    let mut changed = state.reset_labels != state.reset_labels(now_millis());
                     for value in state.windows.values_mut() {
                         if !value.stale && value.received.elapsed() > STALE_AFTER {
                             value.stale = true;
@@ -913,6 +927,49 @@ pub fn refresh(app: &AppHandle<CefRuntime>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retained_countdown_repaint_preserves_observation_and_scope() {
+        use delidev_desktop::presentation::{QuotaState, TrayAccount, TrayAccounts, TrayQuota};
+        let mut state = State::default();
+        let mut value = presentation("original-scope");
+        value.revision = 7;
+        value.summary = Some(TraySummary {
+            overview: None,
+            usage: None,
+            accounts: Some(TrayAccounts {
+                entries: vec![TrayAccount {
+                    alias: "Fixture".into(),
+                    alias_hidden: false,
+                    more: false,
+                    windows: vec![TrayQuota {
+                        state: QuotaState::Failed,
+                        remaining_basis_points: Some(5000),
+                        observed_at: Some("2026-10-08T00:00:00Z".into()),
+                        reset_at: Some("2026-10-08T00:01:00Z".into()),
+                    }],
+                }],
+                more: false,
+            }),
+        });
+        let before = serde_json::to_string(value.summary.as_ref().unwrap()).unwrap();
+        let received = value.received;
+        state.windows.insert("fixture".into(), value);
+        let now = 1791417600000;
+        state.reset_labels = state.reset_labels(now);
+        assert_eq!(state.reset_labels, state.reset_labels(now));
+        assert_ne!(state.reset_labels, state.reset_labels(now + 15000));
+        assert_ne!(state.reset_labels, state.reset_labels(now + 60000));
+        let value = state.windows.get("fixture").unwrap();
+        assert_eq!(value.scope, "original-scope");
+        assert_eq!(value.revision, 7);
+        assert_eq!(value.received, received);
+        assert_eq!(
+            serde_json::to_string(value.summary.as_ref().unwrap()).unwrap(),
+            before
+        );
+        assert!(state.pending.is_empty());
+    }
+
     fn unavailable() -> TraySummary {
         TraySummary {
             overview: None,
