@@ -14,6 +14,7 @@ import { document, encode, items, object, resourceName, text, type Document } fr
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
 import { NativeModelSettings } from "./native-model-settings";
+import { ProviderMark } from "./provider-mark";
 
 const requiredCapabilities = [
   ProviderInventoryCapability.PROVIDER_ACTIVATION,
@@ -113,7 +114,7 @@ export function ApiProviderSettings({
     const customCopy = presetData(entry, presets);
     const accountState = entry.accountCountsAvailable ? copy("provider-model-settings.sentence.490d50c6611c", { v0: entry.connectedAccounts.toString(), v1: entry.totalAccounts.toString() }) : copy("provider-model-settings.extra.555765b26ebc");
     return <article className="result provider-row" key={providerIdentity(entry)}>
-      <div className="provider-row-heading"><div><h4>{entry.displayName}</h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? copy("provider-model-settings.customApiProvider_c1db3d") : [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId) ? copy("provider-model-settings.localApiServer_dd8eec") : copy("provider-model-settings.preset_7252e7")}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} readOnly={Boolean(result.error)} /></div>
+      <div className="provider-row-heading"><div><h4 className="api-provider-name"><ProviderMark preset={entry.presetId} /><span>{entry.displayName}</span></h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? copy("provider-model-settings.customApiProvider_c1db3d") : [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId) ? copy("provider-model-settings.localApiServer_dd8eec") : copy("provider-model-settings.preset_7252e7")}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} readOnly={Boolean(result.error)} /></div>
       <p><LocalizedText id="provider-model-settings.entriesConnectionStateIsSeparateFrom_e54388" components={{ s0: <>{accountState}</> }} /></p>
       {!entry.enabled && entry.totalAccounts > 0n ? <p>{copy("provider-model-settings.turningThisProviderOffPreservesIts_2cf65c")}</p> : null}
       <div className="actions">

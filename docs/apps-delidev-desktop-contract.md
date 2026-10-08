@@ -2839,3 +2839,8 @@ Advanced contains registration inspection/recovery, app updates and retained ins
 ### API Providers retained refresh — issue #1867
 
 Refreshing accepted API Providers inventory does not insert a transient provider-state paragraph, replacement banner or reserved gap above the rows. Preserve initial loading, confirmed switches and identities, persistent Off-provider guidance, all-disabled notice, sanitized failures, uncertainty and exact original-request retries.
+
+
+### API provider inventory marks — issue #1866
+
+Settings > API Providers places one decorative 24px local monochrome mark before the complete provider name with an 8px gap. Resolve only the original ProviderPresetId: all 35 existing hosted/local presets have explicit mappings, with regional variants sharing their family mark. Custom copies, unknown/unmapped identities and failed image loads use the same neutral icon in the reserved slot. Names/endpoints/accounts never infer branding. Keep the empty image alt and aria-hidden wrapper, no focus target or duplicated accessible name. Preserve image proportions, readable light/dark/System themes, wrapping names and usable controls under narrow widths and 200% zoom. Keep inventory grouping, ordering, search, pagination, refresh, loading/failures, account counts, switch labels and every original action/request unchanged. Bundle artwork and separate MIT/CC0/source/modification notices under `public/provider-marks` according to the license contract; add no runtime retrieval, favicon requests, dependency, API, native or storage authority.

@@ -4,6 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
+import { providerMarkFamilies } from "./provider-mark";
 import { ProviderInventoryCapability, ProviderPresetId, ProviderService, EntityKind, ResourceService } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
@@ -26,6 +27,13 @@ it("starts with hosted presets on without accounts or models and retains identit
   const turnOff = await screen.findByRole("switch", { name: "Turn off OpenAI" });
   await waitFor(() => expect((turnOff as HTMLButtonElement).disabled).toBe(false));
   expect(screen.queryByText("Account required")).toBeNull();
+  await waitFor(() => expect(document.querySelectorAll(".api-provider-mark img")).toHaveLength(35));
+  for (const entry of initial.entries) {
+    const heading = screen.getByRole("heading", { name: entry.displayName });
+    expect(heading.querySelector("img")?.getAttribute("src")).toBe(`./provider-marks/${providerMarkFamilies.get(entry.presetId)}.svg`);
+    expect(heading.querySelector("img")?.alt).toBe("");
+    expect(screen.getByRole("switch", { name: `${entry.enabled ? "Turn off" : "Turn on"} ${entry.displayName}` })).toBeDefined();
+  }
   let inventory = await providers.listProviderInventory({ pageSize: 50 });
   let saved = inventory.entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
   expect(saved.enabled).toBe(true);
