@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ConfigurationServiceListProjectPromptHistoryProcedure is the fully-qualified name of the
+	// ConfigurationService's ListProjectPromptHistory RPC.
+	ConfigurationServiceListProjectPromptHistoryProcedure = "/delidev.v1.ConfigurationService/ListProjectPromptHistory"
+	// ConfigurationServiceClearProjectPromptHistoryProcedure is the fully-qualified name of the
+	// ConfigurationService's ClearProjectPromptHistory RPC.
+	ConfigurationServiceClearProjectPromptHistoryProcedure = "/delidev.v1.ConfigurationService/ClearProjectPromptHistory"
 	// ConfigurationServiceExportConfigurationProcedure is the fully-qualified name of the
 	// ConfigurationService's ExportConfiguration RPC.
 	ConfigurationServiceExportConfigurationProcedure = "/delidev.v1.ConfigurationService/ExportConfiguration"
@@ -58,6 +64,8 @@ const (
 
 // ConfigurationServiceClient is a client for the delidev.v1.ConfigurationService service.
 type ConfigurationServiceClient interface {
+	ListProjectPromptHistory(context.Context, *connect.Request[v1.ListProjectPromptHistoryRequest]) (*connect.Response[v1.ListProjectPromptHistoryResponse], error)
+	ClearProjectPromptHistory(context.Context, *connect.Request[v1.ClearProjectPromptHistoryRequest]) (*connect.Response[v1.ClearProjectPromptHistoryResponse], error)
 	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
 	PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error)
 	ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error)
@@ -82,6 +90,18 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 	baseURL = strings.TrimRight(baseURL, "/")
 	configurationServiceMethods := v1.File_delidev_v1_configuration_proto.Services().ByName("ConfigurationService").Methods()
 	return &configurationServiceClient{
+		listProjectPromptHistory: connect.NewClient[v1.ListProjectPromptHistoryRequest, v1.ListProjectPromptHistoryResponse](
+			httpClient,
+			baseURL+ConfigurationServiceListProjectPromptHistoryProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ListProjectPromptHistory")),
+			connect.WithClientOptions(opts...),
+		),
+		clearProjectPromptHistory: connect.NewClient[v1.ClearProjectPromptHistoryRequest, v1.ClearProjectPromptHistoryResponse](
+			httpClient,
+			baseURL+ConfigurationServiceClearProjectPromptHistoryProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ClearProjectPromptHistory")),
+			connect.WithClientOptions(opts...),
+		),
 		exportConfiguration: connect.NewClient[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse](
 			httpClient,
 			baseURL+ConfigurationServiceExportConfigurationProcedure,
@@ -129,6 +149,8 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
+	listProjectPromptHistory   *connect.Client[v1.ListProjectPromptHistoryRequest, v1.ListProjectPromptHistoryResponse]
+	clearProjectPromptHistory  *connect.Client[v1.ClearProjectPromptHistoryRequest, v1.ClearProjectPromptHistoryResponse]
 	exportConfiguration        *connect.Client[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse]
 	previewConfigurationImport *connect.Client[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse]
 	applyConfigurationImport   *connect.Client[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse]
@@ -136,6 +158,16 @@ type configurationServiceClient struct {
 	saveConfiguration          *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
 	deleteConfiguration        *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
 	previewRouting             *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+}
+
+// ListProjectPromptHistory calls delidev.v1.ConfigurationService.ListProjectPromptHistory.
+func (c *configurationServiceClient) ListProjectPromptHistory(ctx context.Context, req *connect.Request[v1.ListProjectPromptHistoryRequest]) (*connect.Response[v1.ListProjectPromptHistoryResponse], error) {
+	return c.listProjectPromptHistory.CallUnary(ctx, req)
+}
+
+// ClearProjectPromptHistory calls delidev.v1.ConfigurationService.ClearProjectPromptHistory.
+func (c *configurationServiceClient) ClearProjectPromptHistory(ctx context.Context, req *connect.Request[v1.ClearProjectPromptHistoryRequest]) (*connect.Response[v1.ClearProjectPromptHistoryResponse], error) {
+	return c.clearProjectPromptHistory.CallUnary(ctx, req)
 }
 
 // ExportConfiguration calls delidev.v1.ConfigurationService.ExportConfiguration.
@@ -175,6 +207,8 @@ func (c *configurationServiceClient) PreviewRouting(ctx context.Context, req *co
 
 // ConfigurationServiceHandler is an implementation of the delidev.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
+	ListProjectPromptHistory(context.Context, *connect.Request[v1.ListProjectPromptHistoryRequest]) (*connect.Response[v1.ListProjectPromptHistoryResponse], error)
+	ClearProjectPromptHistory(context.Context, *connect.Request[v1.ClearProjectPromptHistoryRequest]) (*connect.Response[v1.ClearProjectPromptHistoryResponse], error)
 	ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error)
 	PreviewConfigurationImport(context.Context, *connect.Request[v1.PreviewConfigurationImportRequest]) (*connect.Response[v1.PreviewConfigurationImportResponse], error)
 	ApplyConfigurationImport(context.Context, *connect.Request[v1.ApplyConfigurationImportRequest]) (*connect.Response[v1.ApplyConfigurationImportResponse], error)
@@ -195,6 +229,18 @@ type ConfigurationServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	configurationServiceMethods := v1.File_delidev_v1_configuration_proto.Services().ByName("ConfigurationService").Methods()
+	configurationServiceListProjectPromptHistoryHandler := connect.NewUnaryHandler(
+		ConfigurationServiceListProjectPromptHistoryProcedure,
+		svc.ListProjectPromptHistory,
+		connect.WithSchema(configurationServiceMethods.ByName("ListProjectPromptHistory")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceClearProjectPromptHistoryHandler := connect.NewUnaryHandler(
+		ConfigurationServiceClearProjectPromptHistoryProcedure,
+		svc.ClearProjectPromptHistory,
+		connect.WithSchema(configurationServiceMethods.ByName("ClearProjectPromptHistory")),
+		connect.WithHandlerOptions(opts...),
+	)
 	configurationServiceExportConfigurationHandler := connect.NewUnaryHandler(
 		ConfigurationServiceExportConfigurationProcedure,
 		svc.ExportConfiguration,
@@ -239,6 +285,10 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 	)
 	return "/delidev.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ConfigurationServiceListProjectPromptHistoryProcedure:
+			configurationServiceListProjectPromptHistoryHandler.ServeHTTP(w, r)
+		case ConfigurationServiceClearProjectPromptHistoryProcedure:
+			configurationServiceClearProjectPromptHistoryHandler.ServeHTTP(w, r)
 		case ConfigurationServiceExportConfigurationProcedure:
 			configurationServiceExportConfigurationHandler.ServeHTTP(w, r)
 		case ConfigurationServicePreviewConfigurationImportProcedure:
@@ -261,6 +311,14 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 
 // UnimplementedConfigurationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedConfigurationServiceHandler struct{}
+
+func (UnimplementedConfigurationServiceHandler) ListProjectPromptHistory(context.Context, *connect.Request[v1.ListProjectPromptHistoryRequest]) (*connect.Response[v1.ListProjectPromptHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ListProjectPromptHistory is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ClearProjectPromptHistory(context.Context, *connect.Request[v1.ClearProjectPromptHistoryRequest]) (*connect.Response[v1.ClearProjectPromptHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ClearProjectPromptHistory is not implemented"))
+}
 
 func (UnimplementedConfigurationServiceHandler) ExportConfiguration(context.Context, *connect.Request[v1.ExportConfigurationRequest]) (*connect.Response[v1.ExportConfigurationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ExportConfiguration is not implemented"))

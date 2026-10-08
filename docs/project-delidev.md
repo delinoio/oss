@@ -322,3 +322,7 @@ source and negotiated Runner. Independent subscription Fork remains unsupported.
 See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829)
 for protected lease/Finish publication, read-only continuation and dependent
 cleanup ownership. No new RPC or SQLite migration is added.
+
+## Project prompt history ownership
+
+Issue #1828 adds server-persisted project first-message history under the sessions, storage, protocol, desktop and API-client contracts. Go owns immutable 100-entry acceptance order, authenticated pagination and receipt-bound confirmed clear. Desktop owns text-only boundary keyboard recall. History survives source-session deletion, belongs to project deletion, is captured by managed backups and is excluded from portable configuration. System 48 / entity 35 add no Worker, native or migration authority.

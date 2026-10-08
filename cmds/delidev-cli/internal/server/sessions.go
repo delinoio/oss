@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -308,6 +309,11 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 		}
 		if _, err := tx.Put(domain.SessionKind, id, 0, id, input.ProjectID, value); err != nil {
 			return nil, err
+		}
+		if input.ProjectID != "" && (input.Source == domain.ManualSession || input.Source == domain.ExternalCLISession) && strings.TrimSpace(input.Prompt) != "" {
+			if err := tx.AppendProjectPromptHistory(input.ProjectID, input.Prompt); err != nil {
+				return nil, err
+			}
 		}
 		return sessionReceipt{SessionID: id, InputID: itemID}, nil
 	})

@@ -449,3 +449,7 @@ ownership. The additional declarations grant only the closed managed Sidechat
 profile after activation and original native verification. Independent managed
 Fork stays unsupported; no database migration or separate reservation PR is
 required. Follow the [Sidechat contract](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829).
+
+## Project prompt history allocation closure
+
+Issue #1828 records System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT_PROMPT_HISTORY = 35` and complete closed list/clear declarations in its owning feature PR. This follows the allocation workflow; no separate reservation merge is required. Preserve every original allocation. No Worker capability or SQLite migration is added. Allocation records alone activate no support.

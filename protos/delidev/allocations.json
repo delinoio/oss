@@ -9343,6 +9343,156 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
       "number": 26
+    },
+    {
+      "issue": 1828,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_PROJECT_PROMPT_HISTORY_V1",
+      "number": 48
+    },
+    {
+      "issue": 1828,
+      "kind": "enum",
+      "declaration": "EntityKind",
+      "member": "ENTITY_KIND_PROJECT_PROMPT_HISTORY",
+      "number": 35
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ProjectPromptHistoryEntry",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ProjectPromptHistoryEntry",
+      "member": "project_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ProjectPromptHistoryEntry",
+      "member": "prompt",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ProjectPromptHistoryEntry",
+      "member": "accepted_at",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ProjectPromptHistoryEntry",
+      "member": "acceptance_sequence",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ListProjectPromptHistoryRequest",
+      "member": "project_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ListProjectPromptHistoryRequest",
+      "member": "page_size",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ListProjectPromptHistoryRequest",
+      "member": "page_token",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ListProjectPromptHistoryResponse",
+      "member": "entries",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ListProjectPromptHistoryResponse",
+      "member": "next_page_token",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ClearProjectPromptHistoryRequest",
+      "member": "project_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ClearProjectPromptHistoryRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ClearProjectPromptHistoryRequest",
+      "member": "confirmed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ClearProjectPromptHistoryResponse",
+      "member": "project_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ClearProjectPromptHistoryResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ClearProjectPromptHistoryResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1828,
+      "kind": "message",
+      "declaration": "ClearProjectPromptHistoryResponse",
+      "member": "removed_count",
+      "number": 4,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -9424,6 +9574,24 @@
       "method": "ReportAttachmentTransfer",
       "input": "ReportAttachmentTransferRequest",
       "output": "ReportAttachmentTransferResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1828,
+      "service": "ConfigurationService",
+      "method": "ListProjectPromptHistory",
+      "input": "ListProjectPromptHistoryRequest",
+      "output": "ListProjectPromptHistoryResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1828,
+      "service": "ConfigurationService",
+      "method": "ClearProjectPromptHistory",
+      "input": "ClearProjectPromptHistoryRequest",
+      "output": "ClearProjectPromptHistoryResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

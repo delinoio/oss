@@ -50,3 +50,15 @@ it("retains text and original bindings atomically when draft growth is rejected"
  const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>({skills:entries})}));render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><RestoredComposer runner={machine} reject/></QueryClientProvider></TransportProvider>);
  fireEvent.change(screen.getByRole("textbox"),{target:{value:"rejected",selectionStart:8}});expect(screen.getByRole("textbox")).toHaveProperty("value","$add-issue");expect(screen.getByText("1")).toBeDefined();expect(screen.getByRole("button",{name:"Restored send"})).toHaveProperty("disabled",false);
 });
+
+function HistorySkillComposer({ locked = false }: { locked?: boolean }) {
+ const [value, change] = useState("$add-issue"); const textarea = useRef<HTMLTextAreaElement>(null);
+ const skills = useSkillCompletion({ value, change, textarea, machineId: machine, agentId: agent, disabled: locked, initialBindings: [{ start: 0, end: 10, token: "$add-issue", selection: entries[0]!.selection, stale: false, context: `${machine}:${agent}::` }] });
+ return <><textarea aria-label="History skill draft" ref={textarea} disabled={locked} value={value} onChange={event => skills.onChange(event.target.value,event.target.selectionStart)}/><output data-history-selections>{skills.selections.length}</output><button onClick={() => skills.replaceUnbound("$add-issue", 0)}>Recall text only</button></>;
+}
+it("recalling identical text drops typed skill authority and respects the creation lock", () => {
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async () => ({ skills: entries }) })); const client = new QueryClient();
+ const tree = (locked: boolean) => <TransportProvider transport={transport}><QueryClientProvider client={client}><HistorySkillComposer locked={locked}/></QueryClientProvider></TransportProvider>;
+ const view = render(tree(true)); fireEvent.click(screen.getByRole("button", { name: "Recall text only" })); expect(view.container.querySelector("[data-history-selections]")!.textContent).toBe("1");
+ view.rerender(tree(false)); fireEvent.click(screen.getByRole("button", { name: "Recall text only" })); expect(screen.getByRole("textbox", { name: "History skill draft" })).toHaveProperty("value", "$add-issue"); expect(view.container.querySelector("[data-history-selections]")!.textContent).toBe("0");
+});

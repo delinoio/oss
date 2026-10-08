@@ -196,6 +196,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   KIND create --input FILE|- [--request-id UUID-V7]
   KIND edit --id ID --revision N --input FILE|- [--request-id UUID-V7]
   KIND delete --id ID --revision N [--request-id UUID-V7]
+  project prompt-history list --project-id ID [--limit 50] [--page-token TOKEN]
+  project prompt-history clear --project-id ID --confirm [--request-id ID]
   agent routing --id ID [--project-id ID]
   events --cursor TOKEN [--session-id ID]
   version
