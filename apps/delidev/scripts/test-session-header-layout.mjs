@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Host-supplied Chromium validates the real sidebar using synthetic Connect
+// Host-supplied Chromium validates the real Session header using synthetic Connect
 // inventory. This does not establish native CEF, account or platform acceptance.
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
