@@ -470,6 +470,18 @@ func (r *serviceReloader) retire(j *serviceReloadJournal) error {
 }
 
 func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (result error) {
+	if j, err := readUninstallJournal(r.Unit); err != nil || j != nil {
+		return uninstallFailure()
+	}
+	reloadPeer := func(peer int) error {
+		// A claim may become durable while the status/native probe runs. In
+		// particular, its vacant canonical path must not grant fallback reload.
+		if j, err := readUninstallJournal(r.Unit); err != nil || j != nil {
+			return uninstallFailure()
+		}
+		_, _, err := r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
+		return err
+	}
 	j, err := readReloadJournal(r.Unit)
 	if err != nil {
 		return err
@@ -480,8 +492,7 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 			return controlErr
 		}
 		if _, err := os.Lstat(r.Unit); os.IsNotExist(err) {
-			_, _, err = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
-			return err
+			return reloadPeer(peer)
 		} else if err != nil {
 			return reloadFailure()
 		}
@@ -492,8 +503,7 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 		if err != nil || pid != peer {
 			// Without native ownership evidence, only the authenticated socket peer
 			// may handle ordinary reload. Pending journals require native recovery.
-			_, _, err = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
-			return err
+			return reloadPeer(peer)
 		}
 	} else if controlErr == nil {
 		// A reachable socket owned by a different process takes precedence over
@@ -505,8 +515,7 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 			return err
 		}
 		if pid != peer {
-			_, _, err = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
-			return err
+			return reloadPeer(peer)
 		}
 	}
 	lock, err := lockServiceOperation(r.Unit)
@@ -514,6 +523,9 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 		return err
 	}
 	defer unlockState(lock)
+	if j, err := readUninstallJournal(r.Unit); err != nil || j != nil {
+		return uninstallFailure()
+	}
 	// A competing invocation may have finished before this lock was acquired.
 	j, err = readReloadJournal(r.Unit)
 	if err != nil {
@@ -530,8 +542,7 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 				return e
 			}
 			if pid != peer {
-				_, _, e = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
-				return e
+				return reloadPeer(peer)
 			}
 		}
 	}
@@ -574,8 +585,7 @@ func (r *serviceReloader) Reload(ctx context.Context, path string, c Config) (re
 			return err
 		}
 		if semver.Compare(current, targetSemver) >= 0 {
-			_, _, err = r.Control(ctx, c, ControlRequest{Action: "reload"}, peer)
-			return err
+			return reloadPeer(peer)
 		}
 		previousVersion, targetVersion = response.Status.Version, r.Version
 		// The strings have passed the release-version parser before logging.
