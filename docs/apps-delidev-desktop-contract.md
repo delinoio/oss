@@ -1597,9 +1597,12 @@ stays at the bottom as a full-width 24px-corner card with 16px padding and a
 subtle semantic border/shadow. Its borderless textarea starts at 48px, grows with
 content to 180px and then scrolls internally, without manual resizing; short
 viewports cap growth at 64px while keeping the toolbar reachable. Bound the
-card to half the actual workspace height with independent vertical scrolling and
-a pinned toolbar, so inline failures or eight-image strips cannot displace input
-actions or obscure workspace tools. Ordered 64px
+card to half the measured original workspace height (independent of nested
+conversation containers) with independent vertical scrolling and a pinned toolbar, so inline failures or eight-image strips cannot displace input
+actions or obscure workspace tools. When the compact Info band leaves less than
+one usable composer control in a short workspace, the conversation region owns
+a bounded vertical fallback scroll; retain the original transcript/tray scrollports
+and avoid document overflow or remounting drafts. Ordered 64px
 image thumbnails precede the input in a horizontally scrolling strip with original
 numbered descriptions, staging state and independent 40px removal controls. The
 bottom wrapping toolbar has a 40px Attach images plus, keyboard-accessible

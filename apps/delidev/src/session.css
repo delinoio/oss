@@ -181,7 +181,7 @@
 /* Only retained session composers use this compact layout; creation keeps its owner.
    Bound the card to its actual workspace so inline errors and image strips cannot
    displace the toolbar in short layouts. Original input/status stay scrollable. */
-.session-workspace .composer { max-height: 50cqh; overflow-y: auto; scroll-padding-bottom: 48px; }
+.session-workspace .composer { max-height: var(--session-composer-cap, 50vh); overflow-y: auto; scroll-padding-bottom: 48px; }
 .session-workspace .composer .image-preview-list { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding: 2px; }
 .session-workspace .composer .image-preview-list li { flex: 0 0 auto; grid-template-columns: 64px 40px; max-width: none; padding: 4px; gap: 2px; }
 .session-workspace .composer .image-preview-list img { grid-column: 1; width: 64px; height: 64px; }
@@ -202,4 +202,12 @@
 
 @container session-view (max-height: 480px) {
   .session-workspace .composer textarea { max-height: 64px; }
+}
+
+/* A compact Info band can leave less room than one input control. Scroll the
+   retained conversation inside its bounds rather than clipping the composer or
+   growing the page. Its original transcript and tray keep their own scrollports. */
+@container session-view (max-height: 480px) {
+  .session-workspace .session-conversation-region { overflow-y: auto; }
+  .session-workspace .session-conversation-region > .session-body { min-height: calc(var(--session-composer-cap, 50vh) + 96px); }
 }

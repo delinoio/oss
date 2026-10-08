@@ -34,6 +34,44 @@ try {
   assert(value.controls.every(control => control.width >= 39 && control.height >= 39));
   return value;
  };
+ // Reproduce the actual nested size-container geometry after compact Info reflow:
+ // 320px original workspace, 72px conversation, and the same retained body/input.
+ // A pointer click must succeed naturally; forced clicks would hide interception.
+ for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const zoom of [1, 2]) {
+  await open(language, theme, 480 * zoom, 320 * zoom);
+  await page.evaluate(zoom => {
+   document.body.style.zoom = String(zoom);
+   const workspace = document.querySelector(".session-workspace"), body = workspace.querySelector(".session-body");
+   const region = document.createElement("div"); region.className = "session-conversation-region";
+   body.before(region); region.append(body);
+   workspace.style.gridTemplateRows = "auto auto minmax(0, 1fr)";
+   Object.assign(region.style, { gridArea: "3 / 1", alignSelf: "end", height: "72px", minHeight: "0", container: "conversation / size" });
+   Object.assign(body.style, { display: "grid", height: "100%", gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(0, auto) minmax(0, 1fr) minmax(0, auto) minmax(0, auto)" });
+   for (const [selector, row] of [[".session-notices", 1], [".transcript", 2], [".session-input-tray", 3], [".composer", 4]]) body.querySelector(selector).style.gridArea = `${row} / 1`;
+  }, zoom);
+  const input = page.locator(".composer textarea"), c = key => catalogs[language][key];
+  await input.fill("Retained short workspace draft");
+  await page.locator('input[type="file"]').setInputFiles(await image());
+  await page.waitForFunction(() => document.querySelectorAll(".image-preview-list img").length === 1);
+  assert.equal(await page.locator(".image-preview-list img").evaluate(node => node.getBoundingClientRect().width / (parseFloat(getComputedStyle(document.body).zoom) || 1)), 64);
+  await page.locator(".image-preview-list button").click({ timeout: 5000 });
+  await page.waitForFunction(() => document.querySelectorAll(".image-preview-list img").length === 0);
+  assert.equal(await input.inputValue(), "Retained short workspace draft");
+  await page.locator('input[type="file"]').setInputFiles(await image());
+  await page.waitForFunction(() => document.querySelectorAll(".image-preview-list img").length === 1);
+  await page.locator(".image-preview-list button").focus(); await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelectorAll(".image-preview-list img").length === 0);
+  await input.click({ timeout: 5000 }); await input.press("End"); await input.press("!");
+  assert.equal(await input.inputValue(), "Retained short workspace draft!");
+  await page.getByRole("button", { name: c("image-input.helpLabel"), exact: true }).click({ timeout: 5000 });
+  await page.keyboard.press("Escape"); assert(await page.locator(".composer-attachment-help").evaluate(node => document.activeElement === node));
+  await page.getByRole("button", { name: c("session.queueMessage_891d4e"), exact: true }).click({ timeout: 5000 });
+  await page.waitForFunction(() => window.__sessionComposerFixture.events.length === 1);
+  const bounds = await page.evaluate(() => { const workspace = document.querySelector(".session-workspace"), region = document.querySelector(".session-conversation-region"); return { workspace: workspace.clientHeight, region: region.clientHeight, contents: region.scrollHeight, overflow: getComputedStyle(region).overflowY }; });
+  assert.equal(bounds.workspace, 320); assert.equal(bounds.region, 72); assert(bounds.contents > bounds.region); assert.equal(bounds.overflow, "auto");
+  assert.equal(await input.inputValue(), "");
+  console.log(JSON.stringify({ operation: "composer_nested_short", language, theme, zoom, result: "passed" })); cases++;
+ }
  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440, 900], [960, 640], [960, 480], [480, 320]]) {
   console.log(JSON.stringify({ operation: "composer_case", language, theme, width, height }));
   await open(language, theme, width, height);

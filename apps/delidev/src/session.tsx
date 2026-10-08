@@ -341,15 +341,24 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     const input = composer.current;
     if (!input) return;
     let width = input.clientWidth;
+    const workspace = input.closest<HTMLElement>(".session-workspace");
+    // Conversation containers can be shorter than the retained workspace after
+    // Info reflows. Pin this cap to its original owner, not the nearest cqh scope.
+    const cap = () => {
+      if (workspace && workspace.clientHeight > 0) workspace.style.setProperty("--session-composer-cap", `${workspace.clientHeight / 2}px`);
+    };
     const fit = () => {
+      cap();
       input.style.height = "auto";
       const maximum = Number.parseFloat(getComputedStyle(input).maxHeight);
       input.style.height = `${Math.min(input.scrollHeight, Number.isFinite(maximum) ? maximum : 180)}px`;
     };
-    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => { if (width !== input.clientWidth) { width = input.clientWidth; fit(); } });
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => { cap(); if (width !== input.clientWidth) { width = input.clientWidth; fit(); } });
     observer?.observe(input);
+    if (workspace) observer?.observe(workspace);
+    cap();
     window.addEventListener("resize", fit);
-    return () => { observer?.disconnect(); window.removeEventListener("resize", fit); };
+    return () => { observer?.disconnect(); workspace?.style.removeProperty("--session-composer-cap"); window.removeEventListener("resize", fit); };
   }, [session?.id]);
   const skills = useSkillCompletion({ value: draft, change: (value, bindings) => { if (new TextEncoder().encode(value).byteLength > (256 << 10)) { setImageTextLimit(true); return false; } setImageTextLimit(false); return setDraft(value, bindings); }, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active, disabled: locked });
   const canSend = !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
