@@ -286,6 +286,20 @@ fn kill(report: &mut Report, backend: &mut impl Backend, clock: &mut impl Clock)
     }
 }
 
+// Presentation omits private socket identities; consume all original
+// observations first.
+fn settle_snapshot(
+    report: &mut Report,
+    terminate: bool,
+    backend: &mut impl Backend,
+    clock: &mut impl Clock,
+) {
+    if terminate {
+        kill(report, backend, clock);
+    }
+    report.normalize();
+}
+
 pub fn execute(action: Action) -> Result<i32> {
     let (query, pids, terminate) = match action {
         Action::List { query, pids } => (query, pids, false),
@@ -294,7 +308,6 @@ pub fn execute(action: Action) -> Result<i32> {
     let ports = query.ports.into_iter().collect();
     let mut backend = Native::default();
     let mut report = backend.snapshot(&ports, query.protocol);
-    report.normalize();
     tracing::debug!(
         operation = "port-enumeration",
         backend = std::env::consts::OS,
@@ -302,9 +315,12 @@ pub fn execute(action: Action) -> Result<i32> {
         errors = report.errors.len(),
         "Port snapshot completed"
     );
-    if terminate {
-        kill(&mut report, &mut backend, &mut RealClock(Instant::now()));
-    }
+    settle_snapshot(
+        &mut report,
+        terminate,
+        &mut backend,
+        &mut RealClock(Instant::now()),
+    );
     let mode = if query.json {
         OutputMode::Json
     } else if query.quiet {
