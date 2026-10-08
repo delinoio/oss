@@ -18,3 +18,6 @@ apps/delidev/src-tauri/provider-guidance.generated.json text eol=lf
 
 # The pinned Tauri CLI serializes this manifest with LF on every build host.
 apps/delidev/src-tauri/Cargo.toml text eol=lf
+
+# Unified patch context preserves one leading space on empty source lines.
+patches/@xterm__xterm@6.0.0.patch whitespace=-blank-at-eol
