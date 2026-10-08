@@ -70,6 +70,15 @@ fn value(value: &str, name: &str, parent: &Environment, windows: bool) -> String
 }
 
 fn command_convert(arg: OsString, env: &Environment, windows: bool) -> OsString {
+    command_convert_token(arg, env, windows, false)
+}
+
+fn command_convert_token(
+    arg: OsString,
+    env: &Environment,
+    windows: bool,
+    executable: bool,
+) -> OsString {
     if !windows {
         return arg;
     }
@@ -85,7 +94,17 @@ fn command_convert(arg: OsString, env: &Environment, windows: bool) -> OsString 
         .replace_all(&defaults, |c: &Captures<'_>| {
             let key = c.get(1).or_else(|| c.get(2)).unwrap().as_str();
             if lookup(env, key, true).is_some_and(|v| !v.is_empty()) {
-                format!("%{key}%")
+                if executable {
+                    // Lookup is shell-free: expand only supported dollar
+                    // references from the prepared child
+                    // environment before native path lookup.
+                    lookup(env, key, true)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned()
+                } else {
+                    format!("%{key}%")
+                }
             } else {
                 String::new()
             }
@@ -134,19 +153,23 @@ fn plan(args: Vec<OsString>, parent: Environment, windows: bool) -> Result<Plan>
     }
     // The caller already tokenized argv. Assignment escaping must not strip
     // literal child quotes or backslashes (including a Windows UNC prefix).
-    let mut converted = args
-        .into_iter()
-        .skip(first)
-        .map(|a| command_convert(a, &env, windows));
-    let command = converted.next().filter(|s| !s.is_empty()).ok_or_else(|| {
-        Failure::new(
-            Code::InvalidInput,
-            "A child command is required after environment assignments; use clibox run env --help.",
-        )
-    })?;
+    let mut tokens = args.into_iter().skip(first);
+    let command = tokens
+        .next()
+        .map(|arg| command_convert_token(arg, &env, windows, true))
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            Failure::new(
+                Code::InvalidInput,
+                "A child command is required after environment assignments; use clibox run env \
+                 --help.",
+            )
+        })?;
     Ok(Plan {
         command,
-        args: converted.collect(),
+        args: tokens
+            .map(|arg| command_convert(arg, &env, windows))
+            .collect(),
         env,
     })
 }
@@ -257,6 +280,80 @@ mod tests {
             ("EMPTY".into(), "".into()),
         ]
         .into()
+    }
+
+    #[test]
+    fn windows_executable_references_use_prepared_child_values_only() {
+        let inherited: Environment = [
+            ("ToOl".into(), "parent.exe".into()),
+            ("BASE".into(), "from-parent.exe".into()),
+            ("123".into(), "numeric.exe".into()),
+            ("PATH".into(), "child-search".into()),
+            ("PATHEXT".into(), ".EXE;.CMD".into()),
+        ]
+        .into();
+        for reference in ["$TOOL", "${tool}", "${TOOL:-unused}"] {
+            let p = plan(
+                args(&[reference, "$TOOL", "", "a b", "&", "\"quoted\""]),
+                inherited.clone(),
+                true,
+            )
+            .unwrap();
+            assert_eq!(p.command, "parent.exe");
+            assert_eq!(p.args, args(&["%TOOL%", "", "a b", "&", "\"quoted\""]));
+            let p = plan(
+                args(&["TOOL=C:/tools with spaces/child.cmd", reference]),
+                inherited.clone(),
+                true,
+            )
+            .unwrap();
+            assert_eq!(p.command, "C:/tools with spaces/child.cmd");
+            assert_eq!(
+                lookup(&p.env, "PATH", true),
+                Some(OsStr::new("child-search"))
+            );
+            assert_eq!(
+                lookup(&p.env, "PATHEXT", true),
+                Some(OsStr::new(".EXE;.CMD"))
+            );
+        }
+        for raw in ["$MISSING", "${MISSING}", "${EMPTY}"] {
+            assert!(plan(args(&["EMPTY=", raw]), inherited.clone(), true).is_err());
+        }
+        assert_eq!(
+            plan(args(&["${MISSING:-fallback.exe}"]), inherited.clone(), true)
+                .unwrap()
+                .command,
+            "fallback.exe"
+        );
+        assert_eq!(
+            plan(args(&["$123"]), inherited.clone(), true)
+                .unwrap()
+                .command,
+            "numeric.exe"
+        );
+        assert_eq!(
+            plan(
+                args(&["BASE=changed", "TOOL=$BASE", "$TOOL"]),
+                inherited.clone(),
+                true
+            )
+            .unwrap()
+            .command,
+            "from-parent.exe"
+        );
+        for direct in ["clibox.exe", "%TOOL%", "C:/tools with spaces/clibox.exe"] {
+            assert_eq!(
+                plan(args(&[direct]), inherited.clone(), true)
+                    .unwrap()
+                    .command,
+                direct
+            );
+        }
+        assert_eq!(
+            plan(args(&["$TOOL"]), inherited, false).unwrap().command,
+            "$TOOL"
+        );
     }
 
     #[test]
