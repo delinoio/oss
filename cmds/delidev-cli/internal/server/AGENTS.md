@@ -313,3 +313,5 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 - Loopback RPC authority accepts canonical portless 127.0.0.1, localhost and [::1] for normalized default-port client origins, plus valid explicit-port loopback authorities. Preserve malformed/numeric-alias/foreign-host rejection, exact CORS, authentication and listener ownership under the connections contract.
 
 A fresh subscription lifecycle Take may return Canceled with exact cause `subscription_take_not_admitted` only inside its rolled-back admission transaction after original account/Worker/instance/installation/update fences when the queued original is absent, replaced or canceled. Replay, claimed/recovery state, wrong action/machine and post-commit errors never carry this proof. No lease, bundle or native authority is granted.
+
+- Repository saves check unused global identity and permanent tombstones at expected-zero admission and final validation. Known identity conflicts settle the original parent failure with valid child success in one report transaction; unexpected storage failures remain rollback/retryable. Follow the workspace contract.

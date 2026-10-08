@@ -24,6 +24,13 @@ Failure cleanup requires the original durable claim and independently joined ori
 
 Inspection accepts an absolute root, subdirectory, or linked worktree and resolves its canonical working-tree root, display name, remote names, and locally recorded remote defaults. It neither fetches nor returns remote URLs. When a save supplies an opaque expected source identity, the Worker reads the selected effective remote locally and rejects a mismatch without returning the raw URL. GitHub HTTPS/SSH forms share their established, case-insensitive owner/repository namespace; generic hosts retain transport, SSH user and absolute-vs-relative SSH path namespace so distinct server repositories cannot collide. Encoded path separators are rejected before identity derivation so escaped and literal repository namespaces cannot collapse. An invalid preferred remote fails. Default reference selection uses the configured preferred remote, otherwise `origin`, otherwise the sole remote; missing or ambiguous defaults require input.
 
+Repository save admission and final validation require an unused global identity
+for expected revision zero, including absence of permanent tombstones. Known
+identity conflicts after acceptance atomically retain valid original child
+inspection success and terminal parent failure; unexpected storage errors roll
+back for exact retry. Never recreate a deleted repository or overwrite a newer
+revision.
+
 ### Negotiated repository metadata
 
 Issue #1142 adds optional `Inspection.github_repositories`, mapping an inspected remote name to only validated `{owner, name}`. The normal `Inspect` result stays unchanged. `RepositoryInspectionInput` can carry an internal opaque expected source identity for a repository save/import; it never carries the raw URL into Worker output. The Worker enriches results only after observing server support and the second attachment's accepted Machine capability. Legacy combinations omit the map and identity; the server also omits the identity input for an active Worker that has not negotiated `RepositoryInspectionMetadataV1`, preserving strict decoders and the original inspection flow. Missing GitHub metadata never blocks otherwise valid registration or invents a default branch. The CLI's legacy inspection raw output remains decodable. This does not promise compatibility for unrelated legacy consumers that reject newly advertised Machine capability identifiers.
