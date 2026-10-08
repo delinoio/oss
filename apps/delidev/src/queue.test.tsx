@@ -1,20 +1,20 @@
 import { useState } from "react";
 import { useConversationDrafts } from "./conversation-drafts";
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, SessionService, newRequestId } from "@delinoio/delidev-api-client";
 import { QueuedInput, type QueuedInputDraft } from "./queue";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
-function fixture() {
+function fixture(prompt = "Original queued input") {
   const id = newRequestId(), execution = newRequestId(), turn = newRequestId();
   const session = create(ResourceSchema, { id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 4n, documentJson: encode({ outcome: "running", archive: "active", active_execution_id: execution, execution: { execution_id: execution, native_turn_id: turn } }) });
-  const resource = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 6n, documentJson: encode({ prompt: "Original queued input", sequence: 3, delivery: "queued", mode: "plan" }) });
+  const resource = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 6n, documentJson: encode({ prompt, sequence: 3, delivery: "queued", mode: "plan" }) });
   const edit = vi.fn(async (_request: unknown) => ({ change: { input: create(ResourceSchema, { ...resource, revision: 7n, documentJson: encode({ prompt: "Changed", sequence: 3, delivery: "queued", mode: "plan" }) }) } }));
   const steer = vi.fn(async (_request: unknown) => ({}));
   const remove = vi.fn(async (_request: unknown) => ({}));
@@ -23,6 +23,78 @@ function fixture() {
   const view = (input = resource) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><QueuedInput resource={input} session={session} refresh={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { resource, session, execution, turn, edit, steer, remove, view, transport, client };
 }
+
+it.each([
+  { name: "100,000-byte queued ASCII prompt", prompt: "a".repeat(100000) },
+  { name: "65,537-byte ASCII prompt", prompt: "a".repeat(65537) },
+  { name: "256 KiB ASCII prompt", prompt: "a".repeat(256 << 10) },
+  { name: "256 KiB supplementary Unicode prompt", prompt: "😀".repeat(65536) },
+])("edits the complete $name at its original revision", async ({ prompt }) => {
+  const value = fixture(prompt);
+  render(value.view());
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  const editor = screen.getByRole("textbox", { name: "Edited input" });
+  // jsdom does not enforce native maxlength during typing. Check the actual
+  // textarea attribute as well as the controlled draft and transmitted bytes.
+  expect(editor.hasAttribute("maxlength")).toBe(false);
+  expect(editor).toHaveProperty("value", prompt);
+  const edited = prompt.endsWith("😀") ? `${prompt.slice(0, -2)}😃` : `${prompt.slice(0, -1)}b`;
+  fireEvent.change(editor, { target: { value: edited, selectionStart: edited.length } });
+  expect(editor).toHaveProperty("value", edited);
+  fireEvent.click(screen.getByRole("button", { name: "Save input" }));
+  await waitFor(() => expect(value.edit).toHaveBeenCalledOnce());
+  expect(value.edit.mock.calls[0]![0]).toMatchObject({ prompt: edited, mutation: { id: value.resource.id, expectedRevision: value.resource.revision }, sessionId: value.session.id });
+  expect(new TextEncoder().encode(edited)).toHaveLength(new TextEncoder().encode(prompt).byteLength);
+});
+
+it.each([
+  { name: "ASCII", valid: "a".repeat(256 << 10), overflow: "a".repeat((256 << 10) + 1) },
+  { name: "supplementary Unicode", valid: "😀".repeat(65536), overflow: `${"😀".repeat(65536)}a` },
+])("retains the last valid $name edit on UTF-8 overflow", ({ valid, overflow }) => {
+  const value = fixture();
+  render(value.view());
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  const editor = screen.getByRole("textbox", { name: "Edited input" });
+  fireEvent.change(editor, { target: { value: valid, selectionStart: 0 } });
+  fireEvent.change(editor, { target: { value: overflow, selectionStart: 0 } });
+  expect(editor).toHaveProperty("value", valid);
+  expect(screen.getByRole("alert")).toBeTruthy();
+  expect(value.edit).not.toHaveBeenCalled();
+  fireEvent.change(editor, { target: { value: "Within the budget", selectionStart: 0 } });
+  expect(editor).toHaveProperty("value", "Within the budget");
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.change(editor, { target: { value: "  \n  ", selectionStart: 0 } });
+  expect(screen.getByRole("button", { name: "Save input" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Save input" }));
+  expect(value.edit).not.toHaveBeenCalled();
+});
+
+it("locks a large pending and uncertain edit and explicitly retries the original bytes", async () => {
+  const value = fixture("a".repeat(100000));
+  let reject!: (reason: ConnectError) => void;
+  value.edit.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  render(value.view());
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  const editor = screen.getByRole("textbox", { name: "Edited input" });
+  const edited = `${"a".repeat(99999)}b`;
+  fireEvent.change(editor, { target: { value: edited, selectionStart: edited.length } });
+  fireEvent.click(screen.getByRole("button", { name: "Save input" }));
+  await waitFor(() => expect(value.edit).toHaveBeenCalledOnce());
+  expect(editor).toHaveProperty("disabled", true);
+  fireEvent.change(editor, { target: { value: "Replacement" } });
+  fireEvent.submit(editor.closest("form")!);
+  expect(editor).toHaveProperty("value", edited);
+  expect(value.edit).toHaveBeenCalledOnce();
+  await act(async () => { reject(new ConnectError("Lost response", Code.Unavailable)); });
+  const retry = await screen.findByRole("button", { name: "Retry the same edit" });
+  expect(editor).toHaveProperty("disabled", true);
+  fireEvent.change(editor, { target: { value: "Another replacement" } });
+  expect(editor).toHaveProperty("value", edited);
+  fireEvent.click(retry);
+  await waitFor(() => expect(value.edit).toHaveBeenCalledTimes(2));
+  expect(value.edit.mock.calls[1]![0]).toEqual(value.edit.mock.calls[0]![0]);
+  expect(value.edit.mock.calls[0]![0]).toMatchObject({ prompt: edited, mutation: { expectedRevision: value.resource.revision } });
+});
 
 it("binds an edit to the revision at which editing began and preserves its draft after peer changes", async () => {
   const value = fixture();
