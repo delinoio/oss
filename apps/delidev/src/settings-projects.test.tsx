@@ -98,6 +98,8 @@ it("preserves four field groups, repository order, primary clearing, restriction
   const first = resource(EntityKind.REPOSITORY, { name: "First" }), second = resource(EntityKind.REPOSITORY, { name: "Second" }), row = project("Editable project");
   row.documentJson = encode({ name: "Editable project", repositories: [first.id, second.id], primary_repository: first.id, agents: { configured: true, ids: [newRequestId()] }, accounts: { configured: false, ids: [] }, extension: { retained: true } });
   const value = fixture([row, first, second]); openProjects(value); fireEvent.click(await screen.findByRole("button", { name: "Edit Editable project" }));
+  expect(screen.getByText("The harness starts in this repository. Select it explicitly after adding repositories.")).toBeTruthy();
+  expect(screen.queryByText(/The first repository you select becomes the primary repository/)).toBeNull();
   for (const label of ["Name", "Repositories", "Agent Workers", "AI accounts"]) expect(screen.getByRole("group", { name: label })).toBeTruthy();
   await within(screen.getByRole("combobox", { name: "Primary repository" })).findByRole("option", { name: "First" });
   expect(within(screen.getByRole("combobox", { name: "Primary repository" })).getByRole("option", { name: "Second" }).getAttribute("value")).toBe(second.id);

@@ -78,7 +78,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
   }, [active, visible, step]);
   const repositories = (values: string[]) => {
     if (blocked || !active || !visible) return;
-    change({ ...data, repositories: values, primary_repository: values.includes(text(data.primary_repository)) ? data.primary_repository : "", ...(!nameEdited && (!values.length || names.has(values[0]!)) ? { name: values.length ? names.get(values[0]!) : "" } : {}) });
+    change({ ...data, repositories: values, primary_repository: !ids.length && values.length ? values[0] : values.includes(text(data.primary_repository)) ? data.primary_repository : "", ...(!nameEdited && (!values.length || names.has(values[0]!)) ? { name: values.length ? names.get(values[0]!) : "" } : {}) });
     setProblem("");
   };
   const validRepositories = ids.length > 0 && ids.length <= 1000 && new Set(ids).size === ids.length;
@@ -128,7 +128,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
         {!nameEdited ? <p>{copy("project-creation.nameHelp")}</p> : null}
         {nameEdited && !validName(text(data.name)) ? <p role="alert">{copy("project-creation.invalidName")}</p> : null}
         <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select data-project-focus="primary" required value={text(data.primary_repository)} onChange={event => { change({ ...data, primary_repository: event.target.value }); setProblem(""); }}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{ids.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>
-        <p>{copy("configuration-fields.theHarnessStartsInThisRepository_8c3af5")}</p><h4>{copy("project-creation.selectedRepositories")}</h4>{selected(false)}
+        <p>{copy("project-creation.primaryHelp")}</p><h4>{copy("project-creation.selectedRepositories")}</h4>{selected(false)}
       </fieldset>
     </section>
     <section hidden={step !== Step.Restrictions}>
