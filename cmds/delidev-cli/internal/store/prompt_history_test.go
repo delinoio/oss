@@ -118,6 +118,10 @@ func TestProjectPromptHistoryClearReplayMaximumTextAndBackup(t *testing.T) {
 		return r
 	}
 	clear()
+	var retired int
+	if err := s.db.QueryRow("SELECT count(*) FROM tombstones WHERE kind='project_prompt_history'").Scan(&retired); err != nil || retired != 0 {
+		t.Fatal("live clear prevents captured backup restoration", retired, err)
+	}
 	appendHistory(t, s, domain.NewID(), project, "later")
 	if !clear().Replayed || len(historyRows(t, s, project)) != 1 {
 		t.Fatal("replayed clear erased later submission")

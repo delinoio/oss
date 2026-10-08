@@ -720,6 +720,16 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	if expected != r.Revision {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
 	}
+	if kind == domain.ProjectPromptHistoryKind {
+		// Live history removal is independent of receipt/native retirement. Older
+		// managed backups may restore captured text; project tombstones still fence
+		// deleted projects. Do not redact source-session creation receipts here.
+		if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM entities WHERE id=?", id); err != nil {
+			return storageError(err)
+		}
+		delete(t.touched, id)
+		return t.event(r, Deleted)
+	}
 	if kind == domain.ProjectKind {
 		if _, err := t.ClearProjectPromptHistory(id); err != nil {
 			return err

@@ -1115,4 +1115,6 @@ Backup exclusion includes every current image owner. Restore discards historical
 
 Issue #1828 uses immutable `project_prompt_history` entities with the exact project ID and an empty session ID. Append/prune and confirmed clear use ordinary durable receipt transactions. Project deletion removes live history atomically. Session deletion and first-input editing do not own these records. No SQLite migration is added.
 
+Live history removal emits deletion metadata without native/configuration tombstones or source-receipt redaction. This permits captured-history restoration while project tombstones retain their original authority.
+
 Managed backups capture history. Open and backup validation check closed documents, project ownership, unique acceptance sequences and the 100-entry bound. Restore follows captured history, except current project deletion tombstones remain authoritative. Portable configuration exports exclude history. Clear removes live history only, without securely erasing immutable older backups. Restoring a backup may restore its captured history. Logs contain operation/project/correlation IDs and safe codes, never prompt text.

@@ -24,9 +24,13 @@ func (t *Tx) AppendProjectPromptHistory(project domain.ID, prompt string) error 
 	if err := value.Validate(); err != nil {
 		return err
 	}
-	if _, err := t.Put(domain.ProjectPromptHistoryKind, domain.NewID(), 0, "", project, value); err != nil {
+	row, err := t.Put(domain.ProjectPromptHistoryKind, domain.NewID(), 0, "", project, value)
+	if err != nil {
 		return err
 	}
+	// History is not part of the source-session result. Its independent removal
+	// must never redact that original creation receipt or own session deletion.
+	delete(t.touched, row.ID)
 	rows, err := t.tx.QueryContext(t.ctx, "SELECT id FROM entities WHERE kind=? AND project_id=? ORDER BY json_extract(body,'$.acceptance_sequence') DESC LIMIT -1 OFFSET ?", domain.ProjectPromptHistoryKind, project, MaxProjectPromptHistory)
 	if err != nil {
 		return storageError(err)

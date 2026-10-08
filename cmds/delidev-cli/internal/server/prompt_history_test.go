@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
@@ -9,12 +10,20 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"log/slog"
 	"strings"
 	"testing"
 )
 
 func TestProjectPromptHistoryPublicCreationPaginationAndClear(t *testing.T) {
 	f := newScheduleDispatchFixture(t, domain.ScheduleSkipOverlap, false)
+	var logs bytes.Buffer
+	f.service.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	defer func() {
+		if strings.Contains(logs.String(), "first") || strings.Contains(logs.String(), "later canary") {
+			t.Fatal("private prompt reached logs")
+		}
+	}()
 	f.service.Identity = security.Identity{ServerID: domain.NewID(), Token: strings.Repeat("a", 64)}
 	creation := domain.CreateSession{Name: "Fixture", AgentID: f.agent, MachineID: f.machine, ProjectID: f.project, Workspace: domain.Worktree, Prompt: "  first\n한글  ", Source: domain.ManualSession}
 	raw, _ := json.Marshal(creation)
@@ -60,8 +69,15 @@ func TestProjectPromptHistoryPublicCreationPaginationAndClear(t *testing.T) {
 	if _, err := f.service.CreateSession(f.ctx, connect.NewRequest(&pb.CreateSessionRequest{RequestId: string(domain.NewID()), DocumentJson: raw})); err != nil {
 		t.Fatal(err)
 	}
+	edited, err := f.service.EditQueuedInput(f.ctx, connect.NewRequest(&pb.EditQueuedInputRequest{SessionId: response.Msg.Change.Session.Id, Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: response.Msg.Change.Input.Id, ExpectedRevision: response.Msg.Change.Input.Revision}, Prompt: "changed first input"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.RemoveQueuedInput(f.ctx, connect.NewRequest(&pb.RemoveQueuedInputRequest{SessionId: response.Msg.Change.Session.Id, Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: edited.Msg.Change.Input.Id, ExpectedRevision: edited.Msg.Change.Input.Revision}})); err != nil {
+		t.Fatal(err)
+	}
 	all, err := list(f.project, 100, "")
-	if err != nil || len(all.Entries) != 2 {
+	if err != nil || len(all.Entries) != 2 || all.Entries[0].Prompt != "  first\n한글  " || all.Entries[1].Prompt != "  first\n한글  " {
 		t.Fatal("excluded creation appended", all, err)
 	}
 	clear := connect.NewRequest(&pb.ClearProjectPromptHistoryRequest{ProjectId: string(f.project), RequestId: string(domain.NewID())})
@@ -72,6 +88,9 @@ func TestProjectPromptHistoryPublicCreationPaginationAndClear(t *testing.T) {
 	cleared, err := f.service.ClearProjectPromptHistory(f.ctx, clear)
 	if err != nil || cleared.Msg.RemovedCount != 2 {
 		t.Fatal(cleared, err)
+	}
+	if _, err := f.service.CreateSession(f.ctx, req); err != nil {
+		t.Fatal("clear changed original session creation receipt", err)
 	}
 	f.mutate(t, func(tx *store.Tx) error { return tx.AppendProjectPromptHistory(f.project, "later canary") })
 	replay, err := f.service.ClearProjectPromptHistory(f.ctx, clear)
