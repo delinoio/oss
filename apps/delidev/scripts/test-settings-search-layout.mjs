@@ -49,6 +49,8 @@ try {
     await search('remediation-policy.consecutiveAutomaticAttemptLimit_844605');await select('remediation-attempts');assert.equal(await attempts.inputValue(),'8');
     assert.equal(await page.locator('.server-remediation-details').getAttribute('open'),'');
     await search('network-settings.networkSettings_600f22');await select('network');assert.equal(await page.locator('.network-inline > div').count(),1);assert.equal(await page.locator('.network-workspace').count(),0);
+    await search('notification-settings.aboutNotificationDelivery_e8b4e9');await select('notification-delivery');
+    const delivery=page.locator('[data-settings-search-target="notification-delivery"]');assert.equal(await delivery.evaluate(node=>node.tabIndex),0);assert.equal(await delivery.getAttribute('tabindex'),null);await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');assert(await delivery.evaluate(node=>node===document.activeElement));
     await search('notification-settings.questionsAndApprovalRequests_e6c1b4');await select('notification-questions');assert.equal(await page.locator('dialog[open]:not([role="region"])').count(),0);
     await search('ssh-setup.setUpAWorkerOverSsh_9a1626');await select('ssh');assert.equal(await page.locator('dialog[open]:not([role="region"])').count(),0);
     await open();await input.fill('private-resource-name-no-match');assert.equal(await page.locator('[data-settings-search-result]').count(),0);

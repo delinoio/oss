@@ -48,3 +48,6 @@ it.each(['focus','pointer','keyboard','navigation'])("cancels pending focus on %
  view.rerender(<FocusFixture request={kind==='navigation'?undefined:request} present/>);
  await act(async()=>{await new Promise(done=>setTimeout(done,40));});expect(document.activeElement?.getAttribute('data-settings-search-target')).not.toBe('remediation-attempts');expect(screen.getByText('Details').closest('details')?.open).toBe(false);
 });
+
+function SummaryFixture() { const root=useRef<HTMLDivElement>(null);return <><SettingsSearchFocus request={{category:SettingsCategory.Notifications,target:SettingsSearchTarget.Delivery,generation:'summary'}} category={SettingsCategory.Notifications} root={root}/><div ref={root}><h1>Notifications</h1><details><summary data-settings-search-target="notification-delivery">Delivery guidance</summary><p>Guidance</p></details><button>Other control</button></div></>; }
+it("preserves native summary tab order after search focuses delivery guidance",async()=>{render(<SummaryFixture/>);const summary=screen.getByText('Delivery guidance');await waitFor(()=>expect(document.activeElement).toBe(summary));expect(summary.getAttribute('tabindex')).toBeNull();expect(summary.tabIndex).toBe(0);screen.getByRole('button',{name:'Other control'}).focus();expect(summary.tabIndex).toBe(0);expect(summary.closest('details')?.open).toBe(false);});

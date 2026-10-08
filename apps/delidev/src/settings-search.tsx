@@ -50,7 +50,7 @@ export function SettingsSearchFocus({request,category,root}:{request?:SettingsSe
   const scope=root.current; let pending=true,frame=0;
   const cancel=()=>{pending=false;observer.disconnect();cancelAnimationFrame(frame);};
   const intent=(event:Event)=>{if(event.type==="keydown"&&!['Tab','Enter',' ','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes((event as KeyboardEvent).key))return;cancel();};
-  const focus=(node:HTMLElement)=>{cancel();node.tabIndex=-1;node.focus({preventScroll:true});node.scrollIntoView?.({block:"nearest",inline:"nearest"});};
+  const focus=(node:HTMLElement)=>{cancel();if(node.tabIndex<0)node.tabIndex=-1;node.focus({preventScroll:true});node.scrollIntoView?.({block:"nearest",inline:"nearest"});};
   const attempt=()=>{
    if(!pending||!scope.isConnected)return;
    if(scope.closest('[inert], [aria-hidden="true"]')||document.querySelector('dialog[open]:not([role="region"])')){cancel();return;}
