@@ -655,16 +655,19 @@ func TestSystemdActionsRejectAnActiveManagerWithDifferentArguments(t *testing.T)
 		name     string
 		action   string
 		sequence []string
+		code     ErrorCode
 	}{
-		{name: "start", action: "start", sequence: []string{pid}},
-		{name: "stop before drain", action: "stop", sequence: []string{pid}},
-		{name: "uninstall before drain", action: "uninstall", sequence: []string{pid}},
-		{name: "stop before disable", action: "stop", sequence: []string{"0", pid}},
+		{name: "start", action: "start", sequence: []string{pid}, code: ErrConfig},
+		{name: "stop before drain", action: "stop", sequence: []string{pid}, code: ErrConfig},
+		{name: "uninstall before drain", action: "uninstall", sequence: []string{pid}, code: ErrConfig},
+		// A manager appearing after inactive admission is an authority race,
+		// rather than a mismatch in the invocation of an admitted active manager.
+		{name: "stop after inactive admission", action: "stop", sequence: []string{"0", pid}, code: ErrControl},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := &serviceFixture{systemdPIDSequence: tc.sequence}
 			err := Service(context.Background(), tc.action, configPath, c, fixture)
-			requireCode(t, err, ErrConfig)
+			requireCode(t, err, tc.code)
 			if strings.Contains(err.Error(), configPath) || strings.Contains(err.Error(), binary) {
 				t.Fatalf("service identity details leaked: %v", err)
 			}
@@ -676,10 +679,12 @@ func TestSystemdActionsRejectAnActiveManagerWithDifferentArguments(t *testing.T)
 					t.Fatalf("mismatched active service reached another manager command: %v", fixture.commands)
 				}
 			}
-			if tc.action == "uninstall" {
-				if _, err := os.Stat(unit); err != nil {
-					t.Fatalf("mismatched active service definition was removed: %v", err)
-				}
+			if _, err := os.Stat(unit); err != nil {
+				t.Fatalf("unadmitted service definition was removed: %v", err)
+			}
+			snapshot, err := ReadSnapshot(c)
+			if err != nil || snapshot.Stopping {
+				t.Fatalf("unadmitted service changed offline Stop authority: %v", err)
 			}
 		})
 	}
@@ -729,11 +734,16 @@ func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
 	if len(fixture.commands) != len(fixture.envs) {
 		t.Fatal("service invocation environment was not captured")
 	}
-	var systemctlCalls int
+	var systemctlChecks int
+	var systemctlMutations []string
 	for i, command := range fixture.commands {
 		env := commandEnvironmentMap(t, fixture.envs[i])
 		if command[0] == "systemctl" {
-			systemctlCalls++
+			if len(command) > 2 && command[2] == "show" {
+				systemctlChecks++
+			} else {
+				systemctlMutations = append(systemctlMutations, strings.Join(command, " "))
+			}
 			if runtime.GOOS != "linux" {
 				t.Fatal("systemctl unexpectedly used on a non-Linux host")
 			}
@@ -744,8 +754,23 @@ func TestUserServiceLifecycleUsesIsolatedUserDirectory(t *testing.T) {
 			t.Fatalf("non-systemctl action %v received Linux session context", command)
 		}
 	}
-	if runtime.GOOS == "linux" && systemctlCalls != 15 {
-		t.Fatalf("systemctl calls = %d, want fifteen including active-identity checks and validated unit reloads across install/start/stop/uninstall", systemctlCalls)
+	if runtime.GOOS == "linux" {
+		// Read-only admission/inactivity rechecks may increase independently of
+		// the native lifecycle. Verify mutation order and every child environment
+		// without freezing the number of ownership proofs.
+		expected := []string{
+			"systemctl --user daemon-reload",
+			"systemctl --user daemon-reload",
+			"systemctl --user enable --now " + systemdServiceName,
+			"systemctl --user daemon-reload",
+			"systemctl --user disable --now " + systemdServiceName,
+			"systemctl --user daemon-reload",
+			"systemctl --user disable --now " + systemdServiceName,
+			"systemctl --user daemon-reload",
+		}
+		if systemctlChecks == 0 || strings.Join(systemctlMutations, "\n") != strings.Join(expected, "\n") {
+			t.Fatalf("systemctl lifecycle = %v with %d identity checks, want %v and read-only admission checks", systemctlMutations, systemctlChecks, expected)
+		}
 	}
 }
 func TestCapacityWaitIsVisibleWithoutPreemptingWork(t *testing.T) {
