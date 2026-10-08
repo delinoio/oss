@@ -115,6 +115,21 @@ func TestOriginalImageBytesSurviveRestartAndReplay(t *testing.T) {
 			if err := write(t, m, ref, 0, raw); err == nil {
 				t.Fatal("delayed write recreated deleted image")
 			}
+			if err := m.Removed(ref.MachineID, ref); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(paths[0], raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.Removed(ref.MachineID, ref); err == nil {
+				t.Fatal("replacement passed original removal proof")
+			}
+			if got, err := os.ReadFile(paths[0]); err != nil || !bytes.Equal(got, raw) {
+				t.Fatal("proof changed replacement", err)
+			}
+			if err := os.Remove(paths[0]); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := os.Stat(paths[0]); !os.IsNotExist(err) {
 				t.Fatal("bytes remain", err)
 			}

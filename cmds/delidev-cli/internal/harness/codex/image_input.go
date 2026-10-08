@@ -10,7 +10,8 @@ import (
 )
 
 // The pinned V2 UserInput union uses camelCase localImage, not textual paths.
-// Source: openai/codex 8b9fa496bbf2c47aebd62e85a080b9a522a455b5,
+// Source: openai/codex 0.151.0 d8673cb68e349c208659b986697773d3145dbb14
+// and 0.159.2 8b9fa496bbf2c47aebd62e85a080b9a522a455b5,
 // codex-rs/app-server-protocol/src/protocol/v2/turn.rs.
 func (c *Client) nativeImageParts(ctx context.Context, input domain.SessionInput) ([]nativeTextInput, error) {
 	result := []nativeTextInput{}

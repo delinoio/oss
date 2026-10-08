@@ -409,7 +409,7 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if value.IsSidechat() && len(input.Attachments) > 0 {
 			return nil, domain.UnsupportedImageInput()
 		}
-		if err := checkImageRoute(tx, value.AgentID, value.MachineID, input.Attachments); err != nil {
+		if err := checkSessionImageRoute(tx, value, input.Attachments); err != nil {
 			return nil, err
 		}
 		itemID, err := appendSessionInput(tx, r.ID, &value, input, preparedSkillNames)

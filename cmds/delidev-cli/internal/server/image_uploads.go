@@ -28,7 +28,7 @@ func imageUploadRecord(tx *store.Tx, id domain.ID) (store.Record, domain.ImageUp
 	}
 	job, err := store.Decode[domain.Job](row)
 	var upload domain.ImageUpload
-	if err != nil || job.Type != domain.ImageAttachmentJob || domain.Decode(job.Input, &upload) != nil || upload.Version != 1 || upload.Attachment.ID != id || upload.Attachment.Validate() != nil || upload.Attachment.MachineID != job.MachineID {
+	if err != nil || job.Type != domain.ImageAttachmentJob || domain.Decode(job.Input, &upload) != nil || upload.Version != 1 || upload.WorkerDeviceID.Validate() != nil || upload.Attachment.ID != id || upload.Attachment.Validate() != nil || upload.Attachment.MachineID != job.MachineID {
 		return row, upload, domain.InvalidImageInput()
 	}
 	return row, upload, nil
@@ -36,6 +36,14 @@ func imageUploadRecord(tx *store.Tx, id domain.ID) (store.Record, domain.ImageUp
 func putImageUpload(tx *store.Tx, row store.Record, value domain.ImageUpload) (store.Record, error) {
 	raw, _ := json.Marshal(value)
 	job := domain.Job{Type: domain.ImageAttachmentJob, State: domain.JobSucceeded, MachineID: value.Attachment.MachineID, Input: raw, AcceptedAt: time.Now().UTC()}
+	if row.Revision > 0 {
+		original, err := store.Decode[domain.Job](row)
+		if err != nil || original.Type != domain.ImageAttachmentJob || original.MachineID != value.Attachment.MachineID {
+			return store.Record{}, domain.InvalidImageInput()
+		}
+		job = original
+		job.Input = raw
+	}
 	return tx.PutJob(value.Attachment.ID, row.Revision, "", "", job)
 }
 func ownedImageUpload(tx *store.Tx, id domain.ID, actor domain.Principal) (store.Record, domain.ImageUpload, error) {
@@ -110,7 +118,14 @@ func (s *Service) BeginUpload(ctx context.Context, req *connect.Request[pb.Begin
 				return nil, domain.UnsupportedImageInput()
 			}
 		}
-		value := domain.ImageUpload{Version: 1, Attachment: prototype, Actor: actor, DraftID: domain.ID(q.DraftId), OperationID: domain.ID(q.OperationId), MachineRevision: q.MachineRevision, SessionID: domain.ID(q.SessionId), State: domain.ImageUploading}
+		device, err := tx.InstallationWorkerDevice(prototype.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		value := domain.ImageUpload{WorkerDeviceID: device, Version: 1, Attachment: prototype, Actor: actor, DraftID: domain.ID(q.DraftId), OperationID: domain.ID(q.OperationId), MachineRevision: q.MachineRevision, SessionID: domain.ID(q.SessionId), State: domain.ImageUploading}
+		if err := validateImageDraftBound(tx, value); err != nil {
+			return nil, err
+		}
 		if _, err := putImageUpload(tx, store.Record{}, value); err != nil {
 			return nil, err
 		}
@@ -137,7 +152,7 @@ func (s *Service) WriteChunk(ctx context.Context, req *connect.Request[pb.WriteC
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	if value.State != domain.ImageUploading || len(q.Data) == 0 || len(q.Data) > domain.MaxImageChunkBytes || q.Sha256 != imageinput.Digest(q.Data) || q.Offset > value.UploadedBytes || q.Offset > value.Attachment.ByteLength || uint64(len(q.Data)) > value.Attachment.ByteLength-q.Offset {
+	if value.Quarantined || value.State != domain.ImageUploading || len(q.Data) == 0 || len(q.Data) > domain.MaxImageChunkBytes || q.Sha256 != imageinput.Digest(q.Data) || q.Offset > value.UploadedBytes || q.Offset > value.Attachment.ByteLength || uint64(len(q.Data)) > value.Attachment.ByteLength-q.Offset {
 		return nil, rpc.Error(domain.InvalidImageInput(), c)
 	}
 	transfer := &pb.AttachmentTransfer{Id: string(domain.NewID()), Attachment: imageinput.ToProto(value.Attachment), Operation: pb.AttachmentTransferOperation_ATTACHMENT_TRANSFER_OPERATION_WRITE, Offset: q.Offset, Data: q.Data, Sha256: q.Sha256}
@@ -180,10 +195,13 @@ func (s *Service) FinishUpload(ctx context.Context, req *connect.Request[pb.Fini
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	if value.Quarantined {
+		return nil, rpc.Error(domain.InvalidImageInput(), c)
+	}
 	if value.State == domain.ImageReady || value.State == domain.ImageClaimed {
 		return connect.NewResponse(&pb.FinishUploadResponse{Upload: imageUploadMessage(value)}), nil
 	}
-	if value.State != domain.ImageUploading || value.UploadedBytes != value.Attachment.ByteLength {
+	if value.Quarantined || value.State != domain.ImageUploading || value.UploadedBytes != value.Attachment.ByteLength {
 		return nil, rpc.Error(domain.InvalidImageInput(), c)
 	}
 	if _, err = s.transferImage(ctx, &pb.AttachmentTransfer{Id: string(domain.NewID()), Attachment: imageinput.ToProto(value.Attachment), Operation: pb.AttachmentTransferOperation_ATTACHMENT_TRANSFER_OPERATION_FINISH}); err != nil {
@@ -307,7 +325,7 @@ func (s *Service) ReadAttachment(ctx context.Context, req *connect.Request[pb.Re
 		if err != nil {
 			return err
 		}
-		if value.State != domain.ImageClaimed || !slices.Contains(value.Owners, domain.ID(q.SessionId)) || session.MachineID != value.Attachment.MachineID || q.Limit == 0 || q.Limit > domain.MaxImageChunkBytes || q.Offset > value.Attachment.ByteLength {
+		if value.Quarantined || value.State != domain.ImageClaimed || !slices.Contains(value.Owners, domain.ID(q.SessionId)) || session.MachineID != value.Attachment.MachineID || q.Limit == 0 || q.Limit > domain.MaxImageChunkBytes || q.Offset > value.Attachment.ByteLength {
 			return domain.InvalidImageInput()
 		}
 		return nil

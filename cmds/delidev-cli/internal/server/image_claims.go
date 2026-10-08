@@ -53,12 +53,20 @@ func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, refs []domain.I
 // This runs inside the same original session/input acceptance transaction.
 // Receipt replay returns current records without re-entering this claim.
 func claimInputImages(tx *store.Tx, actor domain.Principal, operation, sessionID, inputID, machineID domain.ID, refs []domain.ImageAttachment, creating bool) error {
+	machineRow, _, err := activeMachine(tx, machineID)
+	if err != nil {
+		return err
+	}
+	device, err := tx.InstallationWorkerDevice(machineID)
+	if err != nil {
+		return err
+	}
 	for _, ref := range refs {
 		row, value, err := ownedImageUpload(tx, ref.ID, actor)
 		if err != nil {
 			return err
 		}
-		if value.State != domain.ImageReady || value.Attachment != ref || value.Attachment.MachineID != machineID || value.OperationID != operation || value.SessionID != "" && value.SessionID != sessionID || creating && value.SessionID != "" || !creating && value.SessionID != sessionID || value.UploadedBytes != ref.ByteLength || len(value.Owners) != 0 || value.InputID != "" {
+		if value.Quarantined || value.WorkerDeviceID != device || value.MachineRevision != machineRow.Revision || value.State != domain.ImageReady || value.Attachment != ref || value.Attachment.MachineID != machineID || value.OperationID != operation || value.SessionID != "" && value.SessionID != sessionID || creating && value.SessionID != "" || !creating && value.SessionID != sessionID || value.UploadedBytes != ref.ByteLength || len(value.Owners) != 0 || value.InputID != "" {
 			return domain.InvalidImageInput()
 		}
 		value.State = domain.ImageClaimed
@@ -76,4 +84,32 @@ func rejectDocumentAttachments(typed []*pb.ImageAttachment, document []domain.Im
 		return domain.Fail(domain.InvalidArgument, "Image attachments require the typed request field.", "Keep image references outside the session selection document.")
 	}
 	return nil
+}
+
+func checkSessionImageRoute(tx *store.Tx, session domain.Session, refs []domain.ImageAttachment) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	var snapshot *domain.InitialExecution
+	if session.InitialExecution != nil {
+		snapshot = session.InitialExecution
+	} else if session.Fork != nil {
+		snapshot = &session.Fork.Snapshot
+	}
+	if snapshot == nil {
+		return checkImageRoute(tx, session.AgentID, session.MachineID, refs)
+	}
+	_, machine, err := activeMachine(tx, session.MachineID)
+	if err != nil {
+		return err
+	}
+	if snapshot.Configuration.Harness != domain.Codex || snapshot.Configuration.SidechatPolicy != "" || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
+		return domain.UnsupportedImageInput()
+	}
+	for _, ref := range refs {
+		if ref.MachineID != session.MachineID {
+			return domain.InvalidImageInput()
+		}
+	}
+	return domain.ValidateImageAttachments(refs)
 }

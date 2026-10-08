@@ -53,7 +53,19 @@ func (s *Service) transferImage(ctx context.Context, value *pb.AttachmentTransfe
 			reader.delivered = false
 		}
 	}()
-	check := func(tx *store.Tx) error { return currentWorkspaceReader(tx, &reader.authority) }
+	check := func(tx *store.Tx) error {
+		if err := currentWorkspaceReader(tx, &reader.authority); err != nil {
+			return err
+		}
+		_, upload, err := imageUploadRecord(tx, ref.ID)
+		if err != nil {
+			return err
+		}
+		if upload.Attachment != ref || upload.WorkerDeviceID != reader.authority.device {
+			return imageTransferUnavailable()
+		}
+		return nil
+	}
 	if err := s.Store.Read(ctx, check); err != nil {
 		return nil, err
 	}

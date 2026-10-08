@@ -14,6 +14,8 @@ const ImageAttachmentJob JobType = "image-attachment"
 
 // ImageUpload is durable metadata only. Bytes remain on its original Worker.
 type ImageUpload struct {
+	Quarantined     bool             `json:"quarantined,omitempty"`
+	WorkerDeviceID  ID               `json:"worker_device_id"`
 	Actor           Principal        `json:"actor"`
 	Version         uint32           `json:"version"`
 	Attachment      ImageAttachment  `json:"attachment"`

@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -87,6 +88,13 @@ func journal(root *os.Root, ref domain.ImageAttachment, create bool) error {
 	if err := regular(root, id+".json"); err != nil {
 		return err
 	}
+	info, statErr := root.Stat(id + ".json")
+	if statErr == nil && info.Size() > 2048 {
+		return conflict()
+	}
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return conflict()
+	}
 	raw, err := root.ReadFile(id + ".json")
 	if errors.Is(err, os.ErrNotExist) && create {
 		file, err := root.OpenFile(id+".json", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
@@ -100,7 +108,7 @@ func journal(root *os.Root, ref domain.ImageAttachment, create bool) error {
 		if write != nil || sync != nil || close != nil {
 			return conflict()
 		}
-		return nil
+		return security.SyncParent(filepath.Join(root.Name(), id+".json"))
 	}
 	var original domain.ImageAttachment
 	if err != nil || len(raw) > 2048 || domain.Decode(raw, &original) != nil || original != ref {
@@ -179,7 +187,7 @@ func (m Manager) Transfer(machine domain.ID, value *pb.AttachmentTransfer) ([]by
 		if err = file.Sync(); err != nil {
 			return nil, conflict()
 		}
-		return nil, nil
+		return nil, security.SyncParent(filepath.Join(root.Name(), id+".data"))
 	case pb.AttachmentTransferOperation_ATTACHMENT_TRANSFER_OPERATION_FINISH:
 		_, err := content(root, ref)
 		return nil, err
@@ -197,6 +205,9 @@ func (m Manager) Transfer(machine domain.ID, value *pb.AttachmentTransfer) ([]by
 		// The tombstone prevents an old delayed Write from recreating deleted bytes.
 		if err := regular(root, id+".deleted"); err != nil {
 			return nil, err
+		}
+		if info, err := root.Stat(id + ".deleted"); err == nil && info.Size() > 2048 {
+			return nil, conflict()
 		}
 		if old, err := root.ReadFile(id + ".deleted"); err == nil {
 			var prior domain.ImageAttachment
@@ -223,6 +234,9 @@ func (m Manager) Transfer(machine domain.ID, value *pb.AttachmentTransfer) ([]by
 		} else {
 			return nil, conflict()
 		}
+		if err := security.SyncParent(filepath.Join(root.Name(), id+".deleted")); err != nil {
+			return nil, conflict()
+		}
 		for _, name := range []string{id + ".data", id + ".json"} {
 			if err := regular(root, name); err != nil {
 				return nil, err
@@ -234,7 +248,7 @@ func (m Manager) Transfer(machine domain.ID, value *pb.AttachmentTransfer) ([]by
 				return nil, conflict()
 			}
 		}
-		return nil, nil
+		return nil, security.SyncParent(filepath.Join(root.Name(), id+".deleted"))
 	default:
 		return nil, domain.InvalidImageInput()
 	}
@@ -301,4 +315,38 @@ func (m Manager) Lookup(machine domain.ID, path string) (domain.ImageAttachment,
 		return ref, err
 	}
 	return ref, nil
+}
+
+// Removed observes an original immutable deletion receipt. It never removes a
+// reappeared file, creates a tombstone, or adopts another private generation.
+func (m Manager) Removed(machine domain.ID, ref domain.ImageAttachment) error {
+	if ref.Validate() != nil || ref.MachineID != machine {
+		return domain.InvalidImageInput()
+	}
+	storageMu.Lock()
+	defer storageMu.Unlock()
+	root, err := m.open()
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	id := string(ref.ID)
+	if err := regular(root, id+".deleted"); err != nil {
+		return err
+	}
+	info, err := root.Stat(id + ".deleted")
+	if err != nil || info.Size() > 2048 {
+		return conflict()
+	}
+	raw, err := root.ReadFile(id + ".deleted")
+	var receipt domain.ImageAttachment
+	if err != nil || domain.Decode(raw, &receipt) != nil || receipt != ref {
+		return conflict()
+	}
+	for _, name := range []string{id + ".data", id + ".json"} {
+		if _, err := root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
+			return conflict()
+		}
+	}
+	return nil
 }
