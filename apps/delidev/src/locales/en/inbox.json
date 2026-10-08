@@ -72,5 +72,8 @@
   "inbox.extra.c3dba8527625": "The Inbox draft limit is 4 MiB per connection. Shorten or clear a draft before changing this one.",
   "inbox.extra.51107686754a": "All items",
   "inbox.extra.1b9f384c1436": "Unread",
-  "inbox.extra.9b9a8d05a7ec": "Read"
+  "inbox.extra.9b9a8d05a7ec": "Read",
+  "inbox.filters": "Filters",
+  "inbox.executionMetadata": "Execution metadata",
+  "inbox.originalIdentifiersAndOutcome": "Original identifiers and outcome"
 }
