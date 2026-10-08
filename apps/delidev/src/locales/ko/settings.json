@@ -171,5 +171,10 @@
   "settings.connections.authorization": "서버를 열 때 권한을 확인합니다.",
   "settings.connections.stale": "저장된 서버 목록을 읽을 수 없습니다. 마지막으로 확인한 프로필을 표시합니다.",
   "settings.connections.loading": "저장된 서버를 불러오는 중…",
-  "settings.connections.continue": "{{title}} 계속"
+  "settings.connections.continue": "{{title}} 계속",
+  "settings.search.label": "설정 검색",
+  "settings.search.clear": "검색 지우기",
+  "settings.search.empty": "검색과 일치하는 설정이 없습니다.",
+  "settings.search.unavailable": "여기에서는 이 설정을 사용할 수 없습니다.",
+  "settings.search.category": "개요"
 }

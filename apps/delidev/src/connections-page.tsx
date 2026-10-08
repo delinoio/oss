@@ -35,7 +35,7 @@ export function ConnectionsPage({ onSlots, local = false }: { onSlots: (slots: C
     return () => { observer.disconnect(); onSlots(undefined); };
   }, [onSlots]);
   return <div className="connections-page">
-    <section aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><div className="connections-current" ref={current} /></section>
+    <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><div className="connections-current" ref={current} /></section>
     {local ? <div ref={saved} /> : null}
     {attention ? <p className="connections-attention" role="status">{copy("settings.connections.attention")}</p> : null}
     <details className="connections-advanced"><summary>{copy("settings.connections.advanced")}</summary><p>{copy("settings.connections.advancedHelp")}</p><div ref={advanced} /></details>

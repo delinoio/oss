@@ -38,7 +38,7 @@ export function NetworkSettings({ active, machine = "", authority, onPresentatio
     setOpen(false);
   };
   const trigger = <button ref={disclosure} type="button" aria-label={machine && open ? copy("network-settings.hideNetworkSettings_b1aa7f") : copy("network-settings.networkSettings_600f22")} aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>{machine && open ? copy("network-settings.hideNetworkSettings_b1aa7f") : copy("network-settings.networkSettings_600f22")}</button>;
-  return <section className={machine ? undefined : "network-inline"} aria-label={machine ? copy("network-settings.runnerDeviceNetwork_1f2f36") : copy("network-settings.networkSettings_600f22")}>
+  return <section data-settings-search-target={machine ? undefined : "network"} className={machine ? undefined : "network-inline"} aria-label={machine ? copy("network-settings.runnerDeviceNetwork_1f2f36") : copy("network-settings.networkSettings_600f22")}>
     {machine ? trigger : <div className="network-disclosure-header">{trigger}<div ref={setHeaderActions} /></div>}
     {open ? machine ? <SettingsTaskDialog title={copy("network-settings.runnerDeviceNetwork_1f2f36")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={close}><NetworkWorkspace active={active} machine={machine} authority={authority} /></SettingsTaskDialog>
       // A plain nested lifetime keeps each profile dialog independently disposable.

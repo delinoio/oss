@@ -140,7 +140,7 @@ export function DateFormatSettings() {
   const { snapshot, operation, select, reload } = useContext(DateFormatContext);
   const labelId = useId();
   const choices = [DateFormatPreference.System, DateFormatPreference.Ymd, DateFormatPreference.Mdy, DateFormatPreference.Dmy];
-  return <section className="date-format-settings" aria-label={copy("date-format.title")}>
+  return <section data-settings-search-target="date-format" className="date-format-settings" aria-label={copy("date-format.title")}>
     {/* Native disabling during autosave blurs the selected control in Chromium.
         Keep it focusable; the controller rejects saves while busy or uncertain. */}
     <fieldset disabled={operation === DateFormatOperation.Reading} aria-disabled={Boolean(operation || snapshot.problem)} aria-busy={operation === DateFormatOperation.Saving}>

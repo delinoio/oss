@@ -15,7 +15,7 @@ enum Authentication { Password = "password", PrivateKey = "private-key" }
 export function SSHSetup({ active }: { active: boolean }) {
   useLocale();
   const [expanded, setExpanded] = useState(false);
-  return <section><button type="button" onClick={() => setExpanded(true)}>{copy("ssh-setup.setUpAWorkerOverSsh_9a1626")}</button>
+  return <section data-settings-search-target="ssh"><button type="button" onClick={() => setExpanded(true)}>{copy("ssh-setup.setUpAWorkerOverSsh_9a1626")}</button>
     {expanded ? <SettingsTaskScope><SSHSetupTask active={active} close={() => setExpanded(false)} /></SettingsTaskScope> : null}
   </section>;
 }

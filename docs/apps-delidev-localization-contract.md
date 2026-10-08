@@ -231,3 +231,5 @@ unit order. Below one minute uses Resets soon / 곧 리셋. Ordinary timestamps,
 source strings, device date preferences and successful observation times remain
 unchanged. Expiry returns to the surface's original timestamp/fallback and cannot
 prove quota recovery.
+
+Settings search (issue #1869) indexes only bundled category/target label and static help keys in the current display language. NFC-normalized case-insensitive all-token matching retains visit-scoped query and focus while locale changes recompute results. No cross-language aliases, resource/private/native content, query persistence or logging is permitted. Localization cannot restart category/native controllers or repeat a consumed search focus target.

@@ -751,7 +751,7 @@ it("keeps the unfiltered picker cursor independent and retains an exact provider
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   expect(await screen.findByRole("button", { name: "OpenAI API key" })).toBeTruthy();
-  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Load more Provider pages" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry providers" }));
@@ -858,7 +858,7 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   const apiStart = requests.length;
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   await screen.findByText("No entries on this page.");
-  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Clear provider filter" })).toBeNull();
   expect(requests.slice(apiStart).every((request) => request.query === "" && request.pageSize === 50)).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
@@ -1109,4 +1109,39 @@ it("retains Connection controls without mounting or reading Settings Doctor", as
  expect(screen.queryByText("Reading server diagnostics")).toBeNull();
  expect(doctor).not.toHaveBeenCalled();
 
+});
+
+it("Settings search keeps the active draft on typing and same-category selection, and discards query on departure", async()=>{
+ const value=fixture([]);const view=render(value.view(<Settings/>));
+ fireEvent.click(screen.getByRole('button',{name:'Git'}));
+ const attempts=await screen.findByRole('spinbutton',{name:'Consecutive automatic attempt limit'});
+ fireEvent.change(attempts,{target:{value:'8'}});
+ const input=screen.getByRole('searchbox');fireEvent.change(input,{target:{value:'attempt limit'}});
+ expect(screen.getByRole('spinbutton',{name:'Consecutive automatic attempt limit'})).toBe(attempts);expect((attempts as HTMLInputElement).value).toBe('8');
+ fireEvent.click(screen.getByRole('button',{name:'Git › Consecutive automatic attempt limit'}));
+ await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('remediation-attempts'));
+ expect(screen.getByRole('spinbutton',{name:'Consecutive automatic attempt limit'})).toBe(attempts);expect((attempts as HTMLInputElement).value).toBe('8');
+ expect(value.save).not.toHaveBeenCalled();expect(value.remove).not.toHaveBeenCalled();expect(value.inspect).not.toHaveBeenCalled();
+ view.rerender(value.view(<Settings visible={false}/>));view.rerender(value.view(<Settings/>));expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');expect(screen.getByRole('heading',{level:1,name:'AI Subscription'})).toBeTruthy();
+});
+it("Settings search focuses Network and SSH entry sections without opening their workflows",async()=>{
+ const value=fixture([]);render(value.view(<Settings/>));const input=screen.getByRole('searchbox');
+ fireEvent.change(input,{target:{value:'Network settings'}});fireEvent.click(screen.getByRole('button',{name:'Server preferences › Network settings'}));
+ await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('network'));expect(screen.queryByRole('combobox',{name:'Outbound profile'})).toBeNull();
+ fireEvent.change(input,{target:{value:'SSH'}});fireEvent.click(screen.getByRole('button',{name:'Runner Devices › Set up a Worker over SSH'}));
+ await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('ssh'));expect(screen.queryByRole('dialog')).toBeNull();expect(value.save).not.toHaveBeenCalled();expect(value.inspect).not.toHaveBeenCalled();
+});
+it("Settings search respects malformed singleton admission and never starts a write",async()=>{
+ const value=fixture([{...resource(EntityKind.SETTINGS,{default_routing:'remaining-quota',remediation:{}}),schemaVersion:99}]);render(value.view(<Settings/>));
+ fireEvent.change(screen.getByRole('searchbox'),{target:{value:'account routing'}});fireEvent.click(screen.getByRole('button',{name:'Server preferences › Account routing'}));
+ await screen.findByText('This setting is unavailable here.');expect(document.activeElement).toBe(screen.getByRole('heading',{level:1,name:'Server preferences'}));expect(screen.queryByRole('combobox',{name:'Default account routing'})).toBeNull();expect(value.save).not.toHaveBeenCalled();
+});
+it("Settings search preserves the original uncertain server-preference request until explicit retry",async()=>{
+ const value=fixture([]);value.save.mockRejectedValueOnce(new ConnectError('Original unavailable save',Code.Unavailable));render(value.view(<Settings/>));
+ fireEvent.click(screen.getByRole('button',{name:'Git'}));const fetch=await screen.findByRole('checkbox',{name:'Allow automatic fetch before Worktree preparation'});fireEvent.click(fetch);const submittedFetch=(fetch as HTMLInputElement).checked;
+ fireEvent.click(screen.getByRole('button',{name:'Save changes'}));const retry=await screen.findByRole('button',{name:'Retry the same configuration'});
+ const original=input(value.save.mock.calls[0][0]);const search=screen.getByRole('searchbox');fireEvent.change(search,{target:{value:'automatic fetch'}});fireEvent.click(screen.getByRole('button',{name:'Clear search'}));
+ fireEvent.change(search,{target:{value:'automatic fetch'}});fireEvent.click(screen.getByRole('button',{name:'Git › Allow automatic fetch before Worktree preparation'}));
+ await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('automatic-fetch'));expect(screen.getByRole('button',{name:'Retry the same configuration'})).toBe(retry);expect((fetch as HTMLInputElement).checked).toBe(submittedFetch);expect(value.save).toHaveBeenCalledTimes(1);
+ fireEvent.click(retry);await waitFor(()=>expect(value.save).toHaveBeenCalledTimes(2));const retried=input(value.save.mock.calls[1][0]);expect(retried.mutation.requestId).toBe(original.mutation.requestId);expect(retried.documentJson).toEqual(original.documentJson);
 });

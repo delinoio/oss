@@ -128,7 +128,7 @@ export function ApiProviderSettings({
       </div>
     </article>;
   };
-  return <section ref={root} aria-label={copy("provider-model-settings.apiProviderInventory_db530c")}>
+  return <section data-settings-search-target="provider-inventory" data-settings-search-pending={result.isLoading ? "true" : undefined} ref={root} aria-label={copy("provider-model-settings.apiProviderInventory_db530c")}>
     <SettingsHeading title={copy("provider-model-settings.apiProviders_376855")} description={copy("provider-model-settings.manageApiProvidersAndTheirAvailability_946ee7")} actions={<><button type="button" disabled={result.isFetching} onClick={result.refreshExplicit}>{copy("provider-model-settings.refreshProviders_56b2d1")}</button><button className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>{copy("provider-model-settings.customProvider_fee405")}</button></>} />
     <div className="search-form"><label>{copy("provider-model-settings.searchApiProviders_1b03d9")}<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label></div>
     {result.isFetching && result.data ? <p role="status">{copy("provider-model-settings.refreshingProviderStateDisplayedSwitchesShow_735700")}</p> : null}
@@ -143,12 +143,12 @@ export function ApiProviderSettings({
       const presetsMain = entries.filter(entry => hostedPresetOrder.includes(entry.presetId)).sort((left, right) => hostedPresetOrder.indexOf(left.presetId) - hostedPresetOrder.indexOf(right.presetId));
       const local = entries.filter(entry => [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId));
       const custom = entries.filter(entry => entry.presetId === ProviderPresetId.UNSPECIFIED);
-      return <>{ready && presetsMain.length ? <section><h3>{copy("provider-model-settings.presets_954f93")}</h3>{presetsMain.map(row)}</section> : null}
-      {ready && local.length ? <section><h3>{copy("provider-model-settings.localApiServers_2052f0")}</h3>{local.map(row)}</section> : null}
-      {ready && custom.length ? <section><h3>{copy("provider-model-settings.customProviders_52b22a")}</h3>{custom.map(row)}</section> : null}</>;
+      return <>{ready && presetsMain.length ? <section data-settings-search-target="provider-presets"><h3>{copy("provider-model-settings.presets_954f93")}</h3>{presetsMain.map(row)}</section> : null}
+      {ready && local.length ? <section data-settings-search-target="provider-local"><h3>{copy("provider-model-settings.localApiServers_2052f0")}</h3>{local.map(row)}</section> : null}
+      {ready && custom.length ? <section data-settings-search-target="provider-custom"><h3>{copy("provider-model-settings.customProviders_52b22a")}</h3>{custom.map(row)}</section> : null}</>;
     }}</ScrollPayloadWindow>
     {ready && !result.rows.length && !result.error ? <p className="empty">{copy("provider-model-settings.noProvidersMatchThisSearch_45fe24")}</p> : null}
-    {ready && !query && result.loaded && !result.nextPageToken && !result.rows.some(row => !row.id.startsWith("preset:")) ? <section><h3>{copy("provider-model-settings.customProviders_52b22a")}</h3><SettingsEmpty title={copy("provider-model-settings.noCustomProvidersYet_8fdcb5")}><p>{copy("provider-model-settings.useCustomProviderToConfigureAnother_f7a531")}</p></SettingsEmpty></section> : null}
+    {ready && !query && result.loaded && !result.nextPageToken && !result.rows.some(row => !row.id.startsWith("preset:")) ? <section data-settings-search-target="provider-custom"><h3>{copy("provider-model-settings.customProviders_52b22a")}</h3><SettingsEmpty title={copy("provider-model-settings.noCustomProvidersYet_8fdcb5")}><p>{copy("provider-model-settings.useCustomProviderToConfigureAnother_f7a531")}</p></SettingsEmpty></section> : null}
     <ScrollContinuation query={result} root={root} active={active && ready} label={copy("provider-model-settings.providerPages_ca1fc1")} />
   </section>;
 }
