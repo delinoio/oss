@@ -323,7 +323,7 @@ and remediation history, conversation resources, Files, backups and removed
 saved connections. Opaque cursors, numeric GitHub pages, native next_after and
 local slices keep their existing domain formats. Explicit initial Load, Search
 and Apply remain required where they already govern admission; wizard Back/Next
-and Files Root/Up remain ordinary navigation.
+and Files tree expansion/Back remain ordinary navigation.
 
 Accessible pickers retain exact selected/off-page identities and disabled choices,
 with Arrow keys, Home/End, Enter/Space, Escape, Tab and opener focus restoration.
@@ -697,6 +697,11 @@ Inbox is one persistent list/detail workspace for retained requests and terminal
 The selected detail refreshes while Inbox is active and the window is visible, and revalidates on focus/visibility return. This selected-item read is separate from the existing metadata-only notification candidate poll, which remains on its ten-second process-wide schedule. A detail item outside the current list page remains viewable after its exact source is joined again. Missing, mixed, stale or unauthorized source state is unavailable or read-only; it cannot enable a response. Session pause/archive/recovery and active-execution ownership checks remain required in addition to the Inbox read.
 
 Question/approval forms share their typed controls with the session view, but Inbox drafts remain React-memory-only and scoped to the effective connection identity. Each draft retains the original interaction ID, interaction revision and request identity. Preserve a draft after source/request changes for inspection and block applying it to a new request. Bound the serialized collection to 4 MiB and 1,000 nonempty requests per connection; a limit error keeps the previous draft intact. An uncertain submission retains its exact mutation identity and may be retried only after a fresh current-source read. The persistent Inbox controller preserves drafts while the user visits other app surfaces. This UI work does not establish native notification delivery on a supported operating system.
+
+Files preview Back also restores the original compact panel and enclosing Session
+scroll owners with preventScroll focus, alongside the inner tree position. These
+memory-only snapshots belong to the original controller/repository and only
+connected original ancestors containing the returned tree may receive them.
 
 ### Session terminals
 
@@ -1922,7 +1927,13 @@ Validate all typed unions, ordered completion matching/omission, message-wide se
 
 ### Session file explorer
 
-The Files control opens the right session application panel without remounting the conversation or composer. It lists the original prepared repository roots (including a nonfirst primary), supports directory navigation, bounded pagination, explicit refresh and a UTF-8 text preview. Directory pages require unique entry names; reject malformed whole pages while preserving accepted metadata and exact continuation/retry ownership. It uses owner/client Connect Query against the actual execution Worker, even during native execution. Keyboard users can close with Escape and regain the Files control; native controls provide ordinary keyboard navigation. Narrow windows place the panel below the conversation. Binary, truncated, unsupported and failed/stale reads remain explicit. Inactive queries are canceled and their file-content cache is discarded; no Web Storage, Tauri filesystem access or executable preview is added. See the [file explorer contract](cmds-delidev-files-contract.md). Other session-side applications remain separate unfinished requirements.
+The Files control opens the existing right session application panel without remounting the conversation or composer. Its compact header provides icon Refresh and Close controls, with “Session workspace · Read-only” context. The original prepared repository selector includes a nonfirst primary; selection resets only this repository's explorer scope. Keep the existing 400px desktop pane and compact drawer. Tree and preview bodies retain a 160px minimum intrinsic height so a short compact drawer scrolls the complete Files surface instead of collapsing its body under the header. The tree uses indented folder/file icons, disclosures, 32px minimum rows, wrapping names and quiet metadata; selection and visible keyboard focus use shared semantic theme tokens.
+
+Each directory has its own lazy metadata-only pagination chain, accepted digest-bound tokens and expansion state. Expanding loads an unobserved directory; collapsing cancels its unfinished descendants and fences late results while preserving already accepted metadata. Reopening accepted expansion performs no implicit refresh. Root, directory, continuation, retry, refresh and preview reads share one serial Files observation scheduler. Cancellation fences publication and skips queued reads. An already dispatched read-only RPC uses an independent settlement signal and retains its running slot until its original query settles; replacement sessions and reopened panels share the pending barrier for the same connection client. There is no prefetch or background poll. Explicit Refresh supersedes unfinished tree reads, then refreshes the root and still-visible expanded directories in parent-first sequence. Remove an absent child and its descendants only when the complete successful parent range proves absence, never from a partial page or failed refresh. Preserve stale metadata and exact-token retry; changed digests require explicit Reload list. Reject whole malformed or duplicate-name pages before accumulation.
+
+A regular file opens a separate read-only preview in this pane, with Back, filename, parent-relative path, exact byte size and truncation guidance. Retain the 64KiB UTF-8 bound and inert preformatted text; binary, empty, unsupported, failed and stale reads remain explicit. Back restores tree expansion, selection, reached scroll and nearest surviving focus from accepted metadata without rereading, and discards preview bytes. A failed explicit preview refresh may retain its labeled prior bytes only while that preview stays open. Symbolic links and special files remain visibly unavailable and cannot issue preview reads.
+
+Use a semantic tree with roving focus: Up/Down and Home/End traverse visible entries, Right expands or enters a folder, Left collapses or returns to its parent, and Enter expands or previews an eligible entry. Escape closes Files through the original opener restoration. Use owner/client generated Connect Query against the actual execution Worker, including during native execution. Closing, changing session/repository/connection or disposal cancels reads, fences publication and discards file-content query caches. Keep metadata and preview bytes out of Web Storage, Tauri filesystem access, persistent caches and executable preview. Browser/component validation remains separate from actual installed-native/platform acceptance. See the [file explorer contract](cmds-delidev-files-contract.md); other session-side applications retain separate ownership.
 
 ### Portable configuration
 

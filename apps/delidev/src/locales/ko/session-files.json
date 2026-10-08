@@ -30,5 +30,14 @@
   "session-files.filePreview_71d50a": "파일 미리보기",
   "session-files.previewLimitedTo64Kib_9fd380": " · 미리보기는 64 KiB로 제한됨",
   "session-files.bytes_d4ed53": "<s0/> 바이트<s1/>",
-  "session-files.thisFileHasNoUtf8_c06ed8": "이 파일에는 UTF-8 텍스트 미리보기가 없습니다."
+  "session-files.thisFileHasNoUtf8_c06ed8": "이 파일에는 UTF-8 텍스트 미리보기가 없습니다.",
+  "session-files.readOnlyContext": "세션 작업 공간 · 읽기 전용",
+  "session-files.readOnly": "읽기 전용",
+  "session-files.noRoots": "준비된 작업 공간 저장소가 없습니다.",
+  "session-files.back": "파일로 돌아가기",
+  "session-files.previewLoading": "파일 읽는 중…",
+  "session-files.emptyFile": "이 파일은 비어 있습니다.",
+  "session-files.previewUnavailable": "파일 미리보기를 사용할 수 없습니다.",
+  "session-files.selectFile": "미리볼 파일을 선택하세요",
+  "session-files.loadDirectory": "디렉터리 불러오기"
 }

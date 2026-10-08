@@ -30,5 +30,14 @@
   "session-files.filePreview_71d50a": "File preview",
   "session-files.previewLimitedTo64Kib_9fd380": " · Preview limited to 64 KiB",
   "session-files.bytes_d4ed53": "<s0/> bytes<s1/>",
-  "session-files.thisFileHasNoUtf8_c06ed8": "This file has no UTF-8 text preview."
+  "session-files.thisFileHasNoUtf8_c06ed8": "This file has no UTF-8 text preview.",
+  "session-files.readOnlyContext": "Session workspace · Read-only",
+  "session-files.readOnly": "Read-only",
+  "session-files.noRoots": "No prepared workspace repositories are available.",
+  "session-files.back": "Back to files",
+  "session-files.previewLoading": "Reading file…",
+  "session-files.emptyFile": "This file is empty.",
+  "session-files.previewUnavailable": "File preview is unavailable.",
+  "session-files.selectFile": "Select a file to preview",
+  "session-files.loadDirectory": "Load directory"
 }
