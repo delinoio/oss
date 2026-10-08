@@ -135,8 +135,9 @@ type disconnectAccountInput struct {
 	Revision uint64    `json:"revision"`
 }
 type accountReceipt struct {
-	ID           domain.ID `json:"id"`
-	CompletionID domain.ID `json:"completion_id,omitempty"`
+	ManagedSidechat *domain.SubscriptionForkFinish `json:"managed_sidechat,omitempty"`
+	ID              domain.ID                      `json:"id"`
+	CompletionID    domain.ID                      `json:"completion_id,omitempty"`
 }
 
 // Request receipts must remain comparable after a credential has been deleted.

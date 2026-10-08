@@ -2,9 +2,12 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -107,7 +110,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if assignment.Fork != nil {
 		historyID = assignment.Fork.RuntimeID
 	}
-	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: assignment.Input.InputDigest(), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{Subscription: assignment.Configuration.Subscription, JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: assignment.Input.InputDigest(), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 	if err != nil {
 		return nil, err
 	}
@@ -175,6 +178,12 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	sourceConfig := codex.Config{ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
 		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
+		sourceConfig.ManagedAuthentication = assignment.Configuration.Subscription
+		if sourceConfig.ManagedAuthentication {
+			if err := validateManagedAuthenticationHome(sourceHome, manifest.WorkspaceRoots()); err != nil {
+				return nil, err
+			}
+		}
 	}
 	sourceClient, err := codex.Open(ctx, sourceConfig)
 	if err != nil {
@@ -219,7 +228,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
-	settings := codex.ThreadSettings{Model: assignment.Configuration.NativeModel, Provider: codex.APIProvider, Effort: assignment.Configuration.Effort, Cwd: childManifest.PrimaryPath, WorkspaceRoots: nativeWorkspaceRoots(childManifest), Instructions: assignment.Configuration.Instructions, Options: assignment.Configuration.Options}
+	settings := codex.ThreadSettings{Model: assignment.Configuration.NativeModel, Provider: codexExecutionProvider(assignment.Configuration.Subscription), Effort: assignment.Configuration.Effort, Cwd: childManifest.PrimaryPath, WorkspaceRoots: nativeWorkspaceRoots(childManifest), Instructions: assignment.Configuration.Instructions, Options: assignment.Configuration.Options}
 	// Pin native defaults to the original effective observations. Configuration
 	// itself remains byte-identical; observed defaults cannot become new choices.
 	settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)
@@ -253,12 +262,89 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if input.Purpose == domain.SidechatFork {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
+
+	var managed *managedSubscriptionLease
+	var latest []byte
+	var closeRPC func()
+	cleanup, captured, unused, preNative, finished := false, false, false, false, false
+	defer func() {
+		if closeRPC != nil {
+			defer closeRPC()
+		}
+		if managed == nil {
+			return
+		}
+		defer clear(managed.response.Bundle)
+		if finished {
+			return
+		}
+		if preNative {
+			cleanup = cleanupUnusedExecutionAuthentication(nativeConfig.Home, managed.response.Bundle) == nil
+			if cleanup {
+				latest = bytes.Clone(managed.response.Bundle)
+				unused = true
+			}
+		}
+		conclusive := cleanup && (captured || unused)
+		if err := managed.finish(latest, cleanup, false, captured); err != nil {
+			output, returned = nil, &managedExecutionUncertain{err}
+		} else if !conclusive {
+			output, returned = nil, &managedExecutionUncertain{subscription.Invalid()}
+		}
+	}()
+	if assignment.Configuration.Subscription {
+		if err := validateManagedAuthenticationHome(nativeConfig.Home, manifest.WorkspaceRoots()); err != nil {
+			return nil, err
+		}
+		rpcClient, close, err := subscriptionRPC(ctx, config, config.execution.Credential)
+		if err != nil {
+			return nil, err
+		}
+		closeRPC = close
+		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "take")
+		managed, err = takeManagedSubscription(ctx, config, rpcClient, config.execution.Credential, config.execution.Instance, assignment.AccountID, owner, config.execution.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+		if err != nil {
+			return nil, err
+		}
+		if managed.response.GenerationId != string(input.SubscriptionGeneration) {
+			return nil, &managedExecutionUncertain{subscription.Invalid()}
+		}
+		if _, _, err := subscription.Parse(managed.response.Bundle); err != nil {
+			return nil, err
+		}
+		if err := security.PrivateDir(nativeConfig.Home); err != nil {
+			return nil, err
+		}
+		preNative = true
+		if err := security.WriteAtomic(filepath.Join(nativeConfig.Home, "auth.json"), managed.response.Bundle); err != nil {
+			return nil, subscription.Invalid()
+		}
+		nativeConfig.API, nativeConfig.ManagedAuthentication = nil, true
+	}
+	preNative = false
 	client, err := codex.Open(ctx, nativeConfig)
 	if err != nil {
+		preNative = domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, executionCheckpointUncertain()
 	}
 	bound, forkErr := client.ForkThread(ctx, input.NativeRequestID, source, settings)
+
+	if managed != nil {
+		bounded, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		var captureErr error
+		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "capture")
+		latest, captureErr = client.ManagedBundle(bounded, false)
+		captured = captureErr == nil
+		stop()
+	}
 	closeErr = client.Close()
+	if managed != nil && closeErr == nil {
+		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "cleanup")
+		cleanup = cleanupExecutionAuthentication(nativeConfig.Home, latest, managed.response.Bundle) == nil
+		if !captured || !cleanup {
+			return nil, &managedExecutionUncertain{subscription.Invalid()}
+		}
+	}
 	if forkErr != nil || closeErr != nil || bound.Thread == nil || bound.Effective == nil {
 		return nil, executionCheckpointUncertain()
 	}
@@ -287,7 +373,18 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err := ctx.Err(); err != nil {
 		return nil, executionCheckpointUncertain()
 	}
-	return json.Marshal(domain.ForkJobResult{Version: input.Version, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
+
+	var managedFinish domain.ID
+	if managed != nil {
+		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "finish")
+		if err := managed.finish(latest, cleanup, false, captured); err != nil {
+			finished = true
+			return nil, &managedExecutionUncertain{err}
+		}
+		finished = true
+		managedFinish = managed.finishID
+	}
+	return json.Marshal(domain.ForkJobResult{ManagedFinish: managedFinish, Version: input.Version, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
 }
 
 // Every pre-native validation/preparation return shares this guard. Workspace

@@ -440,3 +440,12 @@ or unrelated allocation changes.
 ## Issue #1728 batch allocation exception
 
 The owner explicitly permits System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` allocation, declaration, generated bindings and activation in the same complete feature PR for issue #1728. This narrow exception waives only the prior main reservation merge. Existing QUOTA and Refresh all RPCs retain their allocations; no new RPC, Worker capability, migration or native change is introduced. Follow the [server quota ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728). Capabilities 18, 19 and 30 retain independent ownership.
+
+## Managed ChatGPT Sidechat allocation closure
+
+Issue #1829 records System 47 and Worker 26 in its complete owning feature PR.
+Existing Sidechat 27/16 and managed authentication Worker 3 retain their original
+ownership. The additional declarations grant only the closed managed Sidechat
+profile after activation and original native verification. Independent managed
+Fork stays unsupported; no database migration or separate reservation PR is
+required. Follow the [Sidechat contract](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829).

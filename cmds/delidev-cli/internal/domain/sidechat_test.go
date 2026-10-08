@@ -57,3 +57,29 @@ func TestSidechatSnapshotPreservesSelectionAndFreezesNativeAuthority(t *testing.
 		t.Fatal("nested Sidechat inherited authority")
 	}
 }
+
+func TestManagedSidechatRetainsChatGPTSelectorAndReadOnlyOverlay(t *testing.T) {
+	config := managedSubscriptionExecutionConfiguration(t, PermissionWorkspaceWrite)
+	config.ProviderID, config.SubscriptionService = "", SubscriptionChatGPT
+	digest, err := config.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := InitialExecution{ID: NewID(), InputID: NewID(), Configuration: config, ConfigurationDigest: digest, InitialAccountID: NewID(), ConnectionID: NewID(), AcceptedAt: time.Now().UTC()}
+	before, _ := json.Marshal(parent)
+	child, err := SidechatSnapshot(parent)
+	if err != nil || !child.Configuration.Subscription || child.Configuration.SubscriptionService != SubscriptionChatGPT || child.InitialAccountID != parent.InitialAccountID || child.ConnectionID != parent.ConnectionID || child.Configuration.Options.Permission != PermissionReadOnly || child.Configuration.Options.ApprovalPolicy != "never" {
+		t.Fatal("managed selection or overlay changed", err)
+	}
+	after, _ := json.Marshal(parent)
+	if string(before) != string(after) {
+		t.Fatal("managed overlay rewrote parent")
+	}
+	for _, service := range []SubscriptionService{SubscriptionClaude, SubscriptionGrok, ""} {
+		bad := parent
+		bad.Configuration.SubscriptionService = service
+		if _, err := SidechatSnapshot(bad); err == nil {
+			t.Fatal("unsupported managed service", service)
+		}
+	}
+}

@@ -281,6 +281,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			// Capabilities describe implemented adapters, never inventory readiness.
 			// The original actual process validates its protocol before input.
+			managedSidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1)
 			sidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
 			verifiedTitleProfile := true
 			managedCapabilityExpected = true
@@ -353,6 +354,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				current := config.network.current()
 				profile += "\x00network-generation-" + strconv.FormatUint(current.metadata.Generation, 10) + "-" + string(current.metadata.RouteID)
 			}
+			if managedSidechatExpected {
+				profile += "\x00managed-codex-sidechat-v1"
+			}
 			if sidechatExpected {
 				profile += "\x00codex-read-only-sidechat-v1"
 			}
@@ -369,8 +373,12 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
 			}
+
 			if sidechatExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
+				if managedSidechatExpected && managedCapabilityExpected {
+					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1)
+				}
 			}
 			if openCodeForkExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)

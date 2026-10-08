@@ -204,6 +204,10 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	config.Mode = ThreadProtocol
 	if mode == "thread-continuation-sidechat" {
 		config.Sidechat = ReadOnlySidechatV1
+		if os.Getenv("DELIDEV_CODEX_MANAGED_SIDECHAT") == "1" {
+			config.ManagedAuthentication = true
+			config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_MANAGED_SIDECHAT=1")
+		}
 	}
 	capture := filepath.Join(t.TempDir(), "requests.jsonl")
 	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_CAPTURE="+capture)

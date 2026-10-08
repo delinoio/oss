@@ -43,6 +43,16 @@ func (f *threadFixture) handleSidechatCompaction(id json.RawMessage, method stri
 			features[key] = false
 		}
 		config := map[string]any{"features": features, "sandbox_mode": "read-only", "approval_policy": "never", "approvals_reviewer": "user", "allow_login_shell": false, "web_search": "disabled"}
+		if os.Getenv("DELIDEV_CODEX_MANAGED_SIDECHAT") == "1" {
+			config["cli_auth_credentials_store"], config["model_provider"], config["forced_login_method"] = "file", "openai", "chatgpt"
+			config["model_providers"] = map[string]any{}
+			if f.sidechatDrift == "provider" {
+				config["model_provider"] = "foreign"
+			}
+			if f.sidechatDrift == "authentication" {
+				config["cli_auth_credentials_store"] = "keyring"
+			}
+		}
 		if f.sidechatDrift == "mcp" {
 			config["mcp_servers"] = map[string]any{"foreign": map[string]any{"command": "foreign"}}
 		}
@@ -86,5 +96,47 @@ func TestSidechatCompactionRechecksChangedNativeAuthorityBeforeOnceOnlySend(t *t
 				t.Fatal("changed Sidechat authority claimed or sent compaction", err)
 			}
 		})
+	}
+}
+
+func TestManagedSidechatRechecksCombinedNativeProfileBeforeInputAndCompaction(t *testing.T) {
+	for _, operation := range []string{"input", "steer", "compaction"} {
+		for _, drift := range []string{"mcp", "permission", "feature", "provider", "authentication", "unchanged"} {
+			t.Run(operation+"/"+drift, func(t *testing.T) {
+				t.Setenv("DELIDEV_CODEX_MANAGED_SIDECHAT", "1")
+				c, capture, source, _ := continuationFixture(t, "sidechat")
+				if _, err := c.VerifyContinuation(context.Background(), domain.NewID(), source, ContinueAfterSuccess); err != nil {
+					t.Fatal(err)
+				}
+				var active TurnResult
+				if operation == "steer" {
+					var err error
+					active, err = c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				fixtureSignal(t, c, "sidechat-drift", map[string]any{"kind": drift})
+				var err error
+				method := "thread/compact/start"
+				switch operation {
+				case "input":
+					method = "turn/start"
+					_, err = c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))
+				case "steer":
+					method = "turn/steer"
+					_, err = c.Steer(context.Background(), domain.NewID(), domain.NewID(), active.TurnID, input(domain.ExecuteMode))
+				default:
+					err = c.StartCompaction(context.Background(), domain.NewID(), source, nil)
+				}
+				if drift == "unchanged" {
+					if err != nil || len(requestsOf(t, capture, method)) != 1 {
+						t.Fatal("verified managed operation refused", err)
+					}
+				} else if err == nil || len(requestsOf(t, capture, method)) != 0 {
+					t.Fatal("changed managed Sidechat profile sent native input", err)
+				}
+			})
+		}
 	}
 }

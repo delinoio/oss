@@ -308,3 +308,34 @@ it.each(["missing", "foreign", "wrong-kind"])("reinspects a successful Fork with
  expect(forkSession).toHaveBeenCalledTimes(1);
  expect(await screen.findByRole("button", { name: "Open forked session" })).toBeTruthy();
 });
+
+
+it.each(["eligible", "missing-server", "missing-worker", "missing-auth", "locked"])("negotiates managed ChatGPT Sidechat with its original Runner (%s)", async (profile) => {
+ const machineId = newRequestId();
+ const source = create(ResourceSchema, { schemaVersion: 1, kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, documentJson: encode({ name: "Managed parent", machine_id: machineId, workspace: "worktree", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "codex", subscription: true, subscription_service: "chatgpt" } }, execution: { native_turn_id: newRequestId(), cleanup_verified: true } }) });
+ const workerCapabilities = ["codex-read-only-sidechat-v1", ...(profile !== "missing-worker" ? ["managed-codex-sidechat-v1"] : []), ...(profile !== "missing-auth" ? ["managed-codex-subscriptions-v1"] : [])];
+ const machine = create(ResourceSchema, { schemaVersion: 1, kind: EntityKind.MACHINE, id: machineId, revision: 1n, documentJson: encode({ worker_capabilities: workerCapabilities }) });
+ const job = create(ResourceSchema, { schemaVersion: 1, kind: EntityKind.JOB, id: newRequestId(), revision: 1n, documentJson: encode({ state: "claimed", input: { source_session_id: source.id } }) });
+ const fork = vi.fn(async (_request: unknown) => ({ job }));
+ const transport = createRouterTransport(router => {
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_SIDECHAT_V1, ...(profile !== "missing-server" ? [SystemCapability.MANAGED_CODEX_SIDECHAT_V1] : [])] }) });
+  router.service(ResourceService, { getResource: request => ({ resource: request.kind === EntityKind.MACHINE ? machine : source }) });
+  router.service(SessionService, { forkSession: fork, getSessionFork: () => ({ job }) });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} disabled={profile === "locked"} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ if (profile.startsWith("missing")) {
+  await waitFor(() => expect(client.isFetching()).toBe(0));
+  expect(screen.queryByRole("button", { name: "Open Sidechat" })).toBeNull();
+ } else {
+  const action = await screen.findByRole("button", { name: "Open Sidechat" });
+  if (profile === "locked") expect((action as HTMLButtonElement).disabled).toBe(true);
+  else {
+   fireEvent.click(action);
+   fireEvent.click(await screen.findByRole("button", { name: "Create Sidechat" }));
+   await waitFor(() => expect(fork).toHaveBeenCalledTimes(1));
+   expect(fork.mock.calls[0]?.[0]).toMatchObject({ purpose: ForkPurpose.SIDECHAT, workspace: ForkWorkspace.UNSPECIFIED });
+  }
+ }
+ if (profile !== "eligible") expect(fork).not.toHaveBeenCalled();
+});

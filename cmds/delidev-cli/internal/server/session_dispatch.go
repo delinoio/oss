@@ -169,7 +169,7 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	if err := requireSidechatParent(tx, session); err != nil {
 		return empty, err
 	}
-	if c.SidechatPolicy != "" && (!session.IsSidechat() || !slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1)) {
+	if c.SidechatPolicy != "" && (!session.IsSidechat() || (!slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || c.Subscription && !domain.ManagedSidechatSupported(machine.WorkerCapabilities))) {
 		return empty, domain.SidechatUnavailable()
 	}
 	protocol := domain.OpenAIResponses

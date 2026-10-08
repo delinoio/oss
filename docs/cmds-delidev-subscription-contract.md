@@ -115,7 +115,7 @@ Existing-login import, externally supplied token bundles, internal-only `chatgpt
 
 ## Runtime and Language
 
-Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. The current native Fork coordinator uses that API profile and rejects managed subscription sources before accepting work. Source inspection cannot grant credentials; managed Fork requires its own verified protected lease and joined write-back.
+Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. Independent native Fork uses that API profile and rejects managed subscription sources before accepting work. Managed ChatGPT Sidechat uses its separately negotiated protected Fork lease under the Sidechat contract. Source inspection cannot grant credentials; the exact claimed Sidechat job owns protected Take, joined native/plaintext cleanup and original-account write-back before publication.
 
 ## Users and Operators
 
@@ -357,3 +357,5 @@ Server quota ownership excludes lifecycle requests, Worker credential grants, ob
 Successful projection shares sparse-window merging, minimum remaining fractions and atomic recovery Inbox deduplication. Elapsed resets alone grant no recovery. Frontend and CLI refresh negotiate capability 46 before omitting the machine, retain exact revisions/selectors/retries and expose unsupported/failed/pending states. Server quota support grants no reset-credit consumption on that lane. Structured logs contain operation/generation references, closed phases, safe error codes and cleanup confirmation only.
 
 The owner will perform real-account, installed-native, remote and platform acceptance separately. This batch's automated fixture/build validation does not establish those results; that skipped acceptance is nonblocking for this feature PR under the owner's explicit instruction.
+
+Managed ChatGPT Sidechat follows [issue #1829’s protected Fork profile](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829). EXECUTE Take admits only its exact claimed original Fork job. Protected Finish writes a metadata-only original-job receipt after actor/source/lease rechecks; that receipt gates child publication. Independent managed Fork remains unsupported.

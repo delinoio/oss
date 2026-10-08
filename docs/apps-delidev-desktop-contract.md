@@ -2563,3 +2563,11 @@ RPC, protocol allocation, database migration or format conversion is added.
 Automated component/storage/build evidence is separate from actual native
 persistence and multi-window acceptance on macOS, Windows and Linux. Record the
 revision, commands, results and unresolved limits in PRs and CI artifacts.
+
+Managed ChatGPT/Codex Sidechat (issue #1829) composes System 47, Worker 26,
+existing Sidechat 27/16 and managed authentication Worker 3. The session detail
+action menu exposes Open Sidechat only for the original eligible completed
+source and negotiated Runner. Independent subscription Fork remains unsupported.
+See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829)
+for protected lease/Finish publication, read-only continuation and dependent
+cleanup ownership. No new RPC or SQLite migration is added.

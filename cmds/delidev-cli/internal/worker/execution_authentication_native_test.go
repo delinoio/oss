@@ -44,6 +44,9 @@ func init() {
 	// Tagged lifecycle drivers retain their separate fixture by requiring direct
 	// native arguments here, rather than intercepting their wrapper arguments.
 	home := os.Getenv("CODEX_HOME")
+	if runManagedSidechatProcess(home) {
+		os.Exit(0)
+	}
 	faultBytes, _ := os.ReadFile(filepath.Join(home, "fixture-fault"))
 	fault := managedExecutionFixtureFault(faultBytes)
 	var thread map[string]any

@@ -47,7 +47,7 @@ func configureSidechat(config *Config) error {
 	if config.Sidechat == "" {
 		return nil
 	}
-	if config.Sidechat != ReadOnlySidechatV1 || config.Mode != ThreadProtocol || config.ManagedAuthentication || config.ModelObservation || config.API != nil && config.API.TitleProfile {
+	if config.Sidechat != ReadOnlySidechatV1 || config.Mode != ThreadProtocol || (config.ManagedAuthentication && config.API != nil) || config.ModelObservation || config.API != nil && config.API.TitleProfile {
 		return sidechatUnavailable()
 	}
 	for _, key := range sidechatDisabledFeatures {
@@ -139,6 +139,11 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 			c.logger.WarnContext(ctx, "Codex Sidechat authority rejected", "owner_id", c.ownerID, "code", domain.SafeError(returned).Code)
 		}
 	}()
+	if c.managedHome != "" {
+		if err := c.verifyManagedConfig(ctx, cwd); err != nil {
+			return err
+		}
+	}
 	response, err := c.wire.Call(ctx, domain.NewID(), "config/read", struct {
 		Cwd           string `json:"cwd"`
 		IncludeLayers bool   `json:"includeLayers"`
