@@ -42,7 +42,8 @@ it("opens the native-selected view without sending work or losing the session dr
   await waitFor(() => expect(native.pending).toBeNull());
   native.pending = { id: newRequestId(), destination: "inbox", inbox_id: inboxId };
   await act(async () => { for (const callback of native.callbacks) callback(); });
-  await screen.findByRole("heading", { name: "Execution stopped" });
+  await screen.findByRole("heading", { name: "Tray fixture", level: 3 });
+  expect(view.container.querySelector(".inbox-source-badge")?.textContent).toBe("Execution stopped");
   await screen.findByText("Original terminal observation");
   expect(getInbox).toHaveBeenCalledWith(expect.objectContaining({ id: inboxId }), expect.anything());
   expect(markRead).not.toHaveBeenCalled();
