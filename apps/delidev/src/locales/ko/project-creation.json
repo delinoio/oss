@@ -11,7 +11,7 @@
   "project-creation.selectedCount_other": "선택한 저장소 {{count}}개",
   "project-creation.selectedRepositories": "선택한 저장소",
   "project-creation.workspaceHelp": "선택한 모든 저장소가 하나의 작업 공간을 구성합니다.",
-  "project-creation.orderHelp": "선택 순서가 유지됩니다. 모든 저장소가 하나의 작업 공간을 구성합니다.",
+  "project-creation.orderHelp": "손잡이를 끌어 순서를 변경하세요. 또는 Space나 Enter, 위아래 화살표, Space나 Enter를 사용하세요. Escape로 취소합니다. 모든 저장소가 하나의 작업 공간을 구성합니다.",
   "project-creation.name": "프로젝트 이름",
   "project-creation.nameHelp": "첫 번째로 선택한 저장소 이름으로 채웠습니다. 직접 수정할 수 있습니다.",
   "project-creation.summary": "프로젝트 요약",
@@ -38,5 +38,10 @@
   "project-creation.selectRepository": "저장소를 하나 이상 선택하세요. 중복 없이 최대 1,000개까지 선택할 수 있습니다.",
   "project-creation.primaryHelp": "처음 선택한 저장소가 기본 저장소가 됩니다. 여기에서 변경할 수 있습니다. 하네스는 이 저장소에서 시작합니다. 다른 저장소가 남아 있는 상태에서 기본 저장소를 제거하면 새 기본 저장소를 선택하세요.",
   "project-creation.selectPrimary": "선택한 저장소 중에서 기본 저장소를 선택하세요.",
-  "project-creation.invalidName": "프로젝트 이름은 UTF-8 기준 256바이트 이내로 입력하세요."
+  "project-creation.invalidName": "프로젝트 이름은 UTF-8 기준 256바이트 이내로 입력하세요.",
+  "project-order.handle": "저장소 {{position}} 이동: {{name}}",
+  "project-order.picked": "저장소 {{position}} 이동을 시작했습니다. 위아래 화살표로 이동하고 Space 또는 Enter로 확정하세요. Escape로 취소합니다.",
+  "project-order.position": "저장소 위치 {{position}} / {{count}}.",
+  "project-order.completed": "위치 {{position}}로 순서를 확정했습니다. 프로젝트를 저장하면 유지됩니다.",
+  "project-order.canceled": "이동을 취소했습니다. 저장소 위치 {{position}}로 복원했습니다."
 }

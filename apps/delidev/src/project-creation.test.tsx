@@ -13,6 +13,7 @@ import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
 
+function reorder(position: number) { const grip = screen.getAllByRole("button", { name: /^Move repository/ })[position - 1]!; fireEvent.keyDown(grip, { key: " " }); fireEvent.keyDown(grip, { key: "ArrowUp" }); fireEvent.keyDown(grip, { key: "Enter" }); }
 function repository(name: string) { return create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 7n, schemaVersion: 1, documentJson: encode({ name, private_metadata: "not retained in the search cache" }) }); }
 type Page = { resources: Resource[]; nextPageToken?: string };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { resolve, promise }; }
@@ -81,7 +82,7 @@ it("rechecks every required value at final submission and focuses the invalid st
 
 it("updates untouched names after removal/reordering, clears all selections, and protects manual names", async () => {
   const value = fixture(); render(value.view()); await choose("oss"); await choose("delidev");
-  fireEvent.click(screen.getByRole("button", { name: "Move entry 2 up" })); next(); expect(name().value).toBe("delidev"); expect(primary().value).toBe(value.rows[0].id);
+  reorder(2); next(); expect(name().value).toBe("delidev"); expect(primary().value).toBe(value.rows[0].id);
   fireEvent.change(primary(), { target: { value: value.rows[1].id } }); previous();
   fireEvent.click(screen.getByRole("button", { name: "Remove entry 1" })); next(); expect(name().value).toBe("oss"); expect(primary().value).toBe("");
   fireEvent.change(name(), { target: { value: "My project" } }); previous();
@@ -92,7 +93,7 @@ it("preserves a manual primary through additions and reorder, and requires corre
   const value = fixture([repository("A"), repository("B"), repository("C")]); render(value.view());
   await choose("A"); next(); expect(primary().value).toBe(value.rows[0].id); previous();
   await choose("B"); next(); fireEvent.change(primary(), { target: { value: value.rows[1].id } }); previous();
-  await choose("C"); fireEvent.click(screen.getByRole("button", { name: "Move entry 3 up" }));
+  await choose("C"); reorder(3);
   fireEvent.click(screen.getByRole("button", { name: "Remove entry 1" })); next(); expect(primary().value).toBe(value.rows[1].id);
   previous(); await choose("B"); next(); expect(primary().value).toBe(""); expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
   previous(); await choose("A"); next(); expect(primary().value).toBe(""); expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
