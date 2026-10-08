@@ -105,9 +105,13 @@ fn main() -> io::Result<()> {
                 "ordinary-spelled-shortcut-parent",
                 &case.join("shortcut").join("..").join("target.txt"),
             );
+            // PathBuf::push reduces parents when its base is verbatim, so
+            // append raw UTF-16-compatible spelling without PathBuf::join.
+            let mut verbatim_parent = root.as_os_str().to_os_string();
+            verbatim_parent.push(r"\shortcut\..\target.txt");
             read_probe(
-                "canonical-spelled-shortcut-parent",
-                &root.join("shortcut").join("..").join("target.txt"),
+                "verbatim-raw-shortcut-parent",
+                &PathBuf::from(verbatim_parent),
             );
             println!("END_CASE");
         }
