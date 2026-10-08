@@ -891,6 +891,70 @@ mod tests {
         NativePath::WindowsUtf16(path.as_os_str().encode_wide().collect())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn nofollow_external_link_entry_replacement_is_selected_exactly() {
+        use std::{fs, os::unix::fs::symlink};
+
+        use crate::unix_paths::{path_identity, resolve_final_component, FinalSymlink};
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().canonicalize().unwrap();
+        let root = base.join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(base.join("outside"), b"outside").unwrap();
+        let logical = root.join("link");
+        symlink(base.join("outside"), &logical).unwrap();
+        let resolved = resolve_final_component(&logical, FinalSymlink::NoFollow, |parent| {
+            fs::canonicalize(parent).map(Some)
+        })
+        .unwrap()
+        .unwrap();
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&logical),
+            resolved: Some(native(&resolved)),
+            project_relative: Some(native(resolved.strip_prefix(&root).unwrap())),
+            identity: path_identity(&logical, FinalSymlink::NoFollow),
+        };
+        let selector = Selector::new(&["link".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &access,
+            &selector,
+            Observed {
+                operation: Operation::Metadata,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            Some(&root),
+        );
+        assert!(dependencies.relevant(Path::new("link")));
+        assert!(!dependencies.relevant(Path::new("sibling")));
+        assert_eq!(dependencies.files, BTreeSet::from([PathBuf::from("link")]));
+        fs::write(root.join("replacement"), b"replacement").unwrap();
+        fs::rename(root.join("replacement"), &logical).unwrap();
+        assert_ne!(
+            path_identity(&logical, FinalSymlink::NoFollow),
+            access.identity
+        );
+        assert!(dependencies.relevant(Path::new("link")));
+        let excluded = Selector::new(&["**".to_owned()], &["link".to_owned()]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &access,
+            &excluded,
+            Observed {
+                operation: Operation::Metadata,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            Some(&root),
+        );
+        assert!(dependencies.is_empty());
+    }
+
     #[test]
     fn internal_link_alias_and_target_are_both_dependencies() {
         #[cfg(unix)]
