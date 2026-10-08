@@ -165,3 +165,9 @@
 .session-tray-content { max-height: 240px; overflow: auto; }
 
 .conversation-page-scroll { max-height: 400px; overflow: auto; }
+
+.skill-completion { max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 8px; }
+.skill-completion ul { list-style: none; padding: 0; margin: 0; }
+.skill-completion li { padding: 8px; cursor: pointer; overflow-wrap: anywhere; }
+.skill-completion li[aria-selected="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
+.skill-completion li p { margin: 4px 0; }

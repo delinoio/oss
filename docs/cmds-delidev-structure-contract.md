@@ -428,3 +428,12 @@ native lifecycle/execution cleanup under the subscription and desktop contracts.
 The feature PR records System 42, Worker 22 and the complete endpoint/model-identity/pricing closure in the allocation ledger. Compose full DB baseline 32 / protocol 2 reset with inline Worker schema 4 and current portable bundle 4. The prior atomic Model/Agent save and portable bundle 2 proposal are superseded only on complete activation. The 2026-10-07 owner amendment waives earlier DB retention and permits explicit DB/sidecar reset without conversion, retaining original native and protected-credential cleanup authority.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+## Owner-authorized #1748 allocation exception
+
+For the fixed 2026-10-08 QA batch, the owner explicitly authorized #1748's complete
+skill declarations and activation in one feature PR instead of a prior main
+reservation PR. System 44, Worker 24 and session request field 4 retain exclusive
+ownership. Regenerate shared outputs from reconciled sources. This exception does
+not waive other domain contracts or authorize merging, native acceptance claims,
+or unrelated allocation changes.

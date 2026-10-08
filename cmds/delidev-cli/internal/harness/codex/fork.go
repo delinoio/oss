@@ -13,6 +13,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 )
 
 const forkThread threadMethod = "thread/fork"
@@ -22,10 +23,13 @@ const maxForkRollout = 64 << 20
 // ForkSource is in-memory evidence from the exact original Worker runtime.
 // Its private path is never supplied by a product client or serialized publicly.
 type ForkSource struct {
-	home, path string
-	checkpoint ContinuationCheckpoint
-	fileDigest [sha256.Size]byte
-	turns      []json.RawMessage
+	packageHome string
+	packages    map[string]string
+	original    *ForkSource
+	home, path  string
+	checkpoint  ContinuationCheckpoint
+	fileDigest  [sha256.Size]byte
+	turns       []json.RawMessage
 }
 
 func unsupportedFork() error {
@@ -298,7 +302,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		return result, c.problem
 	}
 	turns, err := c.forkTurnsLocked(ctx, thread.ID)
-	if err != nil || !slices.EqualFunc(turns, source.turns, func(a, b json.RawMessage) bool { return string(a) == string(b) }) {
+	if err != nil || !slices.EqualFunc(turns, source.turns, equivalentForkJSON) {
 		c.problem = threadUncertain()
 		return result, c.problem
 	}
@@ -318,6 +322,16 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 func (s *ForkSource) Verify(ctx context.Context) error {
 	if s == nil {
 		return continuationUncertain()
+	}
+	if s.original != nil {
+		if err := s.original.Verify(ctx); err != nil {
+			return err
+		}
+	}
+	for source, target := range s.packages {
+		if s.original == nil || skills.VerifyRuntimePackage(ctx, s.original.home, source) != nil || skills.VerifyRuntimePackage(ctx, s.packageHome, target) != nil {
+			return continuationUncertain()
+		}
 	}
 	actual, err := forkRolloutDigest(ctx, s.home, s.path)
 	if err != nil || actual != s.fileDigest {

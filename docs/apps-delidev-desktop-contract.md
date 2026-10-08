@@ -2391,3 +2391,22 @@ Exact Runner inspection, executable editing and protocol verification reuse the 
 The shared Runner owner retains its exact machine controller across presentation close and same-identity connection readiness changes. Each task presents that controller through its original task slot; ordinary Settings inspection keeps Updates and Runner network tools, while inline inspection can use the compact view. Exact-machine pending inspection, protocol changes and uncertain jobs continue to gate new consuming workflow effects. Bounded inventory explanations never alter the original eligibility predicate or grant authority from malformed, stale or partial evidence.
 
 Session startup and preparation failures expose a supported recovery action beside the safe cause in the owning conversation. Its one SessionTools controller presents the original confirmation in the same session, including its Info drawer when space is constrained, preserving request and draft ownership. Account reads older than the original resource or retained successful acknowledgment cannot enable a fresh lifecycle action; original uncertain retries and durable cleanup remain independently available.
+
+### Explicit skill completion
+
+The three first-message/follow-up composer surfaces share one `$` completion
+controller. A token opens at input start or after whitespace at the caret;
+case-insensitive prefix filtering orders exact names first, then name and opaque
+identity. Candidates retain descriptions and user/project provenance. Mouse,
+Up/Down, Enter/Tab and Escape operate the accessible listbox without creating or
+sending input. IME composition never accepts a candidate or submits. Only the
+active token is replaced, with surrounding Unicode, newlines and caret preserved.
+
+Selected bindings are separate from visible text and exact uncertain mutations
+retain them. Token edits remove bindings. Changed context requires reselection
+before sending; unselected manually typed tokens remain ordinary text. Loading,
+empty, unsupported and retry states preserve the draft in English and Korean.
+Inventory belongs to the selected Runner and Harness, including remote Runners;
+renderer-local skill directories are never discovery authority. Codex alone is
+supported. Follow the sessions contract's Explicit native skills section for
+snapshot, native input, recovery, protocol and cleanup ownership.

@@ -20,6 +20,7 @@ const (
 // HistoricalInput retains only the native input identity and exact UTF-8 prompt
 // digest. The original content remains in the owning coordinator's transcript.
 type HistoricalInput struct {
+	SkillDigest  [sha256.Size]byte `json:",omitempty"`
 	ID           domain.ID
 	PromptDigest [sha256.Size]byte
 }
@@ -143,7 +144,7 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	}
 	retained := trackedTurn{Turn: turn, Mode: checkpoint.Mode}
 	for _, input := range checkpoint.Inputs {
-		state.inputs[input.ID] = inputAttempt{Digest: input.PromptDigest, TurnID: turn.ID}
+		state.inputs[input.ID] = inputAttempt{Digest: input.PromptDigest, SkillDigest: input.SkillDigest, TurnID: turn.ID}
 		retained.Inputs = append(retained.Inputs, input.ID)
 	}
 	state.turns[turn.ID] = retained
@@ -229,25 +230,45 @@ func decodeLatestTurnInputs(raw json.RawMessage) (Turn, []HistoricalInput, error
 		if identity.Type != "userMessage" {
 			continue
 		}
+
 		var item struct {
-			Type     string    `json:"type"`
-			ID       string    `json:"id"`
-			ClientID domain.ID `json:"clientId"`
-			Content  []struct {
-				Type     string            `json:"type"`
-				Text     *string           `json:"text"`
-				Elements []json.RawMessage `json:"text_elements"`
-			} `json:"content"`
+			Type     string            `json:"type"`
+			ID       string            `json:"id"`
+			ClientID domain.ID         `json:"clientId"`
+			Content  []json.RawMessage `json:"content"`
 		}
-		if domain.Decode(rawItem, &item) != nil || item.ClientID.Validate() != nil || identities[item.ClientID] || len(item.Content) != 1 {
+		if domain.Decode(rawItem, &item) != nil || item.ClientID.Validate() != nil || identities[item.ClientID] || len(item.Content) < 1 || len(item.Content) > 17 {
 			return Turn{}, nil, incompatible()
 		}
-		part := item.Content[0]
-		if part.Type != "text" || part.Text == nil || len(part.Elements) != 0 || domain.Text(*part.Text, "retained native input", nativewire.MaxFrame, true) != nil {
-			return Turn{}, nil, incompatible()
+		var prompt string
+		selected := []nativeTextInput{}
+		for n, raw := range item.Content {
+			var kind struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(raw, &kind) != nil {
+				return Turn{}, nil, incompatible()
+			}
+			if n == 0 {
+				var part struct {
+					Type     string            `json:"type"`
+					Text     *string           `json:"text"`
+					Elements []json.RawMessage `json:"text_elements"`
+				}
+				if domain.Decode(raw, &part) != nil || part.Type != "text" || part.Text == nil || len(part.Elements) != 0 || domain.Text(*part.Text, "retained native input", nativewire.MaxFrame, true) != nil {
+					return Turn{}, nil, incompatible()
+				}
+				prompt = *part.Text
+			} else {
+				var part nativeTextInput
+				if domain.Decode(raw, &part) != nil || part.Type != "skill" || part.Name == "" || part.Path == "" || part.Text != "" {
+					return Turn{}, nil, incompatible()
+				}
+				selected = append(selected, part)
+			}
 		}
 		identities[item.ClientID] = true
-		inputs = append(inputs, HistoricalInput{ID: item.ClientID, PromptDigest: sha256.Sum256([]byte(*part.Text))})
+		inputs = append(inputs, HistoricalInput{ID: item.ClientID, PromptDigest: sha256.Sum256([]byte(prompt)), SkillDigest: nativeSkillDigest(selected)})
 	}
 	if len(inputs) == 0 {
 		return Turn{}, nil, incompatible()

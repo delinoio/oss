@@ -71,7 +71,7 @@ func (s *Service) SteerQueuedInput(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		if ir.SessionID != sr.ID || ir.Revision != identity.Revision || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.NativeRequestID != "" || input.ContentRevision == 0 || input.Mode != assignment.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(input.Prompt)) {
+		if ir.SessionID != sr.ID || ir.Revision != identity.Revision || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.NativeRequestID != "" || input.ContentRevision == 0 || len(input.Skills) > 0 || input.Mode != assignment.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(input.Prompt)) {
 			return nil, steerConflict()
 		}
 		binding := domain.BindExecutionInput(ir.ID, input.Prompt)

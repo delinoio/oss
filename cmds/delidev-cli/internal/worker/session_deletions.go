@@ -305,6 +305,9 @@ func removeSessionTree(ctx context.Context, root, path string) error {
 // never gains permission to delete it merely from the earlier completed proof.
 func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.SessionDeletionWork) ([]string, error) {
 	paths := []string{filepath.Join(root, "execution-claims", string(w.SessionID)+".json"), filepath.Join(root, "execution-history", string(w.SessionID)), filepath.Join(root, "pr-startup", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)), filepath.Join(root, "processes", string(w.SessionID)+".recovery.lock")}
+	for _, binding := range w.SkillSnapshots {
+		paths = append(paths, filepath.Join(root, "skill-snapshots", string(binding.SnapshotID)))
+	}
 	paths = append(paths, workspace.SessionStorageCopyPaths(root, w)...)
 	remnants, err := workspace.SessionStorageRemnantPaths(ctx, root, w)
 	if err != nil {

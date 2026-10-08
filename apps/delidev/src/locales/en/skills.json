@@ -1,0 +1,11 @@
+{
+  "skills.loading": "Loading skills…",
+  "skills.unavailable": "Skills are unavailable. Your message is unchanged.",
+  "skills.retry": "Retry skill inventory",
+  "skills.available": "Available skills",
+  "skills.project": "Project",
+  "skills.user": "User",
+  "skills.empty": "No matching skills.",
+  "skills.unsupported": "Update the server and Runner Device to use skills.",
+  "skills.reselect": "The selected skills need reselection before sending."
+}

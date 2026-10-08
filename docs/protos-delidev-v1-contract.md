@@ -939,3 +939,19 @@ surfaces; retained field and enum numbers preserve their original meanings.
 Record System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields in the owning feature PR. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+## Explicit native skill selection (#1748)
+
+System `NATIVE_SKILLS_V1 = 44` and Worker `NATIVE_SKILLS_V1 = 24` own this independent
+profile. `SkillService.ListSkills` returns bounded opaque selections with exact
+content revisions, display metadata and user/project provenance. Creation,
+enqueue and queued-edit requests append repeated `skills = 4`; edits cannot
+replace skill selections or strip existing bindings, including omitted fields
+from old clients. The existing joined workspace-read envelope gains an exclusive
+skill request/result profile with original actor, Runner device/instance and
+Agent/session context. It grants no file, preparation, account or inference
+authority. Ordinary JSON carries references only. Regenerate the compatibility
+barrel and both generated clients from the reconciled sources. No SQLite
+migration is required. The narrow owner-authorized simultaneous declaration and
+activation exception is defined in the sessions contract's Explicit native skills
+section; remaining allocation policy is unchanged.
