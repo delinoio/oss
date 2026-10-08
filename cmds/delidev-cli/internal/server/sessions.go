@@ -254,7 +254,8 @@ func (s *Service) CreateSession(ctx context.Context, req *connect.Request[pb.Cre
 			}
 			return connect.NewResponse(&pb.CreateSessionResponse{Change: change}), nil
 		}
-		prepared, e := s.observeSkills(ctx, domain.SkillReadRequest{ProjectID: input.ProjectID, MachineID: input.MachineID, AgentID: input.AgentID, Selections: input.Skills})
+		prepared, finish, e := s.prepareSkills(ctx, domain.SkillReadRequest{ProjectID: input.ProjectID, MachineID: input.MachineID, AgentID: input.AgentID, Selections: input.Skills}, domain.ID(req.Msg.RequestId), "session.create", identity)
+		defer finish()
 		if e != nil {
 			return nil, rpc.Error(e, correlation)
 		}
@@ -363,7 +364,8 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if e != nil {
 			return nil, rpc.Error(e, correlation)
 		}
-		prepared, e := s.observeSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: domain.ID(req.Msg.SessionId), Selections: input.Skills})
+		prepared, finish, e := s.prepareSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: domain.ID(req.Msg.SessionId), Selections: input.Skills}, domain.ID(req.Msg.RequestId), "session.enqueue", identity)
+		defer finish()
 		if e != nil {
 			return nil, rpc.Error(e, correlation)
 		}
@@ -511,7 +513,8 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 			}); err != nil {
 				return nil, err
 			}
-			prepared, e := s.observeSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: sessionID, Selections: fresh})
+			prepared, finish, e := s.prepareSkills(ctx, domain.SkillReadRequest{MachineID: session.MachineID, AgentID: session.AgentID, SessionID: sessionID, Selections: fresh}, domain.ID(meta.RequestId), "session.input.change", identity)
+			defer finish()
 			if e != nil {
 				return nil, e
 			}
