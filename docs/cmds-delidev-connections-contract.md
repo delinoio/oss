@@ -62,3 +62,12 @@ Update this contract, scoped CLI/desktop AGENTS, project index and evidence when
 ## Desktop execution transport
 
 A Local native connection includes its current private execution generation and proof key in memory. Each request checks an unauthenticated generation challenge and protects its transport-only bearer copy with generation-bound authenticated encryption; a port successor receives no original token even after a successful prior proof. Port changes do not rewrite stable client identity, device token, pairing document or recovery receipt. Native recovery guards the current runtime before mutation, then preserves the original request and logical endpoint through replay. Saved/remote connection addresses are immutable to this relocation; only the explicitly paired fixed Local Worker may follow the same-server private locator. See the [resident host contract](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown).
+
+### Canonical loopback HTTP authority
+
+The loopback RPC guard accepts canonical portless `127.0.0.1`, `localhost` and
+`[::1]`, matching client origins that omit default HTTP 80 or HTTPS 443 ports.
+Explicit-port authorities retain loopback IP-family checks and require a valid
+nonzero decimal port. Malformed hosts, numeric IPv4 aliases and foreign hosts
+remain denied. Exact configured browser origins and authenticated RPC checks
+remain independent; this changes no listener or privileged-port ownership.
