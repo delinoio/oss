@@ -523,7 +523,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if event.Kind == codex.SubagentActivityEvent || event.Kind == codex.TurnCompletedEvent {
 			inspection, err := client.InspectDescendants(publicationContext)
 			if err != nil {
-				logger.WarnContext(publicationContext, "native_subagent_inspection_failed", "job_id", job, "code", domain.SafeError(err).Code)
+				logger.WarnContext(publicationContext, "native_subagent_inspection_failed", "code", domain.SafeError(err).Code)
 				return nil, err
 			}
 			if _, err := mapper.PublishCore(publicationContext, inspection); err != nil {

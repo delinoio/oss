@@ -3,10 +3,10 @@ package worker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http/httptest"
 	"os"
@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,9 +31,11 @@ import (
 type managedExecutionFixtureFault string
 
 const (
-	managedFixtureCapture        managedExecutionFixtureFault = "capture"
-	managedFixtureScan           managedExecutionFixtureFault = "scan"
-	managedFixtureStartupCleanup managedExecutionFixtureFault = "startup-cleanup"
+	managedFixtureInspectionActivity   managedExecutionFixtureFault = "inspection-activity"
+	managedFixtureInspectionCompletion managedExecutionFixtureFault = "inspection-completion"
+	managedFixtureCapture              managedExecutionFixtureFault = "capture"
+	managedFixtureScan                 managedExecutionFixtureFault = "scan"
+	managedFixtureStartupCleanup       managedExecutionFixtureFault = "startup-cleanup"
 )
 
 func init() {
@@ -96,6 +99,10 @@ func init() {
 		case "thread/loaded/list":
 			write(request.ID, map[string]any{"data": []string{}, "nextCursor": nil})
 		case "thread/list":
+			if fault == managedFixtureInspectionActivity || fault == managedFixtureInspectionCompletion {
+				_ = encoder.Encode(map[string]any{"id": request.ID, "error": map[string]any{"code": -32603, "message": "Controlled inspection refusal"}})
+				continue
+			}
 			// Root completion performs the same state-DB-only descendant inventory
 			// as production. This managed-auth fixture has no children, but it must
 			// answer that read before terminal authentication capture and Close.
@@ -135,7 +142,11 @@ func init() {
 					os.Exit(86)
 				}
 			}
-			notify("turn/completed", map[string]any{"threadId": thread["id"], "turn": turn(id, codex.TurnCompleted)})
+			if fault == managedFixtureInspectionActivity {
+				notify("item/completed", map[string]any{"threadId": thread["id"], "turnId": id, "completedAtMs": 1, "item": map[string]any{"type": "subAgentActivity", "id": "fixture-activity", "kind": "completed", "agentThreadId": domain.NewID(), "agentPath": "/synthetic-child"}})
+			} else {
+				notify("turn/completed", map[string]any{"threadId": thread["id"], "turn": turn(id, codex.TurnCompleted)})
+			}
 		case "account/read":
 			reads++
 			if os.WriteFile(filepath.Join(home, "bundle-read-count"), []byte(strconv.Itoa(reads)), 0600) != nil {
@@ -286,11 +297,14 @@ func TestManagedExecutionCapturesRotatedBundleBeforeNativeClose(t *testing.T) {
 }
 
 func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) {
-	for _, fault := range []managedExecutionFixtureFault{managedFixtureCapture, managedFixtureScan, managedFixtureStartupCleanup} {
+	for _, fault := range []managedExecutionFixtureFault{managedFixtureCapture, managedFixtureScan, managedFixtureStartupCleanup, managedFixtureInspectionActivity, managedFixtureInspectionCompletion} {
 		t.Run(string(fault), func(t *testing.T) {
 			f := newCheckpointFixture(t)
 			f.input.ExecutionID = domain.NewID()
 			f.input.Configuration.Subscription = true
+			f.input.Input.Prompt = "SYNTHETIC_PRIVATE_INSPECTION_PROMPT"
+			f.input.Configuration.Instructions = "SYNTHETIC_PRIVATE_INSPECTION_INSTRUCTIONS"
+			f.input.Configuration.Templates = []domain.AppliedTemplate{{ID: domain.NewID(), Revision: 1, Contents: f.input.Configuration.Instructions}}
 			f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
 			binary, err := os.Executable()
 			if err != nil {
@@ -308,6 +322,9 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 			}
 			f.input.Preparation, _ = json.Marshal(preparation)
 			f.input.Manifest, _ = json.Marshal(manifest)
+			if err := f.input.Validate(); err != nil {
+				t.Fatal("controlled input invalid", err)
+			}
 			f.job.Input, _ = json.Marshal(f.input)
 			f.job.InstanceID, f.job.AcceptedAt = domain.NewID(), time.Now().UTC()
 			document, _ := json.Marshal(f.job)
@@ -330,8 +347,12 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
-			config := Config{Root: f.root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+			var logs bytes.Buffer
+			config := Config{Root: f.root, Logger: slog.New(slog.NewJSONHandler(&logs, nil))}
 			err = runAndReportJob(ctx, config, client, credential, f.job.InstanceID, assignment{context: ctx, cancel: func() {}}, resource, f.job)
+			if fault == managedFixtureInspectionActivity || fault == managedFixtureInspectionCompletion {
+				assertInspectionFailureLog(t, logs.Bytes(), f.jobID, f.input.ExecutionID, f.input.SessionID, f.input.Input.Prompt, f.input.Configuration.Instructions, f.root)
+			}
 			var uncertain *managedExecutionUncertain
 			if !errors.As(err, &uncertain) || client.reported {
 				t.Fatal("acknowledged fenced finish authorized ordinary job reporting", err)
@@ -357,5 +378,41 @@ func TestManagedExecutionAcknowledgedFencePreservesStartedJournal(t *testing.T) 
 				t.Fatal("uncertain execution omitted its protected fenced Finish")
 			}
 		})
+	}
+}
+
+// The native fixture exercises both event families through executeSession rather
+// than repeating the diagnostic statement in a synthetic logging test.
+func assertInspectionFailureLog(t *testing.T, raw []byte, job, execution, session domain.ID, private ...string) {
+	t.Helper()
+	found := 0
+	for _, line := range bytes.Split(raw, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatal("invalid structured diagnostic", err)
+		}
+		if record["msg"] != "native_subagent_inspection_failed" {
+			continue
+		}
+		found++
+		if record["job_id"] != string(job) || record["execution_id"] != string(execution) || record["session_id"] != string(session) || record["code"] == nil {
+			t.Fatal("inspection diagnostic lost original identifiers or safe code")
+		}
+		for _, canary := range private {
+			if strings.Contains(string(line), canary) {
+				t.Fatal("inspection diagnostic exposed private execution content")
+			}
+		}
+		for _, key := range []string{"input", "configuration", "manifest", "job"} {
+			if _, present := record[key]; present {
+				t.Fatal("inspection diagnostic exposed a full document")
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatal("native fixture did not reach exactly one inspection failure diagnostic", found)
 	}
 }
