@@ -108,3 +108,18 @@ it("shows sidebar reset countdowns without quota or account operations", async (
   expect(screen.getByText("Resets in 6 days 3 hours")).toBeTruthy(); expect(screen.getByTitle(reset).getAttribute("datetime")).toBe(reset);
   expect(read).toHaveBeenCalledTimes(1); expect(manage).not.toHaveBeenCalled();
 });
+
+it.each([
+ { name: "healthy", quota: [{ id: "weekly", remaining: .28, state: "observed", observed_at: new Date().toISOString(), comparison_group: "weekly", blocking: true }], status: "Observed" },
+ { name: "stale", quota: [{ id: "weekly", remaining: .28, state: "observed", observed_at: new Date(Date.now() - 360000).toISOString(), comparison_group: "weekly", blocking: true }], status: "Stale" },
+ { name: "failed", quota: [{ id: "weekly", remaining: .28, state: "failed", observed_at: new Date().toISOString(), comparison_group: "weekly", blocking: true }], status: "Observation failed" },
+ { name: "empty", quota: [], status: "No current quota evidence" },
+])("shows truthful $name observations without inventing an operation failure", async ({ quota, status }) => {
+ const f = mount(() => ({ resources: [resource("Personal", "chatgpt", { quota })] }));
+ fireEvent.click(await screen.findByRole("button", { name: /ChatGPT · Personal/ }));
+ const dialog = screen.getByRole("dialog", { name: "ChatGPT · Personal" });
+ expect(dialog.textContent).toContain(status);
+ expect(dialog.textContent).not.toContain("Quota observation was not confirmed.");
+ expect(f.requests).toHaveBeenCalledTimes(1);
+ expect(f.manage).not.toHaveBeenCalled();
+});
