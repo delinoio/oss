@@ -177,3 +177,28 @@ it("consumes explicit New Project and Repositories entry while another category 
   await screen.findByRole("heading", { level: 1, name: "Repositories" }); expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull(); expect(consumed).toHaveBeenCalledTimes(2);
   expect(value.save).not.toHaveBeenCalled();
 });
+
+
+it("refreshes only the active category metadata through the shared Settings header", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Initial repository", remote_url: "https://example.org/repository" });
+  const model = resource(EntityKind.MODEL, { name: "Initial model", native_id: "initial-model" });
+  const worker = resource(EntityKind.AGENT, { name: "Refresh Worker", harness: "codex", model_id: model.id, accounts: [{ id: newRequestId(), weight: 1 }] });
+  const row = project("Refresh project");
+  row.documentJson = encode({ name: "Refresh project", repositories: [repository.id], primary_repository: repository.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
+  const value = fixture([row, repository, worker, model]); openProjects(value);
+  await screen.findByText("Initial repository");
+  const repositoryReads = value.get.mock.calls.filter(([id]) => id === repository.id).length;
+  repository.revision += 1n; repository.documentJson = encode({ name: "Updated repository", remote_url: "https://example.org/updated" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("Updated repository");
+  expect(value.get.mock.calls.filter(([id]) => id === repository.id)).toHaveLength(repositoryReads + 1);
+  expect(value.get.mock.calls.filter(([id]) => id === model.id)).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  await screen.findByText("initial-model");
+  const modelReads = value.get.mock.calls.filter(([id]) => id === model.id).length;
+  model.revision += 1n; model.documentJson = encode({ name: "Updated model", native_id: "updated-model" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("updated-model");
+  expect(value.get.mock.calls.filter(([id]) => id === model.id)).toHaveLength(modelReads + 1);
+  expect(value.get.mock.calls.filter(([id]) => id === repository.id)).toHaveLength(repositoryReads + 1);
+});
