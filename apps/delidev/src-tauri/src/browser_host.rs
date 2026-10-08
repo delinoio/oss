@@ -1582,8 +1582,16 @@ impl BrowserHost {
             join.join().map_err(|_| NativeFailure::SidecarFailed)?;
         }
         let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
-        self.finish_forgotten(Instant::now())?;
-        self.finish_account_removals()
+        // Queue-local failures retain their original evidence, but cannot
+        // prevent the independent account queue from using its exit budget.
+        let forgotten = self.finish_forgotten(Instant::now());
+        let accounts = self.finish_account_removals();
+        for (queue, result) in [("forgotten", &forgotten), ("accounts", &accounts)] {
+            if let Err(code) = result {
+                tracing::warn!(operation = "browser_shutdown_cleanup", queue, ?code);
+            }
+        }
+        forgotten.and(accounts)
     }
 
     // Called only after independent native shutdown and the address-worker
@@ -2199,6 +2207,109 @@ mod tests {
             },
         };
         (temp, host, record)
+    }
+
+    #[test]
+    fn forgotten_failure_preserves_evidence_without_starving_account_cleanup() {
+        for unsafe_storage in [false, true] {
+            let (temp, host, mut account) = storage_fixture();
+            let account_cache =
+                browser::profile_path(&host.root.join("profiles"), &account).unwrap();
+            fs::write(account_cache.join("Cookies"), b"account fixture").unwrap();
+            account.data.state = ProfileState::RemovalPending;
+            account.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
+            host.prepare_removal(account.clone(), None).unwrap();
+            let account_intent = host
+                .root
+                .join("removals")
+                .join(format!("{}.json", account.id));
+            let original: Removal = read_json(&account_intent).unwrap();
+
+            let mut forgotten_cookies = None;
+            let marker = if unsafe_storage {
+                let mut forgotten_account = account.clone();
+                forgotten_account.data.device_id = uuid::Uuid::now_v7().to_string();
+                let scope = forgotten_scope(&forgotten_account);
+                host.prepare_forget(&scope).unwrap();
+                fs::write(
+                    temp.path().join("sidecar.operation"),
+                    "#!/bin/sh\nexec /bin/cat \"$2/reply.json\"\n",
+                )
+                .unwrap();
+                browser::write_private(
+                    &temp.path().join("reply.json"),
+                    &serde_json::json!({"version": 1, "result": scope}),
+                )
+                .unwrap();
+                let cache =
+                    browser::profile_path(&host.root.join("profiles"), &forgotten_account).unwrap();
+                fs::write(cache.join("Cookies"), b"forgotten fixture").unwrap();
+                forgotten_cookies = Some(cache.join("Cookies"));
+                // Unsafe ownership must retain the original scope and cookies.
+                let device = cache.parent().unwrap();
+                fs::set_permissions(device, fs::Permissions::from_mode(0o755)).unwrap();
+                host.forgotten_path(&scope.server_id, &scope.device_id)
+                    .unwrap()
+            } else {
+                let marker = host.root.join("forgotten").join("malformed.json");
+                browser::write_private(&marker, &"malformed fixture").unwrap();
+                marker
+            };
+            let evidence = fs::read(&marker).unwrap();
+            assert_eq!(host.finish_removals(), Err(NativeFailure::InvalidEvidence));
+            assert!(account_cache.exists(), "native shutdown remains mandatory");
+            host.stop();
+            let expected = if unsafe_storage {
+                NativeFailure::PermissionDenied
+            } else {
+                NativeFailure::InvalidEvidence
+            };
+            assert_eq!(host.finish_removals(), Err(expected));
+            assert_eq!(fs::read(&marker).unwrap(), evidence);
+            if let Some(cookies) = forgotten_cookies {
+                assert_eq!(fs::read(cookies).unwrap(), b"forgotten fixture");
+            }
+            assert!(!account_cache.exists());
+            assert_eq!(
+                read_json::<String>(&host.root.join("removal-cursor.json")).unwrap(),
+                account.id
+            );
+            let retained: Removal = read_json(&account_intent).unwrap();
+            assert_eq!(retained.record, original.record);
+            assert_eq!(retained.request_id, original.request_id);
+            assert!(retained.shutdown_confirmed);
+        }
+    }
+
+    #[test]
+    fn simultaneous_cleanup_failures_return_first_error_after_account_checkpoint() {
+        let (_temp, host, mut account) = storage_fixture();
+        let cache = browser::profile_path(&host.root.join("profiles"), &account).unwrap();
+        fs::set_permissions(&cache, fs::Permissions::from_mode(0o755)).unwrap();
+        account.data.state = ProfileState::RemovalPending;
+        account.data.deletion_request_id = uuid::Uuid::now_v7().to_string();
+        host.prepare_removal(account.clone(), None).unwrap();
+        browser::write_private(
+            &host.root.join("forgotten/malformed.json"),
+            &"malformed fixture",
+        )
+        .unwrap();
+        host.stop();
+        assert_eq!(host.finish_removals(), Err(NativeFailure::InvalidEvidence));
+        assert!(cache.exists());
+        assert_eq!(
+            read_json::<String>(&host.root.join("removal-cursor.json")).unwrap(),
+            account.id
+        );
+        let retained: Removal = read_json(
+            &host
+                .root
+                .join("removals")
+                .join(format!("{}.json", account.id)),
+        )
+        .unwrap();
+        assert_eq!(retained.record, account);
+        assert!(retained.shutdown_confirmed);
     }
 
     #[test]
