@@ -607,4 +607,6 @@ it("subscription details opens and closes without reads, then one management tas
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   expect(screen.queryByRole("dialog", { name: "Account details" })).toBeNull();
   expect(value.logout).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Close Manage subscription" }));
+  await waitFor(() => expect(globalThis.document.activeElement).toBe(opener));
 });
