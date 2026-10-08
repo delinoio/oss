@@ -2275,7 +2275,10 @@ mod tests {
                 account.id
             );
             let retained: Removal = read_json(&account_intent).unwrap();
-            assert_eq!(retained.record, original.record);
+            assert_eq!(
+                serde_json::to_value(&retained.record).unwrap(),
+                serde_json::to_value(&original.record).unwrap()
+            );
             assert_eq!(retained.request_id, original.request_id);
             assert!(retained.shutdown_confirmed);
         }
@@ -2308,7 +2311,10 @@ mod tests {
                 .join(format!("{}.json", account.id)),
         )
         .unwrap();
-        assert_eq!(retained.record, account);
+        assert_eq!(
+            serde_json::to_value(&retained.record).unwrap(),
+            serde_json::to_value(&account).unwrap()
+        );
         assert!(retained.shutdown_confirmed);
     }
 
