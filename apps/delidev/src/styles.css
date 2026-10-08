@@ -147,7 +147,11 @@ summary { cursor: pointer; padding: 3px; }
 .new-session-composer textarea::placeholder { color: var(--text-subtle); opacity: 1; }
 .new-session-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 0 12px 12px; }
 .new-session-selectors { display: flex; min-width: 0; flex: 1; align-items: flex-end; gap: 8px; }
+.new-session-attach { display: grid; flex: 0 0 40px; place-items: center; width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 8px; font-size: 24px; }
 .new-session-selectors .resource-choice { min-width: 0; flex: 1; }
+/* Align the attachment action with the actual picker input, not its outer margins. */
+.new-session-selectors .scroll-picker { margin: 0; gap: 4px; }
+.new-session-selectors .scroll-picker > span { color: var(--text-secondary); font-size: 11px; }
 .new-session-selectors .resource-choice > label, .new-session-mode { gap: 4px; min-width: 0; margin: 0; color: var(--text-secondary); font-size: 11px; }
 .plan-mode { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 40px; margin: 0; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
 .plan-mode input[type=checkbox] { flex: 0 0 auto; margin: 0; accent-color: var(--accent); }

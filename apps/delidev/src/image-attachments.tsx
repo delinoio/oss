@@ -16,19 +16,19 @@ export function imageEntryHandlers(draft: ReturnType<typeof useImageDraft>, disa
     onDrop: (event: DragEvent<HTMLElement>) => { const files = [...event.dataTransfer.files]; if (!files.length) return; event.preventDefault(); if (!disabled) void draft.controller.add(files); },
   };
 }
-export function ImageAttachmentInput({ draft, disabled, available, routeReady, routeLoading, machineId, compact = false, children, controls }: { compact?: boolean; children?: ReactNode; controls?: ReactNode; draft: ReturnType<typeof useImageDraft>; disabled: boolean; available: boolean; routeReady: boolean; routeLoading: boolean; machineId: string }) {
+export function ImageAttachmentInput({ draft, disabled, available, routeReady, routeLoading, machineId, compact = false, children, controls, creationToolbar }: { creationToolbar?: (attach: ReactNode) => ReactNode; compact?: boolean; children?: ReactNode; controls?: ReactNode; draft: ReturnType<typeof useImageDraft>; disabled: boolean; available: boolean; routeReady: boolean; routeLoading: boolean; machineId: string }) {
   useLocale();
   const input = useRef<HTMLInputElement>(null);
   const help = useRef<HTMLButtonElement>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const helpId = useId();
-  const attach = <button className={compact ? "composer-attach" : undefined} type="button" aria-label={copy("image-input.attach")} title={copy("image-input.attach")} disabled={disabled || draft.busy || !available} onClick={() => input.current?.click()}>{compact ? <span aria-hidden="true">+</span> : copy("image-input.attach")}</button>;
+  const attach = <button className={creationToolbar ? "new-session-attach" : compact ? "composer-attach" : undefined} type="button" aria-label={copy("image-input.attach")} title={copy("image-input.attach")} disabled={disabled || draft.busy || !available} onClick={() => input.current?.click()}>{compact || creationToolbar ? <span aria-hidden="true">+</span> : copy("image-input.attach")}</button>;
   return <section className={compact ? "image-attachments image-attachments-compact" : "image-attachments"} onKeyDown={event => { if (compact && event.key === "Escape" && helpOpen) { event.preventDefault(); event.stopPropagation(); setHelpOpen(false); help.current?.focus(); } }} aria-label={copy("image-input.heading")}>
     <input ref={input} className="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple tabIndex={-1} aria-label={copy("image-input.select")} disabled={disabled || draft.busy || !available} onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ""; void draft.controller.add(files); }} />
-    {!compact ? attach : null}
+    {!compact && !creationToolbar ? attach : null}
     {draft.images.length ? <ol className="image-preview-list">{draft.images.map((image, index) => <li key={image.key}><img src={image.preview} alt={copy("image-input.image", { number: index + 1 })} /><span>{copy(image.ready && image.reference?.machineId === machineId ? "image-input.staged" : "image-input.pending", { number: index + 1 })}</span><button type="button" aria-label={copy("image-input.remove", { number: index + 1 })} disabled={disabled || draft.busy} onClick={() => void draft.controller.remove(image.key)}>×</button></li>)}</ol> : null}
     {children}
-    {compact ? <div className="composer-toolbar">{attach}<button ref={help} type="button" className="composer-attachment-help" title={copy("image-input.helpLabel")} aria-label={copy("image-input.helpLabel")} aria-expanded={helpOpen} aria-controls={helpOpen ? helpId : undefined} onClick={() => setHelpOpen(value => !value)}><span aria-hidden="true">?</span></button>{controls}</div> : <small>{copy("image-input.help")}</small>}
+    {creationToolbar ? creationToolbar(attach) : compact ? <div className="composer-toolbar">{attach}<button ref={help} type="button" className="composer-attachment-help" title={copy("image-input.helpLabel")} aria-label={copy("image-input.helpLabel")} aria-expanded={helpOpen} aria-controls={helpOpen ? helpId : undefined} onClick={() => setHelpOpen(value => !value)}><span aria-hidden="true">?</span></button>{controls}</div> : <small>{copy("image-input.help")}</small>}
     {compact && helpOpen ? <p className="composer-attachment-guidance" id={helpId}>{copy("image-input.help")}</p> : null}
     {!available ? <p role="status">{copy("image-input.update")}</p> : draft.images.length && !routeReady ? <p role="status">{copy(routeLoading ? "image-input.checkingRoute" : "image-input.unsupported")}</p> : null}
     {draft.busy ? <p role="status">{copy("image-input.processing")}</p> : null}

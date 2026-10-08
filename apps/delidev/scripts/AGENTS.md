@@ -133,3 +133,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - `test-subscription-rail-refresh-layout.mjs` uses the real rail with synthetic saved-resource reads for deferred focus/timer geometry and continuation identity in English/Korean, semantic themes and effective 200% widths. Keep `__subscriptionRailFixture` excluded from releases; browser/build state remains temporary and grants no native/account/platform acceptance.
 
 - Usage browser fixtures cover the trend-first summary/charts/session order, exact row/chart data, English/Korean themes, stacked narrow records and effective zoom. Keep filter/tab/disclosure reads and writes observable with synthetic counters; screenshots and evidence remain outside the checkout and cannot establish packaged/native acceptance.
+
+- Creation image layout checks also validate the localized non-submit plus immediately before Agent Worker, pointer/Enter/Space picker activation, absent history/limits/help presentation and independent General Chat toolbar. Retain original image decoding, ordered admission/removal, paste/drop, draft ownership and receipt checks; no fixture grants native/account acceptance.
