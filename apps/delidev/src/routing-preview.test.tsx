@@ -2,12 +2,14 @@ import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
-import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, EntityKind, ResourceSchema, ResourceService, configurationSchemaVersion, newRequestId, type GetResourceRequest, type PreviewRoutingRequest, type Resource } from "@delinoio/delidev-api-client";
+import { SettingsLifetime } from "./settings-lifetime";
+import { useRoutingAccountMetadata } from "./routing-account-metadata";
 import { RoutingPreview } from "./routing-preview";
 import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskDialog } from "./settings-task";
 import { encode, type Document } from "./documents";
@@ -73,14 +75,14 @@ it("deduplicates source and selected identities while preserving ordered evidenc
   const inner = { policy: "remaining-quota", selected: second.id, fallback: true, candidates: [candidate(first), { ...candidate(second, "eligible"), score: 0.75, reset_at: "2026-10-07T00:00:00Z" }] };
   const value = setup([first, second], { ...inner, source_index: 1, sources: [{ source: "subscription:chatgpt", model_id: model, native_model: "model-one", route: { policy: "priority", candidates: [candidate(first, "exhausted")], problem: { code: "missing-input" } } }, { source: "subscription:chatgpt", model_id: model, native_model: "model-two", route: inner }] });
   render(<value.Fixture />);
-  await waitFor(() => expect(screen.getAllByText("Work account")).toHaveLength(6));
+  await waitFor(() => expect(screen.getAllByText("Work account")).toHaveLength(4));
   expect(value.get).toHaveBeenCalledTimes(2);
   const sources = document.querySelectorAll(".routing-source");
   expect(sources[0].textContent).toContain("model-one");
   expect(sources[1].textContent).toContain("model-two");
   expect(sources[1].textContent).toContain("Selected source");
-  expect(screen.getAllByText("0.75")).toHaveLength(2);
-  expect(screen.getAllByText(/Insufficient comparable quota evidence/)).toHaveLength(2);
+  expect(screen.getAllByText("0.75")).toHaveLength(1);
+  expect(screen.getAllByText(/Insufficient comparable quota evidence/)).toHaveLength(1);
 });
 
 it.each(["missing", "denied", "wrong-id", "wrong-kind", "unsupported", "retired", "empty-alias"])("keeps routing evidence when account metadata is %s", async failure => {
@@ -214,4 +216,119 @@ it("keeps nullable quota evidence unknown and displays an observed zero score", 
   expect(within(cards[0] as HTMLElement).getByText("unknown")).toBeTruthy();
   expect(within(cards[0] as HTMLElement).queryByText("Score")).toBeNull();
   expect(within(cards[1] as HTMLElement).getByText("0")).toBeTruthy();
+});
+
+it.each(["selected", "policy", "fallback", "order", "eligibility", "quota", "weight", "score", "reset", "extension"])("keeps distinct complete final decision evidence for %s", async field => {
+  const first = account("Personal"), second = account("Work");
+  const inner = { policy: "priority", selected: second.id, fallback: false, candidates: [{ ...candidate(first), score: null, reset_at: null }, { ...candidate(second, "eligible"), score: 0, reset_at: "2026-10-08T00:00:00Z" }] };
+  const final = structuredClone(inner) as Document;
+  const candidates = final.candidates as Document[];
+  if (field === "selected") final.selected = first.id;
+  if (field === "policy") final.policy = "fixed";
+  if (field === "fallback") final.fallback = true;
+  if (field === "order") candidates.reverse();
+  if (field === "eligibility") candidates[0].eligibility = "disabled";
+  if (field === "quota") candidates[0].quota_state = "observed";
+  if (field === "weight") candidates[0].weight = 2;
+  if (field === "score") candidates[0].score = 0;
+  if (field === "reset") candidates[0].reset_at = "2026-10-09T00:00:00Z";
+  if (field === "extension") candidates[0].future_evidence = { compared: false };
+  const value = setup([first, second], { ...final, source_index: 0, sources: [{ source: "subscription:chatgpt", model_id: newRequestId(), native_model: "Model", route: inner }] });
+  render(<value.Fixture />);
+  await screen.findByText("Final result candidates");
+  expect(document.querySelectorAll(".routing-candidates")).toHaveLength(2);
+  expect(document.querySelectorAll(".routing-account-id[open], .routing-source-id[open]")).toHaveLength(0);
+});
+
+it("reads safe source labels for empty groups with one shared provider read", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "Saved empty source", endpoint: "private.invalid/secret" });
+  const source = `api:${provider.id}`;
+  const value = setup([provider], { policy: "priority", candidates: [], sources: [1, 2].map(index => ({ source, model_id: newRequestId(), native_model: `Model ${index}`, route: { policy: "priority", candidates: [] } })) });
+  render(<value.Fixture />);
+  await waitFor(() => expect(screen.getAllByText(/Saved empty source · Model/)).toHaveLength(2));
+  expect(value.get).toHaveBeenCalledTimes(1);
+  expect(document.body.textContent).not.toContain("private.invalid");
+  expect(document.querySelectorAll(".routing-source-id[open]")).toHaveLength(0);
+});
+
+it("shares four source and account slots across project response replacement", async () => {
+  const rows = Array.from({ length: 4 }, (_, index) => account(`Original ${index}`));
+  const providers = Array.from({ length: 4 }, (_, index) => resource(EntityKind.PROVIDER, { name: `Next source ${index}` }));
+  const project = resource(EntityKind.PROJECT, { name: "Next project" });
+  const value = setup([...rows, ...providers, project], { policy: "priority", candidates: rows.map(row => candidate(row)) });
+  const releases: (() => void)[] = [];
+  let running = 0, peak = 0;
+  value.get.mockImplementation(async request => {
+    if (request.kind === EntityKind.PROJECT) return { resource: project };
+    peak = Math.max(peak, ++running);
+    await new Promise<void>(resolve => releases.push(() => { running--; resolve(); }));
+    return { resource: [...rows, ...providers].find(row => row.id === request.id) };
+  });
+  render(<value.Fixture />);
+  await waitFor(() => expect(value.get).toHaveBeenCalledTimes(4));
+  value.preview.mockResolvedValue({ routeJson: encode({ policy: "priority", candidates: [], sources: providers.map(row => ({ source: `api:${row.id}`, model_id: newRequestId(), native_model: "Next model", route: { policy: "priority", candidates: [] } })) }) });
+  await chooseScrollOption(screen.getByLabelText("Project"), project.id);
+  await waitFor(() => expect(value.preview).toHaveBeenCalledTimes(2));
+  expect(value.get.mock.calls.filter(([request]) => request.kind !== EntityKind.PROJECT)).toHaveLength(4);
+  await act(async () => { releases.splice(0).forEach(release => release()); });
+  await waitFor(() => expect(value.get.mock.calls.filter(([request]) => request.kind !== EntityKind.PROJECT)).toHaveLength(8));
+  expect(peak).toBe(4);
+  expect(screen.queryByText("Original 0")).toBeNull();
+  await act(async () => { releases.splice(0).forEach(release => release()); });
+  await screen.findByText("Next source 0 · Next model");
+});
+
+it("keeps empty-source failure explicit without guessing a provider or hiding its decision", async () => {
+  const id = newRequestId();
+  const value = setup([], { policy: "priority", candidates: [], sources: [{ source: `api:${id}`, model_id: newRequestId(), native_model: "Original model", route: { policy: "priority", candidates: [], fallback: true }, problem: { code: "missing_input", message: "Original source problem" } }] });
+  value.get.mockRejectedValue(new ConnectError("private-metadata-value", Code.PermissionDenied));
+  render(<value.Fixture />);
+  await screen.findByText("Service information unavailable · Original model");
+  expect(screen.getByText("Original source problem")).toBeTruthy();
+  expect(screen.getByText(/Insufficient comparable quota evidence/)).toBeTruthy();
+  expect(document.body.textContent).not.toContain("private-metadata-value");
+  expect(JSON.stringify(value.logs.mock.calls)).not.toContain(id);
+});
+
+it("retains four original RPC permits across nested dialog close and reopen", async () => {
+  const rows = Array.from({ length: 4 }, (_, index) => resource(EntityKind.PROVIDER, { name: `Original source ${index}` }));
+  const gates: (() => void)[] = [];
+  let running = 0, peak = 0, calls = 0;
+  const base = createRouterTransport(router => router.service(ResourceService, {
+    getResource: request => ({ resource: rows.find(row => row.id === request.id) }),
+  }));
+  const transport: Transport = { ...base, unary: async (method, _signal, timeout, headers, input, context) => {
+    const response = await base.unary(method, undefined, timeout, headers, input, context);
+    const generation = ++calls <= 4 ? "Original" : "Reopened";
+    peak = Math.max(peak, ++running);
+    await new Promise<void>(resolve => gates.push(() => { running--; resolve(); }));
+    const message = response.message as { resource?: Resource };
+    if (message.resource) message.resource.documentJson = encode({ name: `${generation} source ${rows.findIndex(row => row.id === message.resource?.id)}` });
+    return response;
+  } };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Names() {
+    const metadata = useRoutingAccountMetadata([], true, "revision", rows.map(row => `api:${row.id}`));
+    return <>{[...metadata.values()].map((value, index) => <p key={index}>{value.name ?? "Loading source"}</p>)}</>;
+  }
+  function Category() {
+    const [open, setOpen] = useState(true);
+    return <><button onClick={() => setOpen(true)}>Reopen preview</button>{open && <SettingsTaskDialog size={SettingsDialogSize.Form} title="Preview routing" close={() => setOpen(false)}><Names /></SettingsTaskDialog>}</>;
+  }
+  render(<QueryClientProvider client={client}><TransportProvider transport={transport}><SettingsLifetime>{() => <Category />}</SettingsLifetime></TransportProvider></QueryClientProvider>);
+  await waitFor(() => expect(calls).toBe(4));
+  fireEvent.click(screen.getByRole("button", { name: "Close Preview routing" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Reopen preview" }));
+  await screen.findByRole("dialog");
+  await act(async () => { await Promise.resolve(); });
+  expect(calls).toBe(4);
+  expect(running).toBe(4);
+  await act(async () => gates.splice(0).forEach(release => release()));
+  await waitFor(() => expect(calls).toBe(8));
+  expect(peak).toBe(4);
+  expect(screen.queryByText("Original source 0")).toBeNull();
+  await act(async () => gates.splice(0).forEach(release => release()));
+  await screen.findByText("Reopened source 0");
+  expect(screen.queryByText("Original source 0")).toBeNull();
 });

@@ -73,18 +73,18 @@ try {
     await disclosure.focus(); await page.keyboard.press("Enter");
     assert.equal(await dialog.locator(".routing-account-id").evaluate(node => node.open), true);
     assert(await dialog.locator(".routing-account-id code").isVisible());
-    const close = dialog.getByRole("button", { name: c("settings-task.close"), exact: true });
+    const close = dialog.locator(".settings-task-close");
     await close.focus(); await page.keyboard.press("Tab");
-    assert(await dialog.locator(".settings-task-close").evaluate(node => node === document.activeElement));
+    assert(await dialog.evaluate(node => node.contains(document.activeElement)));
     await page.keyboard.press("Shift+Tab");
     assert(await close.evaluate(node => node === document.activeElement));
     await dialog.locator(".settings-task-body").evaluate(node => { node.scrollTop = node.scrollHeight; });
-    assert(await close.isVisible(), "Footer stays visible while evidence scrolls");
+    assert(await close.isVisible(), "Header dismissal stays visible while evidence scrolls");
     await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
     assert(await opener.evaluate(node => node === document.activeElement), "Escape restores the original row opener");
     await opener.click(); await dialog.waitFor();
     await close.click(); await dialog.waitFor({ state: "hidden" });
-    assert(await opener.evaluate(node => node === document.activeElement), "Footer dismissal restores opener");
+    assert(await opener.evaluate(node => node === document.activeElement), "Header dismissal restores opener");
     cases++;
   }
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const mode of ["true", "selected", "sources", "empty", "invalid", "denied"]) {
@@ -106,6 +106,24 @@ try {
       await page.screenshot({ path: join(screenshots, `${language}-${theme}-1440x900.png`) });
     }
     await dialog.locator(".settings-task-close").click(); await dialog.waitFor({ state: "hidden" });
+    cases++;
+  }
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) {
+    const { c, dialog, opener } = await open(language, theme, 1440, 900, "compact");
+    await dialog.getByText("Personal", { exact: true }).waitFor();
+    await dialog.getByText("Work", { exact: true }).first().waitFor();
+    const comparison = await dialog.evaluate(node => {
+      const body = node.querySelector(".settings-task-body");
+      const visible = element => { const rect = element.getBoundingClientRect(), limit = body.getBoundingClientRect(); return rect.top >= limit.top && rect.bottom <= limit.bottom; };
+      return { lists: node.querySelectorAll(".routing-candidates").length, result: visible(node.querySelector(".routing-result")), eligibility: [...node.querySelectorAll(".routing-eligibility")].map(visible), scrollTop: body.scrollTop };
+    });
+    assert.equal(comparison.lists, 1);
+    assert(comparison.result && comparison.eligibility.length === 2 && comparison.eligibility.every(Boolean) && comparison.scrollTop === 0, "Selected result and both eligibility states fit before scrolling");
+    assert.equal(await dialog.locator(".routing-source-id").evaluate(node => node.open), false);
+    await dialog.locator(".routing-source-id summary").focus(); await page.keyboard.press("Enter");
+    assert(await dialog.locator(".routing-source-id code").first().isVisible());
+    await page.keyboard.press("Escape"); await dialog.waitFor({ state: "hidden" });
+    assert(await opener.evaluate(node => node === document.activeElement));
     cases++;
   }
   assert.deepEqual(errors, []);

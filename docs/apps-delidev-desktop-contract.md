@@ -860,7 +860,7 @@ Validation covers open/close/save/failure/denial, unchanged list position, disca
 Routing preview remains a read-only 768px Settings task. Its fixed header shows
 `Preview routing`, the complete Agent Worker name and selected-server scope. The
 scrolling body orders read-only context, server selection result, project scope
-and refresh, routing policy, ordered source decisions and candidate evidence.
+and refresh, ordered source comparisons and any distinct final decision evidence.
 The top-level task delegates dismissal to its fixed header Close control (X)
 and Escape, without a duplicate footer Close action or empty footer spacing.
 Both dismissal paths share task disposal, background release and
@@ -871,7 +871,7 @@ is added.
 Use stored account names/aliases as the primary identity and the explicit
 subscription service or saved API provider name as secondary context. Resolve
 unique candidate and selected-account IDs through existing authenticated
-`ResourceService.GetResource` reads, with at most four concurrent reads. Verify
+`ResourceService.GetResource` reads, with at most four concurrent metadata reads shared across the category owner, account/provider lookups and response generations, including nested task close/reopen while the category remains mounted. Hold each permit until the deepest original upstream unary RPC settles, even when an intermediate Settings guard cancels its visible wait first. Preserve immediate visible cancellation and stale-result fences; completion observation grants no new read or mutation authority. Empty source groups resolve exact API provider references through the same bounded reader. Verify
 the exact requested ID, kind, positive revision and supported schema. Reject
 retired metadata. Provider display names require the same checks. Keep only safe
 name/service/provider-reference projections in private, task-scoped query
@@ -880,10 +880,7 @@ URLs or inferred email identities. A shared provider is read once per batch.
 Project/result changes and task disposal fence old reads and late continuations.
 Names do not modify the server's selection, order or execution eligibility.
 
-Each candidate card shows its alias, service/provider, eligibility and labeled
-weight/quota evidence. Score and reset time appear only when returned. Complete
-account UUIDs remain in keyboard-operable, initially collapsed Account ID
-disclosures, including the selected-account summary. Duplicate aliases remain
+Each source shows divided comparison rows with alias, service/provider, eligibility, selection marker and labeled weight/quota evidence. Show routing policy once per group. Keep returned score/reset and complete account UUIDs in keyboard-operable, initially collapsed Account ID disclosures. The compact selected summary retains alias/service and selected readable source/native model context. Source headings show validated service/provider names and native models; exact source keys and model UUIDs remain in initially collapsed source identity details. Preserve a distinct final-result section unless its complete ordered decision evidence exactly matches the selected source: selected identity, policy, fallback and every candidate eligibility/quota/weight/score/reset field, including additional supplied evidence. Source indexes, aliases and account IDs alone cannot establish equality. Duplicate aliases remain
 independent IDs. Loading metadata uses explicit placeholders; missing, denied,
 invalid or unsupported metadata shows Account information unavailable. A failed
 provider read preserves an available account alias and marks service information
@@ -898,8 +895,7 @@ present another project's result as current. General Chat remains the explicit
 project-free option. Refresh performs only read-only preview and metadata reads.
 
 Use existing theme tokens, 16px modal corners, 8px cards/controls, 40px controls,
-24px body spacing and the shared narrow-screen padding. Below 640px available
-body width, project controls, card headings and evidence fields stack. Full
+compact comparison spacing and the shared narrow-screen padding. Below 640px available body width, project controls and comparison fields stack. Full
 names and identifiers wrap without horizontal scrolling. At viewport heights of
 480px or less, preview-only compact vertical padding preserves fixed actions;
 the header subtitle is visually limited to two lines and the complete Worker

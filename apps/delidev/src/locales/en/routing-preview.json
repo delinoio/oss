@@ -34,5 +34,10 @@
   "routing-preview.incompatibleAccount": "Incompatible account",
   "routing-preview.disabled": "Disabled",
   "routing-preview.exhausted": "Exhausted",
-  "routing-preview.automaticExcluded": "Excluded from automatic routing"
+  "routing-preview.automaticExcluded": "Excluded from automatic routing",
+  "routing-preview.modelUnavailable": "Model information unavailable",
+  "routing-preview.sourceDetails": "Source identities",
+  "routing-preview.sourceKey": "Source key",
+  "routing-preview.modelId": "Model ID",
+  "routing-preview.finalResult": "Final result candidates"
 }

@@ -16,7 +16,7 @@ import { RoutingMetadataState, useRoutingAccountMetadata, type RoutingAccountMet
 import "./routing-preview.css";
 
 interface Candidate { id: string; eligibility: string; quota_state: string; weight: number; score?: number | null; reset_at?: string | null }
-interface Route { policy: string; selected?: string; candidates: Candidate[]; fallback?: boolean; sources?: Source[]; source_index?: number }
+interface Route { evidence: Document; policy: string; selected?: string; candidates: Candidate[]; fallback?: boolean; sources?: Source[]; source_index?: number }
 interface Source { source: string; model_id: string; native_model: string; route: Route; problem?: Document }
 function routeEvidence(value: unknown, nested = false): Route | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
@@ -38,7 +38,8 @@ function routeEvidence(value: unknown, nested = false): Route | undefined {
     sources.push({ source: source.source, model_id: source.model_id, native_model: source.native_model, route, problem: source.problem as Document | undefined });
   }
   if (data.source_index !== undefined && (!Number.isInteger(data.source_index) || Number(data.source_index) < 0 || Number(data.source_index) >= sources.length)) return;
-  return { policy: data.policy, selected: text(data.selected), candidates, fallback: data.fallback as boolean | undefined, sources, source_index: data.source_index as number | undefined };
+  const { sources: _sources, source_index: _sourceIndex, ...evidence } = data;
+  return { evidence, policy: data.policy, selected: text(data.selected), candidates, fallback: data.fallback as boolean | undefined, sources, source_index: data.source_index as number | undefined };
 }
 const policyLabels: Record<Routing, MessageKey> = {
   [Routing.Fixed]: "routing-preview.policyFixed", [Routing.Priority]: "routing-preview.policyPriority",
@@ -62,11 +63,22 @@ function AccountId({ id }: { id: string }) {
 }
 function Candidates({ route, metadata }: { route: Route; metadata: Map<string, RoutingAccountMetadata> }) {
   return route.candidates.length ? <ul className="routing-candidates">{route.candidates.map(candidate => <li key={candidate.id} className="routing-candidate" data-selected={route.selected === candidate.id}>
-    <div className="routing-candidate-heading"><AccountIdentity metadata={metadata.get(candidate.id)} /><span className="routing-eligibility" data-warning={candidate.eligibility !== "eligible"}>{eligibilityLabel(candidate.eligibility)}</span></div>
-    {route.selected === candidate.id ? <p className="routing-selected-label">{copy("routing-preview.selectedAccount")}</p> : null}
-    <dl className="routing-candidate-evidence"><div><dt>{copy("routing-preview.weight")}</dt><dd>{candidate.weight}</dd></div><div><dt>{copy("routing-preview.quota")}</dt><dd>{statusLabel(candidate.quota_state)}</dd></div>{typeof candidate.score === "number" ? <div><dt>{copy("routing-preview.score")}</dt><dd>{candidate.score}</dd></div> : null}{candidate.reset_at ? <div><dt>{copy("routing-preview.reset")}</dt><dd>{<Timestamp value={candidate.reset_at} />}</dd></div> : null}</dl>
-    <AccountId id={candidate.id} />
+    <div className="routing-candidate-heading"><AccountIdentity metadata={metadata.get(candidate.id)} /><span className="routing-eligibility" data-warning={candidate.eligibility !== "eligible"}>{eligibilityLabel(candidate.eligibility)}</span>{route.selected === candidate.id ? <span className="routing-selected-label">{copy("routing-preview.selectedAccount")}</span> : null}</div>
+    <dl className="routing-candidate-evidence"><div><dt>{copy("routing-preview.weight")}</dt><dd>{candidate.weight}</dd></div><div><dt>{copy("routing-preview.quota")}</dt><dd>{statusLabel(candidate.quota_state)}</dd></div></dl>
+    <details className="routing-account-id"><summary>{copy("routing-preview.accountId")}</summary><code>{candidate.id}</code><dl className="routing-detail-evidence">{typeof candidate.score === "number" ? <div><dt>{copy("routing-preview.score")}</dt><dd>{candidate.score}</dd></div> : null}{candidate.reset_at ? <div><dt>{copy("routing-preview.reset")}</dt><dd><Timestamp value={candidate.reset_at} /></dd></div> : null}</dl></details>
   </li>)}</ul> : <p className="routing-empty">{copy("routing-preview.noCandidates")}</p>;
+}
+// Object keys are representation details; ordered arrays and every supplied
+// decision field remain evidence. Structural source indexes grant no equality.
+function canonicalEvidence(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalEvidence).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalEvidence(item)}`).join(",")}}`;
+  return JSON.stringify(value) ?? "undefined";
+}
+function sameDecision(first: Route, second: Route) { return canonicalEvidence(first.evidence) === canonicalEvidence(second.evidence); }
+function SourceLabel({ source, metadata }: { source: Source; metadata: Map<string, RoutingAccountMetadata> }) {
+  const name = metadata.get(`source:${source.source}`);
+  return <span>{!name || name.state === RoutingMetadataState.Loading ? copy("routing-preview.loadingSource") : name.name || copy("routing-preview.sourceUnavailable")} · {source.native_model || copy("routing-preview.modelUnavailable")}</span>;
 }
 function Fallback({ route }: { route: Route }) { return route.fallback ? <p className="routing-fallback">{copy("configuration-actions.insufficientComparableQuotaEvidenceTheServer_95890b")}</p> : null; }
 export function RoutingPreview({ agent, active, close }: { agent: Resource; active: boolean; close: () => void }) {
@@ -78,17 +90,19 @@ export function RoutingPreview({ agent, active, close }: { agent: Resource; acti
     try { return result.data ? routeEvidence(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.data.routeJson))) : undefined; } catch { return undefined; }
   }, [result.data]);
   const ids = route ? [route.selected, ...route.candidates.map(candidate => candidate.id), ...(route.sources ?? []).flatMap(source => [source.route.selected, ...source.route.candidates.map(candidate => candidate.id)])].filter((id): id is string => Boolean(id)) : [];
-  const metadata = useRoutingAccountMetadata(ids, active, `${agent.id}:${project}:${result.dataUpdatedAt}`);
+  const metadata = useRoutingAccountMetadata(ids, active, `${agent.id}:${project}:${result.dataUpdatedAt}`, route?.sources?.map(source => source.source));
+  const selectedSource = route?.source_index === undefined ? undefined : route.sources?.[route.source_index];
+  const repeatedFinal = route && selectedSource && sameDecision(route, selectedSource.route);
   return <section className="routing-preview" aria-label={copy("routing-preview.label", { v0: resourceName(agent) })}>
     <p className="routing-agent-name">{resourceName(agent)}</p>
     <span className="routing-read-only">{copy("routing-preview.readOnly")}</span>
-    {route ? <div className="routing-result" data-warning={!route.selected} role="status"><span aria-hidden="true" className="routing-result-icon">{route.selected ? "✓" : "!"}</span><div><h3>{route.selected ? copy("routing-preview.selectedAccount") : copy("routing-preview.noEligible")}</h3>{route.selected ? <><AccountIdentity metadata={metadata.get(route.selected)} /><AccountId id={route.selected} /></> : <p>{copy("routing-preview.reviewStatus")}</p>}</div></div> : result.isPending && !result.error ? <p role="status">{copy("routing-preview.loading")}</p> : null}
+    {route ? <div className="routing-result" data-warning={!route.selected} role="status"><span aria-hidden="true" className="routing-result-icon">{route.selected ? "✓" : "!"}</span><div><h3>{route.selected ? copy("routing-preview.selectedAccount") : copy("routing-preview.noEligible")}</h3>{route.selected ? <><AccountIdentity metadata={metadata.get(route.selected)} />{selectedSource ? <SourceLabel source={selectedSource} metadata={metadata} /> : null}<AccountId id={route.selected} /></> : <p>{copy("routing-preview.reviewStatus")}</p>}</div></div> : result.isPending && !result.error ? <p role="status">{copy("routing-preview.loading")}</p> : null}
     <div className="routing-project"><div className="routing-project-controls"><ResourceChoice label={copy("configuration-actions.project_985959")} emptyLabel={copy("documents.generalChat_f634bc")} kind={EntityKind.PROJECT} value={project} change={setProject} active={active} disabled={!active} /><button type="button" disabled={!active || result.isFetching} aria-label={copy("configuration-actions.refreshRoutingPreview_3b8c83")} onClick={() => void result.refetch()}>{result.isFetching ? copy("routing-preview.refreshing") : copy("routing-preview.refresh")}</button></div><p>{project ? copy("configuration-actions.usingTheSelectedProjectSRestrictions_f4c29e") : copy("configuration-actions.generalChatNoProjectRestrictions_abff59")}</p></div>
     {result.error && route ? <p role="status">{copy("routing-preview.refreshFailed")}</p> : null}<Problem error={result.error} actions={result.error ? <button type="button" disabled={!active || result.isFetching} onClick={() => void result.refetch()}>{copy("ui.retryCurrentRead")}</button> : undefined} />
     {result.data && !route ? <p role="alert">{copy("configuration-actions.routingEvidenceIsUnavailable_3f3ff4")}</p> : null}
-    {route ? <><dl className="routing-policy"><div><dt>{copy("routing-preview.policy")}</dt><dd>{policyLabel(route.policy)}</dd></div></dl><Fallback route={route} />
-      {route.sources?.length ? <section className="routing-sources"><h3>{copy("configuration-actions.sourceDecisions")}</h3><ol>{route.sources.map((source, index) => <li key={`${index}:${source.source}`} className="routing-source"><h4>{index + 1} · {source.source}{route.source_index === index ? copy("configuration-actions.selectedSource") : ""}</h4><p>{copy("configuration-actions.sourceModel", { v0: source.native_model, v1: source.model_id })}</p>{source.problem ? <ServiceProblem code={text(source.problem.code)}>{text(source.problem.message)}</ServiceProblem> : null}<dl className="routing-policy"><div><dt>{copy("routing-preview.policy")}</dt><dd>{policyLabel(source.route.policy) || statusLabel("unknown")}</dd></div></dl><Fallback route={source.route} /><Candidates route={source.route} metadata={metadata} /></li>)}</ol></section> : null}
-      <section className="routing-account-section"><h3>{copy("routing-preview.candidates")}</h3><Candidates route={route} metadata={metadata} /></section></> : null}
+    {route ? <>
+      {route.sources?.length ? <section className="routing-sources"><h3>{copy("configuration-actions.sourceDecisions")}</h3><ol>{route.sources.map((source, index) => <li key={`${index}:${source.source}`} className="routing-source"><h4>{index + 1} · <SourceLabel source={source} metadata={metadata} />{route.source_index === index ? copy("configuration-actions.selectedSource") : ""}</h4><details className="routing-source-id"><summary>{copy("routing-preview.sourceDetails")}</summary><dl><div><dt>{copy("routing-preview.sourceKey")}</dt><dd><code>{source.source}</code></dd></div><div><dt>{copy("routing-preview.modelId")}</dt><dd><code>{source.model_id}</code></dd></div></dl></details>{source.problem ? <ServiceProblem code={text(source.problem.code)}>{text(source.problem.message)}</ServiceProblem> : null}<dl className="routing-policy"><div><dt>{copy("routing-preview.policy")}</dt><dd>{policyLabel(source.route.policy) || statusLabel("unknown")}</dd></div></dl><Fallback route={source.route} /><Candidates route={source.route} metadata={metadata} /></li>)}</ol></section> : null}
+      {!repeatedFinal ? <section className="routing-account-section"><h3>{route.sources?.length ? copy("routing-preview.finalResult") : copy("routing-preview.candidates")}</h3><dl className="routing-policy"><div><dt>{copy("routing-preview.policy")}</dt><dd>{policyLabel(route.policy)}</dd></div></dl><Fallback route={route} /><Candidates route={route} metadata={metadata} /></section> : null}</> : null}
     <p className="routing-note">{copy("configuration-actions.thisPreviewIsReadOnlyAnd_dd9bb1")}</p>
     <SettingsTaskActions><SettingsTaskDismissButton type="button" data-settings-task-cancel onClick={closeTask}>{copy("settings-task.close")}</SettingsTaskDismissButton></SettingsTaskActions>
   </section>;
