@@ -48,5 +48,9 @@
   "local-worker-controls.autoRetryingBadge": "Retrying",
   "local-worker-controls.autoCheckingBadge": "Checking",
   "local-worker-controls.viewProblemDetails": "View problem details",
-  "local-worker-controls.problemTitle": "Local Worker problem"
+  "local-worker-controls.problemTitle": "Local Worker problem",
+  "local-worker-controls.compactRunning": "Process running · Readiness checked separately",
+  "local-worker-controls.quitOwnedSummary": "Stops when you quit DeliDev.",
+  "local-worker-controls.quitBorrowedSummary": "Keeps running after you quit DeliDev.",
+  "local-worker-controls.details": "Details"
 }
