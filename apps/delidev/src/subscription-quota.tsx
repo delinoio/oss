@@ -85,7 +85,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const keepCredit = () => {
     setConfirmation(undefined);
     const opener = selectionOpener.current;
-    if (opener?.isConnected && !opener.closest("[hidden]")) opener.focus(); else sectionHeading.current?.focus();
+    if (opener?.isConnected && !opener.matches(":disabled") && !opener.closest("[hidden], [inert]")) opener.focus(); else sectionHeading.current?.focus();
   };
   const exactConfirmation = confirmation && confirmation.account.id === current.id && confirmation.account.revision === current.revision && confirmation.connection === connection && confirmation.generation === generation && confirmation.inventoryId === inventory.observation_id && confirmation.machine === (serverCreditAvailable ? "" : ownerMachine);
   const saveRecoveryNotifications = (enabled: boolean) => {

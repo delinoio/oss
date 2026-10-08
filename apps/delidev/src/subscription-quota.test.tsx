@@ -25,7 +25,7 @@ function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLim
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  function Harness() {
     const [current, setCurrent] = useState(account), [, setBusy] = useState(false);
-    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button></MutationIntents></TransportProvider></QueryClientProvider>;
+    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button></MutationIntents></TransportProvider></QueryClientProvider>;
   }
   return { Harness, request, reconcile, account, machine, connection, generation, inventory };
 }
@@ -188,4 +188,18 @@ it("locale changes and collapsed details retain the original exact selection wit
  try {await i18n.changeLanguage("ko");expect(await screen.findByRole("button",{name:"리셋권 사용 확인"})).toBeTruthy();expect(screen.getByText("리셋권 credit_1 사용")).toBeTruthy();expect(value.request).not.toHaveBeenCalled();}
  finally {await i18n.changeLanguage("en")}
  expect(screen.getByRole("button",{name:"Confirm credit consumption"})).toBeTruthy();
+});
+
+it("restores the section heading when background inventory disables the original selection opener",async()=>{
+ const value=fixture();render(<value.Harness />);await selectExactCredit();
+ fireEvent.click(screen.getByRole("button",{name:"Remove fixture credits"}));
+ expect((screen.getByRole("button",{name:"Select credit credit_1"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
+ expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();
+});
+it("restores the section heading instead of an inert original selection opener",async()=>{
+ const value=fixture();render(<value.Harness />);await selectExactCredit();
+ screen.getByRole("button",{name:"Select credit credit_1"}).closest(".reset-credit-rows")!.setAttribute("inert","");
+ fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
+ expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();
 });
