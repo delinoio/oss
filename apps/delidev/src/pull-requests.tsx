@@ -185,7 +185,7 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
       <Problem error={selectedQuery.error} />
       {!repositoryId ? <p>{copy("pull-requests.selectOneConfiguredRepositoryInThe_6c065a")}</p> : null}
       {repositoryId && !selectedQuery.isPending && !selected ? <p role="alert">{copy("pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad")}</p> : null}
-      {selected && !configured ? <p>{copy("pull-requests.configureThisRepositorySGithubProfile_86db03")}</p> : null}
+      {selected && !configured ? <><p>{copy("pull-requests.configureThisRepositorySGithubProfile_86db03")}</p><div className="actions"><button type="button" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.GitProfiles); }}>{copy("pull-requests.githubProfiles")}</button></div></> : null}
       {selected && configured && !loaded ? <p>{copy("pull-requests.chooseTheStateAndOptionalTitle_5fb280")}</p> : null}
       {resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey ? <StandalonePullRequestResults key={loaded.scopeKey} selected={selected!} navigation={navigation} active={active} changeNavigation={setNavigation} pending={<PendingPRActions />} /> : null}
     </section>

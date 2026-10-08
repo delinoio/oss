@@ -27,15 +27,16 @@ function fixture(rows = [repository()]) {
     const q = JSON.parse(new TextDecoder().decode(request.queryJson));
     return { schemaVersion: 1, documentJson: encode({ repository_id: row.id, repository_revision: row.revision.toString(), profile_id: config.integration_id, generation_id: newRequestId(), observed_at: "2026-09-28T00:00:00Z", identity: { id: "17", node_id: "U_17", login: "fixture-user" }, repository: { provider: "github.com", id: "37", node_id: "R_37", owner: "owner", name: "repo", private: true }, query: q, items: [{ provider: "github.com", kind: "pull-request", identity_source: q.operation === "search" ? "issue-api" : "pull-request-api", id: "9007199254740993", node_id: "ITEM_17", number: "17", title: "Original fixture title", state: "open", created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-28T00:00:00Z", author: { id: "19", node_id: "U_19", login: "fixture-author", kind: "user", provider_type: "User" }, url: "https://github.com/owner/repo/pull/17", draft: false }], ...(q.operation === "search" ? { total_count: "1", incomplete: false } : {}) }) };
   });
+  const mutation = vi.fn(async () => ({}));
   const preferences = create(NotificationPreferencesSchema, { revision: 1n });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
     router.service(ResourceService, { listResources: list, getResource: get });
     router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences }) });
-    router.service(IntegrationService, { queryRepositoryIntegration: query });
+    router.service(IntegrationService, { queryRepositoryIntegration: query, saveIntegrationProfile: mutation, replaceIntegrationToken: mutation, validateIntegrationProfile: mutation, deleteIntegrationProfile: mutation });
   });
-  return { transport, rows, list, get, query, fail: (code?: Code) => { failure = code; }, defer: (promise?: Promise<void>) => { gate = promise; } };
+  return { transport, rows, list, get, query, mutation, fail: (code?: Code) => { failure = code; }, defer: (promise?: Promise<void>) => { gate = promise; } };
 }
 async function open() {
   fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
@@ -58,6 +59,7 @@ it("shows the approved empty-page hierarchy and scopes styles only while PR is a
   expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull();
   expect(pane.queryByRole("heading", { name: "Query options" })).toBeNull();
   expect(pane.getByRole("button", { name: "Repository settings" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
   expect(window.document.querySelector(".sidebar-pull-requests")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   expect(window.document.querySelector(".sidebar-pull-requests")).toBeNull();
@@ -68,6 +70,7 @@ it("shows only the selected name and sends only the explicit default Load", asyn
   const value = fixture(); render(<App transport={value.transport} />);
   const pane = await open(); await choose(value.rows[0]);
   expect(pane.getByRole("heading", { name: "Query options" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
   const row = pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
   expect(row.textContent).toBe("Example repository");
   expect(row.querySelector("button")).toBeNull();
@@ -242,8 +245,20 @@ it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unco
   fireEvent.change(search, { target: { value: "is:pr" } });
   expect(pane.getByRole("alert").textContent).toMatch(/Use plain words/);
   expect(value.query).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "GitHub profiles" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Git Profiles" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+  expect(screen.queryByRole("dialog")).toBeNull(); expect(value.mutation).not.toHaveBeenCalled(); expect(value.query).not.toHaveBeenCalled();
+  await open(); expect((screen.getByLabelText("Search title and body") as HTMLInputElement).value).toBe("is:pr");
 });
 
+it("hides the profile shortcut before selection and for an unavailable selected repository", async () => {
+  const value = fixture(); value.get.mockResolvedValue({ resource: undefined }); render(<App transport={value.transport} />);
+  await open(); expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` }));
+  await screen.findByText("This repository is no longer available. Refresh the repository catalog and choose another entry.");
+  expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull(); expect(value.query).not.toHaveBeenCalled(); expect(value.mutation).not.toHaveBeenCalled();
+});
 
 it("uses standalone cards with exact UTC precision, Draft and unknown author evidence across language changes", async () => {
   const value = fixture(), original = value.query.getMockImplementation()!;
