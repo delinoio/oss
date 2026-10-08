@@ -374,3 +374,9 @@ The same pre-copy eligibility reserves the complete child native checkpoint unde
 ## Image ownership at the Fork boundary
 
 Independent Fork publication atomically adds child ownership for images in the original accepted prefix through the completed native boundary. Later source inputs grant no child ownership. Child references survive source deletion. Last-owner deletion retains the original Worker device and joined native cleanup. Follow the image-input and storage contracts.
+
+### OpenCode child completed-report recovery
+
+Verified OpenCode Fork publication retains the exact original creation request in the immutable child-owned seed. First and all later child executions use that marker and the independent Fork runtime for read-only completed-report recovery, without a synthetic first execution at the runtime ID or a surviving parent job. Native resumed claim version 2 is separate from execution assignment versions 3 and 4. Current binding/input requests, original assignment revision/digests, accepted inputs, Worker device, checkpoint and cleanup remain independently checked; successful reconciliation preserves the report and leaves dispatch paused.
+
+Legacy seeds with an omitted marker may resolve only through the exact retained succeeded Fork job, original input digest and validated complete input/output, source/child/runtime/native checkpoint, original device, snapshot/account/connection and configuration. Missing, deleted, changed or ambiguous proof retains recovery; no marker comes from a native ID and Fork is never repeated. The additive private field is omitted from old records and needs no migration or protocol allocation.

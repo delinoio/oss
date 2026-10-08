@@ -6,20 +6,21 @@ import "encoding/json"
 // ForkOrigin is a retained boundary, never an executable copy of source input.
 // Snapshot remains immutable even before the child's first explicit input.
 type ForkOrigin struct {
-	Startup                *ExecutionStartupSelection `json:"startup,omitempty"`
-	SidechatParentSnapshot *InitialExecution          `json:"sidechat_parent_snapshot,omitempty"`
-	SourceSessionID        ID                         `json:"source_session_id"`
-	SourceRevision         uint64                     `json:"source_revision"`
-	SourceExecutionID      ID                         `json:"source_execution_id"`
-	SourceTurnID           NativeIdentity             `json:"source_turn_id"`
-	JobID                  ID                         `json:"job_id"`
-	RuntimeID              ID                         `json:"runtime_id"`
-	NativeThreadID         NativeIdentity             `json:"native_thread_id"`
-	NativeTurnID           NativeIdentity             `json:"native_turn_id,omitempty"`
-	CheckpointDigest       string                     `json:"checkpoint_digest"`
-	Snapshot               InitialExecution           `json:"snapshot"`
-	WorkerDeviceID         ID                         `json:"worker_device_id"`
-	JobInputDigest         string                     `json:"job_input_digest"`
+	OpenCodeCreationRequestID ID                         `json:"opencode_creation_request_id,omitempty"`
+	Startup                   *ExecutionStartupSelection `json:"startup,omitempty"`
+	SidechatParentSnapshot    *InitialExecution          `json:"sidechat_parent_snapshot,omitempty"`
+	SourceSessionID           ID                         `json:"source_session_id"`
+	SourceRevision            uint64                     `json:"source_revision"`
+	SourceExecutionID         ID                         `json:"source_execution_id"`
+	SourceTurnID              NativeIdentity             `json:"source_turn_id"`
+	JobID                     ID                         `json:"job_id"`
+	RuntimeID                 ID                         `json:"runtime_id"`
+	NativeThreadID            NativeIdentity             `json:"native_thread_id"`
+	NativeTurnID              NativeIdentity             `json:"native_turn_id,omitempty"`
+	CheckpointDigest          string                     `json:"checkpoint_digest"`
+	Snapshot                  InitialExecution           `json:"snapshot"`
+	WorkerDeviceID            ID                         `json:"worker_device_id"`
+	JobInputDigest            string                     `json:"job_input_digest"`
 }
 
 type ForkJobInput struct {
@@ -158,6 +159,9 @@ func (f ForkOrigin) Validate() error {
 		}
 	}
 	harness := f.Snapshot.Configuration.Harness
+	if f.OpenCodeCreationRequestID != "" && (harness != OpenCode || f.OpenCodeCreationRequestID.Validate() != nil || UniqueIDs([]ID{f.OpenCodeCreationRequestID, f.JobID, f.RuntimeID, f.SourceSessionID, f.SourceExecutionID}) != nil) {
+		return Fail(RecoveryRequired, "The child lost its original OpenCode creation identity.", "Preserve the child-owned Fork seed and checkpoint.")
+	}
 	validProfile := harness == Codex && f.NativeTurnID == "" || harness == OpenCode && f.NativeTurnID.Validate(OpenCode, NativeTurnIdentity) == nil && f.NativeTurnID != f.SourceTurnID
 	digest, err := f.Snapshot.Configuration.Digest()
 	if err != nil || digest != f.Snapshot.ConfigurationDigest || !validProfile || f.SourceRevision == 0 || f.SourceSessionID.Validate() != nil || f.SourceExecutionID.Validate() != nil || f.JobID.Validate() != nil || f.RuntimeID.Validate() != nil || f.WorkerDeviceID.Validate() != nil || f.NativeThreadID.Validate(harness, NativeThreadIdentity) != nil || f.SourceTurnID.Validate(harness, NativeTurnIdentity) != nil || !canonicalDigest(f.CheckpointDigest) || !canonicalDigest(f.JobInputDigest) || f.Snapshot.InitialAccountID.Validate() != nil || f.Snapshot.ConnectionID.Validate() != nil {
