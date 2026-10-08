@@ -44,7 +44,8 @@ try {
     if (await page.locator(".sidebar-context-trigger").isVisible()) await page.locator(".sidebar-context-trigger").click();
     await page.locator(`[data-settings-category="${category}"]`).click();
   };
-  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480], [480,320]]) {
+  // Half-size CSS viewports cover effective 200% reflow; native chrome zoom remains separate.
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1280,820], [960,640], [640,480], [720,450], [480,320]]) {
     const copy = key => catalogs[language][`network-settings.${key}`];
     await page.setViewportSize({ width, height });
     await page.goto(`${origin}/?populated=true&networkFixture=populated&theme=${theme}&language=${language}`);
@@ -53,7 +54,32 @@ try {
     const opener = page.getByRole("button", { name: copy("networkSettings_600f22"), exact: true });
     await opener.waitFor().catch(async error => { console.error(await page.locator("body").innerText()); console.error(failures); throw error; });
     assert.deepEqual(await page.evaluate(() => window.networkFixtureReads), { route: 0, profiles: 0, writes: 0 });
-    await opener.focus(); await opener.press("Enter");
+    const preferenceActions = page.locator(".server-preferences-actions > button");
+    await preferenceActions.first().waitFor();
+    const ordinaryStyles = () => preferenceActions.evaluateAll(nodes => nodes.map(node => {
+      const css = getComputedStyle(node);
+      return { fontSize: css.fontSize, lineHeight: css.lineHeight, border: css.borderTopColor, paddingLeft: css.paddingLeft, paddingRight: css.paddingRight, marker: getComputedStyle(node, "::before").content };
+    }));
+    const ordinaryBefore = await ordinaryStyles();
+    assert.equal(ordinaryBefore.length, 2, "Save and Discard remain ordinary settings actions");
+    assert(ordinaryBefore.every(style => style.fontSize === "14px" && style.lineHeight === "20px" && style.marker === "none" && Number.parseFloat(style.paddingLeft) > 0), JSON.stringify(ordinaryBefore));
+    const productionStyle = async expanded => {
+      const style = await opener.evaluate(node => {
+        const css = getComputedStyle(node), marker = getComputedStyle(node, "::before"), box = node.getBoundingClientRect();
+        return { border: css.borderTopColor, background: css.backgroundColor, fontSize: css.fontSize, lineHeight: css.lineHeight, fontWeight: css.fontWeight, paddingLeft: css.paddingLeft, paddingRight: css.paddingRight, height: box.height, marker: marker.content, markerGap: marker.marginRight, overflow: node.scrollWidth > node.clientWidth, outlineWidth: css.outlineWidth, outlineStyle: css.outlineStyle, outlineColor: css.outlineColor };
+      });
+      const context = JSON.stringify({ language, theme, width, height, expanded, style });
+      assert.equal(style.border, "rgba(0, 0, 0, 0)", context);
+      assert.equal(style.background, "rgba(0, 0, 0, 0)", context);
+      assert.equal(style.fontSize, "16px", context); assert.equal(style.lineHeight, "24px", context); assert.equal(style.fontWeight, "600", context);
+      assert.equal(style.paddingLeft, "0px", context); assert.equal(style.paddingRight, "0px", context);
+      assert(style.height >= 40 && !style.overflow, context);
+      assert.equal(style.marker, expanded ? '"▾"' : '"▸"', context); assert.equal(style.markerGap, "12px", context);
+      assert(Number.parseFloat(style.outlineWidth) >= 2 && style.outlineStyle !== "none" && style.outlineColor !== "rgba(0, 0, 0, 0)", context);
+    };
+    await page.keyboard.press("Tab"); await opener.focus(); await productionStyle(false); await opener.press("Enter");
+    await productionStyle(true);
+    assert.deepEqual(await ordinaryStyles(), ordinaryBefore, "Opening Network preserves ordinary Save and Discard styling");
     await page.getByRole("heading", { name: copy("currentRoute"), exact: true }).waitFor();
     await page.locator(".network-profile-row").waitFor();
     assert.equal(await page.getByRole("dialog").count(), 0, "Network expands without an outer modal");

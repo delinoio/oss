@@ -32,9 +32,6 @@
 .server-preferences-editor .server-preferences-actions { justify-content: flex-end; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
 .server-preferences-status { color: var(--muted); margin-inline-end: auto; }
 .server-preferences-network { max-width: 720px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
-.server-preferences-network > section > button { padding-inline: 0; border-color: transparent; background: transparent; text-align: left; }
-.server-preferences-network > section > button::before { content: "▸"; display: inline-block; margin-right: 12px; }
-.server-preferences-network > section > button[aria-expanded=true]::before { content: "▾"; }
 .server-preferences-unavailable { margin-bottom: 24px; }
 .settings-server-preferences .actions, .settings-server-preferences .problem, .settings-server-preferences .notice { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 1099px) {
