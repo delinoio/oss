@@ -142,3 +142,52 @@ func TestPreparationCanceledReportLossReconcilesOriginalReadLane(t *testing.T) {
 		t.Fatal(v, e)
 	}
 }
+
+func TestPreparationFailedMutationJoinsBeforeCleanup(t *testing.T) {
+	f, ctx, _, id, raw := journalFixture(t)
+	if _, e := f.service.Store.Mutate(ctx, id, "session.create", raw, func(*store.Tx) (any, error) {
+		return nil, domain.Fail(domain.Conflict, "fixture concurrent revision change", "")
+	}); e == nil {
+		t.Fatal("failed original mutation accepted")
+	}
+	if e := f.service.reconcileSkillPreparations(ctx); e != nil {
+		t.Fatal(e)
+	}
+	v, _ := f.service.retainedSkillPreparation(id)
+	if v.State != skillPreparationPending {
+		t.Fatal("mutation ownership was not joined", v.State)
+	}
+	f.service.finishSkillPreparation(id)
+	if e := f.service.reconcileSkillPreparations(ctx); e != nil {
+		t.Fatal(e)
+	}
+	v, _ = f.service.retainedSkillPreparation(id)
+	if v.State != skillPreparationCleaning {
+		t.Fatal("positively absent receipt did not retain offline cleanup", v.State)
+	}
+}
+func TestPreparationExclusiveStoreRestartRetainsOriginalOfflineCleanup(t *testing.T) {
+	f, ctx, scope, id, _ := journalFixture(t)
+	root := f.service.Store.Root()
+	if e := f.service.Store.Close(); e != nil {
+		t.Fatal(e)
+	}
+	reopened, e := store.Open(ctx, root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { reopened.Close() })
+	// Real restart discards process-local claims only after the exclusive Store
+	// lock proves the old server process cannot still publish an acceptance.
+	liveSkillPreparations.Lock()
+	delete(liveSkillPreparations.owners[root], id)
+	liveSkillPreparations.Unlock()
+	restarted := &Service{Store: reopened, Identity: f.service.Identity}
+	if e = restarted.reconcileSkillPreparations(ctx); e != nil {
+		t.Fatal(e)
+	}
+	v, e := restarted.retainedSkillPreparation(id)
+	if e != nil || v.State != skillPreparationCleaning || *v.Scope.Preparation != *scope.Preparation || v.Scope.WorkerDeviceID != scope.WorkerDeviceID {
+		t.Fatal(v, e)
+	}
+}
