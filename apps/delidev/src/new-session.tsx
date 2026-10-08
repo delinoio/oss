@@ -1,3 +1,4 @@
+import { useProjectPromptHistory } from "./project-prompt-history";
 import { useSkillCompletion } from "./skill-completion";
 import { acknowledgeImages } from "./image-input";
 import { ImageAttachmentInput, imageEntryHandlers } from "./image-attachments";
@@ -99,6 +100,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     const submitted = JSON.parse(new TextDecoder().decode(request.documentJson));
     if (UUID_V7.test(submitted.agent_id) && UUID_V7.test(submitted.machine_id)) preferences.remember({ agent_id: submitted.agent_id, machine_id: submitted.machine_id });
     images.controller.accepted(request.requestId, request.attachments.map(image => image.id));
+    endHistoryCycle.current();
     setPrompt("");
     skills.clearAccepted();
     setCreatedElsewhere(undefined);
@@ -177,7 +179,10 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const localDefaultEligible = !localDefault.isFetching && !localDefault.error && localDefaultRow?.id === localDefaultID && localDefaultRow.kind === EntityKind.MACHINE && localDefaultRow.revision > 0n && supportsResourceSchema(localDefaultRow) && localDefaultData.disabled !== true && localDefaultData.enabled !== false && projectEligible && (!project || workspace !== Workspace.Worktree || !items(document(selectedProject.data?.resource).repositories).length || localDefaultCapabilities.includes("remote-workspace-clone-v1") || localDefaultCapabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1));
   useEffect(() => { if (!blocked && workspace !== Workspace.Local && machine === localDefaultID && localDefaultID && eligibilityReadSettled(localDefault.isFetching, localDefault.error) && projectEligible && !localDefaultEligible) { setMachine(""); setLocalDefaultID(""); } }, [blocked, workspace, machine, localDefaultID, localDefault.isFetching, localDefault.error, projectEligible, localDefaultEligible]);
   const automaticChoicesEligible = (!localDefaultID || machine !== localDefaultID || workspace === Workspace.Local || localDefaultEligible) && (!restoration.current.agent || agent !== preferences.pair?.agent_id || agentEligible) && (!restoration.current.machine || workspace === Workspace.Local || machine !== preferences.pair?.machine_id || machineEligible);
+  const historyEditing = useRef(false);
+  const endHistoryCycle = useRef<() => void>(() => {});
   const updatePrompt = (value: string) => {
+    if (!historyEditing.current) endHistoryCycle.current();
     if (new TextEncoder().encode(value).byteLength > (256 << 10)) {
       setPromptLimit(true);
       return false;
@@ -188,6 +193,8 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     return true;
   };
   const skills = useSkillCompletion({ value: prompt, change: updatePrompt, textarea: firstMessage, machineId: machine, agentId: agent, projectId: project, active, disabled: blocked, enabled: status.data?.capabilities.includes(SystemCapability.NATIVE_SKILLS_V1) ?? false });
+  const promptHistory = useProjectPromptHistory({ projectId: generalChat ? "" : project, enabled: status.data?.capabilities.includes(SystemCapability.PROJECT_PROMPT_HISTORY_V1) ?? false, active, blocked, textarea: firstMessage, replace: (value, caret) => { historyEditing.current = true; try { skills.replaceUnbound(value, caret); } finally { historyEditing.current = false; } } });
+  endHistoryCycle.current = promptHistory.onEdit;
   const imageRoute = useImageRoute(machine, agent, active, images.images.length > 0);
   const canCreate = active && automaticTitles && Boolean(agent && machine && (prompt.trim() || images.images.length)) && (!images.images.length || imageRoute.ready) && !blocked && !skills.blocked && automaticChoicesEligible;
 
@@ -257,17 +264,18 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               id={`${idPrefix}-message`}
               name="first-message"
               aria-label={copy("new-session.firstMessage_ecffa2")}
+              aria-describedby={!generalChat && project && status.data?.capabilities.includes(SystemCapability.PROJECT_PROMPT_HISTORY_V1) ? "project-prompt-history-guidance" : undefined}
               placeholder={generalChat ? copy("new-session.generalChatPlaceholder") : copy("new-session.describeATaskAskAQuestion_4ed4ad")}
               value={prompt}
               onChange={(event) => skills.onChange(event.target.value,event.target.selectionStart)}
-              onSelect={skills.onSelect} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}
-              onKeyDown={event => { if (!skills.onKeyDown(event) && !event.nativeEvent.isComposing) shortcuts.onKeyDown(event); }}
+              onSelect={skills.onSelect} onCompositionStart={() => { skills.onCompositionStart(); promptHistory.onCompositionStart(); }} onCompositionEnd={() => { skills.onCompositionEnd(); promptHistory.onCompositionEnd(); }} {...skills.attributes}
+              onKeyDown={event => { if (!skills.onKeyDown(event) && !promptHistory.onKeyDown(event) && !event.nativeEvent.isComposing) shortcuts.onKeyDown(event); }}
               aria-keyshortcuts={shortcuts.aria(ShortcutId.NewSessionFocus, ShortcutId.NewSessionSend, ShortcutId.NewSessionNewline)}
               rows={5}
               required={!images.images.length}
               autoComplete="off"
             />
-            {skills.list}{skills.warning}
+            {skills.list}{skills.warning}{promptHistory.feedback}
             <ImageAttachmentInput draft={images} disabled={blocked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={machine} />
             <div className="new-session-toolbar">
               <div className="new-session-selectors">

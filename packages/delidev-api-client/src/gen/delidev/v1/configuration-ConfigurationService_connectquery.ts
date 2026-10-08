@@ -5,6 +5,16 @@
 import { ConfigurationService } from "./configuration_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.ConfigurationService.ListProjectPromptHistory
+ */
+export const listProjectPromptHistory = ConfigurationService.method.listProjectPromptHistory;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.ClearProjectPromptHistory
+ */
+export const clearProjectPromptHistory = ConfigurationService.method.clearProjectPromptHistory;
+
+/**
  * @generated from rpc delidev.v1.ConfigurationService.ExportConfiguration
  */
 export const exportConfiguration = ConfigurationService.method.exportConfiguration;

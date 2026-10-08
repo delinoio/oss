@@ -110,6 +110,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		// explicitly paired again after startup, never implicitly reattached.
 		"UPDATE entities SET body=json_set(body,'$.revoked',json('true')) WHERE kind='device' AND json_extract(body,'$.type')='worker'",
 		"DELETE FROM entities WHERE id IN (SELECT id FROM tombstones) OR session_id IN (SELECT id FROM tombstones WHERE kind='session')",
+		"DELETE FROM entities WHERE kind='project_prompt_history' AND project_id NOT IN (SELECT id FROM entities WHERE kind='project')",
 		// Preserve original backup-removal jobs exactly for the independent
 		// external obligation controller. These are the sole resumable jobs.
 		"DELETE FROM backup_deletions",

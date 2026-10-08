@@ -786,3 +786,9 @@ are not cleanup proof. Plain inputs add no package ownership and remain usable.
 Read preflight
 checks before new package preparation; the original acceptance transaction checks
 again atomically. Existing references are never evicted to make room.
+
+## Project first-prompt history (issue #1828)
+
+Public `CreateSession` appends the exact nonblank first prompt for accepted MANUAL or EXTERNAL_CLI project sessions. The original receipt transaction appends and prunes immutable project-owned entities to the latest 100 entries. Durable server event sequence determines acceptance order. Replay, rejection and rollback add nothing. Image-only, General Chat, follow-up, schedule, remediation, Fork and Sidechat flows add nothing. Text history includes no attachments, typed skill bindings or execution choices. Source-session deletion and queue edits retain original history. No backfill runs.
+
+`ListProjectPromptHistory` returns newest-first IDs, exact text, acceptance time and sequence. Owner and paired clients share authenticated server/project scope; Workers are rejected. Pages contain at most 100 entries and fit binary and JSON transport budgets. Signed cursors bind server, actor, project and page size; invalid scope returns the typed cursor error. `ClearProjectPromptHistory` requires explicit confirmation and an actor-bound durable request ID. Its atomic acceptance removes only then-present entries. Receipt replay cannot erase later submissions. CLI equivalents are `project prompt-history list --project-id ID` and `project prompt-history clear --project-id ID --confirm`, with the global `--request-id` for exact retries. List accepts `--limit` and `--page-token`.

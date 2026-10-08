@@ -6,6 +6,8 @@ import "delidev/v1/common.proto";
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
 service ConfigurationService {
+  rpc ListProjectPromptHistory(ListProjectPromptHistoryRequest) returns (ListProjectPromptHistoryResponse);
+  rpc ClearProjectPromptHistory(ClearProjectPromptHistoryRequest) returns (ClearProjectPromptHistoryResponse);
   rpc ExportConfiguration(ExportConfigurationRequest) returns (ExportConfigurationResponse);
   rpc PreviewConfigurationImport(PreviewConfigurationImportRequest) returns (PreviewConfigurationImportResponse);
   rpc ApplyConfigurationImport(ApplyConfigurationImportRequest) returns (ApplyConfigurationImportResponse);
@@ -97,4 +99,33 @@ message ApplyConfigurationImportResponse {
   string request_id = 1;
   bool replayed = 2;
   bytes result_json = 3;
+}
+
+// Project-owned first-message text, independent of source-session lifetime.
+message ProjectPromptHistoryEntry {
+  string id = 1;
+  string project_id = 2;
+  string prompt = 3;
+  string accepted_at = 4;
+  uint64 acceptance_sequence = 5;
+}
+message ListProjectPromptHistoryRequest {
+  string project_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+message ListProjectPromptHistoryResponse {
+  repeated ProjectPromptHistoryEntry entries = 1;
+  string next_page_token = 2;
+}
+message ClearProjectPromptHistoryRequest {
+  string project_id = 1;
+  string request_id = 2;
+  bool confirmed = 3;
+}
+message ClearProjectPromptHistoryResponse {
+  string project_id = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  uint32 removed_count = 4;
 }

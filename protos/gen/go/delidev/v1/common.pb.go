@@ -128,46 +128,48 @@ func (ApiAuthentication) EnumDescriptor() ([]byte, []int) {
 type EntityKind int32
 
 const (
-	EntityKind_ENTITY_KIND_UNSPECIFIED     EntityKind = 0
-	EntityKind_ENTITY_KIND_PROJECT         EntityKind = 1
-	EntityKind_ENTITY_KIND_REPOSITORY      EntityKind = 2
-	EntityKind_ENTITY_KIND_AGENT           EntityKind = 3
-	EntityKind_ENTITY_KIND_ACCOUNT         EntityKind = 4
-	EntityKind_ENTITY_KIND_PROVIDER        EntityKind = 5
-	EntityKind_ENTITY_KIND_MODEL           EntityKind = 6
-	EntityKind_ENTITY_KIND_MACHINE         EntityKind = 7
-	EntityKind_ENTITY_KIND_SESSION         EntityKind = 8
-	EntityKind_ENTITY_KIND_TEMPLATE        EntityKind = 9
-	EntityKind_ENTITY_KIND_SETTINGS        EntityKind = 10
-	EntityKind_ENTITY_KIND_SCHEDULE        EntityKind = 11
-	EntityKind_ENTITY_KIND_OCCURRENCE      EntityKind = 12
-	EntityKind_ENTITY_KIND_MESSAGE         EntityKind = 13
-	EntityKind_ENTITY_KIND_QUEUE           EntityKind = 14
-	EntityKind_ENTITY_KIND_INTERACTION     EntityKind = 15
-	EntityKind_ENTITY_KIND_REVIEW          EntityKind = 16
-	EntityKind_ENTITY_KIND_SNAPSHOT        EntityKind = 17
-	EntityKind_ENTITY_KIND_DEVICE          EntityKind = 18
-	EntityKind_ENTITY_KIND_INTEGRATION     EntityKind = 19
-	EntityKind_ENTITY_KIND_PULL_REQUEST    EntityKind = 20
-	EntityKind_ENTITY_KIND_PROBLEM         EntityKind = 21
-	EntityKind_ENTITY_KIND_INBOX           EntityKind = 22
-	EntityKind_ENTITY_KIND_USAGE           EntityKind = 23
-	EntityKind_ENTITY_KIND_JOB             EntityKind = 24
-	EntityKind_ENTITY_KIND_PAIRING         EntityKind = 25
-	EntityKind_ENTITY_KIND_STEER           EntityKind = 26
-	EntityKind_ENTITY_KIND_FORWARD         EntityKind = 27
-	EntityKind_ENTITY_KIND_TERMINAL        EntityKind = 31
-	EntityKind_ENTITY_KIND_NETWORK_PROFILE EntityKind = 28
-	EntityKind_ENTITY_KIND_NETWORK_ROUTE   EntityKind = 29
-	EntityKind_ENTITY_KIND_SUBAGENT        EntityKind = 30
-	EntityKind_ENTITY_KIND_UPDATE          EntityKind = 33
-	EntityKind_ENTITY_KIND_SSH_SETUP       EntityKind = 34
+	EntityKind_ENTITY_KIND_UNSPECIFIED            EntityKind = 0
+	EntityKind_ENTITY_KIND_PROJECT_PROMPT_HISTORY EntityKind = 35
+	EntityKind_ENTITY_KIND_PROJECT                EntityKind = 1
+	EntityKind_ENTITY_KIND_REPOSITORY             EntityKind = 2
+	EntityKind_ENTITY_KIND_AGENT                  EntityKind = 3
+	EntityKind_ENTITY_KIND_ACCOUNT                EntityKind = 4
+	EntityKind_ENTITY_KIND_PROVIDER               EntityKind = 5
+	EntityKind_ENTITY_KIND_MODEL                  EntityKind = 6
+	EntityKind_ENTITY_KIND_MACHINE                EntityKind = 7
+	EntityKind_ENTITY_KIND_SESSION                EntityKind = 8
+	EntityKind_ENTITY_KIND_TEMPLATE               EntityKind = 9
+	EntityKind_ENTITY_KIND_SETTINGS               EntityKind = 10
+	EntityKind_ENTITY_KIND_SCHEDULE               EntityKind = 11
+	EntityKind_ENTITY_KIND_OCCURRENCE             EntityKind = 12
+	EntityKind_ENTITY_KIND_MESSAGE                EntityKind = 13
+	EntityKind_ENTITY_KIND_QUEUE                  EntityKind = 14
+	EntityKind_ENTITY_KIND_INTERACTION            EntityKind = 15
+	EntityKind_ENTITY_KIND_REVIEW                 EntityKind = 16
+	EntityKind_ENTITY_KIND_SNAPSHOT               EntityKind = 17
+	EntityKind_ENTITY_KIND_DEVICE                 EntityKind = 18
+	EntityKind_ENTITY_KIND_INTEGRATION            EntityKind = 19
+	EntityKind_ENTITY_KIND_PULL_REQUEST           EntityKind = 20
+	EntityKind_ENTITY_KIND_PROBLEM                EntityKind = 21
+	EntityKind_ENTITY_KIND_INBOX                  EntityKind = 22
+	EntityKind_ENTITY_KIND_USAGE                  EntityKind = 23
+	EntityKind_ENTITY_KIND_JOB                    EntityKind = 24
+	EntityKind_ENTITY_KIND_PAIRING                EntityKind = 25
+	EntityKind_ENTITY_KIND_STEER                  EntityKind = 26
+	EntityKind_ENTITY_KIND_FORWARD                EntityKind = 27
+	EntityKind_ENTITY_KIND_TERMINAL               EntityKind = 31
+	EntityKind_ENTITY_KIND_NETWORK_PROFILE        EntityKind = 28
+	EntityKind_ENTITY_KIND_NETWORK_ROUTE          EntityKind = 29
+	EntityKind_ENTITY_KIND_SUBAGENT               EntityKind = 30
+	EntityKind_ENTITY_KIND_UPDATE                 EntityKind = 33
+	EntityKind_ENTITY_KIND_SSH_SETUP              EntityKind = 34
 )
 
 // Enum value maps for EntityKind.
 var (
 	EntityKind_name = map[int32]string{
 		0:  "ENTITY_KIND_UNSPECIFIED",
+		35: "ENTITY_KIND_PROJECT_PROMPT_HISTORY",
 		1:  "ENTITY_KIND_PROJECT",
 		2:  "ENTITY_KIND_REPOSITORY",
 		3:  "ENTITY_KIND_AGENT",
@@ -203,40 +205,41 @@ var (
 		34: "ENTITY_KIND_SSH_SETUP",
 	}
 	EntityKind_value = map[string]int32{
-		"ENTITY_KIND_UNSPECIFIED":     0,
-		"ENTITY_KIND_PROJECT":         1,
-		"ENTITY_KIND_REPOSITORY":      2,
-		"ENTITY_KIND_AGENT":           3,
-		"ENTITY_KIND_ACCOUNT":         4,
-		"ENTITY_KIND_PROVIDER":        5,
-		"ENTITY_KIND_MODEL":           6,
-		"ENTITY_KIND_MACHINE":         7,
-		"ENTITY_KIND_SESSION":         8,
-		"ENTITY_KIND_TEMPLATE":        9,
-		"ENTITY_KIND_SETTINGS":        10,
-		"ENTITY_KIND_SCHEDULE":        11,
-		"ENTITY_KIND_OCCURRENCE":      12,
-		"ENTITY_KIND_MESSAGE":         13,
-		"ENTITY_KIND_QUEUE":           14,
-		"ENTITY_KIND_INTERACTION":     15,
-		"ENTITY_KIND_REVIEW":          16,
-		"ENTITY_KIND_SNAPSHOT":        17,
-		"ENTITY_KIND_DEVICE":          18,
-		"ENTITY_KIND_INTEGRATION":     19,
-		"ENTITY_KIND_PULL_REQUEST":    20,
-		"ENTITY_KIND_PROBLEM":         21,
-		"ENTITY_KIND_INBOX":           22,
-		"ENTITY_KIND_USAGE":           23,
-		"ENTITY_KIND_JOB":             24,
-		"ENTITY_KIND_PAIRING":         25,
-		"ENTITY_KIND_STEER":           26,
-		"ENTITY_KIND_FORWARD":         27,
-		"ENTITY_KIND_TERMINAL":        31,
-		"ENTITY_KIND_NETWORK_PROFILE": 28,
-		"ENTITY_KIND_NETWORK_ROUTE":   29,
-		"ENTITY_KIND_SUBAGENT":        30,
-		"ENTITY_KIND_UPDATE":          33,
-		"ENTITY_KIND_SSH_SETUP":       34,
+		"ENTITY_KIND_UNSPECIFIED":            0,
+		"ENTITY_KIND_PROJECT_PROMPT_HISTORY": 35,
+		"ENTITY_KIND_PROJECT":                1,
+		"ENTITY_KIND_REPOSITORY":             2,
+		"ENTITY_KIND_AGENT":                  3,
+		"ENTITY_KIND_ACCOUNT":                4,
+		"ENTITY_KIND_PROVIDER":               5,
+		"ENTITY_KIND_MODEL":                  6,
+		"ENTITY_KIND_MACHINE":                7,
+		"ENTITY_KIND_SESSION":                8,
+		"ENTITY_KIND_TEMPLATE":               9,
+		"ENTITY_KIND_SETTINGS":               10,
+		"ENTITY_KIND_SCHEDULE":               11,
+		"ENTITY_KIND_OCCURRENCE":             12,
+		"ENTITY_KIND_MESSAGE":                13,
+		"ENTITY_KIND_QUEUE":                  14,
+		"ENTITY_KIND_INTERACTION":            15,
+		"ENTITY_KIND_REVIEW":                 16,
+		"ENTITY_KIND_SNAPSHOT":               17,
+		"ENTITY_KIND_DEVICE":                 18,
+		"ENTITY_KIND_INTEGRATION":            19,
+		"ENTITY_KIND_PULL_REQUEST":           20,
+		"ENTITY_KIND_PROBLEM":                21,
+		"ENTITY_KIND_INBOX":                  22,
+		"ENTITY_KIND_USAGE":                  23,
+		"ENTITY_KIND_JOB":                    24,
+		"ENTITY_KIND_PAIRING":                25,
+		"ENTITY_KIND_STEER":                  26,
+		"ENTITY_KIND_FORWARD":                27,
+		"ENTITY_KIND_TERMINAL":               31,
+		"ENTITY_KIND_NETWORK_PROFILE":        28,
+		"ENTITY_KIND_NETWORK_ROUTE":          29,
+		"ENTITY_KIND_SUBAGENT":               30,
+		"ENTITY_KIND_UPDATE":                 33,
+		"ENTITY_KIND_SSH_SETUP":              34,
 	}
 )
 
@@ -878,10 +881,11 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x1eAPI_AUTHENTICATION_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19API_AUTHENTICATION_BEARER\x10\x01\x12\x1e\n" +
 	"\x1aAPI_AUTHENTICATION_API_KEY\x10\x02\x12\x1e\n" +
-	"\x1aAPI_AUTHENTICATION_KEYLESS\x10\x03*\xf9\x06\n" +
+	"\x1aAPI_AUTHENTICATION_KEYLESS\x10\x03*\xa1\a\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
-	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"ENTITY_KIND_PROJECT_PROMPT_HISTORY\x10#\x12\x17\n" +
 	"\x13ENTITY_KIND_PROJECT\x10\x01\x12\x1a\n" +
 	"\x16ENTITY_KIND_REPOSITORY\x10\x02\x12\x15\n" +
 	"\x11ENTITY_KIND_AGENT\x10\x03\x12\x17\n" +

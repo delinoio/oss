@@ -974,3 +974,7 @@ source and negotiated Runner. Independent subscription Fork remains unsupported.
 See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829)
 for protected lease/Finish publication, read-only continuation and dependent
 cleanup ownership. No new RPC or SQLite migration is added.
+
+## Project prompt history allocation
+
+Issue #1828 owns System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT_PROMPT_HISTORY = 35` and complete closed ConfigurationService `ListProjectPromptHistory` / `ClearProjectPromptHistory` declarations in `protos/delidev/allocations.json`. The complete owning feature PR records declarations and activation together under the allocation workflow. Existing ownership remains unchanged. No Worker capability, native change or SQLite migration is added. Allocations alone grant no support.

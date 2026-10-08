@@ -311,7 +311,11 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	if rows.Next() {
 		return corrupt()
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	return validateProjectPromptHistory(ctx, db)
 }
 func corrupt() error {
 	return domain.Fail(domain.RecoveryRequired, "Database integrity validation failed.", "Keep the original database and WAL files, stop writes, and restore a validated backup.")
@@ -559,6 +563,9 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	if !kind.Valid() {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Unknown entity kind.", "Use a supported entity kind.")
 	}
+	if kind == domain.ProjectPromptHistoryKind && (expected != 0 || sessionID != "" || projectID == "") {
+		return Record{}, domain.Fail(domain.InvalidArgument, "Prompt history is immutable project-owned text.", "Use the dedicated history operations.")
+	}
 	if sessionID != "" {
 		if err := sessionID.Validate(); err != nil {
 			return Record{}, err
@@ -712,6 +719,11 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	}
 	if expected != r.Revision {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
+	}
+	if kind == domain.ProjectKind {
+		if _, err := t.ClearProjectPromptHistory(id); err != nil {
+			return err
+		}
 	}
 	if kind == domain.AccountKind {
 		if err := t.RequireBrowserProfileRemoval(id); err != nil {

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/configuration.proto.
  */
 export const file_delidev_v1_configuration: GenFile = /*@__PURE__*/
-  fileDesc("Ch5kZWxpZGV2L3YxL2NvbmZpZ3VyYXRpb24ucHJvdG8SCmRlbGlkZXYudjEi4gEKFlNhdmVBZ2VudFdvcmtlclJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhUKDWRvY3VtZW50X2pzb24YAiABKAwSNAoFbW9kZWwYAyABKAsyJS5kZWxpZGV2LnYxLkFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SFgoOc2NoZW1hX3ZlcnNpb24YBCABKA0SOwoMcm91dGVfbW9kZWxzGAUgAygLMiUuZGVsaWRldi52MS5BZ2VudFdvcmtlck1vZGVsU2VsZWN0aW9uInIKGUFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SEgoIbW9kZWxfaWQYASABKAlIABITCgluYXRpdmVfaWQYAiABKAlIABIfChdleHBlY3RlZF9tb2RlbF9yZXZpc2lvbhgDIAEoBEILCglzZWxlY3Rpb24ilwEKGFNhdmVDb25maWd1cmF0aW9uUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIWCg5zY2hlbWFfdmVyc2lvbhgDIAEoDRIVCg1kb2N1bWVudF9qc29uGAQgASgMIowBChlTYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEiYKCHJlc291cmNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEiEKA2pvYhgEIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiagoaRGVsZXRlQ29uZmlndXJhdGlvblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEiQKBGtpbmQYAiABKA4yFi5kZWxpZGV2LnYxLkVudGl0eUtpbmQiTwobRGVsZXRlQ29uZmlndXJhdGlvblJlc3BvbnNlEgoKAmlkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgiPQoVUHJldmlld1JvdXRpbmdSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkiLAoWUHJldmlld1JvdXRpbmdSZXNwb25zZRISCgpyb3V0ZV9qc29uGAEgASgMIhwKGkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0IjQKG0V4cG9ydENvbmZpZ3VyYXRpb25SZXNwb25zZRIVCg1kb2N1bWVudF9qc29uGAEgASgMIjsKIVByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBIWCg5zZWxlY3Rpb25fanNvbhgBIAEoDCI6CiJQcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhQKDHByZXZpZXdfanNvbhgBIAEoDCJLCh9BcHBseUNvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFAoMcHJldmlld19qc29uGAIgASgMIl0KIEFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIcmVwbGF5ZWQYAiABKAgSEwoLcmVzdWx0X2pzb24YAyABKAwy8wUKFENvbmZpZ3VyYXRpb25TZXJ2aWNlEmYKE0V4cG9ydENvbmZpZ3VyYXRpb24SJi5kZWxpZGV2LnYxLkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0GicuZGVsaWRldi52MS5FeHBvcnRDb25maWd1cmF0aW9uUmVzcG9uc2USewoaUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnQSLS5kZWxpZGV2LnYxLlByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBouLmRlbGlkZXYudjEuUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRJ1ChhBcHBseUNvbmZpZ3VyYXRpb25JbXBvcnQSKy5kZWxpZGV2LnYxLkFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QaLC5kZWxpZGV2LnYxLkFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlElwKD1NhdmVBZ2VudFdvcmtlchIiLmRlbGlkZXYudjEuU2F2ZUFnZW50V29ya2VyUmVxdWVzdBolLmRlbGlkZXYudjEuU2F2ZUNvbmZpZ3VyYXRpb25SZXNwb25zZRJgChFTYXZlQ29uZmlndXJhdGlvbhIkLmRlbGlkZXYudjEuU2F2ZUNvbmZpZ3VyYXRpb25SZXF1ZXN0GiUuZGVsaWRldi52MS5TYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEmYKE0RlbGV0ZUNvbmZpZ3VyYXRpb24SJi5kZWxpZGV2LnYxLkRlbGV0ZUNvbmZpZ3VyYXRpb25SZXF1ZXN0GicuZGVsaWRldi52MS5EZWxldGVDb25maWd1cmF0aW9uUmVzcG9uc2USVwoOUHJldmlld1JvdXRpbmcSIS5kZWxpZGV2LnYxLlByZXZpZXdSb3V0aW5nUmVxdWVzdBoiLmRlbGlkZXYudjEuUHJldmlld1JvdXRpbmdSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
+  fileDesc("Ch5kZWxpZGV2L3YxL2NvbmZpZ3VyYXRpb24ucHJvdG8SCmRlbGlkZXYudjEi4gEKFlNhdmVBZ2VudFdvcmtlclJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEhUKDWRvY3VtZW50X2pzb24YAiABKAwSNAoFbW9kZWwYAyABKAsyJS5kZWxpZGV2LnYxLkFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SFgoOc2NoZW1hX3ZlcnNpb24YBCABKA0SOwoMcm91dGVfbW9kZWxzGAUgAygLMiUuZGVsaWRldi52MS5BZ2VudFdvcmtlck1vZGVsU2VsZWN0aW9uInIKGUFnZW50V29ya2VyTW9kZWxTZWxlY3Rpb24SEgoIbW9kZWxfaWQYASABKAlIABITCgluYXRpdmVfaWQYAiABKAlIABIfChdleHBlY3RlZF9tb2RlbF9yZXZpc2lvbhgDIAEoBEILCglzZWxlY3Rpb24ilwEKGFNhdmVDb25maWd1cmF0aW9uUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SJAoEa2luZBgCIAEoDjIWLmRlbGlkZXYudjEuRW50aXR5S2luZBIWCg5zY2hlbWFfdmVyc2lvbhgDIAEoDRIVCg1kb2N1bWVudF9qc29uGAQgASgMIowBChlTYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEiYKCHJlc291cmNlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEiEKA2pvYhgEIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiagoaRGVsZXRlQ29uZmlndXJhdGlvblJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uEiQKBGtpbmQYAiABKA4yFi5kZWxpZGV2LnYxLkVudGl0eUtpbmQiTwobRGVsZXRlQ29uZmlndXJhdGlvblJlc3BvbnNlEgoKAmlkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgiPQoVUHJldmlld1JvdXRpbmdSZXF1ZXN0EhAKCGFnZW50X2lkGAEgASgJEhIKCnByb2plY3RfaWQYAiABKAkiLAoWUHJldmlld1JvdXRpbmdSZXNwb25zZRISCgpyb3V0ZV9qc29uGAEgASgMIhwKGkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0IjQKG0V4cG9ydENvbmZpZ3VyYXRpb25SZXNwb25zZRIVCg1kb2N1bWVudF9qc29uGAEgASgMIjsKIVByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBIWCg5zZWxlY3Rpb25fanNvbhgBIAEoDCI6CiJQcmV2aWV3Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhQKDHByZXZpZXdfanNvbhgBIAEoDCJLCh9BcHBseUNvbmZpZ3VyYXRpb25JbXBvcnRSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFAoMcHJldmlld19qc29uGAIgASgMIl0KIEFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSEAoIcmVwbGF5ZWQYAiABKAgSEwoLcmVzdWx0X2pzb24YAyABKAwifQoZUHJvamVjdFByb21wdEhpc3RvcnlFbnRyeRIKCgJpZBgBIAEoCRISCgpwcm9qZWN0X2lkGAIgASgJEg4KBnByb21wdBgDIAEoCRITCgthY2NlcHRlZF9hdBgEIAEoCRIbChNhY2NlcHRhbmNlX3NlcXVlbmNlGAUgASgEIlwKH0xpc3RQcm9qZWN0UHJvbXB0SGlzdG9yeVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIRCglwYWdlX3NpemUYAiABKA0SEgoKcGFnZV90b2tlbhgDIAEoCSJzCiBMaXN0UHJvamVjdFByb21wdEhpc3RvcnlSZXNwb25zZRI2CgdlbnRyaWVzGAEgAygLMiUuZGVsaWRldi52MS5Qcm9qZWN0UHJvbXB0SGlzdG9yeUVudHJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJdCiBDbGVhclByb2plY3RQcm9tcHRIaXN0b3J5UmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEQoJY29uZmlybWVkGAMgASgIInQKIUNsZWFyUHJvamVjdFByb21wdEhpc3RvcnlSZXNwb25zZRISCgpwcm9qZWN0X2lkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSFQoNcmVtb3ZlZF9jb3VudBgEIAEoDTLkBwoUQ29uZmlndXJhdGlvblNlcnZpY2USdQoYTGlzdFByb2plY3RQcm9tcHRIaXN0b3J5EisuZGVsaWRldi52MS5MaXN0UHJvamVjdFByb21wdEhpc3RvcnlSZXF1ZXN0GiwuZGVsaWRldi52MS5MaXN0UHJvamVjdFByb21wdEhpc3RvcnlSZXNwb25zZRJ4ChlDbGVhclByb2plY3RQcm9tcHRIaXN0b3J5EiwuZGVsaWRldi52MS5DbGVhclByb2plY3RQcm9tcHRIaXN0b3J5UmVxdWVzdBotLmRlbGlkZXYudjEuQ2xlYXJQcm9qZWN0UHJvbXB0SGlzdG9yeVJlc3BvbnNlEmYKE0V4cG9ydENvbmZpZ3VyYXRpb24SJi5kZWxpZGV2LnYxLkV4cG9ydENvbmZpZ3VyYXRpb25SZXF1ZXN0GicuZGVsaWRldi52MS5FeHBvcnRDb25maWd1cmF0aW9uUmVzcG9uc2USewoaUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnQSLS5kZWxpZGV2LnYxLlByZXZpZXdDb25maWd1cmF0aW9uSW1wb3J0UmVxdWVzdBouLmRlbGlkZXYudjEuUHJldmlld0NvbmZpZ3VyYXRpb25JbXBvcnRSZXNwb25zZRJ1ChhBcHBseUNvbmZpZ3VyYXRpb25JbXBvcnQSKy5kZWxpZGV2LnYxLkFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlcXVlc3QaLC5kZWxpZGV2LnYxLkFwcGx5Q29uZmlndXJhdGlvbkltcG9ydFJlc3BvbnNlElwKD1NhdmVBZ2VudFdvcmtlchIiLmRlbGlkZXYudjEuU2F2ZUFnZW50V29ya2VyUmVxdWVzdBolLmRlbGlkZXYudjEuU2F2ZUNvbmZpZ3VyYXRpb25SZXNwb25zZRJgChFTYXZlQ29uZmlndXJhdGlvbhIkLmRlbGlkZXYudjEuU2F2ZUNvbmZpZ3VyYXRpb25SZXF1ZXN0GiUuZGVsaWRldi52MS5TYXZlQ29uZmlndXJhdGlvblJlc3BvbnNlEmYKE0RlbGV0ZUNvbmZpZ3VyYXRpb24SJi5kZWxpZGV2LnYxLkRlbGV0ZUNvbmZpZ3VyYXRpb25SZXF1ZXN0GicuZGVsaWRldi52MS5EZWxldGVDb25maWd1cmF0aW9uUmVzcG9uc2USVwoOUHJldmlld1JvdXRpbmcSIS5kZWxpZGV2LnYxLlByZXZpZXdSb3V0aW5nUmVxdWVzdBoiLmRlbGlkZXYudjEuUHJldmlld1JvdXRpbmdSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
 
 /**
  * Saves a Worker and resolves its source-scoped model atomically.
@@ -360,9 +360,172 @@ export const ApplyConfigurationImportResponseSchema: GenMessage<ApplyConfigurati
   messageDesc(file_delidev_v1_configuration, 13);
 
 /**
+ * Project-owned first-message text, independent of source-session lifetime.
+ *
+ * @generated from message delidev.v1.ProjectPromptHistoryEntry
+ */
+export type ProjectPromptHistoryEntry = Message<"delidev.v1.ProjectPromptHistoryEntry"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string project_id = 2;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string prompt = 3;
+   */
+  prompt: string;
+
+  /**
+   * @generated from field: string accepted_at = 4;
+   */
+  acceptedAt: string;
+
+  /**
+   * @generated from field: uint64 acceptance_sequence = 5;
+   */
+  acceptanceSequence: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.ProjectPromptHistoryEntry.
+ * Use `create(ProjectPromptHistoryEntrySchema)` to create a new message.
+ */
+export const ProjectPromptHistoryEntrySchema: GenMessage<ProjectPromptHistoryEntry> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 14);
+
+/**
+ * @generated from message delidev.v1.ListProjectPromptHistoryRequest
+ */
+export type ListProjectPromptHistoryRequest = Message<"delidev.v1.ListProjectPromptHistoryRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: uint32 page_size = 2;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 3;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message delidev.v1.ListProjectPromptHistoryRequest.
+ * Use `create(ListProjectPromptHistoryRequestSchema)` to create a new message.
+ */
+export const ListProjectPromptHistoryRequestSchema: GenMessage<ListProjectPromptHistoryRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 15);
+
+/**
+ * @generated from message delidev.v1.ListProjectPromptHistoryResponse
+ */
+export type ListProjectPromptHistoryResponse = Message<"delidev.v1.ListProjectPromptHistoryResponse"> & {
+  /**
+   * @generated from field: repeated delidev.v1.ProjectPromptHistoryEntry entries = 1;
+   */
+  entries: ProjectPromptHistoryEntry[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message delidev.v1.ListProjectPromptHistoryResponse.
+ * Use `create(ListProjectPromptHistoryResponseSchema)` to create a new message.
+ */
+export const ListProjectPromptHistoryResponseSchema: GenMessage<ListProjectPromptHistoryResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 16);
+
+/**
+ * @generated from message delidev.v1.ClearProjectPromptHistoryRequest
+ */
+export type ClearProjectPromptHistoryRequest = Message<"delidev.v1.ClearProjectPromptHistoryRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool confirmed = 3;
+   */
+  confirmed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.ClearProjectPromptHistoryRequest.
+ * Use `create(ClearProjectPromptHistoryRequestSchema)` to create a new message.
+ */
+export const ClearProjectPromptHistoryRequestSchema: GenMessage<ClearProjectPromptHistoryRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 17);
+
+/**
+ * @generated from message delidev.v1.ClearProjectPromptHistoryResponse
+ */
+export type ClearProjectPromptHistoryResponse = Message<"delidev.v1.ClearProjectPromptHistoryResponse"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+
+  /**
+   * @generated from field: uint32 removed_count = 4;
+   */
+  removedCount: number;
+};
+
+/**
+ * Describes the message delidev.v1.ClearProjectPromptHistoryResponse.
+ * Use `create(ClearProjectPromptHistoryResponseSchema)` to create a new message.
+ */
+export const ClearProjectPromptHistoryResponseSchema: GenMessage<ClearProjectPromptHistoryResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_configuration, 18);
+
+/**
  * @generated from service delidev.v1.ConfigurationService
  */
 export const ConfigurationService: GenService<{
+  /**
+   * @generated from rpc delidev.v1.ConfigurationService.ListProjectPromptHistory
+   */
+  listProjectPromptHistory: {
+    methodKind: "unary";
+    input: typeof ListProjectPromptHistoryRequestSchema;
+    output: typeof ListProjectPromptHistoryResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.ConfigurationService.ClearProjectPromptHistory
+   */
+  clearProjectPromptHistory: {
+    methodKind: "unary";
+    input: typeof ClearProjectPromptHistoryRequestSchema;
+    output: typeof ClearProjectPromptHistoryResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.ConfigurationService.ExportConfiguration
    */

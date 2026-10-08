@@ -272,3 +272,7 @@ catalog results grant no execution readiness. Follow the desktop/catalog contrac
 The existing cleanup RPC also includes fully disconnected subscription configurations across services. Individual failed initial ChatGPT deletion uses the existing configuration deletion RPC; generated request/response declarations and capability numbers remain unchanged.
 
 Generated SubscriptionQuery exports cleanupFailedSubscriptions and getFailedSubscriptionCleanup plus the closed batch state, outcome and reason enums. Capability 41 was reserved on main in PR #1614; preserve Claude 38/Grok 39/40 and their independent support. Exact request UUIDs bind uncertain admission retries; accepted work is read by original job ID, with bigint revisions and fixed 50-result pages. Validate identity, monotonic counts/revision, closed state/outcome/reasons and complete page bounds before accepting status. Metadata-only status may use category-scoped Connect Query; neither generated bindings nor a read grant native/login/callback/deletion authority. See the subscription/Settings contracts.
+
+## Project prompt history client
+
+Generated `ConfigurationQuery` exposes `listProjectPromptHistory` and `clearProjectPromptHistory`, the closed entry type, System capability 48 and entity kind 35. Preserve exact text, bigint acceptance order, actor/project-bound cursors and original confirmed-clear request identity. Reads never restore skill, image or execution authority. Capability absence preserves ordinary composer behavior.
