@@ -87,3 +87,5 @@ Update this contract, the command and protocol contracts, project/catalog entrie
 - [Pinned cron calendar search](https://github.com/robfig/cron/blob/v3.0.1/spec.go)
 
 Opening the exclusive server store invalidates persisted Worker availability intervals while preserving instance identity for recovery. The first authenticated attach/heartbeat establishes a fresh interval; a reconnect cannot backdate availability across server restart. A cron instant after restart but before that observation is Worker-offline even if the previous process recorded a beat less than 45 seconds earlier.
+
+Schedule and occurrence pages measure the complete protobuf and protobuf-JSON response, including cursor/envelope, against the existing 4 MiB aggregate bound. A byte-limited page resumes strictly after the last returned row with its original filter epoch and occurrence acceptance ordering. Complete documents are never truncated.
