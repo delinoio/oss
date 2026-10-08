@@ -48,7 +48,7 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
   };
   const onChange = (next: string, position: number) => { setBindings(prior => editedBindings(value, next, prior)); change(next); setCaret(position); setDismissed(false); setSelected(0); };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.nativeEvent.isComposing || composing.current) return false;
+    if (event.nativeEvent.isComposing || composing.current || event.nativeEvent.keyCode === 229 || event.repeat || event.getModifierState("AltGraph")) return false;
     if (!token) return false;
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDismissed(true); return true; }
     if (candidates.length && ["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(event.key) && !event.shiftKey && !event.metaKey && !event.ctrlKey) {

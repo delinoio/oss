@@ -76,13 +76,18 @@ func readBounded(path string, limit int64) ([]byte, error) {
 }
 
 // os.Root confines every opened resource even if a link changes during the read.
-func packageFiles(ctx context.Context, path string) (map[string][]byte, string, error) {
+type packageFile struct {
+	Bytes      []byte
+	Executable bool
+}
+
+func packageFiles(ctx context.Context, path string) (map[string]packageFile, string, error) {
 	r, e := os.OpenRoot(path)
 	if e != nil {
 		return nil, "", unavailable()
 	}
 	defer r.Close()
-	files := map[string][]byte{}
+	files := map[string]packageFile{}
 	total := 0
 	visited := 0
 	var walk func(string) error
@@ -132,7 +137,7 @@ func packageFiles(ctx context.Context, path string) (map[string][]byte, string, 
 			if total > MaxPackageBytes {
 				return bound()
 			}
-			files[name] = data
+			files[name] = packageFile{Bytes: data, Executable: info.Mode().Perm()&0111 != 0}
 		}
 		return nil
 	}
@@ -140,7 +145,7 @@ func packageFiles(ctx context.Context, path string) (map[string][]byte, string, 
 		return nil, "", e
 	}
 
-	if len(files["SKILL.md"]) == 0 || len(files["SKILL.md"]) > 1<<20 {
+	if len(files["SKILL.md"].Bytes) == 0 || len(files["SKILL.md"].Bytes) > 1<<20 {
 		return nil, "", unavailable()
 	}
 	keys := make([]string, 0, len(files))
@@ -150,7 +155,7 @@ func packageFiles(ctx context.Context, path string) (map[string][]byte, string, 
 	sort.Strings(keys)
 	h := sha256.New()
 	for _, k := range keys {
-		b, _ := json.Marshal([]any{k, hex.EncodeToString(hash(files[k]))})
+		b, _ := json.Marshal([]any{k, hex.EncodeToString(hash(files[k].Bytes)), files[k].Executable})
 		h.Write(b)
 	}
 	return files, hex.EncodeToString(h.Sum(nil)), nil
@@ -266,7 +271,7 @@ func (m Manager) List(ctx context.Context, scope domain.SkillReadRequest, projec
 			if e != nil {
 				return result, e
 			}
-			name, desc, e := metadata(files["SKILL.md"])
+			name, desc, e := metadata(files["SKILL.md"].Bytes)
 			if e != nil {
 				return result, e
 			}
@@ -364,7 +369,7 @@ func (m Manager) Prepare(ctx context.Context, scope domain.SkillReadRequest) err
 			return unavailable()
 		}
 		for name, b := range files {
-			total += len(b)
+			total += len(b.Bytes)
 			if total > MaxTotalBytes {
 				return bound()
 			}
@@ -372,7 +377,7 @@ func (m Manager) Prepare(ctx context.Context, scope domain.SkillReadRequest) err
 			if e = os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 				return unavailable()
 			}
-			if e = security.WriteAtomicOwned(path, b); e != nil {
+			if e = security.WriteAtomicOwnedMode(path, b.Bytes, b.Executable); e != nil {
 				return unavailable()
 			}
 		}
@@ -444,7 +449,7 @@ func (m Manager) CopyToRuntime(ctx context.Context, bindings []domain.SkillBindi
 			if e = os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 				return nil, e
 			}
-			if e = security.WriteAtomicOwned(path, b); e != nil {
+			if e = security.WriteAtomicOwnedMode(path, b.Bytes, b.Executable); e != nil {
 				return nil, e
 			}
 		}
@@ -528,12 +533,12 @@ func CloneRuntimePackage(ctx context.Context, sourceHome, sourcePath, childHome 
 	target := filepath.Join(childHome, "selected-skills", parts[0])
 	total := 0
 	for name, contents := range files {
-		total += len(contents)
+		total += len(contents.Bytes)
 		path := filepath.Join(target, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return "", 0, unavailable()
 		}
-		if err := security.WriteAtomicOwned(path, contents); err != nil {
+		if err := security.WriteAtomicOwnedMode(path, contents.Bytes, contents.Executable); err != nil {
 			return "", 0, unavailable()
 		}
 	}

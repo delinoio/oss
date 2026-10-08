@@ -5,7 +5,9 @@ import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -149,5 +151,59 @@ func TestInternalResourceLinkCopiesContent(t *testing.T) {
 	info, e := os.Lstat(filepath.Join(filepath.Dir(selected[0].Path), "linked"))
 	if e != nil || !info.Mode().IsRegular() {
 		t.Fatal("link was not snapshotted as owned content", e)
+	}
+}
+
+func TestExecutablePackageModeSurvivesEveryCopyAndIsProved(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	m, scope, source := fixture(t)
+	script := filepath.Join(source, "run.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf executable-fixture\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	inventory, err := m.List(ctx, scope, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope = selectEntry(scope, inventory.Entries[0])
+	if err = m.Prepare(ctx, scope); err != nil {
+		t.Fatal(err)
+	}
+	execute := func(root string) {
+		t.Helper()
+		path := filepath.Join(root, "run.sh")
+		info, e := os.Stat(path)
+		if e != nil || info.Mode().Perm() != 0700 {
+			t.Fatalf("executable mode: %v %v", info, e)
+		}
+		b, e := exec.Command(path).Output()
+		if e != nil || string(b) != "executable-fixture" {
+			t.Fatalf("execute: %q %v", b, e)
+		}
+		info, e = os.Stat(filepath.Join(root, "SKILL.md"))
+		if e != nil || info.Mode().Perm() != 0600 {
+			t.Fatal("non-executable mode changed", e)
+		}
+	}
+	execute(filepath.Join(snapshotPath(m.Root, scope.Selections[0].SnapshotID), string(scope.Selections[0].SkillID)))
+	home := t.TempDir()
+	selected, err := m.CopyToRuntime(ctx, scope.Selections, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execute(filepath.Dir(selected[0].Path))
+	child, _, err := CloneRuntimePackage(ctx, home, selected[0].Path, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	execute(filepath.Dir(child))
+	if err = os.Chmod(filepath.Join(filepath.Dir(child), "run.sh"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = VerifyRuntimePackage(ctx, filepath.Dir(filepath.Dir(filepath.Dir(child))), child); err == nil {
+		t.Fatal("changed executable mode accepted")
 	}
 }

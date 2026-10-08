@@ -23,3 +23,5 @@ it("keeps manually typed tokens unbound and supports localized loading states",a
 it("keeps bindings shifted by outside edits but removes changed selected tokens",()=>{const binding={start:2,end:12,token:"$add-issue",selection:entries[0]!.selection,stale:false};expect(editedBindings("a $add-issue","prefix a $add-issue",[binding])[0]?.start).toBe(9);expect(editedBindings("a $add-issue","a $other",[binding])).toEqual([]);});
 
 it("includes the remainder of the caret token without matching it as a prefix",()=>{expect(skillToken("before $add-issue after",15)).toEqual({start:7,end:17,prefix:"add-iss"});});
+
+it("does not accept IME commit Enter, repeated keys or AltGraph",async()=>{const f=fixture();render(f.view());const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$add-iss",selectionStart:8}});await screen.findByRole("option");for(const event of [{key:"Enter",keyCode:229,isComposing:false},{key:"Enter",repeat:true},{key:"Enter",modifierAltGraph:true}]) {fireEvent.keyDown(input,event);expect((input as HTMLTextAreaElement).value).toBe("$add-iss");}expect(f.send).not.toHaveBeenCalled();});

@@ -1862,3 +1862,7 @@ user-history parsing preserves ordered skill identity digests independently of
 original text proofs; continuation compares those original private proofs. No
 ordinary native authentication, configuration overlay, plugin, hook, MCP or
 environment is imported. Claude Code, OpenCode and Grok Build remain unsupported.
+
+Package content proofs include each normalized executable flag. Snapshot, runtime,
+and independent Fork copies publish owner-only files: `0700` for executable
+resources and `0600` for other resources. Mode changes invalidate the proof.
