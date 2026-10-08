@@ -443,3 +443,18 @@ The centrally planned `react-forge` job runs on affected pull requests and main 
 The React Forge host job runs non-scene native, package, installed-consumer and document-render regressions on its selected matrix. It skips the React scene test suite and excludes the scene engines from targeted native gates. Generic workspace Rust test and Clippy jobs exclude `forge-scene`, `forge-glb`, and `forge-fbx`. Scene preparation, Khronos/ufbx interoperability, Blender imports, and product renders remain local acceptance evidence; CI does not schedule scene-specific test/render jobs or retain scene artifacts.
 
 Native Tauri consumers restore/verify the immutable execution-host CLI through `.github/actions/setup-prebuilt`, including iOS/Android generation and credential-free DeliDev packaging. CLI keys bind release, host and both SHA-256 digests; successful main jobs alone save these caches. App Cargo caches remain separate. Root and native-package compilation use `nightly-2026-09-28`. Linux CEF jobs install GTK4, XDG portal/GTK portal and `zenity` alongside existing package prerequisites. Follow [prebuilt dependencies](repository-prebuilt-dependencies-contract.md).
+
+### DeliDev automated release coordination
+
+`Release Project` includes DeliDev stable patch/minor/major preparation and the
+exceptional `delidev-v<semver>` namespace. It synchronizes desktop package,
+Cargo/Tauri and lock versions, retains exact same-run source recovery, skips Cargo
+registry publication and calls the dedicated reusable release workflow after
+verified tagging. Unlike the existing manual keyless dry runs, that workflow
+uses the `delidev-release` Environment for production macOS signing and publishes
+an immutable macOS/Linux download-only release with Windows explicitly skipped.
+Follow `apps-delidev-packaging-contract.md` and the download-only exception in
+`cmds-delidev-updates-contract.md`. No update manifest or partial updater authority
+is permitted; complete six-target updater activation requires a new version and
+its original production signing/acceptance gates. Source changes do not configure
+operational credentials or publish the first release.

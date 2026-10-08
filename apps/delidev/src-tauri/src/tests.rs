@@ -847,12 +847,13 @@ if [ "$3" = server ]; then
   if [ -f "$2/stopped" ]; then
     printf '%s' '{{"version":1,"result":{{"state":"stopped"}}}}'
   else
-    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"0.1.0","protocol_version":1,"listener":"http://127.0.0.1:46310"}}}}}}'
+    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"{package_version}","protocol_version":1,"listener":"http://127.0.0.1:46310"}}}}}}'
   fi
 else
   printf '%s' '{{"version":1,"result":{body}}}'
 fi
-"#
+"#,
+        package_version = env!("CARGO_PKG_VERSION"),
     );
     fs::write(&executable, script).unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
@@ -1251,4 +1252,67 @@ pub(crate) fn fixture_connector(executable: PathBuf, root: PathBuf) -> Result<Co
     fs::write(&executable, adapter).unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
     Connector::new(executable, root)
+}
+
+#[test]
+fn local_server_compatibility_uses_the_compiled_package_version() {
+    let temporary = tempfile::tempdir().unwrap();
+    let connector = Connector::new(
+        temporary.path().join("sidecar"),
+        temporary.path().join("state"),
+    )
+    .unwrap();
+    for (version, protocol, accepted) in [
+        (env!("CARGO_PKG_VERSION"), 1, true),
+        ("0.0.0", 1, false),
+        (env!("CARGO_PKG_VERSION"), 2, false),
+    ] {
+        let value = serde_json::json!({"reused":true,"status":{"version":version,"protocol_version":protocol}});
+        assert_eq!(connector.server_state(&value).is_ok(), accepted);
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn saved_server_compatibility_uses_the_compiled_package_version() {
+    use std::os::unix::fs::PermissionsExt;
+
+    use crate::connections::{SavedConnection, SavedConnectionState};
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    let device = metadata();
+    let expected = SavedConnection {
+        version: 1,
+        revision: 1,
+        id: uuid::Uuid::now_v7().to_string(),
+        name: "Fixture".into(),
+        endpoint: device.endpoint.clone(),
+        server_id: device.server_id.clone(),
+        pairing_id: device.pairing_id.clone(),
+        device_id: device.device_id.clone(),
+        state: SavedConnectionState::Paired,
+        created_at: "2026-10-08T00:00:00Z".into(),
+        removal: None,
+    };
+    let directory = root.join("connections").join(&expected.id).join("client");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("device.json"), document(&device)).unwrap();
+    let executable = temporary.path().join("sidecar");
+    fs::write(&executable, "#!/bin/sh\nexit 1\n").unwrap();
+    let connector = fixture_connector(executable.clone(), root).unwrap();
+    let operation = executable.with_extension("operation");
+    for (version, protocol, accepted) in [
+        (env!("CARGO_PKG_VERSION"), 1, true),
+        ("0.0.0", 1, false),
+        (env!("CARGO_PKG_VERSION"), 2, false),
+    ] {
+        let response = serde_json::json!({"version":1,"result":{"profile":expected,"server_version":version,"protocol_version":protocol,"observed_at":"2026-10-08T00:00:00Z"}});
+        fs::write(
+            &operation,
+            format!("#!/bin/sh\nprintf '%s' '{}'\n", response),
+        )
+        .unwrap();
+        fs::set_permissions(&operation, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(connector.connect_saved(&expected).is_ok(), accepted);
+    }
 }

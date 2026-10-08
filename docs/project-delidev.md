@@ -332,3 +332,17 @@ cleanup ownership. No new RPC or SQLite migration is added.
 Issue #1828 adds server-persisted project first-message history under the sessions, storage, protocol, desktop and API-client contracts. Go owns immutable 100-entry acceptance order, authenticated pagination and receipt-bound confirmed clear. Desktop owns text-only boundary keyboard recall. History survives source-session deletion, belongs to project deletion, is captured by managed backups and is excluded from portable configuration. System 48 / entity 35 add no Worker, native or migration authority.
 
 Subscription Account details follows the [subscription Settings modal boundary](apps-delidev-subscription-settings-contract.md#account-details-dialog-issue-1824): category-owned read-only metadata survives virtualized row eviction, while explicit management retains its original fresh account authority.
+
+## Automated distribution
+
+The owner-authorized release coordinator includes DeliDev stable version selection,
+exact `delidev-v<semver>` tags and macOS/Linux x64/arm64 download-only GitHub
+publication. Windows production signing is unavailable and both Windows targets
+are skipped. Published inventory is immutable and contains no updater manifest.
+The [packaging contract](apps-delidev-packaging-contract.md#automated-download-only-releases)
+owns production macOS credentials, provisioning/notarization, retained candidates
+and readback verification. The [updates contract](cmds-delidev-updates-contract.md#download-only-automated-release-exception)
+preserves complete six-target manifest authority for a future new version.
+Workflow fixtures and packaging do not complete issue #964 or establish real
+installed-platform, WidgetKit or account acceptance. Operational credential
+registration and first publication remain separate from repository configuration.

@@ -8,7 +8,7 @@ on:
         description: Project to release
         required: true
         type: choice
-        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, pnport, async-commit-hook, react-forge]
+        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, pnport, async-commit-hook, react-forge, delidev]
       bump:
         description: SemVer increment (next is pnport only)
         required: true
@@ -41,19 +41,19 @@ jobs:
       tag: ${{ steps.prepare.outputs.tag }}
       revision: ${{ steps.prepare.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - name: Validate configuration before committing
         env:
           CLIENT_ID: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
           PRIVATE_KEY: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
-          REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && inputs.project != 'delidev' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: |
           node --input-type=module <<'JS'
           import { requiresCargoPublish, versionChanges } from './scripts/release/project.mjs';
@@ -91,12 +91,12 @@ jobs:
     env:
       RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - name: Validate immutable release source
@@ -104,17 +104,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release/project.mjs validate
       - name: Install Rust toolchain
-        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
-        uses: dtolnay/rust-toolchain@v1
+        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'delidev'
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: nightly-2026-09-28
       - name: Cache Rust dependencies
-        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
-        uses: Swatinem/rust-cache@v2
+        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'delidev'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Publish only the selected crate
-        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport'
+        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'delidev'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          CARGO_REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && inputs.project != 'delidev' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"
 
   tag:
@@ -124,12 +124,12 @@ jobs:
     env:
       RELEASE_REVISION: ${{ needs.prepare.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
       - name: Create fresh source repository token
@@ -146,9 +146,29 @@ jobs:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
         run: node scripts/release/project.mjs tag
 
+  delidev:
+    if: inputs.project == 'delidev'
+    needs: [prepare, tag]
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-delidev.yml
+    secrets:
+      DELIDEV_MACOS_CERTIFICATE_BASE64: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_BASE64 }}
+      DELIDEV_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_PASSWORD }}
+      DELIDEV_MACOS_APP_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_APP_PROFILE_BASE64 }}
+      DELIDEV_MACOS_WIDGET_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_WIDGET_PROFILE_BASE64 }}
+      DELIDEV_MACOS_SELECTION_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_SELECTION_PROFILE_BASE64 }}
+      DELIDEV_APPLE_NOTARY_KEY_BASE64: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_BASE64 }}
+      DELIDEV_APPLE_NOTARY_KEY_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_ID }}
+      DELIDEV_APPLE_NOTARY_ISSUER_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_ISSUER_ID }}
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      revision: ${{ needs.prepare.outputs.revision }}
+
   summary:
     if: always()
-    needs: [prepare, registry, tag]
+    needs: [prepare, registry, tag, delidev]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -167,7 +187,7 @@ jobs:
             '| Phase | Result |', '| --- | --- |',
             ...Object.entries(jobs).map(([name, job]) => `| ${name} | ${job.result} |`), '',
           ];
-          const failed = Object.entries(jobs).filter(([, job]) => job.result !== 'success').map(([name]) => name);
+          const failed = Object.entries(jobs).filter(([name, job]) => job.result !== 'success' && !(name === 'delidev' && process.env.RELEASE_PROJECT !== 'delidev' && job.result === 'skipped')).map(([name]) => name);
           if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Fix the failed phase, then rerun this release run to reuse any recorded version.`);
           else if (process.env.RELEASE_PROJECT === 'async-commit-hook') lines.push(
             'Version and tag preparation is complete. Signing, GitHub Release, and Homebrew require a separate manual run of [Release async-commit-hook](https://github.com/delinoio/oss/actions/workflows/release-async-commit-hook.yml). Consolidated Public Docs deploys automatically through Cloudflare Pages from main.',
