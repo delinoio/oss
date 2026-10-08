@@ -1116,3 +1116,93 @@ func TestHostRemovalUsesVerifiedParentAfterPathReplacement(t *testing.T) {
 		t.Fatal("replacement parent was changed", err)
 	}
 }
+
+func TestHostStatusOwnershipFailuresFailPreparationAndInspection(t *testing.T) {
+	for _, scenario := range []string{"wrong ID", "wrong token", "invalid phase", "malformed JSON", "unsafe permissions", "symlink"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, store, native, p := hostFixture(t)
+			p = buildHostFixture(t, c, store, native, p)
+			r := seedHostFixture(t, c, store, p)
+			native.writeStatus = func(root *os.Root, status HostExecutionStatus) error {
+				switch scenario {
+				case "wrong ID":
+					status.ID = newID()
+				case "wrong token":
+					status.Token = newID()
+				case "invalid phase":
+					status.Phase = HostExecutionPhase("foreign")
+				case "symlink":
+					return root.Symlink("missing-foreign-status", "status.json")
+				}
+				if err := hostRootWrite(root, "status.json", status); err != nil {
+					return err
+				}
+				if scenario == "malformed JSON" || scenario == "unsafe permissions" {
+					file, err := root.OpenFile("status.json", os.O_WRONLY, 0600)
+					if err != nil {
+						return err
+					}
+					defer file.Close()
+					if scenario == "unsafe permissions" {
+						return file.Chmod(0644)
+					}
+					if err = file.Truncate(0); err != nil {
+						return err
+					}
+					_, err = file.WriteString("private malformed fixture")
+					return err
+				}
+				return nil
+			}
+			driver := HostDriver{Store: store, Native: native}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			err := driver.Prepare(ctx, c, p, r, store.View(), "PRIVATE-JIT-FIXTURE", func(Handle) error { return nil })
+			requireCode(t, err, ErrOwnership)
+			if ctx.Err() != nil || strings.Contains(err.Error(), "private malformed fixture") {
+				t.Fatalf("ownership failure was delayed or exposed file content: %v", err)
+			}
+			before := store.View()
+			d := before.HostDirectories[r.ID]
+			e := before.HostExecutions[r.ID]
+			root := native.roots[e.Supervisor.PID]
+			_, err = hostReadStatus(root, *d)
+			requireCode(t, err, ErrOwnership)
+			_, err = driver.Inspect(context.Background(), c, r, before)
+			requireCode(t, err, ErrOwnership)
+			after := store.View()
+			if native.stopped != 0 || after.HostDirectories[r.ID] == nil || after.HostExecutions[r.ID].Cleaned || after.HostExecutions[r.ID].Terminated || !after.HostExecutions[r.ID].LaunchPending {
+				t.Fatal("ownership rejection changed execution or signaled its processes")
+			}
+			if _, err = root.Lstat("status.json"); err != nil {
+				t.Fatal("ownership rejection removed status")
+			}
+			beforeUsed, beforeCount, beforeVMs := usage(before)
+			afterUsed, afterCount, afterVMs := usage(after)
+			if after.Runners[r.ID].Resources != r.Resources || beforeUsed != afterUsed || beforeCount != afterCount || beforeVMs != afterVMs {
+				t.Fatal("ownership rejection released reservation")
+			}
+		})
+	}
+}
+
+func TestHostMissingPublishedStatusIsOwnershipFailure(t *testing.T) {
+	c, store, native, p := hostFixture(t)
+	p = buildHostFixture(t, c, store, native, p)
+	r := prepareHostFixture(t, c, store, native, p)
+	state := store.View()
+	root := native.roots[state.HostExecutions[r.ID].Supervisor.PID]
+	if err := root.Remove("status.json"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := hostReadStatus(root, *state.HostDirectories[r.ID])
+	if !os.IsNotExist(err) {
+		t.Fatalf("missing status classification: %v", err)
+	}
+	driver := HostDriver{Store: store, Native: native}
+	_, err = driver.Inspect(context.Background(), c, r, state)
+	requireCode(t, err, ErrOwnership)
+	if native.stopped != 0 || store.View().HostExecutions[r.ID].Cleaned {
+		t.Fatal("missing published status authorized cleanup")
+	}
+}
