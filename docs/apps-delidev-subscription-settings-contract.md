@@ -216,3 +216,32 @@ Manage metadata alone occupies the footer. Close details before handing the exac
 English/Korean strings and shared keyboard focus containment remain unchanged. Required frontend/localization checks and synthetic zero-to-three-window, eviction/update/removal, opener fallback, metadata guards and once-only handoff fixtures cover this boundary. Browser/component fixtures and builds do not establish real-account, installed-native or packaged CEF/platform acceptance.
 
 The saved quota rail popover reports each retained window’s actual observation state and timestamp. It does not display a generic failed-operation warning merely because saved details are open. Saved-read failures and incomplete aggregate evidence retain their owning explanations; Recheck reads saved resources without starting quota collection or proving recovery.
+
+### Compact reset-credit presentation — issue #1855
+
+The account-management reset-credit section shows the authoritative available
+count and one Use action. Details start collapsed. Use expands exact-credit
+selection and focuses its heading; it never automatically selects or consumes a
+credit. Only explicitly null details with a valid positive fresh count permit the
+original native-next confirmation. Missing or malformed details grant no selector.
+The returned detail count remains separate from the authoritative available count.
+Rows show inert IDs, availability and valid supplied expiry timestamps.
+
+Confirmation names the original account and selection, explains that consumption
+spends a credit, and keeps quota recovery separate. Keep dismisses it without a
+request and restores its selection opener or the section heading. Collapse,
+locale changes, resize and background updates retain the mounted controller,
+original selection, request IDs and account/revision/connection/generation,
+inventory and owner bindings. Only explicit confirmation sends consumption.
+Outcomes, failures, uncertainty, original retries and cleanup-gated reconciliation
+remain visible outside details. Existing Worker/server capability and eligibility
+gates remain authoritative; unknown, zero, stale, pending, unsupported and
+ineligible states expose localized reasons without manufacturing zero counts.
+
+Use “Reset credits” in English and “리셋권” in Korean. Scope the semantic themed
+styles to this section: 14px body, 12px secondary, 16px heading/padding, 8px corners
+and controls at least 40px tall. Below 480px section width, wrap the summary action
+and stack detail rows. Preserve parent dialog dismissal and keyboard ownership.
+Browser fixtures cover 640px/320px sections, both languages/themes and 200% zoom;
+they grant no installed-native, real-account or platform acceptance. Add no RPC,
+allocation, migration, persistent preference or native behavior.
