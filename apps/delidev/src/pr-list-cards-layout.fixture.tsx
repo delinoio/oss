@@ -14,12 +14,12 @@ import "./styles.css";
 const args = new URLSearchParams(location.search);
 const theme = args.get("theme") === "dark" ? Theme.Dark : Theme.Light;
 void i18n.changeLanguage(args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English);
-const requests = { github: 0, repository: 0 };
+const requests = { github: 0, repository: 0, mutations: 0 };
 // Layout checks can inspect only synthetic read counts, never product state or credentials.
 Object.defineProperty(window, "__prSidebarFixture", { value: requests });
 const rows = args.get("empty") === "true" ? [] : ["oss", "delidev", args.get("long") === "true" ? "long-repository-name-".repeat(18) : "docs"].map((name, index) => create(ResourceSchema, {
   id: `0195c9c0-7b13-7000-8000-00000000000${index + 1}`, kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n,
-  documentJson: encode({ name, integration_id: "0195c9c0-7b13-7000-8000-000000000010", github_owner: args.get("long") === "true" ? "long-owner-".repeat(8) : "delinoio", github_name: name }),
+  documentJson: encode({ name, ...(args.get("unconfigured") === "true" ? {} : { integration_id: "0195c9c0-7b13-7000-8000-000000000010", github_owner: args.get("long") === "true" ? "long-owner-".repeat(8) : "delinoio", github_name: name }) }),
 }));
 const transport = createRouterTransport(router => {
   router.service(SystemService, { getStatus: () => ({ protocolVersion: 1 }) });
@@ -29,7 +29,7 @@ const transport = createRouterTransport(router => {
     listResources: request => ({ resources: request.filter?.kind === EntityKind.REPOSITORY ? rows : [] }),
     getResource: request => { requests.repository++; return { resource: rows.find(row => row.id === request.id) }; },
   });
-  router.service(IntegrationService, { queryRepositoryIntegration: request => {
+  router.service(IntegrationService, { saveIntegrationProfile: () => { requests.mutations++; return {}; }, replaceIntegrationToken: () => { requests.mutations++; return {}; }, validateIntegrationProfile: () => { requests.mutations++; return {}; }, deleteIntegrationProfile: () => { requests.mutations++; return {}; }, queryRepositoryIntegration: request => {
     requests.github++;
     const query = JSON.parse(new TextDecoder().decode(request.queryJson));
     const row = rows.find(row => row.id === request.repositoryId)!;

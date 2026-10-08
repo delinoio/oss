@@ -1143,6 +1143,20 @@ it("discards a nested integration profile draft on close before targeted reposit
   expect(value.githubQuery).not.toHaveBeenCalled();
 });
 
+it("opens a fresh targeted Git Profiles visit after abandoning an unsaved profile", async () => {
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Unconfigured repository" }) });
+  const value = fixture([], [repository]); render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" })); fireEvent.click(screen.getByRole("button", { name: "Git Profiles" }));
+  await screen.findByRole("heading", { name: "Add your first GitHub profile" }); fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Profile name" }), { target: { value: "Discarded profile draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(await screen.findByRole("button", { name: `Unconfigured repository. Repository ID: ${repository.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "GitHub profiles" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Git Profiles" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(screen.queryByRole("textbox", { name: "Profile name" })).toBeNull(); expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("main")); expect(value.githubQuery).not.toHaveBeenCalled(); expect(value.saveConfiguration).not.toHaveBeenCalled();
+});
+
 // Each independent draft family owns its complete close/reopen lifecycle check.
 // Keep them separate so unrelated navigation does not consume one test deadline.
 it("discards a notification draft on close without saving", async () => {

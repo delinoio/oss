@@ -74,6 +74,27 @@ try {
     if (screenshots && width === 1440) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `cards-${language}-${theme}.png`) }); }
     checks++;
   }
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[960,640], [720,450], [480,320]]) {
+    await page.setViewportSize({ width, height }); await page.goto(`${origin}/?unconfigured=true&theme=${theme}&language=${language}`);
+    await page.getByRole("button", { name: language === "ko" ? "풀 리퀘스트" : "Pull requests", exact: true }).click();
+    const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) await opener.click();
+    const pane = page.locator(".sidebar-pull-requests");
+    await pane.getByRole("button", { name: language === "ko" ? `oss. 저장소 ID: ${id}` : `oss. Repository ID: ${id}`, exact: true }).click();
+    const load = pane.getByRole("button", { name: language === "ko" ? "풀 리퀘스트 불러오기" : "Load pull requests", exact: true });
+    await page.waitForFunction(() => document.querySelector(".pull-requests-page .actions button")); assert(await load.isDisabled());
+    if (width < 760) await page.keyboard.press("Escape");
+    const shortcut = page.getByRole("button", { name: language === "ko" ? "GitHub 프로필" : "GitHub profiles", exact: true });
+    await page.keyboard.press("Tab"); await shortcut.focus();
+    const geometry = await shortcut.evaluate(node => { const css = getComputedStyle(node), box = node.getBoundingClientRect(); return { height: box.height, overflow: node.scrollWidth > node.clientWidth, focus: node === document.activeElement, outline: css.outlineStyle, precedingNotice: Boolean(node.parentElement.previousElementSibling?.textContent), pageOverflow: node.closest(".page").scrollWidth > node.closest(".page").clientWidth }; });
+    assert(geometry.height >= 40 && !geometry.overflow && geometry.focus && geometry.outline !== "none" && geometry.precedingNotice && !geometry.pageOverflow, JSON.stringify({ language, theme, width, geometry }));
+    await shortcut.press("Enter");
+    await page.waitForFunction(() => document.querySelector('[data-settings-category="integrations"]')?.getAttribute("aria-pressed") === "true");
+    assert.equal(await page.getByRole("dialog").count(), 0, "Profile shortcut opens the list without creating a task");
+    assert(await page.locator(width < 760 ? ".sidebar-context-trigger" : "main").evaluate(node => node === document.activeElement));
+    assert.equal(await page.locator(".sidebar-drawer-backdrop").count(), 0, "Navigation closes the compact drawer");
+    const counts = await page.evaluate(() => window.__prSidebarFixture); assert.equal(counts.github, 0); assert.equal(counts.mutations, 0);
+    checks++;
+  }
   assert.deepEqual(failures, []);
   console.log(JSON.stringify({ operation: "pr-list-cards-browser", source, checks, result: "passed", evidence: "synthetic App browser; effective viewport zoom only; no packaged CEF acceptance" }));
 } finally {
