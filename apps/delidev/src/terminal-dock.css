@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+:root { --terminal-background: #14191f; --terminal-foreground: #e5e9f0; --terminal-border: #526174; --terminal-muted: #b1bac5; --terminal-selection: #344459; --terminal-scrollbar: #596575; --terminal-scrollbar-hover: #758296; --terminal-scrollbar-active: #8b99ad; }
+.session-upper-content { display: contents; }
+.session-workspace.terminal-open .session-content { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) var(--terminal-dock-height, 40%); }
+.session-workspace.terminal-open .session-upper-content { display: grid; grid-area: 1 / 1; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, auto) minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
+@container session-view (min-width: 900px) { .session-workspace.terminal-open .session-upper-content { grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: minmax(0, 1fr); column-gap: 24px; } }
+.session-terminal-slot { grid-area: 2 / 1 / 3 / -1; min-width: 0; min-height: 0; overflow: hidden; }
+.session-terminal-slot[hidden], .terminal-dock[hidden] { display: none; }
+.terminal-dock { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; overflow: auto; background: var(--terminal-background); color: var(--terminal-foreground); }
+.terminal-dock > * { flex-shrink: 0; }
+.terminal-dock-header { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 4px 8px; }
+.terminal-dock-header h3 { margin: 0 auto 0 0; font-size: 13px; }
+.terminal-dock button { min-height: 32px; color: var(--terminal-foreground); border: 1px solid var(--terminal-border); background: transparent; }
+.terminal-dock button:hover, .terminal-dock button[aria-selected=true] { background: var(--terminal-selection); }
+.terminal-dock button:focus-visible, .terminal-dock-separator:focus-visible { outline: 2px solid #80b7ef; outline-offset: -2px; }
+.terminal-dock button:disabled { color: var(--terminal-muted); opacity: .6; }
+.terminal-dock-separator { flex: none; min-height: 6px; border-top: 1px solid var(--terminal-border); cursor: ns-resize; touch-action: none; }
+.terminal-tabs { display: flex; flex-wrap: wrap; align-items: center; max-height: 80px; overflow: auto; padding: 0 8px; }
+.terminal-tabs ul, .terminal-tabs [data-payload-page] { display: flex; flex-wrap: wrap; list-style: none; padding: 0; margin: 0; }
+.terminal-dock-details, .terminal-resource-details { max-height: 200px; overflow: auto; padding: 8px; overflow-wrap: anywhere; }
+.terminal-dock-details[hidden], .terminal-resource-details[hidden] { display: none; }
+.terminal-dock-details input { background: var(--terminal-background); color: var(--terminal-foreground); }
+.terminal-view { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.terminal-view > :not(.terminal-screen) { flex: none; margin: 0; padding: 4px 8px; font-size: 12px; overflow-wrap: anywhere; }
+.terminal-screen { flex: 1; min-height: 80px; min-width: 0; padding: 8px; overflow: hidden; }
+.terminal-screen .xterm { height: 100%; }
+.terminal-view footer { color: var(--terminal-muted); }
+/* The pinned Viewport patch removes dynamic stylesheet insertion. Scrollbar
+   palette stays static under production style-src self; only upstream bounded
+   cell/canvas/textarea geometry uses element.style properties. */
+.terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider { background: var(--terminal-scrollbar); }
+.terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider:hover { background: var(--terminal-scrollbar-hover); }
+.terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider.active { background: var(--terminal-scrollbar-active); }

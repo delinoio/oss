@@ -700,30 +700,55 @@ Question/approval forms share their typed controls with the session view, but In
 
 ### Session terminals
 
-The session's Terminals pane uses authenticated generated public operations
-under the [terminal contract](cmds-delidev-terminals-contract.md). Mounting it
-lists retained terminal metadata only after the server advertises session
-terminal support. Unknown/unsupported status gates history polling, manual
-refresh and selection and hides cached terminal errors; only explicit creation
-launches a shell.
-Creation supports the Worker's default shell or an absolute override. Each
-terminal offers line input, Ctrl+C/Ctrl+D bytes, resize, output reattachment and
-close. Creation/control use the connection-owned retained mutation registry;
-an uncertain retry preserves the original request and revision. Input focus returns when controls become available after a
-pending input or resize. Metadata polling does not refocus an already available
-input.
-Creation retains its single accepted resource for direct selection and attachment
-even when the current 50-record history page omits it.
+The session's Terminals tool is the sole bottom dock: it spans the Session
+content width beneath conversation, composer and Info, excluding the app
+sidebar. Other tools retain their existing right pane/compact drawer geometry
+and their single-visible-tool rule. The independent Terminal dock can coexist
+with the selected tool, including Browser. Each Hide/Escape restores its own
+opener; terminal screen Escape remains native input. Conversation, composer and Info stay mounted.
+At a content width of at least 900px and body height of at least 600px, the initial
+dock is 40 percent high; pointer and keyboard separator resizing clamps to 200px
+through 70 percent. Smaller initial bodies maximize the dock. Explicit Restore,
+Maximize and Hide retain presentation state in the open Session lifetime.
 
-Output uses one incremental UTF-8 decoder per terminal and exact bigint cursors
-across reconnects. Gaps visibly reset decoding, normal confirmed exit flushes
-its tail, and stale generations cannot publish after view disposal. The text
-view is bounded to 262,144 UTF-16 code units without splitting a retained
-surrogate pair. It preserves the native byte contract but does not emulate a
-full VT/full-screen application display. Styling remains static under the
-production CSP. Hiding the view aborts observation only; Agent Stop preserves
-terminals and Archive waits for native cleanup. Worker/shell/cwd and current
-terminal state are displayed separately from connection state.
+Authenticated generated operations follow the
+[terminal contract](cmds-delidev-terminals-contract.md). Only advertised support
+enables history reads/refresh/selection; capability errors remain distinct from
+missing support. Opening, tab selection and reattachment cannot create shells.
+The compact dark header exposes explicit creation, terminal tabs, Details and
+Hide. Details owns the future-creation shell override, Worker/shell/cwd, original
+state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
+and explicit selection beyond the bounded 50-record history payload window.
+
+Pin xterm 6.0.0, WebGL addon 0.19.0 and Fit addon 0.11.0 with their MIT notices.
+Static CSS preserves the dark 14px monospace palette in both application themes.
+The narrow package patch removes Viewport dynamic stylesheet insertion and
+makes the DOM renderer fallback fail closed; its source and ESM changes route
+both package entrypoints to the same patched ESM on repository Node24. Load
+WebGL before opening, dispose Terminal before addon teardown, and leave
+production style-src self unchanged. Renderer failure or context loss disables
+input and offers explicit original reattachment/Close. Do not install clipboard,
+web-link or attach addons; consume OSC 52/OSC 8 and keep detected links inert.
+Screen-reader output remains enabled and xterm diagnostic logging stays off.
+
+Pass ordered Uint8Array output directly to the emulator with exact bigint
+cursors and epoch checks. Keep at most 5000 scrollback lines. Explicit gaps reset
+the parser and screen before retained suffix bytes; gap/connection/error notices
+remain outside native bytes. Reattachment recovers only the available bounded
+ring and never claims a full-screen application snapshot.
+
+One retained control owner serializes input and resize. Admit each complete
+paste atomically within 64 KiB of unsent bytes and send chunks of at most 32768
+bytes. UTF-8 onData and binary onBinary preserve keyboard, IME, control and
+bracketed-paste bytes; the native shell owns echo and line endings. Coalesce the
+latest valid measured 1–500 rows/1–1000 columns after prior input acknowledgment.
+Uncertain control retains its exact original request/revision and permits only
+explicit retry. Definitive failures suspend dispatch until explicit reattachment.
+Tab departure, hiding or detachment discards unsent bytes with a visible notice,
+while dispatched uncertainty stays in the connection registry. Metadata/resize
+acknowledgment never steals focus; first explicit attachment focuses once.
+Hiding aborts observation only. Agent Stop preserves original processes;
+explicit Close, Archive and deletion retain independent native cleanup gates.
 
 ## Storage
 The server remains the only database owner. Frontend query caches and unsent drafts are memory-only and scoped to the selected connection. No credential, prompt, transcript, cursor or account browser state enters Web Storage. Client exit cannot stop server-owned sessions. Native profiles and server startup are separate infrastructure boundaries.

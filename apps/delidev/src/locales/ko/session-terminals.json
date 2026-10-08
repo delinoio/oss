@@ -30,5 +30,19 @@
   "session-terminals.retryTheSameTerminalOperation_92eff7": "동일한 터미널 작업 다시 시도",
   "session-terminals.extra.d1bcaf842eff": "터미널 출력을 기다리는 중…",
   "session-terminals.attribute.34ad7d49708a": "터미널 출력",
-  "session-terminals.retryCapability": "터미널 기능 읽기 재시도"
+  "session-terminals.retryCapability": "터미널 기능 읽기 재시도",
+  "session-terminals.details": "상세 정보",
+  "session-terminals.resizeDock": "터미널 도크 크기 조절",
+  "session-terminals.restoreDock": "터미널 도크 복원",
+  "session-terminals.maximizeDock": "터미널 도크 최대화",
+  "session-terminals.unsentDiscarded": "미전송 입력을 삭제했습니다. 승인된 작업은 원래 복구 상태를 유지합니다.",
+  "session-terminals.outputGap": "터미널 출력이 불완전합니다. 남아 있는 출력 전에 화면을 초기화했습니다. 누락된 바이트로 전체 앱 화면을 복구할 수 없습니다.",
+  "session-terminals.inputOverflow": "입력을 대기열에 넣지 않았습니다. 미전송 입력 한도인 64 KiB를 초과합니다. 기다린 후 다시 붙여넣으세요.",
+  "session-terminals.rendererUnavailable": "터미널 화면을 사용할 수 없습니다. 원래 터미널에 다시 연결하거나 명시적으로 닫으세요.",
+  "session-terminals.uncertainInput": "전달 결과가 불확실합니다. 원래 터미널 작업만 명시적으로 다시 시도하세요.",
+  "session-terminals.connecting": "연결 중",
+  "session-terminals.attached": "연결됨",
+  "session-terminals.detached": "연결 해제됨",
+  "session-terminals.exited": "종료됨",
+  "session-terminals.emptyInventory": "세션 터미널이 없습니다. + 버튼으로 명시적으로 생성하세요."
 }

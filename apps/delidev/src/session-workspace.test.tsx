@@ -236,3 +236,20 @@ it("keeps Info independent of every temporary tool and restores the original too
   expect(document.activeElement).toBe(heading); expect(info).toHaveProperty("hidden", false);
   expect(f.enqueue).not.toHaveBeenCalled(); expect(f.rename).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
 });
+
+it("keeps one upper tool alongside the independent Terminal dock and restores each opener", async () => {
+  const f = fixture(); const mounted = render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const composer = screen.getByRole("textbox", { name: "Message" }), browser = screen.getByRole("button", { name: "Browser" }), terminals = screen.getByRole("button", { name: "Terminals" });
+  fireEvent.click(browser);fireEvent.click(terminals);
+  expect(browser.getAttribute("aria-expanded")).toBe("true");expect(terminals.getAttribute("aria-expanded")).toBe("true");
+  const dock = screen.getByRole("complementary", { name: "Session terminals" });
+  fireEvent.keyDown(within(dock).getByRole("button", { name: "Details" }), { key: "Escape" });
+  expect(document.activeElement).toBe(terminals);expect(terminals.getAttribute("aria-expanded")).toBe("false");expect(browser.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(terminals);fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  expect(browser.getAttribute("aria-expanded")).toBe("false");expect(terminals.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), { key: "Escape" });
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Files" }));expect(terminals.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);expect(f.control).not.toHaveBeenCalled();
+  mounted.unmount();f.client.clear();
+});

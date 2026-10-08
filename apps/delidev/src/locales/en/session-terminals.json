@@ -30,5 +30,19 @@
   "session-terminals.retryTheSameTerminalOperation_92eff7": "Retry the same terminal operation",
   "session-terminals.extra.d1bcaf842eff": "Waiting for terminal output…",
   "session-terminals.attribute.34ad7d49708a": "Terminal output",
-  "session-terminals.retryCapability": "Retry terminal capability read"
+  "session-terminals.retryCapability": "Retry terminal capability read",
+  "session-terminals.details": "Details",
+  "session-terminals.resizeDock": "Resize terminal dock",
+  "session-terminals.restoreDock": "Restore terminal dock",
+  "session-terminals.maximizeDock": "Maximize terminal dock",
+  "session-terminals.unsentDiscarded": "Unsent terminal input was discarded. Accepted operations retain their original recovery.",
+  "session-terminals.outputGap": "Terminal output is incomplete. The screen was reset before retained output; missing bytes cannot recover a complete application screen.",
+  "session-terminals.inputOverflow": "Input was not queued: the unsent 64 KiB limit would be exceeded. Wait before pasting again.",
+  "session-terminals.rendererUnavailable": "Terminal display is unavailable. Reattach the original terminal or close it explicitly.",
+  "session-terminals.uncertainInput": "Delivery is uncertain. Explicitly retry only the original terminal operation.",
+  "session-terminals.connecting": "Connecting",
+  "session-terminals.attached": "Attached",
+  "session-terminals.detached": "Detached",
+  "session-terminals.exited": "Exited",
+  "session-terminals.emptyInventory": "No session terminals. Create one explicitly with +."
 }
