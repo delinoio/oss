@@ -265,28 +265,31 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 				return e
 			}
 		}
-		if _, e := SendControl(ctx, c, ControlRequest{Action: "stop"}); e == nil {
-			if e = waitStopped(ctx, c, ""); e != nil {
-				return e
-			}
-		} else {
-			store, se := OpenStore(c)
-			if se != nil {
-				return e
-			}
-			s := store.View()
-			store.Close()
-			if !allTerminated(s) {
-				return problem(ErrControl, "Service is unreachable while owned executions may still be active.", "Restart the manager to reconcile and drain before removing the service.")
-			}
+		admission := newServiceReloader(os.Stderr)
+		admission.Exec = exec
+		manager, e := admission.admitServiceManager(ctx, definitionSnapshot.data)
+		if e != nil {
+			return e
+		}
+		admission.Control = func(ctx context.Context, c Config, req ControlRequest, pid int) (ControlResponse, int, error) {
+			return sendControlIdentity(ctx, c, req, pid, manager.start, true)
+		}
+		if e = admission.drainServiceManager(ctx, c, manager); e != nil {
+			return e
 		}
 		if definitionSnapshot != nil {
 			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
 				return e
 			}
 		}
+		if e := admission.checkServiceManager(ctx, manager); e != nil {
+			return e
+		}
 		if runtime.GOOS == "darwin" {
 			if e := requireLaunchdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
+				return e
+			}
+			if e := admission.checkServiceManager(ctx, manager); e != nil {
 				return e
 			}
 			if e := unloadLaunchd(ctx, domain, unit, exec); e != nil {
@@ -314,11 +317,17 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 					return e
 				}
 			}
+			if e := admission.checkServiceManager(ctx, manager); e != nil {
+				return e
+			}
 			if e := run("systemctl", "--user", "disable", "--now", systemdServiceName); e != nil {
 				return e
 			}
 		}
 		if action == "uninstall" {
+			if e := admission.checkServiceManager(ctx, manager); e != nil {
+				return e
+			}
 			if definitionSnapshot != nil {
 				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
 					return e
