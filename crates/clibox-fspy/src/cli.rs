@@ -1807,6 +1807,34 @@ fn selection_native(path: &Path) -> NativePath {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn verified_observed_alias(
+    path: &record::AccessPath,
+    root: &Path,
+    snapshot: &crate::repro::Snapshot,
+) -> Result<Option<PathBuf>, crate::repro::ReproFailure> {
+    use crate::repro::ReproFailure;
+    let logical = logical_relative(root, path);
+    let alias = if logical.as_ref().is_some_and(|relative| {
+        snapshot.contains_selected(relative) || snapshot.contains_selected_directory(relative)
+    }) {
+        let relative = logical.expect("selected logical path exists");
+        if path.identity.is_some_and(|identity| {
+            !snapshot.selected_path_has_identity(&relative, identity)
+                && !snapshot.selected_directory_has_identity(&relative, identity)
+        }) {
+            return Err(ReproFailure::UnstableInput);
+        }
+        Some(relative)
+    } else {
+        path.identity
+            .and_then(|identity| snapshot.selected_alias_for_identity(identity))
+            .map(Path::to_path_buf)
+            .or(logical)
+    };
+    Ok(alias)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn collect_required(
     record: &CompleteRecord,
     root: &Path,
@@ -1868,25 +1896,7 @@ fn collect_required(
             if path.class != record::PathClass::Project {
                 continue;
             }
-            let logical = logical_relative(root, path);
-            let alias = if logical.as_ref().is_some_and(|relative| {
-                snapshot.contains_selected(relative)
-                    || snapshot.contains_selected_directory(relative)
-            }) {
-                let relative = logical.expect("selected logical path exists");
-                if path.identity.is_some_and(|identity| {
-                    !snapshot.selected_path_has_identity(&relative, identity)
-                        && !snapshot.selected_directory_has_identity(&relative, identity)
-                }) {
-                    return Err(ReproFailure::UnstableInput);
-                }
-                Some(relative)
-            } else {
-                path.identity
-                    .and_then(|identity| snapshot.selected_alias_for_identity(identity))
-                    .map(Path::to_path_buf)
-                    .or(logical)
-            };
+            let alias = verified_observed_alias(path, root, snapshot)?;
             let Some(alias) = alias else {
                 if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
                 {
@@ -1925,23 +1935,24 @@ fn collect_required(
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn staged_root_executable(
     record: &CompleteRecord,
+    root: &Path,
     required: &std::collections::BTreeSet<PathBuf>,
-) -> Option<PathBuf> {
-    record
+    snapshot: &crate::repro::Snapshot,
+) -> Result<Option<PathBuf>, crate::repro::ReproFailure> {
+    let Some(path) = record
         .operations
         .iter()
         .find(|pair| {
             pair.start.operation == record::Operation::Exec
                 && pair.completion.native_error.is_none()
-        })?
-        .start
-        .paths
-        .first()
-        .filter(|path| path.class == record::PathClass::Project)?
-        .project_relative
-        .as_ref()
-        .and_then(repro_relative_native)
-        .filter(|relative| required.contains(relative))
+        })
+        .and_then(|pair| pair.start.paths.first())
+        .filter(|path| path.class == record::PathClass::Project)
+    else {
+        return Ok(None);
+    };
+    let alias = verified_observed_alias(path, root, snapshot)?;
+    Ok(alias.filter(|relative| required.contains(relative)))
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -2300,7 +2311,10 @@ fn min_repro(args: MinReproArgs) -> i32 {
         return diagnostic("candidate_prepare", "min-repro");
     }
     let mut rerun_command = args.command.clone();
-    let staged_program = staged_root_executable(&original, &required);
+    let staged_program = match staged_root_executable(&original, &root, &required, &snapshot) {
+        Ok(program) => program,
+        Err(error) => return repro_error(error, &signals),
+    };
     if let Some(relative) = &staged_program {
         rerun_command[0] = candidate.path().join(relative).into_os_string();
     }
@@ -4580,6 +4594,139 @@ mod tests {
         assert_eq!(execute(parsed.command), 1);
         assert!(!bundle.exists());
         assert!(!marker.exists());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn staged_executable_reuses_verified_selected_alias_mapping() {
+        use std::os::unix::{
+            ffi::OsStrExt,
+            fs::{symlink, MetadataExt},
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        fs::write(root.join("tool"), b"original").unwrap();
+        symlink("tool", root.join("tool-link")).unwrap();
+        let selector = coverage::Selector::new(&["tool-link".into()], &[]).unwrap();
+        let snapshot = crate::repro::Snapshot::take(&root, &selector, 1024, 10).unwrap();
+        let metadata = fs::metadata(root.join("tool")).unwrap();
+        let identity = record::FileIdentity::Inode {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        };
+        let mut observed = CompleteRecord {
+            header: record::Header {
+                schema_version: record::SCHEMA_VERSION,
+                execution_id: uuid::Uuid::now_v7(),
+                platform: if cfg!(target_os = "macos") {
+                    record::Platform::Macos
+                } else {
+                    record::Platform::Linux
+                },
+                backend: record::Backend::Injection,
+                root: NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec()),
+                coverage: record::CoverageBoundary::SynchronousFileOperationsV1,
+            },
+            summary: record::Summary {
+                complete: true,
+                child_exit_code: Some(0),
+                child_signal: None,
+                operation_count: 1,
+                failure_count: 0,
+                failure: None,
+            },
+            operations: vec![record::OperationPair {
+                start: record::Start {
+                    sequence: 1,
+                    correlation_id: 1,
+                    pid: 1,
+                    tid: 1,
+                    parent_pid: None,
+                    operation: record::Operation::Exec,
+                    open_mutates: false,
+                    paths: vec![record::AccessPath {
+                        class: record::PathClass::Project,
+                        logical: NativePath::UnixBytes(
+                            root.join("tool-link").as_os_str().as_bytes().to_vec(),
+                        ),
+                        resolved: Some(NativePath::UnixBytes(
+                            root.join("tool-link").as_os_str().as_bytes().to_vec(),
+                        )),
+                        project_relative: Some(NativePath::UnixBytes(b"tool".to_vec())),
+                        identity: Some(identity),
+                    }],
+                    path_unavailable: false,
+                    descriptor: None,
+                    requested_bytes: Some(1),
+                    monotonic_ns: 1,
+                    requested_delay_ns: 0,
+                },
+                completion: record::Completion {
+                    sequence: 2,
+                    correlation_id: 1,
+                    pid: 1,
+                    tid: 1,
+                    monotonic_ns: 2,
+                    native_result: 5,
+                    native_error: None,
+                    byte_count: Some(5),
+                    observed_delay_ns: 0,
+                },
+            }],
+        };
+        let required = collect_required(&observed, &root, &selector, &snapshot).unwrap();
+        assert_eq!(
+            required,
+            std::collections::BTreeSet::from([PathBuf::from("tool-link")])
+        );
+        assert_eq!(
+            staged_root_executable(&observed, &root, &required, &snapshot).unwrap(),
+            Some(PathBuf::from("tool-link"))
+        );
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(
+            fs::read_link(candidate.path().join("tool-link")).unwrap(),
+            PathBuf::from("tool")
+        );
+        assert_eq!(
+            fs::read(candidate.path().join("tool")).unwrap(),
+            b"original"
+        );
+        observed.operations[0].start.paths[0].logical = selection_native(Path::new("./tool-link"));
+        assert_eq!(
+            staged_root_executable(&observed, &root, &required, &snapshot).unwrap(),
+            Some(PathBuf::from("tool-link"))
+        );
+        observed.operations[0].start.paths[0].logical = selection_native(&root.join("tool-link"));
+        observed.operations[0].start.paths[0].identity = Some(record::FileIdentity::Inode {
+            device: metadata.dev(),
+            inode: metadata.ino() + 1,
+        });
+        assert!(matches!(
+            staged_root_executable(&observed, &root, &required, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
+        observed.operations[0].start.paths[0].identity = Some(identity);
+        observed.operations[0].start.paths[0].class = record::PathClass::External;
+        assert_eq!(
+            staged_root_executable(&observed, &root, &required, &snapshot).unwrap(),
+            None
+        );
+        observed.operations[0].start.paths[0].class = record::PathClass::Project;
+        fs::remove_file(root.join("tool-link")).unwrap();
+        symlink("../outside", root.join("tool-link")).unwrap();
+        assert!(snapshot.verify_required(&required).is_err());
+        let plain_selector = coverage::Selector::new(&["tool".into()], &[]).unwrap();
+        let plain = crate::repro::Snapshot::take(&root, &plain_selector, 1024, 10).unwrap();
+        observed.operations[0].start.paths[0].logical = selection_native(&root.join("tool"));
+        let required = collect_required(&observed, &root, &plain_selector, &plain).unwrap();
+        assert_eq!(
+            staged_root_executable(&observed, &root, &required, &plain).unwrap(),
+            Some(PathBuf::from("tool"))
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
