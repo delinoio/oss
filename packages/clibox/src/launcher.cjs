@@ -37,9 +37,11 @@ function resolveBinary(manifestPath = path.join(__dirname, "..", "package.json")
   return binary;
 }
 
-function launch(binary, args, { spawnChild = spawn, parent = process, environment = process.env, platform = process.platform } = {}) {
+function launch(binary, args, { spawnChild = spawn, parent = process, environment = process.env, platform = process.platform, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   return new Promise((resolve, reject) => {
-    let terminalInterruptAcknowledgements = 0;
+    let settled = false;
+    let forwardingOnly = false;
+    const pendingInterrupts = new Map();
     const usesTerminalInterruptAcknowledgement = platform !== Platform.Windows;
     const child = spawnChild(binary, args, {
       stdio: usesTerminalInterruptAcknowledgement ? ["inherit", "inherit", "inherit", "pipe"] : "inherit",
@@ -52,7 +54,13 @@ function launch(binary, args, { spawnChild = spawn, parent = process, environmen
       } : {}),
     });
     const acknowledgement = usesTerminalInterruptAcknowledgement ? child.stdio?.[TerminalInterruptAcknowledgementDescriptor] : null;
-    const acknowledgeTerminalInterrupt = (chunk) => { terminalInterruptAcknowledgements += chunk.length; };
+    const acknowledgeTerminalInterrupt = (chunk) => {
+      // Bytes have no event identity. Credit belongs only to one current grace
+      // attempt and must never survive a fallback or overlap another attempt.
+      if (!settled && !forwardingOnly && chunk.length > 0 && pendingInterrupts.size === 1) {
+        pendingInterrupts.values().next().value.acknowledged = true;
+      }
+    };
     const ignoreAcknowledgementError = () => {};
     acknowledgement?.on("data", acknowledgeTerminalInterrupt);
     acknowledgement?.on("error", ignoreAcknowledgementError);
@@ -65,23 +73,33 @@ function launch(binary, args, { spawnChild = spawn, parent = process, environmen
       // when stdin is attached to a foreground terminal.
       if (platform === Platform.Windows && (signal === "SIGINT" || signal === "SIGBREAK")) return;
       if (signal === "SIGINT") {
-        // The native handler acknowledges a terminal-generated SIGINT. Give
-        // that signal a short event-loop turn before forwarding so the same
-        // Ctrl+C is counted once, while an explicit SIGINT to this launcher
-        // still reaches the native child.
-        setTimeout(() => {
-          if (terminalInterruptAcknowledgements > 0) {
-            terminalInterruptAcknowledgements -= 1;
-          } else if (child.exitCode === null && child.signalCode === null) {
-            child.kill(signal);
-          }
+        if (settled) return;
+        if (pendingInterrupts.size > 0) forwardingOnly = true;
+        if (forwardingOnly) {
+          if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+          return;
+        }
+        // Suppress only an early acknowledgement for an unambiguous attempt.
+        // After uncertainty, duplicate terminal forwarding is preferable to
+        // losing a later launcher-only interrupt. This lasts for this launch.
+        const attempt = { acknowledged: false };
+        const timer = setTimer(() => {
+          pendingInterrupts.delete(timer);
+          if (settled) return;
+          if (!forwardingOnly && attempt.acknowledged) return;
+          forwardingOnly = true;
+          if (child.exitCode === null && child.signalCode === null) child.kill(signal);
         }, TerminalInterruptGraceMs);
+        pendingInterrupts.set(timer, attempt);
         return;
       }
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
     }]);
     for (const [signal, handler] of handlers) parent.on(signal, handler);
     const cleanup = () => {
+      settled = true;
+      for (const timer of pendingInterrupts.keys()) clearTimer(timer);
+      pendingInterrupts.clear();
       acknowledgement?.removeListener("data", acknowledgeTerminalInterrupt);
       acknowledgement?.removeListener("error", ignoreAcknowledgementError);
       for (const [signal, handler] of handlers) parent.removeListener(signal, handler);
