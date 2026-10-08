@@ -13,7 +13,7 @@ import {
   clientFailure, isEntityId, newRequestId, subscriptionService, subscriptionServiceNames, type Resource,
 } from "@delinoio/delidev-api-client";
 import { useFailedSubscriptionCleanup } from "./subscription-cleanup";
-import { SubscriptionQuotaControls, quotaAccountAvailable, quotaObservationMachine } from "./subscription-quota";
+import { SubscriptionQuotaControls, quotaAccountAvailable, quotaObservationMachine, serverQuotaAvailable } from "./subscription-quota";
 import { useSubscriptionLogin } from "./subscription-login";
 import { serviceAccount } from "./subscription-resource";
 import { document, items, object, resourceName, text } from "./documents";
@@ -99,7 +99,9 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
   refreshInventory.current = rows.refetch;
   const quota = useRetainedMutation("subscription:quota:row",SubscriptionQuery.requestSubscriptionObservation,()=>{void rows.refetch();},(result,request)=>result.operationId===request.mutation?.requestId && serviceAccount(result.account,request.mutation?.id,undefined,request.mutation?.expectedRevision ?? 1n));
  const refreshAll = useRetainedMutation("subscription:quota:all",SubscriptionQuery.refreshAllSubscriptionQuotas,()=>{void rows.refetch();},(result,request)=>result.requestId===request.requestId && result.accounts.length<=10000 && new Set(result.accounts).size===result.accounts.length && result.accounts.every(isEntityId));
- const quotaSupported=status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1)===true;
+ const workerQuotaSupported=status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1)===true;
+ const serverQuotaSupported=status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V1)===true;
+ const quotaSupported=workerQuotaSupported || serverQuotaSupported;
  const loginCapable = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1) === true;
  const accountOperationsBlocked = Boolean(selected || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain);
  const cleanupCapable = status.data?.capabilities.includes(SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1) === true;
@@ -116,7 +118,7 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
     const quotaMachine = quotaObservationMachine(object(data.subscription));
     return { id: row.id, alias: resourceName(row), providerName: subscriptionServiceNames[service], brand: service as unknown as SubscriptionBrand,
       connection: data.removal ? SubscriptionConnectionState.CleanupPending : object(data.subscription).recovery_required === true ? SubscriptionConnectionState.CleanupPending : text(object(data.connection).id) ? SubscriptionConnectionState.Connected : SubscriptionConnectionState.Disconnected,
-      refresh: quotaSupported && service===SubscriptionServiceId.ChatGPT && quotaAccountAvailable(data) && isEntityId(quotaMachine) && !quota.busy && !quota.uncertain ? ()=>{ if (cleanup.canMutate()) void quota.send({mutation:{requestId:newRequestId(),id:row.id,expectedRevision:row.revision},machineId:quotaMachine,action:SubscriptionObservationAction.QUOTA,connectionId:text(object(data.connection).id),generationId:text(object(data.subscription).generation)}); } : undefined,
+      refresh: quotaSupported && service===SubscriptionServiceId.ChatGPT && quotaAccountAvailable(data) && (isEntityId(quotaMachine) && workerQuotaSupported || serverQuotaAvailable(object(data.subscription), serverQuotaSupported)) && !quota.busy && !quota.uncertain ? ()=>{ if (cleanup.canMutate()) void quota.send({mutation:{requestId:newRequestId(),id:row.id,expectedRevision:row.revision},machineId:quotaMachine,action:SubscriptionObservationAction.QUOTA,connectionId:text(object(data.connection).id),generationId:text(object(data.subscription).generation)}); } : undefined,
  health: text(data.health), enabled: data.enabled === true, providerState: copy("subscription-accounts.extra.22fc4e1096f2"), confirmedExhausted: data.confirmed_exhausted === true,
       windows: items(data.quota).map((entry) => { const window = object(entry); return { id: text(window.id), state: Object.values(QuotaObservationState).find((state) => state === window.state) ?? QuotaObservationState.Unknown, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) }; }),
       metadataAvailable: true, connect: service === SubscriptionServiceId.ChatGPT || service === SubscriptionServiceId.Claude ? () => { if (cleanup.canMutate()) setSelected(row); } : undefined,

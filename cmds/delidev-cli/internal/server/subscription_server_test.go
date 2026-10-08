@@ -38,6 +38,9 @@ type serverLoginFixture struct {
 	calls      atomic.Int32
 }
 
+func (n *serverLoginFixture) ReadManagedQuota(context.Context, domain.ID) (domain.SubscriptionQuotaObservation, error) {
+	return domain.SubscriptionQuotaObservation{}, domain.InvalidSubscriptionObservation()
+}
 func (n *serverLoginFixture) Version() string { return "0.159.2" }
 func (n *serverLoginFixture) StartManagedLogin(context.Context, bool) (codex.ManagedLoginProgress, error) {
 	n.calls.Add(1)

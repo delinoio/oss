@@ -70,7 +70,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   browser-profile list [--page-size N --page-token TOKEN]
   browser-profile register --id SESSION --revision N --account-id ACCOUNT
   browser-profile confirm-removal --id PROFILE --revision N --deletion-request-id REQUEST
-  account refresh-quota --id ID --revision N --machine-id ID --connection-id ID --generation-id ID
+  account refresh-quota --id ID --revision N [--machine-id ID] --connection-id ID --generation-id ID
   account refresh-all-quotas
   account consume-reset-credit --id ID --revision N --machine-id ID --connection-id ID --generation-id ID --credits-observation-id ID (--credit-id ID | --next-credit) --confirm
   account reconcile-reset-credit --id ID --revision N --operation-id ORIGINAL_ID --connection-id ID --generation-id ID --confirm

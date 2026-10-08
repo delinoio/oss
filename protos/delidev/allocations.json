@@ -9322,6 +9322,13 @@
       "declaration": "EditQueuedInputRequest",
       "member": "attachments",
       "number": 5
+    },
+    {
+      "issue": 1728,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V1",
+      "number": 46
     }
   ],
   "rpcReservations": [

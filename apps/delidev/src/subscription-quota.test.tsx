@@ -11,14 +11,14 @@ import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
  import { SubscriptionQuotaControls } from "./subscription-quota";
 
-function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "") {
+function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "") {
   const machine = newRequestId(), connection = newRequestId(), generation = newRequestId(), inventory = newRequestId();
-  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { generation, owner_machine_id: machine, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details } } };
+  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_quota: phase ? { id: newRequestId(), phase } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details } } };
   let account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 2, documentJson: encode(data) });
   const request = vi.fn(async (value) => ({ account, operationId: value.mutation?.requestId }));
   const reconcile = vi.fn(async () => ({ account }));
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_QUOTA_V1, SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1, ...(server && supported ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V1] : [SystemCapability.SUBSCRIPTION_QUOTA_V1])] }) });
     router.service(SubscriptionService, { requestSubscriptionObservation: request, reconcileSubscriptionCredit: reconcile });
   });
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
@@ -72,4 +72,19 @@ it("blocks detail quota refresh while a different native lease kind owns the acc
  await screen.findByText(/Last successful observation/);
  expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(true);
  expect(value.request).not.toHaveBeenCalled();
+});
+
+
+it.each([true, false])("negotiates server quota without a Runner Device (supported: %s)", async supported => {
+ const value=fixture(undefined,undefined,"",true,supported);render(<value.Harness />);
+ await screen.findByText(/Last successful observation/);
+ const button=screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement;
+ await waitFor(()=>expect(button.disabled).toBe(!supported));
+ fireEvent.click(button);
+ if(supported){await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));expect(value.request.mock.calls[0][0]).toMatchObject({machineId:"",connectionId:value.connection,generationId:value.generation,mutation:{id:value.account.id,expectedRevision:1n}})}else{expect(value.request).not.toHaveBeenCalled()}
+ expect((screen.getByRole("button",{name:"Review reset credit credit_1"}) as HTMLButtonElement).disabled).toBe(true);
+});
+it.each(["queued","sending","uncertain"])("retains the server quota %s fence in detail controls",async phase=>{
+ const value=fixture(undefined,undefined,"",true,true,phase);render(<value.Harness />);await screen.findByText(/Last successful observation/);
+ expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(true);expect(value.request).not.toHaveBeenCalled();
 });

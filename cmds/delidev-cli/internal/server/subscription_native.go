@@ -23,6 +23,7 @@ import (
 )
 
 type serverSubscriptionNative interface {
+	ReadManagedQuota(context.Context, domain.ID) (domain.SubscriptionQuotaObservation, error)
 	Version() string
 	StartManagedLogin(context.Context, bool) (codex.ManagedLoginProgress, error)
 	WaitManagedLogin(context.Context, string) error

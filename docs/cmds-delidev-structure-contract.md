@@ -437,3 +437,6 @@ reservation PR. System 44, Worker 24 and session request field 4 retain exclusiv
 ownership. Regenerate shared outputs from reconciled sources. This exception does
 not waive other domain contracts or authorize merging, native acceptance claims,
 or unrelated allocation changes.
+## Issue #1728 batch allocation exception
+
+The owner explicitly permits System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` allocation, declaration, generated bindings and activation in the same complete feature PR for issue #1728. This narrow exception waives only the prior main reservation merge. Existing QUOTA and Refresh all RPCs retain their allocations; no new RPC, Worker capability, migration or native change is introduced. Follow the [server quota ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728). Capabilities 18, 19 and 30 retain independent ownership.
