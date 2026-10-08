@@ -210,7 +210,7 @@
 .browser-open .session-body { grid-template-columns: minmax(0, 1fr); }
 .session-workspace.browser-open .session-app-panel { grid-area: 1 / 1 / 3 / 2; width: min(400px, calc(100% - 16px)); box-shadow: -4px 0 12px var(--shadow-soft); }
 @container conversation (min-width: 960px) {
-  .browser-open .session-body { grid-template-columns: minmax(360px, 1fr) 8px clamp(480px, var(--browser-width), calc(100cqw - 368px)); }
+  .browser-open .session-body { grid-template-columns: minmax(360px, 1fr) 8px clamp(480px, var(--browser-width, 480px), calc(100cqw - 368px)); }
   .browser-open .browser-splitter { display: block; grid-area: 1 / 2 / 5 / 3; cursor: col-resize; touch-action: none; background: var(--surface-subtle); border-inline: 1px solid var(--border-subtle); z-index: 3; }
   .browser-open .browser-splitter:hover, .browser-open .browser-splitter:focus-visible { background: var(--selected-background); }
   .session-workspace.browser-open .session-app-panel { grid-area: 1 / 3 / 5 / 4; width: 100%; box-shadow: none; }
