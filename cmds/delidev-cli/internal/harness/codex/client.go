@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -158,7 +159,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	}
 	defer func() {
 		if returned != nil {
-			if err := wire.Close(); err != nil {
+			if err := wire.CloseGracefully(3 * time.Second); err != nil {
 				returned = domain.CodexRecoveryFailure(config.Version, domain.CodexPhase(phase), returned, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
 			}
 		}
@@ -261,7 +262,7 @@ func handshakeError(wire *nativewire.Connection, err error) error {
 	return failure
 }
 func (c *Client) Close() error {
-	return domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.Close())
+	return domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.CloseGracefully(3*time.Second))
 }
 func (c *Client) Version() string { return c.version }
 

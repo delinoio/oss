@@ -226,6 +226,8 @@ Managed execution captures native identity and the final authentication bundle o
 
 Credential cleanup scans retained native files for raw token material and padded or unpadded standard/URL Base64 copies under the existing file/count/byte bounds. Finding a remnant leaves cleanup unconfirmed and retains recovery ownership without erasing the original native history.
 
+Ordinary Codex closure fences new protocol writes, closes stdin on the retained original process and allows at most three seconds for native EOF shutdown before forced cancellation. Join the original process controller and any input-close operation before returning. Codex's temporary helper aliases require normal native destructor cleanup; forced cancellation can leave them behind. Protocol failure, caller cancellation and expired grace retain immediate original-owner termination. The subsequent authentication scan still refuses symlinks and credential remnants. A graceful exit is process evidence only: it cannot release an existing recovery fence, change a protected completion receipt or establish bundle/file cleanup by itself. Closed structured shutdown logs distinguish timeout and joined cleanup without paths or native content.
+
 ## Logging
 
 Use structured `slog` events for accepted operations, grants, completion, capability availability and recovery failures. Log only opaque account/operation/lease/machine identities, closed action, cleanup classification and stable error code. Native protocol messages, token bundles, JWT identities, URLs, device codes and filesystem paths never enter these logs.

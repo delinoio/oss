@@ -122,6 +122,17 @@ func TestManualNativeThreadSmoke(t *testing.T) {
 	if err := client.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if err := filepath.WalkDir(cfg.Home, func(_ string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("native helper alias remained after joined shutdown")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	cfg.Process.OwnerID = domain.NewID()
 	client, err = Open(ctx, cfg)
 	if err != nil {
