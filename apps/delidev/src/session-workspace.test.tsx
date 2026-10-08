@@ -58,7 +58,8 @@ it("retains composer, mode and staged information edits through tool switches an
   expect(screen.getByRole("textbox", { name: "Session name" })).toBe(name);
   expect(name).toHaveProperty("value", "Staged name");
   fireEvent.keyDown(screen.getByRole("complementary", { name: "Session information" }), { key: "Escape" });
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Info" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Files" }));
+  expect(screen.getByRole("complementary", { name: "Session information" })).toHaveProperty("hidden", false);
   mounted.rerender(f.view("Retained draft"));
   expect(composer).toHaveProperty("value", "Retained draft");
   expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
@@ -97,33 +98,36 @@ it("locks the checked mode while its original enqueue request is pending", async
   await waitFor(() => expect(mode).toHaveProperty("disabled", false)); expect(mode).toHaveProperty("checked", true);
 });
 
-it("observes reached budgets with Info hidden and reveals the budget without resuming", async () => {
+it("observes reached budgets in persistent Info and reveals the budget without closing a tool", async () => {
   const f = fixture(BudgetState.THRESHOLD_REACHED);
   render(f.view());
   await waitFor(() => expect(f.budget).toHaveBeenCalled());
   await waitFor(() => expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true));
-  expect(screen.queryByRole("complementary", { name: "Session information" })).toBeNull();
+  expect(screen.getByRole("complementary", { name: "Session information" })).toHaveProperty("hidden", false);
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
   fireEvent.click(screen.getByRole("button", { name: "Show details" }));
+  expect(screen.getByRole("button", { name: "Files" }).getAttribute("aria-expanded")).toBe("true");
   const info = screen.getByRole("complementary", { name: "Session information" });
   expect(within(info).getByText("Usage and budget").closest("details")).toHaveProperty("open", true);
-  fireEvent.click(screen.getByRole("button", { name: "Close session information" }));
+  fireEvent.keyDown(info, { key: "Escape" });
+  expect(info).toHaveProperty("hidden", false);
   expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true);
   expect(f.control).not.toHaveBeenCalled();
 });
 
-it("keeps original technical evidence behind Info and opens it from the compact notice", async () => {
+it("keeps original technical evidence in persistent Info and reveals it from the compact notice", async () => {
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, true);
   render(f.view());
   await screen.findByText("Execution is blocked");
-  expect(screen.queryByRole("complementary", { name: "Session information" })).toBeNull();
-  expect(screen.getByText(/Original installation evidence/).closest("aside")).toHaveProperty("hidden", true);
+  expect(screen.getByRole("complementary", { name: "Session information" })).toHaveProperty("hidden", false);
+  expect(screen.getByText(/Original installation evidence/).closest("aside")).toHaveProperty("hidden", false);
   const opener = screen.getByRole("button", { name: "Show details" });
   fireEvent.click(opener);
   const evidence = screen.getByText(/Original installation evidence/);
   expect(evidence.closest("details")).toHaveProperty("open", true);
   expect(evidence.closest("aside")).toHaveProperty("hidden", false);
   fireEvent.keyDown(evidence, { key: "Escape" });
-  expect(document.activeElement).toBe(opener);
+  expect(document.activeElement).toBe(evidence.closest(".session-information-evidence"));
   expect(f.control).not.toHaveBeenCalled();
 });
 
@@ -172,16 +176,18 @@ it("shows original uncertain startup recovery beside the conversation with one c
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, { dispatch: "paused", recovery: "required", execution: { execution_id: execution }, initial_execution: { id: execution }, startup: { job_id: job, execution_id: execution, failure: { state: 3, phase: 5, harness: "codex", problem_code: "recovery_required", correlation_id: job, input_delivery: 4, cleanup: 2 } } });
   render(f.view("Retained first draft"));
   const recovery = await screen.findByRole("button", { name: "Reconcile original execution" });
-  expect(screen.queryByRole("complementary", { name: "Session information" })).toBeNull();
+  expect(screen.getByRole("complementary", { name: "Session information" })).toHaveProperty("hidden", false);
   expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true);
   expect(f.recover).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
   fireEvent.click(recovery);
+  expect(screen.getByRole("button", { name: "Files" }).getAttribute("aria-expanded")).toBe("true");
   expect(f.recover).not.toHaveBeenCalled();
   expect(screen.getByRole("complementary", { name: "Session information" })).toBeTruthy();
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Confirm selected recovery action" }));
   const confirmation = screen.getByRole("button", { name: "Confirm selected recovery action" });
-  fireEvent.click(screen.getByRole("button", { name: "Close session information" }));
-  expect(document.activeElement).toBe(recovery);
+  fireEvent.keyDown(confirmation, { key: "Escape" });
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Files" }));
   fireEvent.click(screen.getByRole("button", { name: "Info" }));
   expect(screen.getByRole("button", { name: "Confirm selected recovery action" })).toBe(confirmation);
   expect(screen.getAllByRole("button", { name: "Reconcile original execution" })).toHaveLength(1);
@@ -200,4 +206,33 @@ it("keeps malformed startup evidence visible and does not grant retry", async ()
   expect(screen.queryByText(/private-native-output/)).toBeNull();
   expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true);
   expect(f.control).not.toHaveBeenCalled();
+});
+
+
+it("keeps Info independent of every temporary tool and restores the original tool opener", async () => {
+  const f = fixture(); render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const info = screen.getByRole("complementary", { name: "Session information" });
+  const heading = within(info).getByRole("heading", { name: "Session information" });
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  expect(within(info).getByText("Status and recovery").closest("details")).toHaveProperty("open", true);
+  for (const details of info.querySelectorAll(".session-information-section")) expect(details).toHaveProperty("open", false);
+  expect(screen.queryByRole("button", { name: "Close session information" })).toBeNull();
+  for (const name of ["Files", "Diff", "Terminals", "Browser", "Diagnostics"]) {
+    const opener = screen.getByRole("button", { name });
+    fireEvent.click(opener);
+    expect(opener.getAttribute("aria-expanded")).toBe("true");
+    expect(info).toHaveProperty("hidden", false);
+    fireEvent.click(screen.getByRole("button", { name: "Info" }));
+    expect(document.activeElement).toBe(heading);
+    expect(opener.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(heading, { key: "Escape" });
+    expect(document.activeElement).toBe(opener);
+    expect(opener.getAttribute("aria-expanded")).toBe("false");
+    expect(info).toHaveProperty("hidden", false); expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Info" }));
+  fireEvent.keyDown(heading, { key: "Escape" });
+  expect(document.activeElement).toBe(heading); expect(info).toHaveProperty("hidden", false);
+  expect(f.enqueue).not.toHaveBeenCalled(); expect(f.rename).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
 });

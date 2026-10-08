@@ -226,7 +226,7 @@ const submissionLabels = {
   [SubmissionPhase.Rejected]: "session.submissionRejected", [SubmissionPhase.Removed]: "session.submissionRemoved",
 } as const;
 
-enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics", Info = "info" }
+enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics" }
 enum InfoTarget { Status = "status", Recovery = "recovery", Budget = "budget" }
 
 export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; openRunnerSettings?: () => void }) {
@@ -275,7 +275,6 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const budgetDetails = useRef<HTMLDetailsElement>(null);
   const information = useRef<HTMLElement>(null);
   const [infoReveal, setInfoReveal] = useState<{ target: InfoTarget }>();
-  useLayoutEffect(() => { if (panel === SessionPanel.Info) infoHeading.current?.focus({ preventScroll: true }); }, [panel]);
   useLayoutEffect(() => {
     if (!infoReveal) return;
     const target = infoReveal.target === InfoTarget.Budget ? budgetDetails.current : infoReveal.target === InfoTarget.Recovery ? infoToolsTarget : infoEvidence.current;
@@ -372,7 +371,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const panelButtons = {
     [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
     [SessionPanel.Terminals]: terminalsButton, [SessionPanel.Browser]: browserButton,
-    [SessionPanel.Diagnostics]: diagnosticsButton, [SessionPanel.Info]: infoButton,
+    [SessionPanel.Diagnostics]: diagnosticsButton,
   };
   const closePanel = () => {
     setPanel(SessionPanel.Closed);
@@ -386,9 +385,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     if (panel === next) closePanel();
     else { panelOpener.current = panelButtons[next].current; setPanel(next); }
   };
-  const showInfo = (opener: HTMLButtonElement, target = InfoTarget.Status) => {
-    panelOpener.current = opener;
-    setPanel(SessionPanel.Info); setInfoReveal({ target });
+  // Revealing Info does not replace the temporary tool or its original opener.
+  const showInfo = (_opener: HTMLButtonElement, target = InfoTarget.Status) => {
+    setInfoReveal({ target });
   };
   const problem = object(data.problem);
   const recovering = text(data.recovery) !== "none" && Boolean(text(data.recovery));
@@ -404,7 +403,6 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     { panel: SessionPanel.Terminals, icon: SessionIconKind.Terminals, label: copy("session.terminals_7482c4") },
     { panel: SessionPanel.Browser, icon: SessionIconKind.Browser, label: copy("session.browser_d31de1") },
     { panel: SessionPanel.Diagnostics, icon: SessionIconKind.Diagnostics, label: copy("session.diagnostics_268f14") },
-    { panel: SessionPanel.Info, icon: SessionIconKind.Info, label: copy("session.info") },
   ] as const;
   return <section className={`session-workspace${panel !== SessionPanel.Closed ? " panel-open" : ""}`} aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
     if (event.key === "Escape" && panel !== SessionPanel.Closed && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
@@ -428,8 +426,10 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     </header>
     <div className="session-toolbar">
       <strong>{copy("session.conversation_ccca18")}</strong>
-      <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}</div>
+      <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}<button type="button" ref={infoButton} aria-controls={`info-${id}`} onClick={() => { infoHeading.current?.focus({ preventScroll: true }); infoHeading.current?.scrollIntoView?.({ block: "nearest" }); }}><SessionIcon kind={SessionIconKind.Info} />{copy("session.info")}</button></div>
     </div>
+    <div className="session-content">
+    <div className="session-conversation-region">
     <div className="session-body">
       <div className="session-notices">
         {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={opener => showInfo(opener)}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
@@ -445,7 +445,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <RunnerTaskRemediation active={active} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
         <div ref={setRecoveryLauncherTarget} hidden={!inlineRecovery} />
       </div>
-      {session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen={panel === SessionPanel.Info} target={infoToolsTarget} launcherTarget={inlineRecovery ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)} /> : null}
+      {session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen target={infoToolsTarget} launcherTarget={inlineRecovery ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)} /> : null}
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
@@ -484,9 +484,15 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
           {send.uncertain ? <button type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
         </div>
       </form>
+    {panel === SessionPanel.Terminals && session ? <div id={`terminals-${id}`} className="session-app-panel"><SessionTerminals key={id} session={session} close={closePanel} /></div>
+      : panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={closePanel} /></div>
+      : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={closePanel} /></div>
+      : panel === SessionPanel.Diagnostics ? <div id={`diagnostics-${id}`} className="session-app-panel"><RequestDiagnostics key={id} sessionId={id} close={closePanel} /></div>
+      : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} /></div> : null}
     </div>
-    <aside ref={information} id={`info-${id}`} className="session-app-panel session-information" hidden={panel !== SessionPanel.Info} aria-labelledby={`info-title-${id}`}>
-      <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2><button type="button" onClick={closePanel} aria-label={copy("session.closeInformation")}>×</button></header>
+    </div>
+    <aside ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
+      <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2></header>
       <div className="session-information-body">
         <div ref={setInfoToolsTarget} tabIndex={-1} />
         <div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
@@ -506,10 +512,6 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </> : null}
       </div>
     </aside>
-    {panel === SessionPanel.Terminals && session ? <div id={`terminals-${id}`} className="session-app-panel"><SessionTerminals key={id} session={session} close={closePanel} /></div>
-      : panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={closePanel} /></div>
-      : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={closePanel} /></div>
-      : panel === SessionPanel.Diagnostics ? <div id={`diagnostics-${id}`} className="session-app-panel"><RequestDiagnostics key={id} sessionId={id} close={closePanel} /></div>
-      : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} /></div> : null}
+    </div>
   </section>;
 }

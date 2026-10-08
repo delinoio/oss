@@ -1546,12 +1546,33 @@ startup-rejection guards. Fork/Sidechat and Archive/Restore use a keyboard-opera
 Session actions popup; opening or closing it never creates or replaces authority.
 
 A full-width tool strip exposes Diff, Files, Terminals, Browser, Diagnostics and
-Info. Default to closed; activating the selected tool closes it. Preserve one
-visible panel and restore the original trigger focus on Close/Escape. At 900px
-available session width, an open panel occupies a 400px right column. Below that
-threshold it overlays the notices and transcript, with a width capped at 400px;
-it cannot obscure the request tray or composer. CSS reflow uses the same DOM and
-controllers. Tool labels wrap at narrow widths and effective zoom.
+Info. Info is a persistent inspector, independent of the five initially closed,
+mutually exclusive temporary tools. Its toolbar action focuses the original Info
+heading; it never toggles or dismisses the card. At 900px available session width
+or more, reserve a 360px right rail including 20px horizontal padding, separated
+from the conversation by 24px. Place the 320px card at the upper right, with 20px
+corners, a semantic thin border, subtle shadow and 16px internal padding. Cap its
+height to the available body and scroll excess content inside it. The card ends
+after its content; no full-height separator or rail background is present.
+
+Below 900px, reflow the same Info DOM above the conversation into a scrolling
+band capped at the smaller of 240px and 25% of workspace height. Notices,
+transcript, request tray and composer remain in the conversation region without
+intersecting Info. Temporary panels are bounded within that region, excluding
+Info, request tray and composer at compact widths. Their existing 400px pane is
+reserved only at 900px available conversation width; compact panels overlay
+notices and transcript. Close/Escape closes only the temporary tool and restores
+its original opener. Info focus and notice-detail actions reveal/focus the
+original section without closing the temporary tool or issuing business actions.
+
+Preserve the complete Info inspector, initially expanded status/recovery and
+initially collapsed other disclosures, staged editors, budget gates, query and
+controller identities, confirmations and original receipts. CSS reflow retains
+the same DOM, composer, drafts and Plan Mode. Tool labels wrap at narrow widths
+and effective zoom. Browser cleanup and independent terminal lifetime retain
+their original authority. This presentation adds no RPC, protocol allocation,
+database migration or native authority. Fixtures remain separate from packaged
+CEF, native/account and platform acceptance.
 
 Conversation transcript presentation distinguishes recognized roles without
 changing content authority. Generic user messages and validated Grok user roots
@@ -1573,7 +1594,9 @@ The transcript scrolls independently. Open interactions remain expanded, and
 request/queue contents have bounded scroll space near the composer. Preserve
 original page-scoped counts, pagination and live delivery ordering. The composer
 stays at the bottom, with a 120px textarea adjustable from 80px to 180px; short
-available areas start at 80px, with independently bounded upper rows. Compact
+available areas start at 80px, with independently bounded upper rows. The composer
+can scroll within its allocated row when narrow or zoomed content exceeds the
+available height, keeping its original input and actions reachable. Compact
 sidebar navigation takes space from the workspace instead of displacing input.
 Keep the existing Execute/Plan selection, Enter behavior,
 connection-owned prompt limits, send locks and exact uncertain retries. An empty
