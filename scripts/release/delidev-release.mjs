@@ -20,6 +20,12 @@ export function identity(version, revision) {
   requireValue(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) && version.split('.').every(n => BigInt(n) <= 0xffffffffn) && /^[a-f0-9]{40}$/.test(revision), 'Invalid DeliDev release identity');
   return { schemaVersion: 1, version, sourceRevision: revision, tag: releaseTag(Project.DeliDev, version), channel: 'download-only', excludedTargets: ['windows-amd64', 'windows-arm64'] };
 }
+export function sourceIdentity({ repository, event, ref, revision, head, version, tagRevision }) {
+  requireValue(repository === 'delinoio/oss' && event === 'push' && typeof ref === 'string' && ref.startsWith('refs/tags/delidev-v'), 'DeliDev release requires a first-party tag push');
+  const expected = identity(ref.slice('refs/tags/delidev-v'.length), revision);
+  requireValue(head === revision && tagRevision === revision && version === expected.version, 'DeliDev tag and checkout identity conflict');
+  return { version: expected.version, revision: expected.sourceRevision };
+}
 export function updaterTarget(t) { return `${t.platform}-${t.arch === 'x64' ? 'amd64' : 'arm64'}`; }
 export function expectedNames() {
   return [...releaseTargets.flatMap(t => {
@@ -148,6 +154,17 @@ function output(values) {
   console.log(JSON.stringify({ component: 'delidev.release', ...values }));
 }
 export async function main(command) {
+  if (command === 'source') {
+    const metadata = sourceIdentity({
+      repository: process.env.GITHUB_REPOSITORY, event: process.env.GITHUB_EVENT_NAME,
+      ref: process.env.GITHUB_REF, revision: process.env.GITHUB_SHA,
+      head: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      version: readVersion(Project.DeliDev),
+      tagRevision: execFileSync('git', ['rev-parse', `${process.env.GITHUB_REF}^{commit}`], { encoding: 'utf8' }).trim(),
+    });
+    output(metadata);
+    return;
+  }
   const expected = identity(process.env.RELEASE_VERSION, process.env.RELEASE_REVISION);
   requireValue(process.env.GITHUB_REPOSITORY === 'delinoio/oss', 'DeliDev publication requires delinoio/oss');
   const head = execFileSync('git', ['rev-parse','HEAD'], { encoding: 'utf8' }).trim();

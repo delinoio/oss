@@ -1,31 +1,8 @@
 name: Release DeliDev
 
 on:
-  workflow_call:
-    inputs:
-      version:
-        required: true
-        type: string
-      revision:
-        required: true
-        type: string
-    secrets:
-      DELIDEV_MACOS_CERTIFICATE_BASE64:
-        required: true
-      DELIDEV_MACOS_CERTIFICATE_PASSWORD:
-        required: true
-      DELIDEV_MACOS_APP_PROFILE_BASE64:
-        required: true
-      DELIDEV_MACOS_WIDGET_PROFILE_BASE64:
-        required: true
-      DELIDEV_MACOS_SELECTION_PROFILE_BASE64:
-        required: true
-      DELIDEV_APPLE_NOTARY_KEY_BASE64:
-        required: true
-      DELIDEV_APPLE_NOTARY_KEY_ID:
-        required: true
-      DELIDEV_APPLE_NOTARY_ISSUER_ID:
-        required: true
+  push:
+    tags: [delidev-v*]
 
 permissions:
   contents: read
@@ -35,36 +12,45 @@ concurrency:
   group: delidev-release
   cancel-in-progress: false
 
-env:
-  RELEASE_VERSION: ${{ inputs.version }}
-  RELEASE_REVISION: ${{ inputs.revision }}
-
 jobs:
   inspect:
-    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    if: github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/delidev-v') && github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
+      version: ${{ steps.source.outputs.version }}
+      revision: ${{ steps.source.outputs.revision }}
       published: ${{ steps.existing.outputs.published }}
       matrix: ${{ steps.targets.outputs.matrix }}
       macos_matrix: ${{ steps.targets.outputs.macos_matrix }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.revision }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, package-manager-cache: false }
+      - name: Validate tag and source identity
+        id: source
+        run: node scripts/release/delidev-release.mjs source
       - id: targets
         env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+          RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           DELIDEV_WINDOWS_SIGNING_ENABLED: ${{ vars.DELIDEV_WINDOWS_SIGNING_ENABLED }}
         run: node scripts/release/delidev-release.mjs plan
       - id: existing
         env:
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+          RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release/delidev-release.mjs inspect
 
   preflight:
+    env:
+      RELEASE_VERSION: ${{ needs.inspect.outputs.version }}
+      RELEASE_REVISION: ${{ needs.inspect.outputs.revision }}
     needs: inspect
     if: needs.inspect.outputs.published != 'true'
     runs-on: ubuntu-24.04
@@ -72,7 +58,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: '${{ inputs.revision }}', persist-credentials: false }
+        with: { ref: '${{ needs.inspect.outputs.revision }}', persist-credentials: false }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, package-manager-cache: false }
       - name: Validate signing configuration before native builds
@@ -95,6 +81,9 @@ jobs:
           JS
 
   package:
+    env:
+      RELEASE_VERSION: ${{ needs.inspect.outputs.version }}
+      RELEASE_REVISION: ${{ needs.inspect.outputs.revision }}
     needs: [inspect, preflight]
     if: needs.inspect.outputs.published != 'true'
     timeout-minutes: 180
@@ -104,7 +93,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: '${{ inputs.revision }}', lfs: true, persist-credentials: false }
+        with: { ref: '${{ needs.inspect.outputs.revision }}', lfs: true, persist-credentials: false }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
@@ -163,19 +152,22 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: runner.os == 'macOS' && steps.retained.outputs.reused != 'true' && steps.inputs.outputs.reused != 'true'
         with:
-          name: delidev-signing-input-${{ matrix.target }}-${{ inputs.revision }}-${{ github.run_id }}
+          name: delidev-signing-input-${{ matrix.target }}-${{ needs.inspect.outputs.revision }}-${{ github.run_id }}
           path: target/delidev-signing-input/${{ matrix.target }}/
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: runner.os == 'Linux' && steps.retained.outputs.reused != 'true' && steps.inputs.outputs.reused != 'true'
         with:
-          name: delidev-release-${{ matrix.target }}-${{ inputs.revision }}-${{ github.run_id }}
+          name: delidev-release-${{ matrix.target }}-${{ needs.inspect.outputs.revision }}-${{ github.run_id }}
           path: target/delidev-release-candidate/${{ matrix.target }}/
           if-no-files-found: error
           retention-days: 7
 
   sign:
+    env:
+      RELEASE_VERSION: ${{ needs.inspect.outputs.version }}
+      RELEASE_REVISION: ${{ needs.inspect.outputs.revision }}
     needs: [inspect, preflight, package]
     if: needs.inspect.outputs.published != 'true'
     environment: delidev-release
@@ -186,7 +178,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: '${{ inputs.revision }}', persist-credentials: false }
+        with: { ref: '${{ needs.inspect.outputs.revision }}', persist-credentials: false }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, architecture: '${{ matrix.arch }}', package-manager-cache: false }
       - name: Restore the original signed candidate from this release run
@@ -199,7 +191,7 @@ jobs:
         if: steps.retained.outputs.reused != 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: delidev-signing-input-${{ matrix.target }}-${{ inputs.revision }}-${{ github.run_id }}
+          name: delidev-signing-input-${{ matrix.target }}-${{ needs.inspect.outputs.revision }}-${{ github.run_id }}
           path: target/delidev-signing-input/${{ matrix.target }}/
       - name: Sign and notarize macOS release files
         if: steps.retained.outputs.reused != 'true'
@@ -218,12 +210,18 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: steps.retained.outputs.reused != 'true'
         with:
-          name: delidev-release-${{ matrix.target }}-${{ inputs.revision }}-${{ github.run_id }}
+          name: delidev-release-${{ matrix.target }}-${{ needs.inspect.outputs.revision }}-${{ github.run_id }}
           path: target/delidev-release-candidate/${{ matrix.target }}/
           if-no-files-found: error
           retention-days: 7
 
   publish:
+    env:
+      RELEASE_VERSION: ${{ needs.inspect.outputs.version }}
+      RELEASE_REVISION: ${{ needs.inspect.outputs.revision }}
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_INPUTS: target/delidev-release-inputs
+      RELEASE_OUTPUT: target/delidev-public-release
     needs: [inspect, package, sign]
     if: needs.inspect.outputs.published != 'true'
     environment: delidev-release
@@ -232,13 +230,9 @@ jobs:
     permissions:
       contents: write
       actions: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-      RELEASE_INPUTS: target/delidev-release-inputs
-      RELEASE_OUTPUT: target/delidev-public-release
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: '${{ inputs.revision }}', persist-credentials: false }
+        with: { ref: '${{ needs.inspect.outputs.revision }}', persist-credentials: false }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, package-manager-cache: false }
       - name: Download original candidates
@@ -263,6 +257,9 @@ jobs:
         run: node scripts/release/delidev-release.mjs publish
 
   result:
+    env:
+      RELEASE_VERSION: ${{ needs.inspect.outputs.version }}
+      RELEASE_REVISION: ${{ needs.inspect.outputs.revision }}
     if: always()
     needs: [inspect, preflight, package, sign, publish]
     runs-on: ubuntu-24.04

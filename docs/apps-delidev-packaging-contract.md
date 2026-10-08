@@ -150,11 +150,13 @@ The desktop and resident CLI ship from the same package/source revision with pri
 
 `Release Project` accepts `delidev` with a stable patch/minor/major increment.
 It updates the desktop package, Cargo manifest/lock and Tauri versions together,
-records the original run/source revision, and creates `delidev-v<semver>` before
-calling `release-delidev.yml`. The existing Go sidecar/Worker version and source
-revision injection remains shared. DeliDev does not publish a Cargo or npm package. Desktop local-server and saved-connection compatibility checks use the compiled `CARGO_PKG_VERSION`, so they advance with the packaged Go server version; protocol checks remain independent.
+records the original run/source revision, and creates `delidev-v<semver>`.
+The tag push starts the independent `release-delidev.yml` workflow. The coordinator
+ends after tagging and reports preparation only. Recover downstream failure by
+rerunning the original tag workflow without moving its tag. The existing Go
+sidecar/Worker version and source revision injection remains shared. DeliDev does not publish a Cargo or npm package. Desktop local-server and saved-connection compatibility checks use the compiled `CARGO_PKG_VERSION`, so they advance with the packaged Go server version; protocol checks remain independent.
 
-The reusable workflow builds macOS/Linux x64 and arm64 using the existing native
+The tag-triggered workflow builds macOS/Linux x64 and arm64 using the existing native
 matrix and keyless package checks. Windows x64/arm64 is explicitly skipped:
 there is no Windows production signing backend in this workflow. Setting
 `DELIDEV_WINDOWS_SIGNING_ENABLED` to a value other than empty or `false` fails
@@ -165,7 +167,7 @@ provides the ordinary `delidev` CLI/server commands. A downloaded standalone Uni
 executable requires executable permission before use.
 
 Production macOS signing runs in a fresh job separate from keyless preparation.
-External actions in the coordinator and reusable workflow use full commit SHAs.
+External actions in the coordinator and independent release workflow use full commit SHAs.
 The signer installs no package manager, Go/Rust toolchain, build dependencies or
 CEF cache. It invokes the repository signer directly with Node, consumes only
 the original same-run keyless DMG/Worker and digest-bound CEF notice inventory,
@@ -195,11 +197,13 @@ The `delidev-release` GitHub Environment supplies these secrets:
 - `DELIDEV_APPLE_NOTARY_KEY_BASE64`, `DELIDEV_APPLE_NOTARY_KEY_ID`,
   `DELIDEV_APPLE_NOTARY_ISSUER_ID`.
 
-The coordinator forwards only these named secret references to the reusable
-workflow, which declares each reference required. Its jobs select the Environment
-to obtain the values. Required declarations check the caller contract; the runtime
-preflight still rejects missing or empty signing material. No unrelated secrets
-are inherited.
+The independent workflow reads these secrets directly from the Environment in
+its preflight and signing jobs. The coordinator neither forwards signing secrets
+nor invokes the release workflow. Runtime preflight rejects missing or empty
+signing material before native builds. Build jobs remain credential-free.
+The tag workflow accepts only first-party `delidev-v<semver>` pushes and validates
+the exact stable version against synchronized source files, checkout revision and
+tag target before passing version/revision outputs to dependent jobs.
 
 Its non-secret variables are `DELIDEV_APPLE_TEAM_ID` and
 `DELIDEV_MACOS_CERTIFICATE_SHA1`. Base64 material must be canonical single-line

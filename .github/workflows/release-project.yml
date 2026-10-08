@@ -36,6 +36,7 @@ jobs:
     outputs:
       project: ${{ steps.prepare.outputs.project }}
       kind: ${{ steps.prepare.outputs.kind }}
+      cargo_publish: ${{ steps.plan.outputs.cargo_publish }}
       previous_version: ${{ steps.prepare.outputs.previous_version }}
       version: ${{ steps.prepare.outputs.version }}
       tag: ${{ steps.prepare.outputs.tag }}
@@ -49,11 +50,14 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
+      - name: Resolve publication requirements
+        id: plan
+        run: node scripts/release/project.mjs plan
       - name: Validate configuration before committing
         env:
           CLIENT_ID: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
           PRIVATE_KEY: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
-          REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && inputs.project != 'delidev' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          REGISTRY_TOKEN: ${{ steps.plan.outputs.cargo_publish == 'true' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: |
           node --input-type=module <<'JS'
           import { requiresCargoPublish, versionChanges } from './scripts/release/project.mjs';
@@ -104,17 +108,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release/project.mjs validate
       - name: Install Rust toolchain
-        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'delidev'
+        if: needs.prepare.outputs.cargo_publish == 'true'
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: nightly-2026-09-28
       - name: Cache Rust dependencies
-        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'delidev'
+        if: needs.prepare.outputs.cargo_publish == 'true'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Publish only the selected crate
-        if: needs.prepare.outputs.kind == 'rust' && inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'delidev'
+        if: needs.prepare.outputs.cargo_publish == 'true'
         env:
-          CARGO_REGISTRY_TOKEN: ${{ inputs.project != 'clibox' && inputs.project != 'pnport' && inputs.project != 'async-commit-hook' && inputs.project != 'react-forge' && inputs.project != 'delidev' && secrets.CARGO_REGISTRY_TOKEN || '' }}
+          CARGO_REGISTRY_TOKEN: ${{ needs.prepare.outputs.cargo_publish == 'true' && secrets.CARGO_REGISTRY_TOKEN || '' }}
         run: cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"
 
   tag:
@@ -146,29 +150,9 @@ jobs:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
         run: node scripts/release/project.mjs tag
 
-  delidev:
-    if: inputs.project == 'delidev'
-    needs: [prepare, tag]
-    permissions:
-      contents: write
-      actions: read
-    uses: ./.github/workflows/release-delidev.yml
-    secrets:
-      DELIDEV_MACOS_CERTIFICATE_BASE64: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_BASE64 }}
-      DELIDEV_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.DELIDEV_MACOS_CERTIFICATE_PASSWORD }}
-      DELIDEV_MACOS_APP_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_APP_PROFILE_BASE64 }}
-      DELIDEV_MACOS_WIDGET_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_WIDGET_PROFILE_BASE64 }}
-      DELIDEV_MACOS_SELECTION_PROFILE_BASE64: ${{ secrets.DELIDEV_MACOS_SELECTION_PROFILE_BASE64 }}
-      DELIDEV_APPLE_NOTARY_KEY_BASE64: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_BASE64 }}
-      DELIDEV_APPLE_NOTARY_KEY_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_KEY_ID }}
-      DELIDEV_APPLE_NOTARY_ISSUER_ID: ${{ secrets.DELIDEV_APPLE_NOTARY_ISSUER_ID }}
-    with:
-      version: ${{ needs.prepare.outputs.version }}
-      revision: ${{ needs.prepare.outputs.revision }}
-
   summary:
     if: always()
-    needs: [prepare, registry, tag, delidev]
+    needs: [prepare, registry, tag]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -187,7 +171,7 @@ jobs:
             '| Phase | Result |', '| --- | --- |',
             ...Object.entries(jobs).map(([name, job]) => `| ${name} | ${job.result} |`), '',
           ];
-          const failed = Object.entries(jobs).filter(([name, job]) => job.result !== 'success' && !(name === 'delidev' && process.env.RELEASE_PROJECT !== 'delidev' && job.result === 'skipped')).map(([name]) => name);
+          const failed = Object.entries(jobs).filter(([name, job]) => job.result !== 'success').map(([name]) => name);
           if (failed.length) lines.push(`Incomplete phases: ${failed.join(', ')}. Fix the failed phase, then rerun this release run to reuse any recorded version.`);
           else if (process.env.RELEASE_PROJECT === 'async-commit-hook') lines.push(
             'Version and tag preparation is complete. Signing, GitHub Release, and Homebrew require a separate manual run of [Release async-commit-hook](https://github.com/delinoio/oss/actions/workflows/release-async-commit-hook.yml). Consolidated Public Docs deploys automatically through Cloudflare Pages from main.',

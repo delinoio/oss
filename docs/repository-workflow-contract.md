@@ -373,7 +373,7 @@ Changes to DevHud workflows or these contracts must update `docs/apps-devhud-ope
 
 ## Selected CLI release and bot ownership
 
-`release-project.yml` is the manual `Release Project` entrypoint. Its required choices are `project` (`binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor`, `clibox`, `pnport`, `async-commit-hook`) and `bump` (`patch`, `minor`, `major`, default `patch`). It accepts only `main` in `delinoio/oss`. There is no main-push workspace publisher: Rust libraries remain available through explicit local `cargo mono publish` usage, but are not published by this workflow. DevHud and documentation deployment remain separate.
+`release-project.yml` is the manual `Release Project` entrypoint. Its required choices are `project` (`binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor`, `clibox`, `pnport`, `async-commit-hook`, `react-forge`, `delidev`) and `bump` (`patch`, `minor`, `major`, pnport-only `next`, default `patch`). It accepts only `main` in `delinoio/oss`. There is no main-push workspace publisher: Rust libraries remain available through explicit local `cargo mono publish` usage, but are not published by this workflow. DevHud and documentation deployment remain separate.
 
 The private organization-owned GitHub App `delino-release-bot` has only Contents write and implicit Metadata read, no webhook subscriptions or user authorization, and selected installation access to `oss` and `homebrew-tap`. Both the organization and repository main rulesets must allow this app to bypass directly; other rules and actors are preserved. `DELINO_RELEASE_BOT_CLIENT_ID` is an Actions variable and `DELINO_RELEASE_BOT_PRIVATE_KEY` is an Actions secret in `oss`. Neither private keys nor installation tokens belong in files, artifacts, logs, Git URLs, or Git configuration. `actions/create-github-app-token@v3` obtains a fresh repository-scoped token immediately before each write phase and revokes it afterward. The app has no Actions or Administration write permission. Release-source inspection and same-repository release uploads use the built-in token. Registry uploads retain `CARGO_REGISTRY_TOKEN`.
 
@@ -446,12 +446,19 @@ Native Tauri consumers restore/verify the immutable execution-host CLI through `
 
 ### DeliDev automated release coordination
 
+The shared release planner exports `cargo_publish` from the central project policy.
+The coordinator resolves it before configuration validation and version commits,
+then uses it to select Cargo registry credentials, Rust setup, caching and
+publication. Non-Cargo projects still validate their immutable source and tag.
+
 `Release Project` includes DeliDev stable patch/minor/major preparation and the
 exceptional `delidev-v<semver>` namespace. It synchronizes desktop package,
 Cargo/Tauri and lock versions, retains exact same-run source recovery, skips Cargo
-registry publication and calls the dedicated reusable release workflow after
-verified tagging. Unlike the existing manual keyless dry runs, that workflow
-uses the `delidev-release` Environment for production macOS signing and publishes
+registry publication through the common `cargo_publish` output and ends after
+verified tagging. The tag push starts the dedicated independent release workflow;
+the coordinator summary does not report downstream publication. Rerun the original
+tag workflow to recover deployment failures without moving the tag.
+Unlike the existing manual keyless dry runs, that workflow uses the `delidev-release` Environment for production macOS signing and publishes
 an immutable macOS/Linux download-only release with Windows explicitly skipped.
 Follow `apps-delidev-packaging-contract.md` and the download-only exception in
 `cmds-delidev-updates-contract.md`. No update manifest or partial updater authority
