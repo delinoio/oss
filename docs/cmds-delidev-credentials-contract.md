@@ -172,3 +172,13 @@ Issue #1857's bounded tool exception follows the [harness contract](cmds-delidev
 ## Access-only server quota references — issue #1854
 
 System 50 quota reads retain the exact current sealed AccountLogin reference independently of an Execute writer. Go validates its original account/user commitment and narrows native input to access token, account and plan; ID and refresh tokens remain in Go and never reach the quota native process or managed files. Admission/reference capture use short account serialization, never a lock across native/network work. Worker completion may rotate the current generation but must protect the quota operation's captured generation until independent cleanup. An uncertain quota owner fences protected-reference deletion and restore without marking an original execution lease failed. Authentication renewal and writeback remain exclusively owned by the original lifecycle/execution controller. Follow the [V2 quota contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2--issue-1854).
+
+### Subscription vault initialization
+
+Server subscription maintenance acquires the shared account gate before lazy
+vault initialization and before reading the exact original `AccountLogin`
+generation. API account operations use the same gate and retained vault owner.
+Cancellation before acquisition admits no vault or native work; failed opening
+publishes no owner and permits a later original-authority retry. Release the gate
+before native login/logout or waiting on its process. Original operation claims,
+independent cleanup and joined shutdown keep their existing ownership.
