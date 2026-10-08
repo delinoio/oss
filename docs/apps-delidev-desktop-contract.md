@@ -2614,7 +2614,21 @@ disabled/inert state before changing text, bindings, or focus. Confirmed origina
 mutation acceptance clears its submitted bindings independently of the pending
 render lock; this settlement callback grants no user edit authority. A token opens at input start or after whitespace at the caret;
 case-insensitive prefix filtering orders exact names first, then name and opaque
-identity. Candidates retain descriptions and user/project provenance. Mouse,
+identity. Candidates retain descriptions and user/project provenance. All four consuming
+placements (project creation, General Chat creation, follow-up and queue editing)
+use one horizontal option row: name, original description and an unshrunk neutral
+User/Project badge. The in-flow panel has a 220px maximum scroll height, 4px padding,
+a neutral border and 8px corners. Rows have a 40px minimum height, 12px horizontal
+padding, 12px gaps and 8px corners. Names use 14px/20px semibold text; descriptions
+use muted 12px/18px text. Preserve full original text in the DOM and accessible
+option name. Ellipsize actual overflow only; names have priority and a 40% maximum
+content width, while description width can shrink to zero. Keep rows single-line
+in both locales, semantic themes, narrow widths and 200% zoom. Selection uses
+semantic background/text/border tokens and a 1px inset border without layout
+shift; unselected rows have no card borders and use the existing hover token.
+Keyboard navigation scrolls only the completion container when an active option
+is outside its visible area, retaining textarea focus and ancestor scroll. Do not
+add tooltips, expansion controls, icons, description summaries or content logs. Mouse,
 Up/Down, Enter/Tab and Escape operate the accessible listbox without creating or
 sending input. IME composition never accepts a candidate or submits. Only the
 active token is replaced, with surrounding Unicode, newlines and caret preserved.
