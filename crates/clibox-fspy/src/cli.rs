@@ -397,6 +397,28 @@ fn invalid_argument(classification: &'static str, action: &'static str) -> i32 {
     2
 }
 
+fn human_coverage_report(report: &coverage::CoverageReport, total: usize) -> Vec<u8> {
+    let mut text = format!(
+        "Covered: {}/{} ({:.2}%)\n",
+        report.covered.len(),
+        total,
+        report.percentage
+    );
+    for (heading, files) in [
+        ("Covered files", &report.covered),
+        ("Uncovered files", &report.uncovered),
+    ] {
+        text.push_str(heading);
+        text.push_str(":\n");
+        for file in files {
+            text.push_str("  ");
+            text.push_str(&display_path(&file.logical));
+            text.push('\n');
+        }
+    }
+    text.into_bytes()
+}
+
 fn display_path(path: &NativePath) -> String {
     match path {
         NativePath::UnixBytes(bytes) => bytes
@@ -1507,25 +1529,7 @@ fn assetcov(args: AssetcovArgs) -> i32 {
                 Err(_) => return diagnostic("report_encode", "assetcov"),
             }
         } else {
-            let mut text = format!(
-                "Covered: {}/{} ({:.2}%)\n",
-                report.covered.len(),
-                denominator.files.len(),
-                report.percentage
-            );
-            text.push_str("Covered files:\n");
-            for file in &report.covered {
-                text.push_str("  ");
-                text.push_str(&display_path(&file.logical));
-                text.push('\n');
-            }
-            text.push_str("Uncovered files:\n");
-            for file in &report.uncovered {
-                text.push_str("  ");
-                text.push_str(&display_path(&file.logical));
-                text.push('\n');
-            }
-            text.into_bytes()
+            human_coverage_report(&report, denominator.files.len())
         };
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
@@ -3671,13 +3675,7 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
                 Err(_) => return diagnostic("report_encode", "assetcov"),
             }
         } else {
-            format!(
-                "Covered: {}/{} ({:.2}%)\n",
-                report.covered.len(),
-                denominator.files.len(),
-                report.percentage
-            )
-            .into_bytes()
+            human_coverage_report(&report, denominator.files.len())
         };
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
@@ -3956,13 +3954,7 @@ fn windows_assetcov(args: AssetcovArgs) -> i32 {
                 Err(_) => return diagnostic("report_encode", "assetcov"),
             }
         } else {
-            format!(
-                "Covered: {}/{} ({:.2}%)\n",
-                report.covered.len(),
-                denominator.files.len(),
-                report.percentage
-            )
-            .into_bytes()
+            human_coverage_report(&report, denominator.files.len())
         };
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
@@ -4225,6 +4217,65 @@ pub fn execute(command: Command) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn human_assetcov_lists_and_publication_modes_are_complete() {
+        use super::*;
+        let file = |logical| coverage::SelectedFile {
+            identity: record::FileIdentity::Inode {
+                device: 1,
+                inode: 2,
+            },
+            logical,
+            initially_empty: false,
+        };
+        let report = coverage::CoverageReport {
+            covered: vec![file(NativePath::UnixBytes(b"read\n.txt".to_vec()))],
+            uncovered: vec![file(NativePath::WindowsUtf16(vec![
+                b'u' as u16,
+                0xd800,
+                10,
+            ]))],
+            percentage: 50.0,
+        };
+        let bytes = human_coverage_report(&report, 2);
+        assert_eq!(bytes, b"Covered: 1/2 (50.00%)\nCovered files:\n  read\\n.txt\nUncovered files:\n  u\\ud800\\n\n");
+        let dir = tempfile::tempdir().unwrap();
+        for quiet in [false, true] {
+            let stdout = OutputArgs {
+                output: None,
+                force: false,
+            };
+            assert_eq!(wants_report(quiet, &stdout), !quiet);
+            let dash = OutputArgs {
+                output: Some(PathBuf::from("-")),
+                force: false,
+            };
+            assert_eq!(wants_report(quiet, &dash), !quiet);
+            let path = dir.path().join(format!("report-{quiet}"));
+            let output = OutputArgs {
+                output: Some(path.clone()),
+                force: false,
+            };
+            assert!(wants_report(quiet, &output));
+            publish_with_cancel(&output, &bytes, || false).unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+        }
+        for (covered, uncovered, percentage) in [
+            (vec![], report.uncovered.clone(), 0.0),
+            (report.covered.clone(), vec![], 100.0),
+        ] {
+            let r = coverage::CoverageReport {
+                covered,
+                uncovered,
+                percentage,
+            };
+            let text = String::from_utf8(human_coverage_report(&r, 1)).unwrap();
+            assert!(text.contains("Covered files:\n"));
+            assert!(text.contains("Uncovered files:\n"));
+            assert_eq!(r.fails_threshold(50.0), percentage < 50.0);
+        }
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_break_status_preserves_supervisor_failure_when_signal_is_late() {
