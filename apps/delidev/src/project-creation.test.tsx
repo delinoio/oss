@@ -36,15 +36,15 @@ const search = () => screen.getByRole("searchbox", { name: "Search repository na
 const choose = async (label: string) => fireEvent.click(await screen.findByRole("checkbox", { name: label }));
 function configure(id: string) { next(); fireEvent.change(primary(), { target: { value: id } }); next(); }
 
-it("requires explicit steps and primary selection, preserves configured-empty restrictions and saves UUIDs once", async () => {
+it("defaults the first primary, permits an explicit override, preserves configured-empty restrictions and saves UUIDs once", async () => {
   const value = fixture(); render(value.view());
   await waitFor(() => expect(document.activeElement).toBe(search()));
   expect(screen.queryByRole("button", { name: "Save Project" })).toBeNull();
   expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
   await choose("oss"); await choose("delidev"); next();
   expect(name().value).toBe("oss"); expect(document.activeElement).toBe(name());
-  expect(primary().value).toBe(""); expect(within(primary()).getByRole("option", { name: "oss" }).getAttribute("value")).toBe(value.rows[0].id);
-  expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(primary().value).toBe(value.rows[0].id); expect(within(primary()).getByRole("option", { name: "oss" }).getAttribute("value")).toBe(value.rows[0].id);
+  expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.submit(name().form!); expect(value.save).not.toHaveBeenCalled();
   fireEvent.change(primary(), { target: { value: value.rows[1].id } }); next();
   expect(value.save).not.toHaveBeenCalled();
@@ -81,11 +81,22 @@ it("rechecks every required value at final submission and focuses the invalid st
 
 it("updates untouched names after removal/reordering, clears all selections, and protects manual names", async () => {
   const value = fixture(); render(value.view()); await choose("oss"); await choose("delidev");
-  fireEvent.click(screen.getByRole("button", { name: "Move entry 2 up" })); next(); expect(name().value).toBe("delidev");
+  fireEvent.click(screen.getByRole("button", { name: "Move entry 2 up" })); next(); expect(name().value).toBe("delidev"); expect(primary().value).toBe(value.rows[0].id);
   fireEvent.change(primary(), { target: { value: value.rows[1].id } }); previous();
   fireEvent.click(screen.getByRole("button", { name: "Remove entry 1" })); next(); expect(name().value).toBe("oss"); expect(primary().value).toBe("");
   fireEvent.change(name(), { target: { value: "My project" } }); previous();
-  fireEvent.click(screen.getByRole("button", { name: "Remove entry 1" })); await choose("delidev"); next(); expect(name().value).toBe("My project");
+  fireEvent.click(screen.getByRole("button", { name: "Remove entry 1" })); await choose("delidev"); next(); expect(name().value).toBe("My project"); expect(primary().value).toBe(value.rows[1].id);
+});
+
+it("preserves a manual primary through additions and reorder, and requires correction after removal", async () => {
+  const value = fixture([repository("A"), repository("B"), repository("C")]); render(value.view());
+  await choose("A"); next(); expect(primary().value).toBe(value.rows[0].id); previous();
+  await choose("B"); next(); fireEvent.change(primary(), { target: { value: value.rows[1].id } }); previous();
+  await choose("C"); fireEvent.click(screen.getByRole("button", { name: "Move entry 3 up" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove entry 1" })); next(); expect(primary().value).toBe(value.rows[1].id);
+  previous(); await choose("B"); next(); expect(primary().value).toBe(""); expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  previous(); await choose("A"); next(); expect(primary().value).toBe(""); expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  previous(); await choose("C"); await choose("A"); await choose("C"); next(); expect(primary().value).toBe(value.rows[2].id);
 });
 
 it("does not carry an automatic name through clearing and reselecting every repository", async () => {
@@ -174,8 +185,11 @@ it("shows final registered emptiness without enabling repository advancement", a
 
 it("preserves name edits, focus, query identity and uncertain request bytes during language changes", async () => {
   const value = fixture(); value.save.mockRejectedValueOnce(new ConnectError("Lost acknowledgment", Code.Unavailable)); render(value.view()); await choose("oss"); next();
+  expect(screen.getByText(/The first repository you select becomes the primary repository/)).toBeTruthy();
+  expect(screen.queryByText("The harness starts in this repository. Select it explicitly after adding repositories.")).toBeNull();
   fireEvent.change(name(), { target: { value: "User name" } }); const input = name(); input.focus(); const reads = value.list.mock.calls.length;
   await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+  expect(screen.getByText(/처음 선택한 저장소가 기본 저장소가 됩니다/)).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "프로젝트 이름" })).toBe(input); expect(input.value).toBe("User name"); expect(document.activeElement).toBe(input); expect(value.list).toHaveBeenCalledTimes(reads);
   fireEvent.change(screen.getByRole("combobox", { name: "기본 저장소" }), { target: { value: value.rows[0].id } }); fireEvent.click(screen.getByRole("button", { name: "다음" }));
   fireEvent.click(screen.getByRole("button", { name: "프로젝트 저장" })); await screen.findByRole("button", { name: "같은 설정 다시 시도" });

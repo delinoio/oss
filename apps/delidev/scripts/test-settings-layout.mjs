@@ -294,7 +294,7 @@ try {
       const name = form.getByRole("textbox", { name: l("Project name"), exact: true });
       assert.equal(await name.inputValue(), "oss"); assert(await name.evaluate(node => node === document.activeElement));
       const primary = form.getByRole("combobox", { name: l("Primary repository"), exact: true });
-      assert.equal(await primary.inputValue(), ""); assert(await dialog.getByRole("button", { name: l("Next"), exact: true }).isDisabled()); await check(2);
+      assert.equal(await primary.inputValue(), await primary.locator("option").filter({ hasText: /^oss$/ }).getAttribute("value")); assert(await dialog.getByRole("button", { name: l("Next"), exact: true }).isEnabled()); await check(2);
       await primary.selectOption({ label: "oss" }); await dialog.getByRole("button", { name: l("Next"), exact: true }).click();
       assert(await form.getByRole("heading", { name: l("Usage restrictions"), exact: true }).evaluate(node => node === document.activeElement));
       assert(await dialog.getByRole("button", { name: l("Save Project"), exact: true }).isEnabled()); await check(3);

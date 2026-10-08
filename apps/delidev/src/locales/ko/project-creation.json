@@ -36,6 +36,7 @@
   "project-creation.previousResults": "이전 검색 결과",
   "project-creation.nextResults": "다음 검색 결과",
   "project-creation.selectRepository": "저장소를 하나 이상 선택하세요. 중복 없이 최대 1,000개까지 선택할 수 있습니다.",
+  "project-creation.primaryHelp": "처음 선택한 저장소가 기본 저장소가 됩니다. 여기에서 변경할 수 있습니다. 하네스는 이 저장소에서 시작합니다. 다른 저장소가 남아 있는 상태에서 기본 저장소를 제거하면 새 기본 저장소를 선택하세요.",
   "project-creation.selectPrimary": "선택한 저장소 중에서 기본 저장소를 선택하세요.",
   "project-creation.invalidName": "프로젝트 이름은 UTF-8 기준 256바이트 이내로 입력하세요."
 }

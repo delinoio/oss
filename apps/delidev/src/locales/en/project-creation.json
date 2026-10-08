@@ -36,6 +36,7 @@
   "project-creation.previousResults": "Previous results",
   "project-creation.nextResults": "Next results",
   "project-creation.selectRepository": "Select at least one repository, with no duplicates and at most 1,000 entries.",
+  "project-creation.primaryHelp": "The first repository you select becomes the primary repository. You can change it here. The harness starts in this repository. If you remove it while other repositories remain, select a new primary.",
   "project-creation.selectPrimary": "Select a primary repository from your selected repositories.",
   "project-creation.invalidName": "Enter a project name of at most 256 UTF-8 bytes."
 }
