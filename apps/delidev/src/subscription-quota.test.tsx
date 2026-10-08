@@ -212,3 +212,18 @@ it("renders expiry only for a valid supplied RFC3339 timestamp",async()=>{
  expect(globalThis.document.querySelectorAll(".reset-credit-row time").length).toBe(1);
  expect(globalThis.document.querySelector(".reset-credit-row time")?.getAttribute("datetime")).toBe("2030-10-31T00:00:00Z");expect(value.request).not.toHaveBeenCalled();
 });
+
+it.each(["2030", "2030-02-30T00:00:00Z", "", true, 0])("rejects malformed expiry %s for selection and confirmation", async expires_at => {
+ const value=fixture([{id:"credit_1",reset_type:"codexRateLimits",status:"available",expires_at}]);render(<value.Harness />);
+ await screen.findByText(/Last successful observation/);
+ expect((screen.getByRole("button",{name:"Use"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"View details"}));
+ expect(screen.queryByRole("button",{name:"Select credit credit_1"})).toBeNull();
+ expect(screen.queryByRole("button",{name:"Confirm credit consumption"})).toBeNull();
+ expect(value.request).not.toHaveBeenCalled();
+});
+it.each([undefined,null,"2999-01-01T00:00:00Z"])("preserves omitted and valid future expiry selection (%s)",async expires_at=>{
+ const value=fixture([{id:"credit_1",reset_type:"codexRateLimits",status:"available",expires_at}]);render(<value.Harness />);await selectExactCredit();
+ expect((screen.getByRole("button",{name:"Confirm credit consumption"}) as HTMLButtonElement).disabled).toBe(false);
+ expect(value.request).not.toHaveBeenCalled();
+});

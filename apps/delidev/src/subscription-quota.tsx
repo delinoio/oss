@@ -70,7 +70,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const credits = Array.isArray(details) && details.length <= 100 ? details.map(object) : undefined;
   const inventoryFresh = isEntityId(text(inventory.observation_id)) && Number.isFinite(Date.parse(text(inventory.observed_at))) && Date.now() - Date.parse(text(inventory.observed_at)) >= 0 && Date.now() - Date.parse(text(inventory.observed_at)) <= 300000;
   const inventoryAvailable = countValid && BigInt(count) > 0n && inventoryFresh;
-  const selectable = (credits ?? []).filter((credit) => /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(text(credit.id)) && credit.reset_type === "codexRateLimits" && credit.status === "available" && (!credit.expires_at || Date.parse(text(credit.expires_at)) > Date.now()));
+  const selectable = (credits ?? []).filter((credit) => /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(text(credit.id)) && credit.reset_type === "codexRateLimits" && credit.status === "available" && (credit.expires_at == null || (timestampInstant(text(credit.expires_at)) ?? -Infinity) > Date.now()));
   const confirmCredit = (creditId: string, next: boolean, opener: HTMLElement) => {
     if (!creditReady || originalActive || !creditsSupported || !countValid || BigInt(count) <= 0n || !inventoryFresh) return;
     selectionOpener.current = opener; focusConfirmation.current = true;
