@@ -2435,3 +2435,44 @@ Restored queued bindings require one unique matching token and one accepted
 package with that display name. Ambiguous same-named packages or literal tokens
 remain stale through text edits until explicit clearing and reselection; package
 metadata cannot infer the original token span.
+## Image inputs
+
+The project first-message composer, General Chat first-message composer and
+Session follow-up composer share the image input controller. Follow
+[the image input contract](cmds-delidev-image-input-contract.md). Select, paste
+or drop original still PNG, JPEG or WebP bytes. Validate the whole added batch
+before changing the draft; reject corrupt, animated, mismatched or oversized
+content without conversion. Keep at most eight images, ten MiB per image, forty
+MiB combined, forty million decoded pixels and 256 KiB of UTF-8 text. File names
+and local paths do not become prompt or retained metadata.
+
+Each connection identity owns independent project, General Chat and per-Session
+image drafts. Navigation, Settings and same-identity reconnect retain ordered
+bytes, previews, cleanup obligations and original transfer identities. A changed
+identity disposes local bytes and revokes object URLs. Changing the Runner or
+starting a fresh confirmed operation restages on the selected Runner and keeps
+cleanup on the original Runner. Pending or uncertain submission locks edits and
+replays only the exact original typed request and ordered references.
+
+Capability 45, Worker capability 25 and the supported original execution harness
+gate image submission. Text-only input retains its existing gates. Image-only
+input is valid after all original transfers reach verified READY. Keep typed
+attachment references outside ordinary document JSON. Admission clears a draft
+only after the original receipt proves the full ordered references; an absent or
+mismatched receipt remains uncertain. Renderer selection is advisory and does
+not replace Worker observation of actual native model input support.
+
+Retained messages and queued inputs read bytes through the authenticated Session
+attachment API only near the active conversation viewport. Abort off-screen reads
+and release their object URLs. Verify every returned chunk digest and the full retained digest
+before displaying an app-local blob URL; revoke it when its owner unmounts. Show
+a safe problem and explicit retry when readback fails. Queued text edits preserve
+immutable attachment references and may contain empty text when images remain.
+Image-bound Steer stays disabled. Removing an accepted queued input uses the
+existing backend lifecycle; local draft cleanup cannot delete accepted history.
+
+`image-input-layout.fixture.tsx` and its browser script exercise real browser
+decoding, ordered file/paste/drop entry, separate drafts, navigation retention,
+image-only typed admission and localized responsive controls with synthetic
+services. Keep the fixture outside release bundles. Browser fixtures and builds
+do not establish real native, account or platform acceptance.

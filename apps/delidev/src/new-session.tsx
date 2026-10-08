@@ -1,4 +1,7 @@
 import { useSkillCompletion } from "./skill-completion";
+import { acknowledgeImages } from "./image-input";
+import { ImageAttachmentInput, imageEntryHandlers } from "./image-attachments";
+import { useImageDraft, useImageRoute } from "./image-drafts";
 import { productError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
@@ -48,6 +51,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   useLocale();
   const generalChat = kind === NewSessionKind.GeneralChat;
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
+  const images = useImageDraft(idPrefix);
   const local = useLocalWorkerProof(readLocalWorker);
   const transport = useTransport();
   const [defaultProblem, setDefaultProblem] = useState<unknown>();
@@ -83,7 +87,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
   const automaticTitles = status.data?.capabilities.includes(SystemCapability.AUTOMATIC_TITLES_V1) ?? false;
   const selectedProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: generalChat ? "" : project }, { enabled: active && !generalChat && Boolean(project) });
-  const accepted = useCallback((result: { change?: { session?: Resource } }, request: { documentJson: Uint8Array }) => {
+  const accepted = useCallback((result: { change?: { session?: Resource } }, request: { documentJson: Uint8Array; requestId: string; attachments: import("@delinoio/delidev-api-client").ImageAttachment[] }) => {
     const session = result.change?.session;
     if (!sessionResource(session)) {
       setInvalidAcknowledgment(true);
@@ -92,6 +96,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     // The original retained request, including receipt retries, owns history.
     const submitted = JSON.parse(new TextDecoder().decode(request.documentJson));
     if (UUID_V7.test(submitted.agent_id) && UUID_V7.test(submitted.machine_id)) preferences.remember({ agent_id: submitted.agent_id, machine_id: submitted.machine_id });
+    images.controller.accepted(request.requestId, request.attachments.map(image => image.id));
     setPrompt("");
     skills.clearAccepted();
     setCreatedElsewhere(undefined);
@@ -104,8 +109,9 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   }, [created, open, preferences.remember]);
   const submittedActivation = useRef(-1);
   const mutation = useRetainedMutation(generalChat ? "create-general-chat" : "create-session", SessionQuery.createSession, accepted);
+  useEffect(() => { if (mutation.error && !mutation.uncertain && !mutation.busy) images.controller.operationId = undefined; }, [mutation.error, mutation.uncertain, mutation.busy, images.controller]);
   const restrictions = object(document(selectedProject.data?.resource).agents);
-  const blocked = mutation.busy || mutation.uncertain || local.busy || invalidAcknowledgment;
+  const blocked = mutation.busy || mutation.uncertain || local.busy || invalidAcknowledgment || images.busy;
   const projectChanged = useCallback((id: string) => {
     touched.current = false;
     restoration.current = { agent: false, machine: false };
@@ -170,7 +176,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   useEffect(() => { if (!blocked && workspace !== Workspace.Local && machine === localDefaultID && localDefaultID && eligibilityReadSettled(localDefault.isFetching, localDefault.error) && projectEligible && !localDefaultEligible) { setMachine(""); setLocalDefaultID(""); } }, [blocked, workspace, machine, localDefaultID, localDefault.isFetching, localDefault.error, projectEligible, localDefaultEligible]);
   const automaticChoicesEligible = (!localDefaultID || machine !== localDefaultID || workspace === Workspace.Local || localDefaultEligible) && (!restoration.current.agent || agent !== preferences.pair?.agent_id || agentEligible) && (!restoration.current.machine || workspace === Workspace.Local || machine !== preferences.pair?.machine_id || machineEligible);
   const updatePrompt = (value: string) => {
-    if (new TextEncoder().encode(value).byteLength > 256 << 10) {
+    if (new TextEncoder().encode(value).byteLength > (256 << 10)) {
       setPromptLimit(true);
       return false;
     }
@@ -180,7 +186,8 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     return true;
   };
   const skills = useSkillCompletion({ value: prompt, change: updatePrompt, textarea: firstMessage, machineId: machine, agentId: agent, projectId: project, active, disabled: blocked, enabled: status.data?.capabilities.includes(SystemCapability.NATIVE_SKILLS_V1) ?? false });
-  const canCreate = active && automaticTitles && Boolean(agent && machine && prompt.trim()) && !blocked && !skills.blocked && automaticChoicesEligible;
+  const imageRoute = useImageRoute(machine, agent, active, images.images.length > 0);
+  const canCreate = active && automaticTitles && Boolean(agent && machine && (prompt.trim() || images.images.length)) && (!images.images.length || imageRoute.ready) && !blocked && !skills.blocked && automaticChoicesEligible;
 
   const submit = async () => {
     if (!canCreate) return;
@@ -210,7 +217,10 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     if (workspaceType === Workspace.Local && !proof) return;
     touched.current = true;
     submittedActivation.current = navigation.current.activation;
-    void mutation.send({ requestId: newRequestId(), documentJson: encode(selection), skills: skills.selections.length ? { selections: skills.selections } : undefined, localWorkerToken: proof?.token });
+    const requestId = images.images.length ? images.controller.operationId ?? newRequestId() : newRequestId();
+    let attachments;
+    try { attachments = images.images.length && imageRoute.machine ? await images.controller.prepare(imageRoute.machine, requestId) : []; } catch { return; }
+    void mutation.send({ requestId, documentJson: encode(selection), localWorkerToken: proof?.token, skills: skills.selections.length ? { selections: skills.selections } : undefined, attachments }, attachments.length ? (result, request) => acknowledgeImages(result.change, request.requestId, request.attachments) : undefined);
   };
 
   const shortcutScope = generalChat ? Surface.NewGeneralChat : Surface.NewSession;
@@ -236,7 +246,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       </header>
       {!generalChat ? <ResourceChoice label={copy("new-session.project_985959")} kind={EntityKind.PROJECT} value={project} active={active} showStatus disabled={blocked} change={projectChanged} /> : null}
       {!generalChat && !project ? <p className="new-session-project-note">{copy("new-session.generalChatIsolatedProjectlessDirectoryOn_aac210")}</p> : null}
-      <form onSubmit={submitForm}>
+      <form {...imageEntryHandlers(images, blocked || !imageRoute.systemSupported)} onSubmit={submitForm}>
         <fieldset className="new-session-fieldset" disabled={blocked}>
           <div className="new-session-composer">
             <label className="new-session-message-label" htmlFor={`${idPrefix}-message`}>{copy("new-session.firstMessage_ecffa2")}</label>
@@ -252,10 +262,11 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               onKeyDown={event => { if (!skills.onKeyDown(event) && !event.nativeEvent.isComposing) shortcuts.onKeyDown(event); }}
               aria-keyshortcuts={shortcuts.aria(ShortcutId.NewSessionFocus, ShortcutId.NewSessionSend, ShortcutId.NewSessionNewline)}
               rows={5}
-              required
+              required={!images.images.length}
               autoComplete="off"
             />
             {skills.list}{skills.warning}
+            <ImageAttachmentInput draft={images} disabled={blocked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={machine} />
             <div className="new-session-toolbar">
               <div className="new-session-selectors">
                 <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />

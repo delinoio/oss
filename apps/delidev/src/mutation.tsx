@@ -19,6 +19,7 @@ class IntentRegistry {
   entries = new Map<string, Intent>();
   listeners = new Set<() => void>();
   acceptedListeners = new Map<string, Set<() => void>>();
+  acceptedObservers = new Set<(key: string, request: object) => void>();
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   observeAccepted(key: string, listener: () => void) {
     const listeners = this.acceptedListeners.get(key) ?? new Set<() => void>();
@@ -29,7 +30,10 @@ class IntentRegistry {
       if (!listeners.size) this.acceptedListeners.delete(key);
     };
   }
-  notifyAccepted(key: string) {
+  notifyAccepted(key: string, request: object) {
+    for (const observer of this.acceptedObservers) {
+      try { observer(key, request); } catch (error) { console.warn("delidev.mutation.accepted_observer_failed", { classification: clientFailure(error).code }); }
+    }
     for (const listener of [...(this.acceptedListeners.get(key) ?? [])]) listener();
   }
   put(key: string, value: Intent) {
@@ -61,12 +65,21 @@ export function MutationIntents({ children }: { children: ReactNode }) {
   const opening = useSettingsOpening();
   const [registry] = useState(() => new IntentRegistry());
   useEffect(() => {
-    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); };
+    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); };
     registry.alive = !opening?.disposed;
     opening?.controller.signal.addEventListener("abort", dispose, { once: true });
     return () => { opening?.controller.signal.removeEventListener("abort", dispose); dispose(); };
   }, [registry, opening]);
   return <Context.Provider value={registry}>{children}</Context.Provider>;
+}
+
+// Connection-owned attachment drafts observe the exact accepted request even
+// after its submitting conversation leaves the mounted surface.
+export function useRetainedMutationNotifications(accepted: (key: string, request: object) => void) {
+  const registry = useContext(Context);
+  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  const callback = useRef(accepted); callback.current = accepted;
+  useEffect(() => { const observer = (key: string, request: object) => callback.current(key, request); registry.acceptedObservers.add(observer); return () => { registry.acceptedObservers.delete(observer); }; }, [registry]);
 }
 
 // Acceptance belongs to the retained request, not to the component that
@@ -144,7 +157,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       }
     }
     registry.put(key, empty);
-    registry.notifyAccepted(key);
+    registry.notifyAccepted(key, retained);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
     if (!mounted.current || !registry.alive || opening?.disposed) return;

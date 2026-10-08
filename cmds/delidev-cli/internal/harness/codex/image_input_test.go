@@ -14,6 +14,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/imageinput"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -108,5 +109,57 @@ func TestNativeImageHistoryPreservesOrderedDigest(t *testing.T) {
 	swapped, err := decodeNativeInputParts(parts, lookup)
 	if err != nil || got.InputDigest() == swapped.InputDigest() {
 		t.Fatal("image order lost", err)
+	}
+}
+
+func TestCombinedTextSkillsAndImagesRetainIndependentNativeProofs(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	source := filepath.Join(home, ".agents", "skills", "add-issue")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("---\nname: add-issue\ndescription: fixture\n---\nSelected package\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manager := skills.Manager{Root: t.TempDir(), Home: home}
+	scope := domain.SkillReadRequest{MachineID: domain.NewID(), AgentID: domain.NewID(), ActorID: domain.NewID(), AgentRevision: 1, WorkerDeviceID: domain.NewID(), WorkerInstanceID: domain.NewID()}
+	inventory, err := manager.List(ctx, scope, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := inventory.Entries[0]
+	scope.Selections = []domain.SkillBinding{{WorkerDeviceID: entry.WorkerDeviceID, InventoryID: entry.InventoryID, SkillID: entry.SkillID, ContentRevision: entry.ContentRevision, SnapshotID: domain.NewID()}}
+	if err := manager.Prepare(ctx, scope); err != nil {
+		t.Fatal(err)
+	}
+	c, capture, _, _ := boundTurnFixture(t, "images")
+	c.skillsRoot = manager.Root
+	c.imageRoot = t.TempDir()
+	c.imageMachine = scope.MachineID
+	ref := stageImage(t, c.imageRoot, c.imageMachine)
+	original := domain.SessionInput{Prompt: "Look $add-issue", Mode: domain.ExecuteMode, Skills: scope.Selections, Attachments: []domain.ImageAttachment{ref}}
+	id := domain.NewID()
+	started, err := c.StartTurn(ctx, domain.NewID(), id, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := nextKind(t, c, MessageCompletedEvent)
+	if event.Message == nil || event.Message.Text != original.Prompt || !slices.Equal(event.Message.Attachments, original.Attachments) {
+		t.Fatal(event)
+	}
+	parts := requestsOf(t, capture, "turn/start")[0]["input"].([]any)
+	if len(parts) != 3 || parts[1].(map[string]any)["type"] != "localImage" || parts[2].(map[string]any)["type"] != "skill" {
+		t.Fatal(parts)
+	}
+	parts[0].(map[string]any)["text_elements"] = []any{}
+	turn := fixtureTurn(started.TurnID, TurnCompleted)
+	turn["itemsView"] = "full"
+	turn["items"] = []any{map[string]any{"type": "userMessage", "id": "combined", "clientId": id, "content": parts}}
+	raw, _ := json.Marshal(map[string]any{"data": []any{turn}, "nextCursor": nil, "backwardsCursor": nil})
+	_, history, err := decodeLatestTurnInputs(raw, c.nativeImageInput)
+	proofs, proofErr := c.SkillInputProofs(ctx)
+	if err != nil || proofErr != nil || len(history) != 1 || len(proofs) != 1 || history[0].PromptDigest != original.InputDigest() || history[0].SkillDigest == ([32]byte{}) || history[0] != proofs[0] {
+		t.Fatal(history, proofs, err, proofErr)
 	}
 }

@@ -328,7 +328,7 @@ func (s *Service) ReadAttachment(ctx context.Context, req *connect.Request[pb.Re
 		if err != nil {
 			return err
 		}
-		if value.Quarantined || value.State != domain.ImageClaimed || !slices.Contains(value.Owners, domain.ID(q.SessionId)) || session.MachineID != value.Attachment.MachineID || q.Limit == 0 || q.Limit > domain.MaxImageChunkBytes || q.Offset > value.Attachment.ByteLength {
+		if value.Quarantined || value.State != domain.ImageClaimed || tx.ImageAttachmentReadable(domain.ID(q.SessionId), value.Attachment) != nil || session.MachineID != value.Attachment.MachineID || q.Limit == 0 || q.Limit > domain.MaxImageChunkBytes || q.Offset > value.Attachment.ByteLength {
 			return domain.InvalidImageInput()
 		}
 		return nil
