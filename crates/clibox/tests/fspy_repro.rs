@@ -517,3 +517,69 @@ fn restored_selected_directory_identity_is_unstable() {
     assert_eq!(fs::read_dir(&private).unwrap().count(), 0);
     assert_eq!(fs::read(root.join("assets/flag")).unwrap(), b"original");
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn alias_executable_workload() {
+    let Some(expected) = std::env::var_os("CLIBOX_ALIAS_ARGV0") else {
+        return;
+    };
+    assert_eq!(std::env::args_os().next().unwrap(), expected);
+    assert!(std::env::args_os().any(|arg| arg.is_empty()));
+    eprintln!("EXPECTED");
+    std::process::exit(42);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "opt-in Linux native capture acceptance; deterministic mapping covered in library tests"]
+fn alias_only_executable_reproduction_preserves_argv_zero_and_empty_arguments() {
+    let _lock = REPRO_TEST_LOCK.lock().unwrap();
+    for absolute in [false, true] {
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(root_dir.path()).unwrap();
+        fs::copy(std::env::current_exe().unwrap(), root.join("tool")).unwrap();
+        symlink("tool", root.join("tool-link")).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let bundle = out.path().join("bundle");
+        let program = if absolute {
+            root.join("tool-link")
+        } else {
+            PathBuf::from("./tool-link")
+        };
+        let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .args(["fspy", "min-repro", "--root"])
+            .arg(&root)
+            .arg("--bundle-dir")
+            .arg(&bundle)
+            .args([
+                "--include",
+                "tool-link",
+                "--expect-exit",
+                "42",
+                "--expect-stderr",
+                "EXPECTED",
+                "--max-snapshot-bytes",
+                "100000000",
+                "--max-result-bytes",
+                "100000000",
+                "--json",
+                "--",
+            ])
+            .arg(&program)
+            .args(["--exact", "alias_executable_workload", "--nocapture", ""])
+            .env("CLIBOX_ALIAS_ARGV0", &program)
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert_verified(&output);
+        assert_eq!(
+            fs::read_link(bundle.join("tool-link")).unwrap(),
+            PathBuf::from("tool")
+        );
+        assert_eq!(
+            fs::read(bundle.join("tool")).unwrap(),
+            fs::read(root.join("tool")).unwrap()
+        );
+    }
+}
