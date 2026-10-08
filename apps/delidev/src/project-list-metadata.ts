@@ -76,9 +76,10 @@ export function useProjectListMetadata(ids: readonly string[], active: boolean) 
     else { owner.current?.abort(); retained.current.clear(); setRows(new Map()); }
     return () => owner.current?.abort();
   }, [active, identity, start]);
-  // A transport change starts a new connection authority and must not preserve
-  // projections from the previous authenticated server.
-  useEffect(() => () => { owner.current?.abort(); retained.current.clear(); }, [client, transport]);
+  // App replaces the QueryClient only when the authenticated identity changes.
+  // A same-identity reconnect may replace its transport and keeps accepted
+  // projections; failed reads still require the explicit Refresh control.
+  useEffect(() => () => { owner.current?.abort(); retained.current.clear(); }, [client]);
   const refresh = useCallback(() => { if (enabled.current) start(true); }, [start]);
   return { rows, refresh };
 }

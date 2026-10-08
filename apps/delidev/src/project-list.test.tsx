@@ -16,7 +16,7 @@ function fixture(read: (id: string) => Promise<{ resource?: Resource }> | { reso
   const get = vi.fn(({ id }: { id: string }) => read(id)), list = vi.fn(() => ({ resources: [] }));
   const transport = createRouterTransport(router => router.service(ResourceService, { getResource: get, listResources: list }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const wrap = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}>{children}</QueryClientProvider></TransportProvider>;
+  const wrap = (children: React.ReactNode, queryClient = client) => <TransportProvider transport={transport}><QueryClientProvider client={queryClient}>{children}</QueryClientProvider></TransportProvider>;
   return { get, list, client, wrap };
 }
 function Reader({ ids, active = true }: { ids: string[]; active?: boolean }) {
@@ -115,4 +115,14 @@ it("marks missing or malformed exact reads unavailable and keeps original stale 
   await waitFor(() => expect(value.get).toHaveBeenCalledTimes(6));
   await waitFor(() => expect(screen.getByTestId("metadata").textContent).toContain("true"));
   expect(screen.getByTestId("metadata").textContent).toContain("Accepted"); expect(screen.getByTestId("metadata").textContent).not.toContain("Regressed");
+});
+
+it("preserves accepted projections across same-identity authentication transport replacement until explicit Refresh", async () => {
+  const row = repository("Retained across reconnect"), first = fixture(() => ({ resource: row })), second = fixture(() => ({ resource: { ...row, revision: 2n, documentJson: encode({ name: "Refreshed after reconnect", remote_url: "https://example.org/refreshed" }) } }));
+  const mounted = render(first.wrap(<Reader ids={[row.id]} />));
+  await waitFor(() => expect(screen.getByTestId("metadata").textContent).toContain("Retained across reconnect"));
+  mounted.rerender(second.wrap(<Reader ids={[row.id]} />, first.client));
+  expect(screen.getByTestId("metadata").textContent).toContain("Retained across reconnect"); expect(second.get).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh metadata" }));
+  await waitFor(() => expect(screen.getByTestId("metadata").textContent).toContain("Refreshed after reconnect"));
 });
