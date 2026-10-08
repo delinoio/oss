@@ -1,8 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useId, useSyncExternalStore, type ReactNode } from "react";
-import { EntityKind, ResourceQuery, clientFailure, isEntityId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useId, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { EntityKind, ResourceQuery, clientFailure, isEntityId, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document } from "./documents";
-import { useConnectPaginationReader } from "./scroll-pagination-query";
+import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
+import { useQueryClient } from "@tanstack/react-query";
+
+// This category pool surrounds the original transport await. Query observer
+// cancellation must never make a fifth transport request eligible while an
+// original abort-ignoring wait is still unsettled.
+class AgentModelReadPool {
+  private running = 0;
+  private waiting: (() => void)[] = [];
+  async read<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+    const admitted = await new Promise<boolean>(resolve => {
+      const cancel = () => { const index = this.waiting.indexOf(start); if (index >= 0) this.waiting.splice(index, 1); resolve(false); };
+      const start = () => { signal.removeEventListener("abort", cancel); if (signal.aborted) { resolve(false); return; } this.running++; resolve(true); };
+      if (signal.aborted) resolve(false);
+      else if (this.running < 4) start();
+      else { this.waiting.push(start); signal.addEventListener("abort", cancel, { once: true }); }
+    });
+    if (!admitted) throw new Error("Disposed configured model read");
+    try { if (signal.aborted) throw new Error("Disposed configured model read"); return await operation(); }
+    finally { this.running--; this.waiting.shift()?.(); }
+  }
+}
 
 export enum ModelSummaryState { Loading = "loading", Ready = "ready", Unavailable = "unavailable" }
 export interface ModelSummary { state: ModelSummaryState; nativeID?: string; name?: string }
@@ -89,10 +110,23 @@ export class AgentModelReader {
 interface MetadataContext { reader: AgentModelReader; entries: Map<string, ModelSummary>; active: boolean }
 const Context = createContext<MetadataContext | undefined>(undefined);
 export function AgentWorkerMetadataProvider({ active, refresh, children }: { active: boolean; refresh: number; children: ReactNode }) {
-  const request = useCallback((id: string) => ({ kind: EntityKind.MODEL, id }), []);
-  const project = useCallback((reply: { resource?: Resource }, id: string) => ({ rows: [{ id, revision: reply.resource?.revision ?? 0n }], payload: [modelSummary(reply.resource, id)], nextPageToken: "" }), []);
-  const read = useConnectPaginationReader(ResourceQuery.getResource, request, project);
-  const reader = useMemo(() => new AgentModelReader(async (id, signal) => (await read(id, signal)).payload![0]!), [read]);
+  const transport = useTransport(), client = useQueryClient();
+  const pool = useRef(new AgentModelReadPool());
+  const read = useCallback(async (id: string, signal: AbortSignal) => {
+    const options = createQueryOptions(ResourceQuery.getResource, { kind: EntityKind.MODEL, id }, { transport });
+    const queryKey = [...options.queryKey, { agentModelMetadata: newRequestId() }];
+    try {
+      return await client.fetchQuery({ queryKey, retry: false, gcTime: 0, staleTime: 0, queryFn: async context => {
+        const result = await pool.current.read(signal, async () => options.queryFn({ ...context, queryKey: options.queryKey }));
+        return modelSummary(result.resource, id);
+      } });
+    } finally { client.removeQueries({ queryKey, exact: true }); }
+  }, [client, transport]);
+  // App retains the QueryClient for same-identity authentication reconnects.
+  // Keep the reader, references and original unsettled permits in that scope;
+  // subsequent explicit reads use the latest authenticated transport.
+  const currentRead = useRef(read); currentRead.current = read;
+  const reader = useMemo(() => new AgentModelReader((id, signal) => currentRead.current(id, signal)), [client]);
   const entries = useSyncExternalStore(reader.subscribe, reader.snapshot, reader.snapshot);
   useLayoutEffect(() => { reader.reopen(); return () => reader.dispose(); }, [reader]);
   useLayoutEffect(() => { reader.setActive(active); }, [reader, active]);

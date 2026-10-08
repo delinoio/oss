@@ -94,3 +94,31 @@ it("rejects late metadata after its row reference is released and remounted", as
   pending[0]({ ...ready, nativeID: "late-original" }); await settle(); expect(reader.snapshot().get(id)?.state).toBe(ModelSummaryState.Loading);
   pending[1](ready); await settle(); expect(reader.snapshot().get(id)).toEqual(ready); reader.dispose();
 });
+
+it.each(["refresh", "reconnect"])("holds four actual transport permits across mounted-provider %s with abort-ignoring original waits", async mode => {
+  const models = Array.from({ length: 8 }, (_, index) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, schemaVersion: 1, revision: 1n, documentJson: encode({ name: `Permit model ${index}`, native_id: `permit-native-${index}` }) }));
+  const rows = models.map((model, index) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: `Permit Worker ${index}`, harness: "codex", model_id: model.id }) }));
+  const pending: (() => void)[] = [];
+  let concurrent = 0, maximum = 0;
+  const get = vi.fn(async ({ id }: { id: string }) => {
+    concurrent++; maximum = Math.max(maximum, concurrent);
+    await new Promise<void>(resolve => pending.push(() => { concurrent--; resolve(); }));
+    return { resource: models.find(model => model.id === id) };
+  });
+  const first = createRouterTransport(router => router.service(ResourceService, { getResource: get }));
+  const second = createRouterTransport(router => router.service(ResourceService, { getResource: get }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (refresh: number, transport = first) => <QueryClientProvider client={client}><TransportProvider transport={transport}><AgentWorkerMetadataProvider active refresh={refresh}>{rows.map(row => <AgentWorkerRow key={row.id} row={row} edit={() => {}} preview={() => {}} remove={() => {}} />)}</AgentWorkerMetadataProvider></TransportProvider></QueryClientProvider>;
+  const mounted = render(view(0)); await waitFor(() => expect(get).toHaveBeenCalledTimes(4));
+  if (mode === "reconnect") { mounted.rerender(view(0, second)); await act(settle); expect(get).toHaveBeenCalledTimes(4); }
+  mounted.rerender(view(1, mode === "reconnect" ? second : first));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(get).toHaveBeenCalledTimes(4);
+  await act(async () => { pending.splice(0).forEach(resolve => resolve()); await settle(); });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(8));
+  await act(async () => { pending.splice(0).forEach(resolve => resolve()); await settle(); });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(12));
+  await act(async () => { pending.splice(0).forEach(resolve => resolve()); await settle(); });
+  await screen.findByText("permit-native-7"); expect(maximum).toBe(4);
+  expect(client.getQueryCache().getAll()).toHaveLength(0); mounted.unmount();
+});
