@@ -12,7 +12,7 @@ import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { SessionView } from "./session";
 
-function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}) {
+function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => []) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({
     name: "Original session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "blocked", recovery: "none",
@@ -27,7 +27,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const list = vi.fn(async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[], nextPageToken: "" }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
-    router.service(SessionService, { listQueue: () => ({ inputs: [] }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
+    router.service(SessionService, { listQueue: () => ({ inputs: queueInputs(id) }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
       getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
       listResources: list,
@@ -271,4 +271,18 @@ it.each([580, 120])("occludes mounted upper content at automatic maximum and res
     fireEvent.click(screen.getByRole("button", { name: "Hide terminals" }));await waitFor(() => expect(upper.hasAttribute("inert")).toBe(false));
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Terminals" }));expect(f.control).not.toHaveBeenCalled();
   } finally { mounted.unmount();f.client.clear();vi.unstubAllGlobals(); }
+});
+
+it.each([false, true])("shows only waiting queue inputs while retaining accepted history (mixed=%s)", async mixed => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, id => [
+    ...["accepted", "claimed", "uncertain", "rejected-before-start", "unknown", undefined].map((delivery, i) => create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 1n, documentJson: encode({ sequence: i + 1, delivery, prompt: `Hidden history ${i}`, mode: "execute" }) })),
+    ...(mixed ? [create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 1n, documentJson: encode({ sequence: 8, delivery: "queued", prompt: "Waiting input", mode: "execute" }) })] : []),
+  ]);
+  render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const summary = await screen.findByText(`Input queue · ${mixed ? 1 : 0} waiting`);
+  fireEvent.click(summary);
+  expect(document.querySelectorAll(".queue-item")).toHaveLength(mixed ? 1 : 0);
+  expect(screen.queryByText(/Hidden history/)).toBeNull();
+  if (mixed) expect(screen.getByText("Waiting input")).toBeTruthy();
 });
