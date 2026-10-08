@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -36,6 +38,18 @@ func (n *serverQuotaFixture) ReadManagedQuota(ctx context.Context, _ domain.ID) 
 func (n *serverQuotaFixture) Close([]byte) error { return n.closeError }
 func newServerQuotaFixture(t *testing.T) (*subscriptionFixture, *serverQuotaFixture) {
 	f := newSubscriptionFixture(t)
+	// Remove the common fixture's Runner registration. This lane must work with
+	// only its server-owned account, original protected generation and receipt.
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.server.quota.no-runner", nil, func(tx *store.Tx) (any, error) {
+		r, err := tx.Get(domain.MachineKind, f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		return nil, tx.Delete(domain.MachineKind, r.ID, r.Revision)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
 	login := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle("quota-server-account", "first", time.Now().UTC())}
 	done := f.serverRun(login)
@@ -282,5 +296,76 @@ func TestServerQuotaUpgradeRequiresOriginalSettledGeneration(t *testing.T) {
 	_, a := f.record()
 	if !serverQuotaReady(a) || n.reads.Load() != 0 {
 		t.Fatal("upgrade fabricated read or lost confirmed generation")
+	}
+}
+
+func TestServerQuotaOmittedMachineUsesOriginalActiveWorker(t *testing.T) {
+	f := newQuotaFixture(t)
+	lease := takeSubscriptionExecutionFixture(t, f)
+	req := requestServerQuota(f)
+	accepted, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, req))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, a := f.record()
+	if a.Subscription.ServerQuota != nil || a.Subscription.Observation.MachineID != f.input.MachineID || a.Subscription.Lease.ID != domain.ID(lease.LeaseId) {
+		t.Fatal("omitted selector invented a second owner")
+	}
+	f.claimObservation(accepted.Msg.OperationId, lease)
+}
+func TestServerQuotaRevokedActorCannotPublishWindows(t *testing.T) {
+	f, n := newServerQuotaFixture(t)
+	owner := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	id := domain.NewID()
+	_, err := f.service.Store.Mutate(owner, domain.NewID(), "fixture.server.quota.client", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.DeviceKind, id, 0, "", "", domain.Device{Name: "Quota fixture client", Type: domain.ClientDevice, PairedAt: time.Now().UTC()})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: id})
+	if _, err = f.service.RequestSubscriptionObservation(actor, connect.NewRequest(requestServerQuota(f))); err != nil {
+		t.Fatal(err)
+	}
+	n.duringRead = func() {
+		_, err := f.service.Store.Mutate(owner, domain.NewID(), "fixture.server.quota.revoke", nil, func(tx *store.Tx) (any, error) {
+			r, err := tx.Get(domain.DeviceKind, id)
+			if err != nil {
+				return nil, err
+			}
+			d, err := store.Decode[domain.Device](r)
+			if err != nil {
+				return nil, err
+			}
+			d.Revoked = true
+			return tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.service.runServerQuota(owner, f.input.AccountID)
+	_, a := f.record()
+	if len(a.Quota) != 0 || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || a.Subscription.ServerQuota.ErrorCode != domain.Canceled || a.Subscription.RecoveryRequired {
+		t.Fatal("revoked read published windows or false recovery")
+	}
+}
+func TestServerQuotaRejectsNonDirectWithoutNativeFallback(t *testing.T) {
+	f, n := newServerQuotaFixture(t)
+	owner := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	route := domain.NetworkRoute{ProfileID: domain.NewID(), ProfileRevision: 1, Profile: domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Quota proxy fixture", Mode: domain.ProxyHTTP, Host: "127.0.0.1", Port: 3128}}}
+	_, err := f.service.Store.Mutate(owner, domain.NewID(), "fixture.server.quota.route", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.NetworkRouteKind, domain.NewID(), 0, "", "", route)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, requestServerQuota(f))); err != nil {
+		t.Fatal(err)
+	}
+	f.service.runServerQuota(owner, f.input.AccountID)
+	_, a := f.record()
+	if n.reads.Load() != 0 || a.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || a.Subscription.ServerQuota.ErrorCode != domain.Unsupported || a.Subscription.RecoveryRequired {
+		t.Fatal("unsupported routing bypassed native authority")
 	}
 }
