@@ -355,3 +355,83 @@ it.each(["all", "server", "worker", "subscription"])("negotiates managed indepen
  expect(Boolean(screen.queryByRole("button", { name: "Fork session" }))).toBe(missing === "all");
  rendered.unmount();client.clear();
 });
+
+async function rejectedDraftFixture(code = Code.FailedPrecondition, hold = false) {
+ const sources = ["Rejected source", "Fresh source"].map(name => create(ResourceSchema, {
+  kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1,
+  documentJson: encode({ name, workspace: "general-chat", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "codex" } }, execution: { native_turn_id: newRequestId(), cleanup_verified: true } }),
+ }));
+ const gate = deferred<void>();
+ const jobs = new Map<string, Resource>();
+ const children = new Map<string, Resource>();
+ const open = vi.fn();
+ const fork = vi.fn(async request => {
+  if (fork.mock.calls.length === 1) {
+   if (hold) await gate.promise;
+   throw new ConnectError("Original Fork rejection", code);
+  }
+  const job = create(ResourceSchema, { kind: EntityKind.JOB, id: newRequestId(), revision: 1n, schemaVersion: 1, documentJson: encode({ state: "succeeded", input: { source_session_id: request.mutation?.id } }) });
+  const child = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Verified child", fork: { source_session_id: request.mutation?.id } }) });
+  jobs.set(job.id, job); children.set(job.id, child);
+  return { job };
+ });
+ const transport = createRouterTransport(router => {
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.CODEX_SESSION_FORK_V1] }) });
+  router.service(ResourceService, { getResource: request => ({ resource: sources.find(source => source.id === request.id) }) });
+  router.service(SessionService, { forkSession: fork, getSessionFork: request => ({ job: jobs.get(request.jobId), session: children.get(request.jobId) }) });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+ const view = (source = sources[0]!) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={open}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+ const rendered = render(view());
+ fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+ fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
+ await waitFor(() => expect(fork).toHaveBeenCalledTimes(1));
+ if (!hold) await screen.findByText("recovery_required");
+ return { sources, fork, gate, open, children, rendered, view };
+}
+
+it.each(["discard-other", "discard-same", "replace-other"])("clears only the rejected draft diagnostic before a fresh submission: %s", async mode => {
+ const fixture = await rejectedDraftFixture();
+ // Hiding and reopening the original draft must preserve its own diagnostic.
+ fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+ fireEvent.click(screen.getByRole("button", { name: "Return to retained fork operation" }));
+ expect(screen.getByText("recovery_required")).toBeDefined();
+ if (mode !== "replace-other") fireEvent.click(screen.getByRole("button", { name: "Discard fork draft" }));
+ const next = mode === "discard-same" ? fixture.sources[0]! : fixture.sources[1]!;
+ fixture.rendered.rerender(fixture.view(next));
+ fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+ expect(screen.queryByText("recovery_required")).toBeNull();
+ expect(screen.getByRole("textbox", { name: "Fork name" })).toHaveProperty("value", `${document(next).name} fork`);
+ expect(fixture.fork).toHaveBeenCalledTimes(1);
+ fireEvent.click(screen.getByRole("button", { name: "Create fork" }));
+ fireEvent.click(await screen.findByRole("button", { name: "Open forked session" }));
+ await waitFor(() => expect(fixture.open).toHaveBeenCalledWith([...fixture.children.values()][0]!.id));
+ expect(fixture.fork).toHaveBeenCalledTimes(2);
+ expect(fixture.fork.mock.calls[1]![0]).toMatchObject({ mutation: { id: next.id, expectedRevision: next.revision }, expectedTurnId: object(document(next).execution).native_turn_id });
+ expect(fixture.fork.mock.calls[1]![0].mutation?.requestId).not.toBe(fixture.fork.mock.calls[0]![0].mutation?.requestId);
+});
+
+it("preserves pending then uncertain original ownership through hiding and attempted source replacement", async () => {
+ const fixture = await rejectedDraftFixture(Code.Unavailable, true);
+ expect(screen.queryByRole("button", { name: "Discard fork draft" })).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+ fixture.rendered.rerender(fixture.view(fixture.sources[1]!));
+ fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+ expect(screen.getByRole("textbox", { name: "Fork name" })).toHaveProperty("value", "Rejected source fork");
+ await act(async () => fixture.gate.resolve());
+ await screen.findByRole("button", { name: "Retry the same fork request" });
+ fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+ fireEvent.click(screen.getByRole("button", { name: "Fork session" }));
+ expect(screen.getByRole("textbox", { name: "Fork name" })).toHaveProperty("value", "Rejected source fork");
+ expect(screen.queryByRole("button", { name: "Discard fork draft" })).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Retry the same fork request" }));
+ await screen.findByRole("button", { name: "Open forked session" });
+ expect(fixture.fork.mock.calls[1]![0]).toEqual(fixture.fork.mock.calls[0]![0]);
+ fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
+ fireEvent.click(screen.getByRole("button", { name: "Fork session" }));
+ expect(screen.getByText(new RegExp(fixture.sources[0]!.id))).toBeDefined();
+ expect(screen.queryByRole("button", { name: "Create fork" })).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Open forked session" }));
+ expect(fixture.open).toHaveBeenCalledWith([...fixture.children.values()][0]!.id);
+ expect(fixture.fork).toHaveBeenCalledTimes(2);
+});

@@ -360,6 +360,12 @@ before refreshing. Discard or replacement invalidates that generation; recheck i
 after each asynchronous prerequisite and before ForkSession admission. Late reads
 cannot submit the old source or populate another draft. Hiding the operation
 retains its original preflight, accepted job and exact uncertain retry.
+A definite rejected draft retains its diagnostic while hidden and reopened in
+that original context. Explicit discard or replacement with another source or
+purpose clears only terminal rejection presentation from the connection-owned
+mutation registry. The clearing operation rechecks current ownership and cannot
+remove a pending/uncertain original request or an accepted job. Reopening a
+discarded source starts a clean draft; managed subscription admission is unchanged.
 These reads grant no child/native authority: Go independently validates complete
 canonical history at acceptance/publication, and the Worker verifies complete
 native history before exposing the child.
