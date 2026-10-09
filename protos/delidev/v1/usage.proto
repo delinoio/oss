@@ -402,4 +402,5 @@ message ListTokenPricingRequest {
 message ListTokenPricingResponse {
   repeated PricingVersion pricing = 1;
   string next_page_token = 2;
+  repeated ModelIdentity models = 3;
 }

@@ -12791,6 +12791,17 @@
       "member": "reclaimed_bytes_known",
       "number": 10,
       "newDeclaration": true
+    },
+    {
+      "issue": 964,
+      "sharedIssues": [
+        2138
+      ],
+      "kind": "message",
+      "declaration": "ListTokenPricingResponse",
+      "member": "models",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [

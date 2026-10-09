@@ -110,7 +110,7 @@ func (s *Service) applyReference(tx *store.Tx, m domain.ModelIdentity, snapshot 
 		return nil
 	}
 	if snapshot.Checked.IsZero() {
-		return nil
+		return tx.ClearActivePricing(m)
 	}
 	ref, _, e := priceReference(tx, m, snapshot)
 	if e != nil {
@@ -381,7 +381,12 @@ func (s *Service) ListTokenPricing(ctx context.Context, req *connect.Request[pb.
 			return e
 		}
 		sort.Slice(models, func(i, j int) bool { return models[i].Key() < models[j].Key() })
-		values := []*pb.PricingVersion{}
+		type row struct {
+			model domain.ModelIdentity
+			price *pb.PricingVersion
+		}
+		values := []row{}
+		ids := []string{}
 		for _, m := range models {
 			if provider != "" && m.ProviderID != provider || service != "" && m.SubscriptionService != service {
 				continue
@@ -390,13 +395,13 @@ func (s *Service) ListTokenPricing(ctx context.Context, req *connect.Request[pb.
 			if e != nil {
 				return e
 			}
-			if price != nil {
-				values = append(values, pricingVersion(price))
+			wire := pricingVersion(price)
+			values = append(values, row{m, wire})
+			id := string(m.Key())
+			if wire != nil {
+				id += "|" + wire.Id
 			}
-		}
-		ids := make([]string, len(values))
-		for i, v := range values {
-			ids[i] = v.Id
+			ids = append(ids, id)
 		}
 		raw, _ := json.Marshal(struct {
 			Provider domain.ID
@@ -404,6 +409,7 @@ func (s *Service) ListTokenPricing(ctx context.Context, req *connect.Request[pb.
 			IDs      []string
 		}{provider, service, ids})
 		digest := sha256.Sum256(raw)
+
 		index := 0
 		if req.Msg.PageToken != "" {
 			cursor, e := base64.RawURLEncoding.DecodeString(req.Msg.PageToken)
@@ -417,7 +423,12 @@ func (s *Service) ListTokenPricing(ctx context.Context, req *connect.Request[pb.
 			index = c.Index
 		}
 		end := min(index+size, len(values))
-		result.Pricing = values[index:end]
+		for _, row := range values[index:end] {
+			result.Models = append(result.Models, wireModel(row.model))
+			if row.price != nil {
+				result.Pricing = append(result.Pricing, row.price)
+			}
+		}
 		if end < len(values) {
 			cursor, _ := json.Marshal(struct {
 				Digest string

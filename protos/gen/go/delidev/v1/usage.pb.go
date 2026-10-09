@@ -3586,6 +3586,7 @@ type ListTokenPricingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Pricing       []*PricingVersion      `protobuf:"bytes,1,rep,name=pricing,proto3" json:"pricing,omitempty"`
 	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	Models        []*ModelIdentity       `protobuf:"bytes,3,rep,name=models,proto3" json:"models,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3632,6 +3633,13 @@ func (x *ListTokenPricingResponse) GetNextPageToken() string {
 		return x.NextPageToken
 	}
 	return ""
+}
+
+func (x *ListTokenPricingResponse) GetModels() []*ModelIdentity {
+	if x != nil {
+		return x.Models
+	}
+	return nil
 }
 
 var File_delidev_v1_usage_proto protoreflect.FileDescriptor
@@ -3955,10 +3963,11 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"page_token\x18\x02 \x01(\tR\tpageToken\x12\x1f\n" +
 	"\vprovider_id\x18\x03 \x01(\tR\n" +
 	"providerId\x12Z\n" +
-	"\x14subscription_service\x18\x04 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"x\n" +
+	"\x14subscription_service\x18\x04 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\xab\x01\n" +
 	"\x18ListTokenPricingResponse\x124\n" +
 	"\apricing\x18\x01 \x03(\v2\x1a.delidev.v1.PricingVersionR\apricing\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*^\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x121\n" +
+	"\x06models\x18\x03 \x03(\v2\x19.delidev.v1.ModelIdentityR\x06models*^\n" +
 	"\x14UsageTimeGranularity\x12&\n" +
 	"\"USAGE_TIME_GRANULARITY_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aUSAGE_TIME_GRANULARITY_DAY\x10\x01*p\n" +
@@ -4158,29 +4167,30 @@ var file_delidev_v1_usage_proto_depIdxs = []int32{
 	40,  // 91: delidev.v1.SetTokenPricingModeResponse.current:type_name -> delidev.v1.GetTokenPricingResponse
 	49,  // 92: delidev.v1.ListTokenPricingRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
 	17,  // 93: delidev.v1.ListTokenPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
-	47,  // 94: delidev.v1.UsageService.ListTokenPricing:input_type -> delidev.v1.ListTokenPricingRequest
-	39,  // 95: delidev.v1.UsageService.GetTokenPricing:input_type -> delidev.v1.GetTokenPricingRequest
-	41,  // 96: delidev.v1.UsageService.SetTokenPricing:input_type -> delidev.v1.SetTokenPricingRequest
-	43,  // 97: delidev.v1.UsageService.SetTokenPricingMode:input_type -> delidev.v1.SetTokenPricingModeRequest
-	45,  // 98: delidev.v1.UsageService.RefreshTokenPrices:input_type -> delidev.v1.RefreshTokenPricesRequest
-	6,   // 99: delidev.v1.UsageService.GetUsageSummary:input_type -> delidev.v1.GetUsageSummaryRequest
-	18,  // 100: delidev.v1.UsageService.GetModelPricing:input_type -> delidev.v1.GetModelPricingRequest
-	20,  // 101: delidev.v1.UsageService.GetPricingVersion:input_type -> delidev.v1.GetPricingVersionRequest
-	22,  // 102: delidev.v1.UsageService.SetModelPricing:input_type -> delidev.v1.SetModelPricingRequest
-	48,  // 103: delidev.v1.UsageService.ListTokenPricing:output_type -> delidev.v1.ListTokenPricingResponse
-	40,  // 104: delidev.v1.UsageService.GetTokenPricing:output_type -> delidev.v1.GetTokenPricingResponse
-	42,  // 105: delidev.v1.UsageService.SetTokenPricing:output_type -> delidev.v1.SetTokenPricingResponse
-	44,  // 106: delidev.v1.UsageService.SetTokenPricingMode:output_type -> delidev.v1.SetTokenPricingModeResponse
-	46,  // 107: delidev.v1.UsageService.RefreshTokenPrices:output_type -> delidev.v1.RefreshTokenPricesResponse
-	15,  // 108: delidev.v1.UsageService.GetUsageSummary:output_type -> delidev.v1.GetUsageSummaryResponse
-	19,  // 109: delidev.v1.UsageService.GetModelPricing:output_type -> delidev.v1.GetModelPricingResponse
-	21,  // 110: delidev.v1.UsageService.GetPricingVersion:output_type -> delidev.v1.GetPricingVersionResponse
-	23,  // 111: delidev.v1.UsageService.SetModelPricing:output_type -> delidev.v1.SetModelPricingResponse
-	103, // [103:112] is the sub-list for method output_type
-	94,  // [94:103] is the sub-list for method input_type
-	94,  // [94:94] is the sub-list for extension type_name
-	94,  // [94:94] is the sub-list for extension extendee
-	0,   // [0:94] is the sub-list for field type_name
+	50,  // 94: delidev.v1.ListTokenPricingResponse.models:type_name -> delidev.v1.ModelIdentity
+	47,  // 95: delidev.v1.UsageService.ListTokenPricing:input_type -> delidev.v1.ListTokenPricingRequest
+	39,  // 96: delidev.v1.UsageService.GetTokenPricing:input_type -> delidev.v1.GetTokenPricingRequest
+	41,  // 97: delidev.v1.UsageService.SetTokenPricing:input_type -> delidev.v1.SetTokenPricingRequest
+	43,  // 98: delidev.v1.UsageService.SetTokenPricingMode:input_type -> delidev.v1.SetTokenPricingModeRequest
+	45,  // 99: delidev.v1.UsageService.RefreshTokenPrices:input_type -> delidev.v1.RefreshTokenPricesRequest
+	6,   // 100: delidev.v1.UsageService.GetUsageSummary:input_type -> delidev.v1.GetUsageSummaryRequest
+	18,  // 101: delidev.v1.UsageService.GetModelPricing:input_type -> delidev.v1.GetModelPricingRequest
+	20,  // 102: delidev.v1.UsageService.GetPricingVersion:input_type -> delidev.v1.GetPricingVersionRequest
+	22,  // 103: delidev.v1.UsageService.SetModelPricing:input_type -> delidev.v1.SetModelPricingRequest
+	48,  // 104: delidev.v1.UsageService.ListTokenPricing:output_type -> delidev.v1.ListTokenPricingResponse
+	40,  // 105: delidev.v1.UsageService.GetTokenPricing:output_type -> delidev.v1.GetTokenPricingResponse
+	42,  // 106: delidev.v1.UsageService.SetTokenPricing:output_type -> delidev.v1.SetTokenPricingResponse
+	44,  // 107: delidev.v1.UsageService.SetTokenPricingMode:output_type -> delidev.v1.SetTokenPricingModeResponse
+	46,  // 108: delidev.v1.UsageService.RefreshTokenPrices:output_type -> delidev.v1.RefreshTokenPricesResponse
+	15,  // 109: delidev.v1.UsageService.GetUsageSummary:output_type -> delidev.v1.GetUsageSummaryResponse
+	19,  // 110: delidev.v1.UsageService.GetModelPricing:output_type -> delidev.v1.GetModelPricingResponse
+	21,  // 111: delidev.v1.UsageService.GetPricingVersion:output_type -> delidev.v1.GetPricingVersionResponse
+	23,  // 112: delidev.v1.UsageService.SetModelPricing:output_type -> delidev.v1.SetModelPricingResponse
+	104, // [104:113] is the sub-list for method output_type
+	95,  // [95:104] is the sub-list for method input_type
+	95,  // [95:95] is the sub-list for extension type_name
+	95,  // [95:95] is the sub-list for extension extendee
+	0,   // [0:95] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_usage_proto_init() }

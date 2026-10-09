@@ -45,7 +45,7 @@ export function newConfiguration(kind: EntityKind): Document {
     case EntityKind.PROVIDER: return { name: "", endpoint: "", protocol: Protocol.Responses, authentication: Authentication.Bearer, api_formats: [], discovery: true, enabled: true };
     case EntityKind.MODEL: return { name: "", provider_id: "", native_id: "", alias: "", harnesses: [], hidden: false, order: 0, manual: true, new: false, metadata_source: "unknown" };
     case EntityKind.ACCOUNT: return { alias: "", provider_id: "", type: "api", enabled: true, exclude_automatic: false, recovery_notifications: true, health: "disconnected", quota: [], confirmed_exhausted: false };
-    case EntityKind.AGENT: return { name: "", harness: Harness.Codex, model_id: "", accounts: [], templates: [], options: { permission: Permission.Default } };
+    case EntityKind.AGENT: return { name: "", harness: Harness.Codex, routes: [], templates: [], options: { permission: Permission.Default } };
     case EntityKind.PROJECT: return { settings: { automatic_fetch: "inherit", automatic_plan_approval: "inherit" }, name: "", repositories: [], primary_repository: "", agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } };
     case EntityKind.REPOSITORY: return { name: "", checkouts: [], base: {}, starting: {}, auto_fetch: true };
     case EntityKind.TEMPLATE: return { name: "", contents: "" };
@@ -280,7 +280,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
     const options = object(data.options);
     const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
     return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
-      core={<>{!props.workerWizard ? <AgentReconfiguration data={data} change={change} active={active} /> : null}<TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label={copy("configuration-fields.model_5e2c61")} kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required markRequired /></div> : null}</>}
+      core={<><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /></div> : null}</>}
       permissions={<AgentPermissions reviewSupported={reviewerStatus.data?.capabilities.includes(SystemCapability.CODEX_APPROVAL_REVIEW_V1) === true} active={props.movementActive ?? active} disabled={props.disabled ?? false} harness={data.harness} options={options} change={field("options")} />}
       reasoning={<><ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</>}
       accounts={props.workerWizard ? undefined : <><Choice label={copy("configuration-fields.accountRouting_0c3707")} value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label={copy("configuration-fields.accounts_8a7c8b")} kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
@@ -423,13 +423,6 @@ function ModelFields({ data, change, active, existing }: FieldsProps) {
   </>;
 }
 
-function AgentReconfiguration({ data, change, active }: { data: Document; change: (value: Document) => void; active: boolean }) {
-  useLocale();
-  const model = useQuery(ResourceQuery.getResource, { kind: EntityKind.MODEL, id: text(data.model_id) }, { enabled: active && data.reconfiguration_required === true && Boolean(text(data.model_id)), retry: false });
-  if (data.reconfiguration_required !== true) return null;
-  const valid = model.data?.resource && supportsResourceSchema(model.data.resource) && document(model.data.resource).retired !== true && model.data.resource.id === data.model_id;
-  return <section role="status"><p>{copy("configuration-fields.legacySubscriptionConfigurationWasRetiredChoose_bb6be6")}</p><Problem error={model.error} /><SettingsActionButton icon={SettingsActionIcon.Confirm} type="button" disabled={!valid || Boolean(model.error || model.isFetching)} onClick={() => change({ ...data, reconfiguration_required: false })}>{copy("configuration-fields.confirmReconfiguredModelAndAccounts_021890")}</SettingsActionButton></section>;
-}
 
 export enum BooleanOverride { Inherit = "inherit", Enabled = "enabled", Disabled = "disabled" }
 export function ProjectBehaviorFields({ data, change, active, supportsSessionDefaults = false }: Pick<FieldsProps, "data" | "change" | "active" | "supportsSessionDefaults">) {

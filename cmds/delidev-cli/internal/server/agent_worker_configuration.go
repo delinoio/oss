@@ -83,6 +83,9 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 			seen[key] = true
 			model := domain.InlineModel{ModelIdentity: identity, MetadataSource: domain.Unknown}
 			if route.Model != nil {
+				if route.Model.ModelIdentity != identity {
+					return nil, domain.Fail(domain.Conflict, "The staged source model no longer matches the original selected accounts.", "Read the accounts and retain the explicit native selection before saving.")
+				}
 				model = *route.Model
 				model.ModelIdentity = identity
 				if model.MetadataSource == domain.Known {
