@@ -31,7 +31,7 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
   const opening = useSettingsOpening();
   const drawerOpen = useSidebarDrawerOpen();
   const ids = useId();
-  const form = useRef<HTMLFormElement>(null), editorForm = useRef<HTMLFormElement>(null);
+  const form = useRef<HTMLElement>(null), editorForm = useRef<HTMLFormElement>(null);
   const firstCheckbox = useRef<HTMLInputElement>(null);
   const edit = useRef<HTMLButtonElement>(null);
   const focusIntent = useRef<FocusTarget | undefined>(undefined);
@@ -82,7 +82,7 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
     onWorkflowReadyChange?.(Boolean(draft));
     return () => onWorkflowReadyChange?.(false);
   }, [draft, onWorkflowReadyChange]);
-  const preferences = <form data-settings-search-target="notification-preferences" data-settings-search-pending={current.isPending && !current.error ? "true" : undefined} id={`${ids}-form`} ref={form} className="notification-preferences">
+  const preferences = <section aria-labelledby={`${ids}-preferences`} data-settings-search-target="notification-preferences" data-settings-search-pending={current.isPending && !current.error ? "true" : undefined} id={`${ids}-form`} ref={form} className="notification-preferences">
       <div className="notification-section-heading"><h2 id={`${ids}-preferences`}>{copy("notification-settings.notifyThisClientAbout_db8955")}</h2>{value ? <button ref={edit} type="button" disabled={Boolean(current.error) || current.isFetching} onClick={() => { focusIntent.current = FocusTarget.FirstCheckbox; setDraft({ ...value }); }}>{copy("notification-settings.editNotificationPreferences_b2aceb")}</button> : null}</div>
       <Problem error={current.error} actions={current.error ? <button type="button" disabled={!active || current.isFetching} onClick={() => void current.refetch()}>{copy("ui.retryCurrentRead")}</button> : undefined} />
       {current.error && current.data?.preferences ? <p role="status">{copy("notification-settings.notificationPreferencesCouldNotBeRefreshed_4e5bdf")}</p> : null}
@@ -90,7 +90,7 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
         <div data-settings-search-target="notification-questions" className="notification-row"><div><label>{copy("notification-settings.questionsAndApprovalRequests_e6c1b4")}</label><p id={`${ids}-interaction-help`}>{copy("notification-settings.whenASessionNeedsYourAnswer_b52af9")}</p></div><span className="notification-value">{value.interactions ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div>
         <div data-settings-search-target="notification-outcomes" className="notification-row"><div><label>{copy("notification-settings.executionCompletionFailureAndInterruption_275b47")}</label><p id={`${ids}-terminal-help`}>{copy("notification-settings.whenAnExecutionSucceedsFailsOr_fae45f")}</p></div><span className="notification-value">{value.terminals ? copy("notification-settings.enabled_92c1cd") : copy("notification-settings.disabled_75081b")}</span></div>
       </fieldset>}
-    </form>;
+    </section>;
   return <section className="notification-settings">{showCategoryIntro ? <div className="notification-intro"><h1>{copy("notification-settings.notifications_788011")}</h1><p>{copy("notification-settings.chooseWhichUpdatesThisClientReceives_16bc3a")}</p><p className="notification-scope">{copy("notification-settings.forThisClientOnTheSelected_c0d140")}</p></div> : null}
     <NativeNotificationSettings active={active} />
     {preferences}
