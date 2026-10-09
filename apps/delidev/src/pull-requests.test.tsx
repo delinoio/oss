@@ -384,32 +384,22 @@ it("keeps repository inventory visits free of GitHub content reads across langua
 });
 
 it("debounces trimmed search, waits for IME and cancels invalid pending terms", async () => {
-  const value = fixture(); render(<App transport={value.transport} />);
+  const value = fixture(); const view = render(<App transport={value.transport} />);
   const pane = await open(); await choose(value.rows[0]); await screen.findByText("Original fixture title");
   const search = pane.getByLabelText("Search title and body");
-  fireEvent.change(search, { target: { value: "fix" } });
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
-  expect(value.query).toHaveBeenCalledTimes(1);
-  fireEvent.change(search, { target: { value: "fixed" } });
-  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(2));
-  expect(submitted(value, 1).search).toBe("fixed");
-  fireEvent.change(search, { target: { value: " fixed " } });
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
-  expect(value.query).toHaveBeenCalledTimes(2);
-  fireEvent.compositionStart(search);
-  fireEvent.change(search, { target: { value: "composed" } });
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
-  expect(value.query).toHaveBeenCalledTimes(2);
-  fireEvent.compositionEnd(search);
-  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3));
-  expect(submitted(value, 2).search).toBe("composed");
-  fireEvent.change(search, { target: { value: "pending" } });
-  fireEvent.change(search, { target: { value: "is:open" } });
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
-  expect(value.query).toHaveBeenCalledTimes(3);
-  fireEvent.change(search, { target: { value: "" } });
-  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(4));
-  expect(submitted(value, 3).operation).toBe("list");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const tick = async (milliseconds: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds); }); };
+  try {
+    fireEvent.change(search, { target: { value: "fix" } }); await tick(150); expect(value.query).toHaveBeenCalledTimes(1);
+    fireEvent.change(search, { target: { value: "fixed" } }); await tick(299); expect(value.query).toHaveBeenCalledTimes(1);
+    await tick(1); expect(value.query).toHaveBeenCalledTimes(2); expect(submitted(value, 1).search).toBe("fixed");
+    fireEvent.change(search, { target: { value: " fixed " } }); await tick(350); expect(value.query).toHaveBeenCalledTimes(2);
+    fireEvent.compositionStart(search); fireEvent.change(search, { target: { value: "composed" } }); await tick(350); expect(value.query).toHaveBeenCalledTimes(2);
+    fireEvent.compositionEnd(search); await tick(299); expect(value.query).toHaveBeenCalledTimes(2);
+    await tick(1); expect(value.query).toHaveBeenCalledTimes(3); expect(submitted(value, 2).search).toBe("composed");
+    fireEvent.change(search, { target: { value: "pending" } }); fireEvent.change(search, { target: { value: "is:open" } }); await tick(350); expect(value.query).toHaveBeenCalledTimes(3);
+    fireEvent.change(search, { target: { value: "" } }); await tick(300); expect(value.query).toHaveBeenCalledTimes(4); expect(submitted(value, 3).operation).toBe("list");
+  } finally { view.unmount(); vi.useRealTimers(); }
 });
 
 it("waits for validated selected metadata before automatic GitHub reads", async () => {
