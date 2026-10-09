@@ -40,3 +40,8 @@ it('groups original Claude entries through their validator and retains foreign r
  const {container}=render(<ToolTurnTranscript {...props(query([[original,row(tool('command')),foreign]]))}/>);
  expect(container.querySelectorAll('.tool-turn')).toHaveLength(1);expect(container.querySelectorAll('.tool-turn li')).toHaveLength(2);expect(screen.getByText('{ "path": "exact" }')).toBeTruthy();expect(screen.getByLabelText('Claude tool unavailable')).toBeTruthy();
 });
+
+it('projects the original builtin name and latest active native status without retaining snapshots',()=>{
+ const record=row({...tool('opencode-builtin'),tool:{started:{kind:'opencode-builtin',status:'pending',builtin:{name:'webfetch',input_json:'{ "url":"private fixture" }'}},states:[{sequence:1,snapshot:{kind:'opencode-builtin',status:'running',builtin:{name:'webfetch',output:'DO NOT RETAIN'}}}]}});
+ const projected=conversationProjection(record,sessionId);expect(projected.tool?.name).toBe('webfetch');expect(projected.tool?.state).toBe('running');expect(JSON.stringify(projected,(_,v)=>typeof v==='bigint'?String(v):v)).not.toContain('DO NOT RETAIN');
+});

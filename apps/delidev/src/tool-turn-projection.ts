@@ -28,7 +28,10 @@ export function conversationProjection(row: Resource, sessionId: string): Conver
   } else {
     const tool = object(d.tool), started = object(tool.started), completed = object(tool.completed);
     if (!Object.keys(tool).length) return projection;
-    name = label(started.kind); state = label(completed.status) || label(started.status) || state;
+    const observations = Array.isArray(tool.states) ? tool.states : [];
+    const latest = object(object(observations.at(-1)).snapshot);
+    name = started.kind === "opencode-builtin" ? label(object(started.builtin).name) || label(started.kind) : label(started.kind);
+    state = label(completed.status) || (latest.kind === started.kind ? label(latest.status) : "") || label(started.status) || state;
   }
   projection.tool = { owner: JSON.stringify([sessionId, d.execution_id, d.native_thread_id, d.native_turn_id]), name, state };
   return projection;
