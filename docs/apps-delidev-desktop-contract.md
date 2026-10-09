@@ -616,7 +616,7 @@ credential-shaped IDs use localized Quota N. Each independent quota retains
 basis-point precision, original observation/reset evidence, state and decorative
 bar; never pool quotas or infer duration labels. Expired reset times await new
 observation, and stale historical values remain visibly stale. Usage stays exact,
-incomplete and separated by currency in an initially collapsed disclosure.
+incomplete and separated by currency in an initially collapsed disclosure. Reuse the shared native disclosure family with its original 40px header. Opening or closing it preserves the mounted retained snapshot and grants no product read or activation authority.
 
 On macOS/Windows, left-click toggles the panel adjacent to the native tray
 rectangle; Linux keeps its native Open status menu and centers the same panel on

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { copy, displayLocale, i18n, useLocale, type MessageKey } from "./localization";
@@ -132,7 +133,7 @@ export function TrayStatus({ instance, bridge }: { instance: string; bridge: Tra
         <button disabled={!current || busy || problem} onClick={() => void action(TrayPanelAction.Usage)}><span>{copy("tray-status.tokens")}</span><strong>{count(summary?.usage?.known_tokens)}</strong></button>
       </section>
       <p>{copy(stale ? "tray-status.stale" : "tray-status.incomplete")}</p>
-      <details><summary>{copy("tray-status.usageDetails")}</summary><p>{copy("tray-status.incomplete")}</p>{summary?.usage?.estimates.map(estimate => <p key={estimate.currency}>{copy("tray-status.estimate", { currency: estimate.currency, amount: estimate.known_amount ?? copy("tray-status.unavailable") })}</p>)}</details>
+      <Disclosure density={DisclosureDensity.Settings}><DisclosureSummary>{copy("tray-status.usageDetails")}</DisclosureSummary><p>{copy("tray-status.incomplete")}</p>{summary?.usage?.estimates.map(estimate => <p key={estimate.currency}>{copy("tray-status.estimate", { currency: estimate.currency, amount: estimate.known_amount ?? copy("tray-status.unavailable") })}</p>)}</Disclosure>
     </div>
     <footer><button className="primary" disabled={busy || Boolean(current && problem)} onClick={() => void action(current ? TrayPanelAction.Show : TrayPanelAction.Recovery)}>{copy("tray-status.open")}</button><button disabled={busy} onClick={() => void action(TrayPanelAction.Quit)}>{copy("tray-status.quit")}</button></footer>
   </main>;

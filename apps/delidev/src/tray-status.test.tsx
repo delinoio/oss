@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { i18n, SupportedLanguage } from "./localization";
 import { DateFormatPreference } from "./timestamp-format";
@@ -33,6 +33,24 @@ describe("isolated tray panel",()=>{
     fireEvent.click(screen.getByRole("button",{name:"Manage subscriptions"}));
     await waitFor(()=>expect(bridge.activate).toHaveBeenCalledWith(TrayPanelAction.Settings,fixture().windows[0].target));
     expect(bridge.read).toHaveBeenCalledTimes(1);
+  });
+  it("keeps the shared usage disclosure collapsed and changes no retained observation authority",async()=>{
+    const {bridge}=controller();render(<TrayStatus instance={instance} bridge={bridge}/>);
+    await screen.findByText("57.00% remaining");
+    const header=screen.getByText("Usage details").closest("summary")!;
+    const details=header.closest("details")!;
+    expect(details.open).toBe(false);
+    expect(details.dataset.disclosureDensity).toBe("settings");
+    expect(header.getAttribute("aria-controls")).toBeTruthy();
+    act(()=>{details.open=true;});
+    await waitFor(()=>expect(header.getAttribute("aria-expanded")).toBe("true"));
+    const content=document.getElementById(header.getAttribute("aria-controls")!)!;
+    const paragraph=content.querySelector("p")!;paragraph.tabIndex=-1;paragraph.focus();
+    act(()=>{details.open=false;});
+    expect(document.activeElement).toBe(header);
+    expect(bridge.read).toHaveBeenCalledTimes(1);
+    expect(bridge.activate).not.toHaveBeenCalled();
+    expect(bridge.dismiss).not.toHaveBeenCalled();
   });
   it("selection changes only projection, persists across snapshots and rejects disappeared identity",async()=>{
     const {bridge,update}=controller();render(<TrayStatus instance={instance} bridge={bridge}/>);
