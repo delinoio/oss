@@ -3,7 +3,7 @@ import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclo
 import { ScrollContinuation } from "./scroll-continuation";
 import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, IntegrationQuery, PullRequestFixQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
@@ -112,6 +112,8 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const [state, setState] = useState(ItemState.Open);
   const stateGroupId = useId();
   const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [composing, setComposing] = useState(false);
   const [pageSize, setPageSize] = useState(20);
   const [loaded, setLoaded] = useState<LoadedPullRequests>();
   const [navigation, setNavigation] = useState<PullRequestNavigation>();
@@ -120,15 +122,32 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const navigationActive = active && paneVisible;
   const repositories = useGitHubCatalog(EntityKind.REPOSITORY, navigationActive);
   const selectedQuery = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: repositoryId }, { enabled: active && Boolean(repositoryId) });
+  const metadataScope = useRef({ active: false, id: "", generation: 0 });
+  if (metadataScope.current.active !== active || metadataScope.current.id !== repositoryId) {
+    metadataScope.current = { active, id: repositoryId, generation: metadataScope.current.generation + 1 };
+  }
+  const metadataGeneration = metadataScope.current.generation;
+  const [confirmedMetadataGeneration, setConfirmedMetadataGeneration] = useState<number>();
+  useEffect(() => {
+    if (!active || !repositoryId) return;
+    let current = true;
+    // A cached selected resource is historical on reentry. Join the original
+    // query's current read rather than admitting GitHub work before it settles.
+    void selectedQuery.refetch({ cancelRefetch: false }).then(() => {
+      if (current && metadataScope.current.generation === metadataGeneration) setConfirmedMetadataGeneration(metadataGeneration);
+    }, () => { console.warn("delidev.pull_requests.metadata_confirmation_failed", { phase: "activation" }); });
+    return () => { current = false; };
+  }, [active, repositoryId, metadataGeneration, selectedQuery.refetch]);
+  const metadataConfirmed = confirmedMetadataGeneration === metadataGeneration;
   const selected = selectedQuery.data?.resource;
   const config = document(selected);
-  const configured = Boolean(selected && selected.schemaVersion === 1 && text(config.integration_id) && text(config.github_owner) && text(config.github_name));
+  const configured = Boolean(selected && selected.id === repositoryId && selected.kind === EntityKind.REPOSITORY && selected.schemaVersion === 1 && text(config.integration_id) && text(config.github_owner) && text(config.github_name));
   const searchValid = plainSearch(search.trim());
-  const canLoad = Boolean(active && configured && !selectedQuery.isFetching && searchValid);
-  const scopeKey = selected ? JSON.stringify([selected.id, selected.revision.toString(), state, search.trim(), pageSize]) : "";
+  const canLoad = Boolean(active && metadataConfirmed && configured && !selectedQuery.error && !selectedQuery.isFetching);
+  const scopeKey = selected ? JSON.stringify([selected.id, selected.revision.toString(), state, appliedSearch, pageSize]) : "";
 
   useEffect(() => {
-    if (!active) setLoaded(undefined);
+    if (!active) { setLoaded(undefined); setNavigation(undefined); }
   }, [active]);
 
   const chooseRepository = (row: Resource) => {
@@ -138,18 +157,27 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
     setRepositoryId(row.id);
     setState(ItemState.Open);
     setSearch("");
+    setAppliedSearch("");
+    setComposing(false);
     setPageSize(20);
   };
-  const load = (event: FormEvent) => {
-    event.preventDefault();
-    if (!selected || !canLoad) return;
+  useEffect(() => {
     const term = search.trim();
-    const query: GitHubQuery = { kind: ItemKind.PullRequest, operation: term ? QueryOperation.Search : QueryOperation.List, state, page: 1, page_size: pageSize, ...(term ? { search: term } : {}) };
-    const retained = navigation?.scopeKey === scopeKey ? navigation : { scopeKey, query, previous: [] };
-    setNavigation(retained);
-    setLoaded({ repositoryId: selected.id, revision: selected.revision, scopeKey, state, search: term, pageSize, query: retained.query });
-    closeDrawer();
-  };
+    if (!active || composing || !searchValid || term === appliedSearch) return;
+    const timer = setTimeout(() => setAppliedSearch(term), 300);
+    return () => clearTimeout(timer);
+  }, [active, composing, search, searchValid, appliedSearch]);
+
+  useEffect(() => {
+    if (!selected || !canLoad || loaded?.scopeKey === scopeKey) return;
+    // A return during a pending search must not read the superseded term first.
+    if (!loaded && searchValid && !composing && search.trim() !== appliedSearch) return;
+    const query: GitHubQuery = { kind: ItemKind.PullRequest, operation: appliedSearch ? QueryOperation.Search : QueryOperation.List, state, page: 1, page_size: pageSize, ...(appliedSearch ? { search: appliedSearch } : {}) };
+    // Every effective query owns a new first-page scope. Existing pagination
+    // owners cancel replacement reads and fence transports that ignore abort.
+    setNavigation({ scopeKey, query, previous: [] });
+    setLoaded({ repositoryId: selected.id, revision: selected.revision, scopeKey, state, search: appliedSearch, pageSize, query });
+  }, [canLoad, scopeKey, loaded, selected, state, pageSize, appliedSearch, search, searchValid, composing]);
 
   const resultsCurrent = Boolean(active && loaded && selected && loaded.repositoryId === selected.id && loaded.revision === selected.revision);
   const listLayout = !navigation || navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search;
@@ -166,18 +194,17 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
       <ScrollContinuation query={repositories} root={root} active={active} label={copy("pull-requests.repositories_1e32af")} showInitial={false} /></div>
       {repositoryId ? <>
         <section className="sidebar-query-options" aria-label={copy("pull-requests.queryOptions_aeced2")}><h3>{copy("pull-requests.queryOptions_aeced2")}</h3>
-        <form className="sidebar-form" onSubmit={load}>
+        <form className="sidebar-form" onSubmit={event => event.preventDefault()}>
           <fieldset className="pr-state-field"><legend>{copy("pull-requests.state_a3b50c")}</legend><div className="pr-state-options">
             {[{ value: ItemState.Open, label: copy("pull-requests.open_ed077f") }, { value: ItemState.Closed, label: copy("pull-requests.closed_c21ead") }, { value: ItemState.All, label: copy("pull-requests.all_a52ace") }].map((option) => <label key={option.value} className="pr-state-choice"><input type="radio" name={stateGroupId} value={option.value} checked={state === option.value} onChange={() => setState(option.value)} /><span>{option.label}</span></label>)}
           </div></fieldset>
-          <label>{copy("pull-requests.searchTitleAndBody_f2c94c")}<span className="pr-search-input"><Icon name="search" /><input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} /></span></label>
+          <label>{copy("pull-requests.searchTitleAndBody_f2c94c")}<span className="pr-search-input"><Icon name="search" /><input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} /></span></label>
           {!searchValid ? <p role="alert">{copy("pull-requests.usePlainWordsNumbersSpacesHyphens_0bce88")}</p> : null}
           {selectedQuery.error ? <Problem error={selectedQuery.error} /> : null}
           {selected && !configured ? <p className="sidebar-help">{copy("pull-requests.setASupportedGithubProfileOwner_c9cd89")}</p> : null}
           {repositoryId && selectedQuery.isPending ? <p role="status">{copy("pull-requests.loadingRepositorySettings_98ac56")}</p> : null}
           <label>{copy("pull-requests.prPageSize_f04cb9")}<select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>{[1, 5, 10, 20].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
           <p className="sidebar-help">{copy("pull-requests.noGithubRequestIsMadeUntil_55d1b2")}</p>
-          <button className="primary" disabled={!canLoad}>{copy("pull-requests.loadPullRequests_c952ba")}</button>
           {loaded && filtersChanged ? <p className="sidebar-help">{copy("pull-requests.theDisplayedResultsBelongToThe_44e130")}</p> : null}
         </form>
         </section>
