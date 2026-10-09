@@ -1,4 +1,6 @@
 {
+  "session-terminals.retryInventory": "터미널 목록 읽기 재시도",
+  "session-terminals.openingTerminal": "터미널 여는 중…",
   "session-terminals.sessionTerminals_db991c": "세션 터미널",
   "session-terminals.terminals_7482c4": "터미널",
   "session-terminals.hideTerminals_522e2b": "터미널 숨기기",

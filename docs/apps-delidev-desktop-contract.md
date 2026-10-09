@@ -3542,6 +3542,10 @@ keyboard focus and dismissal ownership. Use 14px primary/12px secondary text,
 English and Korean use generated localized copy. Capability 77 gates the mutation;
 older servers receive update guidance. UI presence grants no native support.
 
+
+### Explicit first-terminal opening (issue #2112)
+
+The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… while resolving, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup. Preserve full-pane tab selection and attached-input focus, + for additional terminals, shell override, exact uncertain retry and all server admission. Presentation departure cancels only unresolved intent; opening, mounting, reconnecting, polling and exits never replace shells.
 ## Detailed session startup — issue #2120
 
 Ordinary Session and General Chat render authenticated original operation

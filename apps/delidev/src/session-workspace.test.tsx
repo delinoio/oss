@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, SystemCapability, TerminalService, newRequestId, type RenameSessionRequest } from "@delinoio/delidev-api-client";
+import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, SystemCapability, TerminalService, TerminalCreationMode, newRequestId, type RenameSessionRequest } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
 import { SessionNameEditorProvider } from "./session-name-editor";
@@ -19,7 +19,7 @@ vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement) 
  return { write: async () => {}, enabled: () => {}, focus: () => field.focus(), dispose: () => host.replaceChildren() };
 } }));
 
-function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => [], terminalMode: boolean | number = false) {
+function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => [], terminalMode: boolean | number = false, snapshotGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({
     name: "Original session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "blocked", recovery: "none",
@@ -31,7 +31,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const releases = new Map<string, () => void>();
   const terminalHeld = new Map(terminals.map(row => [row.id, new Promise<void>(resolve => { releases.set(row.id, resolve); })]));
   const releaseTerminal = (index = 0) => releases.get(terminals[index]!.id)?.();
-  const terminalControl = vi.fn(), terminalCreate = vi.fn(), terminalWatches = vi.fn();
+  const terminalControl = vi.fn(), terminalCreate = vi.fn((request: { preferredTerminalId?: string }) => ({ terminal: terminals.find(row => row.id === request.preferredTerminalId) ?? terminal })), terminalWatches = vi.fn();
   const retained = new Map([[id, session]]);
   const events: ReturnType<typeof create<typeof WatchEventsResponseSchema>>[] = [];
   let wake = () => {};
@@ -53,13 +53,14 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     router.service(SystemService, { getStatus: () => ({ capabilities: terminalMode ? [SystemCapability.SESSION_TERMINALS_V1] : [] }) });
     router.service(TerminalService, { controlTerminal: terminalControl, createTerminal: terminalCreate, watchTerminalOutput: async function* (request, context) {
       terminalWatches(request.terminalId);
-      const terminal = terminals.find(row => row.id === request.terminalId)!;
+      const terminal = terminals.find(row => row.id === request.terminalId);
+      if (!terminal) return;
       yield { epoch: "fixture-epoch", sequence: 0n, terminal, heartbeat: true };
       await terminalHeld.get(terminal.id); if (!context.signal.aborted) yield { epoch: "fixture-epoch", sequence: 0n, terminal: create(ResourceSchema, { ...terminal, revision: 2n, documentJson: encode({ state: "exited", cleanup_verified: true }) }), heartbeat: true };
     } });
     router.service(SessionService, { listQueue, getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
-      getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
+      getSnapshot: async () => { await snapshotGate; return { resources: [session], cursor: "original-snapshot" }; },
       getResource,
       listResources: request => terminalMode && request.filter?.kind === EntityKind.TERMINAL ? { resources: terminals } : list(request),
       async *watchEvents(_request, context) {
@@ -392,10 +393,16 @@ it("last verified terminal exit restores the actual Session conversation, focus 
   expect(composer).toHaveProperty("value", "Original draft"); expect(composer.closest("[inert]")).toBeNull();
   expect(screen.getByRole("complementary", { name: "Session information" })).toBe(info);
   expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Conversation" }));
+  // Observing the final exit is read-only. A subsequent toolbar gesture owns
+  // fresh atomic admission and must ignore the stale running history row.
+  expect(f.terminalCreate).toHaveBeenCalledOnce();
+  const replacement = create(ResourceSchema, { ...f.terminals[0]!, id: newRequestId() });
+  f.terminalCreate.mockReturnValue({ terminal: replacement });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-  await screen.findByText("No session terminals. Create one explicitly with +.");
-  expect(screen.getByRole("button", { name: "Create terminal" })).toHaveProperty("disabled", false);
-  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+  await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledTimes(2));
+  expect(f.terminalCreate.mock.calls[1]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, mutation: { id: f.session.id, expectedRevision: 7n } });
+  await waitFor(() => expect(f.terminalWatches).toHaveBeenCalledWith(replacement.id));
+  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
  } finally { view.unmount(); f.releaseTerminal(); f.client.clear(); }
 });
 
@@ -428,10 +435,29 @@ it("verified terminal removal skips intervening Files and selects the original l
   await act(async () => f.releaseTerminal(0));
   await waitFor(() => expect(screen.getAllByRole("tab", { name: /^Terminals ·/ })).toHaveLength(1));
   expect(screen.getByRole("tab", { name: /^Terminals ·/ }).getAttribute("aria-selected")).toBe("true");
-  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
+  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).toHaveBeenCalledTimes(2);
  } finally { view.unmount(); for (let index = 0; index < 3; index++) f.releaseTerminal(index); f.client.clear(); }
 });
 
+
+it.each([false, true])("retains initial terminal toolbar intent until session load unless departed (%s)", async departed => {
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true, gate);
+  const view = render(f.view());
+  try {
+    const openTerminal = () => { fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" })); };
+    expect(screen.queryByRole("heading", { name: "Original session" })).toBeNull();
+    openTerminal(); openTerminal();
+    expect(f.terminalWatches).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
+    if (departed) fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    await act(async () => release());
+    await screen.findByRole("heading", { name: "Original session" });
+    if (departed) { expect(f.terminalWatches).not.toHaveBeenCalled(); expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true"); }
+    else { await waitFor(() => expect(f.terminalWatches).toHaveBeenCalledWith(f.terminals[0]!.id)); expect(f.terminalWatches).toHaveBeenCalledOnce(); }
+    expect(f.terminalCreate).toHaveBeenCalledTimes(departed ? 0 : 1); expect(f.terminalControl).not.toHaveBeenCalled();
+  } finally { view.unmount(); release(); f.releaseTerminal(); f.client.clear(); }
+});
 
 it.each(["succeeded", "failed", "canceled"])("does not observe Worker presence for terminal %s retained startup history", async outcome => {
  const f=fixture(BudgetState.ALLOW_INCOMPLETE,false,{outcome,machine_id:newRequestId(),startup_progress:{workspace:{job_id:newRequestId()}}});
