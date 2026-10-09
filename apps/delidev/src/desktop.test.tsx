@@ -31,7 +31,7 @@ it("shows failed launch guidance and original registration controls inline witho
   expect(problem.textContent).toContain("0700 for private directories and 0600 for private files");
   expect(problem.textContent).toContain("Preserve existing data");
   expect(bridge.invoke.mock.calls.filter(([command]) => command === "launch_local")).toHaveLength(1);
-  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "local_server_status", "launch_local"].includes(command))).toBe(true);
+  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "local_server_status", "launch_local", "read_quit_attempt"].includes(command))).toBe(true);
   expect(bridge.createTransport).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Re-register this desktop" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Continue desktop recovery" })).toBeNull();
@@ -64,7 +64,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   expect(await screen.findByText("Remote fixture · Connected")).toBeTruthy();
   expect(bridge.createTransport).toHaveBeenCalledWith(expect.objectContaining({ origin: value.profile.endpoint }));
   expect(value.status).toHaveBeenCalled();
-  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission", "begin_notifications", "end_notifications", "read_sidebar_preference", "begin_inbox_badge", "read_inbox_badge_selection", "publish_inbox_badge"].includes(command))).toBe(true);
+  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission", "begin_notifications", "end_notifications", "read_sidebar_preference", "begin_inbox_badge", "read_inbox_badge_selection", "publish_inbox_badge", "read_quit_attempt"].includes(command))).toBe(true);
   expect(JSON.stringify(bridge.invoke.mock.calls)).not.toContain(value.connection.token);
   expect(screen.queryByText(value.connection.token)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -346,4 +346,19 @@ it("keeps ownership conflict guidance consistent in startup diagnostics and expl
     cleanup();
   }
   await act(() => i18n.changeLanguage("en"));
+});
+
+it("keeps original Quit checking and Cancel before native context resolves",async()=>{
+ const id=newRequestId();
+ bridge.invoke.mockImplementation(async(command:string)=>{
+  if(command==="connection_context")return new Promise(()=>{});
+  if(command==="read_quit_attempt")return {id,checking:true,unknown:true,count:"0",present:true,observe:true};
+  return undefined;
+ });
+ render(<Desktop/>);
+ await screen.findByText("Checking session status…");
+ await waitFor(()=>expect(bridge.invoke).toHaveBeenCalledWith("observe_quit_attempt",{id,count:null}));
+ fireEvent.click(screen.getByRole("button",{name:"Cancel"}));
+ await waitFor(()=>expect(bridge.invoke).toHaveBeenCalledWith("decide_quit_attempt",{id,decision:"cancel"}));
+ expect(bridge.createTransport).not.toHaveBeenCalled();
 });

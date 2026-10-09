@@ -46,6 +46,29 @@ pub struct Registry {
 }
 
 impl Registry {
+    /// Check the captured scope set and fence publication under the caller's
+    /// registry lock. Focus changes are presentation only, not scope changes.
+    pub fn stop_if_current(&mut self, expected: &[Entry], local_revision: u64) -> bool {
+        let current = self.entries();
+        if self.stopping
+            || current.len() != expected.len()
+            || expected.iter().any(|old| {
+                !current.iter().any(|new| {
+                    new.label == old.label
+                        && new.instance == old.instance
+                        && new.role == old.role
+                        && new.phase == old.phase
+                })
+            })
+            || (expected.iter().any(|entry| entry.role == Role::Local)
+                && self.local_revision != local_revision)
+        {
+            return false;
+        }
+        self.stop();
+        true
+    }
+
     pub fn reserve(&mut self, role: Role, initial: bool) -> Result<Entry> {
         if self.stopping {
             return Err(NativeFailure::Stopped);
@@ -236,6 +259,27 @@ mod tests {
         r.ready(&value).unwrap();
         value
     }
+    #[test]
+    fn silent_quit_fences_exact_scope_before_queued_creation() {
+        let mut registry = Registry::default();
+        let original = registry.reserve(Role::Local, true).unwrap();
+        registry.ready(&original).unwrap();
+        let captured = registry.entries();
+        registry.focus(&original.label);
+        assert!(registry.stop_if_current(&captured, 0));
+        assert!(registry.reserve(Role::Local, false).is_err());
+        assert!(registry.adopt_local([1; 32]).is_err());
+    }
+    #[test]
+    fn changed_scope_keeps_quit_unfenced_for_confirmation() {
+        let mut registry = Registry::default();
+        registry.reserve(Role::Local, true).unwrap();
+        let captured = registry.entries();
+        registry.reserve(Role::Local, false).unwrap();
+        assert!(!registry.stop_if_current(&captured, 0));
+        assert!(registry.reserve(Role::Local, false).is_ok());
+    }
+
     #[test]
     fn local_windows_survive_initial_close_without_reusing_labels() {
         let mut r = Registry::default();

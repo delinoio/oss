@@ -8,6 +8,8 @@ mod browser_host;
 mod date_format_host;
 mod notification_host;
 mod oauth_host;
+mod quit_dialog;
+mod quit_host;
 mod session_creation_preferences_host;
 mod shortcut_capture_host;
 mod shortcut_preferences_host;
@@ -1865,6 +1867,7 @@ fn run() -> Result<(), NativeFailure> {
                 .root_cache_path(browser.cache_root()),
         )
         .manage(Arc::new(UpdateHost::default()))
+        .manage(Arc::new(quit_host::QuitHost::default()))
         .manage(Arc::clone(&browser))
         .manage(Arc::new(ProductWindows::default()))
         .manage(Arc::new(window_host::WindowActions::default()))
@@ -1882,6 +1885,10 @@ fn run() -> Result<(), NativeFailure> {
                 badge_host::read_inbox_badge_selection,
                 badge_host::publish_inbox_badge,
                 tray_status_host::watch_tray_status,
+                quit_host::present_quit_attempt,
+                quit_host::read_quit_attempt,
+                quit_host::observe_quit_attempt,
+                quit_host::decide_quit_attempt,
                 tray_status_host::read_tray_status,
                 tray_status_host::activate_tray_status,
                 tray_status_host::dismiss_tray_status,
@@ -2133,6 +2140,15 @@ fn run() -> Result<(), NativeFailure> {
     let returning_app = app.handle().clone();
     app.run(move |_app, event| {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+            let confirmation = _app.state::<Arc<quit_host::QuitHost>>();
+            if code.unwrap_or(0) == 0
+                && !quit_started.load(std::sync::atomic::Ordering::Acquire)
+                && !confirmation.admitted()
+            {
+                api.prevent_exit();
+                confirmation.inner().request(_app, 0);
+                return;
+            }
             _app.state::<Arc<badge_host::BadgeHost>>().stop(_app);
             _app.state::<Arc<tray_status_host::PanelHost>>()
                 .request_stop(_app);
@@ -2166,6 +2182,9 @@ fn run() -> Result<(), NativeFailure> {
                 let app = _app.clone();
                 *quit_task.lock().unwrap_or_else(|e| e.into_inner()) =
                     Some(std::thread::spawn(move || {
+                        if app.state::<Arc<quit_host::QuitHost>>().admitted() {
+                            app.state::<Arc<quit_host::QuitHost>>().join();
+                        }
                         IMAGE_EXPORTS.join();
                         oauth.stop();
                         windows.join();
