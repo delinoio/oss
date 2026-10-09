@@ -61,6 +61,10 @@ function AttachmentGuidance({ children, id }: { children: ReactNode; id: string 
     {open ? createPortal(<div ref={tooltip} className="composer-attachment-tooltip" role="tooltip" onPointerEnter={enter} onPointerLeave={leave} style={position}>{copy("image-input.help")}</div>, document.body) : null}
   </span>;
 }
+function DraftImagePresentation({url,number}:{url:string;number:number}) {
+  const preferences=useAppearancePreferences();const [revealed,setRevealed]=useState(false);
+  return preferences.inline_images||revealed?<span className="image-draft-viewport"><img src={url} alt={copy("image-input.image",{number})}/></span>:<button className="image-draft-reveal" type="button" onClick={()=>setRevealed(true)}>{copy("appearance.v2.revealImage")} {number}</button>;
+}
 export function ImageAttachmentInput({ draft, disabled, available, routeReady, routeLoading, machineId, compact = false, active = true, children, controls, creationToolbar }: { creationToolbar?: (attach: ReactNode) => ReactNode; compact?: boolean; active?: boolean; children?: ReactNode; controls?: ReactNode; draft: ReturnType<typeof useImageDraft>; disabled: boolean; available: boolean; routeReady: boolean; routeLoading: boolean; machineId: string }) {
   useLocale();
   const input = useRef<HTMLInputElement>(null);
@@ -69,7 +73,7 @@ export function ImageAttachmentInput({ draft, disabled, available, routeReady, r
   return <section className={compact ? "image-attachments image-attachments-compact" : "image-attachments"} aria-label={copy("image-input.heading")}>
     <input ref={input} className="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple tabIndex={-1} aria-label={copy("image-input.select")} disabled={disabled || draft.busy || !available} onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ""; void draft.controller.add(files); }} />
     {!compact && !creationToolbar ? attach : null}
-    {draft.images.length ? <ol className="image-preview-list">{draft.images.map((image, index) => <li key={image.key}><img src={image.preview} alt={copy("image-input.image", { number: index + 1 })} /><span>{copy(image.ready && image.reference?.machineId === machineId ? "image-input.staged" : "image-input.pending", { number: index + 1 })}</span><button type="button" aria-label={copy("image-input.remove", { number: index + 1 })} disabled={disabled || draft.busy} onClick={() => void draft.controller.remove(image.key)}>×</button></li>)}</ol> : null}
+    {draft.images.length ? <ol className="image-preview-list">{draft.images.map((image, index) => <li key={image.key}><DraftImagePresentation url={image.preview} number={index+1}/><span>{copy(image.ready && image.reference?.machineId === machineId ? "image-input.staged" : "image-input.pending", { number: index + 1 })}</span><button type="button" aria-label={copy("image-input.remove", { number: index + 1 })} disabled={disabled || draft.busy} onClick={() => void draft.controller.remove(image.key)}>×</button></li>)}</ol> : null}
     {children}
     {creationToolbar ? creationToolbar(attach) : compact ? <div className="composer-toolbar">{active ? <AttachmentGuidance id={guidanceId}>{attach}</AttachmentGuidance> : attach}{controls}</div> : <small>{copy("image-input.help")}</small>}
     {!available ? <p role="status">{copy("image-input.update")}</p> : draft.images.length && !routeReady ? <p role="status">{copy(routeLoading ? "image-input.checkingRoute" : "image-input.unsupported")}</p> : null}

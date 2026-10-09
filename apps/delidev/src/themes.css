@@ -218,3 +218,11 @@
 .appearance-palettes { margin-top: -16px; }
 .appearance-palettes h3 { font-size: 14px; }
 :root[data-show-time="false"] .transcript [data-time-observation] { display: none; }
+
+:root[data-conversation-size="12"] .transcript .message { font-size: 12px; }
+
+:root[data-conversation-size="14"] .transcript .message { font-size: 14px; }
+
+:root[data-conversation-size="16"] .transcript .message { font-size: 16px; }
+
+:root[data-conversation-size="18"] .transcript .message { font-size: 18px; }

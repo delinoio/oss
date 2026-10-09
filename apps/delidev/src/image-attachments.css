@@ -19,3 +19,8 @@
 
 :root[data-image-size="original"] .image-retained-list > li { max-height: 480px; max-width: 100%; overflow: auto; }
 :root[data-image-size="original"] .image-retained-list img { width: auto; height: auto; max-width: none; max-height: none; }
+
+.image-draft-viewport, .image-draft-reveal { grid-column: 1 / -1; }
+.image-draft-viewport { display: block; min-width: 0; max-width: 100%; }
+:root[data-image-size="original"] .image-draft-viewport { max-height: 240px; overflow: auto; }
+:root[data-image-size="original"] .image-draft-viewport img { width: auto; height: auto; max-width: none; max-height: none; }
