@@ -917,6 +917,8 @@ Backup inspection pauses all three background inventory/history readers and refr
 
 - Automatic reset-credit consent (#2123) is a default-off, capability-77 typed revision mutation in `subscription-quota.tsx`. Confirm the exact account connection/generation with the existing Settings task; retain uncertain requests and reject replacement revisions. Use approved English/Korean copy, theme tokens and keyboard/dismissal ownership. Accepted server work continues after Settings closes; login replacement requires fresh consent and consumption never automatically resumes a session.
 
+
+- Home project groups, fallback groups and General Chat use the issue #2107 flat resting disclosure exception. Keep compact chevrons, hover/focus and hierarchy. Known projects alone have independent + and borderless … controls; one original-ID Project settings menu item opens the existing validated editor after restoring trigger focus. Menu-only interaction performs no reads, expansion or selection. Share the session-action popup owner, top-layer positioning/clamping and drawer lifetime; preserve editor drafts, revision/retry guards and opener/disclosure restoration. Top creation and non-Home disclosures remain unchanged.
 - Inbox icon counts (#2143) use a connection-owned Connect Query background
   aggregate independent of the Inbox surface, preferences and notifications.
   Native selected-window scope/generation is authoritative. Clear initial,
