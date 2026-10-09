@@ -99,6 +99,10 @@ func runManagedSidechatProcess(home string) bool {
 		case "thread/queue/list":
 			write(req.ID, map[string]any{"data": []any{}, "nextCursor": nil})
 		case "thread/turns/list":
+			if child && f.Fault == "changed-tool-prefix" {
+				items := f.Turn["items"].([]any)
+				items[1].(map[string]any)["command"] = "false"
+			}
 			write(req.ID, map[string]any{"data": []any{f.Turn}, "nextCursor": nil, "backwardsCursor": nil})
 		case "thread/fork":
 			child = true
@@ -266,7 +270,7 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 }
 
 func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T) {
-	for _, fault := range []string{"success", "finish-response-loss", "native-response-loss", "cleanup"} {
+	for _, fault := range []string{"success", "finish-response-loss", "native-response-loss", "cleanup", "changed-tool-prefix"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newCheckpointFixture(t)
 			ctx := context.Background()
@@ -345,7 +349,12 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 					t.Fatal("lost rotated bundle/cleanup")
 				}
 			}
-			if fault != "success" {
+			if fault == "changed-tool-prefix" {
+				if err == nil || len(output) != 0 || !auth.finish.CleanupConfirmed {
+					t.Fatal("changed settled native tool prefix published or released without original cleanup", err)
+				}
+			}
+			if fault != "success" && fault != "changed-tool-prefix" {
 				var uncertainty *managedExecutionUncertain
 				if err == nil || len(output) != 0 || !errors.As(err, &uncertainty) {
 					t.Fatal("uncertain child published", err)
