@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
+import { copy, i18n, SupportedLanguage } from "./localization";
 import { RepositoryRow } from "./repository-list";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
@@ -851,8 +852,7 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   const requests: { query: string; pageToken: string; enabledOnly: boolean; pageSize: number }[] = [];
   const value = fixture([provider], { readResources: (kind, token) => ({ resources: [], nextPageToken: kind === EntityKind.ACCOUNT && !token ? "api-page-2" : "" }), readProviderInventory: (pageToken, request) => { requests.push({ ...request, pageToken }); return { entries: [entry], capabilities, nextPageToken: request.query === "Exact" && !pageToken ? "provider-page-2" : "" }; } });
   render(value.view(<Settings />));
-  const advanced = screen.getByText("Advanced settings").closest("details")!;
-  advanced.open = true;
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   fireEvent.click(await screen.findByRole("button", { name: "Load more Subscription account pages" }));
   await screen.findByRole("heading", { name: "No subscriptions yet" });
   expect(requests).toHaveLength(0); expect(screen.queryByLabelText("Search providers")).toBeNull();
@@ -882,7 +882,7 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   fireEvent.click(screen.getByRole("button", { name: "AI Subscription" }));
   expect(screen.queryByLabelText("Search providers")).toBeNull();
   expect(screen.queryByLabelText("Filter accounts by provider")).toBeNull();
-  expect(screen.getByText("Advanced settings").closest("details")!.open).toBe(false);
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   expect((screen.getByLabelText("Search API providers") as HTMLInputElement).value).toBe("");
   await waitFor(() => expect(requests.filter(request => !request.enabledOnly).at(-1)).toMatchObject({ query: "", pageToken: "" }));
@@ -1191,4 +1191,32 @@ it("keeps confirmed provider switches and layout content through delayed off/on 
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(original.getAttribute("aria-checked")).toBe("true");
   expect(screen.getByRole("switch", { name: "Turn off OpenAI" })).toBe(original);
+});
+
+it.each(Object.values(SupportedLanguage))("shows API provider guidance once with exact and unavailable counts in %s", async language => {
+  const custom = resource(EntityKind.PROVIDER, { name: "Custom fixture", enabled: true });
+  const entries = [
+    create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENAI, displayName: "Hosted fixture", enabled: true, accountCountsAvailable: true }),
+    create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OLLAMA, displayName: "Local fixture", enabled: true, connectedAccounts: 1n, totalAccounts: 2n, accountCountsAvailable: true }),
+    create(ProviderInventoryEntrySchema, { providerId: custom.id, provider: custom, displayName: "Custom fixture", enabled: true, accountCountsAvailable: false }),
+  ];
+  const value = fixture([custom], { providerEntries: entries });
+  render(value.view(<Settings visible />));
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  await screen.findByText("Custom fixture", { selector: '.api-provider-name span' });
+  await act(async () => { await i18n.changeLanguage(language); });
+  const guidance = copy("provider-model-settings.connectionGuidance");
+  expect(screen.getAllByText(guidance)).toHaveLength(1);
+  const paragraph = screen.getByText(guidance), search = screen.getByRole("textbox", { name: copy("provider-model-settings.searchApiProviders_1b03d9") });
+  expect(paragraph.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(paragraph.closest("article")).toBeNull();
+  for (const [name, count] of [["Hosted fixture", copy("provider-model-settings.sentence.490d50c6611c", { v0: "0", v1: "0" })], ["Local fixture", copy("provider-model-settings.sentence.490d50c6611c", { v0: "1", v1: "2" })], ["Custom fixture", copy("provider-model-settings.extra.555765b26ebc")]]) {
+    const row = screen.getByText(name, { selector: '.api-provider-name span' }).closest("article")!;
+    expect(row.textContent).toContain(count);
+    expect(row.textContent).not.toContain(guidance);
+  }
+  fireEvent.change(search, { target: { value: "no-match" } });
+  expect(screen.getAllByText(guidance)).toHaveLength(1);
+  expect(value.connect).not.toHaveBeenCalled();
+  expect(value.save).not.toHaveBeenCalled();
 });

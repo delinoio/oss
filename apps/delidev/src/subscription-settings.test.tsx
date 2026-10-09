@@ -20,7 +20,7 @@ function row(id = "chatgpt", windows: SubscriptionQuotaWindow[] = []): Subscript
 }
 function window(id: string, remaining?: number, state = Quota.Observed): SubscriptionQuotaWindow { return { id, remaining, state, observedAt, resetAt }; }
 function view(accounts: SubscriptionAccountRow[] = [], props: Partial<React.ComponentProps<typeof SubscriptionSettingsView>> = {}) {
-  return <SubscriptionSettingsView accounts={accounts} state={Read.Ready} now={now} clearFilter={vi.fn()} advanced={<button>Metadata settings fixture</button>} {...props} />;
+  return <SubscriptionSettingsView accounts={accounts} state={Read.Ready} now={now} clearFilter={vi.fn()} {...props} />;
 }
 
 it("renders separate observed quota windows, explicit branding and masked fixture identities with exact callbacks", () => {
@@ -119,12 +119,12 @@ it.each([Read.Loading, Read.Failed, Read.PermissionDenied, Read.AuthenticationEx
   expect(screen.queryByRole("button", { name: "Retry subscription read" }) !== null).toBe(![Read.Loading, Read.Unsupported].includes(state));
 });
 
-it("keeps retained data visible on read failure, filter clearing outside collapsed Advanced and all production actions disabled", () => {
+it("keeps retained data visible on read failure, filter clearing and all production actions disabled", () => {
   const clearFilter = vi.fn(), first = { ...row(), brand: undefined, maskedIdentity: undefined, refresh: undefined, disconnect: undefined };
   render(view([first], { state: Read.Failed, activeFilter: "Configured provider", clearFilter }));
   expect(screen.getByText("Showing the last successfully loaded subscriptions.")).toBeTruthy();
   expect(screen.getByRole("article", { name: first.alias }).querySelector("img")).toBeNull();
-  expect((screen.getByText("Advanced settings").closest("details") as HTMLDetailsElement).open).toBe(false);
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Clear provider filter" })); expect(clearFilter).toHaveBeenCalledTimes(1);
   for (const name of ["Refresh all", `Refresh ${first.alias}`, `Disconnect ${first.alias}`, "ChatGPT · Coming soon", "Claude · Coming soon", "Grok · Coming soon"]) expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole("navigation", { name: "Account pages" })).toBeNull();
@@ -272,19 +272,17 @@ it("retains the exact metadata projection after payload eviction, updates valid 
   for (const action of [first.refresh, first.disconnect, first.details, first.edit, first.delete]) expect(action).not.toHaveBeenCalled();
 });
 
-it.each(["X", "Escape"])("details %s dismissal preserves inventory/disclosure and returns the exact additional-window opener", async method => {
+it.each(["X", "Escape"])("details %s dismissal preserves inventory and returns the exact additional-window opener", async method => {
   const first = row("chatgpt", [window("one", .1), window("two", .2), window("three", .3)]);
   render(view([first]));
   const inventory = screen.getByRole("article", { name: first.alias });
-  const advanced = screen.getByText("Advanced settings").closest("details")!;
-  fireEvent.click(advanced.querySelector("summary")!);
   const opener = screen.getByRole("button", { name: "View all 3 quota windows" });
   fireEvent.click(opener);
   if (method === "X") fireEvent.click(screen.getByRole("button", { name: "Close Account details" }));
   else fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByRole("article", { name: first.alias })).toBe(inventory);
-  expect(advanced.open).toBe(true);
+  expect(document.querySelector(".subscription-advanced")).toBeNull();
   expect(document.activeElement).toBe(opener);
   for (const action of [first.refresh, first.disconnect, first.details, first.edit, first.delete]) expect(action).not.toHaveBeenCalled();
 });
@@ -337,6 +335,18 @@ it("expires retained paid buckets before freshly observed quota windows without 
     rendered.rerender(view([first],{now:undefined,active:false}));
     expect(vi.getTimerCount()).toBe(0);
   } finally {rendered.unmount();vi.useRealTimers();}
+});
+it.each(Object.values(Read).flatMap(state => Object.values(SupportedLanguage).map(language => ({ state, language }))))("omits subscription Advanced settings in $language/$state", async ({ state, language }) => {
+  await i18n.changeLanguage(language);
+  const first = row();
+  render(view([first], { state, problem: <p>Read fixture</p> }));
+  const content = document.querySelector(".subscription-settings")!;
+  expect(content.querySelector(".subscription-advanced")).toBeNull();
+  expect(content.querySelector("details")).toBeNull();
+  expect(content.textContent).not.toContain(language === SupportedLanguage.English ? "Advanced settings" : "고급 설정");
+  expect(content.textContent).not.toContain(language === SupportedLanguage.English ? "Service identity is independent of API providers." : "서비스 ID는 API 제공업체와 독립적입니다.");
+  expect(screen.getByRole("article", { name: first.alias })).toBeTruthy();
+  for (const action of [first.refresh, first.disconnect, first.edit, first.delete]) expect(action).not.toHaveBeenCalled();
 });
 
 it.each([Connection.Connected, Connection.Disconnected])("retains the original management callback and alias for %s accounts", connection => {

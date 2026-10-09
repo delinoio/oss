@@ -157,7 +157,7 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
       selectService={capable && !blocked ? (brand) => { const service = subscriptionService(brand); if (!cleanup.canMutate()) return; if (service === SubscriptionServiceId.OpenCodeGo && status.data?.capabilities.includes(SystemCapability.OPENCODE_GO_SUBSCRIPTIONS_V1)) { setGoIntent(true); setGoCreate(true); } else if (service && flow.available) flow.begin(service); } : undefined}
       serviceLoginAvailable={(brand) => brand === SubscriptionBrand.OpenCodeGo ? status.data?.capabilities.includes(SystemCapability.OPENCODE_GO_SUBSCRIPTIONS_V1) === true : brand === SubscriptionBrand.ChatGPT ? loginCapable && flow.available : brand === SubscriptionBrand.Claude && flow.available && status.data?.capabilities.includes(SystemCapability.CLAUDE_SUBSCRIPTIONS_V1) === true}
       pagination={<ScrollContinuation showInitial={false} showErrors={false} query={inventory} root={root} active={active && !workflow} label={copy("subscription-accounts.subscriptionAccountPages_6c8f61")} />}
-      advanced={<p>{copy("subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6")}</p>} />
+      />
     {goIntent && !goCreate ? <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => setGoCreate(true)}>{copy("opencode-go.title")}</SettingsActionButton> : null}
     {goIntent ? <OpenCodeGoAccount active={active} visible={goCreate} changed={() => refreshInventory.current()} close={() => setGoCreate(false)} completed={() => setGoIntent(false)} /> : null}
     {flow.hidden ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" onClick={flow.show}>{copy("claude-subscription.viewOriginalOperation")}</SettingsActionButton> : null}
