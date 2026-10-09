@@ -38,7 +38,7 @@ import { SessionForkProvider } from "./session-fork";
 import { SessionStorageProvider } from "./session-storage";
 import { PRWorkflowProvider } from "./pr-workflow";
 import { ProjectCreationDialog } from "./project-creation";
-import { ShortcutProvider, useShortcutHelp, useShortcutSurface, useShortcuts } from "./shortcut-provider";
+import { ShortcutProvider, useShortcutHelp, useHeldShortcutHelp, useShortcutSurface, useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput, ShortcutScope, globalShortcutBindings } from "./shortcuts";
 
 function Shell({ localServer, serverPresentation, connectionReady, connectionSettings, connectionTarget, onConnectionHelp, readLocalWorker, controlLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; chooseRepositoryFolder?: ChooseRepositoryFolder; localServer?: ReactNode; serverPresentation?: ServerPresentation; connectionReady: boolean; connectionSettings?: ReactNode; connectionTarget?: HTMLElement; onConnectionHelp?: (target: HTMLElement | undefined) => void; readLocalWorker?: ReadLocalWorkerProof }) {
@@ -46,6 +46,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const [surface, setSurface] = useState(Surface.Sessions);
   useShortcutSurface(surface);
   const openHelp = useShortcutHelp();
+  const holdHelp = useHeldShortcutHelp();
   const pendingFocusDestination = useRef<Surface>(undefined);
   const main = useRef<HTMLElement>(null);
   const contextOpener = useRef<HTMLButtonElement>(null);
@@ -132,7 +133,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     pendingFocusDestination.current = destination;
   };
   useShortcuts([
-    { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: globalShortcutBindings[ShortcutId.Help], run: openHelp },
+    { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: globalShortcutBindings[ShortcutId.Help], helpKeydown: holdHelp },
     { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: globalShortcutBindings[ShortcutId.NewSession], input: ShortcutInput.Allow, run: startNewSession },
   ]);
   useLayoutEffect(() => {

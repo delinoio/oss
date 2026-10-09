@@ -18,7 +18,7 @@
   "shortcuts.or": "또는",
   "shortcuts.empty": "이 화면에 등록된 전용 단축키가 없습니다.",
   "shortcuts.typingHint": "입력 중에는 ?가 문자로 입력됩니다. 전송 단축키는 메시지 입력창 안에서 사용합니다.",
-  "shortcuts.closeHint": "Esc로 닫기",
+  "shortcuts.closeHint": "도움말 단축키를 누르는 동안 표시되고 키를 놓으면 닫힙니다. 도움말 버튼으로 열면 계속 표시됩니다. Esc로 닫기",
   "shortcuts.unavailable": "현재 사용할 수 없습니다.",
   "shortcuts.pending": "진행 중인 작업을 기다리거나 불확실한 결과를 확인하세요.",
   "shortcuts.updateServer": "서버가 자동 세션 제목을 지원해야 합니다.",
