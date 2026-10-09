@@ -27,6 +27,7 @@ type executionStartupAttempt struct {
 	firstFailure      error
 	cleanupUncertain  bool
 	processIndexOwned bool
+	imageRejection    *imageStartupRejectionClaim
 }
 
 func newExecutionStartupAttempt(config Config, job domain.ID, input domain.ExecutionJobInput) *executionStartupAttempt {
@@ -175,6 +176,10 @@ func (a *executionStartupAttempt) finish(original error) error {
 	if a.processIndexOwned && !a.cleanupUncertain && domain.SafeError(original).Code != domain.RecoveryRequired && process.ReconcileOwner(filepath.Join(a.config.Root, "processes"), a.job) == nil {
 		o.Cleanup = domain.StartupCleanupConfirmed
 	}
+	if a.imageRejectionRetained() && o.Cleanup == domain.StartupCleanupConfirmed && o.Phase == domain.StartupInput && o.InputDelivery == domain.StartupClaimed && o.ProblemCode == domain.Unsupported {
+		o.InputDelivery = domain.StartupNotSent
+		o.FailureKind = domain.StartupImageInputRejected
+	}
 	if o.InputDelivery == domain.StartupNotSent && o.Cleanup == domain.StartupCleanupConfirmed {
 		o.State = domain.StartupFailed
 	}
@@ -182,7 +187,7 @@ func (a *executionStartupAttempt) finish(original error) error {
 		o.ProblemCode = domain.Unavailable
 	}
 	if a.config.Logger != nil {
-		a.config.Logger.Warn("execution_startup_failed", "job_id", a.job, "stage", o.Phase, "options", a.input.Configuration.SelectedNativeOptionNames(), "code", o.ProblemCode, "input_delivery", o.InputDelivery, "cleanup", o.Cleanup)
+		a.config.Logger.Warn("execution_startup_failed", "job_id", a.job, "stage", o.Phase, "options", a.input.Configuration.SelectedNativeOptionNames(), "code", o.ProblemCode, "input_delivery", o.InputDelivery, "cleanup", o.Cleanup, "failure_kind", o.FailureKind)
 	}
 	if err := a.report(context.Background(), "failure", o); err != nil {
 		if a.config.Logger != nil {

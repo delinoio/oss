@@ -300,3 +300,62 @@ func TestDirectStartupUncertainResolutionCannotCreateCleanupProof(t *testing.T) 
 		})
 	}
 }
+
+func TestImageRejectionNeedsRetainedClaimAndIndependentCleanup(t *testing.T) {
+	for _, scenario := range []string{"proved", "missing", "changed", "cleanup-uncertain", "acknowledged", "generic", "changed-assignment"} {
+		t.Run(scenario, func(t *testing.T) {
+			client := &startupReportFixture{}
+			job := domain.NewID()
+			config := Config{Root: t.TempDir(), execution: &PublicationConfig{Assignment: &pb.Resource{Id: string(job), Revision: 3}, Client: client, Instance: domain.NewID()}}
+			if err := security.PrivateDir(filepath.Join(config.Root, "processes")); err != nil {
+				t.Fatal(err)
+			}
+			if err := security.CreatePrivateDirExclusive(filepath.Join(config.Root, "processes", string(job))); err != nil {
+				t.Fatal(err)
+			}
+			directory := filepath.Join(config.Root, "jobs", string(job))
+			if err := security.PrivateDir(directory); err != nil {
+				t.Fatal(err)
+			}
+			a := newExecutionStartupAttempt(config, job, domain.ExecutionJobInput{MachineID: domain.NewID(), Configuration: domain.ExecutionConfiguration{Harness: domain.Codex}})
+			a.claimedWorkspace()
+			a.claimInput()
+			identity := a.imageRejectionIdentity()
+			claim := &identity
+			raw, _ := json.Marshal(claim)
+			if scenario != "generic" {
+				a.imageRejection = claim
+			}
+			if scenario != "missing" {
+				if scenario == "changed" {
+					raw = []byte(`{}`)
+				}
+				if err := os.WriteFile(filepath.Join(directory, "startup-image-rejection.json"), raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "changed-assignment" {
+				config.execution.Assignment.Revision++
+			}
+			returned := error(domain.UnsupportedImageInput())
+			if scenario == "cleanup-uncertain" {
+				returned = a.cleanupFailure(returned, errors.New("fixture cleanup"))
+			}
+			if scenario == "acknowledged" {
+				a.acknowledgeInput()
+			}
+			a.finish(returned)
+			o := client.observation
+			if o == nil {
+				t.Fatal("missing original failure report")
+			}
+			if scenario == "proved" {
+				if o.FailureKind != pb.ExecutionStartupFailureKind_EXECUTION_STARTUP_FAILURE_KIND_IMAGE_INPUT_REJECTED || o.State != pb.ExecutionStartupState_EXECUTION_STARTUP_STATE_FAILED || o.InputDelivery != pb.ExecutionStartupInputDelivery_EXECUTION_STARTUP_INPUT_DELIVERY_NOT_SENT {
+					t.Fatal("positive rejection lost")
+				}
+			} else if o.FailureKind != 0 || o.State != pb.ExecutionStartupState_EXECUTION_STARTUP_STATE_UNCERTAIN {
+				t.Fatal("missing independent proof granted retry")
+			}
+		})
+	}
+}

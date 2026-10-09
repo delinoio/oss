@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { executionStartupFailure } from "./execution-startup";
 import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
@@ -37,6 +38,12 @@ export function StartupRejection({ session }: { session: Resource }) {
 export function RejectedInput({ resource, session }: { resource: Resource; session?: Resource }) {
   useLocale();
   const input = document(resource), value = startupRejection(session), proof = object(value?.workspace);
+  if (isImageStartupRejectedInput(resource, session)) return <p className="notice">{copy("session.startupImageInput")}</p>;
   if (!value || resource.kind !== EntityKind.QUEUE || resource.sessionId !== session?.id || resource.id !== value.input_id || input.execution_id !== proof.execution_id || input.delivery !== "rejected-before-start") return <p className="notice">{copy("startup-rejection.theOriginalStartupRejectionCouldNot_fff807")}</p>;
   return <p className="notice">{copy("startup-rejection.rejectedBeforeAgentStartupThisInput_9b8fc2")}</p>;
+}
+
+export function isImageStartupRejectedInput(resource: Resource, session?: Resource): boolean {
+ const data=document(session), input=document(resource), startup=executionStartupFailure(data), record=object(data.startup), selected=object(data.current_execution ?? data.initial_execution);
+ return startup?.failure_kind===1 && resource.kind===EntityKind.QUEUE && resource.sessionId===session?.id && resource.id===selected.input_id && input.execution_id===record.execution_id && input.delivery==="rejected-before-start";
 }

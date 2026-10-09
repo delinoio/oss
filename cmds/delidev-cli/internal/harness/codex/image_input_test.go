@@ -45,6 +45,9 @@ func TestOwnedImagesUseNativePrimitiveAndImmutableInputBinding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if turn.ProvesImageInputNotSent(turn.RequestID, inputID, input.InputDigest()) {
+				t.Fatal("sent input acquired rejection proof")
+			}
 			parts := requestsOf(t, capture, "turn/start")[0]["input"].([]any)
 			expected := 2
 			if prompt != "" {
@@ -86,7 +89,17 @@ func TestUnsupportedModelDoesNotSendImageTurn(t *testing.T) {
 	c.imageRoot = t.TempDir()
 	c.imageMachine = domain.NewID()
 	ref := stageImage(t, c.imageRoot, c.imageMachine)
-	_, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), domain.SessionInput{Mode: domain.ExecuteMode, Attachments: []domain.ImageAttachment{ref}})
+	request, inputID := domain.NewID(), domain.NewID()
+	input := domain.SessionInput{Mode: domain.ExecuteMode, Attachments: []domain.ImageAttachment{ref}}
+	result, err := c.StartTurn(context.Background(), request, inputID, input)
+	if !result.ProvesImageInputNotSent(request, inputID, input.InputDigest()) || result.ProvesImageInputNotSent(domain.NewID(), inputID, input.InputDigest()) || result.ProvesImageInputNotSent(request, domain.NewID(), input.InputDigest()) {
+		t.Fatal("missing or foreign rejection proof")
+	}
+	changed := input
+	changed.Prompt = "changed"
+	if result.ProvesImageInputNotSent(request, inputID, changed.InputDigest()) || (TurnResult{RequestID: request, InputID: inputID}).ProvesImageInputNotSent(request, inputID, input.InputDigest()) {
+		t.Fatal("unproved input accepted")
+	}
 	assertCode(t, err, domain.Unsupported)
 	if len(requestsOf(t, capture, "turn/start")) != 0 {
 		t.Fatal("unsupported image sent")

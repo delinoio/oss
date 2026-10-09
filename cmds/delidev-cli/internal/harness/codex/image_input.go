@@ -22,11 +22,11 @@ func (c *Client) nativeImageParts(ctx context.Context, input domain.SessionInput
 		return result, nil
 	}
 	if c.imageRoot == "" || c.imageMachine.Validate() != nil {
-		return nil, domain.UnsupportedImageInput()
+		return nil, unsupportedImageBeforeSend()
 	}
 	models, err := c.readModelList(ctx, true)
 	if err != nil {
-		return nil, domain.UnsupportedImageInput()
+		return nil, unsupportedImageBeforeSend()
 	}
 	supported := false
 	for _, model := range models {
@@ -36,7 +36,7 @@ func (c *Client) nativeImageParts(ctx context.Context, input domain.SessionInput
 		}
 	}
 	if !supported {
-		return nil, domain.UnsupportedImageInput()
+		return nil, unsupportedImageBeforeSend()
 	}
 	paths, err := (imageinput.Manager{Root: c.imageRoot}).Resolve(c.imageMachine, input.Attachments)
 	if err != nil {
@@ -98,4 +98,27 @@ func (c *Client) nativeImageInput(parts []json.RawMessage) (domain.SessionInput,
 		}
 		return (imageinput.Manager{Root: c.imageRoot}).Lookup(c.imageMachine, path)
 	})
+}
+
+// This private error is emitted only by image preparation before turn/start.
+// A generic Unsupported error elsewhere cannot acquire this provenance.
+type imageBeforeSendError struct{ cause error }
+
+func (e *imageBeforeSendError) Error() string { return e.cause.Error() }
+func (e *imageBeforeSendError) Unwrap() error { return e.cause }
+func unsupportedImageBeforeSend() error {
+	return &imageBeforeSendError{cause: domain.UnsupportedImageInput()}
+}
+
+type imageRejectionProof struct {
+	request domain.ID
+	input   domain.ID
+	digest  [32]byte
+}
+
+// ProvesImageInputNotSent binds the original pre-wire rejection to the complete
+// immutable input. It proves no turn/start send, never independent cleanup.
+func (r TurnResult) ProvesImageInputNotSent(request, input domain.ID, digest [32]byte) bool {
+	p := r.imageRejection
+	return p != nil && r.TurnID == "" && r.RequestID == request && r.InputID == input && p.request == request && p.input == input && p.digest == digest
 }

@@ -1032,3 +1032,6 @@ replayed 3. Preserve all existing numbers and regenerate bindings. Reuse the
 closed context-job version 4 and exact observation-only recovery version 2; no
 new job kind or database migration is allocated. Capabilities grant only the
 implemented product operation, never native/account/platform acceptance.
+## Image rejection startup metadata — issue #2048
+
+ExecutionStartupObservation.failure_kind is field 11. ExecutionStartupFailureKind owns UNSPECIFIED=0 and IMAGE_INPUT_REJECTED=1, recorded in allocations.json in the complete feature change. Zero remains omitted with legacy wire and JSON compatibility. Nonzero provenance requires the complete Failed/Input/Codex/Unsupported/NotSent/confirmed-cleanup profile and original authenticated claim, ready-process and native-thread checks under the direct startup and image-input contracts. Unknown or mixed values fail closed. No capability, RPC or migration is added.

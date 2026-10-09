@@ -1,5 +1,6 @@
 import { NativeAutoReview } from "./native-auto-review";
 import { useSessionRevert } from "./session-revert";
+import { isImageStartupRejectedInput } from "./startup-rejection";
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
@@ -443,8 +444,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     setRevealSubmission(undefined);
   }, [revealSubmission, active]);
   const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
-  const queued = pending.filter(isQueuedInput);
-  const presentedQueueIds = new Set(queue.payloadPages.flatMap(page => queueRows(page.payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => row.id)).concat(!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => row.id) : []));
+  const queued = pending.filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session));
+  const presentedQueueIds = new Set(queue.payloadPages.flatMap(page => queueRows(page.payload, live.resources, live.removed, [], id, false).filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session)).map(row => row.id)).concat(!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => row.id) : []));
   const panelButtons = {
     [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
     [SessionPanel.Terminals]: terminalsButton, [SessionPanel.Browser]: browserButton,
@@ -575,7 +576,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         <Disclosure className="queue" onToggle={event => setQueueOpen(event.currentTarget.open)}><DisclosureSummary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.length}</> }} />}</DisclosureSummary>
           <div ref={queueRoot} className="session-tray-content"><Failure failure={queue.error?.failure} />
-            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={conversationActive && queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput active={conversationActive && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput active={conversationActive && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={conversationActive && queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session)).map(row => <QueuedInput active={conversationActive && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput active={conversationActive && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
             <ScrollContinuation query={queue} root={queueRoot} active={conversationActive && queueOpen} label={copy("session.queuePages_1acdd8")} />
           </div>
         </Disclosure>

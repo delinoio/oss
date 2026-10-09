@@ -100,6 +100,21 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 			if o.InputDelivery == domain.StartupNotSent && session.Execution != nil && session.Execution.NativeTurnID != "" {
 				return nil, executionDenied()
 			}
+			if o.FailureKind == domain.StartupImageInputRejected {
+				ready := session.Startup.Ready
+				if len(input.Input.Attachments) == 0 || ready == nil || ready.Validate() != nil || ready.State != domain.StartupReady || ready.ExecutableSHA256 != o.ExecutableSHA256 || ready.NativeVersion != o.NativeVersion || session.Execution == nil || session.Execution.NativeThreadID == "" || session.Execution.NativeTurnID != "" {
+					return nil, executionDenied()
+				}
+				queue, err := tx.Get(domain.QueueKind, input.InputID)
+				if err != nil {
+					return nil, err
+				}
+				claimed, err := store.Decode[domain.QueuedInput](queue)
+				original := domain.SessionInput{Prompt: claimed.Prompt, Mode: claimed.Mode, Skills: claimed.Skills, Attachments: claimed.Attachments}
+				if err != nil || queue.SessionID != sr.ID || claimed.Delivery != domain.InputClaimed || claimed.ExecutionID != input.ExecutionID || claimed.NativeRequestID != input.TurnRequestID || original.InputDigest() != input.Input.InputDigest() {
+					return nil, executionDenied()
+				}
+			}
 			session.Startup.Failure = &o
 			session.Problem = startupFailureProblem(o)
 		}
@@ -125,6 +140,9 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 }
 
 func startupFailureProblem(o domain.ExecutionStartupObservation) *domain.Error {
+	if o.FailureKind == domain.StartupImageInputRejected && o.Validate() == nil {
+		return domain.UnsupportedImageInput()
+	}
 	message, guidance := "The agent could not start.", "Open details to inspect the failure phase and original log reference."
 	switch o.ProblemCode {
 	case domain.NotFound:
