@@ -20,9 +20,12 @@ import { verifyLocalServer } from "./connection";
 import { CredentialAccessGate } from "./credential-access";
 
 import { LocalRegistrationRecovery, localPermissionProblem, type NativeConnection } from "./local-registration";
+import { localStartupProblem } from "./local-startup-problem";
 const nativeProblems: Record<string, string> = {
   get "service-managed"() { return copy("desktop.aNativeServiceOwnsThisConnection_413f9b"); },
   get stopped() { return copy("desktop.theServerWasExplicitlyStoppedStart_5d2c3b"); },
+  get "ownership-conflict"() { return localStartupProblem("ownership-conflict")!; },
+  get "startup-conflict"() { return localStartupProblem("startup-conflict")!; },
   get busy() { return copy("desktop.aLocalConnectionAttemptIsAlready_2efbe3"); },
   get "sidecar-missing"() { return copy("desktop.theBundledDelidevExecutableIsMissing_2b5194"); },
   get "sidecar-failed"() { return copy("desktop.theLocalServerCouldNotConnect_88c6fd"); },

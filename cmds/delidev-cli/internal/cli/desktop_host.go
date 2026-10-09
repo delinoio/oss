@@ -52,11 +52,60 @@ type desktopRequest struct {
 	TimeoutMS uint64           `json:"timeout_ms,omitempty"`
 }
 type desktopReply struct {
-	Version int           `json:"version"`
-	ID      domain.ID     `json:"id,omitempty"`
-	Result  any           `json:"result,omitempty"`
-	Error   *domain.Error `json:"error,omitempty"`
+	Version int             `json:"version"`
+	ID      domain.ID       `json:"id,omitempty"`
+	Result  any             `json:"result,omitempty"`
+	Error   *desktopFailure `json:"error,omitempty"`
 }
+
+// StartupConflict is private desktop control metadata, not an RPC error cause.
+// Only positively observed ownership or admission pressure may select a kind.
+type startupConflict string
+
+const (
+	startupOwnership startupConflict = "ownership"
+	startupAdmission startupConflict = "admission"
+)
+
+type startupConflictError struct {
+	problem *domain.Error
+	kind    startupConflict
+}
+
+func (e *startupConflictError) Error() string { return e.problem.Error() }
+func (e *startupConflictError) Unwrap() error { return e.problem }
+func classifiedStartupConflict(err error, kind startupConflict) error {
+	problem := domain.SafeError(err)
+	if problem.Code != domain.Conflict {
+		return err
+	}
+	return &startupConflictError{problem: problem, kind: kind}
+}
+
+type desktopFailure struct {
+	*domain.Error
+	StartupConflict startupConflict `json:"startup_conflict,omitempty"`
+}
+
+func safeDesktopFailure(err error) *desktopFailure {
+	result := &desktopFailure{Error: domain.SafeError(err)}
+	var classified *startupConflictError
+	if errors.As(err, &classified) && result.Code == domain.Conflict && (classified.kind == startupOwnership || classified.kind == startupAdmission) {
+		result.StartupConflict = classified.kind
+	}
+	return result
+}
+
+// Preserve the legacy safe conflict code without treating every bind failure
+// (for example, denied or malformed configuration) as proof of another owner.
+func desktopListenerFailure(err error) error {
+	problem := domain.Fail(domain.Conflict, "The desktop listener could not be bound.", "Preserve the original process and inspect the connection configuration.")
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return classifiedStartupConflict(problem, startupOwnership)
+	}
+	return problem
+}
+
 type desktopHostState struct {
 	mu         sync.Mutex
 	target     desktopruntime.Target
@@ -94,17 +143,17 @@ func runDesktopHostCommand(ctx context.Context, o options, args []string, stream
 	}
 	lease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-host.lock"))
 	if err != nil {
-		return emitDesktopFailure(streams, err)
+		return emitDesktopFailure(streams, classifiedStartupConflict(err, startupOwnership))
 	}
 	defer lease.Close()
 	sessionLease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-session.lock"))
 	if err != nil {
-		return emitDesktopFailure(streams, err)
+		return emitDesktopFailure(streams, classifiedStartupConflict(err, startupOwnership))
 	}
 	defer sessionLease.Close()
 	listener, err := net.Listen("tcp4", *listen)
 	if err != nil {
-		return emitDesktopFailure(streams, domain.Fail(domain.Conflict, "The desktop listener is occupied.", "Preserve the existing process and inspect the original connection."))
+		return emitDesktopFailure(streams, desktopListenerFailure(err))
 	}
 	key, err := randomDesktopKey()
 	if err != nil {
@@ -158,11 +207,11 @@ func runDesktopHostCommand(ctx context.Context, o options, args []string, stream
 		}
 		if err != nil {
 			frame.Result = nil
-			frame.Error = domain.SafeError(err)
+			frame.Error = safeDesktopFailure(err)
 		}
 		raw, encodeErr := json.Marshal(frame)
 		if encodeErr != nil || len(raw) > desktopReplyLimit {
-			raw, _ = json.Marshal(desktopReply{Version: 2, ID: id, Error: domain.SafeError(domain.Fail(domain.ResourceExhausted, "The desktop reply exceeds its bound.", "Inspect the original operation before retrying."))})
+			raw, _ = json.Marshal(desktopReply{Version: 2, ID: id, Error: safeDesktopFailure(domain.Fail(domain.ResourceExhausted, "The desktop reply exceeds its bound.", "Inspect the original operation before retrying."))})
 		}
 		writes.Lock()
 		_, err = streams.Out.Write(append(raw, '\n'))
@@ -253,7 +302,7 @@ loop:
 			pendingMu.Lock()
 			if len(pending) >= 32 || pending[r.ID] != nil {
 				pendingMu.Unlock()
-				send(r.ID, nil, domain.Fail(domain.Conflict, "Desktop admission is busy.", "Retain the original request identity."))
+				send(r.ID, nil, classifiedStartupConflict(domain.Fail(domain.Conflict, "Desktop admission is busy.", "Retain the original request identity."), startupAdmission))
 				continue
 			}
 			timeout := 40 * time.Second
@@ -443,6 +492,6 @@ func (h *desktopHostState) shutdown(suppressRestart bool) {
 }
 
 func emitDesktopFailure(streams IO, err error) int {
-	_ = json.NewEncoder(streams.Out).Encode(desktopReply{Version: 2, Error: domain.SafeError(err)})
+	_ = json.NewEncoder(streams.Out).Encode(desktopReply{Version: 2, Error: safeDesktopFailure(err)})
 	return 1
 }

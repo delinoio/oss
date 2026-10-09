@@ -45,5 +45,7 @@
   "desktop.keychainDenied": "This desktop is no longer authorized. Preserve the existing keys. Open the connection controls here to inspect the original registration before explicitly re-registering.",
   "desktop.keychainObservationFailed": "The original access check could not be observed. Try again to observe the same attempt.",
   "desktop.keychainSkipped": "Keychain access checking was skipped for this launch. Saved account status is unchanged.",
-  "desktop.keychainDismiss": "Dismiss"
+  "desktop.keychainDismiss": "Dismiss",
+  "desktop.startupOwnershipConflict": "Another process owns the local server scope or listener. Inspect the original owner and its compatibility in Connection & diagnostics. Preserve its process and data. Retry after confirmed shutdown, or explicitly use an isolated scope.",
+  "desktop.startupConflict": "Local startup reported a conflict. Inspect the original owner and its compatibility in Connection & diagnostics. Preserve its process and data. Retry after confirmed shutdown, or explicitly use an isolated scope."
 }

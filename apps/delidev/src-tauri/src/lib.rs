@@ -124,6 +124,8 @@ pub use worker_supervision::{
 pub enum NativeFailure {
     ServiceManaged,
     Busy,
+    OwnershipConflict,
+    StartupConflict,
     SidecarMissing,
     SidecarFailed,
     TimedOut,
@@ -219,6 +221,37 @@ struct CliEnvelope {
 #[derive(Deserialize)]
 struct CliFailure {
     code: String,
+    #[serde(default)]
+    startup_conflict: Option<StartupConflict>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum StartupConflict {
+    Ownership,
+    Admission,
+    #[serde(other)]
+    Unknown,
+}
+
+impl CliFailure {
+    fn native_failure(&self, startup: bool) -> NativeFailure {
+        match self.code.as_str() {
+            "unsupported" => NativeFailure::Incompatible,
+            "invalid_argument" | "missing_input" => NativeFailure::InvalidInput,
+            "unauthenticated" => NativeFailure::CredentialUnavailable,
+            "permission_denied" => NativeFailure::PermissionDenied,
+            "conflict" => match self.startup_conflict {
+                Some(StartupConflict::Ownership) => NativeFailure::OwnershipConflict,
+                Some(StartupConflict::Admission) => NativeFailure::Busy,
+                // Legacy or unknown conflicts cannot prove transient admission.
+                _ if startup => NativeFailure::StartupConflict,
+                _ => NativeFailure::Busy,
+            },
+            "recovery_required" => NativeFailure::InvalidEvidence,
+            _ => NativeFailure::SidecarFailed,
+        }
+    }
 }
 
 pub struct Connector {
@@ -764,15 +797,7 @@ impl Connector {
             return Err(NativeFailure::Incompatible);
         }
         if let Some(error) = envelope.error {
-            return Err(match error.code.as_str() {
-                "unsupported" => NativeFailure::Incompatible,
-                "invalid_argument" | "missing_input" => NativeFailure::InvalidInput,
-                "unauthenticated" => NativeFailure::CredentialUnavailable,
-                "permission_denied" => NativeFailure::PermissionDenied,
-                "conflict" => NativeFailure::Busy,
-                "recovery_required" => NativeFailure::InvalidEvidence,
-                _ => NativeFailure::SidecarFailed,
-            });
+            return Err(error.native_failure(false));
         }
         if !status.success() {
             return Err(NativeFailure::SidecarFailed);
@@ -1026,3 +1051,39 @@ mod repository_folder_tests {
 }
 
 pub mod localization;
+
+#[cfg(test)]
+mod startup_conflict_tests {
+    use super::*;
+    #[test]
+    fn conflict_classification_never_uses_private_error_text() {
+        for (detail, expected) in [
+            (
+                r#", "startup_conflict":"ownership""#,
+                NativeFailure::OwnershipConflict,
+            ),
+            (r#", "startup_conflict":"admission""#, NativeFailure::Busy),
+            ("", NativeFailure::StartupConflict),
+            (
+                r#", "startup_conflict":"future-private-kind""#,
+                NativeFailure::StartupConflict,
+            ),
+        ] {
+            let bytes = format!(
+                r#"{{"version":1,"error":{{"code":"conflict"{detail},"message":"private/path secret","cause":"listener"}}}}"#
+            );
+            let envelope: CliEnvelope = serde_json::from_str(&bytes).unwrap();
+            assert_eq!(envelope.error.unwrap().native_failure(true), expected);
+        }
+        for (code, expected) in [
+            ("unsupported", NativeFailure::Incompatible),
+            ("unavailable", NativeFailure::SidecarFailed),
+        ] {
+            let failure: CliFailure = serde_json::from_value(
+                serde_json::json!({"code":code,"startup_conflict":"ownership"}),
+            )
+            .unwrap();
+            assert_eq!(failure.native_failure(true), expected);
+        }
+    }
+}
