@@ -9,8 +9,10 @@ import { isImageStartupRejectedInput } from "./startup-rejection";
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
-import { sessionProgress, progressMessages, progressResponseOwner, responseSuppressesProgress } from "./session-progress";
-import { SessionProgressStatus } from "./session-progress-status";
+import { initialExecutionPending, SessionProgressPhase, sessionProgress, progressMessages, progressResponseOwner, responseSuppressesProgress } from "./session-progress";
+import { useStartupPresence } from "./session-startup-presence";
+import { startupOperations, startupWorkerCurrent } from "./session-startup-operations";
+import { SessionProgressStatus, StartupObservedOperation } from "./session-progress-status";
 import { currentTurn } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -369,6 +371,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const historyHeights=useRef(new Map<string,number>());
   const historyRoot=useRef<HTMLDivElement>(null);
   const data = readDocument(session);
+  const hasStartupOperations = Boolean(data.startup_progress);
   const startupFailure = executionStartupFailure(data);
   const startupRetry = canRetryExecutionStartup(data);
   const inlineRecovery = Boolean(startupFailure || Object.hasOwn(data, "startup_rejection") || data.recovery === "required" || ["failed", "canceled", "uncertain"].includes(text(object(data.preparation).state)));
@@ -532,7 +535,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   }, [id, session]);
   const timing = currentTurn(session, id);
   const timingConfirmed = live.state === ConnectionState.Live && !live.error && !messages.error && !queue.error && !interactions.error && !control.uncertain && !control.error && data.recovery !== "required" && !Number(object(data.execution).unconfirmed_responses);
-  const progress = sessionProgress({ session, sessionId: id,
+  const observedProgress = sessionProgress({ session, sessionId: id,
     current: (progressRevision.current.id !== id || Boolean(session && session.revision >= progressRevision.current.revision)) && conversationActive && live.state === ConnectionState.Live && !live.error && !queue.error && !interactions.error && !messages.error && !messages.isPending,
     complete: Boolean(messages.data) && !messages.nextPageToken,
     blocked: Boolean(progressOwner && progressResponse.current.owner === progressOwner.key && progressResponse.current.seen) || budgetBlocked || runnerRemediationPending || control.busy || control.uncertain || Boolean(control.error) || requests.some(row => readDocument(row).closure === "open") || pending.some(row => readDocument(row).delivery === "uncertain") || projectedSubmissions.some(row => row.observationUnavailable || row.phase === SubmissionPhase.Uncertain),
@@ -540,6 +543,20 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     queueCurrent: Boolean(queue.data) && !queue.error && !queue.isPending && !queue.nextPageToken,
     queue: pending,
   });
+  // Retained startup metadata is historical. Presence is consumed only while
+  // the original progress projection still has a current startup to display.
+  const observeStartupOwner = conversationActive && hasStartupOperations && Boolean(observedProgress) && Boolean(data.machine_id);
+  const startupScopes = object(data.startup_progress);
+  const startupOwner = JSON.stringify({ session: id, execution: object(data.current_execution ?? data.initial_execution).id,
+    scopes: [startupScopes.workspace, startupScopes.native].map(value => {
+      const scope = object(value);
+      return [scope.job_id, scope.execution_id, scope.machine_id, scope.instance_id, scope.device_id, scope.server_epoch, scope.assignment_revision];
+    }) });
+  const startupMachine = useStartupPresence(text(data.machine_id), startupOwner, observeStartupOwner);
+  const startupOwnerCurrent = !hasStartupOperations || startupWorkerCurrent(session, startupMachine.data?.resource,
+    observeStartupOwner && Boolean(startupMachine.data) && !startupMachine.error && !startupMachine.isPending && !startupMachine.isFetching,
+    startupMachine.data?.observedAt, startupMachine.data ? performance.now() - startupMachine.data.startedAt : NaN);
+  const progress = startupOwnerCurrent ? observedProgress : undefined;
   return <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><section className="session-workspace session-tabbed" aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
     if (event.key === "Escape" && event.target instanceof Node && upperContent.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && tabs.tab.kind !== SessionTabKind.Conversation && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
       event.stopPropagation(); if (event.target instanceof Element && event.target.closest(".terminal-dock")) closeTerminal(); else if (panel !== SessionPanel.Closed) closePanel(); else closeTerminal();
@@ -565,8 +582,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     <SessionActivityProvider active={conversationActive}><div className="session-body" hidden={!conversationActive} inert={!conversationActive}>
       <div className="session-notices">
         {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={opener => showInfo(opener)}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
-        {startupFailure ? <SessionNotice><strong>{copy("session.startupFailed")}</strong><span>{startupFailure.state === 2 ? startupCorrection(startupFailure) : startupRecoveryGuidance(startupFailure)}</span><ExecutionStartupDetails key={text(startupFailure.correlation_id)} failure={startupFailure} />{startupFailure.state === 2 ? <p>{copy("session.startupManualSteps")}</p> : null}</SessionNotice> : Object.keys(object(object(data.startup).failure)).length ? <p role="alert">{copy("session.startupInvalidEvidence")}</p> : null}
-        {text(problem.message) && !startupFailure ? <SessionNotice details={opener => showInfo(opener)}><strong>{text(data.dispatch) === "blocked" ? copy("session.executionBlocked") : copy("session.attentionRequired")}</strong><span>{failureSummary(text(problem.code) || text(problem.problem_code))}</span></SessionNotice> : null}
+        {startupFailure ? <SessionNotice><strong>{copy("session.startupFailed")}</strong><span>{startupFailure.state === 2 ? startupCorrection(startupFailure) : startupRecoveryGuidance(startupFailure)}</span><StartupObservedOperation session={session}/><ExecutionStartupDetails key={text(startupFailure.correlation_id)} failure={startupFailure} />{startupFailure.state === 2 ? <p>{copy("session.startupManualSteps")}</p> : null}</SessionNotice> : Object.keys(object(object(data.startup).failure)).length ? <p role="alert">{copy("session.startupInvalidEvidence")}</p> : null}
+        {text(problem.message) && !startupFailure && !(initialExecutionPending(data.problem) && (progress === SessionProgressPhase.Preparing || progress === SessionProgressPhase.Queued)) ? <SessionNotice details={opener => showInfo(opener)}><strong>{text(data.dispatch) === "blocked" ? copy("session.executionBlocked") : copy("session.attentionRequired")}</strong><span>{failureSummary(text(problem.code) || text(problem.problem_code))}</span><StartupObservedOperation session={session}/></SessionNotice> : null}
         {recovering ? <SessionNotice details={opener => showInfo(opener)}><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></SessionNotice> : null}
         {session && Object.hasOwn(data, "startup_rejection") ? <StartupRejection session={session} /> : null}
         {budgetBlocked ? <SessionNotice details={opener => showInfo(opener, InfoTarget.Budget)}>{copy("session-budget.budgetThresholdReachedNewTurnsAnd_6236ce")}</SessionNotice> : null}
@@ -589,7 +606,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
         {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length || timing ? null : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
         {rows.length || messages.rows.length || timing ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} current={timing} confirmed={timingConfirmed} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} contextRevision={Number(data.context_revision ?? 0)} actions={<>{revert.action(row)}<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/></>}/>} /> : null}
-        {progress ? <SessionProgressStatus phase={progress} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
+        {observeStartupOwner && !startupOwnerCurrent && !startupMachine.isPending && !inlineRecovery && !budgetBlocked && data.archive === "active" && ["not-started", "running"].includes(text(data.outcome)) ? <p role="status">{copy("session.connectionRequiresAttention_160d4a")}</p> : null}
+        {progress ? <SessionProgressStatus phase={progress} operations={startupOperations(session, progress)} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
         {items(data.sidechat_retries).length ? <Disclosure className="sidechat-answer-history"><DisclosureSummary>{copy("sidechat.retry.history")}</DisclosureSummary><p>{copy("sidechat.retry.retainedHistory")}</p><div className="sidechat-history-content" ref={historyRoot}><ToolTurnTranscript sessionId={id} active={conversationActive} query={{...messages,pages:messages.pages.map(page=>({...page,height:historyHeights.current.get(page.token)})),measure:(token,height)=>{historyHeights.current.set(token,height);}}} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={historyRoot} include={sidechatAnswerFilter(session,true)} render={row=><TranscriptItem resource={row} active={conversationActive}/>} /></div></Disclosure> : null}
         <ScrollContinuation query={messages} root={transcriptRoot} active={conversationActive && live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
         {retryQuestion.sidechat && retryQuestion.unsupported ? <p role="status">{copy("sidechat.retry.unsupported")}</p> : null}

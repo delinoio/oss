@@ -259,6 +259,8 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err := domain.Decode(response.Result, &loaded); err != nil || loaded.Data == nil || len(loaded.Data) != 0 || loaded.NextCursor != nil {
 		return nil, incompatible()
 	}
+	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)
+	process.ObserveStartup(config.Process, domain.StartupSettings, domain.StartupProgressRunning)
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
