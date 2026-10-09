@@ -202,3 +202,86 @@ func TestExecutionAPIRejectsInheritedProviderAndShellOverrides(t *testing.T) {
 		})
 	}
 }
+
+func TestExecutionAPIOptionalCatalogAndGatewayAuthority(t *testing.T) {
+	for _, profile := range []struct {
+		name    string
+		title   bool
+		proxied bool
+	}{{"ordinary", false, false}, {"title", true, false}, {"proxy", false, true}, {"proxy-title", true, true}} {
+		t.Run(profile.name, func(t *testing.T) {
+			for _, change := range []struct {
+				name   string
+				fields string
+				valid  bool
+			}{
+				{"omitted", "", true},
+				{"catalog-null", `,"model_catalog_url":null`, true},
+				{"gateway-null", `,"gateway_oauth":null`, true},
+				{"both-null", `,"model_catalog_url":null,"gateway_oauth":null`, true},
+				{"catalog-url", `,"model_catalog_url":"https://catalog.example"`, false},
+				{"catalog-empty", `,"model_catalog_url":""`, false},
+				{"catalog-object", `,"model_catalog_url":{}`, false},
+				{"gateway-object", `,"gateway_oauth":{"issuer":"https://gateway.example"}`, false},
+				{"gateway-empty-object", `,"gateway_oauth":{}`, false},
+				{"gateway-string", `,"gateway_oauth":""`, false},
+				{"gateway-array", `,"gateway_oauth":[]`, false},
+				{"gateway-scalar", `,"gateway_oauth":false`, false},
+				{"unknown-null", `,"other_authority":null`, false},
+				{"catalog-duplicate", `,"model_catalog_url":null,"model_catalog_url":null`, false},
+				{"gateway-duplicate", `,"gateway_oauth":null,"gateway_oauth":null`, false},
+				{"catalog-populated-with-gateway-null", `,"model_catalog_url":"","gateway_oauth":null`, false},
+				{"gateway-populated-with-catalog-null", `,"model_catalog_url":null,"gateway_oauth":{}`, false},
+			} {
+				t.Run(change.name, func(t *testing.T) {
+					provider := `{"name":"DeliDev","base_url":"http://127.0.0.1:12345/api-proxy/v1","env_key":"DELIDEV_EXECUTION_TOKEN","wire_api":"responses","requires_openai_auth":false,"supports_websockets":false,"supports_standalone_web_search":false,"request_max_retries":0,"stream_max_retries":0` + change.fields + `}`
+					config := apiOptionalAuthorityConfig(t, provider, profile.proxied)
+					binding := apiBinding{endpoint: "http://127.0.0.1:12345/api-proxy/v1", title: profile.title, proxied: profile.proxied}
+					if err := binding.validateConfig(config); (err == nil) != change.valid {
+						t.Fatalf("optional provider authority was misclassified: %v", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func apiOptionalAuthorityConfig(t *testing.T, provider string, proxied bool) map[string]json.RawMessage {
+	t.Helper()
+	excluded := []string{executionTokenEnv}
+	if proxied {
+		excluded = append(excluded, proxyEnvironmentKeys...)
+	}
+	raw, err := json.Marshal(map[string]any{
+		"model_provider": APIProvider, "cli_auth_credentials_store": "ephemeral",
+		"model_providers":          map[string]json.RawMessage{APIProvider: json.RawMessage(provider)},
+		"features":                 map[string]bool{"respect_system_proxy": false},
+		"shell_environment_policy": map[string]any{"exclude": excluded},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	return config
+}
+
+func TestExecutionAPINullOptionalFieldsPreserveTitleRetryRestrictions(t *testing.T) {
+	for _, proxied := range []bool{false, true} {
+		for _, retries := range []string{
+			``,
+			`,"request_max_retries":0`,
+			`,"request_max_retries":null,"stream_max_retries":0`,
+			`,"request_max_retries":1,"stream_max_retries":0`,
+			`,"request_max_retries":0,"stream_max_retries":1`,
+		} {
+			provider := `{"name":"DeliDev","base_url":"http://127.0.0.1:12345/api-proxy/v1","env_key":"DELIDEV_EXECUTION_TOKEN","wire_api":"responses","requires_openai_auth":false,"supports_websockets":false,"supports_standalone_web_search":false,"model_catalog_url":null,"gateway_oauth":null` + retries + `}`
+			binding := apiBinding{endpoint: "http://127.0.0.1:12345/api-proxy/v1", title: true, proxied: proxied}
+			if err := binding.validateConfig(apiOptionalAuthorityConfig(t, provider, proxied)); err == nil {
+				t.Fatal("null optional authority bypassed the title zero-retry requirement")
+			}
+		}
+	}
+}
