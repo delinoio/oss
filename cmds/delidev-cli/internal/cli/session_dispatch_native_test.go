@@ -327,7 +327,6 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 			if account["data"].(map[string]any)["health"] != string(domain.AccountReady) {
 				t.Fatal("public account validation did not establish readiness")
 			}
-			model := run([]string{"model", "create"}, domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: domain.ID(provider["id"].(string)), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})["resource"].(map[string]any)
 			options := domain.AgentOptions{Permission: domain.PermissionReadOnly}
 			if scenario.workspace != domain.GeneralChat {
 				options.Permission = domain.PermissionWorkspaceWrite
@@ -339,7 +338,7 @@ func testManualNativeCLI(t *testing.T, steerScenario bool, profile nativeCLIWork
 				switchAccount = run([]string{"account", "connect", "--id", switchAccount["id"].(string), "--revision", revision(switchAccount), "--keyless"}, nil)["account"].(map[string]any)
 				candidates = append(candidates, domain.WeightedAccount{ID: domain.ID(switchAccount["id"].(string)), Weight: 1})
 			}
-			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(model["id"].(string)), Accounts: candidates, Options: options})["resource"].(map[string]any)
+			agent := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{cliInlineFixtureRoute(domain.ID(provider["id"].(string)), "fixture-model", candidates)}, Options: options})["resource"].(map[string]any)
 			create := []string{"session", "create", "--request-id", string(domain.NewID())}
 			if profile != nativeForkWorkspaces && profile != nativeSidechatWorkspaces {
 				create = append(create, "--wait")

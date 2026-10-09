@@ -180,75 +180,43 @@ func TestNativeAccountCLISecretService(t *testing.T) {
 	if code != 6 || value["result"].(map[string]any)["replayed"] != true || providerCalls.Load() != 1 {
 		t.Fatal("native validation replay repeated network")
 	}
-	// Enabling discovery starts the real server's background inspection, using
-	// this account's native protected key, then publishes model and account
-	// evidence atomically without claiming custom endpoint authentication.
+	// Legacy discovery preferences retain their original fields but grant no
+	// persistent Model catalog or automatic endpoint-inspection authority.
 	var providerConfig domain.Provider
 	if err := json.Unmarshal(providerJSON, &providerConfig); err != nil {
 		t.Fatal(err)
 	}
 	providerConfig.Discovery = true
 	providerJSON, _ = json.Marshal(providerConfig)
+	beforeCatalog := providerCalls.Load()
 	code, value = run(string(providerJSON), "provider", "edit", "--id", provider, "--revision", "1", "--input", "-")
 	if code != 0 {
-		t.Fatalf("enable native catalog: %+v", value)
+		t.Fatalf("retain native provider preference: %+v", value)
 	}
-	deadline := time.Now().Add(8 * time.Second)
-	for {
-		code, value = run("", "account", "status", "--id", id)
-		if code != 0 {
-			t.Fatalf("native catalog status: %+v", value)
-		}
-		current = value["result"].(map[string]any)["account"].(map[string]any)
-		if current["data"].(map[string]any)["catalog"] != nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("native automatic catalog deadline")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	code, value = run("", "model", "search", "--query", "native-fixture", "--provider-id", provider, "--limit", "1")
+	code, value = run("", "account", "status", "--id", id)
 	if code != 0 {
-		t.Fatalf("native model search: %+v", value)
-	}
-	models := value["result"].(map[string]any)["models"].([]any)
-	if len(models) != 1 {
-		t.Fatal("native catalog missing model")
-	}
-	model := models[0].(map[string]any)
-	if model["data"].(map[string]any)["new"] != true || current["data"].(map[string]any)["health"] != "unverified" {
-		t.Fatal("native catalog changed readiness or lost NEW marker")
-	}
-	code, value = run("", "model", "resolve", "--selector", "native-fixture-model", "--provider-id", provider)
-	if code != 0 || value["result"].(map[string]any)["id"] != model["id"] {
-		t.Fatal("native model canonical resolution failed")
-	}
-	discoveryArgs := []string{"provider", "discover", "--account-id", id, "--revision", strconv.FormatUint(uint64(current["revision"].(float64)), 10), "--request-id", string(domain.NewID())}
-	code, value = run("", discoveryArgs...)
-	if code != 0 {
-		t.Fatalf("native explicit discovery: %+v", value)
+		t.Fatalf("original native account status: %+v", value)
 	}
 	current = value["result"].(map[string]any)["account"].(map[string]any)
-	beforeDiscoveryReplay := providerCalls.Load()
-	shutdown()
-	start()
-	code, value = run("", discoveryArgs...)
-	if code != 0 || value["result"].(map[string]any)["replayed"] != true || providerCalls.Load() != beforeDiscoveryReplay {
-		t.Fatal("native discovery replay repeated HTTP after restart")
+	if current["data"].(map[string]any)["catalog"] != nil || current["data"].(map[string]any)["health"] != "unverified" {
+		t.Fatal("retired catalog created state or changed readiness")
 	}
 	catalogFailure.Store(true)
-	failedArgs := []string{"provider", "discover", "--account-id", id, "--revision", strconv.FormatUint(uint64(current["revision"].(float64)), 10), "--request-id", string(domain.NewID())}
-	code, value = run("", failedArgs...)
-	if code == 0 || value["error"].(map[string]any)["code"] != "unavailable" || value["result"] == nil {
-		t.Fatal("failed native discovery lost typed observation")
+	for _, retired := range [][]string{
+		{"model", "search", "--query", "native-fixture", "--provider-id", provider, "--limit", "1"},
+		{"model", "resolve", "--selector", "native-fixture-model", "--provider-id", provider},
+		{"provider", "discover", "--account-id", id, "--revision", strconv.FormatUint(uint64(current["revision"].(float64)), 10), "--request-id", string(domain.NewID())},
+	} {
+		code, value = run("", retired...)
+		if code == 0 || value["error"].(map[string]any)["code"] != "unsupported" {
+			t.Fatalf("retired native catalog accepted: %+v", value)
+		}
 	}
-	current = value["result"].(map[string]any)["account"].(map[string]any)
-	beforeDiscoveryReplay = providerCalls.Load()
-	code, value = run("", failedArgs...)
-	if code == 0 || value["result"].(map[string]any)["replayed"] != true || providerCalls.Load() != beforeDiscoveryReplay {
-		t.Fatal("native failed discovery replay repeated HTTP")
+	if providerCalls.Load() != beforeCatalog {
+		t.Fatal("retired catalog or compatibility preference repeated endpoint HTTP")
 	}
+	shutdown()
+	start()
 	code, value = run("", "account", "disconnect", "--id", id, "--revision", strconv.FormatUint(uint64(current["revision"].(float64)), 10))
 	if code != 0 {
 		t.Fatalf("native disconnect: %+v", value)

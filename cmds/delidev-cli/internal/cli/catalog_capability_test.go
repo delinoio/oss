@@ -84,24 +84,15 @@ func TestAccountListProviderFilterRequiresInventoryCapability(t *testing.T) {
 	}
 }
 
-func TestEnabledProviderModelSearchRequiresInventoryCapability(t *testing.T) {
-	provider := &providerCapabilityStub{}
-	c := client{providers: provider}
-	args := []string{"search", "--enabled-providers-only"}
-
-	if _, err := modelCatalog(context.Background(), c, args); domain.SafeError(err).Code != domain.Unsupported {
-		t.Fatalf("legacy server ignored enabled-provider filtering: %v", err)
+func TestRetiredModelSearchNeverUsesInventoryOrSearch(t *testing.T) {
+	provider := &providerCapabilityStub{capabilities: []pb.ProviderInventoryCapability{pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER}}
+	for _, args := range [][]string{{"search", "--enabled-providers-only"}, {"resolve", "--selector", "original-native"}} {
+		if _, err := modelCatalog(context.Background(), client{providers: provider}, args); domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatalf("retired catalog accepted: %v", err)
+		}
 	}
-	if provider.searchCalls != 0 || provider.inventoryCalls != 1 {
-		t.Fatalf("model search ran before capability check: search=%d inventory=%d", provider.searchCalls, provider.inventoryCalls)
-	}
-
-	provider.capabilities = []pb.ProviderInventoryCapability{pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER}
-	if _, err := modelCatalog(context.Background(), c, args); err != nil {
-		t.Fatal(err)
-	}
-	if provider.searchCalls != 1 || !provider.searchRequest.EnabledProvidersOnly {
-		t.Fatalf("supported model filter was not sent: %+v", provider.searchRequest)
+	if provider.searchCalls != 0 || provider.inventoryCalls != 0 {
+		t.Fatal("retired catalog used server inventory or search")
 	}
 }
 

@@ -104,13 +104,10 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   provider inventory [--query TEXT] [--enabled-only] [--limit N] [--page-token TOKEN]
   provider create --preset PRESET [--name NAME]
     --name creates an independent custom copy; --preset alone creates the managed preset
-  provider discover --account-id ID --revision N
-  model search [--query TEXT] [--provider-id ID] [--include-hidden] [--enabled-providers-only] [--limit N] [--page-token TOKEN]
   model native-discover --machine-id ID --revision N --account-id ID --account-revision N [--include-hidden]
   model native-observation --id JOB_ID
   model native-list --id JOB_ID [--limit N] [--page-token TOKEN]
   model native-cancel --id JOB_ID --revision N
-  model resolve --selector ID|ALIAS|NATIVE_ID [--provider-id ID]
   session forward start|status|stop|reconcile --session-id ID [--id ID] [--revision N] [--machine-id ID --worker-port N --local-port N]
   session diagnostics --id ID [--execution-id ID] [--page-size 50] [--page-token TOKEN]
   session files roots|list|read --id ID [--repository-id ID] [--path RELATIVE] [--page-token TOKEN]
@@ -201,7 +198,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   events --cursor TOKEN [--session-id ID]
   version
 
-Configuration kinds: project, repository, agent, account, provider, model,
+Configuration kinds: project, repository, agent, account, provider,
                      template, settings.
 Product output is versioned JSON; --json is accepted explicitly.
 Progress and structured diagnostics go to stderr. Ordinary commands never start

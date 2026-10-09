@@ -23,7 +23,9 @@ func TestCLIRequestDiagnosticsExactPagesAndUnavailableFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	session, execution := domain.NewID(), domain.NewID()
-	record := domain.RequestDiagnostic{ID: domain.NewID(), SessionID: session, ExecutionID: execution, AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), Source: domain.DiagnosticNativeInput, Operation: domain.DiagnosticInput, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, Harness: domain.Codex, InputID: domain.NewID(), NativeThreadID: string(domain.NewID()), ObservedAt: time.Now().UTC()}
+	provider := domain.NewID()
+	model := (domain.ModelIdentity{ProviderID: provider, NativeID: "original-native"}).Key()
+	record := domain.RequestDiagnostic{ID: domain.NewID(), SessionID: session, ExecutionID: execution, AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: provider, ModelID: model, Source: domain.DiagnosticNativeInput, Operation: domain.DiagnosticInput, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, Harness: domain.Codex, InputID: domain.NewID(), NativeThreadID: string(domain.NewID()), ObservedAt: time.Now().UTC()}
 	record.NativeRequestID = string(record.ID)
 	_, err = db.Mutate(ctx, domain.NewID(), "fixture.diagnostics", nil, func(tx *store.Tx) (any, error) {
 		if _, err := tx.Put(domain.SessionKind, session, 0, session, "", domain.Session{Name: "Private conversation", Workspace: domain.GeneralChat, Archive: domain.Archived, Dispatch: domain.DispatchPaused}); err != nil {
