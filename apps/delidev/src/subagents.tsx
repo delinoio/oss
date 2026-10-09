@@ -20,6 +20,25 @@ export function SubagentRows({ rows, sessionId, technical = true, labels }: { ro
   return accepted ? <ChildRows rows={accepted} technical={technical} labels={labels} /> : unavailable();
 }
 
+// Diagnostics owns only original source references. Conversation output and
+// ordinary status/model/usage presentation remain in the mounted Info owner.
+export function SubagentSourceRows({ rows, sessionId }: { rows: readonly Resource[]; sessionId: string }) {
+  useLocale();
+  const accepted = useMemo(() => validateSubagentPage(rows, sessionId), [rows, sessionId]);
+  return accepted ? <table aria-label={copy("session-name.nativeEvidence")}>
+    <thead><tr><th>{copy("subagents.child_805332")}</th><th>{copy("subagents.parent_5f7953")}</th><th>{copy("subagents.sourceCoverage_0b8649")}</th></tr></thead>
+    <tbody>{accepted.map(({ resource, record, child }) => <tr key={resource.id}>
+      <td><code>{text(child.native_id)}</code></td><td><code>{text(child.parent_id)}</code></td>
+      <td><p>{text(record.harness)} {text(record.native_version)}</p>
+        <p><LocalizedText id="subagents.execution_2ce365" components={{ s0: <>{text(record.execution_id)}</> }} /></p>
+        <p><LocalizedText id="subagents.parentTool_5586e7" components={{ s0: <>{text(child.parent_tool_id) || copy("subagents.extra.ca1844969742")}</> }} /></p>
+        {text(object(child.output).native_message_id) ? <code>{text(object(child.output).native_message_id)}</code> : null}
+        <ul>{items(record.sources).map(object).map((source, index) => <li key={index}><LocalizedText id="subagents.sequence_440e77" components={{ s0: <>{text(source.source)}</>, s1: <>{text(source.source_id)}</>, s2: <>{String(source.sequence ?? copy("subagents.extra.ca1844969742"))}</>, s3: <>{text(object(source.usage).native_report) ? <pre>{text(object(source.usage).native_report)}</pre> : null}</> }} /></li>)}</ul>
+      </td>
+    </tr>)}</tbody>
+  </table> : unavailable();
+}
+
 function ChildRows({ rows, technical = true, labels }: { rows: readonly SubagentRow[]; technical?: boolean; labels?: Map<string, number> }) {
   useLocale();
   return <table aria-label={copy("subagents.nativeChildAgentHierarchy_212425")}>
@@ -81,7 +100,7 @@ export function Subagents({ sessionId, revision, visible = true, emptyChanged, d
     {query.isPending && supported ? <p>{copy("subagents.loadingChildObservations_0a8d53")}</p> : null}
     {supported && (query.error && !query.loaded || query.data && !rows) ? unavailable() : null}
     {supported && rows?.length === 0 ? <p>{copy("subagents.noNativeChildObservationsAreAvailable_8c2be5")}</p> : null}
-    {needsOpenCodeUpdate ? <p>{copy("subagents.updateTheServerAndRunnerDevice_ac66cd")}</p> : supported && rows && rows.length > 0 ? <div><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={query} root={root} active={active && visible}>{payload => <><SubagentRows rows={payload} sessionId={sessionId} technical={false} labels={labels.current} />{diagnosticsTarget ? createPortal(<section><h3>{copy("session-name.nativeEvidence")}</h3><SubagentRows rows={payload} sessionId={sessionId} /></section>, diagnosticsTarget) : null}</>}</ScrollPayloadWindow></div> : null}
+    {needsOpenCodeUpdate ? <p>{copy("subagents.updateTheServerAndRunnerDevice_ac66cd")}</p> : supported && rows && rows.length > 0 ? <div><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={query} root={root} active={active && visible}>{payload => <><SubagentRows rows={payload} sessionId={sessionId} technical={false} labels={labels.current} />{diagnosticsTarget ? createPortal(<section><h3>{copy("session-name.nativeEvidence")}</h3><SubagentSourceRows rows={payload} sessionId={sessionId} /></section>, diagnosticsTarget) : null}</>}</ScrollPayloadWindow></div> : null}
     {query.error ? <button disabled={!supported || query.isFetching} onClick={() => void query.refetch()}>{copy("session-name.retryRead")}</button> : null}
     <ScrollContinuation query={query} root={root} active={active && visible && supported && !needsOpenCodeUpdate} label={copy("subagents.subagents_88296a")} />
   </div>;
