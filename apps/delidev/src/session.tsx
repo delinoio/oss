@@ -247,7 +247,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   useLocale();
   const tabs = useSessionTabs(id);
   const conversationActive = active && (embedded || tabs.tab.kind === SessionTabKind.Conversation);
-  const live = useSessionStream(id, conversationActive);
+  // Session metadata owns account and native presentation authority even when
+  // a resource pane hides the conversation. Only transcript reads pause there.
+  const live = useSessionStream(id, active && tabs.tab.kind !== SessionTabKind.Sidechat);
   const submissions = useSessionSubmissions();
   const [submissionError, setSubmissionError] = useState<unknown>();
   const [revealSubmission, setRevealSubmission] = useState<string>();
