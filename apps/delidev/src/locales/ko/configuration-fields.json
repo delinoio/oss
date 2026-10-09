@@ -204,5 +204,6 @@
   "configuration-fields.serviceTier.fast": "빠른 모드",
   "configuration-fields.serviceTier.custom": "사용자 지정 서비스 등급",
   "configuration-fields.serviceTier.guidance": "빠른 모드는 네이티브 모델 및 계정의 지원 여부에 따라 달라지며 구독 사용량을 더 많이 사용할 수 있습니다. 선택만으로 이용 권한, 요금 또는 실제 속도가 확인되지는 않습니다.",
-  "configuration-fields.serviceTier.learn": "공식 빠른 모드 안내"
+  "configuration-fields.serviceTier.learn": "공식 빠른 모드 안내",
+  "configuration-fields.unsupportedPermissionSelection": "지원되지 않는 선택 · {{value}}"
 }

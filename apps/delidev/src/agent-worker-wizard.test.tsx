@@ -715,7 +715,7 @@ it("retains a stale edit and returns empty-name validation to its input", async 
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Name"));
   expect(value.save).not.toHaveBeenCalled();
-  (screen.getByLabelText("Permission mode") as HTMLSelectElement).focus();
+  screen.getByRole("combobox", { name: "Permission mode" }).focus();
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Name"));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retained draft" } });

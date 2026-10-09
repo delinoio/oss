@@ -300,6 +300,13 @@ Generated Connect Query batches use isolated disposable keys; this does not
 replace the global inactive-query retention guard or a domain's disposal rules.
 Locale and geometry remain presentation inputs, never scope identity.
 
+Agent Worker permission choices in creation and editing use ScrollPicker with
+finite local options and an already-loaded, exhausted continuation adapter.
+Opening and selection perform no inventory/native reads. Preserve exact option
+order, unsupported retained values and harness-specific guidance/clearing.
+Propagate visible owner activity and mutation admission locks, and reject late
+selection after native fieldset disabling, hiding or disposal.
+
 Shared ScrollPicker choices use a native manual popover in the original DOM
 owner. Only the label and trigger participate in ordinary form layout. Position
 the mounted listbox against its trigger within the visible viewport and original
