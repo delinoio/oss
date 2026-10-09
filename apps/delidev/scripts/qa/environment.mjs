@@ -18,6 +18,14 @@ export function credential(value, endpoint, serverId, type) {
 }
 export const document = resource => JSON.parse(new TextDecoder().decode(resource.documentJson));
 
+// QA owns disposable protocol-2 environments. Pairing-file version 1 remains
+// independent of the server wire protocol; neither a legacy server nor a
+// different original server identity can be admitted through this check.
+export function verifyServerStatus(status, serverId, failure) {
+  if (status.serverId !== serverId || status.version !== "0.1.0" || status.protocolVersion !== 2 || status.stopping) throw new QaError(failure);
+}
+
+
 export class Environment {
   processes = new Processes(); endpoint = ""; phase = "preparing"; closing = false;
   constructor({ root, assets, binary, api, index, changed = () => {} }) { Object.assign(this, { root, assets, binary, api, index, changed }); this.ownerNonce = randomUUID(); this.serverRoot = join(root, "server"); this.clientRoot = join(root, "client"); this.workerRoot = join(root, "worker"); }
@@ -52,7 +60,7 @@ export class Environment {
     this.ownerTransport = this.api.createDeliDevTransport({ origin: this.endpoint, getToken: () => owner.token });
     this.server.done.then(() => { if (!this.closing) { this.phase = "server-stopped"; this.changed(); } });
     const status = await createClient(this.api.SystemService, this.ownerTransport).getStatus({}, { timeoutMs: 5000 });
-    if (status.serverId !== this.serverId || status.version !== "0.1.0" || status.protocolVersion !== 1 || status.stopping) throw new QaError("server-verification-failed");
+    verifyServerStatus(status, this.serverId, "server-verification-failed");
   }
   async registerWorker() {
     // Registration is idempotent only for this run's existing credential. Never
@@ -97,7 +105,7 @@ export class Environment {
   async verify() {
     const transport = this.api.createDeliDevTransport({ origin: this.endpoint, getToken: () => this.clientCredential.token });
     const status = await createClient(this.api.SystemService, transport).getStatus({}, { timeoutMs: 5000 });
-    if (status.serverId !== this.serverId || status.protocolVersion !== 1 || status.version !== "0.1.0" || status.stopping) throw new QaError("paired-verification-failed");
+    verifyServerStatus(status, this.serverId, "paired-verification-failed");
     await this.verifyWorker();
   }
   async bootstrap() {
