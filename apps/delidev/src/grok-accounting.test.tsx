@@ -9,8 +9,8 @@ it("shows distinct exact Grok totals in summary, day, model and session views wi
   const totals = { responses: 1, total: { knownTotal: "20", measuredResponses: 1 }, accounting: [{ kind: AccountingUnitKind.CODEX_RESPONSE, units: 1, knownTotal: "20", measuredUnits: 1 }, grok] };
   const data = create(GetUsageSummaryResponseSchema, {
     accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1, totals,
-    groups: [{ sessionId: "original-session", sessionName: "Original session", accountId: "original-account", accountName: "Original account", modelId: "original-model", modelName: "Original model", providerId: "original-provider", totals }],
-    analytics: { granularity: UsageTimeGranularity.DAY, timeZone: "UTC", days: [{ fromUnixMs: 1788220800000n, untilUnixMs: 1788307200000n, totals }], models: [{ modelId: "original-model", modelName: "Original model", providerId: "original-provider", totals }] },
+    groups: [{ sessionId: "original-session", sessionName: "Original session", accountId: "original-account", accountName: "Original account", model: { nativeId: "original-model" }, modelName: "Original model", providerId: "original-provider", totals }],
+    analytics: { granularity: UsageTimeGranularity.DAY, timeZone: "UTC", days: [{ fromUnixMs: 1788220800000n, untilUnixMs: 1788307200000n, totals }], models: [{ model: { nativeId: "original-model" }, modelName: "Original model", providerId: "original-provider", totals }] },
   });
   const open = vi.fn(); render(<GrokAccounting data={data} open={open} />);
   expect(screen.getByRole("heading", { name: "Verified Grok closed inputs" })).toBeTruthy();

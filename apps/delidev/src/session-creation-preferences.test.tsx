@@ -13,7 +13,7 @@ import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { parseCreationPreferences, CreationPreferenceProblem, type CreationPreferencePair, type CreationPreferenceSnapshot } from "./session-creation-preferences";
 
-function resource(kind: EntityKind, name: string, extra = {}): Resource { return create(ResourceSchema, { kind, id:newRequestId(), revision:1n, schemaVersion:1, documentJson:encode({name,...extra}) }); }
+function resource(kind: EntityKind, name: string, extra = {}): Resource { return create(ResourceSchema, { kind, id:newRequestId(), revision:1n, schemaVersion:kind===EntityKind.AGENT?4:1, documentJson:encode({name,...(kind===EntityKind.AGENT?{harness:"codex",routes:[{model:{provider_id:newRequestId(),native_id:"fixture-native-model",input_modalities:["text"],metadata_source:"unknown"},accounts:[{id:newRequestId(),weight:1}]}],templates:[],options:{permission:"default"}}:{}),...extra}) }); }
 function fixture(initial = true, includeRemembered = false, defaults?: { global: boolean; fail?: boolean; project?: "enabled" | "disabled" | "inherit" }) {
  const agent=resource(EntityKind.AGENT,"Remembered agent"), machine=resource(EntityKind.MACHINE,"Disconnected runner",{disabled:false});
  const otherAgent=resource(EntityKind.AGENT,"Manual agent"), otherMachine=resource(EntityKind.MACHINE,"Manual runner");

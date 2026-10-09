@@ -3,8 +3,7 @@ package store
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,182 +12,120 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-func TestBackupRestorePreservesChangedMigrationImages(t *testing.T) {
-	for _, checkpoint := range []string{"prepared", "recorded"} {
-		for _, change := range []string{"modified", "replaced", "unexpected", "legacy-unfingerprinted"} {
-			t.Run(checkpoint+"/"+change, func(t *testing.T) {
-				s, root, ctx, input, _ := restoreFixture(t)
-				source := filepath.Join(root, "backups", string(input.Backup.ID)+".sqlite")
-				image, err := openRestoreDatabase(source)
+// Historical cleanup claims can survive the current-only reset boundary. Build
+// one original retained claim explicitly; current restores never create these
+// historical copies or derive cleanup authority from whatever bytes exist now.
+func retainedRestoreCopyFixture(t *testing.T) (string, domain.ID, string) {
+	t.Helper()
+	s, root, ctx, input, _ := restoreFixture(t)
+	request := domain.NewID()
+	if _, _, err := s.RestoreBackup(ctx, request, input); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := readRestoreReceipt(root, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(restoreDirectory(root, request), "backups")
+	if err := security.PrivateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	id := domain.NewID()
+	target := filepath.Join(dir, string(id)+".sqlite")
+	source := filepath.Join(root, "backups", string(input.Backup.ID)+".sqlite")
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(target, raw); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := fingerprintBackupPublication(ctx, target, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt.MigrationImages = &restoreMigrationImages{Images: []backupPublication{claim}}
+	if err := writeRestore(restoreJournal(root, request), receipt); err != nil {
+		t.Fatal(err)
+	}
+	return root, request, target
+}
+
+func TestBackupRestorePreservesChangedRetainedImages(t *testing.T) {
+	for _, change := range []string{"modified", "replaced", "unexpected", "legacy-unfingerprinted"} {
+		t.Run(change, func(t *testing.T) {
+			root, request, target := retainedRestoreCopyFixture(t)
+			switch change {
+			case "modified":
+				db, err := openRestoreDatabase(target)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := historicalSchema(image, "023-titles"); err != nil {
+				if _, err = db.Exec("INSERT INTO metadata VALUES('fixture.changed','preserve original evidence')"); err != nil {
 					t.Fatal(err)
 				}
-				if err := image.Close(); err != nil {
+				if err = db.Close(); err != nil {
 					t.Fatal(err)
 				}
-				inspection, err := s.InspectBackup(ctx, input.Backup.ID, input.ServerID)
+			case "replaced", "unexpected":
+				raw, err := os.ReadFile(filepath.Join(root, "state.sqlite"))
 				if err != nil {
 					t.Fatal(err)
 				}
-				input.Backup, input.SHA256 = inspection.Backup, inspection.SHA256
-				request := domain.NewID()
-				injected := errors.New("fixture interrupts restore before startup cleanup")
-				_, _, err = s.restoreBackup(ctx, request, input, func(stage string) error {
-					if stage == checkpoint {
-						return injected
-					}
-					return nil
-				})
-				if !errors.Is(err, injected) {
-					t.Fatal("restore did not reach selected checkpoint", err)
+				if change == "unexpected" {
+					target = filepath.Join(filepath.Dir(target), string(domain.NewID())+".sqlite")
 				}
-				migration := filepath.Join(restoreDirectory(root, request), "backups")
-				entries, err := os.ReadDir(migration)
-				if err != nil || len(entries) != 1 {
-					t.Fatal("fixture has no original migration image", entries, err)
+				if err := security.WriteAtomic(target, raw); err != nil {
+					t.Fatal(err)
 				}
-				target := filepath.Join(migration, entries[0].Name())
-				switch change {
-				case "modified":
-					image, err := openRestoreDatabase(target)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if _, err := image.Exec("INSERT INTO metadata(key,value) VALUES('fixture.changed','preserve this evidence')"); err != nil {
-						t.Fatal(err)
-					}
-					if err := image.Close(); err != nil {
-						t.Fatal(err)
-					}
-				case "replaced", "unexpected":
-					// A valid database with this server's identity is still another image.
-					replacement, err := os.ReadFile(filepath.Join(root, "state.sqlite"))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if change == "unexpected" {
-						target = filepath.Join(migration, string(domain.NewID())+".sqlite")
-					}
-					if err := security.WriteAtomic(target, replacement); err != nil {
-						t.Fatal(err)
-					}
-				case "legacy-unfingerprinted":
-					// A pre-fingerprint v1 receipt cannot grant ownership of existing copies.
-					for _, path := range []string{restoreJournal(root, request), filepath.Join(restoreRoot(root), "active.json")} {
-						raw, err := os.ReadFile(path)
-						if err != nil {
-							t.Fatal(err)
-						}
-						var journal map[string]json.RawMessage
-						if err := json.Unmarshal(raw, &journal); err != nil {
-							t.Fatal(err)
-						}
-						delete(journal, "migration_images")
-						raw, err = json.Marshal(journal)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if err := security.WriteAtomic(path, raw); err != nil {
-							t.Fatal(err)
-						}
-					}
-				}
-				if err := validateBackup(ctx, target, &input.ServerID); err != nil {
-					t.Fatal("replacement must remain valid for the same server", err)
-				}
-				retained, err := os.ReadFile(target)
+			case "legacy-unfingerprinted":
+				receipt, err := readRestoreReceipt(root, request)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := s.Close(); err != nil {
+				receipt.MigrationImages = nil
+				if err := writeRestore(restoreJournal(root, request), receipt); err != nil {
 					t.Fatal(err)
 				}
-				reopened, err := Open(ctx, root)
-				if err == nil {
-					reopened.Close()
-					t.Fatal("startup removed changed or unowned migration evidence")
-				}
-				if domain.SafeError(err).Code != domain.RecoveryRequired {
-					t.Fatal("unexpected recovery result", err)
+			}
+			before, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := cleanupSettledRestoreImages(context.Background(), root, map[domain.ID]bool{request: true}); err == nil {
+					t.Fatal("changed or unowned copy retired")
 				}
 				after, err := os.ReadFile(target)
-				if err != nil || !bytes.Equal(retained, after) {
-					t.Fatal("startup changed retained migration evidence", err)
+				if err != nil || !bytes.Equal(before, after) {
+					t.Fatal("recovery evidence changed", err)
 				}
-				// Cleanup refusal and restart retries cannot adopt the changed image.
-				reopened, err = Open(ctx, root)
-				if err == nil {
-					reopened.Close()
-					t.Fatal("retry adopted changed migration evidence")
-				}
-				after, err = os.ReadFile(target)
-				if err != nil || !bytes.Equal(retained, after) {
-					t.Fatal("retry changed retained migration evidence", err)
-				}
-			})
-		}
+			}
+		})
 	}
 }
 
-func TestBackupRestoreMigrationCleanupResumesInterruptedUnlink(t *testing.T) {
-	for _, checkpoint := range []string{"prepared", "recorded"} {
-		t.Run(checkpoint, func(t *testing.T) {
-			s, root, ctx, input, _ := restoreFixture(t)
-			source := filepath.Join(root, "backups", string(input.Backup.ID)+".sqlite")
-			image, err := openRestoreDatabase(source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := historicalSchema(image, "023-titles"); err != nil {
-				t.Fatal(err)
-			}
-			if err := image.Close(); err != nil {
-				t.Fatal(err)
-			}
-			inspection, err := s.InspectBackup(ctx, input.Backup.ID, input.ServerID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			input.Backup, input.SHA256 = inspection.Backup, inspection.SHA256
-			request := domain.NewID()
-			injected := errors.New("fixture stops before migration cleanup")
-			_, _, err = s.restoreBackup(ctx, request, input, func(stage string) error {
-				if stage == checkpoint {
-					return injected
-				}
-				return nil
-			})
-			if !errors.Is(err, injected) {
-				t.Fatal(err)
-			}
-			journal, err := readRestoreReceipt(root, request)
-			if err != nil || journal.MigrationImages == nil || len(journal.MigrationImages.Images) != 1 {
-				t.Fatal("original copy has no pinned ownership", err)
-			}
-			claim := journal.MigrationImages.Images[0]
-			path := filepath.Join(restoreDirectory(root, request), "backups", string(claim.Backup.ID)+".sqlite")
-			actual, err := fingerprintBackupPublication(ctx, path, claim.Backup.ID)
-			if err != nil || actual != claim {
-				t.Fatal("journal does not pin the original migration image", err)
-			}
-			// Emulate a crash after one authorized unlink and before directory fsync.
-			if err := os.Remove(path); err != nil {
-				t.Fatal(err)
-			}
-			if err := s.Close(); err != nil {
-				t.Fatal(err)
-			}
-			reopened, err := Open(ctx, root)
-			if err != nil {
-				t.Fatal("interrupted cleanup did not finish", err)
-			}
-			defer reopened.Close()
-			if err := reopened.checkRestoreImagesRetired(ctx); err != nil {
-				t.Fatal(err)
-			}
-		})
+func TestBackupRestoreRetainedCleanupResumesInterruptedUnlink(t *testing.T) {
+	root, request, target := retainedRestoreCopyFixture(t)
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := cleanupSettledRestoreImages(context.Background(), root, map[domain.ID]bool{request: true}); err != nil {
+			t.Fatal("original cleanup did not resume", err)
+		}
+	}
+	if _, err := os.Stat(filepath.Dir(target)); !os.IsNotExist(err) {
+		t.Fatal("retained image directory survived", err)
 	}
 }

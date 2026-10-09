@@ -36,42 +36,36 @@ func TestProjectBehaviorLegacyWritesCannotEraseSettings(t *testing.T) {
 		t.Fatal("failed write changed settings")
 	}
 }
-func TestProjectBehaviorPortableVersion5AndLegacyImports(t *testing.T) {
-	for _, version := range []uint32{1, 2, 3, 4, 5} {
+func TestProjectBehaviorPortableVersionFourAndRetiredImports(t *testing.T) {
+	for _, version := range []uint32{1, 2, 3, 5, 6} {
 		s, _ := newDoctorFixture(t)
 		selection := transferSelection()
 		selection.Bundle.Version = version
-		if version == 5 {
-			v := domain.DefaultSettings()
-			v.AutomaticPlanApproval = true
-			raw, _ := json.Marshal(v)
-			var fields map[string]json.RawMessage
-			_ = json.Unmarshal(raw, &fields)
-			delete(fields, "plan_mode_default")
-			delete(fields, "branch_prefix")
-			raw, _ = json.Marshal(fields)
-			selection.Bundle.Entries = append(selection.Bundle.Entries, domain.ConfigurationEntry{ID: domain.NewID(), Kind: domain.SettingsKind, Document: raw})
-		}
-		preview := transferPreview(t, s, selection)
-		var value domain.ConfigurationImportPreview
-		if domain.Decode(preview, &value) != nil || value.Plan.Version != domain.ConfigurationBundleVersion {
-			t.Fatal("portable version was not upgraded")
-		}
-		if version == 5 {
-			found := false
-			for _, change := range value.Plan.Changes {
-				if change.Kind == domain.SettingsKind {
-					v, err := configurationValue(change.Kind, change.After, false)
-					if err != nil || !v.(*domain.Settings).AutomaticPlanApproval {
-						t.Fatal("explicit automation lost")
-					}
-					found = true
-				}
+		assertRejectedPortableVersion(t, s, selection)
+	}
+	s, _ := newDoctorFixture(t)
+	selection := transferSelection()
+	v := domain.DefaultSettings()
+	v.AutomaticPlanApproval = true
+	raw, _ := json.Marshal(v)
+	selection.Bundle.Entries = append(selection.Bundle.Entries, domain.ConfigurationEntry{ID: domain.NewID(), Kind: domain.SettingsKind, Document: raw})
+	preview := transferPreview(t, s, selection)
+	var value domain.ConfigurationImportPreview
+	if domain.Decode(preview, &value) != nil || value.Plan.Version != domain.ConfigurationBundleVersion {
+		t.Fatal("current portable version lost")
+	}
+	found := false
+	for _, change := range value.Plan.Changes {
+		if change.Kind == domain.SettingsKind {
+			settings, err := configurationValue(change.Kind, change.After, false)
+			if err != nil || !settings.(*domain.Settings).AutomaticPlanApproval {
+				t.Fatal("explicit automation lost")
 			}
-			if !found {
-				t.Fatal("settings omitted")
-			}
+			found = true
 		}
+	}
+	if !found {
+		t.Fatal("settings omitted")
 	}
 }
 
@@ -103,7 +97,7 @@ func TestProjectBehaviorResolvesOnlyOriginalExplicitProject(t *testing.T) {
 func TestProjectBehaviorPortableProjectRemapsCompletePolicy(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	selection := transferSelection()
-	selection.Bundle.Version = 5
+	selection.Bundle.Version = domain.ConfigurationBundleVersion
 	sourceMachine, targetMachine := domain.NewID(), domain.NewID()
 	doctorPut(t, s, domain.MachineKind, targetMachine, 0, domain.Machine{Name: "Selected Worker", OS: "linux", Architecture: "amd64"})
 	selection.Bundle.Machines = []domain.ConfigurationMachine{{ID: sourceMachine, Name: "Original Worker", OS: "linux", Architecture: "amd64"}}

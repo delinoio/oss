@@ -520,7 +520,7 @@ func TestContinuationArchiveTargetsCurrentJobAndRestoreKeepsPause(t *testing.T) 
 }
 
 func TestContinuationRejectsChangedReadinessAndUnprovenPredecessor(t *testing.T) {
-	for _, scenario := range []string{"legacy-completion", "unfinished-cleanup", "unconfirmed-answer", "waiting", "wrong-turn", "paused", "archived", "recovery", "disabled-account", "exhausted-account", "changed-connection", "unvalidated-account", "offline-worker", "incompatible-model"} {
+	for _, scenario := range []string{"legacy-completion", "unfinished-cleanup", "unconfirmed-answer", "waiting", "wrong-turn", "paused", "archived", "recovery", "disabled-account", "exhausted-account", "changed-connection", "unvalidated-account", "offline-worker"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newContinuationFixture(t, domain.ExecutionSucceeded)
 			f.enqueue(t, "retained later input", domain.ExecuteMode)
@@ -557,14 +557,6 @@ func TestContinuationRejectsChangedReadinessAndUnprovenPredecessor(t *testing.T)
 					s.Recovery = domain.NeedsRecovery
 				case "offline-worker":
 					return nil, tx.SetWorkerInstance(f.input.MachineID, domain.ID(f.workerInstance), time.Now().UTC().Add(-time.Minute))
-				case "incompatible-model":
-					mr, err := tx.Get(domain.ModelKind, f.input.Configuration.ModelID)
-					if err != nil {
-						return nil, err
-					}
-					model, _ := store.Decode[domain.Model](mr)
-					model.Harnesses = []domain.Harness{domain.ClaudeCode}
-					return tx.Put(mr.Kind, mr.ID, mr.Revision, "", "", model)
 				default:
 					ar, a, err := accountFromTx(tx, f.input.AccountID, 0)
 					if err != nil {

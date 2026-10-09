@@ -16,7 +16,7 @@ func TestBackupPagesAndInspectionRecheckAuthorityAndInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 3 {
-		if _, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())})); err != nil {
+		if _, err := createCurrentBackupFixture(s, ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -32,14 +32,14 @@ func TestBackupPagesAndInspectionRecheckAuthorityAndInventory(t *testing.T) {
 	if err != nil || checked.Msg.ServerId != string(s.Identity.ServerID) || len(checked.Msg.Sha256) != 64 || len(secrets.refs) != 0 {
 		t.Fatal(checked, err)
 	}
-	if _, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())})); err != nil {
+	if _, err := createCurrentBackupFixture(s, ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())})); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ListBackups(ctx, connect.NewRequest(&pb.ListBackupsRequest{PageSize: 1, PageToken: page.Msg.NextPageToken})); err == nil {
 		t.Fatal("changed inventory retained cursor")
 	}
 	worker := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.WorkerDevice, DeviceID: domain.NewID(), MachineID: domain.NewID()})
-	if _, err := s.CreateBackup(worker, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := s.RequestBackup(worker, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())})); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatal("Worker created backup", err)
 	}
 	if _, err := s.ListBackups(worker, connect.NewRequest(&pb.ListBackupsRequest{})); connect.CodeOf(err) != connect.CodePermissionDenied {
@@ -59,11 +59,11 @@ func TestBackupDeletionRPCIsOwnerClientOnlyAndReturnsCurrentOriginalJob(t *testi
 	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
 		t.Fatal(err)
 	}
-	created, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())}))
+	created, err := createCurrentBackupFixture(s, ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	inspected, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: created.Msg.Id}))
+	inspected, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: created.Msg.Job.BackupId}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,11 +149,11 @@ func TestBackupDeletionReadObservesExactJobBeyondHistoryAndRejectsOtherAuthority
 	}
 	var latest *pb.BackupDeletionJob
 	for range 21 {
-		created, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(domain.NewID())}))
+		created, err := createCurrentBackupFixture(s, ctx, connect.NewRequest(&pb.RequestBackupRequest{RequestId: string(domain.NewID())}))
 		if err != nil {
 			t.Fatal(err)
 		}
-		checked, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: created.Msg.Id}))
+		checked, err := s.InspectBackup(ctx, connect.NewRequest(&pb.InspectBackupRequest{Id: created.Msg.Job.BackupId}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,5 +204,37 @@ func TestBackupDeletionReadObservesExactJobBeyondHistoryAndRejectsOtherAuthority
 	}
 	if _, err := s.GetBackupDeletion(ctx, connect.NewRequest(&pb.GetBackupDeletionRequest{Id: created.Msg.Job.Id})); err == nil {
 		t.Fatal("creation job returned as deletion")
+	}
+}
+
+// Backup inventory/restore fixtures use the current durable acceptance and its
+// retained original job; the retired synchronous RPC grants no creation path.
+func createCurrentBackupFixture(s *Service, ctx context.Context, request *connect.Request[pb.RequestBackupRequest]) (*connect.Response[pb.RequestBackupResponse], error) {
+	accepted, err := s.RequestBackup(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = s.Store.RunBackupCreation(ctx, domain.ID(accepted.Msg.Job.Id), s.Identity.ServerID); err != nil {
+		return nil, err
+	}
+	return accepted, nil
+}
+
+func TestSynchronousBackupIsRetiredWithoutStateMutation(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := s.Store.BindIdentity(ctx, s.Identity.ServerID); err != nil {
+		t.Fatal(err)
+	}
+	id := domain.NewID()
+	if _, err := s.CreateBackup(ctx, connect.NewRequest(&pb.CreateBackupRequest{RequestId: string(id)})); connect.CodeOf(err) != connect.CodeUnimplemented {
+		t.Fatal("retired backup was accepted", err)
+	}
+	if _, err := s.Store.Get(ctx, domain.JobKind, id); domain.SafeError(err).Code != domain.NotFound {
+		t.Fatal("retired request retained a job", err)
+	}
+	page, err := s.ListBackups(ctx, connect.NewRequest(&pb.ListBackupsRequest{}))
+	if err != nil || len(page.Msg.Backups) != 0 {
+		t.Fatal("retired request created a backup", page, err)
 	}
 }

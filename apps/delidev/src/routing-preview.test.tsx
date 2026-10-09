@@ -73,7 +73,7 @@ it("resolves selected API accounts through validated provider metadata without i
 it("deduplicates source and selected identities while preserving ordered evidence and duplicate aliases", async () => {
   const first = account("Work account"), second = account("Work account"), model = newRequestId();
   const inner = { policy: "remaining-quota", selected: second.id, fallback: true, candidates: [candidate(first), { ...candidate(second, "eligible"), score: 0.75, reset_at: "2026-10-07T00:00:00Z" }] };
-  const value = setup([first, second], { ...inner, source_index: 1, sources: [{ source: "subscription:chatgpt", model_id: model, native_model: "model-one", route: { policy: "priority", candidates: [candidate(first, "exhausted")], problem: { code: "missing-input" } } }, { source: "subscription:chatgpt", model_id: model, native_model: "model-two", route: inner }] });
+  const value = setup([first, second], { ...inner, source_index: 1, sources: [{ source: "subscription:chatgpt", model_key: model, native_model: "model-one", route: { policy: "priority", candidates: [candidate(first, "exhausted")], problem: { code: "missing-input" } } }, { source: "subscription:chatgpt", model_key: model, native_model: "model-two", route: inner }] });
   render(<value.Fixture />);
   await waitFor(() => expect(screen.getAllByText("Work account")).toHaveLength(4));
   expect(value.get).toHaveBeenCalledTimes(2);
@@ -233,7 +233,7 @@ it.each(["selected", "policy", "fallback", "order", "eligibility", "quota", "wei
   if (field === "score") candidates[0].score = 0;
   if (field === "reset") candidates[0].reset_at = "2026-10-09T00:00:00Z";
   if (field === "extension") candidates[0].future_evidence = { compared: false };
-  const value = setup([first, second], { ...final, source_index: 0, sources: [{ source: "subscription:chatgpt", model_id: newRequestId(), native_model: "Model", route: inner }] });
+  const value = setup([first, second], { ...final, source_index: 0, sources: [{ source: "subscription:chatgpt", model_key: newRequestId(), native_model: "Model", route: inner }] });
   render(<value.Fixture />);
   await screen.findByText("Final result candidates");
   expect(document.querySelectorAll(".routing-candidates")).toHaveLength(2);
@@ -243,7 +243,7 @@ it.each(["selected", "policy", "fallback", "order", "eligibility", "quota", "wei
 it("reads safe source labels for empty groups with one shared provider read", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "Saved empty source", endpoint: "private.invalid/secret" });
   const source = `api:${provider.id}`;
-  const value = setup([provider], { policy: "priority", candidates: [], sources: [1, 2].map(index => ({ source, model_id: newRequestId(), native_model: `Model ${index}`, route: { policy: "priority", candidates: [] } })) });
+  const value = setup([provider], { policy: "priority", candidates: [], sources: [1, 2].map(index => ({ source, model_key: newRequestId(), native_model: `Model ${index}`, route: { policy: "priority", candidates: [] } })) });
   render(<value.Fixture />);
   await waitFor(() => expect(screen.getAllByText(/Saved empty source · Model/)).toHaveLength(2));
   expect(value.get).toHaveBeenCalledTimes(1);
@@ -266,7 +266,7 @@ it("shares four source and account slots across project response replacement", a
   });
   render(<value.Fixture />);
   await waitFor(() => expect(value.get).toHaveBeenCalledTimes(4));
-  value.preview.mockResolvedValue({ routeJson: encode({ policy: "priority", candidates: [], sources: providers.map(row => ({ source: `api:${row.id}`, model_id: newRequestId(), native_model: "Next model", route: { policy: "priority", candidates: [] } })) }) });
+  value.preview.mockResolvedValue({ routeJson: encode({ policy: "priority", candidates: [], sources: providers.map(row => ({ source: `api:${row.id}`, model_key: newRequestId(), native_model: "Next model", route: { policy: "priority", candidates: [] } })) }) });
   await chooseScrollOption(screen.getByLabelText("Project"), project.id);
   await waitFor(() => expect(value.preview).toHaveBeenCalledTimes(2));
   expect(value.get.mock.calls.filter(([request]) => request.kind !== EntityKind.PROJECT)).toHaveLength(4);
@@ -280,7 +280,7 @@ it("shares four source and account slots across project response replacement", a
 
 it("keeps empty-source failure explicit without guessing a provider or hiding its decision", async () => {
   const id = newRequestId();
-  const value = setup([], { policy: "priority", candidates: [], sources: [{ source: `api:${id}`, model_id: newRequestId(), native_model: "Original model", route: { policy: "priority", candidates: [], fallback: true }, problem: { code: "missing_input", message: "Original source problem" } }] });
+  const value = setup([], { policy: "priority", candidates: [], sources: [{ source: `api:${id}`, model_key: newRequestId(), native_model: "Original model", route: { policy: "priority", candidates: [], fallback: true }, problem: { code: "missing_input", message: "Original source problem" } }] });
   value.get.mockRejectedValue(new ConnectError("private-metadata-value", Code.PermissionDenied));
   render(<value.Fixture />);
   await screen.findAllByText("Service information unavailable · Original model");
@@ -351,7 +351,7 @@ it("keeps routing reset countdowns read-only and preserves independent original 
 it("starts with one selected summary and expands all evidence without reads", async () => {
   const project = resource(EntityKind.PROJECT, { name: "Another project" });
   const row = account("Personal"), inner = { policy: "priority", selected: row.id, candidates: [{ ...candidate(row, "eligible"), quota_state: "stale", score: 0, reset_at: "2026-10-08T00:00:00Z" }] };
-  const value = setup([row, project], { ...inner, source_index: 0, sources: [{ source: "subscription:chatgpt", model_id: newRequestId(), native_model: "gpt-6", route: inner }] });
+  const value = setup([row, project], { ...inner, source_index: 0, sources: [{ source: "subscription:chatgpt", model_key: newRequestId(), native_model: "gpt-6", route: inner }] });
   render(<value.Fixture />);
   await waitFor(() => expect(screen.getAllByText("Personal")).toHaveLength(2));
   const details = document.querySelector<HTMLDetailsElement>(".routing-details")!;
@@ -384,7 +384,7 @@ it("starts with one selected summary and expands all evidence without reads", as
 });
 
 it.each([null, []])("distinguishes unavailable candidate counts from explicit zero (%j)", async candidates => {
-  const value = setup([], { policy: "priority", candidates, fallback: true, sources: [{ source: "subscription:chatgpt", model_id: newRequestId(), native_model: "Model", route: { policy: "priority", candidates: [] }, problem: { code: "missing_input", message: "Original source problem" } }] });
+  const value = setup([], { policy: "priority", candidates, fallback: true, sources: [{ source: "subscription:chatgpt", model_key: newRequestId(), native_model: "Model", route: { policy: "priority", candidates: [] }, problem: { code: "missing_input", message: "Original source problem" } }] });
   render(<value.Fixture />);
   await screen.findByText(candidates === null ? "Candidate count unavailable" : "0 candidates");
   const details = document.querySelector<HTMLDetailsElement>(".routing-details")!;
@@ -397,7 +397,7 @@ it.each([null, []])("distinguishes unavailable candidate counts from explicit ze
 });
 
 it("does not infer selected eligibility or quota from source-only evidence", async () => {
-  const row = account("Personal"), value = setup([row], { policy: "priority", selected: row.id, candidates: [], source_index: 0, sources: [{ source: "subscription:chatgpt", model_id: newRequestId(), native_model: "Model", route: { policy: "priority", selected: row.id, candidates: [candidate(row, "eligible")] } }] });
+  const row = account("Personal"), value = setup([row], { policy: "priority", selected: row.id, candidates: [], source_index: 0, sources: [{ source: "subscription:chatgpt", model_key: newRequestId(), native_model: "Model", route: { policy: "priority", selected: row.id, candidates: [candidate(row, "eligible")] } }] });
   render(<value.Fixture />);
   await waitFor(() => expect(screen.getAllByText("Personal")).toHaveLength(2));
   const summary = document.querySelector(".routing-result")!;

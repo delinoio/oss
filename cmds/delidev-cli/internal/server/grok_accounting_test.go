@@ -50,8 +50,8 @@ func TestGrokAccountingRequiresCleanupAndKeepsOriginalUnitOnce(t *testing.T) {
 			if first.AccountingProfile != profile || first.Totals.Responses != 0 || first.Totals.Total.KnownTotal != "" || len(unit) != 1 || unit[0].Kind != pb.AccountingUnitKind_ACCOUNTING_UNIT_KIND_GROK_CLOSED_INPUT || unit[0].Units != 1 || unit[0].KnownTotal != total || unit[0].MeasuredUnits != 1 || unit[0].ActualCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || unit[0].EstimatedCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || first.EstimatedCost != pb.UsageCostState_USAGE_COST_STATE_UNAVAILABLE || len(first.Estimates.Currencies) != 0 || first.Estimates.UnpricedResponses != 0 {
 				t.Fatalf("overlap, precision or pricing changed: %+v", first)
 			}
-			if len(first.Groups) != 1 || first.Groups[0].AccountId != string(f.input.AccountID) || first.Groups[0].ModelId != string(f.input.Configuration.ModelID) || first.Groups[0].Totals.Accounting[0].KnownTotal != total || len(first.Analytics.Models) != 1 || first.Analytics.Models[0].Totals.Accounting[0].KnownTotal != total {
-				t.Fatal("assignment/group/model attribution lost")
+			if len(first.Groups) != 1 || first.Groups[0].AccountId != string(f.input.AccountID) || first.Groups[0].ModelId != "" || first.Groups[0].GetModel().GetNativeId() != f.input.Configuration.NativeModel || first.Groups[0].GetModel().GetProviderId() != string(f.input.Configuration.ProviderID) || first.Groups[0].GetModel().GetSubscriptionService() != wireModelKey(f.input.Configuration.ModelID).GetSubscriptionService() || first.Groups[0].Totals.Accounting[0].KnownTotal != total || len(first.Analytics.Models) != 1 || first.Analytics.Models[0].Totals.Accounting[0].KnownTotal != total {
+				t.Fatalf("assignment/group/model attribution lost: groups=%+v models=%+v native=%q", first.Groups, first.Analytics.Models, f.input.Configuration.NativeModel)
 			}
 			dayUnits := uint32(0)
 			for _, day := range first.Analytics.Days {
@@ -82,7 +82,7 @@ func TestGrokAccountingRequiresCleanupAndKeepsOriginalUnitOnce(t *testing.T) {
 				}
 			}
 			reader := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL)
-			for _, request := range []*pb.GetUsageSummaryRequest{{AccountingProfile: profile, AccountId: string(domain.NewID())}, {AccountingProfile: profile, ModelId: string(domain.NewID())}, {AccountingProfile: profile, SessionId: string(domain.NewID())}} {
+			for _, request := range []*pb.GetUsageSummaryRequest{{AccountingProfile: profile, AccountId: string(domain.NewID())}, {AccountingProfile: profile, Model: wireModel(domain.ModelIdentity{SubscriptionService: domain.SubscriptionGrok, NativeID: "different-native-model"})}, {AccountingProfile: profile, SessionId: string(domain.NewID())}} {
 				filtered, err := reader.GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, request))
 				if err != nil || len(filtered.Msg.Totals.Accounting) != 0 {
 					t.Fatal("Grok filter ignored", err)

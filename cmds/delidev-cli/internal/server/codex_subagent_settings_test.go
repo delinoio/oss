@@ -17,7 +17,7 @@ import (
 func TestCodexChildModelSnapshotDoesNotFollowAgentOrCatalogEdits(t *testing.T) {
 	f := newFirstDispatchFixture(t)
 	account := accountBody(t, f.account)
-	child := f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Child", NativeID: "child-model", ProviderID: account.ProviderID, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})
+	childID := (domain.ModelIdentity{ProviderID: account.ProviderID, NativeID: "child-model"}).Key()
 	f.mutateAgent(t, func(a *domain.Agent) {
 		a.Options.SubagentModel = "child-model"
 		a.Options.SubagentEffort = "low"
@@ -39,7 +39,7 @@ func TestCodexChildModelSnapshotDoesNotFollowAgentOrCatalogEdits(t *testing.T) {
 	}
 	before, _ := store.Decode[domain.Session](f.refresh(t))
 	c := before.InitialExecution.Configuration
-	if c.SubagentModel == nil || c.SubagentModel.ModelID != domain.ID(child.Id) || c.SubagentModel.ModelRevision != child.Revision || c.Options.MaxConcurrency != 2 || c.Options.SubagentEffort != "low" {
+	if c.SubagentModel == nil || c.SubagentModel.ModelID != childID || c.SubagentModel.ModelRevision != 1 || c.Options.MaxConcurrency != 2 || c.Options.SubagentEffort != "low" {
 		t.Fatal("child model was not pinned with the original snapshot")
 	}
 	f.mutateAgent(t, func(a *domain.Agent) {
@@ -53,25 +53,13 @@ func TestCodexChildModelSnapshotDoesNotFollowAgentOrCatalogEdits(t *testing.T) {
 	if string(a) != string(b) {
 		t.Fatal("later Agent edit rewrote child settings")
 	}
-	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.child-catalog-edit", nil, func(tx *store.Tx) (any, error) {
-		r, e := tx.Get(domain.ModelKind, domain.ID(child.Id))
-		if e != nil {
-			return nil, e
-		}
-		m, e := store.Decode[domain.Model](r)
-		if e != nil {
-			return nil, e
-		}
-		m.NativeID = "different-model"
-		return tx.Put(domain.ModelKind, r.ID, r.Revision, "", "", m)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Current metadata has no independent child registry to rename. The frozen
+	// original child source remains admissible despite later Worker metadata edits.
 	err = f.service.Store.Read(context.Background(), func(tx *store.Tx) error { return tx.RequireCodexSubagentModel(c, account) })
-	if domain.SafeError(err).Code != domain.Unsupported {
-		t.Fatal("catalog rename substituted the original child authority", err)
+	if err != nil {
+		t.Fatal("Worker edit changed original child authority", err)
 	}
+
 }
 
 func TestCodexChildModelRequiresSameAccountAndWorkerCapabilityBeforeClaim(t *testing.T) {
@@ -83,7 +71,7 @@ func TestCodexChildModelRequiresSameAccountAndWorkerCapabilityBeforeClaim(t *tes
 			value := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Foreign", Endpoint: "https://example.invalid", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth})
 			provider = domain.ID(value.Id)
 		}
-		f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Child", NativeID: "child-model", ProviderID: provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})
+		_ = provider // An unrelated source cannot supply child execution authority.
 		f.mutateAgent(t, func(a *domain.Agent) { a.Options.SubagentModel = "child-model" })
 		err := f.service.dispatchExecution(context.Background(), f.refresh(t))
 		if domain.SafeError(err).Code != domain.Unsupported {
@@ -102,18 +90,13 @@ func TestCodexChildRelayPinsModelReferencesDiagnosticsAndOriginalAccount(t *test
 		json.NewEncoder(w).Encode(map[string]any{"id": "resp_child_fixture", "model": "child-model", "output": []any{}})
 	}))
 	defer upstream.Close()
-	childID := domain.NewID()
+	var childID domain.ID
 	f := newConfiguredAuthorityFixture(t, upstream.URL, func(i *domain.ExecutionJobInput) {
+		childID = (domain.ModelIdentity{ProviderID: i.Configuration.ProviderID, NativeID: "child-model"}).Key()
 		i.Configuration.Options.SubagentModel = "child-model"
 		i.Configuration.SubagentModel = &domain.ExecutionSubagentModel{ModelID: childID, ModelRevision: 1, NativeModel: "child-model"}
 		i.ConfigurationDigest, _ = i.Configuration.Digest()
 	}, false)
-	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.child-relay-model", nil, func(tx *store.Tx) (any, error) {
-		return tx.Put(domain.ModelKind, childID, 0, "", "", domain.Model{Name: "Child", NativeID: "child-model", ProviderID: f.input.Configuration.ProviderID, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	f.registerGrant(t)
 	lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
 	if err != nil {

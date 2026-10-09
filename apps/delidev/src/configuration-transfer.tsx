@@ -25,7 +25,7 @@ const transferStages = [
 ];
 
 enum ImportAction { Create = "create", Reuse = "reuse", Replace = "replace" }
-const kinds: Record<string, EntityKind> = { provider: EntityKind.PROVIDER, model: EntityKind.MODEL, account: EntityKind.ACCOUNT, template: EntityKind.TEMPLATE, agent: EntityKind.AGENT, repository: EntityKind.REPOSITORY, project: EntityKind.PROJECT, settings: EntityKind.SETTINGS };
+const kinds: Record<string, EntityKind> = { provider: EntityKind.PROVIDER, account: EntityKind.ACCOUNT, template: EntityKind.TEMPLATE, agent: EntityKind.AGENT, repository: EntityKind.REPOSITORY, project: EntityKind.PROJECT, settings: EntityKind.SETTINGS };
 const canonicalId = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const encoder = new TextEncoder(), decoder = new TextDecoder("utf-8", { fatal: true });
 const bundleLimit = 384 << 10;
@@ -38,16 +38,12 @@ const name = (entry: Entry) => text(entry.document.name) || text(entry.document.
 function readBundle(raw: string): Bundle {
   if (encoder.encode(raw).byteLength > bundleLimit) throw new ProductError("validation.0c01933238f8");
   const value = object(JSON.parse(raw));
-  if (![1, 2, 3, 4, 5, 6].includes(value.version as number) || !Array.isArray(value.entries) || !Array.isArray(value.machines) || value.entries.length > 256 || value.machines.length > 64) throw new ProductError("validation.71aacc919010");
+  if (value.version !== 4 || !Array.isArray(value.entries) || !Array.isArray(value.machines) || value.entries.length > 256 || value.machines.length > 64) throw new ProductError("validation.71aacc919010");
   const ids = new Set<string>();
   for (const item of value.entries) {
     const entry = object(item), id = text(entry.id);
     if (!canonicalId.test(id) || ids.has(id) || !Object.hasOwn(kinds, text(entry.kind)) || !entry.document || typeof entry.document !== "object" || Array.isArray(entry.document)) throw new ProductError("validation.c2538b95da40");
     const data = object(entry.document);
-    if (value.version === 1 && (data.type === "subscription" || data.source_kind === "subscription" || data.protocol === "native-subscription" || data.subscription_service !== undefined)) throw new ProductError("validation.3944ec33203a");
-    if (Number(value.version) < 5 && ["project", "settings"].includes(text(entry.kind)) && (data.settings !== undefined || data.automatic_plan_approval !== undefined)) throw new ProductError("validation.71aacc919010");
-    if (Number(value.version) < 4 && (data.api_formats !== undefined || data.api_protocol !== undefined)) throw new ProductError("validation.71aacc919010");
-    if (Number(value.version) < 3 && entry.kind === "agent" && data.routes !== undefined) throw new ProductError("validation.sourceRoutesVersion");
     ids.add(id);
   }
   for (const item of value.machines) {
@@ -74,7 +70,7 @@ function readBundle(raw: string): Bundle {
 function readPreview(bytes: Uint8Array): Preview {
   if (bytes.byteLength > 1 << 20) throw new ProductError("validation.6eb6dd2fc3cb");
   const value = object(JSON.parse(decoder.decode(bytes))), plan = object(value.plan);
-  if (!text(value.token) || ![1, 2, 3, 4, 5, 6].includes(plan.version as number) || !Array.isArray(plan.changes) || !plan.changes.length || plan.changes.length > 256 || !Array.isArray(plan.machines)) throw new ProductError("validation.9b79652ebc21");
+  if (!text(value.token) || plan.version !== 4 || !Array.isArray(plan.changes) || !plan.changes.length || plan.changes.length > 256 || !Array.isArray(plan.machines)) throw new ProductError("validation.9b79652ebc21");
   for (const item of plan.changes) {
     const change = object(item);
     if (!canonicalId.test(text(change.id)) || !canonicalId.test(text(change.source_id)) || !Object.hasOwn(kinds, text(change.kind)) || !Object.values(ImportAction).includes(change.action as ImportAction) || !change.after || typeof change.after !== "object" || Array.isArray(change.after)) throw new ProductError("validation.028484655c91");

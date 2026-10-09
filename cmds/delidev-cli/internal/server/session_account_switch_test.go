@@ -31,7 +31,7 @@ func accountSwitchFixture(t *testing.T, mode domain.NativeHistoryMode, settle bo
 	}
 	b = connected.Msg.Account
 	base.mutateAgent(t, func(agent *domain.Agent) {
-		agent.Accounts = append(agent.Accounts, domain.WeightedAccount{ID: domain.ID(b.Id), Weight: 1})
+		agent.Routes[0].Accounts = append(agent.Routes[0].Accounts, domain.WeightedAccount{ID: domain.ID(b.Id), Weight: 1})
 	})
 	f := &continuationFixture{firstDispatchFixture: base, thread: domain.NewID()}
 	if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {

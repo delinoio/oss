@@ -424,13 +424,12 @@ func (s *Store) restoreBackupWithBarrier(ctx context.Context, request domain.ID,
 	if !reflect.DeepEqual(observation.Backup, in.Backup) || observation.SHA256 != in.SHA256 {
 		return result, false, restoreConflict()
 	}
-	if err := migrateRestoreImage(ctx, stage, dir); err != nil {
+	if err := validateRestoreImage(ctx, stage); err != nil {
 		return result, false, err
 	}
-	migrationImages, err := fingerprintRestoreMigrationImages(ctx, dir, in.ServerID)
-	if err != nil {
-		return result, false, err
-	}
+	// Current restores create no historical upgrade copies. Retained old
+	// journal image claims remain independently validated during recovery.
+	var migrationImages *restoreMigrationImages
 	safety := filepath.Join(dir, "safety.sqlite")
 	if err := vacuumPrivate(ctx, s.db, safety); err != nil {
 		return result, false, err

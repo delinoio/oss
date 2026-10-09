@@ -42,19 +42,12 @@ func checkImageRoute(tx *store.Tx, agentID, machineID domain.ID, refs []domain.I
 	if agent.Harness != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.ImageInputsV1) {
 		return domain.UnsupportedImageInput()
 	}
-	for _, modelID := range agent.ModelIDs() {
-		row, err := tx.Get(domain.ModelKind, modelID)
-		if err != nil {
-			return err
-		}
-		model, err := store.Decode[domain.Model](row)
-		if err != nil {
-			return err
-		}
-		if !slices.Contains(model.InputModalities, "image") {
+	for _, route := range agent.SourceRoutes() {
+		if route.Model == nil || !slices.Contains(route.Model.InputModalities, "image") {
 			return domain.UnsupportedImageInput()
 		}
 	}
+
 	for _, ref := range refs {
 		if ref.MachineID != machineID {
 			return domain.InvalidImageInput()

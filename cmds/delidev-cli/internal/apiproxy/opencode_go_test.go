@@ -14,7 +14,7 @@ import (
 )
 
 func TestOpenCodeGoRelayUsesOnlyOriginalNativeSessionAndFixedProfile(t *testing.T) {
-	scope := Scope{ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ModelID: domain.NewID(), NativeModel: "fixture-model", Harness: domain.OpenCode, SubscriptionService: domain.SubscriptionOpenCodeGo, Provider: domain.OpenCodeGoProvider(), Operations: []Operation{ChatCompletion}, OpenCodeSession: "ses_0123456789abABCDEFGHIJKLMN"}
+	scope := Scope{ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ModelID: (domain.ModelIdentity{SubscriptionService: domain.SubscriptionOpenCodeGo, NativeID: "fixture-model"}).Key(), NativeModel: "fixture-model", Harness: domain.OpenCode, SubscriptionService: domain.SubscriptionOpenCodeGo, Provider: domain.OpenCodeGoProvider(), Operations: []Operation{ChatCompletion}, OpenCodeSession: "ses_0123456789abABCDEFGHIJKLMN"}
 	if err := scope.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestOpenCodeGoFailuresNeverRetryOrFallBack(t *testing.T) {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			authority := &fixtureAuthority{ctx: ctx, scope: Scope{ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ModelID: domain.NewID(), NativeModel: "fixture-model", Harness: domain.OpenCode, SubscriptionService: domain.SubscriptionOpenCodeGo, Provider: domain.OpenCodeGoProvider(), Operations: []Operation{ChatCompletion}, OpenCodeSession: "ses_0123456789abABCDEFGHIJKLMN"}}
+			authority := &fixtureAuthority{ctx: ctx, scope: Scope{ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ModelID: (domain.ModelIdentity{SubscriptionService: domain.SubscriptionOpenCodeGo, NativeID: "fixture-model"}).Key(), NativeModel: "fixture-model", Harness: domain.OpenCode, SubscriptionService: domain.SubscriptionOpenCodeGo, Provider: domain.OpenCodeGoProvider(), Operations: []Operation{ChatCompletion}, OpenCodeSession: "ses_0123456789abABCDEFGHIJKLMN"}}
 			var calls int
 			handler := New(authority, nil)
 			handler.client.Transport = oauthProxyTransport(func(req *http.Request) (*http.Response, error) {
@@ -96,7 +96,7 @@ func TestOpenCodeGoFailuresNeverRetryOrFallBack(t *testing.T) {
 func TestOpenCodeGoMissingProofRefusesCredentialBeforeHTTP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	authority := &fixtureAuthority{ctx: ctx, scope: Scope{ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ModelID: domain.NewID(), NativeModel: "fixture-model", Harness: domain.OpenCode, SubscriptionService: domain.SubscriptionOpenCodeGo, Provider: domain.OpenCodeGoProvider(), Operations: []Operation{ChatCompletion}}}
+	authority := &fixtureAuthority{ctx: ctx, scope: Scope{ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ModelID: (domain.ModelIdentity{SubscriptionService: domain.SubscriptionOpenCodeGo, NativeID: "fixture-model"}).Key(), NativeModel: "fixture-model", Harness: domain.OpenCode, SubscriptionService: domain.SubscriptionOpenCodeGo, Provider: domain.OpenCodeGoProvider(), Operations: []Operation{ChatCompletion}}}
 	request := httptest.NewRequest("POST", Prefix+"/chat/completions", strings.NewReader(`{"model":"fixture-model","messages":[]}`))
 	request.RemoteAddr = "127.0.0.1:1234"
 	request.Header.Set("Content-Type", "application/json")

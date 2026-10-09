@@ -11,19 +11,16 @@ import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 
 function fixture() {
-  const resource = (kind: EntityKind, data: Record<string, unknown>) => create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode(data) });
-  const provider = resource(EntityKind.PROVIDER, { name: "Fixture API", protocol: "openai-responses", endpoint: "https://api.example.test/v1", enabled: true, authentication: "keyless", discovery: true });
-  const account = resource(EntityKind.ACCOUNT, { alias: "Fixture account", type: "api", provider_id: provider.id, health: "ready", enabled: true, connection: { authentication: "keyless" } });
+  const resource = (kind: EntityKind, data: Record<string, unknown>) => create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: [EntityKind.PROVIDER, EntityKind.ACCOUNT].includes(kind) ? 3 : 1, documentJson: encode(data) });
+  const provider = resource(EntityKind.PROVIDER, { name: "Fixture API", api_formats: [{ protocol: "openai-responses", endpoint: "https://api.example.test/v1", authentication: "keyless" }], enabled: true, discovery: true });
+  const account = resource(EntityKind.ACCOUNT, { alias: "Fixture account", type: "api", provider_id: provider.id, api_protocol: "openai-responses", health: "ready", enabled: true, connection: { authentication: "keyless" } });
   const models = Array.from({ length: 5 }, (_, index) => resource(EntityKind.MODEL, { name: `Fixture model ${index}`, native_id: `fixture-${index}`, provider_id: provider.id, hidden: false, harnesses: [] }));
-  const search = vi.fn(async (request: { pageToken: string; query: string }) => {
-    const index = Number(request.pageToken || 0);
-    return { models: request.query ? models.filter(row => document(row).native_id === request.query) : [models[index]], providers: [provider], nextPageToken: request.query || index === 4 ? "" : String(index + 1) };
-  });
+  const search = vi.fn(async (_request:unknown) => ({accountId:account.id,accountRevision:account.revision,providerId:provider.id,providerRevision:provider.revision,connectionId:"",models:models.map((_row,index)=>({nativeId:`fixture-${index}`,displayName:`Fixture model ${index}`,inputModalities:["text"]}))}));
   const get = vi.fn(async (request: { id: string }) => ({ resource: [provider, account, ...models].find(row => row.id === request.id) }));
   const save = vi.fn();
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
-    router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ providerId: provider.id, provider, displayName: "Fixture API", enabled: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }), searchModels: search });
+    router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ providerId: provider.id, provider, displayName: "Fixture API", enabled: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER] }), listEndpointModels: search });
     router.service(ResourceService, { getResource: get, listResources: () => ({ resources: [account] }) });
     router.service(ConfigurationService, { saveAgentWorker: save });
   });
@@ -47,38 +44,14 @@ async function modelStep(value: ReturnType<typeof fixture>) {
   await waitFor(() => expect(screen.getByRole("button", { name: "Next" }).matches(":disabled")).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   const input = await screen.findByRole("combobox", { name: "Model for Fixture API" });
+  expect(value.search).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh models from endpoint" }));
   fireEvent.focus(input); await screen.findByRole("option", { name: /Fixture model 0/ });
   return input as HTMLInputElement;
 }
 
-it("keeps all reached model projections but re-reads an evicted saved model at its exact revision before selection", async () => {
-  const value = fixture(), input = await modelStep(value);
-  for (let index = 1; index <= 4; index++) {
-    fireEvent.click(screen.getByRole("button", { name: /Load more Source 1 model pages/ }));
-    await screen.findByRole("option", { name: new RegExp(`Fixture model ${index}`) });
-  }
-  expect(screen.getAllByRole("option", { name: /Fixture model/ })).toHaveLength(5);
-  let resolve!: (response: { resource: Resource | undefined }) => void;
-  value.get.mockImplementation(async request => request.id === value.models[0].id ? await new Promise(done => { resolve = done; }) : { resource: [value.provider, value.account, ...value.models].find(row => row.id === request.id) });
-  fireEvent.click(screen.getByRole("option", { name: /Fixture model 0/ }));
-  await waitFor(() => expect(resolve).toBeTypeOf("function"));
-  expect(input.value).toBe(""); expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
-  await act(async () => resolve({ resource: value.models[0] }));
-  await waitFor(() => expect(input.value).toBe("fixture-0"));
-  expect(value.get.mock.calls.some(([request]) => request.id === value.models[0].id)).toBe(true);
-  expect(value.save).not.toHaveBeenCalled();
-});
-it("fences an ignored-abort model selection after the original wizard becomes inactive", async () => {
-  const value = fixture(), input = await modelStep(value);
-  let resolve!: (response: { resource: Resource | undefined }) => void;
-  value.get.mockImplementation(async request => request.id === value.models[0].id ? await new Promise(done => { resolve = done; }) : { resource: [value.provider, value.account, ...value.models].find(row => row.id === request.id) });
-  fireEvent.click(screen.getByRole("option", { name: /Fixture model 0/ }));
-  await waitFor(() => expect(resolve).toBeTypeOf("function"));
-  value.rendered.rerender(value.view(false));
-  await act(async () => resolve({ resource: value.models[0] }));
-  expect(input.value).toBe(""); expect(value.save).not.toHaveBeenCalled();
-});
-
+it("selects an endpoint native ID without a saved Model read",async()=>{const value=fixture(),input=await modelStep(value);fireEvent.click(screen.getByRole("option",{name:/Fixture model 0/}));expect(input.value).toBe("fixture-0");expect(value.get.mock.calls.every(([request])=>!value.models.some(row=>row.id===request.id))).toBe(true);expect(value.save).not.toHaveBeenCalled();});
+it("keeps selected native ID stable after endpoint refresh and an inactive visit",async()=>{const value=fixture(),input=await modelStep(value);fireEvent.click(screen.getByRole("option",{name:/Fixture model 0/}));value.rendered.rerender(value.view(false));value.rendered.rerender(value.view());expect(input.value).toBe("fixture-0");expect(value.save).not.toHaveBeenCalled();});
 
 it("does not treat the seeded account label as independent source proof", async () => {
   const value = fixture();

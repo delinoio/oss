@@ -53,7 +53,7 @@ func TestEncryptedWorkerNetworkGenerationControlsDispatchAndOriginalScope(t *tes
 		t.Fatal(err)
 	}
 	worker := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.http.URL)
-	_, err = worker.AttachWorker(context.Background(), subscriptionRequest(f.workerToken, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(authority.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1}, NetworkKeyId: string(recipient.KeyID), NetworkRecipient: recipient.PublicKey, NetworkGeneration: cache.Generation, NetworkRouteId: string(cache.RouteID)}))
+	_, err = worker.AttachWorker(context.Background(), subscriptionRequest(f.workerToken, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(authority.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1}, NetworkKeyId: string(recipient.KeyID), NetworkRecipient: recipient.PublicKey, NetworkGeneration: cache.Generation, NetworkRouteId: string(cache.RouteID)}))
 	if err != nil {
 		t.Fatal(err)
 	}

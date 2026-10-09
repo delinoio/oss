@@ -20,7 +20,8 @@ configure({ asyncUtilTimeout: 5000 });
 
 type Page = { resources: Resource[]; nextPageToken?: string };
 function resource(kind: EntityKind, data: Document, revision = 8n) {
-  return create(ResourceSchema, { kind, id: newRequestId(), schemaVersion: 1, revision, documentJson: encode(data) });
+  if (kind === EntityKind.AGENT) data = { ...data, routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture-native" }, accounts: [{ id: newRequestId(), weight: 1 }] }] };
+  return create(ResourceSchema, { kind, id: newRequestId(), schemaVersion: kind === EntityKind.AGENT ? 4 : 1, revision, documentJson: encode(data) });
 }
 function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise<Page>, capabilities: SystemCapability[] = []) {
   const list = vi.fn((request: ListResourcesRequest) => request.filter?.kind === EntityKind.SETTINGS && read

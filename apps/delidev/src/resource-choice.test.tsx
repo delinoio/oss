@@ -12,6 +12,10 @@ import { encode } from "./documents";
 import { RunnerRemediationProvider } from "./runner-remediation";
 import { i18n } from "./localization";
 
+function agentDocument(value: Record<string, unknown>) {
+  return encode({ routes: [{ model: { provider_id: newRequestId(), native_id: "fixture-native" }, accounts: [{ id: newRequestId() }] }], ...value });
+}
+
 it("applies a delayed exact selection to the current sibling form draft", async () => {
   const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Runner" }) });
   let release!: () => void;
@@ -93,7 +97,7 @@ it("retains exact selected Runner changes without a shortcut or inspection prese
 
 it("decorates exact Agent IDs from their top-level harness without model, account or provider reads", async () => {
   const harnesses = ["codex", "claude-code", "opencode", "grok-build"];
-  const rows = harnesses.map(harness => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 3, documentJson: encode({ name: "Equal Agent name", harness, routes: [{ model_id: newRequestId(), accounts: [{ id: newRequestId() }] }, { model_id: newRequestId(), harness: "grok-build", accounts: [{ id: newRequestId() }] }] }) }));
+  const rows = harnesses.map(harness => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 4, documentJson: agentDocument({ name: "Equal Agent name", harness, routes: [{ model: { provider_id: newRequestId(), native_id: "fixture-native" }, accounts: [{ id: newRequestId() }] }, { model: { provider_id: newRequestId(), native_id: "fixture-native" }, harness: "grok-build", accounts: [{ id: newRequestId() }] }] }) }));
   const reads = vi.fn(request => ({ resource: rows.find(row => row.id === request.id) })), change = vi.fn();
   const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: rows }), getResource: reads }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -125,8 +129,8 @@ it("decorates exact Agent IDs from their top-level harness without model, accoun
 });
 
 it.each([false, true])("uses the exact off-page Agent Resource, including resolvedChoice fallback %s", async resolved => {
-  const onPage = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Equal name", harness: "codex" }) });
-  const selected = create(ResourceSchema, { ...onPage, id: newRequestId(), revision: 5n, documentJson: encode({ name: "Equal name", harness: "grok-build" }) });
+  const onPage = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 4, documentJson: agentDocument({ name: "Equal name", harness: "codex" }) });
+  const selected = create(ResourceSchema, { ...onPage, id: newRequestId(), revision: 5n, documentJson: agentDocument({ name: "Equal name", harness: "grok-build" }) });
   const reads = vi.fn((_request: { id: string; kind: EntityKind }) => resolved ? {} : { resource: selected });
   const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [onPage] }), getResource: reads }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -141,7 +145,7 @@ it.each([false, true])("uses the exact off-page Agent Resource, including resolv
 });
 
 it.each(["unknown", "missing", "unsupported", "wrong-id", "unavailable", "zero-revision"])("keeps a blank selected Agent decoration for %s evidence", async state => {
-  const selected = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: state === "zero-revision" ? 0n : 1n, schemaVersion: state === "unsupported" ? 99 : 1, documentJson: encode({ name: "Selected name", ...(state === "missing" ? {} : { harness: state === "unknown" ? "future-harness" : "codex" }) }) });
+  const selected = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: state === "zero-revision" ? 0n : 1n, schemaVersion: state === "unsupported" ? 99 : 4, documentJson: agentDocument({ name: "Selected name", ...(state === "missing" ? {} : { harness: state === "unknown" ? "future-harness" : "codex" }) }) });
   const response = state === "wrong-id" ? create(ResourceSchema, { ...selected, id: newRequestId() }) : selected;
   const read = vi.fn(() => { if (state === "unavailable") throw new ConnectError("Not found", Code.NotFound); return { resource: response }; });
   const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [] }), getResource: read }));
@@ -156,7 +160,7 @@ it.each(["unknown", "missing", "unsupported", "wrong-id", "unavailable", "zero-r
   client.clear();
 });
 
-it.each([EntityKind.PROJECT, EntityKind.MACHINE, EntityKind.MODEL, EntityKind.ACCOUNT])("does not decorate non-Agent kind %s even if its data contains a harness", async kind => {
+it.each([EntityKind.PROJECT, EntityKind.MACHINE, EntityKind.ACCOUNT])("does not decorate non-Agent kind %s even if its data contains a harness", async kind => {
   const row = create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Plain choice", harness: "codex" }) });
   const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [row] }), getResource: () => ({ resource: row }) }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -168,8 +172,8 @@ it.each([EntityKind.PROJECT, EntityKind.MACHINE, EntityKind.MODEL, EntityKind.AC
 });
 
 it("does not borrow a reached row's harness for its independently resolved selected identity", async () => {
-  const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Same Agent", harness: "codex" }) });
-  const exact = create(ResourceSchema, { ...row, revision: 2n, documentJson: encode({ name: "Same Agent", harness: "claude-code" }) });
+  const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 4, documentJson: agentDocument({ name: "Same Agent", harness: "codex" }) });
+  const exact = create(ResourceSchema, { ...row, revision: 2n, documentJson: agentDocument({ name: "Same Agent", harness: "claude-code" }) });
   const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [row] }), getResource: () => ({ resource: exact }) }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Agent" kind={EntityKind.AGENT} value={row.id} active change={vi.fn()} /></QueryClientProvider></TransportProvider>);
@@ -182,7 +186,7 @@ it("does not borrow a reached row's harness for its independently resolved selec
 });
 
 it("reserves blank option slots for missing and unknown harnesses instead of inferring their names", async () => {
-  const rows = [undefined, "future-harness"].map(harness => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Codex", harness }) }));
+  const rows = [undefined, "future-harness"].map(harness => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 4, documentJson: agentDocument({ name: "Codex", harness }) }));
   const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: rows }) }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Agent" kind={EntityKind.AGENT} value="" active change={vi.fn()} /></QueryClientProvider></TransportProvider>);
@@ -195,13 +199,13 @@ it("reserves blank option slots for missing and unknown harnesses instead of inf
 });
 
 it("fences a pending Agent selection and its decoration when the original connection is replaced", async () => {
-  const first = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Retained Agent", harness: "codex" }) });
-  const target = create(ResourceSchema, { ...first, id: newRequestId(), documentJson: encode({ name: "Pending Agent", harness: "claude-code" }) });
+  const first = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 4, documentJson: agentDocument({ name: "Retained Agent", harness: "codex" }) });
+  const target = create(ResourceSchema, { ...first, id: newRequestId(), documentJson: agentDocument({ name: "Pending Agent", harness: "claude-code" }) });
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const reads = vi.fn(async request => { if (request.id === target.id) await gate; return { resource: request.id === first.id ? first : target }; });
   const original = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [first, target] }), getResource: reads }));
-  const updated = create(ResourceSchema, { ...first, revision: 2n, documentJson: encode({ name: "Retained Agent", harness: "opencode" }) });
+  const updated = create(ResourceSchema, { ...first, revision: 2n, documentJson: agentDocument({ name: "Retained Agent", harness: "opencode" }) });
   const replacement = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [updated] }), getResource: () => ({ resource: updated }) }));
   const oldClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }), newClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }), change = vi.fn();
   const view = (transport: typeof original, client: QueryClient) => <TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Agent" kind={EntityKind.AGENT} value={first.id} active change={change} /></QueryClientProvider></TransportProvider>;
@@ -218,4 +222,16 @@ it("fences a pending Agent selection and its decoration when the original connec
   expect(trigger.querySelector("[data-harness=claude-code]")).toBeNull();
   expect(trigger.querySelector("[data-harness=opencode]")).toBeTruthy();
   oldClient.clear(); newClient.clear();
+});
+
+it("rejects retired Model resources without inferring Agent decoration", async () => {
+  const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Retired model", harness: "codex" }) });
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [row] }), getResource: () => ({ resource: row }) }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Model" kind={EntityKind.MODEL} value={row.id} active change={vi.fn()} /></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("combobox", { name: "Model" }));
+  await screen.findByText("Could not read Model.");
+  expect(screen.queryByRole("option", { name: "Retired model" })).toBeNull();
+  expect(document.querySelector(".scroll-picker-decoration")).toBeNull();
+  client.clear();
 });
