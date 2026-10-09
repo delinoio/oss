@@ -137,7 +137,6 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
     list.refresh();
   };
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: createQueryOptions(InboxQuery.getUnreadInboxCount, {}, { transport }).queryKey });
     list.refreshExplicit();
     reloadList();
     if (selectedId) setReadTrigger((value) => value + 1);

@@ -2,10 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { InboxQuery, InboxService } from "@delinoio/delidev-api-client";
+import { useRetainedMutationNotifications } from "./mutation";
 interface Selection { scope: string; generation: number }
 // Serialize scope replacement across React StrictMode and connection remounts.
 let beginQueue: Promise<unknown> = Promise.resolve();
@@ -16,6 +17,12 @@ export function unreadBadgeCount(count: unknown, observedAt: unknown): string | 
 /** Connection-owned background metadata, independent of Inbox and OS notifications. */
 export function InboxBadgePresentation({ ready, supported }: { ready: boolean; supported: boolean }) {
   const transport = useTransport();
+  const queryClient = useQueryClient();
+  // This observer survives detail-pane disposal, but retires with the original
+  // connection registry. Only acknowledged exact read-state mutations refresh.
+  useRetainedMutationNotifications((key) => {
+    if (key.startsWith("inbox-read:")) void queryClient.invalidateQueries({ queryKey: createQueryOptions(InboxQuery.getUnreadInboxCount, {}, { transport }).queryKey });
+  });
   const service = useMemo(() => createClient(InboxService, transport), [transport]);
   const [selection, setSelection] = useState<Selection>();
   const owner = useRef<{ scope: string; revision: number; alive: boolean } | undefined>(undefined);

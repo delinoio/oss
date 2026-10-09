@@ -3560,3 +3560,5 @@ switchers that ignore runtime icons, shell-disabled overlays, hidden tray
 icons and denied OS presentation remain unavailable. Universal Alt+Tab or
 app-switcher visibility is not claimed. There is no badge click action,
 notification permission request, new settings surface or persisted count.
+
+Accepted retained Inbox read-state mutations invalidate unread-count metadata through the connection-owned badge observer, including after detail-pane disposal. Retired connections and rejected/uncertain outcomes do not invalidate a successor.
