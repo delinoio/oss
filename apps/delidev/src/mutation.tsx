@@ -131,7 +131,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
   const opening = useSettingsOpening();
   const mutation = useMutation(method, { retry: false, meta: opening?.mutationMeta });
-  const [localError, setLocalError] = useState<{ key: string; error: unknown }>();
+  const [localError, setLocalError] = useState<{ key: string; error: unknown; rejected: boolean }>();
   const mounted = useRef(true);
   const state = useSyncExternalStore(registry.subscribe, () => registry.entries.get(key) ?? empty);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -148,7 +148,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       bytes = wire.byteLength;
       registry.reserve(key, bytes);
       retained = fromBinary(method.input, wire);
-    } catch (error) { setLocalError({ key, error }); registry.notifyOutcome(key, current.input ?? input!, RetainedMutationPhase.Rejected); return; }
+    } catch (error) { setLocalError({ key, error, rejected: true }); registry.notifyOutcome(key, current.input ?? input!, RetainedMutationPhase.Rejected); return; }
     // Recovery views must use the original request's validation authority even
     // when the submitting view has gone away or its current selection changed.
     const originalAcknowledgement = retainedAcknowledgement ?? acknowledge;
@@ -188,7 +188,15 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
     if (!mounted.current || !registry.alive || opening?.disposed) return;
-    try { accepted?.(result, retained); } catch (error) { setLocalError({ key, error }); }
+    try { accepted?.(result, retained); } catch (error) { setLocalError({ key, error, rejected: false }); }
   };
-  return { send, retry: () => send(), ...state, error: localError?.key === key ? localError.error : state.error };
+  const clearRejected = () => {
+    // Read the current owner, rather than a render snapshot: a late send or
+    // uncertain receipt must never be discarded by presentation cleanup.
+    const current = registry.entries.get(key) ?? empty;
+    if (!registry.alive || opening?.disposed || current.busy || current.uncertain || current.input) return;
+    if (current.error !== undefined) registry.put(key, empty);
+    setLocalError(previous => previous?.key === key && previous.rejected ? undefined : previous);
+  };
+  return { send, retry: () => send(), clearRejected, ...state, error: localError?.key === key ? localError.error : state.error };
 }

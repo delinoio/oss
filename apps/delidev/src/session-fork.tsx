@@ -71,7 +71,7 @@ export function SessionForkProvider({ children, openSession, openSidechat, readL
   const blocked = mutation.busy || mutation.uncertain || local.busy || invalid;
   const invalidatePreflight = () => { generation.current += 1; preflight.current = undefined; setChecking(false); };
   const show = (resource: Resource, requestedPurpose = ForkPurpose.UNSPECIFIED) => {
-    if (!source || (!blocked && !job && (source.id !== resource.id || purpose !== requestedPurpose))) { invalidatePreflight(); setSource(resource); setPurpose(requestedPurpose); setName(`${resourceName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(0, 256)); setWorkspace(ForkWorkspace.UNSPECIFIED); }
+    if (!source || (!blocked && !job && (source.id !== resource.id || purpose !== requestedPurpose))) { mutation.clearRejected(); invalidatePreflight(); setSource(resource); setPurpose(requestedPurpose); setName(`${resourceName(resource)} ${requestedPurpose === ForkPurpose.SIDECHAT ? "Sidechat" : "fork"}`.slice(0, 256)); setWorkspace(ForkWorkspace.UNSPECIFIED); }
     setVisible(true);
   };
   const submit = async () => {
@@ -99,7 +99,7 @@ export function SessionForkProvider({ children, openSession, openSidechat, readL
   const state = text(document(resultJob).state);
   const problem = object(document(resultJob).problem);
   const child = state === JobState.Succeeded && fork.data?.session?.kind === EntityKind.SESSION && text(object(document(fork.data.session).fork).source_session_id) === source?.id ? fork.data.session : undefined;
-  const reset = () => { invalidatePreflight(); setSource(undefined); setJob(undefined); setVisible(false); setInvalid(false); void client.invalidateQueries({ refetchType: "active" }); };
+  const reset = () => { mutation.clearRejected(); invalidatePreflight(); setSource(undefined); setJob(undefined); setVisible(false); setInvalid(false); void client.invalidateQueries({ refetchType: "active" }); };
   return <Context.Provider value={show}>{children}{source && visible ? <Modal title={sidechat ? copy("session-fork.openSidechat_20501a") : copy("session-fork.forkSession_51bc41")} close={() => setVisible(false)}>
     {sidechat ? <p>{copy("session-fork.discussTheCompletedTurnWithThe_ebd3a0")}</p> : <p><LocalizedText id="session-fork.createAnIndependentConversationFromAt_76ffeb" components={{ s0: <>{resourceName(source)}</>, s1: <>{sourceHarness(source) === "opencode" ? copy("session-fork.theChildKeepsASeparateCopy_a3e97a") : copy("session-fork.sourceMessagesStayInTheirOriginal_f0fe74")}</> }} /></p>}
     <p><LocalizedText id="session-fork.sourceTurn_0471be" components={{ s0: <>{source.id}</>, s1: <>{text(object(document(source).execution).native_turn_id)}</> }} /></p>
