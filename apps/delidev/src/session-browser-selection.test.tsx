@@ -13,6 +13,7 @@ import {
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionView } from "./session";
+import { SessionTabsProvider } from "./session-tabs";
 
 const native = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
@@ -70,9 +71,9 @@ it.each([false, true])("switches the open browser before Resume and retains the 
   });
   native.mockReset().mockResolvedValue({ tabs: { tabs: [{ id: tab, url: "https://fixture.test/" }], selected: tab }, removal_pending: false });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>
+  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionTabsProvider>
     <SessionView id={sessionId} draft="unsent composer text" setDraft={() => {}} />
-  </MutationIntents></QueryClientProvider></TransportProvider>);
+  </SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>);
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const open = async () => {
     fireEvent.click(screen.getByRole("tab", { name: "Browser" }));
