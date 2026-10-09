@@ -29,8 +29,9 @@ export function startupOperations(resource: Resource | undefined, phase: Session
  const workspace = p.workspace == null ? [] : attempt(p.workspace, preparation.job_id);
  const native = p.native == null ? [] : attempt(p.native, active.job_id ?? object(d.startup).job_id ?? object(p.native).job_id, execution.id);
  if (!workspace || !native) return;
- const all = [...workspace,...native], latest = Math.max(0,...all.map(s => s.sequence ?? 0));
+ 
  function aggregate(steps: Step[], kind: "workspace_operation" | "native_phase"): StartupOperationRow[] {
+  const latest = Math.max(0,...steps.map(s => s.sequence ?? 0));
   return [...new Set(steps.map(s => s[kind]!))].sort((a,b) => a-b).map(operation => {
    const group = steps.filter(s => s[kind] === operation), current = group.find(s => s.sequence === latest && s.state === 1);
    const completed = group.every(s => s.state === 2);

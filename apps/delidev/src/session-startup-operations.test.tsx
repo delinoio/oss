@@ -61,3 +61,12 @@ it("does not animate an earlier descriptive stage after authoritative startup ad
  expect(response.native.filter(row=>row.state === "running").map(row=>row.operation)).toEqual([6]);
  expect(response.workspace.find(row=>row.operation===3)?.state).toBe("pending");
 });
+
+
+it("keeps independent workspace and native attempt sequence domains", () => {
+ const completedWorkspace={...workspace,last_sequence:14,steps:workspace.steps.map((step,index)=>({...step,state:2,sequence:10+index}))};
+ const currentNative={...native,last_sequence:1,steps:[{native_phase:2,state:1,sequence:1},{native_phase:3},{native_phase:4}]};
+ const operations=startupOperations(resource({workspace:completedWorkspace,native:currentNative}),SessionProgressPhase.Starting)!;
+ expect(operations.native.find(row=>row.operation===2)?.state).toBe("running");
+ expect(operations.workspace.every(row=>row.state==="completed")).toBe(true);
+});
