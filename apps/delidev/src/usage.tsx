@@ -161,6 +161,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
     <div role="tabpanel" id={`${tabId}-${UsageTab.Overview}-panel`} aria-labelledby={`${tabId}-${UsageTab.Overview}-tab`} hidden={tab !== UsageTab.Overview}>
       {data ? <UsageOverview data={data} timeZone={appliedZone} /> : null}
     </div>
+    {!data ? <div role="tabpanel" id={`${tabId}-${UsageTab.History}-panel`} aria-labelledby={`${tabId}-${UsageTab.History}-tab`} hidden={tab !== UsageTab.History} /> : null}
     {data ? <>
       <div role="tabpanel" id={`${tabId}-${UsageTab.History}-panel`} aria-labelledby={`${tabId}-${UsageTab.History}-tab`} hidden={tab !== UsageTab.History}>
       <section className="usage-summary" aria-labelledby="usage-summary-title"><h2 id="usage-summary-title">{copy("usage.knownTokenTotals_17a07e")}</h2>

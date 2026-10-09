@@ -488,3 +488,9 @@ it("retains manual price draft and exact uncertain retry across tabs and dashboa
  fireEvent.click(screen.getByRole("button",{name:"Retry the same price"}));await waitFor(()=>expect(write).toHaveBeenCalledTimes(2));
  expect(write.mock.calls[1][0]).toEqual(original);expect(f.read).toHaveBeenCalledTimes(2);
 });
+
+it("links every tab to a mounted panel while the initial summary is pending", () => {
+ const f=fixture(); f.read.mockImplementationOnce(()=>new Promise(()=>{}));render(f.view());
+ for (const tab of screen.getAllByRole("tab")) expect(document.getElementById(tab.getAttribute("aria-controls")!)).toBeTruthy();
+ fireEvent.click(screen.getByRole("tab",{name:"Usage history"}));expect(screen.getByRole("tabpanel",{name:"Usage history"})).toBeTruthy();
+});
