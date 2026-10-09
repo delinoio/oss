@@ -42,7 +42,7 @@ func serviceScope(root string, kind userservice.Kind) (string, error) {
 	}
 	return root, err
 }
-func serviceCommand(ctx context.Context, o options, kind userservice.Kind, args []string, streams IO) (any, error) {
+func serviceCommand(ctx context.Context, o *options, kind userservice.Kind, args []string, streams IO) (any, error) {
 	if len(args) == 0 || o.server != "" || o.tokenStdin {
 		return nil, domain.Fail(domain.InvalidArgument, "Service registration is local current-user infrastructure.", "Use server service or worker service on the owning computer; use service-control for authenticated server-host operations.")
 	}
@@ -78,7 +78,7 @@ func serviceCommand(ctx context.Context, o options, kind userservice.Kind, args 
 		}
 		manager.Options = userservice.ServerOptions{Listen: config.Listen, TLSCertificate: *cert, TLSKey: *key, AllowedOrigins: config.AllowedOrigins}
 	}
-	ensureRequest(&o)
+	ensureRequest(o)
 	result, err := manager.Control(ctx, userservice.Action(args[0]), o.requestID, *revision, "local-user")
 	if err == nil && args[0] == "stop" {
 		result.Status, err = manager.WaitStopped(ctx)

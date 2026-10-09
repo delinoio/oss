@@ -8,7 +8,7 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-func prRemediationCommand(ctx context.Context, c client, o options, args []string) (any, error) {
+func prRemediationCommand(ctx context.Context, c client, o *options, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, usage()
 	}
@@ -36,7 +36,7 @@ func prRemediationCommand(ctx context.Context, c client, o options, args []strin
 		if domain.ID(id).Validate() != nil || revision == 0 || revision >= 1<<63 {
 			return nil, domain.Fail(domain.MissingInput, "The original PR set and revision are required.", "Inspect remediation history and supply --id and --revision.")
 		}
-		ensureRequest(&o)
+		ensureRequest(o)
 		r, err := c.integrations.ResumePullRequestRemediation(ctx, request(c, &pb.ResumePullRequestRemediationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: id, ExpectedRevision: revision}}))
 		if err != nil {
 			return nil, rpc.ClientError(err)

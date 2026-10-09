@@ -17,8 +17,10 @@ import (
 )
 
 func TestCLIRemediationHistoryAndResumePreserveOriginalIdentity(t *testing.T) {
-	for _, action := range []string{"list", "resume", "foreign-chain", "duplicate", "foreign-pr"} {
+	for _, action := range []string{"list", "resume", "foreign-chain", "duplicate", "foreign-pr", "generated-resume"} {
 		t.Run(action, func(t *testing.T) {
+			generated := strings.HasPrefix(action, "generated-")
+			action = strings.TrimPrefix(action, "generated-")
 			at := time.Now().UTC()
 			setID, chainID, requestID := domain.NewID(), domain.NewID(), domain.NewID()
 			target := domain.SessionPullRequest{Version: 1, Provider: domain.GitHubCom, RepositoryID: domain.NewID(), RemoteRepositoryID: "37", RepositoryNodeID: "R_37", Owner: "fixture-owner", Name: "repo", PullRequestID: "9007199254740993", PullRequestNodeID: "PR_17", Number: "17", Title: "Original", ObservedAt: at}
@@ -50,6 +52,9 @@ func TestCLIRemediationHistoryAndResumePreserveOriginalIdentity(t *testing.T) {
 			}))
 			mux.Handle(delidevv1connect.IntegrationServiceResumePullRequestRemediationProcedure, connect.NewUnaryHandler(delidevv1connect.IntegrationServiceResumePullRequestRemediationProcedure, func(_ context.Context, req *connect.Request[pb.ResumePullRequestRemediationRequest]) (*connect.Response[pb.ResumePullRequestRemediationResponse], error) {
 				calls++
+				if generated {
+					requestID = domain.ID(req.Msg.Mutation.GetRequestId())
+				}
 				if req.Msg.Mutation == nil || req.Msg.Mutation.Id != string(setID) || req.Msg.Mutation.ExpectedRevision != 9007199254740993 || req.Msg.Mutation.RequestId != string(requestID) {
 					t.Error("CLI changed original resumption identity")
 				}
@@ -63,10 +68,19 @@ func TestCLIRemediationHistoryAndResumePreserveOriginalIdentity(t *testing.T) {
 			} else {
 				args = append(args, "list", "--remote-repository-id", "37", "--pull-request-id", "9007199254740993")
 			}
+			if generated {
+				args = append(args[:5], args[7:]...)
+			}
 			var output, diagnostic strings.Builder
 			code := Run(context.Background(), args, IO{In: strings.NewReader("private-remediation-fixture-token"), Out: &output, Err: &diagnostic})
 			if (code == 0) != (action == "list" || action == "resume") || calls != 1 {
 				t.Fatalf("CLI result=%d calls=%d diagnostics=%s", code, calls, diagnostic.String())
+			}
+			if generated {
+				var envelope map[string]any
+				if json.Unmarshal([]byte(output.String()), &envelope) != nil || domain.ID(requestID).Validate() != nil || envelope["request_id"] != string(requestID) {
+					t.Fatal("generated mutation identity was not retained", output.String())
+				}
 			}
 			if strings.Contains(output.String(), "private-remediation-fixture-token") {
 				t.Fatal("fixture token escaped into output")
