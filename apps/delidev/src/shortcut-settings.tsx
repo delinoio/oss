@@ -72,8 +72,11 @@ export function ShortcutSettings() {
       if (pointerTarget.current && target.contains(pointerTarget.current)) return;
       pointerTarget.current = null;
       const bounds = catalog.getBoundingClientRect(), row = target.getBoundingClientRect();
-      if (row.top < bounds.top) catalog.scrollTop -= bounds.top - row.top;
-      else if (row.bottom > bounds.bottom) catalog.scrollTop += row.bottom - bounds.bottom;
+      // The shared focus ring extends 2px plus its 2px outline offset.
+      // Reveal that complete indicator, not just the control border box.
+      const outlineAllowance = 4;
+      if (row.top - outlineAllowance < bounds.top) catalog.scrollTop -= bounds.top - row.top + outlineAllowance;
+      else if (row.bottom + outlineAllowance > bounds.bottom) catalog.scrollTop += row.bottom - bounds.bottom + outlineAllowance;
     }} onPointerDownCapture={event=>{pointerTarget.current=event.target instanceof Element?event.target:null;}}
       onClickCapture={()=>{pointerTarget.current=null;}}
       onPointerCancelCapture={()=>{pointerTarget.current=null;}}

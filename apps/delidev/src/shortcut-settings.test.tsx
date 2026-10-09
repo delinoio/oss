@@ -122,7 +122,9 @@ it("keeps the complete compact catalog separate from status and labeled final ac
  const capture=screen.getByRole('button',{name:'Capture shortcut for New session'});
  vi.spyOn(catalog,'getBoundingClientRect').mockReturnValue({top:20,bottom:120} as DOMRect);
  vi.spyOn(capture,'getBoundingClientRect').mockReturnValue({top:150,bottom:190} as DOMRect);
- fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
+ fireEvent.focus(capture);expect(catalog.scrollTop).toBe(74);
+ vi.mocked(capture.getBoundingClientRect).mockReturnValue({top:14,bottom:54} as DOMRect);
+ catalog.scrollTop=40;fireEvent.focus(capture);expect(catalog.scrollTop).toBe(30);
  expect(f.bridge.update).not.toHaveBeenCalled();
 });
 
@@ -136,8 +138,8 @@ it("preserves pointer focus targets until click and reveals keyboard or cancelle
  fireEvent.pointerDown(disable.querySelector("svg")!);fireEvent.focus(disable);
  expect(catalog.scrollTop).toBe(0);fireEvent.pointerUp(disable);expect(catalog.scrollTop).toBe(0);
  fireEvent.click(disable);expect(catalog.scrollTop).toBe(0);expect(screen.getByText("Unsaved changes")).toBeTruthy();expect(f.bridge.update).not.toHaveBeenCalled();
- fireEvent.keyDown(disable,{key:"Tab"});fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
- catalog.scrollTop=0;fireEvent.pointerDown(capture);fireEvent.pointerCancel(capture);fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
+ fireEvent.keyDown(disable,{key:"Tab"});fireEvent.focus(capture);expect(catalog.scrollTop).toBe(74);
+ catalog.scrollTop=0;fireEvent.pointerDown(capture);fireEvent.pointerCancel(capture);fireEvent.focus(capture);expect(catalog.scrollTop).toBe(74);
 });
 
 it("renders platform-resolved individual keycaps for original current bindings and retains disabled text",async()=>{
