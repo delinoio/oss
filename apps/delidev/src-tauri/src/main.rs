@@ -9,6 +9,7 @@ mod notification_host;
 mod oauth_host;
 mod session_creation_preferences_host;
 mod tray_host;
+mod tray_status_host;
 mod updater_host;
 mod widget_host;
 mod window_host;
@@ -1740,7 +1741,12 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::clone(&oauth))
         .manage(Arc::clone(&connector))
         .manage(Arc::clone(&supervision))
+        .manage(Arc::new(tray_status_host::PanelHost::default()))
         .invoke_handler(tauri::generate_handler![
+            tray_status_host::watch_tray_status,
+            tray_status_host::read_tray_status,
+            tray_status_host::activate_tray_status,
+            tray_status_host::dismiss_tray_status,
             account_oauth_native,
             desktop_credential_access,
             choose_repository_folder,
@@ -1794,6 +1800,22 @@ fn run() -> Result<(), NativeFailure> {
             present_notification
         ])
         .on_window_event(|window, event| {
+            if window.label() == tray_status_host::LABEL {
+                match event {
+                    WindowEvent::Focused(false) => window
+                        .state::<Arc<tray_status_host::PanelHost>>()
+                        .focus_lost(&window),
+                    WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    WindowEvent::Destroyed => window
+                        .state::<Arc<tray_status_host::PanelHost>>()
+                        .destroyed(),
+                    _ => {}
+                }
+                return;
+            }
             let windows = window.state::<Arc<ProductWindows>>();
             if matches!(event, WindowEvent::Focused(true))
                 && let Ok(mut registry) = windows.registry.lock()
@@ -1924,8 +1946,11 @@ fn run() -> Result<(), NativeFailure> {
     let joining_quit = Arc::clone(&quit_task);
     let exiting_window_actions = Arc::clone(&window_actions);
     let returning_oauth = Arc::clone(&oauth);
+    let returning_app = app.handle().clone();
     app.run(move |_app, event| {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+            _app.state::<Arc<tray_status_host::PanelHost>>()
+                .request_stop(_app);
             _app.state::<Arc<window_host::WindowActions>>().stop();
             if let Ok(mut registry) = _app.state::<Arc<ProductWindows>>().registry.lock() {
                 registry.stop();
@@ -1967,6 +1992,7 @@ fn run() -> Result<(), NativeFailure> {
                         }
                         notifications.stop();
                         tracing::info!(operation = "desktop_exit", state = "notifications-joined");
+                        app.state::<Arc<tray_status_host::PanelHost>>().join(&app);
                         tray.stop();
                         tracing::info!(operation = "desktop_exit", state = "tray-joined");
                         complete.store(true, std::sync::atomic::Ordering::Release);
@@ -2005,6 +2031,9 @@ fn run() -> Result<(), NativeFailure> {
     returning_oauth.stop();
     browser.stop();
     notifications.stop();
+    returning_app
+        .state::<Arc<tray_status_host::PanelHost>>()
+        .join(&returning_app);
     tray.stop();
     browser.finish_removals()?;
     Ok(())

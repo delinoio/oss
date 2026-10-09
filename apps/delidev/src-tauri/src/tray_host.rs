@@ -47,6 +47,8 @@ pub struct TrayAction {
     inbox_id: Option<String>,
     #[serde(skip)]
     notification_scope: Option<String>,
+    #[serde(skip)]
+    panel_target: Option<delidev_desktop::tray_status::Target>,
 }
 #[derive(Default)]
 struct State {
@@ -353,6 +355,16 @@ pub async fn read_tray_action(
             .get(window.label())
             .cloned();
         Ok(action.filter(|action| {
+            if let Some(target) = &action.panel_target {
+                if target.instance != original_authority.entry.instance
+                    || !host
+                        .state
+                        .lock()
+                        .is_ok_and(|state| panel_target_current(&state, target))
+                {
+                    return false;
+                }
+            }
             action.notification_scope.as_ref().is_none_or(|scope| {
                 window
                     .state::<Arc<super::NotificationHost>>()
@@ -388,6 +400,7 @@ pub fn schedule(app: &AppHandle<CefRuntime>) {
     let target = app.clone();
     if app
         .run_on_main_thread(move || {
+            super::tray_status_host::notify(&target);
             if render(&target).is_err() {
                 tracing::warn!(
                     operation = "tray_refresh",
@@ -410,6 +423,184 @@ pub fn remove(app: &AppHandle<CefRuntime>, label: &str) {
         state.pending.remove(label);
     }
     schedule(app);
+}
+#[derive(Clone, serde::Serialize)]
+pub struct PanelWindow {
+    pub target: delidev_desktop::tray_status::Target,
+    pub name: String,
+    pub summary: Option<TraySummary>,
+    pub stale: bool,
+    pub observed_age_ms: u64,
+}
+pub fn panel_snapshot(
+    app: &AppHandle<CefRuntime>,
+) -> Result<(Vec<PanelWindow>, bool, Option<String>), NativeFailure> {
+    let windows = app.state::<Arc<ProductWindows>>();
+    let (entries, recent) = {
+        let registry = windows
+            .registry
+            .try_lock()
+            .map_err(|_| NativeFailure::Busy)?;
+        (
+            registry.entries(),
+            registry.recent(None).map(|entry| entry.instance),
+        )
+    };
+    let bindings = windows
+        .bindings
+        .try_lock()
+        .map_err(|_| NativeFailure::Busy)?
+        .clone();
+    let host = app.state::<Arc<TrayHost>>();
+    let state = host.state.try_lock().map_err(|_| NativeFailure::Busy)?;
+    if host.stop.load(Ordering::Acquire) {
+        return Err(NativeFailure::Stopped);
+    }
+    let mut result = Vec::new();
+    for entry in entries
+        .into_iter()
+        .filter(|entry| entry.phase == delidev_desktop::window_registry::Phase::Ready)
+    {
+        let name = match entry.role {
+            delidev_desktop::window_registry::Role::Local => {
+                format!("{} · Window {}", text(Message::Computer), entry.number)
+            }
+            delidev_desktop::window_registry::Role::Saved(_) => {
+                let Some(binding) = bindings
+                    .get(&entry.label)
+                    .filter(|b| !b.closing && b.instance == entry.instance)
+                else {
+                    continue;
+                };
+                format!(
+                    "{} · Window {}",
+                    menu_alias(&binding.profile.name).replace("&&", "&"),
+                    entry.number
+                )
+            }
+        };
+        let current = state.windows.get(&entry.label);
+        let mut summary = current.and_then(|current| current.summary.clone());
+        if let Some(accounts) = summary
+            .as_mut()
+            .and_then(|summary| summary.accounts.as_mut())
+        {
+            for account in &mut accounts.entries {
+                account.alias = if account.alias_hidden {
+                    text(Message::AliasHidden).into()
+                } else {
+                    menu_alias(&account.alias).replace("&&", "&")
+                };
+            }
+        }
+        result.push(PanelWindow {
+            target: delidev_desktop::tray_status::Target {
+                label: entry.label,
+                instance: entry.instance,
+                scope: current.map(|v| v.scope.clone()).unwrap_or_default(),
+                revision: current.map(|v| v.revision).unwrap_or_default(),
+            },
+            name,
+            summary,
+            stale: current.is_none_or(|v| {
+                v.stale
+                    || v.received.elapsed() > STALE_AFTER
+                    || v.summary
+                        .as_ref()
+                        .and_then(|v| v.overview.as_ref())
+                        .is_none_or(|v| v.stale)
+            }),
+            observed_age_ms: current
+                .map(|v| v.received.elapsed().as_millis().min(u64::MAX as u128) as u64)
+                .unwrap_or_default(),
+        });
+    }
+    let more = result.len() > 32;
+    // The most recently used ready window must remain selectable when bounded.
+    if let Some(recent) = &recent
+        && let Some(position) = result.iter().position(|v| &v.target.instance == recent)
+        && position >= 32
+    {
+        result.swap(31, position);
+    }
+    result.truncate(32);
+    Ok((result, more, recent))
+}
+fn panel_target_current(state: &State, target: &delidev_desktop::tray_status::Target) -> bool {
+    match state.windows.get(&target.label) {
+        Some(current) => target.scope == current.scope && target.revision == current.revision,
+        None => target.scope.is_empty() && target.revision == 0,
+    }
+}
+pub fn panel_activate(
+    app: &AppHandle<CefRuntime>,
+    target: &delidev_desktop::tray_status::Target,
+    action: super::tray_status_host::Action,
+    panel: &WebviewWindow<CefRuntime>,
+) -> Result<(), NativeFailure> {
+    let host = app.state::<Arc<TrayHost>>();
+    if host.stop.load(Ordering::Acquire) {
+        return Err(NativeFailure::Stopped);
+    }
+    let window = app
+        .get_webview_window(&target.label)
+        .ok_or(NativeFailure::PermissionDenied)?;
+    let original = super::capture_authority(&window)?;
+    if original.entry.instance != target.instance
+        || original.entry.phase != delidev_desktop::window_registry::Phase::Ready
+    {
+        return Err(NativeFailure::PermissionDenied);
+    }
+    {
+        let state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+        if !panel_target_current(&state, target) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+    }
+    super::recheck_authority(&window, &original)?;
+    if host.stop.load(Ordering::Acquire) {
+        return Err(NativeFailure::Stopped);
+    }
+    {
+        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+        if !panel_target_current(&state, target) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        let destination = match action {
+            super::tray_status_host::Action::Show => None,
+            super::tray_status_host::Action::Sessions => Some(TrayDestination::Sessions),
+            super::tray_status_host::Action::Inbox => Some(TrayDestination::Inbox),
+            super::tray_status_host::Action::Usage => Some(TrayDestination::Usage),
+            super::tray_status_host::Action::Settings => Some(TrayDestination::Settings),
+            _ => return Err(NativeFailure::InvalidEvidence),
+        };
+        if let Some(destination) = destination {
+            state.pending.insert(
+                target.label.clone(),
+                TrayAction {
+                    id: uuid::Uuid::now_v7().to_string(),
+                    destination,
+                    inbox_id: None,
+                    notification_scope: None,
+                    panel_target: Some(target.clone()),
+                },
+            );
+        }
+    }
+    panel
+        .hide()
+        .map_err(|_| NativeFailure::StorageUnavailable)?;
+    super::recheck_authority(&window, &original)?;
+    if host.stop.load(Ordering::Acquire) {
+        return Err(NativeFailure::Stopped);
+    }
+    show(&window).map_err(|_| NativeFailure::StorageUnavailable)?;
+    if !matches!(action, super::tray_status_host::Action::Show) {
+        window
+            .emit("tray-activate", ())
+            .map_err(|_| NativeFailure::StorageUnavailable)?;
+    }
+    Ok(())
 }
 fn append(
     app: &AppHandle<CefRuntime>,
@@ -448,11 +639,33 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(
         app,
+        "tray-status-open",
+        text(Message::OpenStatus),
+        true,
+        None::<&str>,
+    )?)?;
+    menu.append(&MenuItem::with_id(
+        app,
         "tray-show",
         text(Message::Show),
         true,
         None::<&str>,
     )?)?;
+    if !app
+        .state::<Arc<super::tray_status_host::PanelHost>>()
+        .failed()
+    {
+        menu.append(&MenuItem::with_id(
+            app,
+            "tray-quit",
+            text(Message::Quit),
+            true,
+            None::<&str>,
+        )?)?;
+        tray.set_menu(Some(menu))?;
+        state.reset_labels = state.reset_labels(now);
+        return Ok(());
+    }
     let registry = match app.state::<Arc<ProductWindows>>().registry.try_lock() {
         Ok(registry) => registry.entries(),
         Err(_) => return Ok(()),
@@ -742,6 +955,11 @@ fn render(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     Ok(())
 }
 fn activate(app: &AppHandle<CefRuntime>, id: &str) {
+    if id == "tray-status-open" {
+        app.state::<Arc<super::tray_status_host::PanelHost>>()
+            .show_panel(app);
+        return;
+    }
     if id == "tray-quit" {
         app.exit(0);
         return;
@@ -839,6 +1057,7 @@ fn navigate_off_loop(
                 destination: action.destination,
                 inbox_id,
                 notification_scope,
+                panel_target: None,
             },
         );
     }
@@ -859,7 +1078,37 @@ impl TrayHost {
         let mut builder = TrayIconBuilder::with_id(TRAY_ID)
             .menu(&menu)
             .tooltip("DeliDev")
-            .show_menu_on_left_click(true)
+            .show_menu_on_left_click(cfg!(target_os = "linux"))
+            .on_tray_icon_event(|tray, event| {
+                if let tauri::tray::TrayIconEvent::Click {
+                    position,
+                    rect,
+                    button: tauri::tray::MouseButton::Left,
+                    button_state: tauri::tray::MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    let app = tray.app_handle();
+                    let scale = app
+                        .monitor_from_point(position.x, position.y)
+                        .ok()
+                        .flatten()
+                        .map(|m| m.scale_factor())
+                        .unwrap_or(1.0);
+                    let position = rect.position.to_physical::<f64>(scale);
+                    let size = rect.size.to_physical::<f64>(scale);
+                    app.state::<Arc<super::tray_status_host::PanelHost>>()
+                        .toggle(
+                            app,
+                            Some(delidev_desktop::tray_status::Area {
+                                x: position.x,
+                                y: position.y,
+                                width: size.width,
+                                height: size.height,
+                            }),
+                        );
+                }
+            })
             .on_menu_event(|app, event| activate(app, event.id.as_ref()));
         if let Some(icon) = app.default_window_icon() {
             builder = builder.icon(icon.clone());
@@ -928,6 +1177,28 @@ pub fn refresh(app: &AppHandle<CefRuntime>) {
 mod tests {
     use super::*;
     #[test]
+    fn panel_actions_are_fenced_by_original_scope_and_exact_revision() {
+        let mut state = State::default();
+        let target = delidev_desktop::tray_status::Target {
+            label: "fixture".into(),
+            instance: "original".into(),
+            scope: "scope".into(),
+            revision: 7,
+        };
+        let mut value = presentation("scope");
+        value.revision = 7;
+        state.windows.insert("fixture".into(), value);
+        assert!(panel_target_current(&state, &target));
+        state.windows.get_mut("fixture").unwrap().revision = 8;
+        assert!(!panel_target_current(&state, &target));
+        state
+            .windows
+            .insert("fixture".into(), presentation("replacement"));
+        assert!(!panel_target_current(&state, &target));
+        state.windows.remove("fixture");
+        assert!(!panel_target_current(&state, &target));
+    }
+    #[test]
     fn retained_countdown_repaint_preserves_observation_and_scope() {
         use delidev_desktop::presentation::{QuotaState, TrayAccount, TrayAccounts, TrayQuota};
         let mut state = State::default();
@@ -938,10 +1209,12 @@ mod tests {
             usage: None,
             accounts: Some(TrayAccounts {
                 entries: vec![TrayAccount {
+                    subscription_service: None,
                     alias: "Fixture".into(),
                     alias_hidden: false,
                     more: false,
                     windows: vec![TrayQuota {
+                        id: None,
                         state: QuotaState::Failed,
                         remaining_basis_points: Some(5000),
                         observed_at: Some("2026-10-08T00:00:00Z".into()),
@@ -1361,6 +1634,7 @@ mod tests {
                 destination: TrayDestination::Inbox,
                 inbox_id: Some(uuid::Uuid::now_v7().to_string()),
                 notification_scope: None,
+                panel_target: None,
             },
         );
         assert_eq!(
@@ -1376,6 +1650,7 @@ mod tests {
                 destination: TrayDestination::Usage,
                 inbox_id: None,
                 notification_scope: None,
+                panel_target: None,
             },
         );
         state.acknowledge("main", "original");

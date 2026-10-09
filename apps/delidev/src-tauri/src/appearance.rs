@@ -66,6 +66,15 @@ impl AppearanceStore {
         }
     }
 
+    /// Retained presentation only; auxiliary views cannot inspect preference
+    /// files.
+    pub fn current(&self) -> AppearanceSnapshot {
+        self.state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
     pub fn read(&self) -> AppearanceSnapshot {
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
         let previous = state.clone();

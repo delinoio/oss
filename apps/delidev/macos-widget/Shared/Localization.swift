@@ -111,6 +111,7 @@ enum WidgetMessage: String {
     case resetMinute
     case resetMinutes
     case resetSoon
+    case openStatus
 }
 private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
     .english: [
@@ -222,6 +223,7 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "resetMinute": "Resets in {{minutes}} minute",
         "resetMinutes": "Resets in {{minutes}} minutes",
         "resetSoon": "Resets soon",
+        "openStatus": "Open status",
     ],
     .korean: [
         "show": "DeliDev 표시",
@@ -332,6 +334,7 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "resetMinute": "{{minutes}}분 뒤 리셋",
         "resetMinutes": "{{minutes}}분 뒤 리셋",
         "resetSoon": "곧 리셋",
+        "openStatus": "상태 열기",
     ],
 ]
 func widgetCopy(_ key: WidgetMessage, _ language: WidgetLanguage, _ values: [String: String] = [:]) -> String {

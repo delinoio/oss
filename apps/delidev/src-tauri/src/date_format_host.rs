@@ -88,6 +88,7 @@ pub async fn update_date_format(
 }
 
 fn publish(app: &AppHandle<CefRuntime>, windows: &ProductWindows, snapshot: &DateFormatSnapshot) {
+    super::tray_host::refresh(app);
     // The store presentation lock orders commits and publication across
     // windows. External child views receive no preference events or storage
     // authority.

@@ -53,12 +53,22 @@ pub struct TrayAccounts {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrayAccount {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription_service: Option<TraySubscriptionService>,
     pub alias: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub alias_hidden: bool,
     pub windows: Vec<TrayQuota>,
     pub more: bool,
 }
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TraySubscriptionService {
+    ChatGPT,
+    Claude,
+    Grok,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum QuotaState {
@@ -71,10 +81,32 @@ pub enum QuotaState {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrayQuota {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub state: QuotaState,
     pub remaining_basis_points: Option<u16>,
     pub observed_at: Option<String>,
     pub reset_at: Option<String>,
+}
+
+pub fn quota_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.as_bytes()[0].is_ascii_alphanumeric()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.:-".contains(&b))
+        && ![
+            "bearer",
+            "sk-",
+            "ghp_",
+            "github_pat_",
+            "token",
+            "password",
+            "api_key",
+        ]
+        .iter()
+        .any(|pattern| value.to_ascii_lowercase().contains(pattern))
 }
 
 fn decimal(value: &str, limit: usize) -> bool {
@@ -141,7 +173,8 @@ impl TraySummary {
                     return Err(NativeFailure::InvalidEvidence);
                 }
                 for window in &account.windows {
-                    if window.remaining_basis_points.is_some_and(|v| v > 10000)
+                    if window.id.as_deref().is_some_and(|id| !quota_id(id))
+                        || window.remaining_basis_points.is_some_and(|v| v > 10000)
                         || [&window.observed_at, &window.reset_at]
                             .iter()
                             .any(|v| v.as_deref().is_some_and(|v| !timestamp(v)))
@@ -210,6 +243,23 @@ impl TrayQuota {
 mod tests {
     use super::*;
     #[test]
+    fn quota_ids_and_services_are_closed_without_alias_inference() {
+        assert!(quota_id("codex:primary"));
+        assert!(quota_id("weekly"));
+        for id in [
+            "",
+            "a b",
+            "owner@example.test",
+            "sk-private",
+            "TOKEN_private",
+        ] {
+            assert!(!quota_id(id));
+        }
+        assert!(!quota_id(&"a".repeat(129)));
+        assert!(serde_json::from_str::<TraySubscriptionService>("\"chatgpt\"").is_ok());
+        assert!(serde_json::from_str::<TraySubscriptionService>("\"opencode\"").is_err());
+    }
+    #[test]
     fn presentation_rejects_unknown_authority_and_preserves_large_counts() {
         let raw = r#"{"overview":{"observed_at":"2026-09-27T00:00:00Z","stale":false,"active_sessions":"9007199254740993","pending_interactions":"0","registered_workers":"2","connected_workers":"1"},"usage":{"known_tokens":"90071992547409930000","incomplete":true},"accounts":null}"#;
         let mut value: TraySummary = serde_json::from_str(raw).unwrap();
@@ -256,6 +306,7 @@ mod tests {
         assert_eq!(menu_alias("A&B\taccount"), "A&&B account");
         assert_eq!(menu_alias("owner@example.test"), "Account alias hidden");
         let mut value = TrayQuota {
+            id: None,
             state: QuotaState::Unknown,
             remaining_basis_points: None,
             observed_at: None,
