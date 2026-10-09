@@ -286,7 +286,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
           </div> : null}
           <div className="new-session-composer" ref={placement.composer}>
             <label className="new-session-message-label" htmlFor={`${idPrefix}-message`}>{copy("new-session.firstMessage_ecffa2")}</label>
-            <textarea
+            {skills.wrap(<textarea
               ref={firstMessage}
               id={`${idPrefix}-message`}
               name="first-message"
@@ -300,7 +300,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               rows={5}
               required={!images.images.length}
               autoComplete="off"
-            />
+            />)}
             {skills.list}{skills.warning}{promptHistory.feedback}
             <ImageAttachmentInput active={active} draft={images} disabled={blocked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={machine} creationToolbar={attach => <div className="new-session-toolbar">
               <div className="new-session-selectors">

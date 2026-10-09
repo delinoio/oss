@@ -24,10 +24,12 @@ const make = (kind: EntityKind, name: string) => create(ResourceSchema, { id: ne
 const agent = make(EntityKind.AGENT, "Agent One"), machine = make(EntityKind.MACHINE, "Worker One"), project = make(EntityKind.PROJECT, "Project One");
 const skillCompletion = args.get("skills") === "true";
 const inventoryId = newRequestId(), workerDeviceId = newRequestId();
-const skills = ["add-issue", "long-name-".repeat(30), ...Array.from({ length: 12 }, (_, index) => `other-${index}`)].map((name, index) => ({ name, description: index === 1 ? "" : "Evidence-driven GitHub issue creation ".repeat(20), provenance: index % 2 ? SkillProvenance.PROJECT : SkillProvenance.USER, selection: { inventoryId, workerDeviceId, skillId: newRequestId(), contentRevision: "a".repeat(64) } }));
+let skills = ["add-issue", "long-name-".repeat(30), ...Array.from({ length: 12 }, (_, index) => `other-${index}`)].map((name, index) => ({ name, description: index === 1 ? "" : "Evidence-driven GitHub issue creation ".repeat(20), provenance: index % 2 ? SkillProvenance.PROJECT : SkillProvenance.USER, selection: { inventoryId, workerDeviceId, skillId: newRequestId(), contentRevision: "a".repeat(64) } }));
 const rows = [agent, machine, project], creates: Record<string, unknown>[] = [];
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const originalSkills = skills;
 let report: (() => void) | undefined;
+Object.assign(window, { __skillInventory: { remove: async () => { skills = skills.filter(entry => entry.name !== "add-issue"); await client.invalidateQueries(); }, restore: async () => { skills = originalSkills; await client.invalidateQueries(); } } });
 const transport = createRouterTransport(router => {
   router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AUTOMATIC_TITLES_V1, ...(skillCompletion ? [SystemCapability.NATIVE_SKILLS_V1] : [])] }) });
   router.service(SkillService, { listSkills: () => ({ skills }) });
@@ -43,7 +45,7 @@ const queued = make(EntityKind.QUEUE, "Synthetic queue"); queued.sessionId = ses
 function Followup() {
   const [value, change] = useState(""), textarea = useRef<HTMLTextAreaElement>(null);
   const completion = useSkillCompletion({ value, change, textarea, machineId: machine.id, agentId: agent.id, sessionId: session.id });
-  return <form className="composer" data-shared="follow-up" onSubmit={event => { event.preventDefault(); creates.push({ forbidden: true }); report?.(); }}><textarea ref={textarea} value={value} onChange={event => completion.onChange(event.target.value, event.target.selectionStart)} onSelect={completion.onSelect} onKeyDown={completion.onKeyDown} onCompositionStart={completion.onCompositionStart} onCompositionEnd={completion.onCompositionEnd} {...completion.attributes}/>{completion.list}</form>;
+  return <form className="composer" data-shared="follow-up" onSubmit={event => { event.preventDefault(); creates.push({ forbidden: true }); report?.(); }}>{completion.wrap(<textarea ref={textarea} value={value} onChange={event => completion.onChange(event.target.value, event.target.selectionStart)} onSelect={completion.onSelect} onKeyDown={completion.onKeyDown} onCompositionStart={completion.onCompositionStart} onCompositionEnd={completion.onCompositionEnd} {...completion.attributes}/>)}{completion.list}</form>;
 }
 function Fixture() {
   const [active, setActive] = useState<NewSessionKind | undefined>(NewSessionKind.GeneralChat), [identity, setIdentity] = useState(0), [count, setCount] = useState(0);
@@ -54,7 +56,7 @@ function Fixture() {
     <button onClick={() => setIdentity(value => value + 1)}>Fixture identity</button>
     <output data-fixture-creates={count}>{JSON.stringify(creates.at(-1) ?? {})}</output>
   </aside><main><MutationIntents key={identity}>
-    {args.get("shared") === "true" ? <section className="new-session-content" style={{ margin: "24px auto" }}><Followup/><div data-shared="queue"><QueuedInput resource={queued} session={session} refresh={() => {}} /></div></section> : null}
+    {args.get("shared") === "true" ? <section className="new-session-content" style={{ margin: "24px auto" }}><div className="session-workspace skill-followup-fixture"><Followup/></div><div data-shared="queue"><QueuedInput resource={queued} session={session} refresh={() => {}} /></div></section> : null}
     <NewSession kind={NewSessionKind.GeneralChat} active={active === NewSessionKind.GeneralChat} ownsActivation activation={1} back={() => {}} openSettings={() => setActive(undefined)} open={() => {}} created={() => {}} />
     <NewSession active={active === NewSessionKind.Session} ownsActivation activation={1} back={() => {}} openSettings={() => setActive(undefined)} open={() => {}} created={() => {}} />
     {active === undefined ? <h2>Synthetic Settings</h2> : null}

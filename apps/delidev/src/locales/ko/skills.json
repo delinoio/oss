@@ -8,5 +8,7 @@
   "skills.empty": "일치하는 스킬이 없습니다.",
   "skills.unsupported": "스킬을 사용하려면 서버와 실행 기기를 업데이트하세요.",
   "skills.reselect": "보내기 전에 선택한 스킬을 다시 선택해야 합니다.",
-  "skills.clear": "선택한 스킬 지우기"
+  "skills.clear": "선택한 스킬 지우기",
+  "skills.entryUnavailable": "사용할 수 없음",
+  "skills.tokensUnavailable": "현재 범위에서 스킬 토큰 {{count}}개를 사용할 수 없습니다."
 }

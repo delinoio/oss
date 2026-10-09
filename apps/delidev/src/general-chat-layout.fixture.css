@@ -7,3 +7,5 @@
   .general-chat-fixture > aside { padding: 4px; overflow-wrap: anywhere; }
   .general-chat-fixture > aside button { padding: 4px; font-size: 11px; }
 }
+
+.skill-followup-fixture.session-workspace { display: block; height: auto; min-height: 0; }

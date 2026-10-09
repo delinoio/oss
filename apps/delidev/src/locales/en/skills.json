@@ -8,5 +8,7 @@
   "skills.empty": "No matching skills.",
   "skills.unsupported": "Update the server and Runner Device to use skills.",
   "skills.reselect": "The selected skills need reselection before sending.",
-  "skills.clear": "Clear selected skills"
+  "skills.clear": "Clear selected skills",
+  "skills.entryUnavailable": "Unavailable",
+  "skills.tokensUnavailable": "{{count}} skill tokens are unavailable in this scope."
 }

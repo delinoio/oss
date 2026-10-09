@@ -36,6 +36,38 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const frame = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  let overlayCases = 0;
+  const checkOverlay = async (root, input) => {
+    const draft = '한글 Native selection $add-issue $removed-skill\n' + 'wrap words $removed-skill '.repeat(30);
+    await input.fill(draft); await input.press('Escape');
+    await root.locator('.skill-token-unavailable').first().waitFor(); await frame();
+    assert.equal(await input.inputValue(), draft);
+    await input.evaluate(node => { node.parentElement.style.zoom='2'; }); await frame();
+    const scaled = await input.evaluate(node => ({ input: node.getBoundingClientRect().width - (node.offsetWidth-node.clientWidth)*2, overlay: node.parentElement.querySelector('.skill-text-overlay').getBoundingClientRect().width }));
+    assert(Math.abs(scaled.input-scaled.overlay) <= 1, JSON.stringify(scaled));
+    await input.evaluate(node => { node.parentElement.style.zoom=''; }); await frame();
+    assert.equal(await root.locator('.skill-token-unavailable').count(), 31);
+    const geometry = await input.evaluate(node => {
+      const overlay = node.parentElement.querySelector('.skill-text-overlay'), text = overlay.firstElementChild;
+      const style = getComputedStyle(node), mirrored = getComputedStyle(text);
+      return { width: node.clientWidth, overlayWidth: overlay.clientWidth, textWidth: text.clientWidth, nativeHeight: node.scrollHeight, textHeight: text.scrollHeight,
+        fonts: [style.fontFamily,style.fontSize,style.lineHeight,style.letterSpacing,style.padding].join('|'), mirrored: [mirrored.fontFamily,mirrored.fontSize,mirrored.lineHeight,mirrored.letterSpacing,mirrored.padding].join('|'),
+        pointer: getComputedStyle(overlay).pointerEvents, hidden: overlay.getAttribute('aria-hidden'), muted: getComputedStyle(overlay.querySelector('.skill-token-unavailable')).color, semantic: getComputedStyle(node).getPropertyValue('--muted').trim(),
+        described: Boolean(document.getElementById(node.getAttribute('aria-describedby'))) };
+    });
+    assert.equal(geometry.width, geometry.overlayWidth); assert.equal(geometry.width, geometry.textWidth); assert.equal(geometry.fonts, geometry.mirrored);
+    assert.notEqual(await root.locator('.skill-token-unavailable').first().evaluate(node => getComputedStyle(node).color), await root.locator('.skill-text-overlay').evaluate(node => getComputedStyle(node).color));
+    assert(Math.abs(geometry.nativeHeight - geometry.textHeight) <= 1, JSON.stringify(geometry)); assert.equal(geometry.pointer, 'none'); assert.equal(geometry.hidden, 'true'); assert.equal(geometry.described, true);
+    await input.evaluate(node => { node.scrollTop=100; node.dispatchEvent(new Event('scroll')); node.setSelectionRange(3,17); }); await frame();
+    const scroll = await input.evaluate(node => ({ top: node.scrollTop, transform: node.parentElement.querySelector('.skill-text-overlay > div').style.transform, start: node.selectionStart, end: node.selectionEnd }));
+    assert(scroll.top > 0); assert.equal(scroll.transform, `translate(0px, ${-scroll.top}px)`); assert.equal(scroll.start,3); assert.equal(scroll.end,17);
+    await input.evaluate(node => { node.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); });
+    await page.waitForFunction(node => !node.parentElement.querySelector('.skill-text-overlay'), await input.elementHandle());
+    assert.equal(await input.inputValue(), draft);
+    await input.evaluate(node => { node.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); }); await root.locator('.skill-text-overlay').waitFor();
+    await input.press('End'); await input.pressSequentially('!'); await input.press('ControlOrMeta+z'); assert.equal(await input.inputValue(), draft);
+    assert.equal(await page.locator('output').getAttribute('data-fixture-creates'), '0'); overlayCases++;
+  };
   const selectResource = async (root, index) => {
     const control = root.getByRole('combobox').nth(index);
     await control.focus(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
@@ -75,6 +107,18 @@ try {
     await open('$a'); await input.press('Enter'); assert.equal(await input.inputValue(), '$add-issue');
     await open('$a'); await root.locator('.skill-completion').getByRole('option').click(); assert.equal(await input.inputValue(), '$add-issue'); assert(await input.evaluate(node => node === document.activeElement));
     assert.equal(await page.locator('output').getAttribute('data-fixture-creates'), '0');
+    await open('$a');
+    await page.evaluate(() => window.__skillInventory.remove());
+    const removed = root.locator('.skill-completion').getByRole('option'); await page.waitForFunction(node => node.getAttribute('aria-disabled') === 'true', await removed.elementHandle());
+    await removed.click({ force: true }); await input.press('ArrowDown'); await input.press('Enter'); await input.press('Tab');
+    assert.equal(await input.inputValue(), '$a'); assert.equal(await input.getAttribute('aria-activedescendant'), null);
+    assert.equal(await removed.evaluate(node => getComputedStyle(node).color === getComputedStyle(node.querySelector('.skill-completion-description')).color), true);
+    assert.equal(await removed.evaluate(node => node.scrollWidth <= node.clientWidth + 1), true);
+    assert.equal(await removed.getAttribute('data-availability'), 'unavailable'); assert(await input.evaluate(node => node === document.activeElement));
+    await input.press('Escape'); await input.fill(''); await input.pressSequentially('$a');
+    await frame(); assert.equal(await root.locator('.skill-completion').getByRole('option').count(), 0);
+    await page.evaluate(() => window.__skillInventory.restore());
+    await checkOverlay(root, input);
     cases++;
   }
   // Nearest shared placements: real queued editor and follow-up controller/CSS.
@@ -88,11 +132,12 @@ try {
       assert(await root.locator('.skill-completion').evaluate(node => node.scrollWidth <= node.clientWidth + 1));
       await input.press('Enter'); assert.equal(await input.inputValue(), '$add-issue'); assert(await input.evaluate(node => node === document.activeElement));
       assert.equal(await page.locator('output').getAttribute('data-fixture-creates'), '0');
+      await checkOverlay(root, input);
     }
     cases++;
   }
   assert.deepEqual(errors, []);
-  process.stdout.write(JSON.stringify({ operation: 'creation-skill-layout', ...source, cases, screenshots, effectiveZoom: 'half-viewport reflow', nativeAcceptance: 'not-performed' }) + '\n');
+  process.stdout.write(JSON.stringify({ operation: 'creation-skill-layout', ...source, cases, overlayCases, screenshots, effectiveZoom: 'half-viewport reflow', nativeAcceptance: 'not-performed' }) + '\n');
 } finally {
   await browser?.close(); if (server) await new Promise(done => server.close(done));
   await rm(directory, { recursive: true, force: true });
