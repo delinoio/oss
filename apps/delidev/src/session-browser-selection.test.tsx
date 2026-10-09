@@ -80,7 +80,7 @@ it.each([false, true])("switches the open browser before Resume and retains the 
     fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), { target: { value: "https://fixture.test/" } });
     await waitFor(() => expect((screen.getByRole("button", { name: "Open account browser" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Open account browser" }));
-    await screen.findByRole("tab", { name: "https://fixture.test/" });
+    await screen.findByRole("tab", { name: "https://fixture.test/", selected: true });
   };
   try {
     await waitFor(() => expect(publish).toBeTypeOf("function"));
