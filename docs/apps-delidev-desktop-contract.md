@@ -3532,6 +3532,47 @@ Publication uses a synced same-directory temporary file and atomic create-new li
 
 Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
 
+## Process-owned unread Inbox badge (issue #2143)
+
+One joined native BadgeHost selects the most recently focused admitted product
+window through the existing registry. Losing OS focus or hiding to tray retains
+that selection. Closing it selects the most recent remaining product window;
+no remaining window clears the badge. A disconnected selected window remains
+selected and clears its badge; it does not switch servers automatically. Counts
+are never summed across duplicate windows or servers.
+
+Rust receives only bounded count/status metadata. Every publication retains
+original window instance, connection scope, saved-profile/local pairing
+authority, native selection generation and monotonic publication revision.
+Document replacement retires its scope. A queued paint rechecks the current
+selection and original registered authority. Native freshness expires after
+thirty seconds without a successful aggregate observation, including while
+renderers are hidden or unavailable. Expiry cannot refresh itself from cached
+renderer data. Normal Quit fences publication, clears presentation and joins
+the single owned timer off the UI loop with the existing cleanup owner.
+
+Zero and unavailable remove the badge, 1–99 use decimal digits, and 100 or more
+use `99+`. macOS uses the process NSDockTile badge with OS placement and type.
+Windows uses a numeric ITaskbarList3 overlay plus product-window icons; its
+native overlay description contains a localized exact count. Linux uses
+runtime product-window and tray icons and a localized tray description where
+the shell permits them. Runtime pixels preserve the existing icon and add a
+compact red upper-right badge with white digits; installation assets remain
+unchanged. Notification permission and claims do not authorize or filter
+counts. Adapter failures use bounded structured classifications and never
+change Inbox state, navigation or independent server/Worker lifetime.
+
+These are implemented fallback locations, not installed-platform acceptance.
+No OS/shell/switcher, DPI/scale, appearance or badge readability combination has
+been observed for this change. macOS Dock, Windows taskbar and Linux window/tray
+adapters require CI build coverage and owner-assigned installed checks. App
+switchers that ignore runtime icons, shell-disabled overlays, hidden tray
+icons and denied OS presentation remain unavailable. Universal Alt+Tab or
+app-switcher visibility is not claimed. There is no badge click action,
+notification permission request, new settings surface or persisted count.
+
+Accepted retained Inbox read-state mutations invalidate unread-count metadata through the connection-owned badge observer, including after detail-pane disposal. Retired connections and rejected/uncertain outcomes do not invalidate a successor.
+
 ### Current source-native model and price consumers — issue #2138
 
 Follow the [source-specific pricing contract](cmds-delidev-usage-contract.md#automatic-source-specific-token-prices--issue-2138) and the current-only schema-4 Worker/protocol-2 boundary. Keep the approved Overview / Usage history / Model prices navigation. Model prices uses one exact source/native-ID picker, compact Automatic/Manual, Refresh and Edit controls, and three rate columns. Preserve missing versus zero, freshness, the daily cadence, collapsed reference/history evidence and the existing staged manual editor. Do not add a Model UUID header. A retired API source retains historical read-only evidence without current edit authority.
