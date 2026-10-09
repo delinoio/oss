@@ -76,7 +76,7 @@ it("renders the approved uncertain/loading hierarchy without duplicate guidance 
   expect(inventory.querySelector(".settings-runner-skeletons")?.getAttribute("aria-hidden")).toBe("true");
   expect(inventory.querySelectorAll("article")).toHaveLength(0);
   expect(screen.queryByText("No saved entries.")).toBeNull();
-  expect(screen.getByRole("button", { name: "Start local Worker" }).className).toBe("primary");
+  expect(screen.getByRole("button", { name: "Start local Worker" }).classList.contains("primary")).toBe(true);
   expect((screen.getByRole("button", { name: "Stop local Worker" }) as HTMLButtonElement).disabled).toBe(false);
   expect(screen.queryByRole("button", { name: "Load more Settings pages" })).toBeNull();
   await waitFor(() => expect(value.list).toHaveBeenCalledWith(EntityKind.MACHINE, "", 50));
