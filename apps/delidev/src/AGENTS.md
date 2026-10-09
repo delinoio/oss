@@ -917,6 +917,14 @@ Backup inspection pauses all three background inventory/history readers and refr
 
 - Automatic reset-credit consent (#2123) is a default-off, capability-77 typed revision mutation in `subscription-quota.tsx`. Confirm the exact account connection/generation with the existing Settings task; retain uncertain requests and reject replacement revisions. Use approved English/Korean copy, theme tokens and keyboard/dismissal ownership. Accepted server work continues after Settings closes; login replacement requires fresh consent and consumption never automatically resumes a session.
 
+- Inbox icon counts (#2143) use a connection-owned Connect Query background
+  aggregate independent of the Inbox surface, preferences and notifications.
+  Native selected-window scope/generation is authoritative. Clear initial,
+  unsupported, disconnected or failed observation; never substitute candidates
+  or pagination. Invalidate after accepted explicit read-state changes without
+  changing read receipts or source authority. Keep scope replacement serialized
+  and do not reauthorize expired native freshness with unchanged cached data.
+
 
 - Issue #2115 uses directly visible editable Starting branch comboboxes for primary and additional repositories, with a viewport-clamped 280px manual top-layer popup that reserves no flow height or composer movement. Typed names use Git syntax/1,024-byte UTF-8 validation and the original repository preferred_remote or origin, through existing ordered overrides. Empty uses saved references; focus/lookup/Refresh never convert Options local/commit/custom-remote references. Parent create admission rejects invalid or composing drafts, including shortcut submission. Keep local substring filtering, IME/229/Enter/disabled-fieldset fences, input focus and active descendant semantics; retain negotiated selected-Worker discovery, full inventory validation, original identity/revision fencing, proof/runner/comparison-base/Local/General Chat and exact retry ownership.
 - Issue #2138 uses protocol-2 exact Provider-or-SubscriptionService/native model identities and schema-4 inline Agent Worker routes. Usage filters, prices, charts, readiness, original request diagnostics and routing/execution details must consume those original identities without Model resource reads or UUID selection. The Model prices tab owns authenticated server Automatic/Manual policy and Refresh/Edit operations, three nullable exact rates, provenance/exclusions and retained historical versions. Deleted API providers remain read-only; subscription references are API-equivalent rates. Preserve Manual precedence, original revisions, mounted drafts and byte-identical uncertain retries; never fetch models.dev from the renderer or infer execution/native/account support. Portable import/export now accepts current v4 only, preserves current defaults/API profiles and rejects retired Model entries; this current protocol reset supersedes historical compatibility/version statements above. Explicit validation follow-up and Refresh models may read revision-bound endpoint hints but may not persist a Model catalog or treat retained catalog fields as live authority. Follow the usage, catalog and desktop contracts.
@@ -948,6 +956,8 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Notifications under issue #2126 ends with the existing Inbox guidance strip and ordinary padding. Remove the supplementary About notification delivery disclosure, its paragraphs/container and Delivery search destination without replacement. Preserve original native status/permission/Refresh, saved preferences, polling, Edit/Save/Cancel, exact uncertain retries, focus and Settings visit ownership.
 
 - Settings search uses one `minmax(0, 1fr)` header grid column under issue #2117. Keep the input aligned with the full available header/category content width within 1 CSS pixel, including 260px and 190px widths; preserve original padding, scrolling, input identity, query/focus/IME and compact drawer ownership.
+
+- The connection-owned Inbox badge observer invalidates the aggregate after accepted retained inbox-read mutations even when the original detail pane has unmounted. Rejected/uncertain requests and retired connection registries grant no refresh authority; preserve exact mutation receipts.
 
 - The Quit presenter lives in each Local/Saved desktop window above connection gates. Missing or disconnected transports report unknown without mounting business providers; keep Cancel and native-attempt observation active on connection pages.
 

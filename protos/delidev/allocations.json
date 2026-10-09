@@ -10212,6 +10212,414 @@
       "number": 35
     },
     {
+      "issue": 2143,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1",
+      "number": 80
+    },
+    {
+      "issue": 2143,
+      "kind": "message",
+      "declaration": "GetUnreadInboxCountResponse",
+      "member": "unread_count",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2143,
+      "kind": "message",
+      "declaration": "GetUnreadInboxCountResponse",
+      "member": "observed_at",
+      "number": 2
+    },
+    {
+      "issue": 2124,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
+      "number": 76,
+      "status": "implemented"
+    },
+    {
+      "issue": 2124,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
+      "number": 51,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1",
+      "number": 75,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "session_id",
+      "number": 2,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "expected_queue_generation",
+      "number": 3,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "before_input_id",
+      "number": 4,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "before_input_revision",
+      "number": 5,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputResponse",
+      "member": "change",
+      "number": 1,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputResponse",
+      "member": "current_queue_generation",
+      "number": 2,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueRequest",
+      "member": "page_size",
+      "number": 2,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueRequest",
+      "member": "page_token",
+      "number": 3,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueResponse",
+      "member": "inputs",
+      "number": 1,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueResponse",
+      "member": "next_page_token",
+      "number": 2,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueResponse",
+      "member": "current_queue_generation",
+      "number": 3,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueResponse",
+      "member": "waiting_count",
+      "number": 4,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "session_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "execution_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "sequence",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "workspace_operation",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "native_phase",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "state",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "repository_id",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "repository_ordinal",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "repository_count",
+      "number": 12,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressResponse",
+      "member": "replayed",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_SETUP",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_INSPECT",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_CLONE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_REFERENCE",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_CHECKOUT",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_VERIFY",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_PUBLISH",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupProgressState",
+      "member": "SESSION_STARTUP_PROGRESS_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupProgressState",
+      "member": "SESSION_STARTUP_PROGRESS_STATE_RUNNING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupProgressState",
+      "member": "SESSION_STARTUP_PROGRESS_STATE_COMPLETED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
+      "number": 74
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
+      "number": 50
+    },
+    {
+      "issue": 2112,
+      "kind": "message",
+      "declaration": "CreateTerminalRequest",
+      "member": "creation_mode",
+      "number": 5
+    },
+    {
+      "issue": 2112,
+      "kind": "enum",
+      "declaration": "TerminalCreationMode",
+      "member": "TERMINAL_CREATION_MODE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2112,
+      "kind": "enum",
+      "declaration": "TerminalCreationMode",
+      "member": "TERMINAL_CREATION_MODE_REUSE_OR_CREATE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2112,
+      "declaration": "CreateTerminalRequest",
+      "kind": "message",
+      "member": "preferred_terminal_id",
+      "number": 6
+    },
+    {
       "issue": 2138,
       "kind": "message",
       "declaration": "RequestSubscriptionRequest",
@@ -12817,392 +13225,6 @@
       "newDeclaration": true
     },
     {
-      "issue": 2124,
-      "kind": "enum",
-      "declaration": "SystemCapability",
-      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
-      "number": 76,
-      "status": "implemented"
-    },
-    {
-      "issue": 2124,
-      "kind": "enum",
-      "declaration": "WorkerCapability",
-      "member": "WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
-      "number": 51,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "enum",
-      "declaration": "SystemCapability",
-      "member": "SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1",
-      "number": 75,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "MoveQueuedInputRequest",
-      "member": "mutation",
-      "number": 1,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "MoveQueuedInputRequest",
-      "member": "session_id",
-      "number": 2,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "MoveQueuedInputRequest",
-      "member": "expected_queue_generation",
-      "number": 3,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "MoveQueuedInputRequest",
-      "member": "before_input_id",
-      "number": 4,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "MoveQueuedInputRequest",
-      "member": "before_input_revision",
-      "number": 5,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "MoveQueuedInputResponse",
-      "member": "change",
-      "number": 1,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "MoveQueuedInputResponse",
-      "member": "current_queue_generation",
-      "number": 2,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "ListWaitingQueueRequest",
-      "member": "session_id",
-      "number": 1,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "ListWaitingQueueRequest",
-      "member": "page_size",
-      "number": 2,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "ListWaitingQueueRequest",
-      "member": "page_token",
-      "number": 3,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "ListWaitingQueueResponse",
-      "member": "inputs",
-      "number": 1,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "ListWaitingQueueResponse",
-      "member": "next_page_token",
-      "number": 2,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "ListWaitingQueueResponse",
-      "member": "current_queue_generation",
-      "number": 3,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2142,
-      "kind": "message",
-      "declaration": "ListWaitingQueueResponse",
-      "member": "waiting_count",
-      "number": 4,
-      "newDeclaration": true,
-      "status": "implemented"
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "mutation",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "machine_id",
-      "number": 2,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "instance_id",
-      "number": 3,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "session_id",
-      "number": 4,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "execution_id",
-      "number": 5,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "sequence",
-      "number": 6,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "workspace_operation",
-      "number": 7,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "native_phase",
-      "number": 8,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "state",
-      "number": 9,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "repository_id",
-      "number": 10,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "repository_ordinal",
-      "number": 11,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressRequest",
-      "member": "repository_count",
-      "number": 12,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "message",
-      "declaration": "ReportSessionStartupProgressResponse",
-      "member": "replayed",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupWorkspaceOperation",
-      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_UNSPECIFIED",
-      "number": 0,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupWorkspaceOperation",
-      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_SETUP",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupWorkspaceOperation",
-      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_INSPECT",
-      "number": 2,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupWorkspaceOperation",
-      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_CLONE",
-      "number": 3,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupWorkspaceOperation",
-      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_REFERENCE",
-      "number": 4,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupWorkspaceOperation",
-      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_CHECKOUT",
-      "number": 5,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupWorkspaceOperation",
-      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_VERIFY",
-      "number": 6,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupWorkspaceOperation",
-      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_PUBLISH",
-      "number": 7,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupProgressState",
-      "member": "SESSION_STARTUP_PROGRESS_STATE_UNSPECIFIED",
-      "number": 0,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupProgressState",
-      "member": "SESSION_STARTUP_PROGRESS_STATE_RUNNING",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SessionStartupProgressState",
-      "member": "SESSION_STARTUP_PROGRESS_STATE_COMPLETED",
-      "number": 2,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "SystemCapability",
-      "member": "SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
-      "number": 74
-    },
-    {
-      "issue": 2120,
-      "kind": "enum",
-      "declaration": "WorkerCapability",
-      "member": "WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
-      "number": 50
-    },
-    {
-      "issue": 2112,
-      "kind": "message",
-      "declaration": "CreateTerminalRequest",
-      "member": "creation_mode",
-      "number": 5
-    },
-    {
-      "issue": 2112,
-      "kind": "enum",
-      "declaration": "TerminalCreationMode",
-      "member": "TERMINAL_CREATION_MODE_UNSPECIFIED",
-      "number": 0,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2112,
-      "kind": "enum",
-      "declaration": "TerminalCreationMode",
-      "member": "TERMINAL_CREATION_MODE_REUSE_OR_CREATE",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2112,
-      "declaration": "CreateTerminalRequest",
-      "kind": "message",
-      "member": "preferred_terminal_id",
-      "number": 6
-    },
-    {
       "issue": 2123,
       "kind": "enum",
       "declaration": "SystemCapability",
@@ -13410,6 +13432,42 @@
       "serverStreaming": false
     },
     {
+      "issue": 2143,
+      "service": "InboxService",
+      "method": "GetUnreadInboxCount",
+      "input": "GetUnreadInboxCountRequest",
+      "output": "GetUnreadInboxCountResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2142,
+      "service": "SessionService",
+      "method": "MoveQueuedInput",
+      "input": "MoveQueuedInputRequest",
+      "output": "MoveQueuedInputResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2142,
+      "service": "SessionService",
+      "method": "ListWaitingQueue",
+      "input": "ListWaitingQueueRequest",
+      "output": "ListWaitingQueueResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2120,
+      "service": "WorkerService",
+      "method": "ReportSessionStartupProgress",
+      "input": "ReportSessionStartupProgressRequest",
+      "output": "ReportSessionStartupProgressResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
       "issue": 964,
       "service": "ProviderService",
       "method": "ListEndpointModels",
@@ -13460,33 +13518,6 @@
       "method": "RefreshTokenPrices",
       "input": "RefreshTokenPricesRequest",
       "output": "RefreshTokenPricesResponse",
-      "clientStreaming": false,
-      "serverStreaming": false
-    },
-    {
-      "issue": 2142,
-      "service": "SessionService",
-      "method": "MoveQueuedInput",
-      "input": "MoveQueuedInputRequest",
-      "output": "MoveQueuedInputResponse",
-      "clientStreaming": false,
-      "serverStreaming": false
-    },
-    {
-      "issue": 2142,
-      "service": "SessionService",
-      "method": "ListWaitingQueue",
-      "input": "ListWaitingQueueRequest",
-      "output": "ListWaitingQueueResponse",
-      "clientStreaming": false,
-      "serverStreaming": false
-    },
-    {
-      "issue": 2120,
-      "service": "WorkerService",
-      "method": "ReportSessionStartupProgress",
-      "input": "ReportSessionStartupProgressRequest",
-      "output": "ReportSessionStartupProgressResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },

@@ -157,6 +157,15 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Issue #2018 original generated-image export uses its dedicated two-command generated-image-export permission in the app manifest and only admitted main/local-*/server-* product webviews. Keep both URL-authorizing commands asynchronous, checksum/bounds and original instance/connection guards, one process-owned pending operation, replay receipts and joined Quit publication. No renderer path, generic save/download/navigation authority or deletion of exported user copies. Test compiled ACL denial for external children, remote origins and tray/auxiliary views; follow the desktop/image-input contracts.
 
+- Unread Inbox icon badges follow the Inbox and desktop contracts (#2143).
+  Keep one process-owned joined BadgeHost, original admitted window/connection
+  authority, native selection generations and publication revisions. Select
+  the most recently focused product window without summing servers. Preserve
+  hidden-window selection, expiry, clear-on-unavailable and normal-Quit join.
+  Receive bounded count/status metadata only; never call RPCs or request
+  notification permission from native badging. Preserve installed icons and
+  disclose OS/shell/switcher limits independently of fixture/build evidence.
+
 - Issue #2144 normal explicit Quit confirmation follows the desktop contract. One process-owned original attempt precedes every existing shutdown fence, deduplicates native-admitted open server scopes and requires complete fresh renderer GetOverview coverage within five seconds for silent zero admission. Unknown/positive status keeps Cancel available; cancellation grants no cleanup or mutation authority. Preserve exact counts, original window/scope/revision guards, stale-result rejection, checking/dialog focus and localized Worker lifetime wording. The typed original-attempt native IPC is limited to trusted product documents; the native fallback defaults/Escape to Cancel. Confirm joins the existing shutdown once off the UI loop, preserving close-to-tray,35-second original-child grace, borrowed/remote lifetime and mandatory updater/crash behavior. No business RPC, allocation or migration; fixture/source checks do not claim installed native acceptance.
 
 - Quit silent admission atomically checks the captured product scope set and stops registry admission under its original lock before scheduling ExitRequested. A newly reserved/replaced scope turns coverage unknown without starting shutdown; focus changes do not change scope authority.

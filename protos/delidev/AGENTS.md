@@ -254,6 +254,12 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Sidechat same-question retry follows `docs/cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061`: System 57 / Worker 31 compose original 27/16 and managed 47/26/3. Preserve one direct text-only question, exact actor/revision/turn receipts, immutable child/snapshots, original metadata-only workspace reference, captured Worker/native authority, atomic current-answer publication and all-generation joined cleanup within existing bounds. Never replay uncertain native work, create another child or add a migration.
 - Issue #2048 owns ExecutionStartupObservation.failure_kind field 11 and the closed ExecutionStartupFailureKind UNSPECIFIED=0 / IMAGE_INPUT_REJECTED=1 declarations and allocation records in one complete feature change. Zero preserves legacy bytes; no capability, RPC or migration is added. Unknown/mixed provenance fails closed under the direct startup and image-input contracts.
 
+- Issue #2143 owns System capability 80 and the complete authenticated read-only
+  Inbox unread-count RPC with its closed count/time response. Record the
+  allocation in the owning complete feature and regenerate tool-owned bindings
+  and facades. No notification authority, content disclosure or migration is
+  implied by this aggregate capability.
+
 - Current protocol 2 uses canonical split schemas without the retired monolithic public import or aggregate descriptors/queries. Preserve immutable field/capability ownership and do not reinterpret obsolete Model UUID fields. Record complete source-identity, endpoint, price-policy/provenance and refresh declaration closure before regeneration; retain original #964 new-message ownership when #2138 adds fields.
 
 - Protocol-2 token pricing mode changes retain `SetTokenPricingModeRequest.expected_revision = 6` for the original displayed active price, independent of policy field 3 and Provider field 5. Check all three before mutation and preserve exact accepted/uncertain retries. Zero means unavailable active pricing; a mode change cannot freeze an unseen automatically published basis. Preserve System 42 / Worker 22 and all existing declarations; no migration or new capability.
