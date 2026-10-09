@@ -65,6 +65,21 @@ try {
     await page.waitForFunction(() => document.querySelector(".sidebar-pane-dialog").hidden);
     assert.equal(await toggle.getAttribute("aria-expanded"), "false");
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    // Supporting-surface portals retain selected resources and authoring state.
+    await page.getByRole("button", { name: language === "ko" ? "풀 리퀘스트" : "Pull requests", exact: true }).click();
+    assert.equal(await pane.evaluate(node => node.hidden), true);
+    await toggle.click(); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    const repository = pane.locator(".sidebar-repository-row").first(); await repository.click();
+    const draft = pane.locator(".pr-search-input input"); await draft.fill("Retained query draft");
+    const draftHandle = await draft.elementHandle();
+    await draft.evaluate(node => node.setSelectionRange(2, 8));
+    await page.keyboard.press(`${primary}+b`); await page.waitForFunction(() => document.querySelector(".sidebar-pane-dialog").hidden);
+    assert.equal(await toggle.evaluate(node => node === document.activeElement), true);
+    await toggle.click(); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    assert.equal(await draft.inputValue(), "Retained query draft");
+    assert.equal(await draft.evaluate((node, original) => node === original, draftHandle), true);
+    assert.equal(await repository.getAttribute("aria-pressed"), "true");
+    assert.equal(await page.evaluate(() => window.__prSidebarFixture.github), 0);
     checks++;
   }
   // Effective 200% reflow uses half the physical viewport, without claiming CEF zoom.
