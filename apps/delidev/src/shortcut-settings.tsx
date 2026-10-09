@@ -37,7 +37,9 @@ export function ShortcutSettings() {
     }).catch(()=>{if(mounted.current&&generation===captureGeneration.current)setCaptureState("uncertain");});
   };
   useLayoutEffect(()=>{if(!capturing&&restoreFocus.current){restoreFocus.current=false;const button=opener.current;if(button?.isConnected&&!button.matches(":disabled")&&!button.closest("[hidden],[inert]"))button.focus({preventScroll:true});}},[capturing]);
-  useEffect(() => {
+  // Install capture before the active prompt can be painted. A key pressed
+  // immediately after admission must not escape into ordinary dispatch.
+  useLayoutEffect(() => {
     if (!capturing || locked) { if(capturing&&captureState!=="retiring"&&captureState!=="uncertain")cancelCapture(); return; }
     const action = capturing;
     const expire=setTimeout(()=>{if(captureState==="active")cancelCapture();},Math.max(0,deadline.current-performance.now()));
