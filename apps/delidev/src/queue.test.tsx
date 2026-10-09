@@ -20,7 +20,7 @@ function fixture(prompt = "Original queued input") {
   const remove = vi.fn(async (_request: unknown) => ({}));
   const transport = createRouterTransport((router) => router.service(SessionService, { editQueuedInput: edit, steerQueuedInput: steer, removeQueuedInput: remove }));
   const client = new QueryClient();
-  const view = (input = resource, compact = false) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><QueuedInput compact={compact} resource={input} session={session} refresh={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (input = resource, compact = false, readOnly = false) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><QueuedInput readOnly={readOnly} compact={compact} resource={input} session={session} refresh={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { resource, session, execution, turn, edit, steer, remove, view, transport, client };
 }
 
@@ -206,4 +206,37 @@ it("opens the complete original compact input through More and restores menu foc
   fireEvent.click(more); fireEvent.click(screen.getByRole("menuitem", { name: "Edit input" }));
   expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty("value", "Long original prompt ".repeat(100));
   expect(f.edit).not.toHaveBeenCalled(); expect(f.remove).not.toHaveBeenCalled(); expect(f.steer).not.toHaveBeenCalled();
+});
+
+
+it("reveals the complete compact input while retained pagination is read-only", () => {
+  const prompt = "Complete retained pagination input ".repeat(100), value = fixture(prompt);
+  render(value.view(value.resource, true, true));
+  fireEvent.click(screen.getByRole("button", { name: "More input actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit input" }));
+  expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty("value", prompt);
+  expect(screen.getByRole("button", { name: "Save input" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: "Remove input" })).toHaveProperty("disabled", true);
+  expect(value.edit).not.toHaveBeenCalled();
+  expect(value.remove).not.toHaveBeenCalled();
+});
+
+it("reveals the complete compact input during pending and uncertain removal without replacing the request", async () => {
+  const prompt = "Complete original pending removal input ".repeat(100), value = fixture(prompt);
+  let reject!: (error: ConnectError) => void;
+  value.remove.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  render(value.view(value.resource, true));
+  fireEvent.click(screen.getByRole("button", { name: "Remove input" }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole("button", { name: "More input actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit input" }));
+  expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty("value", prompt);
+  expect(screen.getByRole("button", { name: "Save input" })).toHaveProperty("disabled", true);
+  await act(async () => reject(new ConnectError("Lost original removal", Code.Unavailable)));
+  expect(screen.getByRole("button", { name: "More input actions" })).toHaveProperty("disabled", false);
+  expect(screen.getByRole("button", { name: "Save input" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same removal" }));
+  await waitFor(() => expect(value.remove).toHaveBeenCalledTimes(2));
+  expect(value.remove.mock.calls[1]![0]).toEqual(value.remove.mock.calls[0]![0]);
+  expect(value.edit).not.toHaveBeenCalled();
 });

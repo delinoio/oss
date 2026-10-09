@@ -57,5 +57,21 @@
   "schedule-creation.extra.9cd18d06fde1": "HH:mm 형식의 유효한 시간을 입력하세요.",
   "schedule-creation.sentence.6caab2b232d7": "{{v0}} {{v1}} · {{v2}}",
   "schedule-creation.sentence.2a3f85460313": "사용자 지정 cron · {{v0}}",
-  "schedule-creation.weeklyOn": "매주 {{day}}"
+  "schedule-creation.weeklyOn": "매주 {{day}}",
+  "schedule-creation.review": "검토",
+  "schedule-creation.progress": "일정 생성 단계",
+  "schedule-creation.edit": "편집",
+  "schedule-creation.editTask": "작업 편집",
+  "schedule-creation.editExecution": "실행 편집",
+  "schedule-creation.editRepeat": "반복 편집",
+  "schedule-creation.reviewConfiguration": "검토는 설정된 선택을 보여주며 실행 준비 상태를 보장하지 않습니다.",
+  "schedule-creation.correctStep": "계속하기 전에 필수 또는 잘못된 필드를 수정하세요.",
+  "schedule-creation.stepCount": "{{total}}단계 중 {{current}}단계",
+  "schedule-creation.next": "다음",
+  "schedule-creation.back": "이전",
+  "schedule-creation.stepStatus": "{{label}} · {{status}}",
+  "schedule-creation.completed": "완료",
+  "schedule-creation.current": "현재",
+  "schedule-creation.future": "예정",
+  "schedule-creation.repeat": "반복"
 }
