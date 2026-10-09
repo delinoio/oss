@@ -277,7 +277,8 @@ it("adopts the first save and keeps the same form, disclosure and singleton for 
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[1][0].mutation).toMatchObject({ id: first.id, expectedRevision: first.revision });
   expect(screen.getByRole("form")).toBe(form);
-  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[1][0].documentJson))).toEqual({ ...newConfiguration(EntityKind.SETTINGS), automatic_fetch: false, remediation: { ...newConfiguration(EntityKind.SETTINGS).remediation as Document, ci_failure: true } });
+  const { automatic_plan_approval: _newCapability, ...legacyDefaults } = newConfiguration(EntityKind.SETTINGS);
+  expect(JSON.parse(new TextDecoder().decode(value.save.mock.calls[1][0].documentJson))).toEqual({ ...legacyDefaults, automatic_fetch: false, remediation: { ...legacyDefaults.remediation as Document, ci_failure: true } });
 });
 
 it("retains a changed draft on external revision drift and discards into the latest full document", async () => {

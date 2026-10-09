@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { ConfigurationService, EntityKind, NetworkService, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
+import { configurationSchemaVersion, ConfigurationService, EntityKind, NetworkService, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { document, encode } from "./documents";
@@ -56,7 +56,7 @@ it("edits both scoped singleton forms inline without rewriting hidden settings",
   expect(routing.value).toBe("priority");
   expect(screen.queryByLabelText("Allow automatic fetch before Worktree preparation")).toBeNull();
   const retained = { ...defaults, default_routing: "priority", notifications: false, remediation: { ...defaults.remediation, attempt_limit: 9, reviewer_selectors: [{ kind: "bot", id: "9007199254740993", node_id: "BOT_exact" }] } };
-  const configured = await createClient(ConfigurationService, transport).saveConfiguration({ kind: EntityKind.SETTINGS, schemaVersion: 1, documentJson: encode(retained), mutation: { id: first[0].id, expectedRevision: first[0].revision, requestId: newRequestId() } });
+  const configured = await createClient(ConfigurationService, transport).saveConfiguration({ kind: EntityKind.SETTINGS, schemaVersion: configurationSchemaVersion(EntityKind.SETTINGS, retained), documentJson: encode(retained), mutation: { id: first[0].id, expectedRevision: first[0].revision, requestId: newRequestId() } });
   expect(configured.resource).toBeTruthy();
   const network = createClient(NetworkService, transport);
   const originalRoute = await network.getNetworkRoute({});

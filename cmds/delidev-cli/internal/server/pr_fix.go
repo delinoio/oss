@@ -85,7 +85,7 @@ func (s *Service) GetPullRequestFixCapabilities(ctx context.Context, req *connec
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
-func prFixPolicy(tx *store.Tx, repository domain.ID) (store.Record, domain.RemediationPolicy, error) {
+func prFixPolicy(tx *store.Tx, repository domain.ID, projectIDs ...domain.ID) (store.Record, domain.RemediationPolicy, error) {
 	r, err := tx.Get(domain.RepositoryKind, repository)
 	if err != nil {
 		return r, domain.RemediationPolicy{}, err
@@ -108,7 +108,19 @@ func prFixPolicy(tx *store.Tx, repository domain.ID) (store.Record, domain.Remed
 			return r, settings.Remediation, err
 		}
 	}
-	policy, err := repo.EffectiveRemediation(settings.Remediation)
+	defaults := settings.Remediation
+	if len(projectIDs) > 0 && projectIDs[0] != "" {
+		row, readErr := tx.Get(domain.ProjectKind, projectIDs[0])
+		if readErr != nil {
+			return r, defaults, readErr
+		}
+		project, readErr := store.Decode[domain.Project](row)
+		if readErr != nil {
+			return r, defaults, readErr
+		}
+		defaults = project.EffectiveRemediation(defaults)
+	}
+	policy, err := repo.EffectiveRemediation(defaults)
 	return r, policy, err
 }
 func readPRFixSelection(tx *store.Tx, input domain.PRFixRequest) (domain.PRProblemSet, []domain.PRProblem, domain.RemediationPolicy, error) {
@@ -130,7 +142,7 @@ func readPRFixSelection(tx *store.Tx, input domain.PRFixRequest) (domain.PRProbl
 	if !slices.Contains(p.Repositories, input.RepositoryID) {
 		return set, nil, domain.RemediationPolicy{}, domain.Fail(domain.PermissionDenied, "The selected PR repository is outside this project.", "Select the explicit project containing that repository.")
 	}
-	_, policy, err := prFixPolicy(tx, input.RepositoryID)
+	_, policy, err := prFixPolicy(tx, input.RepositoryID, input.ProjectID)
 	if err != nil {
 		return set, nil, policy, err
 	}
@@ -539,7 +551,7 @@ func (s *Service) preparePRFixDispatch(ctx context.Context, record store.Record)
 			if err := tx.RequireAutomaticPRSource(value); err != nil {
 				return err
 			}
-			_, policy, err := prFixPolicy(tx, value.GitTarget.Target.RepositoryID)
+			_, policy, err := prFixPolicy(tx, value.GitTarget.Target.RepositoryID, value.ProjectID)
 			if err != nil {
 				return err
 			}

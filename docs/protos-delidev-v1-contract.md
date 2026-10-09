@@ -997,3 +997,7 @@ No migration, checkout authority or Git credential persistence is added.
 ## Server quota V2 allocation — issue #1854
 
 System `SERVER_SUBSCRIPTION_QUOTA_V2 = 50` is recorded and activated in the complete owning feature PR. Collision-check `allocations.json` and preserve 18/46/49. Reuse RequestSubscriptionObservation and RefreshAllSubscriptionQuotas: omitted-machine QUOTA selects the server even during Execute; explicit-machine legacy semantics remain unchanged. No Worker capability, field, RPC or migration is allocated. Declaration alone grants no native/account/platform acceptance.
+
+## Project behavior settings (issue #1965)
+
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.

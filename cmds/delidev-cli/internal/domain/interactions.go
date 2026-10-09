@@ -229,7 +229,16 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 	return nil
 }
 
+type PlanApprovalPolicyDecision string
+
+const (
+	PlanApprovalManual      PlanApprovalPolicyDecision = "manual"
+	PlanApprovalAutomatic   PlanApprovalPolicyDecision = "automatic"
+	PlanApprovalUnavailable PlanApprovalPolicyDecision = "unavailable"
+)
+
 type ExecutionInteraction struct {
+	PlanApprovalPolicy PlanApprovalPolicyDecision     `json:"plan_approval_policy,omitempty"`
 	Grok               *GrokInteractionRequest        `json:"grok,omitempty"`
 	ClaudeSettlement   *ClaudeCallbackSettlement      `json:"claude_settlement,omitempty"`
 	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`

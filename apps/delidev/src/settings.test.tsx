@@ -260,8 +260,8 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
-  const values = ["subscription-accounts", "api-accounts", "providers", "agent-workers", "instructions", "projects", "repositories", "integrations", "git-workflow", "execution-workers", "paired-devices", "appearance", "server-preferences", "diagnostics", "notifications", "transfer", "backups"];
+  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Project defaults", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
+  const values = ["subscription-accounts", "api-accounts", "providers", "agent-workers", "instructions", "project-defaults", "projects", "repositories", "integrations", "git-workflow", "execution-workers", "paired-devices", "appearance", "server-preferences", "diagnostics", "notifications", "transfer", "backups"];
   expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI", "Coding", "Device management", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
   const buttons = within(navigation).getAllByRole("button");

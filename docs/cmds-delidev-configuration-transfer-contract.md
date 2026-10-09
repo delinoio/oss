@@ -13,7 +13,7 @@ authority. See the [account contract](cmds-delidev-accounts-contract.md#connecte
 
 Version 4 preserves Provider `api_formats` and Account `api_protocol` under the
 [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection).
-Current exports and reviewed import plans use version 4. Versions 1–3 remain
+Current exports and reviewed import plans use version 5. Versions 1–4 remain
 importable with their original API/native/source-route semantics and reject the
 new fields rather than treating them as legacy defaults. Profile declarations
 and account selections use the existing complete relationship validation and
@@ -124,3 +124,7 @@ previews used version 3 and preserve their exact bytes through acceptance/public
 On complete current-only reset and inline-model activation, the reserved portable profile embeds exact route model IDs and required settings in Workers, with no independent Model entries or model UUID remapping. Keep atomic graph validation, explicit machine/source bindings and credential exclusion. Earlier portable formats are unsupported only after complete current-only reset activation. Until then, the active API-format version 4 retains independent Model entries and imports versions 1–3; this reservation cannot change those runtime semantics.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+## Project behavior settings (issue #1965)
+
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.

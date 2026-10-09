@@ -1,4 +1,5 @@
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
+import { readableServerPreferences } from "./server-preferences";
 import { ProjectRepositoryOrder } from "./project-repository-order";
 import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
@@ -39,10 +40,10 @@ export function newConfiguration(kind: EntityKind): Document {
     case EntityKind.MODEL: return { name: "", provider_id: "", native_id: "", alias: "", harnesses: [], hidden: false, order: 0, manual: true, new: false, metadata_source: "unknown" };
     case EntityKind.ACCOUNT: return { alias: "", provider_id: "", type: "api", enabled: true, exclude_automatic: false, recovery_notifications: true, health: "disconnected", quota: [], confirmed_exhausted: false };
     case EntityKind.AGENT: return { name: "", harness: Harness.Codex, model_id: "", accounts: [], templates: [], options: { permission: Permission.Default } };
-    case EntityKind.PROJECT: return { name: "", repositories: [], primary_repository: "", agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } };
+    case EntityKind.PROJECT: return { settings: { automatic_fetch: "inherit", automatic_plan_approval: "inherit" }, name: "", repositories: [], primary_repository: "", agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } };
     case EntityKind.REPOSITORY: return { name: "", checkouts: [], base: {}, starting: {}, auto_fetch: true };
     case EntityKind.TEMPLATE: return { name: "", contents: "" };
-    case EntityKind.SETTINGS: return { default_routing: Routing.Sequential, notifications: true, automatic_fetch: true, remediation: defaultRemediationPolicy() };
+    case EntityKind.SETTINGS: return { automatic_plan_approval: false, default_routing: Routing.Sequential, notifications: true, automatic_fetch: true, remediation: defaultRemediationPolicy() };
     default: throw new Error("Unsupported configuration editor");
   }
 }
@@ -201,13 +202,15 @@ function ProviderFields({ data, change, subscriptionOnly = false, ...props }: Fi
     <ProviderAPIFormatFields data={data} change={change} {...props} /><p>{copy("configuration-fields.localhostRefersToTheServerComputer_cfc90a")}</p><Check label={copy("configuration-fields.discoverModelsAutomaticallyForConnectedEntries_6f1cb4")} value={data.discovery} change={(discovery) => change({ ...data, discovery })} />
   </>;
 }
-export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow" }
-interface FieldsProps { movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
+export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow", ProjectDefaults = "project-defaults" }
+interface FieldsProps { supportsProjectBehavior?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
-  const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All } = props;
+  const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false } = props;
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
   if (kind === EntityKind.SETTINGS) return <>
+ {serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <h3>{copy("configuration-fields.projectDefaults")}</h3> : null}
+ {supportsProjectBehavior ? <section data-settings-search-target="automatic-plan-approval"><Check label={copy("configuration-fields.automaticPlanApproval")} value={data.automatic_plan_approval} change={field("automatic_plan_approval")} /><p>{copy("configuration-fields.planApprovalHelp")}</p></section> : null}
     {serverPreferenceSection !== ServerPreferenceSection.GitWorkflow ? <section data-settings-search-target="account-routing" className="server-preference-section"><h4>{copy("configuration-fields.accountRouting_0c3707")}</h4><div data-settings-search-target="default-routing" className="server-routing-field"><Choice label={copy("configuration-fields.defaultAccountRouting_bb44ea")} value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>{copy("configuration-fields.usedByAgentWorkersThatInherit_4e05b2")}</p></div></section> : null}
     {serverPreferenceSection !== ServerPreferenceSection.AccountRouting ? <>
       <section data-settings-search-target="worktree" className="server-preference-section"><h4>{copy("configuration-fields.worktreePreparation_24002c")}</h4><div data-settings-search-target="automatic-fetch"><Check label={copy("configuration-fields.allowAutomaticFetchBeforeWorktreePreparation_6c9a8c")} value={data.automatic_fetch} change={field("automatic_fetch")} /></div><p>{copy("configuration-fields.fetchingRequiresBothThisServerPreference_10697f")}</p></section>
@@ -262,7 +265,7 @@ export function projectRepositoryOption(id: string, index: number, names: Readon
   const name = names.get(id) ?? copy("project-creation.nameUnavailable");
   return [...names.values()].filter(value => value === name).length > 1 || !names.has(id) ? copy("project-creation.distinctRepository", { name, position: index + 1 }) : name;
 }
-function ProjectFields({ data, change, active, movementActive = active }: FieldsProps) {
+function ProjectFields({ data, change, active, movementActive = active, supportsProjectBehavior = false }: FieldsProps) {
   const [selected, setSelected] = useState("");
   useLocale();
   const repositories = items(data.repositories).map(text);
@@ -280,6 +283,7 @@ function ProjectFields({ data, change, active, movementActive = active }: Fields
       <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{repositories.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>
       <p>{copy("configuration-fields.theHarnessStartsInThisRepository_8c3af5")}</p>
     </fieldset>
+    {supportsProjectBehavior ? <ProjectBehaviorFields data={data} change={change} active={active} /> : <p>{copy("configuration-fields.behaviorUnsupported")}</p>}
     <RestrictionFields label={copy("configuration-fields.agentWorkers_e60c23")} kind={EntityKind.AGENT} value={data.agents} active={active} change={(agents) => change({ ...data, agents })} />
     <RestrictionFields label={copy("configuration-fields.aiAccounts_050a21")} kind={EntityKind.ACCOUNT} value={data.accounts} active={active} change={(accounts) => change({ ...data, accounts })} />
   </>;
@@ -375,4 +379,33 @@ function AgentReconfiguration({ data, change, active }: { data: Document; change
   if (data.reconfiguration_required !== true) return null;
   const valid = model.data?.resource && supportsResourceSchema(model.data.resource) && document(model.data.resource).retired !== true && model.data.resource.id === data.model_id;
   return <section role="status"><p>{copy("configuration-fields.legacySubscriptionConfigurationWasRetiredChoose_bb6be6")}</p><Problem error={model.error} /><button type="button" disabled={!valid || Boolean(model.error || model.isFetching)} onClick={() => change({ ...data, reconfiguration_required: false })}>{copy("configuration-fields.confirmReconfiguredModelAndAccounts_021890")}</button></section>;
+}
+
+export enum BooleanOverride { Inherit = "inherit", Enabled = "enabled", Disabled = "disabled" }
+export function ProjectBehaviorFields({ data, change, active }: Pick<FieldsProps, "data" | "change" | "active">) {
+ useLocale();
+ const defaults = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } }, { enabled: active });
+ const values = defaults.data?.resources;
+ const global = values?.length === 1 && !defaults.data?.nextPageToken && readableServerPreferences(values[0]) && !defaults.error ? document(values[0]) : values?.length === 0 && !defaults.data?.nextPageToken && !defaults.error ? newConfiguration(EntityKind.SETTINGS) : undefined;
+ const overrides = object(data.settings);
+ const set = (key: string, value: unknown) => change({ ...data, settings: { ...overrides, [key]: value } });
+ const booleanField = (key: string, label: string) => {
+  const choice = text(overrides[key]) || BooleanOverride.Inherit;
+  const inherited = choice === BooleanOverride.Inherit ? global?.[key] : choice === BooleanOverride.Enabled;
+  const effective = key === "automatic_fetch" ? global ? Boolean(global.automatic_fetch) && Boolean(inherited) : undefined : inherited;
+  return <div><label>{label}<select value={choice} onChange={event => set(key, event.target.value)}>{Object.values(BooleanOverride).map(value => <option key={value} value={value}>{copy(value === BooleanOverride.Inherit ? "configuration-fields.useGlobal" : value === BooleanOverride.Enabled ? "configuration-fields.enabled" : "configuration-fields.disabled")}</option>)}</select></label><p>{copy("configuration-fields.effectiveValue", { value: effective === undefined ? copy("configuration-fields.unavailable") : copy(effective ? "configuration-fields.enabled" : "configuration-fields.disabled") })}</p></div>;
+ };
+ const routing = text(overrides.routing);
+ const policy = overrides.remediation ? object(overrides.remediation) : global ? object(global.remediation) : undefined;
+ return <fieldset data-settings-search-target="project-behavior"><legend>{copy("configuration-fields.projectSettings")}</legend>
+ <p>{copy("configuration-fields.inheritanceHelp")}</p><Problem error={defaults.error} />
+ <label>{copy("configuration-fields.accountRouting_0c3707")}<select value={routing} onChange={event => { const next = { ...overrides }; if (event.target.value) next.routing = event.target.value; else delete next.routing; change({ ...data, settings: next }); }}><option value="">{copy("configuration-fields.useGlobal")}</option>{Object.values(Routing).map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+ <p>{copy("configuration-fields.effectiveValue", { value: routing || text(global?.default_routing) || copy("configuration-fields.unavailable") })}</p>
+ {booleanField("automatic_fetch", copy("configuration-fields.allowAutomaticFetchBeforeWorktreePreparation_6c9a8c"))}
+ {booleanField("automatic_plan_approval", copy("configuration-fields.automaticPlanApproval"))}
+ <p>{copy("configuration-fields.planApprovalHelp")}</p>
+ <label>{copy("configuration-fields.remediationInheritance")}<select value={overrides.remediation ? "explicit" : "inherit"} onChange={event => { const next = { ...overrides }; if (event.target.value === "inherit") delete next.remediation; else if (policy) next.remediation = { ...policy }; change({ ...data, settings: next }); }}><option value="inherit">{copy("configuration-fields.useGlobal")}</option><option value="explicit" disabled={!policy}>{copy("configuration-fields.projectOverride")}</option></select></label>
+ {policy ? <><p>{["ci_failure", "review_feedback", "merge_conflict"].map(key => `${copy(key === "ci_failure" ? "configuration-fields.ciRemediation" : key === "review_feedback" ? "configuration-fields.reviewRemediation" : "configuration-fields.conflictRemediation")}: ${copy(policy[key] ? "configuration-fields.enabled" : "configuration-fields.disabled")}`).join(" · ")}</p><fieldset disabled={!overrides.remediation}><RemediationFields value={policy} change={value => set("remediation", value)} active={active && Boolean(overrides.remediation)} /></fieldset></> : <p>{copy("configuration-fields.unavailable")}</p>}
+ <button type="button" onClick={() => change({ ...data, settings: { automatic_fetch: BooleanOverride.Inherit, automatic_plan_approval: BooleanOverride.Inherit } })}>{copy("configuration-fields.returnToGlobal")}</button>
+ </fieldset>;
 }

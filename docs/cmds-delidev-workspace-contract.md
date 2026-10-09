@@ -352,3 +352,7 @@ partial list. This job alone has 9 MiB JSON/journal envelope headroom. Its repor
 receipt, bounded transport and single-resource reader support the complete result;
 other job inputs/outputs, page/event bounds and native Git output limits remain
 unchanged. A dedicated branch reader must not widen the general document parser.
+
+## Project behavior settings (issue #1965)
+
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.

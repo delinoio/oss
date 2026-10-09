@@ -101,7 +101,7 @@ func automaticPRScope(tx *store.Tx, original store.Record) (domain.SessionPullRe
 			}
 		}
 	}
-	_, policy, err := prFixPolicy(tx, link.RepositoryID)
+	_, policy, err := prFixPolicy(tx, link.RepositoryID, row.ProjectID)
 	return link, policy, err
 }
 

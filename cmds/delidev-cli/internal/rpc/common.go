@@ -47,6 +47,20 @@ func Resource(record store.Record) *pb.Resource {
 			}
 		}
 	}
+	if record.Kind == domain.InteractionKind {
+		// The once-only policy decision is server-owned durable provenance.
+		// Keep the original schema-1 native controller document compatible with
+		// Workers that do not own project-settings configuration support.
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(document, &fields) == nil {
+			if _, exists := fields["plan_approval_policy"]; exists {
+				delete(fields, "plan_approval_policy")
+				if raw, err := json.Marshal(fields); err == nil {
+					document = raw
+				}
+			}
+		}
+	}
 	if record.Kind == domain.TerminalKind {
 		document = terminalResourceDocument(document)
 	}
@@ -116,6 +130,12 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 }
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
+	if kind == domain.ProjectKind || kind == domain.SettingsKind {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil && (fields["settings"] != nil || fields["automatic_plan_approval"] != nil) {
+			return 2
+		}
+	}
 	var identity struct {
 		APIProtocol             domain.APIProtocol         `json:"api_protocol"`
 		APIFormats              []domain.ProviderAPIFormat `json:"api_formats"`

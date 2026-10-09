@@ -46,7 +46,8 @@ export function supportsResourceSchema(resource: Resource): boolean {
 // Version 2 is accepted only for its owning identity family. This does not grant
 // mutation, native readiness or interpretation of a retired original document.
 function supportsDocumentSchema(resource: Resource, value: ResourceDocument): boolean {
-  if (resource.schemaVersion === 1) return !(resource.kind === EntityKind.ACCOUNT && Object.hasOwn(value, "api_protocol") || resource.kind === EntityKind.PROVIDER && Object.hasOwn(value, "api_formats") || resource.kind === EntityKind.AGENT && Object.hasOwn(value, "routes"));
+  if (resource.schemaVersion === 1) return !(resource.kind === EntityKind.PROJECT && Object.hasOwn(value, "settings") || resource.kind === EntityKind.SETTINGS && Object.hasOwn(value, "automatic_plan_approval") || resource.kind === EntityKind.ACCOUNT && Object.hasOwn(value, "api_protocol") || resource.kind === EntityKind.PROVIDER && Object.hasOwn(value, "api_formats") || resource.kind === EntityKind.AGENT && Object.hasOwn(value, "routes"));
+  if (resource.schemaVersion === 2 && [EntityKind.PROJECT, EntityKind.SETTINGS].includes(resource.kind)) return resource.kind === EntityKind.PROJECT ? object(value.settings) : typeof value.automatic_plan_approval === "boolean";
   if (resource.schemaVersion === 3) {
     if (resource.kind === EntityKind.ACCOUNT) return value.type === "api" && Boolean(apiFormat(value.api_protocol)) && typeof value.provider_id === "string" && !Object.hasOwn(value, "subscription_service") && !Object.hasOwn(value, "subscription");
     if (resource.kind === EntityKind.PROVIDER) return Array.isArray(value.api_formats) && value.api_formats.length > 0 && value.api_formats.length <= 3 && value.api_formats.every(profile => Boolean(apiFormatProfile(profile))) && new Set(value.api_formats.map(profile => (profile as Record<string, unknown>).protocol)).size === value.api_formats.length;
@@ -65,6 +66,7 @@ function supportsDocumentSchema(resource: Resource, value: ResourceDocument): bo
     Array.isArray(value.harnesses) && value.harnesses.length === 1 && value.harnesses[0] === subscriptionServiceHarnesses[service];
 }
 export function configurationSchemaVersion(kind: EntityKind, value: Record<string, unknown>): number {
+  if (kind === EntityKind.PROJECT && Object.hasOwn(value, "settings") || kind === EntityKind.SETTINGS && Object.hasOwn(value, "automatic_plan_approval")) return 2;
   if (kind === EntityKind.ACCOUNT && value.type === "api" && apiFormat(value.api_protocol) || kind === EntityKind.PROVIDER && Array.isArray(value.api_formats) && value.api_formats.length > 0) return 3;
   if (kind === EntityKind.AGENT && Array.isArray(value.routes) && value.routes.length > 0) return 3;
   return kind === EntityKind.ACCOUNT && value.type === "subscription" ||

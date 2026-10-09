@@ -79,7 +79,12 @@ test("real Go environments isolate RPC state, Workers, revocation and failures",
       repositories.set(environment, repository);
     }
     const definition = (environment, name) => ({ name, repositories: [repositories.get(environment).id], primary_repository: repositories.get(environment).id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
-    const save = (environment, name, row) => configuration(environment).saveConfiguration({ kind: api.EntityKind.PROJECT, schemaVersion: 1, mutation: { requestId: api.newRequestId(), id: row?.id ?? "", expectedRevision: row?.revision ?? 0n }, documentJson: new TextEncoder().encode(JSON.stringify(definition(environment, name))) });
+    const save = (environment, name, row) => {
+      // Retain new server-owned project settings on revision-bound updates;
+      // the first legacy-shaped creation still checks default compatibility.
+      const value = { ...(row ? document(row) : {}), ...definition(environment, name) };
+      return configuration(environment).saveConfiguration({ kind: api.EntityKind.PROJECT, schemaVersion: api.configurationSchemaVersion(api.EntityKind.PROJECT, value), mutation: { requestId: api.newRequestId(), id: row?.id ?? "", expectedRevision: row?.revision ?? 0n }, documentJson: new TextEncoder().encode(JSON.stringify(value)) });
+    };
     await t.test("distinct origins, identities and same-name project writes", async () => {
       assert.notEqual(a.host.origin, b.host.origin); assert.notEqual(a.serverId, b.serverId); assert.notEqual(a.clientCredential.token, b.clientCredential.token); assert.notEqual(a.workerCredential.machine_id, b.workerCredential.machine_id);
       const [first, second] = await Promise.all([save(a, "Parallel project"), save(b, "Parallel project")]);

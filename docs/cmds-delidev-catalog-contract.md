@@ -530,3 +530,41 @@ Codex subscription default/full-access do not waive managed authentication owner
 Automatic validation uses the [provider verification boundary](cmds-delidev-providers-contract.md#automatic-api-verification). Its persisted due time and Retry-After do not replace catalog scheduling. Authentication and model observations retain separate request receipts, connection ownership and completion times. New-format generations require fresh observations; original executions and shared key references remain unchanged. No public protocol, migration, native adapter or reserved model-system activation accompanies this scheduler.
 
 Provider inventory and model search pages retain complete entries within a 4 MiB budget measured in both protobuf and protobuf JSON, including cursor/envelope and capability metadata. Model pages charge and deduplicate only the providers represented by returned models. Byte-limited continuation follows the last returned entry/model under the existing query/filter/epoch binding. A single unfit entry returns correlated ResourceExhausted with narrowing guidance; it cannot produce an empty nonadvancing page.
+
+## Project behavior settings (issue #1965)
+
+System capability `PROJECT_BEHAVIOR_SETTINGS_V1 = 52` owns the complete project
+settings feature. Project and Settings documents use schema 2. Schema-1 documents
+remain readable with inherited project values and disabled plan automation.
+Legacy full-document writes cannot erase schema-2 settings. No SQLite migration
+or Worker capability is introduced.
+
+A project stores typed boolean inheritance (`inherit`, `enabled`, `disabled`),
+optional routing and an optional complete remediation policy. Absence means
+continuous inheritance from the currently connected server. Explicit false and
+empty selections remain explicit. Routing priority is source-route/Agent,
+project, then global. Remediation priority is repository, project, then global;
+an override replaces the complete policy. Automatic Worktree fetch requires
+server permission, effective project permission and repository permission.
+Local execution never automatically fetches. Resolve only explicit selected or
+original retained project associations; repository membership cannot select a
+project. Existing execution, workspace and remediation snapshots stay immutable. Freeze the exact selected route policy in the execution configuration; selection and historical attribution must agree for inherited, project and source-route/Agent policies.
+
+Global plan automation defaults to disabled. General Chat uses the global value.
+At the first original native plan approval publication, retain the policy
+decision and eligible ordinary durable response atomically. Claude ExitPlanMode
+and Grok `_x.ai/exit_plan_mode` use their original affirmative replies. Questions,
+tool permissions and plan-capable profiles without an approval request remain
+outside this feature. Previously pending requests stay manual across setting
+changes, replay and restart. Manual/automatic races share the original response
+controller. Original execution/account/Worker/artifact checks and uncertain
+native delivery recovery remain required; uncertainty cannot authorize resend.
+Policy failures retain normal handling with sanitized phase/outcome diagnostics.
+
+Portable configuration version 5 preserves these values and complete remediation
+references with explicit binding and atomic import. Versions 1–4 retain their
+original defaults and cannot carry the new settings. Project remediation machine
+references contribute to the existing complete machine bound. Credentials and
+native ownership do not enter portable documents.
+
+The once-only automatic plan policy decision stays in the original server-owned interaction record. Public schema-1 Interaction JSON omits that private provenance so strict legacy Worker decoders continue to read the unchanged native request and queued response. Restart receipts retain the private first decision and original response ID.

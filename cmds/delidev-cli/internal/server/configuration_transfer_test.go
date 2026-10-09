@@ -24,6 +24,13 @@ import (
 
 func transferEntry(kind domain.Kind, value any) domain.ConfigurationEntry {
 	raw, _ := json.Marshal(value)
+	// Historical bundle fixtures omit settings introduced in portable version 5.
+	if kind == domain.SettingsKind {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &fields)
+		delete(fields, "automatic_plan_approval")
+		raw, _ = json.Marshal(fields)
+	}
 	return domain.ConfigurationEntry{ID: domain.NewID(), Kind: kind, Document: raw}
 }
 func transferSelection() domain.ConfigurationImportSelection {
