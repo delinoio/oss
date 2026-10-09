@@ -185,7 +185,15 @@ impl CaptureHost {
     pub fn departure(&self, app: &AppHandle<CefRuntime>, label: &str, focused: bool) {
         let own = self.close_fenced(label);
         if own && focused {
-            let _ = self.resume(app);
+            if self.resume(app).is_err() {
+                if let Some(window) = app.get_webview_window(label) {
+                    let _ = window.hide();
+                }
+                tracing::warn!(
+                    operation = "shortcut_capture_resume",
+                    code = "menu-restoration-uncertain"
+                );
+            }
         } else if own || focused {
             let _ = self.pause(app);
         }

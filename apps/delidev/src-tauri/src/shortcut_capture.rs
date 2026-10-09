@@ -61,6 +61,9 @@ impl CaptureGate {
     }
 
     pub fn retire(&mut self, owner: String, token: String) -> bool {
+        if self.retired.contains(&(owner.clone(), token.clone())) {
+            return true;
+        }
         if self.retired.len() >= 1024 {
             return false;
         }
@@ -117,6 +120,16 @@ mod tests {
         assert!(gate.retire("original".into(), "lost-ack".into()));
         assert!(!gate.begin("original".into(), "lost-ack".into(), Instant::now()));
         assert!(gate.begin("original".into(), "fresh-explicit".into(), Instant::now()));
+    }
+    #[test]
+    fn final_bounded_retirement_remains_idempotently_recoverable() {
+        let mut gate = CaptureGate::default();
+        for n in 0..1024 {
+            assert!(gate.retire("original".into(), format!("token-{n}")));
+        }
+        assert!(gate.retire("original".into(), "token-1023".into()));
+        assert!(!gate.retire("original".into(), "replacement".into()));
+        assert!(!gate.begin("original".into(), "new-admission".into(), Instant::now()));
     }
     #[test]
     fn queued_custom_menu_actions_cannot_survive_begin_and_end() {
