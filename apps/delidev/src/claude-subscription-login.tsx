@@ -3,6 +3,7 @@ import { claudeRunnerObservation, validRunnerObservation, type RunnerObservation
 import { Failure, Problem, InlineRemediation } from "./ui";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
@@ -841,19 +842,19 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
           <Problem error={p.runnerReadError} summary={copy("claude-subscription.selectedReadFailed")} />
           {p.loading ? <p role="status">{copy("claude-subscription.inventoryLoading")}</p> : null}
           {!p.readFailed && !p.loading && p.runnerQuery.loaded && !p.runners.some(row => !row.disabled) ? <InlineRemediation summary={copy(p.runnerQuery.nextPageToken ? "claude-subscription.inventoryPageEmpty" : p.runners.length ? "claude-subscription.inventoryNoEligible" : "claude-subscription.inventoryEmpty")} /> : null}
-          {p.runnerQuery.nextPageToken && !p.runnerQuery.error ? <button type="button" disabled={busy || p.loading} onClick={p.runnerQuery.append}>{copy("pagination.loadMore")}</button> : null}
-          <button type="button" disabled={busy || p.loading} onClick={p.refreshRunners}>{copy("claude-subscription.refreshRunners")}</button>
+          {p.runnerQuery.nextPageToken && !p.runnerQuery.error ? <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" disabled={busy || p.loading} onClick={p.runnerQuery.append}>{copy("pagination.loadMore")}</SettingsActionButton> : null}
+          <SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" disabled={busy || p.loading} onClick={p.refreshRunners}>{copy("claude-subscription.refreshRunners")}</SettingsActionButton>
           {p.observations.filter(row => !row.eligible).map(row => <article className="result" key={row.id}><h4>{row.label}</h4><InlineRemediation summary={<><p>{copy(`claude-subscription.excluded.${row.observation.cause ?? "unavailable"}`)}</p>{row.observation.detectedVersion ? <p>{copy("claude-subscription.detectedVersion", { version: row.observation.detectedVersion })}</p> : null}</>} /></article>)}
           <SettingsTaskActions form={id}>
-            <button
+            <SettingsActionButton icon={SettingsActionIcon.Start}
               className="primary"
               disabled={busy || !p.canStart || p.readFailed}
             >
               {copy("claude-subscription.start")}
-            </button>
-            <button type="button" onClick={back}>
+            </SettingsActionButton>
+            <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={back}>
               {copy("claude-subscription.back")}
-            </button>
+            </SettingsActionButton>
           </SettingsTaskActions>
         </form>
       ) : (
@@ -890,15 +891,15 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                 />
                 <p>{copy("claude-subscription.nameHelp")}</p>
                 <SettingsTaskActions form={id}>
-                  <button
+                  <SettingsActionButton icon={SettingsActionIcon.Save}
                     className="primary"
                     disabled={busy || !subscriptionNameValid(v.name)}
                   >
                     {copy("claude-subscription.saveName")}
-                  </button>
-                  <button type="button" onClick={p.leave}>
+                  </SettingsActionButton>
+                  <SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" onClick={p.leave}>
                     {copy("claude-subscription.later")}
-                  </button>
+                  </SettingsActionButton>
                 </SettingsTaskActions>
               </form>
             </>
@@ -914,9 +915,9 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                 {copy(status[v.state] ?? "claude-subscription.failed")}
               </p>
               {v.step === Step.Login && v.browserReady ? (
-                <button type="button" disabled={busy} onClick={p.reopen}>
+                <SettingsActionButton icon={SettingsActionIcon.Open} type="button" disabled={busy} onClick={p.reopen}>
                   {copy("claude-subscription.reopen")}
-                </button>
+                </SettingsActionButton>
               ) : null}
               {v.step === Step.Login &&
               v.method === SubscriptionLoginMethod.BROWSER_CODE ? (
@@ -948,9 +949,9 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                         : "claude-subscription.codeHelp",
                     )}
                   </p>
-                  <button className="primary" disabled={busy || v.codeClaimed}>
+                  <SettingsActionButton icon={SettingsActionIcon.Confirm} className="primary" disabled={busy || v.codeClaimed}>
                     {copy("claude-subscription.submitCode")}
-                  </button>
+                  </SettingsActionButton>
                 </form>
               ) : null}
               {safeDiagnostic ? (
@@ -986,13 +987,13 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
               ) : null}
               <SettingsTaskActions>
                 {v.step === Step.Login ? (
-                  <button type="button" disabled={busy} onClick={p.cancel}>
+                  <SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={busy} onClick={p.cancel}>
                     {copy("claude-subscription.cancel")}
-                  </button>
+                  </SettingsActionButton>
                 ) : null}
-                <button type="button" onClick={back}>
+                <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={back}>
                   {copy("claude-subscription.back")}
-                </button>
+                </SettingsActionButton>
               </SettingsTaskActions>
             </>
           )}
@@ -1000,9 +1001,9 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
       )}
       {v.problem ? <p role="alert">{copy(v.problem)}</p> : null}
       {p.retry ? (
-        <button type="button" disabled={busy} onClick={p.retry}>
+        <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={busy} onClick={p.retry}>
           {copy("claude-subscription.retryOriginal")}
-        </button>
+        </SettingsActionButton>
       ) : null}
     </section>
   );

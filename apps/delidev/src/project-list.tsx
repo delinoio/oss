@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
 import { useId, useState } from "react";
 import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
@@ -11,16 +12,16 @@ import "./project-list.css";
 export function ProjectList({ resources, metadata, edit, remove }: { resources: Resource[]; metadata: ReadonlyMap<string, RepositoryDetails>; edit: (row: Resource) => void; remove: (row: Resource) => void }) {
   useLocale();
   if (!resources.length) return null;
-  return <section className="project-list" aria-label={copy("settings.savedProjects_f85c7c")}>{resources.map(row => <ProjectRow key={row.id} row={row} metadata={metadata} edit={edit} remove={remove} />)}</section>;
+  return <section className="project-list" aria-label={copy("settings.savedProjects_f85c7c")}>{resources.map(row => <ProjectRow key={row.id} row={row} ambiguous={resources.filter(other => resourceName(other) === resourceName(row)).length > 1} metadata={metadata} edit={edit} remove={remove} />)}</section>;
 }
-function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: ReadonlyMap<string, RepositoryDetails>; edit: (row: Resource) => void; remove: (row: Resource) => void }) {
+function ProjectRow({ row, metadata, edit, remove, ambiguous }: { row: Resource; ambiguous: boolean; metadata: ReadonlyMap<string, RepositoryDetails>; edit: (row: Resource) => void; remove: (row: Resource) => void }) {
   const [expanded, setExpanded] = useState(false);
   const repositoriesId = useId();
   const name = resourceName(row), ids = projectRepositoryIds(row), primary = text(document(row).primary_repository);
   const singleton = ids.length === 1;
   return <article className="project-row project-metadata-row" data-single-repository={singleton || undefined}>
     <header className="project-row-heading"><div className="project-identity"><h3>{name}</h3>{!singleton ? <p>{copy("settings.projectRepositoryCount", { count: ids.length })}</p> : null}</div>
-      <div className="actions"><button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={() => edit(row)}>{copy("settings.edit_464c4f")}</button><button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={() => remove(row)}>{copy("settings.delete_e2d0a5")}</button></div>
+      <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Edit} presentation={SettingsActionPresentation.Icon} targetId={ambiguous ? row.id : undefined} type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={() => edit(row)}>{copy("settings.edit_464c4f")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Delete} presentation={SettingsActionPresentation.Icon} targetId={ambiguous ? row.id : undefined} type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={() => remove(row)}>{copy("settings.delete_e2d0a5")}</SettingsActionButton></div>
     </header>
     <ol id={repositoriesId} className="project-repository-rows">{(expanded ? ids : ids.slice(0, 3)).map((id, index) => {
       const details = metadata.get(id), ready = details?.state === RepositoryDetailsState.Ready;

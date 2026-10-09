@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { DateFormatPreference, formatTimestampLabel, TimestampMode } from "./timestamp-format";
 import "./date-format.css";
 import { copy, useLocale } from "./localization";
@@ -155,6 +156,6 @@ export function DateFormatSettings() {
     </fieldset>
     <p>{copy("date-format.scope")}</p>
     <p role="status" aria-live="polite">{copy(operation === DateFormatOperation.Reading ? "date-format.reading" : operation === DateFormatOperation.Saving ? "date-format.saving" : snapshot.problem ? "date-format.notSaved" : "date-format.saved")}</p>
-    {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><button type="button" disabled={Boolean(operation)} onClick={reload}>{copy("date-format.reload")}</button></> : null}
+    {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={Boolean(operation)} onClick={reload}>{copy("date-format.reload")}</SettingsActionButton></> : null}
   </section>;
 }

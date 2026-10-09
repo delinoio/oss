@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { copy, useLocale } from "./localization";
 import { useId, type ReactNode } from "react";
 
@@ -55,7 +56,7 @@ export function RepositoryCloneFields({ draft, change, busy, browse, github, sup
     {showURL ? <><label>{copy("repository-clone-fields.inline.cd01c2ef6a")}<input type="text" value={draft.url} maxLength={4096} placeholder={copy("repository-clone-fields.inline.a2116e2c72")} disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, url: event.target.value })} /></label>
     {draft.url && !parsed ? <p role="alert">{copy("repository-clone-fields.inline.2f00f15706")}</p> : null}
     {github}</> : null}
-    <div><label htmlFor={parentId}>{copy("repository-clone-fields.inline.274474037d")}</label><div className="repository-clone-destination"><input id={parentId} type="text" value={draft.parent} maxLength={4096} placeholder={copy("repository-clone-fields.inline.5dbae92725")} disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, parent: event.target.value })} /><button type="button" disabled={busy} onClick={browse}>{copy("repository-clone-fields.inline.93c6b664dc")}</button></div></div>
+    <div><label htmlFor={parentId}>{copy("repository-clone-fields.inline.274474037d")}</label><div className="repository-clone-destination"><input id={parentId} type="text" value={draft.parent} maxLength={4096} placeholder={copy("repository-clone-fields.inline.5dbae92725")} disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, parent: event.target.value })} /><SettingsActionButton icon={SettingsActionIcon.Folder} type="button" disabled={busy} onClick={browse}>{copy("repository-clone-fields.inline.93c6b664dc")}</SettingsActionButton></div></div>
     <p>{copy("repository-clone-fields.inline.50edff7c50")}</p>
     {parsed ? <><label>{copy("repository-clone-fields.inline.734294b760")}<input type="text" value={directory} maxLength={255} disabled={busy} onChange={event => change({ ...draft, directory: event.target.value })} /></label>{!repositoryCloneDirectory(directory) ? <p role="alert">{copy("repository-clone-fields.inline.ebb54b60a0")}</p> : null}</> : null}
     {draft.parent && !repositoryCloneParent(draft.parent) ? <p role="alert">{copy("repository-clone-fields.inline.a0acf59b0f")}</p> : null}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { useId, useState } from "react";
 import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
@@ -10,7 +11,7 @@ import { ModelSummaryState, useAgentModels } from "./agent-worker-models";
 import "./agent-worker-wizard.css";
 import "./agent-worker-row.css";
 
-export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: () => void; preview: () => void; remove: () => void }) {
+export function AgentWorkerRow({ ambiguous = false, row, edit, preview, remove }: { ambiguous?: boolean; row: Resource; edit: () => void; preview: () => void; remove: () => void }) {
   useLocale();
   const data = document(row), supported = supportsResourceSchema(row);
   const [expanded, expand] = useState(false), region = useId();
@@ -51,9 +52,9 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
       </div>
     </div>
     <div className="actions settings-agent-actions">
-      <button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={edit}>{copy("settings.edit_464c4f")}</button>
-      <button type="button" disabled={!supportsResourceSchema(row) || data.reconfiguration_required === true} aria-label={copy("settings.previewRoutingFor_ee49d7", { v0: name })} onClick={preview}>{copy("settings.previewRouting_02d4d9")}</button>
-      <button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={remove}>{copy("settings.delete_e2d0a5")}</button>
+      <SettingsActionButton icon={SettingsActionIcon.Edit} presentation={SettingsActionPresentation.Icon} targetId={ambiguous ? row.id : undefined} type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={edit}>{copy("settings.edit_464c4f")}</SettingsActionButton>
+      <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" disabled={!supportsResourceSchema(row) || data.reconfiguration_required === true} aria-label={copy("settings.previewRoutingFor_ee49d7", { v0: name })} onClick={preview}>{copy("settings.previewRouting_02d4d9")}</SettingsActionButton>
+      <SettingsActionButton icon={SettingsActionIcon.Delete} presentation={SettingsActionPresentation.Icon} targetId={ambiguous ? row.id : undefined} type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={remove}>{copy("settings.delete_e2d0a5")}</SettingsActionButton>
     </div>
   </article>;
 }

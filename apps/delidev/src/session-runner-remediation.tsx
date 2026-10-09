@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -41,5 +42,5 @@ export function RunnerTaskRemediation({ machineId, disabled = false, visible = t
   };
   if (!open) return null;
   const readableIdentity = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(machineId);
-  return <>{open.body}{visible && readableIdentity ? <div><button type="button" disabled={busy || disabled || otherRunnerLocked} onClick={() => void read()}>{copy("execution-startup.runnerRemedy")}</button>{otherRunnerLocked ? <p>{copy("execution-startup.runnerOwnershipLocked")}</p> : null}<Problem error={error} />{invalid ? <p role="alert">{copy("execution-startup.runnerReadInvalid")}</p> : null}</div> : null}</>;
+  return <>{open.body}{visible && readableIdentity ? <div><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={busy || disabled || otherRunnerLocked} onClick={() => void read()}>{copy("execution-startup.runnerRemedy")}</SettingsActionButton>{otherRunnerLocked ? <p>{copy("execution-startup.runnerOwnershipLocked")}</p> : null}<Problem error={error} />{invalid ? <p role="alert">{copy("execution-startup.runnerReadInvalid")}</p> : null}</div> : null}</>;
 }

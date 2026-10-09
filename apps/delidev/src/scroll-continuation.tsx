@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { FailureCode } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
@@ -60,8 +61,8 @@ export function ScrollContinuation({ query, label, root, active, showErrors = tr
   const reloadRequired = error?.stalled || error?.failure.code === FailureCode.CursorExpired;
   return <div ref={anchor} className="sidebar-continuation" data-continuation={label}>
     {loading && (showInitial || loading === ReadStage.Additional) ? <span role="status">{copy(loading === ReadStage.Additional ? "pagination.loadingMore" : "pagination.loading", { label })}</span> : null}
-    {showErrors && error ? <><span role="status">{copy(loaded ? "pagination.previousData" : "pagination.readFailed", { label })}</span><button type="button" disabled={!active || !documentVisible || Boolean(loading)} onClick={reloadRequired ? query.reload : query.retry}>{copy(reloadRequired ? "pagination.reload" : "pagination.retry")}</button></> : null}
-    {loaded && nextPageToken && !error ? <button type="button" aria-label={copy("pagination.loadMoreLabel", { label })} disabled={!allowed} onClick={append}>{copy("pagination.loadMore")}</button> : null}
+    {showErrors && error ? <><span role="status">{copy(loaded ? "pagination.previousData" : "pagination.readFailed", { label })}</span><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" disabled={!active || !documentVisible || Boolean(loading)} onClick={reloadRequired ? query.reload : query.retry}>{copy(reloadRequired ? "pagination.reload" : "pagination.retry")}</SettingsActionButton></> : null}
+    {loaded && nextPageToken && !error ? <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" aria-label={copy("pagination.loadMoreLabel", { label })} disabled={!allowed} onClick={append}>{copy("pagination.loadMore")}</SettingsActionButton> : null}
   </div>;
 }
 

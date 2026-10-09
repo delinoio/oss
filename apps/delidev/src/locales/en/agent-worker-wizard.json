@@ -139,7 +139,7 @@
   "agent-worker-wizard.codexResponses": "Codex needs a provider configured for Responses. Create a compatible custom provider and connect its account before execution.",
   "agent-worker-wizard.accountSources": "Account sources",
   "agent-worker-wizard.subscriptionFirst": "Use subscription accounts first, then API accounts when their quota is exhausted.",
-  "agent-worker-wizard.addSource": "+ Add account source",
+  "agent-worker-wizard.addSource": "Add account source",
   "agent-worker-wizard.newSessions": "New sessions only. Sources advance only after confirmed quota exhaustion. Recovered subscription quota is preferred again.",
   "agent-worker-wizard.nextModels": "Choose a model for each source in the next step.",
   "agent-worker-wizard.accountsSummary": "Accounts: {{v0}}",

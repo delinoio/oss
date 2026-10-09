@@ -1,0 +1,9 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.settings-action-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border-radius: 8px; }
+.settings-action-button > svg.settings-action-glyph { flex: 0 0 16px; width: 16px; height: 16px; pointer-events: none; }
+.settings-action-button.settings-action-only { flex: 0 0 auto; width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; color: var(--text); }
+.settings-action-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.settings-action-name { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.settings-action-tooltip { position: fixed; z-index: 100; max-width: min(280px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: hidden; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; pointer-events: none; box-shadow: 0 4px 16px #0003; }
+
+:is(.api-entry-more-panel, .subscription-more-panel, .connections-row-menu) .settings-action-button { justify-content: flex-start; }

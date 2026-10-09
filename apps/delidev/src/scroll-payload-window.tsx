@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { copy, useLocale } from "./localization";
 import { continuationDistance, resolveScrollRoot } from "./scroll-continuation";
@@ -49,7 +50,7 @@ function PayloadPage<Row extends PaginationRow, Payload>({ page, payload, query,
     return () => { observer?.disconnect(); container.removeEventListener("scroll", check); document.removeEventListener("visibilitychange", check); };
   }, [active, page.token, page.height, payload, query.loading, query.error, query.restore, query.measure, root]);
   return <div ref={element} style={payload ? undefined : { minHeight: page.height ?? 48 }} data-payload-page={page.token} onFocusCapture={() => query.protect?.(page.token)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}>
-    {payload ? children(payload, page.rows) : <button type="button" disabled={!active || Boolean(query.loading) || Boolean(query.error)} onClick={() => query.restore(page.token)}>{copy("pagination.restore")}</button>}
+    {payload ? children(payload, page.rows) : <SettingsActionButton icon={SettingsActionIcon.Back} type="button" disabled={!active || Boolean(query.loading) || Boolean(query.error)} onClick={() => query.restore(page.token)}>{copy("pagination.restore")}</SettingsActionButton>}
   </div>;
 }
 

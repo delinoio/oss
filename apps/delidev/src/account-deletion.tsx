@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { copy, useLocale } from "./localization";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -251,12 +252,12 @@ export function ChatGPTAccountDeletion({ initial, active, deleted, close }: { in
     {view.stage === Stage.Confirmation ? <>
       <p>{copy("account-deletion.thisLogsOutTheAccountAnd_bc0446")}</p>
       <p>{copy("account-deletion.activeExecutionsWillBeCanceledRetained_066584")}</p>
-      <div className="actions"><button className="account-deletion-confirm" disabled={!active} onClick={() => void confirm()}>{copy("account-deletion.disconnectAndDeleteAccount_fdb5f5")}</button><SettingsTaskDismissButton disabled={!active} onClick={leave}>{copy("account-deletion.keepAccount_9be7d9")}</SettingsTaskDismissButton></div>
+      <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Delete} className="account-deletion-confirm" disabled={!active} onClick={() => void confirm()}>{copy("account-deletion.disconnectAndDeleteAccount_fdb5f5")}</SettingsActionButton><SettingsTaskDismissButton disabled={!active} onClick={leave}>{copy("account-deletion.keepAccount_9be7d9")}</SettingsTaskDismissButton></div>
     </> : <>
       <p role="status">{view.stage === Stage.Checking ? copy("account-deletion.checkingTheCurrentAccount_9c2ed5") : view.stage === Stage.Logout ? copy("account-deletion.loggingOutAndCleaningUpCredentials_6b3730") : view.stage === Stage.CleanupDeleting ? copy("account-deletion.cleaningUpAndDeleting") : view.stage === Stage.Deleting ? copy("account-deletion.deletingTheAccountConfiguration_9b97e4") : copy("account-deletion.accountDeletionPaused_df3fd2")}</p>
       {view.stage === Stage.Logout ? <p>{copy("account-deletion.theAccountWillBeDeletedAfter_6b177a")}</p> : null}
       <Failure failure={view.failure} summary={view.failure ? <><p>{view.failure.message}</p><p>{copy("account-connection.inline.deletion")}</p></> : undefined} />
-      {view.stage === Stage.Paused || hasReturnAction ? <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <button disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? copy("account-deletion.retryOriginalLogoutRequest_ce84e9") : pending.current.retry === Retry.Delete ? copy("account-deletion.retryTheSameDeletion_b32bf6") : copy("account-deletion.retryOriginalStatusCheck_88bd61")}</button> : <button disabled={!active || pending.current?.busy} onClick={() => void refresh()}>{copy("account-deletion.refreshAccountForConfirmation_deba05")}</button> : null}<SettingsTaskDismissButton disabled={!active} onClick={leave}>{copy("account-deletion.backToSubscriptions_257d53")}</SettingsTaskDismissButton></div> : null}
+      {view.stage === Stage.Paused || hasReturnAction ? <div className="actions">{view.stage === Stage.Paused ? pending.current?.retry !== undefined ? <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={!active || pending.current.busy} onClick={retry}>{pending.current.retry === Retry.Logout ? copy("account-deletion.retryOriginalLogoutRequest_ce84e9") : pending.current.retry === Retry.Delete ? copy("account-deletion.retryTheSameDeletion_b32bf6") : copy("account-deletion.retryOriginalStatusCheck_88bd61")}</SettingsActionButton> : <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={!active || pending.current?.busy} onClick={() => void refresh()}>{copy("account-deletion.refreshAccountForConfirmation_deba05")}</SettingsActionButton> : null}<SettingsTaskDismissButton disabled={!active} onClick={leave}>{copy("account-deletion.backToSubscriptions_257d53")}</SettingsTaskDismissButton></div> : null}
       <p className="settings-scope">{copy(pending.current?.deletion && !cleared(pending.current.confirmed) && failedInitialLogin(pending.current.confirmed) ? "account-deletion.acceptedServerDeletionContinues" : "account-deletion.leavingThisScreenStopsAutomaticDeletion_7a5a3c")}</p>
     </>}
   </section>;

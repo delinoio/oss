@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -146,7 +147,7 @@ export function GitHubOnboarding({ active, canStart, close, connected }: { activ
       <form onSubmit={event => { event.preventDefault(); void verify(); }}>
         <fieldset disabled={busy}><label>{copy("github-onboarding.token")}<input ref={tokenInput} type="password" autoComplete="off" spellCheck={false} maxLength={512} value={token} onChange={event => setToken(event.target.value)} placeholder={copy("github-onboarding.placeholder")} /></label><p>{copy("github-onboarding.help")}</p></fieldset>
         {busy ? <p role="status">{copy("github-onboarding.verifying")}</p> : null}{message ? <p role="alert">{message}</p> : null}<Problem error={error} />
-        <div className="actions"><button className="primary" disabled={!canStart || busy || !tokenValid(token)}>{copy("github-onboarding.verify")}</button><SettingsTaskDismissButton type="button" onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
+        <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Confirm} className="primary" disabled={!canStart || busy || !tokenValid(token)}>{copy("github-onboarding.verify")}</SettingsActionButton><SettingsTaskDismissButton type="button" onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
       </form>
       <GitHubDraftTokenForm changeKind={setKind} active={active} disabled={!canStart || busy} />
       <p className="integration-storage-note">{copy("github-onboarding.savedOnly")}</p>
@@ -161,7 +162,7 @@ export function GitHubOnboarding({ active, canStart, close, connected }: { activ
       </fieldset>
       {busy ? <p role="status">{copy("github-onboarding.saving")}</p> : null}<Problem error={error} />
       {saveUncertain ? <p role="status">{copy("github-onboarding.uncertain")}</p> : null}
-      <div className="actions"><button className="primary" disabled={!canStart || busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>{copy("github-onboarding.save")}</button>{saveUncertain ? <button type="button" disabled={busy} onClick={() => void save(true)}>{copy("github-onboarding.retry")}</button> : null}<button type="button" disabled={busy || saveUncertain} onClick={back}>{copy("github-onboarding.back")}</button><SettingsTaskDismissButton type="button" disabled={busy || saveUncertain} onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
+      <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Save} className="primary" disabled={!canStart || busy || saveUncertain || !ownerValid || !nameValid || !secret.current}>{copy("github-onboarding.save")}</SettingsActionButton>{saveUncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={busy} onClick={() => void save(true)}>{copy("github-onboarding.retry")}</SettingsActionButton> : null}<SettingsActionButton icon={SettingsActionIcon.Back} type="button" disabled={busy || saveUncertain} onClick={back}>{copy("github-onboarding.back")}</SettingsActionButton><SettingsTaskDismissButton type="button" disabled={busy || saveUncertain} onClick={cancel}>{copy("github-onboarding.cancel")}</SettingsTaskDismissButton></div>
       <p className="integration-storage-note">{copy("github-onboarding.storage")}</p>
     </form>}
     <p className="integration-access-note">{copy("github-onboarding.access")}</p>

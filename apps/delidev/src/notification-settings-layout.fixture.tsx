@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Isolated branch of the existing Settings fixture: no native/account adapters.
 import type { Transport } from "@connectrpc/connect";
+import { SettingsActionScope } from "./settings-action";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NotificationSettings } from "./notification-settings";
@@ -26,5 +27,5 @@ export function prepareNotificationLayoutFixture(args: URLSearchParams) {
 }
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 export function NotificationLayoutFixture({ transport }: { transport: Transport }) {
-  return <TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><SettingsTasks><main className="settings-content" aria-label="Synthetic Notifications settings" style={{ minHeight: "100dvh" }}><SettingsTaskBackground><div className="settings-content-column"><SettingsHeading title={copy("notification-settings.notifications_788011")} description={copy("settings.thesePreferencesBelongToThisClient_082e1e")} scope="" /><NotificationSettings active showCategoryIntro={false} /></div></SettingsTaskBackground></main></SettingsTasks></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>;
+  return <TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><SettingsActionScope><SettingsTasks><main className="settings-content" aria-label="Synthetic Notifications settings" style={{ minHeight: "100dvh" }}><SettingsTaskBackground><div className="settings-content-column"><SettingsHeading title={copy("notification-settings.notifications_788011")} description={copy("settings.thesePreferencesBelongToThisClient_082e1e")} scope="" /><NotificationSettings active showCategoryIntro={false} /></div></SettingsTaskBackground></main></SettingsTasks></SettingsActionScope></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>;
 }

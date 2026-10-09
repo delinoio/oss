@@ -139,7 +139,7 @@
   "agent-worker-wizard.codexResponses": "Codex에는 Responses 프로토콜로 설정된 제공자가 필요합니다. 실행 전에 호환되는 사용자 지정 제공자를 만들고 계정을 연결하세요.",
   "agent-worker-wizard.accountSources": "계정 소스",
   "agent-worker-wizard.subscriptionFirst": "구독 계정을 먼저 사용하고, 할당량이 소진되면 API 계정을 사용합니다.",
-  "agent-worker-wizard.addSource": "+ 계정 소스 추가",
+  "agent-worker-wizard.addSource": "계정 소스 추가",
   "agent-worker-wizard.newSessions": "새 세션에만 적용됩니다. 할당량 소진이 확인된 경우에만 다음 소스로 넘어갑니다. 구독 할당량이 복구되면 다시 우선 사용합니다.",
   "agent-worker-wizard.nextModels": "다음 단계에서 각 소스의 모델을 선택하세요.",
   "agent-worker-wizard.accountsSummary": "계정: {{v0}}",

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useTransport } from "@connectrpc/connect-query";
 import { copy, useLocale } from "./localization";
@@ -70,7 +71,7 @@ export function ProjectRepositoryOrder({ ids, names, active, change, editable = 
         for (let node = root.current?.parentElement; node; node = node.parentElement) { if (node.scrollHeight > node.clientHeight && /auto|scroll/.test(getComputedStyle(node).overflowY)) { const bounds = node.getBoundingClientRect(); if (event.clientY < bounds.top + 40) node.scrollTop -= 24; else if (event.clientY > bounds.bottom - 40) node.scrollTop += 24; break; } }
       }} onPointerUp={event => { if (movement.current?.pointer === event.pointerId) finish(true); }} onPointerCancel={event => { if (movement.current?.pointer === event.pointerId) finish(false); }} onLostPointerCapture={event => { if (movement.current?.pointer === event.pointerId) finish(false); }}><span aria-hidden="true">⠿</span></button> : null}
       <span className="project-repository-position" aria-hidden="true">{index + 1}</span><span className="project-repository-name">{name || copy("project-creation.nameUnavailable")}{distinct ? <RepositorySecondaryID id={id} /> : null}</span>
-      {editable ? <div className="actions"><button type="button" disabled={!active || !!movement.current} aria-label={copy("configuration-fields.removeEntry_8a2d73", { v0: index + 1 })} onClick={() => { if (allowed()) change(ids.filter(value => value !== id)); }}>{copy("configuration-fields.remove_c3812f")}</button></div> : null}
+      {editable ? <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Delete} type="button" disabled={!active || !!movement.current} aria-label={copy("configuration-fields.removeEntry_8a2d73", { v0: index + 1 })} onClick={() => { if (allowed()) change(ids.filter(value => value !== id)); }}>{copy("configuration-fields.remove_c3812f")}</SettingsActionButton></div> : null}
     </li>;
   })}</ol><p role="status" aria-live="polite" className="project-repository-order-status">{status}</p></>;
 }

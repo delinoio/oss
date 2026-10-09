@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Timestamp, TimestampText } from "./timestamp-display";
 import { useQuery } from "@connectrpc/connect-query";
 import { useRef, useState } from "react";
@@ -79,13 +80,13 @@ export function ApiVerification({ row, provider: providedProvider, active, chang
         {uncertain ? <p className="api-verification-progress">{copy("api-verification.uncertain")}</p> : null}
       </div>
       <div className="api-verification-actions">
-        <button type="button" disabled={!available || busy || uncertain} onClick={check}>{copy("api-verification.check")}</button>
-        {validate.uncertain ? <button type="button" disabled={!active || busy} onClick={validate.retry}>{copy("api-verification.retryAuth")}</button> : null}
-        {discover.uncertain ? <button type="button" disabled={!active || busy} onClick={discover.retry}>{copy("api-verification.retryModels")}</button> : null}
+        <SettingsActionButton icon={SettingsActionIcon.Confirm} type="button" disabled={!available || busy || uncertain} onClick={check}>{copy("api-verification.check")}</SettingsActionButton>
+        {validate.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || busy} onClick={validate.retry}>{copy("api-verification.retryAuth")}</SettingsActionButton> : null}
+        {discover.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || busy} onClick={discover.retry}>{copy("api-verification.retryModels")}</SettingsActionButton> : null}
       </div>
       <div className="api-verification-problems">
         <Problem error={validate.error ?? discover.error} />
-        {resolveProvider ? <><Problem error={providerRead.error} />{providerRead.error || providerRead.data && !provider ? <button type="button" disabled={!active || providerRead.isFetching} onClick={() => void providerRead.refetch()}>{copy("api-verification.retryProvider")}</button> : null}</> : null}
+        {resolveProvider ? <><Problem error={providerRead.error} />{providerRead.error || providerRead.data && !provider ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || providerRead.isFetching} onClick={() => void providerRead.refetch()}>{copy("api-verification.retryProvider")}</SettingsActionButton> : null}</> : null}
         {!authority ? <small>{copy("api-verification.unavailable")}</small> : null}
       </div>
     </div>

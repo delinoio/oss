@@ -1,3 +1,4 @@
+import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { useProviderPages, useModelPages, inventoryIdentity } from "./model-pagination";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -67,7 +68,7 @@ function ProviderToggle({ entry, presets, changed, refresh, readOnly }: { entry:
   return <div className="provider-toggle">
     <span>{entry.enabled ? copy("provider-model-settings.on_130011") : copy("provider-model-settings.off_ca7981")}</span>
     <button type="button" role="switch" aria-checked={entry.enabled} aria-label={copy("provider-model-settings.message_42d375", { v0: entry.enabled ? copy("provider-model-settings.turnOff_06f0e2") : copy("provider-model-settings.turnOn_5a1f09"), v1: entry.displayName })} disabled={disabled} onClick={() => toggle(!entry.enabled)} />
-    {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("provider-model-settings.retryTheSameChange_671de5")}</button> : null}
+    {mutation.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("provider-model-settings.retryTheSameChange_671de5")}</SettingsActionButton> : null}
     <Problem error={mutation.error} />
   </div>;
 }
@@ -118,19 +119,19 @@ export function ApiProviderSettings({
       <p><LocalizedText id="provider-model-settings.entriesConnectionStateIsSeparateFrom_e54388" components={{ s0: <>{accountState}</> }} /></p>
       {!entry.enabled && entry.totalAccounts > 0n ? <p>{copy("provider-model-settings.turningThisProviderOffPreservesIts_2cf65c")}</p> : null}
       <div className="actions">
-        <button type="button" disabled={Boolean(result.error) || !entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
+        <SettingsActionButton icon={SettingsActionIcon.Add} type="button" disabled={Boolean(result.error) || !entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
           if (!entry.providerId) return;
           if (entry.accountCountsAvailable && entry.totalAccounts === 0n && entry.enabled) addAccount(entry.providerId, entry, result.data?.capabilities.includes(ProviderInventoryCapability.ACCOUNT_TYPE_FILTER) ? result.data.capabilities : []);
           else manageAccounts(entry.providerId, entry);
-        }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? copy("provider-model-settings.manageAiApiKeys_a84e42") : copy("provider-model-settings.addAiApiKey_2c04a8")}</button>
+        }}>{!entry.accountCountsAvailable || entry.totalAccounts > 0n ? copy("provider-model-settings.manageAiApiKeys_a84e42") : copy("provider-model-settings.addAiApiKey_2c04a8")}</SettingsActionButton>
         {entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled && entry.providerId ? <span>{copy("provider-model-settings.turnOnThisProviderToAdd_6ce913")}</span> : null}
-        {entry.presetId === ProviderPresetId.UNSPECIFIED && entry.provider ? <><button type="button" disabled={Boolean(result.error)} onClick={() => editCustom(entry.provider!)}>{copy("provider-model-settings.editCustomProvider_15ad80")}</button><button type="button" disabled={Boolean(result.error)} onClick={() => deleteCustom(entry.provider!)}>{copy("provider-model-settings.deleteCustomProvider_d29669")}</button></> : null}
-        {entry.presetId !== ProviderPresetId.UNSPECIFIED ? <button type="button" disabled={Boolean(result.error) || !customCopy} onClick={() => { if (!customCopy) return; const copy: Document = { ...customCopy, enabled: true }; delete copy.preset_id; createCustom(copy); }}>{copy("provider-model-settings.createCustomCopy_a6be49")}</button> : null}
+        {entry.presetId === ProviderPresetId.UNSPECIFIED && entry.provider ? <><SettingsActionButton icon={SettingsActionIcon.Edit} presentation={SettingsActionPresentation.Icon} targetName={resourceName(entry.provider!)} targetId={entry.provider!.id} type="button" disabled={Boolean(result.error)} onClick={() => editCustom(entry.provider!)}>{copy("provider-model-settings.editCustomProvider_15ad80")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Delete} presentation={SettingsActionPresentation.Icon} targetName={resourceName(entry.provider!)} targetId={entry.provider!.id} type="button" disabled={Boolean(result.error)} onClick={() => deleteCustom(entry.provider!)}>{copy("provider-model-settings.deleteCustomProvider_d29669")}</SettingsActionButton></> : null}
+        {entry.presetId !== ProviderPresetId.UNSPECIFIED ? <SettingsActionButton icon={SettingsActionIcon.Copy} type="button" disabled={Boolean(result.error) || !customCopy} onClick={() => { if (!customCopy) return; const copy: Document = { ...customCopy, enabled: true }; delete copy.preset_id; createCustom(copy); }}>{copy("provider-model-settings.createCustomCopy_a6be49")}</SettingsActionButton> : null}
       </div>
     </article>;
   };
   return <section data-settings-search-target="provider-inventory" data-settings-search-pending={result.isLoading ? "true" : undefined} ref={root} aria-label={copy("provider-model-settings.apiProviderInventory_db530c")}>
-    <SettingsHeading title={copy("provider-model-settings.apiProviders_376855")} description={copy("provider-model-settings.manageApiProvidersAndTheirAvailability_946ee7")} actions={<><button type="button" disabled={result.isFetching} onClick={result.refreshExplicit}>{copy("provider-model-settings.refreshProviders_56b2d1")}</button><button className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>{copy("provider-model-settings.customProvider_fee405")}</button></>} />
+    <SettingsHeading title={copy("provider-model-settings.apiProviders_376855")} description={copy("provider-model-settings.manageApiProvidersAndTheirAvailability_946ee7")} actions={<><SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" disabled={result.isFetching} onClick={result.refreshExplicit}>{copy("provider-model-settings.refreshProviders_56b2d1")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Add} className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>{copy("provider-model-settings.customProvider_fee405")}</SettingsActionButton></>} />
     <div className="search-form"><label>{copy("provider-model-settings.searchApiProviders_1b03d9")}<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label></div>
     {result.error ? <Failure failure={result.error.failure} /> : <Problem error={activeInventory.error || presetsQuery.error} />}
     {!result.error && result.data && !ready ? <p role="alert">{copy("provider-model-settings.thisServerDoesNotReportThe_03ee8f")}</p> : null}
@@ -160,7 +161,7 @@ function ModelReadProblem({ error, busy, retry, label }: { error: unknown; busy:
   const transient = error && [Code.Unavailable, Code.DeadlineExceeded, Code.Unknown, Code.Internal].includes(ConnectError.from(error).code);
   return error ? <div className="models-read-problem" role="group" aria-label={label}>
     <Problem error={error} />
-    {transient ? <button type="button" disabled={busy} onClick={() => void retry()}>{copy("provider-model-settings.retry_942087")}</button> : null}
+    {transient ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={busy} onClick={() => void retry()}>{copy("provider-model-settings.retry_942087")}</SettingsActionButton> : null}
   </div> : null;
 }
 
@@ -190,7 +191,7 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
   const knownZeroAccounts = enabledProviders.length > 0 && providerInventoryComplete && accountCountsKnown && connectedAccounts === 0n;
   return <section ref={root} className="models-list" aria-label={copy("provider-model-settings.modelsFromActiveApiProvidersAnd_6f3768")}>
     <SettingsHeading title={copy("provider-model-settings.models_d17d2d")} actions={<>
-      <button className="primary" type="button" disabled={!ready} onClick={() => createModel()}><LocalizedText id="provider-model-settings.newModel_aabdb9" components={{ s0: <span aria-hidden="true">+</span> }} /></button>
+      <SettingsActionButton icon={SettingsActionIcon.Add} className="primary" type="button" disabled={!ready} onClick={() => createModel()}><LocalizedText id="provider-model-settings.newModel_aabdb9" components={{ s0: <></> }} /></SettingsActionButton>
     </>} />
     <label className="models-search"><LocalizedText id="provider-model-settings.searchModels_ed8381" components={{ s0: <span className="models-search-control"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg><input value={query} maxLength={256} placeholder={copy("provider-model-settings.searchModels_37b906")} onChange={(event) => changeState({ query: event.target.value, page: "" })} /></span> }} /></label>
     {inventory.isLoading ? <SettingsLoading label={copy("provider-model-settings.loadingProviderInventory_fa3bbe")} /> : null}
@@ -221,7 +222,7 @@ export function ActiveModelSettings({ active, state, changeState, createModel, e
             <div className="models-identifiers"><p><LocalizedText id="provider-model-settings.nativeId_3dd1ba" components={{ s0: <>{text(data.native_id) || copy("provider-model-settings.extra.ca1844969742")}</> }} /></p><p><LocalizedText id="provider-model-settings.cliAlias_275567" components={{ s0: <>{text(data.alias) || copy("provider-model-settings.extra.dc937b598926")}</> }} /></p></div>
             <p><LocalizedText id="provider-model-settings.configuredHarnesses_94210e" components={{ s0: <>{items(data.harnesses).map(text).join(", ") || copy("provider-model-settings.extra.dc937b598926")}</> }} /></p>
           </div>
-          <div className="models-row-actions"><button type="button" disabled={Boolean(models.error) || !supportsResourceSchema(model) || document(model).retired === true} onClick={() => editModel(model)}>{copy("provider-model-settings.editModel_1733ca")}</button><button type="button" disabled={Boolean(models.error) || !supportsResourceSchema(model) || document(model).retired === true} onClick={() => priceModel(model)}>{copy("provider-model-settings.tokenPricing_56b24f")}</button></div>
+          <div className="models-row-actions"><SettingsActionButton icon={SettingsActionIcon.Edit} presentation={SettingsActionPresentation.Icon} targetName={resourceName(model)} targetId={model.id} type="button" disabled={Boolean(models.error) || !supportsResourceSchema(model) || document(model).retired === true} onClick={() => editModel(model)}>{copy("provider-model-settings.editModel_1733ca")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" disabled={Boolean(models.error) || !supportsResourceSchema(model) || document(model).retired === true} onClick={() => priceModel(model)}>{copy("provider-model-settings.tokenPricing_56b24f")}</SettingsActionButton></div>
         </article>;
         })}</div></section>;
       });
